@@ -20,7 +20,11 @@ export interface ReverseTurnDeps {
     documentId: string;
     threadId: ThreadId;
     turnId: TurnId;
-  }): Promise<{ hasDependents: boolean; checkedUntilSeq: number }>;
+  }): Promise<{
+    hasDependents: boolean;
+    blockingActorTypes?: Array<"agent" | "human" | "unknown">;
+    checkedUntilSeq: number;
+  }>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 }
 
@@ -68,7 +72,7 @@ async function reverseDocumentForTurn(
   documentId: DocumentId,
 ): Promise<Pick<WriteOutcome, "status" | "text">> {
   const dependencyCheck =
-    input.direction === "undo" && deps.checkDependentLaterLiveRows
+    input.direction === "undo" && input.actor.type === "agent" && deps.checkDependentLaterLiveRows
       ? await deps.checkDependentLaterLiveRows({
           documentId,
           threadId: input.threadId,
@@ -107,12 +111,14 @@ export function aggregateStatus(
   documents: readonly Pick<DocumentReversalResult, "status">[],
 ): DocumentReversalResult["status"] {
   const statuses = documents.map((document) => document.status);
-  const success = direction === "undo" ? "reversed" : "reconciled";
   const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
 
   if (statuses.every((status) => status === noOp)) return noOp;
-  if (statuses.every((status) => status === success || status === noOp)) return success;
-  if (statuses.every((status) => status === "reversed" || status === noOp)) return "reversed";
+  if (
+    statuses.every((status) => status === "reversed" || status === "reconciled" || status === noOp)
+  ) {
+    return statuses.includes("reconciled") ? "reconciled" : "reversed";
+  }
   if (statuses.includes("cant_undo_dependent")) return "cant_undo_dependent";
   if (statuses.every((status) => status === "expired")) return "expired";
   return "partial";

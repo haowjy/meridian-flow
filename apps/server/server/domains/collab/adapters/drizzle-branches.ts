@@ -24,8 +24,11 @@ import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-s
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
@@ -36,12 +39,17 @@ import {
   type ResetBranchSnapshotInput,
 } from "../domain/branch-coordinator.js";
 import {
+  type BranchCriticalSections,
+  createBranchCriticalSections,
+} from "../domain/branch-critical-sections.js";
+import {
   BranchCorruptError,
   BranchNotFoundError,
   type BranchResolver,
   type BranchState,
 } from "../domain/branch-resolver.js";
 import { sync } from "../domain/branch-sync.js";
+import { createDocumentAuthority } from "../domain/document-authority.js";
 
 export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
 
@@ -92,13 +100,15 @@ export type DrizzleBranchStore = BranchStore &
 
 export function createDrizzleBranchStore(
   db: Database,
-  live?: {
-    journal: UpdateJournal;
-    lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-    coordinator: DocumentCoordinator;
-  },
+  live:
+    | {
+        journal: UpdateJournal;
+        lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+        coordinator: DocumentCoordinator;
+      }
+    | undefined,
+  criticalSections: BranchCriticalSections = createBranchCriticalSections(),
 ): DrizzleBranchStore {
-  const branchMutex = new KeyedMutex();
   const maxCasRetries = 3;
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
@@ -117,6 +127,18 @@ export function createDrizzleBranchStore(
       .where(eq(works.id, workId))
       .limit(1);
     return row?.aiWriteMode === "draft" ? "manual" : "auto";
+  }
+
+  function draftBaseForBranch(branchId: string) {
+    return sql<number>`coalesce((
+      select max(${documentYjsUpdates.id})
+      from ${documentYjsUpdates}
+      where ${documentYjsUpdates.documentId} = (
+        select ${documentBranches.documentId}
+        from ${documentBranches}
+        where ${documentBranches.id} = ${branchId}
+      )
+    ), 0)`;
   }
 
   async function activeWorkDraft(
@@ -165,6 +187,53 @@ export function createDrizzleBranchStore(
     };
   }
 
+  async function replicatedSnapshotFrom(source: Y.Doc): Promise<{
+    state: Buffer;
+    stateVector: Buffer;
+  }> {
+    const target = createCollabYDoc({ gc: false });
+    const frozenSource = createCollabYDoc({ gc: false });
+    Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
+    const unsupported = async (): Promise<never> => {
+      throw new Error("Document authority strategy is unavailable for branch cloning");
+    };
+    try {
+      await createDocumentAuthority({
+        readMutableAuthority: () => ({ documentId: "new-branch", generation: 1n, doc: target }),
+        readFrozenCut: async (cutId) =>
+          cutId === "branch-clone"
+            ? {
+                cutId,
+                documentId: "new-branch",
+                authorityId: "branch-clone",
+                generation: 1n,
+                doc: frozenSource,
+              }
+            : null,
+        admitImmediate: async ({ update }) => {
+          Y.applyUpdate(target, update);
+          return { sequence: 1n, joined: 0 };
+        },
+        readCurrentRevision: unsupported,
+        lowerCertifiedMutation: unsupported,
+        loadCheckpoint: unsupported,
+        unresolvedSettlements: unsupported,
+        replaceGeneration: unsupported,
+        disconnectGeneration: unsupported,
+        stagePush: unsupported,
+        completePush: unsupported,
+      }).mutate({
+        kind: "identityReplication",
+        sourceAuthorityCutId: "branch-clone",
+        plan: { kind: "wholeDocument" },
+      });
+      return snapshotFromDoc(target);
+    } finally {
+      frozenSource.destroy();
+      target.destroy();
+    }
+  }
+
   async function liveSchemaVersion(documentId: DocumentId): Promise<number> {
     const [row] = await currentDrizzleDb(db)
       .select({ schemaVersion: documentYjsHeads.schemaVersion })
@@ -181,9 +250,34 @@ export function createDrizzleBranchStore(
     if (!live) {
       throw new Error("DrizzleBranchStore manifest persistence requires the collab live journal");
     }
-    await live.journal.append(documentId, update, { origin: "system", seq: 0 });
     await live.coordinator.withDocument(documentId, async (doc) => {
-      Y.applyUpdate(doc, update);
+      const unsupported = async (): Promise<never> => {
+        throw new Error("Document authority strategy is unavailable for manifest seeding");
+      };
+      await createDocumentAuthority({
+        readMutableAuthority: () => ({ documentId, generation: 0n, doc }),
+        admitImmediate: async ({ update: admittedUpdate }) => {
+          const sequence = await live.journal.append(documentId, admittedUpdate, {
+            origin: "system",
+            seq: 0,
+          });
+          Y.applyUpdate(doc, admittedUpdate);
+          return { sequence: BigInt(sequence), joined: 0 };
+        },
+        readFrozenCut: unsupported,
+        readCurrentRevision: unsupported,
+        lowerCertifiedMutation: unsupported,
+        loadCheckpoint: unsupported,
+        unresolvedSettlements: unsupported,
+        replaceGeneration: unsupported,
+        disconnectGeneration: unsupported,
+        stagePush: unsupported,
+        completePush: unsupported,
+      }).mutate({
+        kind: "attributedFreshAuthorship",
+        source: { kind: "seed", policy: "agent" },
+        update,
+      });
     });
   }
 
@@ -225,7 +319,7 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeWorkDraft(input.documentId, input.workId);
     if (existing) return existing;
-    const seed = snapshotFromDoc(input.liveDoc);
+    const seed = await replicatedSnapshotFrom(input.liveDoc);
     return insertBranch({
       id: `branch_${randomUUID()}`,
       documentId: input.documentId,
@@ -264,7 +358,7 @@ export function createDrizzleBranchStore(
         threadId: input.threadId,
         pushPolicy: workDraft.pushPolicy,
         status: "active",
-        ...snapshotFromDoc(upstreamDoc),
+        ...(await replicatedSnapshotFrom(upstreamDoc)),
         schemaVersion: workDraft.schemaVersion,
       });
     } finally {
@@ -542,19 +636,14 @@ export function createDrizzleBranchStore(
       if (!workDraftBranchId) {
         throw new Error(`Manifest thread peer ${peer.branchId} has no work-draft upstream`);
       }
-      const lockIds = [peer.branchId, workDraftBranchId].sort();
-      // Same mutex as BranchCoordinator (store.branchMutex): manifest membership rows
-      // participate in journal-id floor ordering with normal agent writes.
-      return await branchMutex.run(lockIds[0], () =>
-        branchMutex.run(lockIds[1], () =>
-          retryManifestMembershipMutation({
-            documentId,
-            present,
-            threadId: view.threadId,
-            peerBranchId: peer.branchId,
-            workDraftBranchId,
-          }),
-        ),
+      return await criticalSections.withBranches([peer.branchId, workDraftBranchId], () =>
+        retryManifestMembershipMutation({
+          documentId,
+          present,
+          threadId: view.threadId,
+          peerBranchId: peer.branchId,
+          workDraftBranchId,
+        }),
       );
     } finally {
       manifest.doc.destroy();
@@ -576,7 +665,7 @@ export function createDrizzleBranchStore(
         workId: view.workId,
         liveDoc: manifest.doc,
       });
-      return await branchMutex.run(work.branchId, async () => {
+      return await criticalSections.withBranches([work.branchId], async () => {
         for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
           const branch = await getBranchSnapshot(work.branchId);
           const doc = materializeBranch(branch, "" as ThreadId);
@@ -603,6 +692,7 @@ export function createDrizzleBranchStore(
                   branchId: branch.branchId,
                   generation: branch.generation,
                   updateData: Buffer.from(updateData),
+                  draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
                   source: "agent",
                   updateMeta: {
                     kind: "manifest_membership",
@@ -701,6 +791,7 @@ export function createDrizzleBranchStore(
             branchId: work.branchId,
             generation: work.generation,
             updateData: Buffer.from(updateData),
+            draftBaseUpdateSeq: draftBaseForBranch(work.branchId),
             source: "agent",
             threadId: input.threadId,
             updateMeta: {
@@ -753,7 +844,7 @@ export function createDrizzleBranchStore(
   }
 
   return {
-    branchMutex,
+    deferUntilCommit: deferUntilDrizzleCommit,
 
     async getBranch(branchId) {
       const [row] = await selectBranch(currentDrizzleDb(db))
@@ -780,6 +871,7 @@ export function createDrizzleBranchStore(
               branchId: input.journal.branchId,
               generation: input.journal.generation,
               updateData: Buffer.from(input.journal.updateData),
+              draftBaseUpdateSeq: draftBaseForBranch(input.journal.branchId),
               source: input.journal.source,
               wId: input.journal.wId ?? null,
               threadId: input.journal.threadId ?? null,
@@ -840,6 +932,7 @@ export function createDrizzleBranchStore(
           branchId: input.branchId,
           generation: input.generation,
           updateData: Buffer.from(input.updateData),
+          draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
           source: input.source,
           wId: input.wId ?? null,
           threadId: input.threadId ?? null,

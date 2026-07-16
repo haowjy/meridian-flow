@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
     ...(branchId ? { branchId } : { draftId: draftId as string }),
     userId: user.userId,
     draftRevisionToken: body.draftRevisionToken,
+    signal: event.req.signal,
     operationIds: Array.isArray(body.operationIds)
       ? body.operationIds.filter(
           (operationId): operationId is string => typeof operationId === "string",

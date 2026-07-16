@@ -1,11 +1,486 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
 import { describe, expect, it, vi } from "vitest";
+import type * as Y from "yjs";
+import { snapshotBlocks } from "../apply/echo.js";
+import { toDocHandle } from "../handles.js";
+import { digestRenderedContent } from "../observation-snapshot.js";
+import type { ObservationSnapshot } from "../ports/observation-snapshot.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
-import { blockTexts } from "./test-support/assertions.js";
-import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
+import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
+import { codec, context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
+function emptyObservationStore() {
+  return {
+    async seal() {},
+    async load(responseId: string): Promise<ObservationSnapshot> {
+      return { responseId, entries: [] };
+    },
+  };
+}
+
+function observationSnapshot(responseId: string, doc: Y.Doc): ObservationSnapshot {
+  return {
+    responseId,
+    entries: snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+      documentId: "chapter.md",
+      clientID: block.clientID as number,
+      clock: block.clock as number,
+      value: {
+        kind: "rendered",
+        digest: digestRenderedContent(block.renderedContent as string),
+      },
+    })),
+  };
+}
+
 describe("response committer", () => {
+  it("S1: stays silent when the authoring response observed the current passage", async () => {
+    const ctx = harness({ "chapter.md": "Observed passage.\n\nKeep." });
+    const responseId = "response-s1-observed";
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Observed passage.", content: "" },
+      { ...context, responseId, turnId: "turn-s1" },
+    );
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result).toMatchObject({ status: "committed" });
+    if (result.status !== "committed") throw new Error("expected committed response");
+    expect(result.documents[0]?.lateSweep).toBeUndefined();
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).not.toContain("Observed passage.");
+  });
+
+  it("denies a blind destructive response from the snapshot empty-case", async () => {
+    const ctx = harness(
+      { "chapter.md": "Unseen passage.\n\nKeep." },
+      { observationSnapshots: emptyObservationStore() },
+    );
+    const responseId = "response-blind";
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Unseen passage.", content: "" },
+      { ...context, responseId, turnId: "turn-blind" },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "rejected",
+    });
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Unseen passage.", "Keep."]);
+  });
+
+  it("stays silent when a later response observed a prior response echo", async () => {
+    const snapshots = new Map<string, ObservationSnapshot>();
+    const ctx = harness(
+      { "chapter.md": "Opening." },
+      {
+        observationSnapshots: {
+          async seal(snapshot) {
+            snapshots.set(snapshot.responseId, snapshot);
+          },
+          async load(responseId) {
+            return snapshots.get(responseId) ?? null;
+          },
+        },
+      },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Echoed passage." },
+      { ...context, responseId: "response-prior", turnId: "turn-prior" },
+    );
+    await ctx.core.commitResponse("response-prior");
+    snapshots.set(
+      "response-after-echo",
+      observationSnapshot("response-after-echo", ctx.liveDoc("chapter.md")),
+    );
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Echoed passage.", content: "" },
+      { ...context, responseId: "response-after-echo", turnId: "turn-after-echo" },
+    );
+    const result = await ctx.core.commitResponse("response-after-echo");
+
+    expect(result).toMatchObject({ status: "committed" });
+    if (result.status !== "committed") throw new Error("expected committed response");
+    expect(result.documents[0]?.lateSweep).toBeUndefined();
+  });
+  it("defers lifecycle close and restores buffered ownership when the host transaction aborts", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseCommitterTransition: (event) => transitions.push(event) },
+    );
+    const responseId = "response-deferred-close";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-deferred-close" },
+    );
+    let participant: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
+
+    await ctx.core.commitResponse(responseId, {
+      deferFinalization: (deferred) => {
+        participant = deferred;
+      },
+    });
+    expect(transitions.some((event) => event.transition === "closed")).toBe(false);
+    await participant?.abort();
+    expect(ctx.core.bufferedUpdatesForDoc(responseId, "chapter.md")).toHaveLength(1);
+  });
+
+  it("publishes deferred lifecycle close only after the host commits", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseCommitterTransition: (event) => transitions.push(event) },
+    );
+    const responseId = "response-publish-close";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-publish-close" },
+    );
+    let commit = async () => {};
+    await ctx.core.commitResponse(responseId, {
+      deferFinalization: (participant) => {
+        commit = async () => participant.commit();
+      },
+    });
+    expect(transitions.some((event) => event.transition === "closed")).toBe(false);
+    await commit();
+    expect(transitions.at(-1)).toMatchObject({
+      transition: "closed",
+      closedOutcome: "committed",
+    });
+  });
+
+  it("reports process-local journal staging separately and restores buffered on failure", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    let ctx!: ReturnType<typeof harness>;
+    ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        onResponseCommitterTransition: (event) => transitions.push(event),
+        afterResponsePreflight: () => ctx.coordinator.failWith(new Error("phase C failed")),
+      },
+    );
+    const appendBatch = ctx.journal.appendBatch.bind(ctx.journal);
+    ctx.journal.appendBatch = async (entries) =>
+      (await appendBatch(entries)).map((entry) => ({ ...entry, journalCommitKind: "staged" }));
+    const responseId = "response-journal-staged";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-journal-staged" },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("staged journal batch");
+    expect(transitions.map((event) => event.transition)).toContain("journal_staged");
+    expect(transitions.map((event) => event.transition)).not.toContain("journal_committed");
+    expect(ctx.core.bufferedUpdatesForDoc(responseId, "chapter.md")).toHaveLength(1);
+  });
+
+  it("S2: reports text typed during the turn and keeps the merge", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-late-sweep";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId === responseId) {
+            humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
+          }
+        },
+      },
+    );
+    const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent note." },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-insert",
+        interactionContext: { mode: "live" },
+      },
+    );
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-delete",
+        interactionContext: { mode: "live" },
+      },
+    );
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result.status).toBe("committed");
+    if (result.status !== "committed") throw new Error("expected committed response");
+    expect(ctx.journal.recordedBatches()).toHaveLength(1);
+    expect(result.documents[0]?.lateSweep).toEqual({
+      affectedBlockHashes: [deletedHash],
+      capturedDeletedBodies: [{ hash: deletedHash, body: "Writer: Alpha." }],
+      sweptContent: true,
+      beforeContentRef: null,
+    });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma.", "Agent note."]);
+    await expect(
+      ctx.core.write({ command: "insert", file: "chapter.md", content: "Next response." }, context),
+    ).resolves.toMatchObject({ status: "success" });
+  });
+
+  it("captures every affected body when one block changes and another is deleted during phase C", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-mixed-late-sweep";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId !== responseId) return;
+          const live = ctx.liveDoc("chapter.md");
+          humanText(live, 0, { from: 0, to: 0 }, "WS: ");
+          model.transact(
+            toDocHandle(live),
+            () => model.deleteBlock(toDocHandle(live), model.getBlocks(toDocHandle(live))[1]),
+            { type: "human" },
+          );
+        },
+      },
+    );
+    const affectedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-mixed-sweep",
+        interactionContext: { mode: "live" },
+      },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          lateSweep: {
+            affectedBlockHashes: [affectedHash],
+            capturedDeletedBodies: [{ hash: affectedHash, body: "WS: Alpha." }],
+          },
+        },
+      ],
+    });
+  });
+
+  it("reports a late destructive sweep when phase C retries after a transient failure", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-late-sweep-phase-c-retry";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId !== responseId) return;
+          humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
+          ctx.coordinator.failNextForDoc("chapter.md", new Error("phase C unavailable"));
+        },
+      },
+    );
+    const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-phase-c-retry",
+        interactionContext: { mode: "live" },
+      },
+    );
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result).toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          documentId: "chapter.md",
+          lateSweep: {
+            affectedBlockHashes: expect.arrayContaining([deletedHash]),
+            capturedDeletedBodies: [{ hash: deletedHash, body: "Writer: Alpha." }],
+            sweptContent: true,
+          },
+        },
+      ],
+    });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma."]);
+  });
+
+  it("aborts after phase A without journaling and leaves the response retryable", async () => {
+    const abort = new AbortController();
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { afterResponsePreflight: () => abort.abort() },
+    );
+    const responseId = "response-abort-between-a-and-b";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-abort-between-a-and-b" },
+    );
+
+    await expect(ctx.core.commitResponse(responseId, { signal: abort.signal })).rejects.toThrow(
+      "before the journal batch was committed",
+    );
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+  });
+
+  it("commits a multi-document thread-peer response in one journal batch", async () => {
+    const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "Beta." });
+    const responseId = "response-multi-thread-peer";
+    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    for (const file of ["alpha.md", "beta.md"]) {
+      await ctx.core.write(
+        { command: "insert", file, content: "Tail." },
+        {
+          ...context,
+          responseId,
+          turnId: `turn-${file}`,
+          interactionContext: { mode: "threadPeer", branchGeneration: 1 },
+        },
+      );
+    }
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documentCount: 2,
+    });
+    expect(ctx.journal.recordedBatches()).toEqual([
+      ["alpha.md:turn-alpha.md", "beta.md:turn-beta.md"],
+    ]);
+    expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha.", "Tail."]);
+    expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["Beta.", "Tail."]);
+  });
+
+  it("rechecks for a silent sweep after phase C and its retry both fail", async () => {
+    let remainingPhaseCFailures = 0;
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-recovery-recheck";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId !== responseId) return;
+          humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
+          remainingPhaseCFailures = 2;
+        },
+      },
+    );
+    const originalWithDocument = ctx.coordinator.withDocument.bind(ctx.coordinator);
+    ctx.coordinator.withDocument = async <T>(docId: string, fn: (doc: Y.Doc) => Promise<T>) => {
+      if (remainingPhaseCFailures > 0) {
+        remainingPhaseCFailures -= 1;
+        throw new Error("phase C unavailable");
+      }
+      return originalWithDocument(docId, fn);
+    };
+    const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-recovery-recheck",
+        interactionContext: { mode: "live" },
+      },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          lateSweep: {
+            affectedBlockHashes: expect.arrayContaining([deletedHash]),
+            sweptContent: true,
+          },
+        },
+      ],
+    });
+  });
+
+  it("reports degraded awareness and fences every document when recovery recheck fails", async () => {
+    let remainingPhaseCFailures = 0;
+    let failConcurrentRecheck = false;
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-recovery-awareness-degraded";
+    ctx = harness(
+      { "alpha.md": "Alpha.\n\nDelete.", "beta.md": "Beta." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId === responseId) {
+            remainingPhaseCFailures = 2;
+            failConcurrentRecheck = true;
+          }
+        },
+      },
+    );
+    const originalWithDocument = ctx.coordinator.withDocument.bind(ctx.coordinator);
+    ctx.coordinator.withDocument = async <T>(docId: string, fn: (doc: Y.Doc) => Promise<T>) => {
+      if (remainingPhaseCFailures > 0) {
+        remainingPhaseCFailures -= 1;
+        throw new Error("phase C unavailable");
+      }
+      return originalWithDocument(docId, fn);
+    };
+    ctx.coordinator.concurrentUpdatesSince = async () => {
+      if (failConcurrentRecheck) throw new Error("concurrent state unavailable");
+      return [];
+    };
+    for (const file of ["alpha.md", "beta.md"]) {
+      await ctx.core.write({ command: "read", file }, context);
+    }
+    await ctx.core.write(
+      { command: "replace", file: "alpha.md", find: "Alpha.\n\nDelete.", content: "" },
+      { ...context, responseId, turnId: "turn-alpha-degraded" },
+    );
+    await ctx.core.write(
+      { command: "insert", file: "beta.md", content: "Tail." },
+      { ...context, responseId, turnId: "turn-beta-degraded" },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      awarenessDegraded: true,
+      documentCount: 2,
+    });
+  });
+
+  it("aborts a queued preflight before journaling and leaves the response retryable", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-aborted-preflight";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-aborted-preflight" },
+    );
+    const originalWithDocument = ctx.coordinator.withDocument.bind(ctx.coordinator);
+    ctx.coordinator.withDocument = () => new Promise<never>(() => {});
+    const abort = new AbortController();
+    const commit = ctx.core.commitResponse(responseId, { signal: abort.signal });
+    abort.abort();
+
+    await expect(commit).rejects.toThrow("before the journal batch was committed");
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+
+    ctx.coordinator.withDocument = originalWithDocument;
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      updateCount: 1,
+    });
+  });
   it("joins a second commit that arrives after the journal append", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-late-second-commit";
@@ -33,15 +508,19 @@ describe("response committer", () => {
     releaseProjection.resolve();
     expect(await Promise.all([first, second])).toEqual([await first, await first]);
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
-    expect(projectionCount).toBe(1);
+    expect(projectionCount).toBe(2);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
   });
 
   it("closes a durable response when projection and recovery both fail", async () => {
     const transitions: ResponseCommitterTransitionDetail[] = [];
-    const ctx = harness(
+    let ctx!: ReturnType<typeof harness>;
+    ctx = harness(
       { "chapter.md": "Alpha." },
-      { onResponseCommitterTransition: (event) => transitions.push(event) },
+      {
+        onResponseCommitterTransition: (event) => transitions.push(event),
+        afterResponsePreflight: () => ctx.coordinator.failWith(new Error("projection failed")),
+      },
     );
     const responseId = "response-durable-projection-recovery-failure";
     const responseContext = {
@@ -55,7 +534,6 @@ describe("response committer", () => {
       responseContext,
     );
 
-    ctx.coordinator.failWith(new Error("projection failed"));
     const originalRecover = ctx.coordinator.recover.bind(ctx.coordinator);
     const recover = vi
       .spyOn(ctx.coordinator, "recover")
@@ -138,6 +616,7 @@ describe("response committer", () => {
     await ctx.core.invalidateThread("chapter.md", THREAD_ID);
     releaseAppend.resolve();
     const result = await commit;
+    if (result.status !== "committed") throw new Error("expected committed response");
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
     expect(result.discardedClaims).toBeUndefined();
@@ -296,8 +775,14 @@ describe("response committer", () => {
       responseContext,
     );
 
+    const appendStarted = deferred<void>();
+    const originalAppend = ctx.journal.appendBatch.bind(ctx.journal);
+    ctx.journal.appendBatch = async (entries) => {
+      appendStarted.resolve();
+      return originalAppend(entries);
+    };
     const firstCommit = ctx.core.commitResponse(responseId);
-    await Promise.resolve();
+    await appendStarted.promise;
     expect(appendBatchInFlight).toBe(1);
     const secondCommit = ctx.core.commitResponse(responseId);
     await Promise.resolve();

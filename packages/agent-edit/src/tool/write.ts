@@ -49,8 +49,14 @@ const DEFAULT_UNDO_CLIENT_ID = 999;
 export interface WriteTool {
   write: WriteFunction;
   recover(docId: string): Promise<void>;
-  commitResponse(responseId: string): Promise<ResponseCommitResult>;
-  rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
+  commitResponse(
+    responseId: string,
+    options?: import("./response-committer.js").ResponseCommitOptions,
+  ): Promise<ResponseCommitResult>;
+  rollbackResponse(
+    responseId: string,
+    options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
+  ): Promise<ResponseRollbackResult>;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
@@ -76,6 +82,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
+    observationSnapshots: options.observationSnapshots,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
@@ -85,23 +92,27 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const responseCommitter = createResponseCommitter({
     runtimeStore,
     mutationCommit,
+    coordinator: options.coordinator,
     model: options.model,
+    codec: options.codec,
     ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
     onTransition: options.onResponseCommitterTransition,
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
+    afterPreflight: options.afterResponsePreflight,
   });
   const writeReversal = createWriteReversal({
     reversalStore,
+    coordinator: options.coordinator,
     runtimeStore,
     mutationCommit,
     model: options.model,
     codec: options.codec,
     undoClientId,
-    undoNotificationPort: options.undoNotificationPort,
+    reversalNoticePort: options.reversalNoticePort,
     onInvariantViolation: options.onInvariantViolation,
-    onUndoNotificationFailed: options.onUndoNotificationFailed,
+    onReversalNoticeFailed: options.onReversalNoticeFailed,
   });
 
   const commands = createWriteCommands({
@@ -111,7 +122,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
       createRuntimeDoc: options.createRuntimeDoc,
-      onBaselineDegraded: options.onBaselineDegraded,
     },
     threadOrigins,
     autoTurnCounter,
@@ -168,8 +178,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (context.externalId && options.actorSessionStore) {
       return options.actorSessionStore.resolve(context.externalId);
     }
+    const actorThreadId =
+      context.actor?.kind === "agent" || context.actor?.kind === "human"
+        ? context.actor.threadId
+        : undefined;
     const id = context.sessionId ?? options.defaultSessionId ?? "default-session";
-    const threadId = context.threadId ?? options.defaultThreadId ?? id;
+    const threadId = actorThreadId ?? context.threadId ?? options.defaultThreadId ?? id;
     const existing = localSessions.get(id);
     if (existing) return existing;
     const session: ActorSession = { id, threadId, documents: new Map() };

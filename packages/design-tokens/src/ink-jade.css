@@ -215,6 +215,16 @@
   --color-review-writer-emphasis: color-mix(in oklab, var(--color-gold) 24%, transparent);
   --color-review-writer-ring: color-mix(in oklab, var(--color-gold) 48%, transparent);
 
+  --color-review-warning-tint: color-mix(in oklab, var(--color-status-warning) 16%, transparent);
+  --color-review-warning-border: color-mix(
+    in oklab,
+    var(--color-status-warning) 52%,
+    transparent
+  );
+  --color-review-warning-ring: color-mix(in oklab, var(--color-status-warning) 58%, transparent);
+  --color-review-warning-chip-bg: var(--color-warning-bg);
+  --color-review-warning-chip-foreground: var(--color-warning-foreground);
+
   /* Merge-artifact seam — NOT an authorship tint. Neutral, derived from
      muted-foreground so it reads as a system "combined here, review" mark,
      never mistaken for jade add / crimson remove / gold writer-edit. Rendered

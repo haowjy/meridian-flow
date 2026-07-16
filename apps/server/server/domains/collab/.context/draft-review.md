@@ -13,5 +13,5 @@ Review cards are computed from `branch_write_journal` rows via
 
 → [`.context/CONTEXT.md`](CONTEXT.md) — branch model overview
 → [`AGENTS.md`](../AGENTS.md) — mental model and rules
-→ [KB: Draft-Branch Topology](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-branch-topology.md) — peer topology and invariants
-→ [KB: JournalCommitKind](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/journal-commit-kind-staging-truth.md) — staging truth model
+→ [KB: Draft-Branch Topology](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-branch-topology.md) — peer topology and invariants
+→ [KB: Journal Staging and Durability](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/journal-staging-durability-states.md) — staging truth model

@@ -185,7 +185,7 @@ export function createThreadUploadImportService(
               storageUrl,
             });
             if (editable) {
-              const write = await deps.documentSync.writeFromMarkdown(
+              const write = await deps.documentSync.seedFromMarkdown(
                 documentId,
                 markdownProjection,
                 {

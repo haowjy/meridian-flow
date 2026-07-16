@@ -122,6 +122,7 @@ export async function handleWorkDraftAcceptRequest(
     userId: UserId;
     draftRevisionToken: number;
     operationIds?: string[];
+    signal?: AbortSignal;
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftWorkAccess(deps, input);
@@ -222,6 +223,7 @@ function mapAcceptResult(
     return { status: "partial_applied", draftId: result.draftId, writeId: result.writeId };
   }
   if (result.status === "stale_draft") return result;
+  if (result.status === "concurrent_conflict") return result;
   if (result.status === "discarded") {
     throw createError({ statusCode: 410, message: "Draft is no longer active" });
   }

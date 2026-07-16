@@ -34,11 +34,13 @@ import {
   isImageFile,
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
+import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
+import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -349,6 +351,7 @@ function SessionEditorView({
     documentId,
     draftId: reviewDraftId,
     enabled: inReview,
+    conflictedBlocks: controller.conflictedBlocks,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
     onReviewSessionUnavailable,
   });
@@ -356,6 +359,11 @@ function SessionEditorView({
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor || inReview) return;
+    return registerLiveRangeEditor(documentId, editor);
+  }, [documentId, editor, inReview]);
 
   useEffect(() => {
     return () => {
@@ -389,6 +397,7 @@ function SessionEditorView({
       )}
     >
       {belowToolbar}
+      {!inReview ? <SafetyNoticeReceipt session={session} /> : null}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
       {session ? (

@@ -187,10 +187,6 @@ export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): 
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
 }
 
-export function apiThreadTurnChangeDiffPath(threadId: string, turnId: string): string {
-  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/change-diff`;
-}
-
 export function apiThreadModelRequestsDebugPath(
   threadId: string,
   opts?: { turnId?: string },

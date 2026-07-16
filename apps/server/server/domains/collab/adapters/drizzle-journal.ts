@@ -6,6 +6,7 @@ import type {
   JournalReadOptions,
   JournalSnapshot,
   PersistedUpdate,
+  PersistRedoEntry,
   ReversalActor,
   ReversalRecord,
   ReversalStatus,
@@ -20,11 +21,14 @@ import {
   persistUndoPlanWatermark,
   writeHandle,
 } from "@meridian/agent-edit";
+import type { ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   agentEditWidCounters,
+  branchPushOutboxUpdates,
+  branchPushSettlementOutbox,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsReversalOps,
@@ -34,7 +38,9 @@ import {
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { insertionAttributions } from "../domain/provenance.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
+import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 
@@ -50,6 +56,7 @@ export type FacadeCheckpointRecord = {
   id: string;
   documentId: string;
   state: Uint8Array;
+  attributionManifest?: unknown;
   reason: string;
   createdAt: string;
 };
@@ -76,6 +83,7 @@ export type DrizzleCollabPersistence = {
 const asDocumentId = (value: string) => value as DocumentId;
 const asThreadId = (value: string) => value as ThreadId;
 const asTurnId = (value: string) => value as TurnId;
+const asModelResponseId = (value: string | undefined) => value as ModelResponseId | undefined;
 const asOptionalTurnId = (value: string | undefined) => value as TurnId | undefined;
 const asUserId = (value: string | undefined) => value as UserId | undefined;
 
@@ -106,9 +114,19 @@ function parseOrigin(meta: UpdateMeta): {
   originType: OriginType;
   actorTurnId?: TurnId;
   actorUserId?: UserId;
+  reversalActorType?: "agent" | "user";
+  reversalActorUserId?: UserId;
 } {
+  const reversal = meta.reversalActor
+    ? {
+        reversalActorType: meta.reversalActor.type,
+        ...(meta.reversalActor.type === "user"
+          ? { reversalActorUserId: asUserId(meta.reversalActor.userId) }
+          : {}),
+      }
+    : {};
   if (meta.origin === "system") {
-    return { originType: "system", actorTurnId: asOptionalTurnId(meta.actorTurnId) };
+    return { originType: "system", actorTurnId: asOptionalTurnId(meta.actorTurnId), ...reversal };
   }
 
   const separator = meta.origin.indexOf(":");
@@ -119,13 +137,14 @@ function parseOrigin(meta: UpdateMeta): {
   if (!id) throw new Error(`Invalid update origin: ${meta.origin}`);
 
   if (kind === "agent") {
-    return { originType: "agent", actorTurnId: asTurnId(meta.actorTurnId ?? id) };
+    return { originType: "agent", actorTurnId: asTurnId(meta.actorTurnId ?? id), ...reversal };
   }
   if (kind === "human") {
     return {
       originType: "human",
       actorTurnId: asOptionalTurnId(meta.actorTurnId),
       actorUserId: asUserId(id),
+      ...reversal,
     };
   }
   throw new Error(`Invalid update origin: ${meta.origin}`);
@@ -135,12 +154,20 @@ function metaFromUpdateRow(
   row: typeof documentYjsUpdates.$inferSelect,
   mode: UpdateMetaMode,
 ): UpdateMeta {
+  const reversalActor =
+    row.reversalActorType === "user" && row.reversalActorUserId
+      ? ({ type: "user", userId: row.reversalActorUserId } as const)
+      : row.reversalActorType === "agent"
+        ? ({ type: "agent" } as const)
+        : undefined;
   if (row.originType === "agent") {
     const originActor = row.actorTurnId ?? (mode === "journal" ? "unknown" : undefined);
     if (originActor) {
       return {
         origin: `agent:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+        ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
+        ...(reversalActor ? { reversalActor } : {}),
         seq: row.id,
       };
     }
@@ -151,6 +178,7 @@ function metaFromUpdateRow(
       return {
         origin: `human:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+        ...(reversalActor ? { reversalActor } : {}),
         seq: row.id,
       };
     }
@@ -158,6 +186,8 @@ function metaFromUpdateRow(
   return {
     origin: "system",
     ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+    ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
+    ...(reversalActor ? { reversalActor } : {}),
     seq: row.id,
   };
 }
@@ -319,10 +349,15 @@ async function insertCheckpoint(
   reason: string,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
+  const authority = await readDocumentAuthority(db, documentId);
+  const attributionManifest = await checkpointAttributionManifest(db, documentId, upToSeq);
   const [row] = await db
     .insert(documentYjsCheckpoints)
     .values({
       documentId: asDocumentId(documentId),
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      attributionManifest,
       state: toBuffer(state),
       stateVector: toBuffer(stateVector),
       upToSeq,
@@ -345,20 +380,138 @@ async function appendUpdate(
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
-): Promise<number> {
+): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
+  const authority = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
     .values({
       documentId: asDocumentId(documentId),
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      admissionSequence: authority.admissionSequence,
+      batchOrdinal: 0,
       updateData: toBuffer(update),
       originType: origin.originType,
       actorUserId: origin.actorUserId ?? null,
       actorTurnId: origin.actorTurnId ?? null,
+      authoringResponseId: asModelResponseId(meta.authoringResponseId) ?? null,
+      reversalActorType: origin.reversalActorType ?? null,
+      reversalActorUserId: origin.reversalActorUserId ?? null,
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
-  return row.id;
+  // Every admitted content mutation invalidates an unresolved settlement cut.
+  const joinedSettlement =
+    (await capturePendingSettlementAuthorityUpdate(db, documentId, row.id, update)) > 0;
+  return { seq: row.id, joinedSettlement };
+}
+
+async function checkpointAttributionManifest(
+  db: JournalDb,
+  documentId: string,
+  upToSeq: number,
+): Promise<unknown> {
+  const rows = await db
+    .select({
+      id: documentYjsUpdates.id,
+      admissionSequence: documentYjsUpdates.admissionSequence,
+      batchOrdinal: documentYjsUpdates.batchOrdinal,
+      updateData: documentYjsUpdates.updateData,
+      originType: documentYjsUpdates.originType,
+      actorUserId: documentYjsUpdates.actorUserId,
+    })
+    .from(documentYjsUpdates)
+    .where(
+      and(
+        eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
+        lte(documentYjsUpdates.id, upToSeq),
+      ),
+    )
+    .orderBy(
+      asc(documentYjsUpdates.admissionSequence),
+      asc(documentYjsUpdates.batchOrdinal),
+      asc(documentYjsUpdates.id),
+    );
+  const floorRow = rows.at(-1);
+  return {
+    version: 1,
+    floor: floorRow ? replayKeyJson(floorRow) : null,
+    attributions: insertionAttributions(
+      rows.map((row) => ({
+        admissionSequence: row.admissionSequence,
+        batchOrdinal: row.batchOrdinal,
+        journalRowId: BigInt(row.id),
+        originType: row.originType,
+        actorUserId: row.actorUserId,
+        update: toBytes(row.updateData),
+      })),
+    ).map((attribution) => ({
+      ...attribution,
+      origin: {
+        admissionSequence: attribution.origin.admissionSequence.toString(),
+        batchOrdinal: attribution.origin.batchOrdinal,
+        journalRowId: attribution.origin.journalRowId.toString(),
+      },
+    })),
+  };
+}
+
+function replayKeyJson(row: { admissionSequence: bigint; batchOrdinal: number; id: number }): {
+  admissionSequence: string;
+  batchOrdinal: number;
+  journalRowId: string;
+} {
+  return {
+    admissionSequence: row.admissionSequence.toString(),
+    batchOrdinal: row.batchOrdinal,
+    journalRowId: row.id.toString(),
+  };
+}
+
+async function capturePendingSettlementAuthorityUpdate(
+  db: JournalDb,
+  documentId: string,
+  journalRowId: number,
+  update: Uint8Array,
+): Promise<number> {
+  const unresolved = await db
+    .select({
+      pushId: branchPushSettlementOutbox.pushId,
+      ordinal: branchPushSettlementOutbox.joinVersion,
+    })
+    .from(branchPushSettlementOutbox)
+    .where(
+      and(
+        eq(branchPushSettlementOutbox.documentId, asDocumentId(documentId)),
+        ne(branchPushSettlementOutbox.state, "completed"),
+      ),
+    );
+  let joined = 0;
+  for (const row of unresolved) {
+    const inserted = await db
+      .insert(branchPushOutboxUpdates)
+      .values({
+        pushId: row.pushId,
+        ordinal: row.ordinal,
+        sourceKind: "journal",
+        sourceId: journalRowId,
+        update: toBuffer(update),
+      })
+      .onConflictDoNothing()
+      .returning({ pushId: branchPushOutboxUpdates.pushId });
+    if (inserted.length === 0) continue;
+    await db
+      .update(branchPushSettlementOutbox)
+      .set({
+        joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
+        settledJoinVersion: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(branchPushSettlementOutbox.pushId, row.pushId));
+    joined += 1;
+  }
+  return joined;
 }
 
 async function hasLaterNonSystemJournalUpdateAfter(
@@ -471,6 +624,7 @@ function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeC
     id: String(row.id),
     documentId: row.documentId,
     state: toBytes(row.state),
+    attributionManifest: row.attributionManifest,
     reason: row.reason ?? "checkpoint",
     createdAt: row.createdAt.toISOString(),
   };
@@ -510,9 +664,83 @@ function mapWriteMutationRow(row: {
   };
 }
 
+async function persistRedoEntries(
+  db: JournalDb,
+  docId: string,
+  entries: readonly PersistRedoEntry[],
+): Promise<{ consumed: boolean; seqs?: number[] }> {
+  const groups: Array<{
+    entry: PersistRedoEntry;
+    reversals: Array<{ writeId: string; status: ReversalStatus }>;
+  }> = [];
+  for (const entry of entries) {
+    const reversals = await db
+      .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
+      .from(documentYjsReversals)
+      .where(
+        and(
+          eq(documentYjsReversals.documentId, asDocumentId(docId)),
+          eq(documentYjsReversals.threadId, asThreadId(entry.ref.threadId)),
+          eq(documentYjsReversals.undoUpdateSeq, entry.ref.undoUpdateSeq),
+        ),
+      )
+      .for("update");
+    if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
+      return { consumed: false };
+    }
+    groups.push({ entry, reversals });
+  }
+
+  const seqs: number[] = [];
+  for (const { entry, reversals } of groups) {
+    const { seq } = await appendUpdate(db, docId, entry.update, entry.meta);
+    seqs.push(seq);
+    await db.insert(documentYjsReversalOps).values(
+      reversals.map((reversal) => ({
+        documentId: asDocumentId(docId),
+        threadId: asThreadId(entry.ref.threadId),
+        updateSeq: seq,
+        handle: reversal.writeId,
+        direction: "redo" as const,
+      })),
+    );
+    await db
+      .update(documentYjsReversals)
+      .set({
+        status: "redone",
+        authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
+        redoUpdateSeq: seq,
+      })
+      .where(
+        and(
+          eq(documentYjsReversals.documentId, asDocumentId(docId)),
+          eq(documentYjsReversals.threadId, asThreadId(entry.ref.threadId)),
+          eq(documentYjsReversals.undoUpdateSeq, entry.ref.undoUpdateSeq),
+        ),
+      );
+    for (const reversal of reversals) {
+      await reactivateMutationsForWrite(db, {
+        documentId: docId,
+        threadId: entry.ref.threadId,
+        writeId: reversal.writeId,
+        undoUpdateSeq: entry.ref.undoUpdateSeq,
+      });
+    }
+  }
+  return { consumed: true, seqs };
+}
+
 export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
   return {
     async append(docId, update, meta) {
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        return (await appendUpdate(txDb, docId, update, meta)).seq;
+      });
+    },
+
+    async appendWriterUpdate(docId, update, meta) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
@@ -527,6 +755,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
         }
+        const admissions = new Map<string, Awaited<ReturnType<typeof allocateDocumentAdmission>>>();
+        for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
+          admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
+        }
+        const batchOrdinals = new Map<string, number>();
 
         // Multi-row INSERT for all updates — one round-trip instead of N.
         const updateRows = await txDb
@@ -534,12 +767,21 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .values(
             entries.map((entry) => {
               const origin = parseOrigin(entry.meta);
+              const authority = admissions.get(entry.docId);
+              if (!authority) throw new Error("Missing allocated document admission");
+              const batchOrdinal = batchOrdinals.get(entry.docId) ?? 0;
+              batchOrdinals.set(entry.docId, batchOrdinal + 1);
               return {
                 documentId: asDocumentId(entry.docId),
+                authorityId: authority.authorityId,
+                authorityGeneration: authority.generation,
+                admissionSequence: authority.admissionSequence,
+                batchOrdinal,
                 updateData: toBuffer(entry.update),
                 originType: origin.originType,
                 actorUserId: origin.actorUserId ?? null,
                 actorTurnId: origin.actorTurnId ?? null,
+                authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
               };
             }),
           )
@@ -548,6 +790,16 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         // PostgreSQL returning order matches insertion order for a single
         // INSERT, but sort by id to be safe (id is auto-incrementing).
         updateRows.sort((a, b) => a.id - b.id);
+        for (const [index, entry] of entries.entries()) {
+          const updateRow = updateRows[index];
+          if (!updateRow) throw new Error("Missing inserted journal row for settlement join");
+          await capturePendingSettlementAuthorityUpdate(
+            txDb,
+            entry.docId,
+            updateRow.id,
+            entry.update,
+          );
+        }
 
         // Reserve wIds for mutations that don't have one pre-allocated.
         const mutationValues: Array<{
@@ -556,6 +808,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           wId: number;
           threadId: string;
           turnId: string | null;
+          authoringResponseId?: string;
+          actorKind: "agent" | "human" | "system";
+          userId?: string;
           writeId: string;
           docId: string;
         }> = [];
@@ -575,6 +830,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             wId,
             threadId: entry.mutation.threadId,
             turnId: entry.mutation.turnId,
+            ...(entry.mutation.authoringResponseId
+              ? { authoringResponseId: entry.mutation.authoringResponseId }
+              : {}),
+            actorKind: entry.mutation.actorKind,
+            ...(entry.mutation.userId ? { userId: entry.mutation.userId } : {}),
             writeId:
               entry.mutation.writeId ??
               `${entry.mutation.threadId}:${entry.mutation.turnId}:${seq}`,
@@ -590,6 +850,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
               documentId: asDocumentId(mv.docId),
               threadId: asThreadId(mv.threadId),
               turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
+              authoringResponseId: asModelResponseId(mv.authoringResponseId) ?? null,
+              actorKind: mv.actorKind,
+              userId: mv.userId ?? null,
               writeId: mv.writeId,
               status: "active" as const,
               createdSeq: mv.seq,
@@ -765,8 +1028,16 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           ? await latestCheckpointAtOrBefore(db, docId, opts.until)
           : await latestCheckpoint(db, docId)
         : await reconstructionCheckpoint(db, docId, opts.until);
+      const authority = checkpoint
+        ? {
+            authorityId: checkpoint.authorityId,
+            generation: checkpoint.authorityGeneration,
+          }
+        : await readDocumentAuthority(db, docId);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+        eq(documentYjsUpdates.authorityId, authority.authorityId),
+        eq(documentYjsUpdates.authorityGeneration, authority.generation),
         gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
       ];
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
@@ -914,7 +1185,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           };
         }
 
-        undoUpdateSeq = await appendUpdate(txDb, docId, undoUpdate, { origin: "system", seq: 0 });
+        undoUpdateSeq = (
+          await appendUpdate(txDb, docId, undoUpdate, {
+            origin: "system",
+            reversalActor: actor,
+            authoringResponseId: records[0]?.authoringResponseId,
+            seq: 0,
+          })
+        ).seq;
         for (const record of records) {
           for (const writeId of record.writeIds) {
             await txDb
@@ -923,6 +1201,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 documentId: asDocumentId(docId),
                 threadId: asThreadId(record.threadId),
                 turnId: record.turnId === null ? null : asTurnId(record.turnId),
+                authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
                 writeId,
                 status: record.status,
                 undoUpdateSeq,
@@ -939,6 +1218,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 ],
                 set: {
                   status: record.status,
+                  authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
                   undoUpdateSeq,
                   redoUpdateSeq: null,
                   expiresAt: record.expiresAt ?? null,
@@ -974,55 +1254,19 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     },
 
     async persistRedo(docId, redoUpdate, ref, meta) {
+      const result = await db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        return persistRedoEntries(txDb, docId, [{ update: redoUpdate, ref, meta }]);
+      });
+      return result.consumed ? { consumed: true, seq: result.seqs?.[0] } : { consumed: false };
+    },
+
+    async persistRedoBatch(docId, entries) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const reversals = await txDb
-          .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
-          .from(documentYjsReversals)
-          .where(
-            and(
-              eq(documentYjsReversals.documentId, asDocumentId(docId)),
-              eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
-              eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
-            ),
-          )
-          .for("update");
-
-        if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
-          return { consumed: false };
-        }
-
-        const seq = await appendUpdate(txDb, docId, redoUpdate, meta);
-        await txDb.insert(documentYjsReversalOps).values(
-          reversals.map((reversal) => ({
-            documentId: asDocumentId(docId),
-            threadId: asThreadId(ref.threadId),
-            updateSeq: seq,
-            handle: reversal.writeId,
-            direction: "redo" as const,
-          })),
-        );
-        await txDb
-          .update(documentYjsReversals)
-          .set({ status: "redone", redoUpdateSeq: seq })
-          .where(
-            and(
-              eq(documentYjsReversals.documentId, asDocumentId(docId)),
-              eq(documentYjsReversals.threadId, asThreadId(ref.threadId)),
-              eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
-            ),
-          );
-        for (const reversal of reversals) {
-          await reactivateMutationsForWrite(txDb, {
-            documentId: docId,
-            threadId: ref.threadId,
-            writeId: reversal.writeId,
-            undoUpdateSeq: ref.undoUpdateSeq,
-          });
-        }
-
-        return { consumed: true, seq };
+        return persistRedoEntries(txDb, docId, entries);
       });
     },
 
@@ -1120,19 +1364,19 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
     },
 
     async latestUpdateSeq(docId) {
-      const [head] = await db
-        .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
-        .from(documentYjsHeads)
-        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
-        .limit(1);
-      if (head) return Number(head.latestUpdateSeq);
       const [row] = await db
         .select({ seq: documentYjsUpdates.id })
         .from(documentYjsUpdates)
         .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
         .orderBy(desc(documentYjsUpdates.id))
         .limit(1);
-      return row?.seq ?? 0;
+      if (row) return row.seq;
+      const [head] = await db
+        .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
+        .limit(1);
+      return Number(head?.latestUpdateSeq ?? 0);
     },
   };
 }

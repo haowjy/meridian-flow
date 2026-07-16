@@ -5,8 +5,9 @@ import type { ResponseCommitterPhase, ResponseLifecycleClosedState } from "./typ
 /** Lifecycle position of a buffered response commit pipeline. */
 export type MutationLifecycle =
   | { phase: "buffered" }
-  | { phase: "journalCommitted"; journalCommitKind: JournalCommitKind }
-  | { phase: "liveProjected"; journalCommitKind: JournalCommitKind }
+  | { phase: "journalStaged"; journalCommitKind: "staged" }
+  | { phase: "journalCommitted"; journalCommitKind: "durable" }
+  | { phase: "liveProjected"; journalCommitKind: "durable" }
   | {
       phase: "closed";
       closed: ResponseLifecycleClosedState;
@@ -15,27 +16,29 @@ export type MutationLifecycle =
 
 export type ActiveMutationLifecycle = Extract<
   MutationLifecycle,
-  { phase: "buffered" | "journalCommitted" | "liveProjected" }
+  { phase: "buffered" | "journalStaged" | "journalCommitted" | "liveProjected" }
 >;
 
-export type JournalCommittedLifecycle = Extract<
-  MutationLifecycle,
-  { phase: "journalCommitted" | "liveProjected" }
->;
+export type JournalCommittedLifecycle =
+  | Extract<MutationLifecycle, { phase: "journalCommitted" }>
+  | Extract<MutationLifecycle, { phase: "liveProjected"; journalCommitKind: "durable" }>;
+
+export type JournalStagedLifecycle = Extract<MutationLifecycle, { phase: "journalStaged" }>;
+export type JournalProgressLifecycle = JournalStagedLifecycle | JournalCommittedLifecycle;
 
 export function bufferedLifecycle(): ActiveMutationLifecycle {
   return { phase: "buffered" };
 }
 
-export function journalCommittedLifecycle(
-  journalCommitKind: JournalCommitKind,
-): JournalCommittedLifecycle {
+export function journalCommittedLifecycle(journalCommitKind: "durable"): JournalCommittedLifecycle {
   return { phase: "journalCommitted", journalCommitKind };
 }
 
-export function liveProjectedLifecycle(
-  journalCommitKind: JournalCommitKind,
-): JournalCommittedLifecycle {
+export function journalStagedLifecycle(): Extract<MutationLifecycle, { phase: "journalStaged" }> {
+  return { phase: "journalStaged", journalCommitKind: "staged" };
+}
+
+export function liveProjectedLifecycle(journalCommitKind: "durable"): JournalCommittedLifecycle {
   return { phase: "liveProjected", journalCommitKind };
 }
 
@@ -47,7 +50,11 @@ export function closedLifecycle(
 }
 
 export function journalKindFromLifecycle(lifecycle: MutationLifecycle): JournalCommitKind | null {
-  if (lifecycle.phase === "journalCommitted" || lifecycle.phase === "liveProjected") {
+  if (
+    lifecycle.phase === "journalStaged" ||
+    lifecycle.phase === "journalCommitted" ||
+    lifecycle.phase === "liveProjected"
+  ) {
     return lifecycle.journalCommitKind;
   }
   if (lifecycle.phase === "closed") return lifecycle.journalCommitKind;
@@ -57,7 +64,10 @@ export function journalKindFromLifecycle(lifecycle: MutationLifecycle): JournalC
 export function hasCommittedJournalKind(
   lifecycle: MutationLifecycle,
 ): lifecycle is JournalCommittedLifecycle {
-  return lifecycle.phase === "journalCommitted" || lifecycle.phase === "liveProjected";
+  return (
+    lifecycle.phase === "journalCommitted" ||
+    (lifecycle.phase === "liveProjected" && lifecycle.journalCommitKind === "durable")
+  );
 }
 
 export function lifecycleToCommitterPhase(lifecycle: MutationLifecycle): ResponseCommitterPhase {

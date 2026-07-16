@@ -4,7 +4,10 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import type { LineageRange } from "../lineage/range-set.js";
+import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { AgentEditModel } from "../ports/model.js";
+import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import {
   findTextMatches,
   serializeBlockBody,
@@ -39,10 +42,12 @@ export interface ResolveWriteContext {
   doc: DocHandle | null | undefined;
   model: AgentEditModel;
   codec: AgentEditCodec;
+  /** Exact revision whose live block handles and source ranges the resolver inspects. */
+  inputRevision?: string;
 }
 
 export type ResolveWriteResult =
-  | { ok: true; edits: ResolvedEdit[] }
+  | { ok: true; edits: ResolvedEdit[]; ir: SemanticEditIRV1 }
   | {
       ok: false;
       error: {
@@ -70,19 +75,26 @@ export function resolveWrite(
   const contentCheck = validateContent(concreteCtx, normalized);
   if (!contentCheck.ok) return contentCheck;
 
+  let resolved: ResolveWriteResultWithoutIr;
   switch (normalized.command) {
     case "insert":
-      return resolveInsert(concreteCtx, normalized, contentCheck.parsed);
+      resolved = resolveInsert(concreteCtx, normalized, contentCheck.parsed);
+      break;
     case "replace":
-      return resolveReplace(concreteCtx, normalized, contentCheck.parsed);
+      resolved = resolveReplace(concreteCtx, normalized, contentCheck.parsed);
+      break;
   }
+  if (!resolved.ok) return resolved;
+  return { ...resolved, ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved.edits) };
 }
+
+type ResolveWriteResultWithoutIr = { ok: true; edits: ResolvedEdit[] } | ResolveWriteFailure;
 
 function resolveInsert(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   parsed: ParsedContent,
-): ResolveWriteResult {
+): ResolveWriteResultWithoutIr {
   if (params.content.length === 0)
     return error("invalid_write", "insert requires non-empty content");
   if (params.after && params.before)
@@ -133,7 +145,7 @@ function resolveReplace(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   parsed: ParsedContent,
-): ResolveWriteResult {
+): ResolveWriteResultWithoutIr {
   if (params.after || params.before) {
     return error(
       "invalid_write",
@@ -235,7 +247,7 @@ function lowerInsertPosition(
   return last ? { ok: true, after: last } : { ok: true };
 }
 
-function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteResult {
+function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteResultWithoutIr {
   return {
     ok: true,
     edits: scope.blocks.map((element) => ({
@@ -260,7 +272,7 @@ function lowerFindMatches(
   params: NormalizedParams,
   matches: readonly TextFindMatch[],
   command: WriteCommandName,
-): ResolveWriteResult {
+): ResolveWriteResultWithoutIr {
   const plainTextEdits = lowerPlainTextFindMatches(ctx, params, matches, command);
   if (plainTextEdits) return { ok: true, edits: plainTextEdits };
 
@@ -310,6 +322,7 @@ function lowerPlainTextFindMatches(
       block: element,
       span: { start, end },
       newText: params.content,
+      semanticLowering: "prosemirror",
     });
   }
   return edits;
@@ -389,7 +402,7 @@ function replaceScope(
   params: NormalizedParams,
   scope: BlockScope,
   parsed: ParsedContent,
-): ResolveWriteResult {
+): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const newBlocks = parsed.blocks;
@@ -438,6 +451,7 @@ function replaceScope(
               block: oldBlock,
               span: { start: 0, end: ctx.model.getText(oldBlock).length },
               newText: serializePmBlockBody(ctx, newBlock),
+              ...(params.find !== undefined ? { semanticLowering: "prosemirror" as const } : {}),
             }
           : {
               documentId: params.documentAddress.documentId,
@@ -489,13 +503,116 @@ function trimOneTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
 }
 
-function scopeError(result: ScopeFailure): ResolveWriteResult {
+function semanticIrForResolvedEdits(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  edits: readonly ResolvedEdit[],
+): SemanticEditIRV1 {
+  const scope: LineageRange[] = [];
+  const deleted: LineageRange[] = [];
+  const mappedEdits = edits.map((edit) => {
+    let outputRuns: SemanticOutputRun[] = [];
+    if (edit.kind === "text") {
+      const lineage = ctx.model.getVisibleContentLineage(edit.block);
+      scope.push(...lineage);
+      deleted.push(...sliceLineage(lineage, edit.span.start, edit.span.end));
+      if (edit.newText.length > 0) {
+        outputRuns = [
+          {
+            kind: "fresh",
+            payload: edit.newText,
+            output: { from: 0, to: edit.newText.length },
+          },
+        ];
+      }
+    } else if (edit.kind === "insert") {
+      if (edit.newText.length > 0) {
+        outputRuns = [
+          {
+            kind: "fresh",
+            payload: edit.newText,
+            output: { from: 0, to: edit.newText.length },
+          },
+        ];
+      }
+    } else {
+      const lineage = ctx.model.getVisibleContentLineage(edit.block);
+      scope.push(...lineage);
+      deleted.push(...lineage);
+      if (edit.kind === "block" && edit.replacement.textContent.length > 0) {
+        outputRuns = [
+          {
+            kind: "fresh",
+            payload: edit.replacement.textContent,
+            output: { from: 0, to: edit.replacement.textContent.length },
+          },
+        ];
+      }
+    }
+    return { edit, outputRuns };
+  });
+  const normalizedScope = normalizeLineageRanges(scope);
+  const normalizedDeleted = normalizeLineageRanges(deleted);
+  const isTotalFreshReplacement =
+    params.command === "replace" &&
+    params.find === undefined &&
+    normalizedScope.length > 0 &&
+    sameLineageRanges(normalizedScope, normalizedDeleted);
+  return {
+    version: 1,
+    documentId: params.documentAddress.documentId,
+    inputRevision: (ctx.inputRevision ?? revisionOf(ctx)) as SemanticEditIRV1["inputRevision"],
+    scope: normalizedScope,
+    intent: isTotalFreshReplacement
+      ? { kind: "fullScopeFreshReplacement", payload: params.content }
+      : { kind: "mappedEdits", edits: mappedEdits },
+    deleted: normalizedDeleted,
+  };
+}
+
+function sameLineageRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (range, index) =>
+        range.clientID === right[index]?.clientID &&
+        range.clock === right[index]?.clock &&
+        range.length === right[index]?.length,
+    )
+  );
+}
+
+function sliceLineage(lineage: readonly LineageRange[], from: number, to: number): LineageRange[] {
+  const slices: LineageRange[] = [];
+  let cursor = 0;
+  for (const range of lineage) {
+    const start = Math.max(from, cursor);
+    const end = Math.min(to, cursor + range.length);
+    if (start < end) {
+      slices.push({
+        clientID: range.clientID,
+        clock: range.clock + start - cursor,
+        length: end - start,
+      });
+    }
+    cursor += range.length;
+  }
+  return slices;
+}
+
+function revisionOf(ctx: ConcreteResolveContext): string {
+  return [...ctx.model.encodeStateVector(ctx.doc)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function scopeError(result: ScopeFailure): ResolveWriteResultWithoutIr {
   return error(result.code === "ambiguous" ? "ambiguous_match" : result.code, result.message);
 }
 
 function findError(
   result: Extract<ReturnType<typeof findTextMatches>, { ok: false }>,
-): ResolveWriteResult {
+): ResolveWriteResultWithoutIr {
   return error(
     result.code,
     result.message,

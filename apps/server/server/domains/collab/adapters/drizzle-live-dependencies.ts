@@ -35,6 +35,8 @@ export type LiveTurnDependencyStore = {
 
 export type LiveTurnDependencyCheck = {
   hasDependents: boolean;
+  /** Provenance for copy only; never changes the canonical dependency boolean. */
+  blockingActorTypes: Array<"agent" | "human" | "unknown">;
   /** Highest live journal update seq included in this dependency check. */
   checkedUntilSeq: number;
 };
@@ -87,6 +89,7 @@ export async function checkDependentLaterLiveRows(
   if (selectedRows.length === 0) {
     return {
       hasDependents: false,
+      blockingActorTypes: [],
       checkedUntilSeq: await latestLiveUpdateSeq(db, input.documentId),
     };
   }
@@ -109,10 +112,18 @@ export async function checkDependentLaterLiveRows(
     .orderBy(asc(documentYjsUpdates.id));
 
   const checkedUntilSeq = Math.max(maxSelectedSeq, ...laterRows.map((row) => Number(row.seq)));
+  const blockingRows = laterRows
+    .filter(isNonSystemLiveDependencyRow)
+    .filter((row) => selected.length > 0 && hasDependentLaterRows(selected, [row]));
   return {
-    hasDependents:
-      selected.length > 0 &&
-      hasDependentLaterRows(selected, laterRows.filter(isNonSystemLiveDependencyRow)),
+    hasDependents: blockingRows.length > 0,
+    blockingActorTypes: [
+      ...new Set(
+        blockingRows.map((row) =>
+          row.originType === "agent" || row.originType === "human" ? row.originType : "unknown",
+        ),
+      ),
+    ].sort(),
     checkedUntilSeq,
   };
 }

@@ -10,11 +10,13 @@ import {
   createBillingUsagePolicy,
   createInMemoryCreditLedger,
 } from "../../../billing/index.js";
+import type { Notice, NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryPackageStore } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import {
+  createActiveDocumentResolver,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../../threads/index.js";
@@ -61,6 +63,7 @@ export function createTestOrchestratorDeps(
 ): OrchestratorDeps & { creditLedger: CreditLedger } {
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects });
+  const activeDocuments = createActiveDocumentResolver(repos);
   const preferences = createInMemoryProjectPreferencesRepository();
   const projectPreferences = {
     async read(userId: string, projectId: string): Promise<ProjectPreferences> {
@@ -85,12 +88,8 @@ export function createTestOrchestratorDeps(
     interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
-    undoNotifications: {
-      async record() {},
-      async consumeForThread() {
-        return [];
-      },
-    },
+    notices: createTestNoticePort(),
+    activeDocuments,
     responseWrites: {
       async commitResponse() {
         return { status: "committed", concurrentEdits: [] };
@@ -99,5 +98,47 @@ export function createTestOrchestratorDeps(
     },
     ...overrides,
     creditLedger,
+  };
+}
+
+export function createTestNoticePort(initial: Notice[] = []): NoticePort & { rows: Notice[] } {
+  const rows = [...initial];
+  const listeners = new Set<Parameters<NoticePort["subscribeWriterVisible"]>[0]>();
+  let nextId = Math.max(0, ...rows.map(({ id }) => id)) + 1;
+  return {
+    rows,
+    async record(input) {
+      const notice = { ...input, id: nextId++, createdAt: new Date() };
+      rows.push(notice);
+      if (!input.writerVisible || typeof input.data.documentId !== "string") return;
+      for (const listener of listeners) {
+        listener({
+          documentId: input.data.documentId,
+          kind: input.kind,
+          message: input.message,
+          data: input.data,
+        });
+      }
+    },
+    async drainForModelContext(threadId, activeDocumentIds) {
+      const consumed = rows.filter((notice) =>
+        notice.scope.kind === "thread"
+          ? notice.scope.threadId === threadId
+          : activeDocumentIds.includes(notice.scope.documentId),
+      );
+      for (const notice of consumed) rows.splice(rows.indexOf(notice), 1);
+      return consumed;
+    },
+    async drainForWriter(documentId) {
+      const consumed = rows.filter(
+        (notice) => notice.writerVisible && notice.data.documentId === documentId,
+      );
+      for (const notice of consumed) rows.splice(rows.indexOf(notice), 1);
+      return consumed;
+    },
+    subscribeWriterVisible(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
   };
 }

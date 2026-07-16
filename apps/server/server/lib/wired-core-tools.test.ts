@@ -1,4 +1,8 @@
-import type { AgentEditCore, ResponseCommitResult } from "@meridian/agent-edit";
+import type {
+  AgentEditCore,
+  ResponseCommitResult,
+  ResponseCommitSuccessResult,
+} from "@meridian/agent-edit";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
@@ -24,6 +28,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
     recover: async () => {},
     commitResponse: async () => commitResult,
     rollbackResponse: async () => ({
+      status: "rolledBack",
       responseId: commitResult.responseId,
       stagedCreates: { committed: [], discarded: [] },
     }),
@@ -64,9 +69,10 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
   };
 }
 
-function responseFinalizerWithCommit(commitResult: ResponseCommitResult) {
+function responseFinalizerWithCommit(commitResult: ResponseCommitSuccessResult) {
   return {
     finalizeResponseCommit: async () => ({
+      status: "committed" as const,
       documents: commitResult.documents,
       stagedCreates: commitResult.stagedCreates,
     }),
@@ -80,6 +86,7 @@ function responseFinalizerWithCommit(commitResult: ResponseCommitResult) {
 function noopResponseFinalizer() {
   return {
     finalizeResponseCommit: async () => ({
+      status: "committed" as const,
       documents: [],
       stagedCreates: { committed: [], discarded: [] },
     }),
@@ -91,9 +98,54 @@ function noopResponseFinalizer() {
 }
 
 describe("agent-edit response write lifecycle", () => {
+  it("transports commit rejection", async () => {
+    const lifecycle = createAgentEditResponseWriteLifecycle({
+      documentSync: {
+        agentEdit: () =>
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              status: "rejected",
+              responseId: "response-rejected",
+              rejections: [
+                {
+                  documentId: "doc-1",
+                  conflictedBlockHashes: ["hash-1"],
+                  affectedWriteIds: ["write-1"],
+                },
+              ],
+            }),
+          ),
+        refreshDocumentProjection: async () => {},
+        finalizeResponseCommit: async () => ({
+          status: "rejected",
+          responseId: "response-rejected",
+          rejections: [
+            {
+              documentId: "doc-1",
+              conflictedBlockHashes: ["hash-1"],
+              affectedWriteIds: ["write-1"],
+            },
+          ],
+          stagedCreates: { committed: [], discarded: [] },
+        }),
+        finalizeResponseRollback: async () => ({
+          stagedCreates: { committed: [], discarded: [] },
+        }),
+      },
+    });
+
+    await expect(
+      lifecycle.commitResponse("response-rejected", {
+        threadId: "thread-1",
+        turnId: "turn-1",
+      }),
+    ).resolves.toMatchObject({ status: "rejected", responseId: "response-rejected" });
+  });
+
   it("commits response through the collab finalizer and maps concurrent edits", async () => {
     const finalized: string[] = [];
     const commitResult: ResponseCommitResult = {
+      status: "committed",
       responseId: "response-1",
       documentCount: 1,
       updateCount: 1,
@@ -101,7 +153,13 @@ describe("agent-edit response write lifecycle", () => {
         {
           documentId: "doc-1",
           updateCount: 1,
-          concurrentEdits: { human: ["abcd"], agent: [] },
+          concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
+          lateSweep: {
+            affectedBlockHashes: ["abcd"],
+            capturedDeletedBodies: [{ hash: "abcd", body: "Writer body." }],
+            sweptContent: true,
+            beforeContentRef: 42,
+          },
         },
       ],
       stagedCreates: { committed: [], discarded: [] },
@@ -114,10 +172,15 @@ describe("agent-edit response write lifecycle", () => {
         },
         finalizeResponseCommit: async (responseId, ctx) => {
           const result = await agentEditCoreWithCommit(commitResult).commitResponse(responseId);
+          if (result.status !== "committed") throw new Error("expected committed response");
           for (const document of result.documents) {
             finalized.push(`${responseId}:${document.documentId}:${ctx.threadId}:${ctx.turnId}`);
           }
-          return { documents: result.documents, stagedCreates: result.stagedCreates };
+          return {
+            status: "committed",
+            documents: result.documents,
+            stagedCreates: result.stagedCreates,
+          };
         },
         finalizeResponseRollback: async () => ({
           stagedCreates: { committed: [], discarded: [] },
@@ -129,7 +192,9 @@ describe("agent-edit response write lifecycle", () => {
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
     ).resolves.toEqual({
       status: "committed",
-      concurrentEdits: [{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }],
+      concurrentEdits: [
+        { documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [], runs: [] } },
+      ],
     });
 
     expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);
@@ -141,6 +206,7 @@ describe("agent-edit response write lifecycle", () => {
         agentEdit: () =>
           asThreadPeerAgentEditCore(
             agentEditCoreWithCommit({
+              status: "committed",
               responseId: "response-1",
               documentCount: 1,
               updateCount: 1,
@@ -150,6 +216,7 @@ describe("agent-edit response write lifecycle", () => {
           ),
         refreshDocumentProjection: async () => {},
         ...responseFinalizerWithCommit({
+          status: "committed",
           responseId: "response-1",
           documentCount: 1,
           updateCount: 1,
@@ -170,6 +237,7 @@ describe("agent-edit response write lifecycle", () => {
         agentEdit: () =>
           asThreadPeerAgentEditCore(
             agentEditCoreWithCommit({
+              status: "committed",
               responseId: "response-closed",
               documentCount: 0,
               updateCount: 0,
@@ -206,6 +274,7 @@ describe("agent-edit response write lifecycle", () => {
         agentEdit: () =>
           asThreadPeerAgentEditCore(
             agentEditCoreWithCommit({
+              status: "committed",
               responseId: "response-rollback",
               documentCount: 0,
               updateCount: 0,
@@ -215,6 +284,7 @@ describe("agent-edit response write lifecycle", () => {
           ),
         refreshDocumentProjection: async () => {},
         finalizeResponseCommit: async () => ({
+          status: "committed" as const,
           documents: [],
           stagedCreates: { committed: [], discarded: [] },
         }),

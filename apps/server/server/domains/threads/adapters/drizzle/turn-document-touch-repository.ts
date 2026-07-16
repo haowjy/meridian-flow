@@ -58,5 +58,13 @@ export function createDrizzleTurnDocumentTouchRepository(
         .sort((a, b) => b.touchedAt.localeCompare(a.touchedAt));
       return typeof limit === "number" ? mapped.slice(0, limit) : mapped;
     },
+    async listThreadIdsByDocument(documentId) {
+      const rows = await currentDrizzleDb(db)
+        .selectDistinct({ threadId: schema.turns.threadId })
+        .from(schema.turnDocumentTouches)
+        .innerJoin(schema.turns, eq(schema.turnDocumentTouches.turnId, schema.turns.id))
+        .where(eq(schema.turnDocumentTouches.documentId, documentId));
+      return rows.map(({ threadId }) => threadId);
+    },
   };
 }

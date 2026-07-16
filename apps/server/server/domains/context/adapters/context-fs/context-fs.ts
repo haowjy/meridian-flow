@@ -373,7 +373,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   async edit(
     path: string,
-    transform: (content: string) => string,
+    command: import("../../ports/context-port.js").ContextEditCommand,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -400,7 +400,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const edited = await editCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
-      transform,
+      command,
       provenance: options?.origin,
     });
     if (!edited.ok) return edited;

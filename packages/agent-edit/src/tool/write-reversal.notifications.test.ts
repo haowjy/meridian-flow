@@ -8,8 +8,8 @@ const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write reversal notifications", () => {
   it("keeps per-handle turn metadata when undo all then redo by turn expands to the grouped boundary", async () => {
-    const records = captureUndoNotifications();
-    const scenario = await independentWriteScenario({ undoNotificationPort: records.port });
+    const records = captureReversalNotices();
+    const scenario = await independentWriteScenario({ reversalNoticePort: records.port });
 
     const undoAll = await scenario.ctx.core.reverse({
       docId: "chapter.md",
@@ -62,8 +62,8 @@ describe("write reversal notifications", () => {
   });
 
   it("keeps notification turns distinct when writes are redone in separate redo operations", async () => {
-    const records = captureUndoNotifications();
-    const scenario = await independentWriteScenario({ undoNotificationPort: records.port });
+    const records = captureReversalNotices();
+    const scenario = await independentWriteScenario({ reversalNoticePort: records.port });
 
     for (const writeId of ["w3", "w2", "w1"]) {
       await scenario.ctx.core.reverse({
@@ -118,7 +118,7 @@ async function independentWriteScenario(
   return scenario;
 }
 
-function captureUndoNotifications() {
+function captureReversalNotices() {
   const records: Array<{
     direction: "undo" | "redo";
     writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[];

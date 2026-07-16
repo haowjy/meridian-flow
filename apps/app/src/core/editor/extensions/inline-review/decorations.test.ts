@@ -61,7 +61,7 @@ describe("buildDecorations", () => {
   it("returns an empty set when the model has no hunks", () => {
     const resolver = makeResolver();
     const decorations = buildDecorations(
-      { draftRevisionToken: 1, operations: [], hunks: [] },
+      { conflictLabel: "", draftRevisionToken: 1, operations: [], hunks: [] },
       null,
       resolver,
     );
@@ -102,6 +102,37 @@ describe("buildDecorations", () => {
     expect(decorationKinds(emitted, [{ operationId: "op-a", kind: "agent" }], "op-a")).toEqual(
       new Set(["agent", "deletion", "emphasized"]),
     );
+  });
+
+  it("adds the edited-since-draft chip to a conflicted hunk", () => {
+    const resolver = makeResolver();
+    const relPos = Y.createRelativePositionFromTypeIndex(resolver.yFragment, 0);
+    const encoded = encodeAnchor(relPos);
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 1,
+      operations: [],
+      conflictedBlocks: new Set(["block-a"]),
+      conflictLabel: "edited since this draft was written",
+      hunks: [
+        {
+          hunkId: "h-conflict",
+          operationIds: [],
+          blockHashes: ["block-a"],
+          anchor: { relStart: encoded, relEnd: encoded },
+          kind: "text",
+          spans: [],
+          deletedText: "old words",
+        },
+      ],
+    });
+
+    const widgets = buildDecorations(model, null, resolver)
+      .find()
+      .filter((decoration) => decorationFlavor(decoration) === "widget")
+      .map(renderWidget);
+
+    expect(widgets.some((dom) => dom.className === inlineReviewClassNames.conflictChip)).toBe(true);
+    expect(widgets.map((dom) => dom.textContent)).toContain("edited since this draft was written");
   });
 
   it("skips hunks whose start anchor points past the document (stale after edits)", () => {

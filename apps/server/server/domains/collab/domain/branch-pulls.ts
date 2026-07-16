@@ -3,7 +3,7 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
-  yjsUpdateChangesDoc,
+  type ReversalStore,
   yjsUpdateFromState,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -29,10 +29,9 @@ export type BranchPullService = {
   scheduleLivePull(documentId: DocumentId): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
-    changed: boolean;
-    baselineSnapshot?: Uint8Array;
     branchGeneration: number;
     afterJournalId?: number;
+    liveJournalSeq?: number;
   }>;
 };
 
@@ -43,6 +42,7 @@ export function createBranchPullService(input: {
   debounceMs?: number;
   maxDebounceMs?: number;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
+  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
@@ -120,17 +120,21 @@ export function createBranchPullService(input: {
 
     async pullThreadPeer(inputPeer) {
       await run(inputPeer.documentId);
+      const liveJournalSeq = input.liveJournal
+        ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
+            (latest, update) => Math.max(latest, update.seq),
+            0,
+          )
+        : undefined;
       const liveDoc = await liveSnapshot(inputPeer.documentId);
       try {
         const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-        const captured = await input.branchCoordinator.readBranch(peer.branchId, (doc, snapshot) =>
+        const captured = await input.branchCoordinator.readBranch(peer.branchId, (_doc, snapshot) =>
           Promise.resolve({
-            snapshot: Y.encodeStateAsUpdate(doc),
             peerGeneration: snapshot?.generation,
             upstreamBranchId: snapshot?.upstreamBranchId,
           }),
         );
-        const baselineSnapshot = captured.snapshot;
         const afterJournalId = input.concurrentJournalWatermarks?.current(
           inputPeer.threadId,
           inputPeer.documentId,
@@ -143,22 +147,10 @@ export function createBranchPullService(input: {
               }),
             )
           : undefined;
-        const update = upstream
-          ? await pullPeerFromCapturedUpstream(peer.branchId, upstream.state)
-          : await input.branchCoordinator.pullFromBranch(peer.branchId);
+        if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
+        else await input.branchCoordinator.pullFromBranch(peer.branchId);
         const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-        const baselineDoc = docFromSnapshot(baselineSnapshot);
-        try {
-          const changed = updateChangesDoc(baselineDoc, update);
-          return {
-            changed,
-            branchGeneration,
-            afterJournalId,
-            ...(changed ? { baselineSnapshot } : {}),
-          };
-        } finally {
-          baselineDoc.destroy();
-        }
+        return { branchGeneration, afterJournalId, liveJournalSeq };
       } finally {
         liveDoc.destroy();
       }
@@ -180,8 +172,4 @@ export function createBranchPullService(input: {
 
 function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
   return yjsUpdateFromState(snapshot);
-}
-
-function updateChangesDoc(doc: Y.Doc, update: Uint8Array): boolean {
-  return yjsUpdateChangesDoc(doc, update);
 }

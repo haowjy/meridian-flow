@@ -13,6 +13,8 @@ export type WriteErrorStatus =
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
+  | "destructive_write_rejected"
+  | "rejected_response_requires_reread"
   | "internal_error";
 
 export type UndoRedoOutcome =
@@ -46,6 +48,20 @@ export type WriteOutcome = WriteOutcomeBase &
 
 export type WriteSuccessPhase = "staged" | "committed";
 
+/** Canonical block evidence carried durably beside the tool result that rendered it. */
+interface WriteObservationEvidenceBase {
+  clientID: number;
+  clock: number;
+  /** Exact substring of the tool output that proves the rendering reached model context. */
+  sourceText: string;
+}
+
+export type WriteObservationEvidence = WriteObservationEvidenceBase &
+  (
+    | { kind: "rendered"; renderedContent: string }
+    | { kind: "explicit_deletion"; capturedBody: string }
+  );
+
 interface WriteOutcomeBase {
   command: WriteCommandName;
   isError: boolean;
@@ -57,10 +73,12 @@ interface WriteOutcomeBase {
   text: string;
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];
+  /** Host metadata; never rendered independently of the tool result. */
+  observations?: readonly WriteObservationEvidence[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
-export type ResponseLifecycleClosedState = "committed" | "rolledBack";
+export type ResponseLifecycleClosedState = "committed" | "rolledBack" | "rejected";
 
 export interface ResponseLifecycleErrorDetail {
   type: "response_lifecycle";
@@ -109,11 +127,17 @@ export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;
 
-export type ResponseCommitterPhase = "buffered" | "journalCommitted" | "liveProjected" | "closed";
+export type ResponseCommitterPhase =
+  | "buffered"
+  | "journalStaged"
+  | "journalCommitted"
+  | "liveProjected"
+  | "closed";
 
 export type ResponseCommitterTransition =
   | "stage"
   | "drop_for_thread"
+  | "journal_staged"
   | "journal_committed"
   | "live_projected"
   | "closed"
@@ -137,10 +161,10 @@ export interface ResponseCommitterTransitionDetail {
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
-  /** Full document state at the interaction boundary before the host pulled foreign bytes. */
-  baselineSnapshot?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
+  /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
+  liveJournalSeq?: number;
   /** Durable write attempt id used to exclude this write from concurrent attribution. */
   attemptId?: string;
 }
@@ -158,6 +182,8 @@ export type InteractionContext =
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
+  /** Attribution and safety policy for mutating commands. */
+  actor?: MutationActor;
   /** Stable session supplied directly by embedded callers. */
   session?: ActorSession;
   /** External identity resolved through ActorSessionStore when configured. */
@@ -181,6 +207,11 @@ export interface WriteContext {
   createdDocument?: boolean;
 }
 
+export type MutationActor =
+  | { kind: "agent"; turnId: string; threadId: string; responseId?: string }
+  | { kind: "human"; userId: string; threadId?: string }
+  | { kind: "system"; origin: string };
+
 export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,
@@ -197,6 +228,7 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
+  lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
 }
 
 export interface ResponseStagedCreateOutcome {
@@ -204,12 +236,15 @@ export interface ResponseStagedCreateOutcome {
   discarded: string[];
 }
 
-export interface ResponseCommitResult {
+export interface ResponseCommitSuccessResult {
+  status: "committed";
   responseId: string;
   documentCount: number;
   updateCount: number;
   documents: ResponseCommitDocumentResult[];
   stagedCreates: ResponseStagedCreateOutcome;
+  /** Recovery committed the journal but could not verify concurrent-content awareness. */
+  awarenessDegraded?: boolean;
   /**
    * Mutation-bearing writes the model was already told succeeded, dropped
    * before commit by a per-doc `dropForThread`, while other docs in this
@@ -219,7 +254,24 @@ export interface ResponseCommitResult {
   discardedClaims?: readonly ResponseClaimDiscardedEntry[];
 }
 
+export interface ResponseCommitDocumentRejection {
+  documentId: string;
+  conflictedBlockHashes: readonly string[];
+  affectedWriteIds: readonly string[];
+}
+
+export interface ResponseCommitRejectedResult {
+  status: "rejected";
+  responseId: string;
+  rejections: ResponseCommitDocumentRejection[];
+}
+
+export type ResponseCommitResult = ResponseCommitSuccessResult | ResponseCommitRejectedResult;
+
 export interface ResponseRollbackResult {
+  status: "rolledBack" | "rolledBackDegraded";
   responseId: string;
   stagedCreates: ResponseStagedCreateOutcome;
+  /** Runtime restoration failed, so affected runtimes were evicted and will rebuild on demand. */
+  restorationFailed?: true;
 }

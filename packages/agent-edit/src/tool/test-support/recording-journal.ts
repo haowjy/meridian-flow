@@ -1,4 +1,6 @@
 // Recording journal fake for tool-module tests that need batch-level observations.
+
+import type { SealedWriterLineageV3 } from "../../lineage/range-set.js";
 import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
@@ -7,12 +9,19 @@ import { InMemoryAgentEditJournal } from "../../test-support/in-memory-agent-edi
 
 export class MemoryJournal extends InMemoryAgentEditJournal {
   private readonly batches: string[][] = [];
+  private readonly batchEntries: JournalBatchAppendEntry[][] = [];
   private nextAppendBatchFailure: unknown;
+  private readonly sealedLineage: Array<{
+    docId: string;
+    responseId: string;
+    token: SealedWriterLineageV3;
+  }> = [];
 
   override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
     this.batches.push(entries.map((entry) => `${entry.docId}:${entry.mutation?.turnId ?? ""}`));
+    this.batchEntries.push(entries.map((entry) => ({ ...entry })));
     if (this.nextAppendBatchFailure) {
       const failure = this.nextAppendBatchFailure;
       this.nextAppendBatchFailure = undefined;
@@ -25,7 +34,23 @@ export class MemoryJournal extends InMemoryAgentEditJournal {
     return this.batches.map((batch) => [...batch]);
   }
 
+  recordedBatchEntries(): readonly (readonly JournalBatchAppendEntry[])[] {
+    return this.batchEntries;
+  }
+
   failNextAppendBatchWith(cause: unknown): void {
     this.nextAppendBatchFailure = cause;
+  }
+
+  async recordWriterProtectionScope(input: {
+    docId: string;
+    responseId: string;
+    token: SealedWriterLineageV3;
+  }): Promise<void> {
+    this.sealedLineage.push(input);
+  }
+
+  recordedSealedLineage() {
+    return this.sealedLineage.map((item) => ({ ...item }));
   }
 }

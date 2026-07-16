@@ -16,6 +16,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const dbSchema = await import("@meridian/database/schema");
     const {
       branchWriteJournal,
+      changeTrailDeliveryOutbox,
+      changeTrailDocumentDetails,
+      changeTrailShells,
       contextSources,
       documentBranches,
       documentYjsCheckpoints,
@@ -36,6 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createDrizzleBranchPushStore } = await import("../drizzle-branch-push.js");
+    const { createDrizzleChangeTrailPersistence } = await import("../drizzle-change-trails.js");
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
     const { createBranchCoordinator, BranchStaleUpdateError } = await import(
@@ -92,6 +96,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
+        changeTrailDeliveryOutbox,
+        changeTrailDocumentDetails,
+        changeTrailShells,
         branchWriteJournal,
         documentBranches,
         documentYjsCheckpoints,
@@ -441,6 +448,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(documentYjsCheckpoints)
         .values({
           documentId: DOC_ID as never,
+          authorityId: DOC_ID as never,
+          authorityGeneration: 1n,
+          attributionManifest: { version: 1, floor: null, attributions: [] },
           state: Buffer.from(Y.encodeStateAsUpdate(live)),
           stateVector: Buffer.from(Y.encodeStateVector(live)),
           upToSeq: 1,
@@ -676,9 +686,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         liveDoc: manifest.doc,
       });
+      const realChangeTrails = createDrizzleChangeTrailPersistence(db);
+      let trailRecordCalls = 0;
+      let failSecondTrailRecord = true;
+      const failingChangeTrails = {
+        async record(input: Parameters<typeof realChangeTrails.record>[0]) {
+          trailRecordCalls += 1;
+          if (failSecondTrailRecord && trailRecordCalls === 2) {
+            throw new Error("injected companion trail failure");
+          }
+          await realChangeTrails.record(input);
+        },
+        reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
+          realChangeTrails.reopenOwners(owners),
+      };
       const branchPush = createBranchPushService({
         branchStore: store,
-        pushStore: createDrizzleBranchPushStore(db, { model, codec }),
+        pushStore: createDrizzleBranchPushStore(db, { model, codec }, failingChangeTrails),
         branchCoordinator: coordinator,
         journal: livePersistence.journal,
         liveCoordinator,
@@ -691,13 +715,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(branchWriteJournal)
         .where(eq(branchWriteJournal.branchId, branchA.branchId));
       if (!contentARow) throw new Error("missing content A row");
-      const pushed = await branchPush.pushToLiveWithManifestEntry({
+      await db
+        .update(branchWriteJournal)
+        .set({ turnId: TURN_ID as never })
+        .where(eq(branchWriteJournal.status, "active"));
+      const pushInput = {
         branchId: branchA.branchId,
         manifestBranchId: manifestBranch.branchId,
         manifestEntryDocumentId: CREATED_A as never,
         contentJournalIds: [Number(contentARow.id)],
         pushedByUserId: USER_ID as never,
-      });
+      };
+      await expect(branchPush.pushToLiveWithManifestEntry(pushInput)).rejects.toThrow(
+        "injected companion trail failure",
+      );
+      expect(await db.select().from(pushLineage)).toEqual([]);
+      expect(await db.select().from(changeTrailShells)).toEqual([]);
+      expect(await db.select().from(changeTrailDocumentDetails)).toEqual([]);
+      expect(await db.select().from(changeTrailDeliveryOutbox)).toEqual([]);
+      expect(
+        (await db.select().from(branchWriteJournal)).filter((row) => row.status === "pushed"),
+      ).toEqual([]);
+
+      failSecondTrailRecord = false;
+      trailRecordCalls = 0;
+      const pushed = await branchPush.pushToLiveWithManifestEntry(pushInput);
       const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const lineageRows = await db.select().from(pushLineage);
       const activeManifestRows = await db
@@ -717,6 +759,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(lineageRows).toHaveLength(2);
       expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
+      const trailDetails = await db.select().from(changeTrailDocumentDetails);
+      const trailReceiptIds = trailDetails.flatMap((detail) =>
+        (detail.changes as Array<{ receiptId: string }>).map((change) => change.receiptId),
+      );
+      expect(trailDetails).toHaveLength(1);
+      expect(new Set(trailReceiptIds)).toEqual(new Set([lineageRows[0]?.receiptId]));
       expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "selective"]);
       expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
       const [reviewedContentRow] = await db
@@ -764,6 +812,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: branch.branchId,
           generation: branch.generation,
           updateData: Buffer.from(new Uint8Array([1, 2, 3])),
+          draftBaseUpdateSeq: 0,
           source: "agent",
           threadId: THREAD_ID as never,
           turnId: TURN_ID as never,
@@ -806,6 +855,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: branch.branchId,
           generation: branch.generation,
           updateData: Buffer.from(update),
+          draftBaseUpdateSeq: 0,
           source: "agent",
         })
         .returning();
@@ -829,6 +879,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               turnId: null,
               actorUserId: null,
               updateData: update,
+              draftBaseUpdateSeq: journalRow.draftBaseUpdateSeq,
               status: "active",
             },
           ],
@@ -846,6 +897,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           markdownProjection: "draft",
           liveStateVector: Y.encodeStateVector(branchDoc),
           liveState: Y.encodeStateAsUpdate(branchDoc),
+          trail: {
+            documentId: DOC_ID,
+            documentTitle: "document",
+            receiptId: "receipt",
+            threadIds: [],
+            journalOwners: [],
+            changes: [],
+          },
+          pendingLiveSettlement: {
+            documentTitle: "document",
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+            pushUpdate: update,
+            postCutUpdates: [],
+            provenanceView: [],
+            lineageEvidence: { version: 2, items: [] },
+            responseEvidence: [],
+            joinVersion: 0,
+            settledJoinVersion: null,
+            claim: {
+              token: "00000000-0000-4000-8000-000000000699",
+              epoch: 1,
+              kind: "warm",
+              leaseExpiresAt: new Date(Date.now() + 30_000),
+            },
+            attemptCount: 0,
+            state: "pending",
+            beforeContentRef: null,
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "receipt",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
+          },
         }),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
@@ -878,6 +965,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           markdownProjection: "draft",
           liveStateVector: Y.encodeStateVector(branchDoc),
           liveState: Y.encodeStateAsUpdate(branchDoc),
+          trail: {
+            documentId: DOC_ID,
+            documentTitle: "document",
+            receiptId: "receipt",
+            threadIds: [],
+            journalOwners: [],
+            changes: [],
+          },
+          pendingLiveSettlement: {
+            documentTitle: "document",
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+            pushUpdate: update,
+            postCutUpdates: [],
+            provenanceView: [],
+            lineageEvidence: { version: 2, items: [] },
+            responseEvidence: [],
+            joinVersion: 0,
+            settledJoinVersion: null,
+            claim: {
+              token: "00000000-0000-4000-8000-000000000699",
+              epoch: 1,
+              kind: "warm",
+              leaseExpiresAt: new Date(Date.now() + 30_000),
+            },
+            attemptCount: 0,
+            state: "pending",
+            beforeContentRef: null,
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "receipt",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
+          },
         }),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
@@ -983,6 +1106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
         {
@@ -990,6 +1114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_target_floor",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "active",
         },
         {
@@ -997,6 +1122,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 2,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
         {
@@ -1004,6 +1130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "discarded",
         },
         {
@@ -1011,6 +1138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 3,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
         {
@@ -1018,6 +1146,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_document",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
       ]);
@@ -1152,6 +1281,45 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         persistence.loadHocuspocusBranchState("missing-review-branch", 1),
       ).resolves.toBeUndefined();
+    });
+    it("captures an immutable live journal draftBase for each new draft row", async () => {
+      const live = docWithText("base");
+      const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: live,
+      });
+      await store.appendJournal?.({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: new Uint8Array(),
+        source: "agent",
+      });
+
+      const beforeSecond = Y.encodeStateVector(live);
+      live.getText("content").insert(live.getText("content").length, " later");
+      const secondSeq = await livePersistence.journal.append(
+        DOC_ID,
+        Y.encodeStateAsUpdate(live, beforeSecond),
+        { origin: `human:${USER_ID}`, seq: 0 },
+      );
+      await store.appendJournal?.({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: new Uint8Array(),
+        source: "agent",
+      });
+
+      const rows = await db
+        .select({ draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branch.branchId))
+        .orderBy(branchWriteJournal.id);
+      expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
     });
     it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {
       const branch = await store.ensureWorkDraftBranch({

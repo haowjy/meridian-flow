@@ -31,7 +31,7 @@ Acyclic at the domain level: threads reference project/work ownership, never
 the reverse (the only projects↔threads imports are test fixtures).
 `apps/server/server/lib/app.ts` is the composition root that wires the runtime,
 thread repositories, gateway, event hub, package repository, preferences,
-billing, projects, and collab services.
+billing, projects, collab services, and the shared model/writer safety-notice port.
 
 ## Harness composition
 

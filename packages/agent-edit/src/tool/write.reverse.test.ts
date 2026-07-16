@@ -8,6 +8,75 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
+  it("denies destructive agent reversals without a sealed observation snapshot", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-fail-closed" },
+    );
+    const journalLength = (await scenario.ctx.journal.read("chapter.md")).updates.length;
+
+    await expect(
+      scenario.ctx.core.write(
+        { command: "undo", file: "chapter.md" },
+        {
+          sessionId: "cold-session",
+          threadId: THREAD_ID,
+          actor: {
+            kind: "agent",
+            turnId: "blind-reversal",
+            threadId: THREAD_ID,
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
+    await expect(
+      scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "latest" },
+        actor: { type: "agent", responseId: undefined },
+      }),
+    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
+
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength);
+    expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
+  });
+
+  it("persists each agent reversal's authoring response provenance", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-provenance" },
+    );
+
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor: { type: "agent", responseId: "response-undo" },
+    });
+    expect(scenario.ctx.journal.reversalRecords("chapter.md")).toMatchObject([
+      { status: "reversed", authoringResponseId: "response-undo" },
+    ]);
+
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "latest" },
+      actor: { type: "agent", responseId: "response-redo" },
+    });
+    expect(scenario.ctx.journal.reversalRecords("chapter.md")).toMatchObject([
+      { status: "redone", authoringResponseId: "response-redo" },
+    ]);
+    const updates = (await scenario.ctx.journal.read("chapter.md")).updates;
+    expect(updates.at(-2)?.meta.authoringResponseId).toBe("response-undo");
+    expect(updates.at(-1)?.meta.authoringResponseId).toBe("response-redo");
+  });
+
   it("undoes the latest write when write scope has no target", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
@@ -390,7 +459,7 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record(input) {
             records.push(input);
           },
@@ -424,6 +493,8 @@ describe("write host reverse", () => {
         writeHandleTurns: [{ writeHandle: "w1", turnId: "turn-user-notification" }],
         docId: "chapter.md",
         direction: "undo",
+        sweptContent: false,
+        beforeContentRef: null,
       },
     ]);
   });
@@ -433,7 +504,7 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record(input) {
             records.push({ direction: input.direction, writeHandles: input.writeHandles });
           },
@@ -479,12 +550,12 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record() {
             throw new Error("notification insert failed");
           },
         },
-        onUndoNotificationFailed: (event) => {
+        onReversalNoticeFailed: (event) => {
           failures.push(event);
         },
       },
@@ -527,7 +598,7 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record() {
             throw new Error("notification insert failed");
           },

@@ -44,8 +44,10 @@
  *   into a single system message — they appear as multi-line system
  *   content, not as turn-structured data.
  */
+
+import type { WriteObservationEvidence } from "@meridian/agent-edit";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { PendingUndoNotification } from "../../undo-notifications/index.js";
+import type { Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -63,11 +65,28 @@ export interface BuildContextInput {
    * `thread.composedSystemPrompt` is already frozen.
    */
   skillsSystemPromptSection?: string;
-  undoNotifications?: readonly PendingUndoNotification[];
 }
 
-export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
+export type RequestObservationEvidence = WriteObservationEvidence & { documentId: string };
+
+/** Documents whose persisted tool output can serialize observation evidence into this request. */
+export function observationDocumentIds(blocks: readonly Block[]): string[] {
+  const ids = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockType !== "tool_result" || block.pruned) continue;
+    const content = block.content as Parameters<typeof evidenceProvenByOutput>[0];
+    for (const evidence of evidenceProvenByOutput(content)) ids.add(evidence.documentId);
+  }
+  return [...ids].sort();
+}
+
+export function buildContext(input: BuildContextInput): {
+  messages: Message[];
+  tools?: Tool[];
+  observationEvidence: RequestObservationEvidence[];
+} {
   const messages: Message[] = [];
+  const observationEvidence: RequestObservationEvidence[] = [];
 
   const composed = input.thread.composedSystemPrompt;
   if (composed && isThreadPromptFrozen(input.thread)) {
@@ -89,13 +108,10 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
     messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
   }
 
-  if (input.undoNotifications?.length) {
-    messages.push(undoNotificationSystemMessage(input.undoNotifications));
-  }
-
   // Group blocks by turn, then sort each group by sequence number.
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
+    if (block.pruned) continue;
     const key = block.turnId as string;
     const list = blocksByTurn.get(key) ?? [];
     list.push(block);
@@ -137,11 +153,16 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
             toolCallId?: string;
             output?: JsonValue;
             isError?: boolean;
+            metadata?: {
+              documentId?: unknown;
+              observationEvidence?: unknown;
+            };
           } | null;
           const toolCallId = content?.toolCallId ?? "";
           messages.push(
             toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
           );
+          observationEvidence.push(...evidenceProvenByOutput(content));
           continue;
         }
         const part = blockToContentPart(block);
@@ -156,7 +177,41 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   return {
     messages,
     tools: input.tools?.length ? input.tools : undefined,
+    observationEvidence,
   };
+}
+
+function evidenceProvenByOutput(
+  content: {
+    output?: JsonValue;
+    metadata?: { documentId?: unknown; observationEvidence?: unknown };
+  } | null,
+): RequestObservationEvidence[] {
+  const documentId = content?.metadata?.documentId;
+  const evidence = content?.metadata?.observationEvidence;
+  if (typeof documentId !== "string" || !Array.isArray(evidence)) return [];
+  const serializedOutput = JSON.stringify(content?.output ?? null);
+  return evidence.flatMap((value) => {
+    if (
+      !isWriteObservationEvidence(value) ||
+      !serializedOutput.includes(JSON.stringify(value.sourceText).slice(1, -1))
+    ) {
+      return [];
+    }
+    return [{ documentId, ...value }];
+  });
+}
+
+function isWriteObservationEvidence(value: unknown): value is WriteObservationEvidence {
+  if (typeof value !== "object" || value === null) return false;
+  const evidence = value as WriteObservationEvidence;
+  return (
+    Number.isSafeInteger(evidence.clientID) &&
+    Number.isSafeInteger(evidence.clock) &&
+    typeof evidence.sourceText === "string" &&
+    ((evidence.kind === "rendered" && typeof evidence.renderedContent === "string") ||
+      (evidence.kind === "explicit_deletion" && typeof evidence.capturedBody === "string"))
+  );
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
@@ -236,19 +291,69 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function undoNotificationSystemMessage(
-  notifications: readonly PendingUndoNotification[],
-): Message {
-  return system(formatUndoNotificationMessage(notifications));
+export function safetyNoticeSystemMessage(notices: readonly Notice[]): Message | null {
+  const content = formatSafetyNotices(notices);
+  return content ? system(content) : null;
 }
 
-export function formatUndoNotificationMessage(
-  notifications: readonly PendingUndoNotification[],
-): string {
+export function formatSafetyNotices(notices: readonly Notice[]): string {
+  const sections: string[] = [];
+  const undoNotices = notices.filter((notice) => notice.kind === "undo");
+  if (undoNotices.length > 0) sections.push(formatUndoNotices(undoNotices));
+  for (const notice of notices) {
+    if (notice.kind === "undo") continue;
+    sections.push(formatSafetyNotice(notice));
+  }
+  return sections.filter(Boolean).join("\n\n");
+}
+
+function formatSafetyNotice(notice: Notice): string {
+  if (notice.kind === "rejection") return notice.message;
+  const documentName =
+    stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
+  if (
+    notice.kind === "late_sweep" ||
+    notice.kind === "push_swept" ||
+    notice.kind === "checkpoint_sweep"
+  ) {
+    return "";
+  }
+  if (notice.kind === "awareness_degraded") {
+    const documentNames = Array.isArray(notice.data.documentNames)
+      ? notice.data.documentNames.filter(
+          (name): name is string => typeof name === "string" && name.length > 0,
+        )
+      : [];
+    const affectedDocuments = documentNames.length > 0 ? documentNames.join(", ") : documentName;
+    const noun = documentNames.length > 1 ? "documents" : "document";
+    return `The system could not verify whether concurrent writer content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
+  }
+  return notice.message;
+}
+
+function formatUndoNotices(notices: readonly Notice[]): string {
+  const notifications = notices.flatMap((notice) => {
+    const data = notice.data;
+    const handles = Array.isArray(data.writeHandles)
+      ? data.writeHandles.filter((handle): handle is string => typeof handle === "string")
+      : [];
+    return handles.map((writeHandle) => ({
+      uri: typeof data.uri === "string" ? data.uri : "",
+      writeHandle,
+      direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
+    }));
+  });
+  const latest = new Map<string, (typeof notifications)[number]>();
+  for (const notification of notifications) {
+    latest.set(`${notification.uri}::${notification.writeHandle}`, notification);
+  }
+  const reversals = [...latest.values()].filter(
+    (notification) => notification.direction === "undo",
+  );
   // Group by uri (the document identity), not filename — distinct docs can share
   // a basename, and merging their handles would mislabel which file changed.
   const grouped = new Map<string, { label: string; handles: string[] }>();
-  for (const notification of notifications) {
+  for (const notification of reversals) {
     const key = notification.uri || notification.writeHandle;
     const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
     const entry = grouped.get(key) ?? { label, handles: [] };
@@ -260,11 +365,18 @@ export function formatUndoNotificationMessage(
     grouped.values(),
     ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
   );
-  return [
-    "The writer reversed the following edits before this message:",
-    ...lines,
-    "They are signaling these changes were unwanted.",
-  ].join("\n");
+  return lines.length > 0
+    ? [
+        "The writer reversed the following edits before this message:",
+        ...lines,
+        "They are signaling these changes were unwanted.",
+      ].join("\n")
+    : "";
+}
+
+function stringData(notice: Notice, key: string): string | null {
+  const value = notice.data[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function filenameFromUri(uri: string): string {

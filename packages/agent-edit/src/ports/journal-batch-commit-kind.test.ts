@@ -10,6 +10,7 @@ describe("appendBatch journalCommitKind", () => {
         update: new Uint8Array([1, 2]),
         meta: { origin: "agent:turn-1", seq: 1 },
         mutation: {
+          actorKind: "agent",
           mode: "live",
           threadId: "thread-1",
           turnId: "turn-1",

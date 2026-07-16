@@ -49,5 +49,12 @@ export function createDrizzleThreadDocumentRepository(db: DrizzleDb): ThreadDocu
         .orderBy(desc(schema.threadDocuments.lastTouchedAt));
       return rows.map(mapThreadDocument);
     },
+    async listThreadIdsByDocument(documentId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ threadId: schema.threadDocuments.threadId })
+        .from(schema.threadDocuments)
+        .where(eq(schema.threadDocuments.documentId, documentId));
+      return rows.map(({ threadId }) => threadId);
+    },
   };
 }

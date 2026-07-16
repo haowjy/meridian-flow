@@ -73,6 +73,7 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     role: turn.role,
     status: turn.status,
     requestParams: turn.requestParams ?? null,
+    metadata: turn.metadata ?? null,
   };
 }
 

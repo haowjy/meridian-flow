@@ -25,7 +25,7 @@ function createHarness() {
     documentSync: {
       ensureDocument: async () => {},
       readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-      writeFromMarkdown: async (documentId: string, markdown: string) => {
+      seedFromMarkdown: async (documentId: string, markdown: string) => {
         await beforeCollabWrite?.();
         observedWriteFiletypes.push(backing.documents.get(documentId)?.filetype ?? null);
         markdownByDocument.set(documentId, markdown);

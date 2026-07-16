@@ -92,8 +92,8 @@ export interface ToolExecutionResult {
   toolCallId: string;
   output: JsonValue;
   isError?: boolean;
-  /** Opaque metadata from the handler, not persisted on the block. Used for post-dispatch tracking (e.g. documentId for concurrent edit backfill). */
-  metadata?: Record<string, unknown>;
+  /** Host metadata persisted beside the result for request reconstruction. */
+  metadata?: JsonObject;
 }
 
 /**

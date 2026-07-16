@@ -477,3 +477,55 @@ describe("orchestrator event projector interrupts", () => {
     expect(agui).toEqual([]);
   });
 });
+
+describe("change-trail event projection", () => {
+  it("projects authorized shells without manuscript detail", () => {
+    const events = projectOrchestratorEvents([
+      {
+        type: "turn.change_trail_updated",
+        eventId: "event-1",
+        threadId: "thread-1",
+        trailId: "trail-1",
+        turnId: "turn-1",
+        version: 3,
+        counts: { changes: 4, swept: 1, documents: 2 },
+      },
+      {
+        type: "turn.change_trail_settled",
+        eventId: "event-2",
+        threadId: "thread-1",
+        trailId: "trail-1",
+        turnId: "turn-1",
+        version: 4,
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: EventType.CUSTOM,
+        name: "meridian.turn_change_trail.updated",
+        value: {
+          eventId: "event-1",
+          threadId: "thread-1",
+          trailId: "trail-1",
+          turnId: "turn-1",
+          version: 3,
+          counts: { changes: 4, swept: 1, documents: 2 },
+        },
+      },
+      {
+        type: EventType.CUSTOM,
+        name: "meridian.turn_change_trail.settled",
+        value: {
+          eventId: "event-2",
+          threadId: "thread-1",
+          trailId: "trail-1",
+          turnId: "turn-1",
+          version: 4,
+        },
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("documentTitle");
+    expect(JSON.stringify(events)).not.toContain("beforeText");
+  });
+});

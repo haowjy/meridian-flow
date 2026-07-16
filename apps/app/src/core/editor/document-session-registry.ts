@@ -20,7 +20,7 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
-import { DocumentSession } from "./document-session";
+import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
 
 /** Soft cap — log once when exceeded; no hard eviction (R14). */
 const LIVE_DOC_SOFT_CAP = 50;
@@ -43,6 +43,10 @@ export class DocumentSessionRegistry {
   /** room key → pending deferred teardown timer. */
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
+  private readonly sessionObservers = new Map<
+    string,
+    Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
+  >();
 
   /**
    * Acquire the live session for a document, creating it (and its transport
@@ -86,6 +90,9 @@ export class DocumentSessionRegistry {
       });
     }
     this.sessions.set(roomKey, session);
+    for (const [observer] of this.sessionObservers.get(roomKey) ?? []) {
+      this.sessionObservers.get(roomKey)?.set(observer, session.subscribe(observer));
+    }
     if (room.kind === "live") this.maybeWarnLiveDocCap();
     return session;
   }
@@ -93,6 +100,24 @@ export class DocumentSessionRegistry {
   /** Whether a session currently exists for a room key. */
   has(roomKey: string): boolean {
     return this.sessions.has(roomKey);
+  }
+
+  /**
+   * Observe a room without opening it. The observer follows registry lifecycle,
+   * so it attaches both to an existing session and to one created later.
+   */
+  observe(roomKey: string, observer: (snapshot: DocumentSessionSnapshot) => void): () => void {
+    let observers = this.sessionObservers.get(roomKey);
+    if (!observers) {
+      observers = new Map();
+      this.sessionObservers.set(roomKey, observers);
+    }
+    observers.set(observer, this.sessions.get(roomKey)?.subscribe(observer));
+    return () => {
+      observers?.get(observer)?.();
+      observers?.delete(observer);
+      if (observers?.size === 0) this.sessionObservers.delete(roomKey);
+    };
   }
 
   /**

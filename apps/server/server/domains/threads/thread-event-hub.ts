@@ -27,6 +27,7 @@ export type SequencedEventInternal = {
 
 type ThreadHubState = {
   events: SequencedEventInternal[];
+  publishedJournalEvents: Set<string>;
   projector: ReturnType<typeof createOrchestratorEventProjector>;
   listeners: Set<(event: SequencedEventInternal) => void>;
 };
@@ -125,6 +126,7 @@ export function createThreadEventHub(
       projectors.set(threadId, projector);
       state = {
         events: [],
+        publishedJournalEvents: new Set(),
         projector,
         listeners: new Set(),
       };
@@ -197,6 +199,15 @@ export function createThreadEventHub(
     journalSeq: bigint,
     orchestratorEvent: OrchestratorEvent,
   ): void {
+    const state = getState(threadId);
+    const eventKey = `${journalSeq}:${JSON.stringify(orchestratorEvent)}`;
+    if (state.publishedJournalEvents.has(eventKey)) return;
+    state.publishedJournalEvents.add(eventKey);
+    if (state.publishedJournalEvents.size > HOT_CACHE_LIMIT) {
+      state.publishedJournalEvents.delete(
+        state.publishedJournalEvents.values().next().value as string,
+      );
+    }
     if (orchestratorEvent.type === "turn.error") {
       emitEvent(eventSink, {
         level: "error",
@@ -214,7 +225,6 @@ export function createThreadEventHub(
         },
       });
     }
-    const state = getState(threadId);
     const sequencedEvents = toSequencedEvents(
       journalSeq,
       state.projector.project(orchestratorEvent),

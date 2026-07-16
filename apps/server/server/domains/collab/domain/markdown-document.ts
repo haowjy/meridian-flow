@@ -11,9 +11,11 @@ import {
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
+  type MutationActor,
   toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
+  type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
@@ -24,12 +26,14 @@ import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
+  DocumentSeedOrigin,
   DocumentWriteOrigin,
   DocumentWriteResult,
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
 } from "../index.js";
+import { type AuthorshipSource, createDocumentAuthority } from "./document-authority.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -58,6 +62,11 @@ type MarkdownDocumentEngineDeps = {
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   afterWrite?: MarkdownWriteHook;
+  identityPreservingWrite?(input: {
+    documentId: DocumentId;
+    markdown: string;
+    actor: MutationActor;
+  }): Promise<WriteOutcome>;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
 };
 
@@ -81,10 +90,10 @@ export type MarkdownDocumentEngine = {
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>>;
-  writeFromMarkdown(
+  seedFromMarkdown(
     documentId: string,
     markdown: string,
-    origin: UpdateOrigin,
+    origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
@@ -165,8 +174,31 @@ export function createMarkdownDocumentEngine(
     }, yjsOrigin);
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
     const meta = deps.metaForOrigin(origin);
-    const seq = await deps.journal.append(documentId, update, meta);
-    Y.applyUpdate(liveDoc, update, yjsOrigin);
+    let seq = 0;
+    const unsupported = async (): Promise<never> => {
+      throw new Error("Document authority strategy is unavailable for markdown authorship");
+    };
+    await createDocumentAuthority({
+      readMutableAuthority: () => ({ documentId, generation: 0n, doc: liveDoc }),
+      admitImmediate: async ({ update: admittedUpdate }) => {
+        seq = await deps.journal.append(documentId, admittedUpdate, meta);
+        Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+        return { sequence: BigInt(seq), joined: 0 };
+      },
+      readFrozenCut: unsupported,
+      readCurrentRevision: unsupported,
+      lowerCertifiedMutation: unsupported,
+      loadCheckpoint: unsupported,
+      unresolvedSettlements: unsupported,
+      replaceGeneration: unsupported,
+      disconnectGeneration: unsupported,
+      stagePush: unsupported,
+      completePush: unsupported,
+    }).mutate({
+      kind: "attributedFreshAuthorship",
+      source: authorshipSource(origin),
+      update,
+    });
     return Ok({
       documentId,
       markdown: serializeForSchema(draft, schemaType),
@@ -293,25 +325,110 @@ export function createMarkdownDocumentEngine(
 
     editMarkdown,
 
-    async writeFromMarkdown(documentId, markdown, origin) {
+    async seedFromMarkdown(documentId, markdown, origin) {
       const result = await setMarkdown({ documentId: documentId as DocumentId, markdown, origin });
       return result.ok ? Ok(persistedUpdate(result.value)) : result;
     },
 
     async writeDocument(input) {
-      const result = await setMarkdown(input);
+      const result = await identityPreservingSet(input);
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
 
     async editDocument(input) {
-      const result = await editMarkdown(input);
+      const format = await documentFormat(input.documentId);
+      if (!format.ok) throwSyncError(format.error);
+      const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
+        serializeForSchema(doc, format.value.schemaType),
+      );
+      const result = await identityPreservingSet({
+        ...input,
+        markdown: input.transform(beforeMarkdown),
+      });
       if (!result.ok) throwSyncError(result.error);
       return {
         ...documentWriteResult(result.value, input.origin),
-        beforeMarkdown: result.value.beforeMarkdown,
+        beforeMarkdown,
       };
     },
+  };
+
+  async function identityPreservingSet(input: {
+    documentId: DocumentId;
+    markdown: string;
+    origin: DocumentWriteOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<MarkdownSetResult, SyncError>> {
+    const format = await documentFormat(input.documentId);
+    if (!format.ok) return format;
+    if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
+    const actor = mutationActor(input.origin, input.threadId);
+    if (!deps.identityPreservingWrite) {
+      throw new Error("Identity-preserving document writes are not configured");
+    }
+    const outcome = await deps.identityPreservingWrite({
+      documentId: input.documentId,
+      markdown: identityPreservingContent(input.markdown, format.value),
+      actor,
+    });
+    if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
+    const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
+      serializeForSchema(doc, format.value.schemaType),
+    );
+    const snapshot = await deps.journal.read(input.documentId);
+    const latest = snapshot.updates.at(-1);
+    await deps.afterWrite?.({ documentId: input.documentId, threadId: input.threadId, markdown });
+    return Ok({
+      documentId: input.documentId,
+      markdown,
+      updateSeq: latest?.seq ?? 0,
+      updateData: latest?.update ?? new Uint8Array(),
+      meta: latest?.meta ?? deps.metaForOrigin(input.origin),
+    });
+  }
+}
+
+function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
+  if (origin.type === "user") return { kind: "writer" };
+  if (origin.type === "import") return { kind: "import", policy: "writer_protected" };
+  return { kind: "seed", policy: origin.type === "agent" ? "agent" : "writer_protected" };
+}
+
+function identityPreservingContent(
+  markdown: string,
+  format: { schemaType: YjsTrackedSchemaType; filetype: string | null },
+): string {
+  if (format.schemaType !== "code") return markdown;
+  const longestFence = Math.max(0, ...Array.from(markdown.matchAll(/`+/g), ([run]) => run.length));
+  const fence = "`".repeat(Math.max(3, longestFence + 1));
+  return `${fence}${format.filetype ?? ""}\n${markdown}${markdown.endsWith("\n") ? "" : "\n"}${fence}`;
+}
+
+export class DocumentMutationRejectedError extends Error {
+  readonly status: WriteOutcome["status"];
+
+  constructor(outcome: WriteOutcome) {
+    super(outcome.text);
+    this.name = "DocumentMutationRejectedError";
+    this.status = outcome.status;
+  }
+}
+
+function mutationActor(origin: DocumentWriteOrigin, threadId?: ThreadId): MutationActor {
+  if (origin.type === "user") {
+    return {
+      kind: "human",
+      userId: origin.actorUserId,
+      ...(threadId ? { threadId } : {}),
+    };
+  }
+  if (!threadId) throw new Error("Agent document writes require a threadId");
+  return {
+    kind: "agent",
+    turnId: origin.actorTurnId,
+    threadId,
+    responseId: origin.actorTurnId,
   };
 }
 

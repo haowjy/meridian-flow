@@ -4,11 +4,18 @@ import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import type { CanonicalBlockIdentity } from "./observation-snapshot.js";
 
 export interface TextRun {
   start: number;
   length: number;
   attrsKey: string;
+}
+
+export interface ContentLineage {
+  clientID: number;
+  clock: number;
+  length: number;
 }
 
 export type BlockLookup =
@@ -39,6 +46,9 @@ export interface DocumentModel {
   /** Derive a stable hash for one already-known block. */
   getBlockId(block: BlockRef): string;
 
+  /** Full immutable identity used by response observation authority. */
+  getCanonicalBlockIdentity(block: BlockRef): CanonicalBlockIdentity;
+
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: DocHandle): string[];
 
@@ -56,6 +66,9 @@ export interface DocumentModel {
 
   /** Get the text content of a block (for find/match). */
   getText(block: BlockRef): string;
+
+  /** Immutable CRDT identities for the currently visible prose units in this block. */
+  getVisibleContentLineage(block: BlockRef): ContentLineage[];
 
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;

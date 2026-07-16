@@ -52,7 +52,7 @@ import {
   meridianErrorFromTool,
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type {
   InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -140,7 +140,7 @@ function successResult(toolCallId: string, output: unknown): ToolExecutionResult
     return {
       toolCallId,
       output: toJsonValue(output.output),
-      ...(output.metadata ? { metadata: output.metadata } : {}),
+      ...(output.metadata ? { metadata: toJsonValue(output.metadata) as JsonObject } : {}),
     };
   }
   return { toolCallId, output: toJsonValue(output) };

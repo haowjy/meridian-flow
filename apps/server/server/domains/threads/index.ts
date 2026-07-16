@@ -9,6 +9,10 @@ export {
   createInMemoryRepositories,
 } from "./adapters/in-memory/index.js";
 export {
+  type ActiveDocumentResolver,
+  createActiveDocumentResolver,
+} from "./domain/active-document-resolver.js";
+export {
   createOrchestratorEventProjector,
   projectOrchestratorEvents,
 } from "./domain/orchestrator-event-projector.js";

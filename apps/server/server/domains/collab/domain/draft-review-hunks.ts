@@ -20,6 +20,7 @@ import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
+import { encodeTrailPosition, rootRelativePosition } from "./trail-read-kernel.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
@@ -391,6 +392,7 @@ function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): DraftReviewHunkIntern
         kind: "text",
         hunkId,
         operationIds: [],
+        blockHashes: [hunk.blockKey],
         anchor: hunk.anchor,
         spans: [],
         ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
@@ -400,6 +402,7 @@ function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): DraftReviewHunkIntern
         kind: "block",
         hunkId,
         operationIds: [],
+        blockHashes: [hunk.blockKey],
         anchor: hunk.anchor,
         ...(hunk.insertedBlock ? { insertedBlock: reviewBlockDisplay(hunk.insertedBlock) } : {}),
         ...(hunk.deletedBlock ? { deletedBlock: reviewBlockDisplay(hunk.deletedBlock) } : {}),
@@ -831,17 +834,11 @@ function relativePositionForTextOffset(
 }
 
 function relativePositionBeforeBlock(block: BlockInfo, doc: Y.Doc): Y.RelativePosition {
-  return Y.createRelativePositionFromTypeIndex(
-    prosemirrorFragment(doc),
-    blockIndexInFragment(block, doc),
-  );
+  return rootRelativePosition(doc, blockIndexInFragment(block, doc));
 }
 
 function relativePositionAfterBlock(block: BlockInfo, doc: Y.Doc): Y.RelativePosition {
-  return Y.createRelativePositionFromTypeIndex(
-    prosemirrorFragment(doc),
-    blockIndexInFragment(block, doc) + 1,
-  );
+  return rootRelativePosition(doc, blockIndexInFragment(block, doc) + 1);
 }
 
 function blockIndexInFragment(block: BlockInfo, doc: Y.Doc): number {
@@ -856,7 +853,7 @@ function prosemirrorFragment(doc: Y.Doc): Y.XmlFragment {
 }
 
 function encodeRelativePosition(position: Y.RelativePosition): string {
-  return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
+  return encodeTrailPosition(position);
 }
 
 function firstTextItem(text: Y.XmlText): ItemLike | null {

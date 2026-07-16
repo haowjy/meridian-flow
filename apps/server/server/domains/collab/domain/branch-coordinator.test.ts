@@ -8,6 +8,7 @@ import {
   type BranchStore,
   createBranchCoordinator,
 } from "./branch-coordinator.js";
+import { runResponseTransaction } from "./response-transaction.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000502" as WorkId;
@@ -46,6 +47,11 @@ class MemoryBranchStore implements BranchStore {
   readonly journal: Uint8Array[] = [];
   failNextCas = false;
   failNextJournal = false;
+
+  deferUntilCommit(callback: () => void): boolean {
+    callback();
+    return true;
+  }
 
   async getBranch(branchId: string): Promise<BranchSnapshot | null> {
     return this.branches.get(branchId) ?? null;
@@ -153,6 +159,37 @@ function materialize(snapshot: BranchSnapshot): Y.Doc {
 }
 
 describe("BranchCoordinator", () => {
+  it("publishes transient cache state only when the response transaction commits", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set(
+      "thread",
+      branchSnapshot({ branchId: "thread", doc: docWithText("before") }),
+    );
+    const coordinator = createBranchCoordinator({ store });
+    const mutate = async () => {
+      await coordinator.withBranchTransient("thread", async (doc) => {
+        doc.getText("content").insert(doc.getText("content").length, " after");
+      });
+      await coordinator.readBranch("thread", async (pending) => {
+        expect(pending.getText("content").toString()).toBe("before after");
+      });
+    };
+
+    await expect(
+      runResponseTransaction(async (operation) => {
+        await operation();
+        throw new Error("rollback");
+      }, mutate),
+    ).rejects.toThrow("rollback");
+    await coordinator.readBranch("thread", async (doc) => {
+      expect(doc.getText("content").toString()).toBe("before");
+    });
+
+    await runResponseTransaction(async (operation) => operation(), mutate);
+    await coordinator.readBranch("thread", async (doc) => {
+      expect(doc.getText("content").toString()).toBe("before after");
+    });
+  });
   it("pulls live edits into a work draft using sync and persists byte-equal state", async () => {
     const store = new MemoryBranchStore();
     const live = docWithText("live prose");

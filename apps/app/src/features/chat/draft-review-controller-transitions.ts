@@ -60,6 +60,8 @@ export type DraftReviewState = {
   acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
+  /** Conflicts survive navigation; only re-review or disposition removes their entry. */
+  concurrentConflicts: ReadonlyMap<string, DraftReviewSelection & { conflictedBlocks: string[] }>;
 };
 
 export type DraftReviewAction =
@@ -86,6 +88,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   acceptingOperationId: null,
   inlineReviewMessage: null,
   inlineDiscardError: null,
+  concurrentConflicts: new Map(),
 };
 
 export function draftReviewReducer(
@@ -236,15 +239,33 @@ function stateAfterAcceptResult(
   if (response.status === "partial_applied") {
     return { ...state, staleDraft: null };
   }
+  if (response.status === "concurrent_conflict") {
+    const concurrentConflicts = new Map(state.concurrentConflicts);
+    concurrentConflicts.set(reviewSelectionKey({ documentId, draftId }), {
+      documentId,
+      draftId,
+      conflictedBlocks: response.conflictedBlocks,
+    });
+    return {
+      ...state,
+      staleDraft: null,
+      concurrentConflicts,
+    };
+  }
   return clearDraftReviewState(state, draftId);
 }
 
 function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {
   const currentDraftId = state.surface.kind === "none" ? null : state.surface.draftId;
+  const concurrentConflicts = new Map(state.concurrentConflicts);
+  for (const [key, conflict] of concurrentConflicts) {
+    if (conflict.draftId === draftId) concurrentConflicts.delete(key);
+  }
   return {
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
+    concurrentConflicts,
   };
 }
 
@@ -255,7 +276,29 @@ function stateAfterInlineModelAvailable(
   const nextSurface = surfaceMatchesDraft(state.surface, action)
     ? { ...state.surface, previewIdentity: action.identity }
     : state.surface;
-  return { ...state, surface: nextSurface };
+  const priorIdentity =
+    surfaceMatchesDraft(state.surface, action) && state.surface.kind === "inline"
+      ? state.surface.previewIdentity
+      : undefined;
+  if (!priorIdentity || priorIdentity === action.identity) {
+    return { ...state, surface: nextSurface };
+  }
+  // A new server preview identity is the explicit re-review transition: the
+  // writer is now looking at a model rebuilt after the rejected disposition.
+  const concurrentConflicts = new Map(state.concurrentConflicts);
+  concurrentConflicts.delete(reviewSelectionKey(action));
+  return { ...state, surface: nextSurface, concurrentConflicts };
+}
+
+export function conflictForSelection(
+  state: DraftReviewState,
+  selection: DraftReviewSelection | null,
+): (DraftReviewSelection & { conflictedBlocks: string[] }) | null {
+  return selection ? (state.concurrentConflicts.get(reviewSelectionKey(selection)) ?? null) : null;
+}
+
+function reviewSelectionKey(selection: DraftReviewSelection): string {
+  return `${selection.documentId}\0${selection.draftId}`;
 }
 
 function clearInlineState(state: DraftReviewState): DraftReviewState {

@@ -209,6 +209,7 @@ function ReviewOperationCards({
         draftRevisionToken: preview.draftRevisionToken,
         operations: preview.operations,
         hunks: preview.hunks,
+        conflictLabel: t`edited since this draft was written`,
       }),
     [preview],
   );

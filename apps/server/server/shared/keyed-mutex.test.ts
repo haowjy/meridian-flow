@@ -81,4 +81,35 @@ describe("KeyedMutex", () => {
 
     await expect(mutex.run("k", async () => "third")).resolves.toBe("third");
   });
+
+  it("times out only while waiting and never invokes the cancelled callback", async () => {
+    const mutex = new KeyedMutex();
+    let release!: () => void;
+    const held = mutex.run(
+      "k",
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    let invoked = false;
+    await expect(
+      mutex.run(
+        "k",
+        async () => {
+          invoked = true;
+        },
+        { timeoutMs: 5 },
+      ),
+    ).rejects.toThrow("Timed out acquiring lock");
+    release();
+    await held;
+    await delay(0);
+    expect(invoked).toBe(false);
+  });
+
+  it("does not time out a callback after it acquires the lock", async () => {
+    const mutex = new KeyedMutex();
+    await expect(mutex.run("k", async () => delay(15), { timeoutMs: 5 })).resolves.toBeUndefined();
+  });
 });
