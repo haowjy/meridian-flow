@@ -77,6 +77,24 @@ export function mergeTrailChanges(
   return [...folded.values()].map((change, ordinal) => ({ ...change, ordinal }));
 }
 
+/** Applies final sweep classification without erasing the push's ordinary edit history. */
+export function refinePushChanges(
+  provisional: readonly TrailChangeV1[],
+  classifiedSweeps: readonly TrailChangeV1[],
+): TrailChangeV1[] {
+  const classifiedKeys = new Set(classifiedSweeps.map(canonicalChangeKey));
+  const ordinary = provisional
+    .filter((change) => !classifiedKeys.has(canonicalChangeKey(change)))
+    .map(withoutProvisionalSweep);
+  return mergeTrailChanges(ordinary, classifiedSweeps);
+}
+
+function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
+  if (change.writerProtection?.kind === "resurrection") return change;
+  const { writerProtection: _writerProtection, ...ordinary } = change;
+  return { ...ordinary, swept: null };
+}
+
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
   return {
     async record(input) {
@@ -139,18 +157,21 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ? true
           : persistedPushChanges.length === incomingKeys.size &&
             persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
+        const replacement = input.replacePushId
+          ? refinePushChanges(persistedPushChanges, trail.changes)
+          : trail.changes;
         const changes = input.refineCurrentVersion
           ? refinementIsComplete
             ? mergeTrailChanges(
                 persistedChanges.filter((change) => !incomingPushIds.has(change.pushId)),
-                trail.changes,
+                replacement,
               )
             : persistedChanges
           : mergeTrailChanges(
               input.replacePushId
                 ? persistedChanges.filter((change) => change.pushId !== input.replacePushId)
                 : persistedChanges,
-              trail.changes,
+              replacement,
             );
         const documentIds = new Set([
           ...existingDetails.map((detail) => detail.documentId),
