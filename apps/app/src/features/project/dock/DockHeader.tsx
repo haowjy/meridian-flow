@@ -38,7 +38,10 @@ export type DockHeaderProps = {
 export function DockHeader({ view, views, onSelectView, onClose, threadSelect }: DockHeaderProps) {
   return (
     <header className="flex h-10 shrink-0 items-stretch pl-2">
-      <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+      {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
+          inside, and clipping here shears the trigger's hover pill (it
+          reaches 6px left of the slot for optical text alignment). */}
+      <div className="flex min-w-0 flex-1 items-center pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
       <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
@@ -55,13 +58,14 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
 }
 
 /**
- * DockViewSwitch — quiet pill toggles, deliberately NOT tabs: the dock is one
- * uniform chrome surface and nothing "rises" out of it (only the page does
- * that, via the document tab strip). The active view is a pill pressing INTO
- * the chrome (`bg-sidebar-accent`); inactive views are bare labels with a
- * whisper hover. Selection is the tonal press, never an outline. The set is
- * fixed — views never close or grow. No count or badge on any segment — the
- * composer DraftDock strip carries discovery.
+ * DockViewSwitch — a contained segmented switch, deliberately NOT tabs: the
+ * dock is one uniform chrome surface and nothing "rises" out of it (only the
+ * page does that, via the document tab strip). The recessed track gives the
+ * control a complete boundary — a bare pressed pill floating at the window's
+ * top corner read as a tab with its base cut off. The active segment surfaces
+ * the paper tone inside the track; selection is tonal, never an outline. The
+ * set is fixed — views never close or grow. No count or badge on any segment —
+ * the composer DraftDock strip carries discovery.
  */
 function DockViewSwitch({
   views,
@@ -73,7 +77,11 @@ function DockViewSwitch({
   onSelectView: (view: DockView) => void;
 }) {
   return (
-    <div role="tablist" aria-label={t`Dock view`} className="flex shrink-0 items-center gap-0.5">
+    <div
+      role="tablist"
+      aria-label={t`Dock view`}
+      className="flex shrink-0 items-center self-center rounded-lg bg-foreground/6 p-0.5"
+    >
       {views.map((segment) => {
         const active = segment === view;
         return (
@@ -84,10 +92,10 @@ function DockViewSwitch({
             aria-selected={active}
             onClick={() => onSelectView(segment)}
             className={cn(
-              "focus-ring h-7 shrink-0 rounded-md px-2.5 text-xs transition-colors",
+              "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors",
               active
-                ? "bg-sidebar-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
+                ? "bg-background font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <DockViewLabel view={segment} />
