@@ -8,9 +8,9 @@
  *
  * Key decision: session-only, no `persist`. The default per screen is the
  * occupant's native view (Context on the chat screen, Chat elsewhere); a fresh
- * reload starts from those defaults rather than a stale tab. Placement, width,
+ * reload starts from those defaults rather than a stale view. Placement, width,
  * and collapse stay owned by the surface-prefs store — this store only tracks
- * the tab.
+ * the view.
  */
 import { create } from "zustand";
 

@@ -182,7 +182,10 @@ Chat switching lives in `features/chat/ThreadSwitcherPopover`: it filters by
 chat title, groups chats by Work when grouping is meaningful, shows recency and
 attention, and supports keyboard switching. Rename is available on the active
 row; new chat remains a footer action. The route owner performs the actual
-thread switch.
+thread switch. `chat/useResolvedChatThread` is the one fallback-resolution
+source shared by `ChatScreen` and every header that names its thread; a header
+must never independently derive a thread id or its title can diverge from the
+conversation body.
 
 ## Don't
 
