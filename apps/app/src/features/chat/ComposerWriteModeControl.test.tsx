@@ -11,7 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  Plural: ({ value }: { value: number }) => <>{value} pending draft changes</>,
+  Plural: ({ value, one, other }: { value: number; one: string; other: string }) => (
+    <>{(value === 1 ? one : other).replace("#", String(value))}</>
+  ),
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -103,8 +105,8 @@ describe("ComposerWriteModeControl", () => {
 
     await click(autoApplyOption());
 
-    expect(document.body.textContent).toContain("7 pending draft changes");
-    expect(button("Apply 7 and switch")).toBeTruthy();
+    expect(document.body.textContent).toContain("7 pending changes");
+    expect(button("Apply 7 changes and switch")).toBeTruthy();
   });
 
   it("sends confirmedPush only from the explicit confirmation button", async () => {
@@ -115,7 +117,7 @@ describe("ComposerWriteModeControl", () => {
     await click(autoApplyOption());
     expect(mocks.mutateAsync).toHaveBeenNthCalledWith(1, { aiWriteMode: "direct" });
 
-    await click(button("Apply 3 and switch"));
+    await click(button("Apply 3 changes and switch"));
     expect(mocks.mutateAsync).toHaveBeenNthCalledWith(2, {
       aiWriteMode: "direct",
       confirmedPush: true,
@@ -128,7 +130,7 @@ describe("ComposerWriteModeControl", () => {
       .mockRejectedValueOnce(new Error("push failed"));
 
     await click(autoApplyOption());
-    await click(button("Apply 2 and switch"));
+    await click(button("Apply 2 changes and switch"));
 
     expect(autoApplyOption().checked).toBe(false);
     expect(document.body.textContent).toContain("you're still in Draft");
@@ -143,7 +145,7 @@ describe("ComposerWriteModeControl", () => {
     mocks.mutateAsync.mockResolvedValueOnce(confirmationRequired(4)).mockReturnValueOnce(pending);
 
     await click(autoApplyOption());
-    await act(async () => button("Apply 4 and switch").click());
+    await act(async () => button("Apply 4 changes and switch").click());
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
