@@ -1,9 +1,7 @@
 # features/chat — Turn render surface + transcript viewport
 
-The chat frontend: how assistant turns render from `Block[]` onto the screen,
-including the `Thinking`/`ActivityBlock` composition model, tool rendering,
-interrupt interaction, and the live→settled transition — AND how the
-conversation transcript scrolls (the explicit `follow | free` policy).
+The chat frontend: assistant-turn rendering, transcript scrolling, and the
+conversation-attached composer chrome, including Work-scoped draft controls.
 
 ## Purpose
 
@@ -78,6 +76,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
+| `ComposerWriteModeControl.tsx` | Compact Draft / Auto-apply selector beside the Writer pill. `ChatView` resolves the thread's Work; the control reads and mutates only that Work and confirms before pushing pending drafts live. |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
