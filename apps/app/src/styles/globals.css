@@ -505,14 +505,16 @@
 }
 
 /*
- * Tab-chip grammar — geometry for the document tab strip (`ContextTabBar`):
- * the one place a surface RISES out of the chrome. A chip sits in the chrome
- * band; the ACTIVE chip surfaces the field tone below it — rounded top plus
- * Obsidian-style bottom flares (corner fills outside the chip so its base
- * curves outward into the page instead of meeting the band at a hard right
- * angle). An INACTIVE chip carries an inset rounded hover pill covering its
- * full hit target. (The dock's Chat|Changes switcher is deliberately NOT this
- * grammar — the dock is one uniform surface; its views are quiet pills.)
+ * Tab-chip grammar — geometry for the places a surface RISES out of the
+ * chrome: the document tab strip (`ContextTabBar`) and the centered chat
+ * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
+ * the chrome band; the ACTIVE chip surfaces the field tone below it — rounded
+ * top plus Obsidian-style bottom flares (corner fills outside the chip so its
+ * base curves outward into the page instead of meeting the band at a hard
+ * right angle). An INACTIVE chip carries an inset rounded hover pill covering
+ * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
+ * this grammar — the dock is one uniform surface; its view switch is a
+ * contained segmented track that presses into the chrome.)
  *
  * The variation point is the surfacing color: consumers set
  * `--tab-chip-surface` on the strip (canvas for document tabs). These

@@ -17,11 +17,11 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
-
 import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
+import { useResolvedChatThread } from "./chat-thread-resolution";
 
 /** `center` = the wide main column (Chat dest); `dock` = right rail (Home/Context). */
 export type ChatPlacement = "center" | "dock";
@@ -57,6 +57,10 @@ export function ChatSurface({
   onCloseDock,
   onSelectContextPath,
 }: ChatSurfaceProps) {
+  // The header must name the SAME thread the body resolves — the route id is
+  // null on Home/Context, where ChatScreen falls back without route
+  // write-back. One shared resolution keeps title and conversation in sync.
+  const { resolvedThreadId } = useResolvedChatThread(projectId, activeThreadId);
   return (
     <div
       aria-hidden={!visible}
@@ -75,10 +79,10 @@ export function ChatSurface({
         screen={activeScreen}
         onClose={onCloseDock}
         threadSelect={
-          activeThreadId ? (
+          resolvedThreadId ? (
             <ChatThreadTitle
               projectId={projectId}
-              threadId={activeThreadId}
+              threadId={resolvedThreadId}
               onSelectThread={onSelectThread}
             />
           ) : (

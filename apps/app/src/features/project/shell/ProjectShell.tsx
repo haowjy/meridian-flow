@@ -184,7 +184,7 @@ export function ProjectShell({
             gridRef={gridRef}
             cssVariableName="--project-dock-width"
             widthPx={dockWidth}
-            minWidthPx={SLOT_WIDTH_BOUNDS.dock?.min ?? 240}
+            minWidthPx={SLOT_WIDTH_BOUNDS.dock?.min ?? 280}
             maxWidthPx={SLOT_WIDTH_BOUNDS.dock?.max ?? 520}
             onCommit={onSetDockWidth}
             ariaLabel={t`Resize right rail`}

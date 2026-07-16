@@ -64,23 +64,21 @@ export function ChatThreadTitle({
   const title = displayThreadTitle(resolved?.title);
   const [editing, setEditing] = useState(false);
 
-  return (
-    <div className="flex min-w-0 flex-1 items-center">
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
-        ) : (
-          <ThreadSwitcherPopover
-            projectId={projectId}
-            activeThreadId={threadId}
-            title={title}
-            onSelectThread={onSelectThread}
-            onRename={() => setEditing(true)}
-            variant={variant}
-          />
-        )}
-      </div>
-    </div>
+  // No wrapper of its own: every host already provides a `flex min-w-0
+  // flex-1 items-center` slot, and an extra block wrapper here defeats the
+  // flex sizing the children rely on (the rename input must shrink with
+  // the slot, not keep its intrinsic width).
+  return editing ? (
+    <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
+  ) : (
+    <ThreadSwitcherPopover
+      projectId={projectId}
+      activeThreadId={threadId}
+      title={title}
+      onSelectThread={onSelectThread}
+      onRename={() => setEditing(true)}
+      variant={variant}
+    />
   );
 }
 
@@ -143,10 +141,9 @@ function RenameField({
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={handleKeyDown}
       onBlur={commit}
-      // w-full, not flex-1: the wrapper is a block, so the input needs an
-      // explicit width or it keeps its intrinsic size and overflows the slot
-      // (it used to paint over the dock's view switch).
-      className="pane-title focus-ring w-full min-w-0 rounded-md border border-border-focus bg-background px-2 py-1 outline-none"
+      // min-w-0 beats the UA's intrinsic min-width on inputs, so flex-1 can
+      // actually shrink the field to the slot instead of overflowing it.
+      className="pane-title focus-ring min-w-0 flex-1 rounded-md border border-border-focus bg-background px-2 py-1 outline-none"
     />
   );
 }

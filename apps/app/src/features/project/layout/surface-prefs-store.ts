@@ -52,7 +52,9 @@ export const SURFACE_WIDTH_BOUNDS: SurfaceWidthBounds = {
 
 /** One bounds entry per slot whose width is persisted at slot level. */
 export const SLOT_WIDTH_BOUNDS: SlotWidthBounds = {
-  dock: { min: 240, max: 520 },
+  // Min matches the chat occupant's floor — below it the dock header's
+  // trigger and rename input compress into unusable slivers.
+  dock: { min: 280, max: 520 },
 };
 
 type PersistedSurfacePrefsMap = Partial<Record<SurfaceId, Partial<SurfacePrefs>>>;

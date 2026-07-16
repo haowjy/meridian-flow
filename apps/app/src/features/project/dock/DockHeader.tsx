@@ -3,10 +3,10 @@
  *
  * The header is part of the dock's ONE uniform chrome surface — it paints
  * nothing of its own (the dock slot owns the material) and carries no bottom
- * border. Layout: `[left slot] … [view pills] [close]`. The left slot hosts
- * the chat select/rename dropdown while Chat is active; the view pills carry
- * the view identity, so there is no separate section title. The left slot
- * truncates before the pills or close ever compress.
+ * border. Layout: `[left slot] … [segmented view switch] [close]`. The left
+ * slot hosts the chat select/rename dropdown while Chat is active; the view
+ * switch carries the view identity, so there is no separate section title.
+ * The left slot truncates before the switch or close ever compress.
  *
  * Replaces the per-occupant RailHeader chrome in the dock: same `h-10` shell
  * and the canonical `PanelToggleButton` close, so the collapse control still
