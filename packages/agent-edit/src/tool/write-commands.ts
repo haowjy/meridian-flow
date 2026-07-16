@@ -7,30 +7,24 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
+import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { DocumentRenderer } from "./document-renderer.js";
-import {
-  BaselineIntegrationError,
-  baselineIntegratesBuffered,
-  interactionContextForAttempt,
-  mutationMode,
-  responseAwareBaselineSnapshot,
-} from "./interaction-mode.js";
+import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { MutationCommit } from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
-import type { WriteCommand, WriteContext } from "./types.js";
+import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
-  agentMeta,
-  agentUpdateOrigin,
-  errorMessage,
   errorResponse,
   isUnconfirmedDestructiveReplace,
+  mutationMeta,
+  mutationUpdateOrigin,
   parseFileAddress,
   readSuccess,
 } from "./write-helpers.js";
@@ -39,7 +33,7 @@ import { scopedToolUseId } from "./write-idempotency.js";
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "onBaselineDegraded" | "coordinator"
+    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "coordinator" | "semanticProvenance"
   >;
   threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
@@ -95,12 +89,34 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    if (command.format === "outline") {
-      return readSuccess(
-        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+    const selected = new Set(selection.blocks);
+    const observations = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec)
+      .filter((_, index) => selected.has(options.model.getBlocks(toDocHandle(runtime.doc))[index]))
+      .flatMap((block) =>
+        block.clientID !== undefined && block.clock !== undefined && block.renderedContent
+          ? [
+              {
+                kind: "rendered" as const,
+                clientID: block.clientID,
+                clock: block.clock,
+                renderedContent: block.renderedContent,
+                sourceText: block.serialized,
+              },
+            ]
+          : [],
       );
+    if (command.format === "outline") {
+      return {
+        ...readSuccess(
+          renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+        ),
+        observations,
+      };
     }
-    return readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
+    return {
+      ...readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks)),
+      observations,
+    };
   }
 
   async function create(
@@ -110,13 +126,15 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
+    const actor = mutationActor(session, address.documentId, context);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
     if (address.fragment) {
       return status("invalid_write", "create does not accept a #fragment in file.");
     }
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       responseCommitter.assertCanStage({
         responseId: context.responseId,
         docId: address.documentId,
@@ -131,7 +149,7 @@ export function createWriteCommands(deps: {
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const responseStagedCreate = context.responseId !== undefined;
+    const responseStagedCreate = context.responseId !== undefined && actor.kind === "agent";
     if (responseStagedCreate && context.createdDocument === undefined) {
       return status(
         "invalid_write",
@@ -172,7 +190,7 @@ export function createWriteCommands(deps: {
     if (missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       for (const update of responseCommitter.bufferedUpdatesForDoc(
         context.responseId,
         address.documentId,
@@ -187,7 +205,6 @@ export function createWriteCommands(deps: {
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
-    const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -197,6 +214,8 @@ export function createWriteCommands(deps: {
     const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
+    let touchedHashes = new Set<string>();
+    let deletedHashes = new Set<string>();
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -210,29 +229,37 @@ export function createWriteCommands(deps: {
       if (!resolved.ok) {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
+      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
         options.codec,
         resolved.edits,
         origin,
-        { ownActorTurnId: turnId },
+        { ...(turnId ? { ownActorTurnId: turnId } : {}) },
       );
       if (!applied.ok) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       }
+      options.semanticProvenance?.writeCertifiedFacts(
+        toDocHandle(runtime.doc),
+        resolved.ir,
+        beforeVector,
+      );
+      touchedHashes = new Set(applied.changedBlocks ?? []);
+      deletedHashes = new Set(applied.deletedBlocks ?? []);
     } else {
       runtime.doc.transact(() => {
         options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       }, origin);
     }
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    const meta = agentMeta(turnId);
+    const meta = mutationMeta(actor);
 
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       try {
-        responseCommitter.stageUpdate({
+        const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
           docId: address.documentId,
           session,
@@ -240,15 +267,25 @@ export function createWriteCommands(deps: {
           commandName: command.command,
           update,
           meta,
-          liveOrigin: agentUpdateOrigin(turnId),
-          turnId,
+          liveOrigin: mutationUpdateOrigin(actor),
+          actor,
+          turnId: actor.turnId,
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
+          toolCallId: command.tool_use_id ?? context.tool_use_id,
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
+          touchedHashes,
+          deletedHashes,
+          preOwnSnapshot: preWriteSnapshot,
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
+        if (rejected) {
+          restorePreWriteSnapshot(runtime, preWriteSnapshot);
+          markSynced(session, address.documentId, runtime);
+          return rejected;
+        }
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         markSynced(session, address.documentId, runtime);
@@ -272,6 +309,7 @@ export function createWriteCommands(deps: {
       committed = await mutationCommit.commitImmediate({
         docId: address.documentId,
         commandName: command.command,
+        runtime,
         updates: [
           {
             update,
@@ -279,6 +317,10 @@ export function createWriteCommands(deps: {
             mutation: {
               threadId: session.threadId,
               turnId,
+              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+              actorKind: actor.kind,
+              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
               ...mutationMode(context.interactionContext),
@@ -286,10 +328,14 @@ export function createWriteCommands(deps: {
           },
         ],
         afterOwnVector: Y.encodeStateVector(runtime.doc),
-        liveOrigin: agentUpdateOrigin(turnId),
+        liveOrigin: mutationUpdateOrigin(actor),
+        actor,
+        touchedHashes,
+        deletedHashes,
+        preOwnSnapshot: preWriteSnapshot,
+        ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
-          undefined,
           writeIdentity.durableId,
         ),
       });
@@ -300,8 +346,7 @@ export function createWriteCommands(deps: {
     }
     if (!committed.ok) {
       if (committed.journalCommitKind !== "durable") {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        markSynced(session, address.documentId, runtime);
+        await runtimeStore.evictRuntime(session, address.documentId);
         return committed.response;
       }
       await runtimeStore.recoverCommittedResponseProjection([
@@ -319,6 +364,7 @@ export function createWriteCommands(deps: {
           blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
         },
       ],
+      ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
     });
   }
 
@@ -366,23 +412,19 @@ export function createWriteCommands(deps: {
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
     }
+    validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const turnId = nextTurnId(session, address.documentId, context);
+    const actor = mutationActor(session, address.documentId, context);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
       context,
       command.tool_use_id,
     );
-    const detectionBaseline = detectionBaselineSnapshot(
-      address.documentId,
-      context,
-      preOwnSnapshot,
-    );
     const interactionContext = interactionContextForAttempt(
       context.interactionContext,
-      detectionBaseline,
       writeIdentity.durableId,
     );
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
@@ -395,18 +437,23 @@ export function createWriteCommands(deps: {
       resolved.edits,
       origin,
       {
-        ownActorTurnId: turnId,
+        ...(turnId ? { ownActorTurnId: turnId } : {}),
         syncStateVector: synced.stateVector,
       },
     );
     if (!applied.ok)
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
+    options.semanticProvenance?.writeCertifiedFacts(
+      toDocHandle(runtime.doc),
+      resolved.ir,
+      beforeVector,
+    );
 
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    const meta = agentMeta(turnId);
+    const meta = mutationMeta(actor);
 
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       try {
         const concurrent = interactionContext
           ? await mutationCommit.detectConcurrentEdits({
@@ -415,7 +462,7 @@ export function createWriteCommands(deps: {
               agentUpdate: ownUpdate,
               interactionContext,
               preOwnSnapshot,
-              ownTurnId: turnId,
+              ...(turnId ? { ownTurnId: turnId } : {}),
             })
           : undefined;
         const summary = mutationCommit.summarizeMutationEcho(
@@ -434,7 +481,7 @@ export function createWriteCommands(deps: {
           concurrentEdits: summary.concurrentEdits,
           deletedBlocks: applied.deletedBlocks,
         });
-        responseCommitter.stageUpdate({
+        const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
           docId: address.documentId,
           session,
@@ -442,14 +489,25 @@ export function createWriteCommands(deps: {
           commandName: command.command,
           update: ownUpdate,
           meta,
-          liveOrigin: agentUpdateOrigin(turnId),
-          turnId,
+          liveOrigin: mutationUpdateOrigin(actor),
+          actor,
+          turnId: actor.turnId,
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
+          toolCallId: command.tool_use_id ?? context.tool_use_id,
           createdDocumentBeforeCommit: false,
+          touchedHashes: new Set(applied.changedBlocks ?? []),
+          deletedHashes: new Set(applied.deletedBlocks ?? []),
+          preOwnSnapshot,
+          semanticEditIr: resolved.ir,
           ...(interactionContext ? { interactionContext } : {}),
         });
+        if (rejected) {
+          restorePreWriteSnapshot(runtime, preOwnSnapshot);
+          markSynced(session, address.documentId, runtime);
+          return rejected;
+        }
         markSynced(session, address.documentId, runtime);
         return result;
       } catch (cause) {
@@ -470,16 +528,23 @@ export function createWriteCommands(deps: {
         mutation: {
           threadId: session.threadId,
           turnId,
+          ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+          actorKind: actor.kind,
+          ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+          ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+          ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
           writeId: writeIdentity.durableId,
           wId: writeIdentity.ordinal,
           ...mutationMode(interactionContext),
         },
         afterOwnVector,
-        liveOrigin: agentUpdateOrigin(turnId),
+        liveOrigin: mutationUpdateOrigin(actor),
+        actor,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
-        ownTurnId: turnId,
+        ...(turnId ? { ownTurnId: turnId } : {}),
+        preOwnSnapshot,
         ...(interactionContext ? { interactionContext } : {}),
       });
     } catch (cause) {
@@ -489,8 +554,7 @@ export function createWriteCommands(deps: {
     }
     if (!syncedMutation.ok) {
       if (syncedMutation.journalCommitKind !== "durable") {
-        restorePreWriteSnapshot(runtime, preOwnSnapshot);
-        markSynced(session, address.documentId, runtime);
+        await runtimeStore.evictRuntime(session, address.documentId);
         return syncedMutation.response;
       }
       await runtimeStore.recoverCommittedResponseProjection([
@@ -515,40 +579,25 @@ export function createWriteCommands(deps: {
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
+      ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
     });
   }
 
-  function detectionBaselineSnapshot(
-    docId: string,
-    context: WriteContext,
-    preOwnSnapshot?: Uint8Array,
-  ): Uint8Array | undefined {
-    const interactionContext = context.interactionContext;
-    if (!interactionContext?.baselineSnapshot) return preOwnSnapshot;
-    if (!context.responseId) return interactionContext.baselineSnapshot;
-    const bufferedUpdates = responseCommitter.bufferedUpdatesForDoc(context.responseId, docId);
-    try {
-      return responseAwareBaselineSnapshot(interactionContext.baselineSnapshot, bufferedUpdates);
-    } catch (cause) {
-      const fallback =
-        preOwnSnapshot && baselineIntegratesBuffered(preOwnSnapshot, bufferedUpdates)
-          ? { snapshot: preOwnSnapshot, to: "preOwnSnapshot" as const }
-          : null;
-      if (!fallback) {
-        throw new BaselineIntegrationError(
-          `Staged response updates are not integrable into the cold/request-local detection baselines: ${errorMessage(cause)}`,
-          { cause },
-        );
-      }
-      options.onBaselineDegraded?.({
-        documentId: docId,
-        responseId: context.responseId,
-        from: "interaction",
-        to: fallback.to,
-        reason: errorMessage(cause),
-      });
-      return fallback.snapshot;
-    }
+  function validateResolvedIr(
+    ir: import("../semantic-edit-ir.js").SemanticEditIRV1,
+    documentId: string,
+    doc: Y.Doc,
+  ): void {
+    validateSemanticEditIRV1(ir, {
+      expectedDocumentId: documentId,
+      expectedInputRevision: revisionOf(doc),
+    });
+  }
+
+  function revisionOf(doc: Y.Doc): string {
+    return [...options.model.encodeStateVector(toDocHandle(doc))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   async function nextWriteIdentity(
@@ -569,6 +618,21 @@ export function createWriteCommands(deps: {
     if (context.turnId) return context.turnId;
     autoTurnCounter.value += 1;
     return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.value.toString(36)}`;
+  }
+
+  function mutationActor(
+    session: ActorSession,
+    docId: string,
+    context: WriteContext,
+  ): MutationActor {
+    if (context.actor) return context.actor;
+    const turnId = nextTurnId(session, docId, context);
+    return {
+      kind: "agent",
+      turnId,
+      threadId: session.threadId,
+      responseId: context.responseId ?? turnId,
+    };
   }
 }
 

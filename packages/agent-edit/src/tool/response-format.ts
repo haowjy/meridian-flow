@@ -4,6 +4,7 @@ import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
+import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
   WriteCommandName,
   WriteErrorDetail,
@@ -19,6 +20,7 @@ export interface ApplySuccessResponseInput {
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
+  lateSweep?: DestructiveSweepReport;
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -39,6 +41,12 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
         ),
       }),
     );
+  }
+  if (input.lateSweep) {
+    metaLines.push("concurrent writer content swept during commit; re-read required");
+    for (const { hash, body } of input.lateSweep.capturedDeletedBodies ?? []) {
+      metaLines.push(`swept: ${hash}|${body}`);
+    }
   }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
@@ -106,6 +114,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
+    ...(result.observations ? { observations: result.observations } : {}),
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
@@ -118,25 +127,17 @@ export function formatConcurrent(
   options: { excludeHashes?: ReadonlySet<string> } = {},
 ): string[] {
   const lines = ["concurrent edits:"];
-  appendConcurrentBucket(lines, "human", info.human, info.renderedBlocks?.human, options);
-  appendConcurrentBucket(lines, "agent", info.agent, info.renderedBlocks?.agent, options);
-  if (info.reviewCommand) lines.push(info.reviewCommand);
-  return lines;
-}
-
-function appendConcurrentBucket(
-  lines: string[],
-  label: "human" | "agent",
-  hashes: readonly string[],
-  renderedBlocks: readonly string[] | undefined,
-  options: { excludeHashes?: ReadonlySet<string> },
-): void {
-  if (hashes.length === 0) return;
-  lines.push(`  ${label}: ${hashes.join(", ")}`);
-  for (const block of renderedBlocks ?? []) {
-    if (options.excludeHashes?.has(blockHash(block))) continue;
-    lines.push(`    ${block}`);
+  for (const run of info.runs) {
+    lines.push(`  ${run.origin}:`);
+    for (const block of run.blocks) {
+      if (!options.excludeHashes?.has(blockHash(block))) lines.push(`    ${block}`);
+    }
+    for (const tombstone of run.tombstones) {
+      lines.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
+    }
   }
+  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
+  return lines;
 }
 
 function blockHash(serialized: string): string {
@@ -144,7 +145,7 @@ function blockHash(serialized: string): string {
   return separator < 0 ? serialized : serialized.slice(0, separator);
 }
 
-function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
+export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
   return (
     status === "not_found" ||
     status === "ambiguous_match" ||
@@ -152,6 +153,8 @@ function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
+    status === "destructive_write_rejected" ||
+    status === "rejected_response_requires_reread" ||
     status === "internal_error"
   );
 }

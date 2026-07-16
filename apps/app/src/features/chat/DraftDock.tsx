@@ -155,6 +155,8 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     bulkActive: bulk !== null,
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
     isBusy: controller.isDisposing || bulk !== null,
+    needsRereview: controller.needsRereview,
+    applyRefusal: controller.applyRefusal,
     reviewRow,
     openRow,
     reviewFirst: () => {
@@ -251,7 +253,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           </button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              dock.needsRereview ? "bg-status-warning" : "bg-jade-text",
+            )}
+          />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
             {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
@@ -269,6 +277,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <Trans>
                 · {dock.reviewedCount} of {dock.totalCount} reviewed
               </Trans>
+            </span>
+          ) : null}
+          {dock.needsRereview ? (
+            <span
+              className="shrink-0 rounded-full border border-warning-border bg-warning-bg px-1.5 text-warning-foreground"
+              data-draft-dock-status="needs-rereview"
+            >
+              <Trans>needs re-review</Trans>
             </span>
           ) : null}
         </div>
@@ -327,6 +343,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         </div>
       </div>
 
+      {dock.applyRefusal ? <DraftApplyRefusalNotice refusal={dock.applyRefusal} /> : null}
+
       {multi && expanded ? (
         <div>
           {dock.rows.map((row) => (
@@ -341,6 +359,36 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function DraftApplyRefusalNotice({
+  refusal,
+}: {
+  refusal: NonNullable<DraftDockModel["applyRefusal"]>;
+}) {
+  return (
+    <div
+      className="space-y-1 border-warning-border border-b bg-warning-bg px-3 py-2 text-caption text-warning-foreground"
+      data-draft-apply-refusal={refusal.reason}
+    >
+      <p className="font-medium">
+        {refusal.reason === "stale_draft" ? (
+          <Trans>This draft changed. Review the latest version before applying.</Trans>
+        ) : refusal.reason === "protected_resurrection" ? (
+          <Trans>Couldn't apply because this would bring back text you deleted.</Trans>
+        ) : (
+          <Trans>
+            Couldn't apply because your live document changed since this draft was prepared.
+          </Trans>
+        )}
+      </p>
+      {refusal.passages.map((passage) => (
+        <p key={passage.body} className="whitespace-pre-wrap text-prose-foreground">
+          {passage.body}
+        </p>
+      ))}
     </div>
   );
 }

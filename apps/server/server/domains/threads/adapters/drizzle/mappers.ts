@@ -84,6 +84,7 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     error: row.error,
     requestParams: row.requestParams as Turn["requestParams"],
     responseMetadata: row.responseMetadata as Turn["responseMetadata"],
+    metadata: row.metadata as Turn["metadata"],
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,
     blocks: [],

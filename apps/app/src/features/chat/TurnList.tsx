@@ -31,14 +31,14 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-
+import type { ChangeTrailShell } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
-
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
+import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
@@ -53,6 +53,7 @@ export type TurnListProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Turn ids that produced an AI draft — write tool rows read "Drafted". */
   draftTurnIds?: ReadonlySet<string>;
+  changeTrails?: Record<string, ChangeTrailShell>;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -67,11 +68,20 @@ export function TurnList({
   ariaLabel,
   onRespondToInterrupt,
   draftTurnIds,
+  changeTrails = {},
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const byTurnId = useMemo(() => {
+    const byTurnId = new Map<string, ChangeTrailShell>();
+    for (const shell of Object.values(changeTrails)) {
+      if (shell.owner.kind === "turn") byTurnId.set(shell.owner.turnId, shell);
+    }
+    return byTurnId;
+  }, [changeTrails]);
 
   const virtualizer = useVirtualizer({
     count: visibleTurns.length,
@@ -125,10 +135,12 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToInterrupt={onRespondToInterrupt}
           draftWrite={draftTurnIds?.has(turn.id) ?? false}
+          changeTrail={byTurnId.get(turn.id)}
+          navigateToChange={navigateToChange}
         />
       );
     },
-    [draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId],
+    [byTurnId, draftTurnIds, lastAssistantIdx, navigateToChange, onRespondToInterrupt, threadId],
   );
 
   return (

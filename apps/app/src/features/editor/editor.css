@@ -222,6 +222,26 @@
   transition: background-color 120ms ease;
 }
 
+.meridian-editor .ProseMirror .meridian-review-conflict {
+  background: var(--color-review-warning-tint);
+  box-shadow: inset 0 -1px 0 0 var(--color-review-warning-border);
+}
+
+.meridian-editor .ProseMirror .meridian-review-conflict-chip {
+  display: inline-block;
+  margin-inline: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--color-review-warning-border);
+  border-radius: 999px;
+  background: var(--color-review-warning-chip-bg);
+  color: var(--color-review-warning-chip-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  vertical-align: 0.08em;
+  user-select: none;
+}
+
 /* Emphasis keeps its underline hint alongside the ring so the two
    `box-shadow` layers compose rather than replace each other. */
 .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
@@ -337,6 +357,27 @@
   .meridian-review-removed-block[data-review-block-type="horizontal_rule"] {
   text-align: center;
   letter-spacing: 0.25em;
+}
+
+/* Conflict is the final visual modifier. Keep these after every authorship,
+   merge, deletion, and block-shape rule so the warning tint always wins the
+   cascade on the destructive hunks where it matters. */
+.meridian-editor .ProseMirror .meridian-review-merged.meridian-review-conflict,
+.meridian-editor .ProseMirror .meridian-review-removed.meridian-review-conflict,
+.meridian-editor .ProseMirror .meridian-review-block.meridian-review-added.meridian-review-conflict,
+.meridian-editor
+  .ProseMirror
+  .meridian-review-block.meridian-review-writer.meridian-review-conflict {
+  background: var(--color-review-warning-tint);
+  box-shadow: inset 0 -1px 0 0 var(--color-review-warning-border);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removed.meridian-review-removed-block.meridian-review-conflict {
+  background: var(--color-review-warning-tint);
+  border-color: var(--color-review-warning-border);
+  box-shadow: 0 0 0 2px var(--color-review-warning-border);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -521,4 +562,17 @@
   .meridian-figure-node__editor {
     grid-template-columns: 1fr;
   }
+}
+
+.meridian-editor .ProseMirror .live-range-navigation-highlight {
+  background: var(--color-review-added-emphasis);
+  box-shadow: 0 0 0 2px var(--color-review-added-ring);
+}
+
+.meridian-editor .ProseMirror .live-range-navigation-boundary {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--color-review-added-border);
+  vertical-align: text-bottom;
 }

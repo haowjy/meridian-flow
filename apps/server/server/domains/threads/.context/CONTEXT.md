@@ -47,6 +47,11 @@ instead of the N:1 `threads.workId` column.
 
   → See [`domains/collab/.context/CONTEXT.md`](../collab/.context/CONTEXT.md)
     for the branch review model.
+- **Active documents** — `createActiveDocumentResolver` is the sole definition
+  of document activity for a thread: the union of explicit `thread_documents`
+  attachments and documents touched by the thread's turns. It also resolves
+  active threads for a document so drain-time notice fan-out and retention use
+  the same definition.
 
 ## Contracts (ports)
 

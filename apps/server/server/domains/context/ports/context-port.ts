@@ -150,6 +150,9 @@ export interface ContextMoveResult {
   movedNodeId?: string;
 }
 
+/** Certified context edits are closed semantic commands, never opaque callbacks. */
+export type ContextEditCommand = { kind: "append"; content: string };
+
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
 export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   fileType: DocumentFileType;
@@ -193,12 +196,11 @@ export interface ContextPort {
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
   /**
-   * Atomically read, transform, and write tracked text content under the
-   * document collab mutex. Only supported for editable tracked files.
+   * Resolve and apply one semantic edit under the document collab mutex.
    */
   edit(
     uri: string,
-    transform: (content: string) => string,
+    command: ContextEditCommand,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
 

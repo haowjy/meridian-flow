@@ -1,11 +1,8 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { ConcurrentEditInfo } from "@meridian/agent-edit";
-import type {
-  ReversalOutcome,
-  TurnChangeDiffResponse,
-  YjsTrackedSchemaType,
-} from "@meridian/contracts/protocol";
+import type { ConcurrentEditInfo, ResponseCommitDocumentRejection } from "@meridian/agent-edit";
+import type { TrailForwardActionResult } from "@meridian/contracts";
+import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -25,6 +22,7 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
@@ -35,6 +33,8 @@ export type UpdateOrigin =
   | { type: "agent"; actorTurnId: string }
   | { type: "import"; userId: string; source: string; filename: string; sourceId?: string }
   | { type: "system" };
+
+export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "system" }>;
 
 export type SyncError =
   | { code: "not_found"; documentId: string }
@@ -100,11 +100,26 @@ export type CollabTransport = {
     branchId: string,
     generation: number,
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
+  admitLiveWriterUpdate(input: {
+    documentId: DocumentId;
+    update: Uint8Array;
+    origin: Extract<UpdateOrigin, { type: "user" }>;
+    expectedGeneration: bigint;
+  }): Promise<{ joinedSettlement: boolean }>;
+  currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  validateBranchWriterUpdate(input: {
+    branchId: string;
+    expectedGeneration: number;
+    update: Uint8Array;
+  }): Promise<void>;
+  writerIngressBarrier: WriterIngressBarrier;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
+    /** True only for the client's initial sync-step-2 integration. */
+    reconcileOffline?: boolean;
   }): void;
   persistBranchConnectionUpdate(input: {
     branchId: string;
@@ -146,10 +161,10 @@ export type TurnReversalAccess = {
 export type MarkdownDocumentStore = {
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  writeFromMarkdown(
+  seedFromMarkdown(
     documentId: string,
     markdown: string,
-    origin: UpdateOrigin,
+    origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
@@ -178,6 +193,7 @@ export type ResponseWriteCommitDocument = {
   documentId: DocumentId;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
+  lateSweep?: import("@meridian/agent-edit").DestructiveSweepReport;
 };
 
 export type DraftClosedFinalizeResult = {
@@ -190,8 +206,15 @@ export type DraftClosedFinalizeResult = {
 
 export type ResponseWriteCommitFinalizeResult =
   | {
-      status?: "committed";
+      status: "committed";
       documents: ResponseWriteCommitDocument[];
+      stagedCreates: ResponseWriteStagedCreates;
+      awarenessDegraded?: boolean;
+    }
+  | {
+      status: "rejected";
+      responseId: string;
+      rejections: Array<ResponseCommitDocumentRejection & { documentName?: string }>;
       stagedCreates: ResponseWriteStagedCreates;
     }
   | DraftClosedFinalizeResult;
@@ -204,6 +227,7 @@ export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
+    beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
     responseId: string,
@@ -249,6 +273,7 @@ export type DraftReviewApi = {
     userId: UserId;
     draftRevisionToken?: number;
     operationIds?: string[];
+    signal?: AbortSignal;
   }): Promise<DraftAcceptResult>;
   reject(input: {
     projectId?: ProjectId;
@@ -290,10 +315,10 @@ export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
-  getTurnChangeDiff(threadId: ThreadId, turnId: TurnId): Promise<TurnChangeDiffResponse>;
 };
 
 export type BranchPushAccess = {
+  recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   pushSelectedToLive(input: {
     branchId: string;
@@ -352,6 +377,16 @@ export type DocumentAttribution = {
   }>;
 };
 
+export type TrailForwardActionAccess = {
+  applyTrailForwardAction(input: {
+    threadId: ThreadId;
+    trailId: string;
+    changeId: string;
+    action: "restore" | "delete-again";
+    userId: UserId;
+  }): Promise<TrailForwardActionResult>;
+};
+
 export type CollabDomain = CollabTransport &
   AgentEditAccess &
   TurnReversalAccess &
@@ -361,6 +396,7 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
+  TrailForwardActionAccess &
   BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts;

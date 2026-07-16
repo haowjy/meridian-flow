@@ -33,16 +33,35 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 const { DocumentSessionRegistry } = await import("./document-session-registry");
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
+  it("notifies an observer when a session created after detail load loses access", async () => {
+    providers.length = 0;
+    const registry = new DocumentSessionRegistry();
+    const statuses: string[] = [];
+    const unobserve = registry.observe("document-later", (snapshot) =>
+      statuses.push(snapshot.status),
+    );
+
+    const session = registry.get("document-later");
+    await session.waitForCurrentSync(100);
+    providers.at(-1)?.emit({ kind: "unauthorized", reason: "revoked", code: 4403 });
+
+    expect(statuses).toContain("access-lost");
+    unobserve();
+    registry.destroyAll();
+  });
+
   it("replaces a retained live session denied before draft materialization", async () => {
     const registry = new DocumentSessionRegistry();
     registry.retain("test-owner", ["document-1"]);
     const deniedSession = registry.get("document-1");
-    providers[0]?.emit({ kind: "unauthorized", reason: "document access denied", code: 4403 });
+    await deniedSession.waitForCurrentSync(100);
+    const providerCount = providers.length;
+    providers.at(-1)?.emit({ kind: "unauthorized", reason: "document access denied", code: 4403 });
 
     await expect(registry.restartUnavailableRoom("document-1")).resolves.toBe(true);
 
-    expect(providers).toHaveLength(2);
-    expect(providers[0]?.destroy).toHaveBeenCalledOnce();
+    expect(providers).toHaveLength(providerCount + 1);
+    expect(providers[providerCount - 1]?.destroy).toHaveBeenCalledOnce();
     expect(registry.get("document-1")).not.toBe(deniedSession);
     registry.destroyAll();
   });

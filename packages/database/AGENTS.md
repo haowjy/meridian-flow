@@ -12,6 +12,10 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
 - Keep Drizzle `src/migrations/meta/*_snapshot.json` tracked. They are generated
   artifacts and diff-collapsed by `.gitattributes`, but `db:generate` diffs
   against them; a missing snapshot silently corrupts the next migration.
+- Schema-representable DDL belongs in migrations produced by `db:generate`.
+  Handwritten follow-on migrations contain only database behavior Drizzle cannot
+  model, such as trigger functions and triggers; create them with
+  `drizzle-kit generate --custom` so the journal remains coherent.
 - Migrations: squashed baseline `0000_thankful_tarantula.sql` (no
   `auth.users` references) plus additive migrations listed in
   `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next

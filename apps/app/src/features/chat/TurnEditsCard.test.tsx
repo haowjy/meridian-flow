@@ -9,16 +9,12 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { mutateAsyncMock, getTurnChangeDiffMock } = vi.hoisted(() => ({
+const { mutateAsyncMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
-  getTurnChangeDiffMock: vi.fn(),
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseTurnMutation: () => ({ mutateAsync: mutateAsyncMock }),
-}));
-vi.mock("@/client/api/turn-change-diff-api", () => ({
-  getTurnChangeDiff: getTurnChangeDiffMock,
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
@@ -133,26 +129,30 @@ describe("TurnEditsCard", () => {
       expect(document.body.textContent).not.toContain("Redo");
     });
   });
-  it("opens the View change dialog from a degraded receipt chip", async () => {
-    getTurnChangeDiffMock.mockResolvedValueOnce({
-      version: 1,
-      source: "pushed",
-      documents: [
-        {
-          documentId: "doc-1",
-          documentTitle: "Chapter One",
-          blocks: [{ blockId: "block-1", beforeText: "Before", afterText: "After" }],
-        },
-      ],
-    });
-    await withInteractiveCard(
-      { receipt: { state: "expired", control: "view_change" } },
-      async (card) => {
-        await card.click("View change");
-
-        expect(getTurnChangeDiffMock).toHaveBeenCalledWith("thread-1", "turn-1");
-        expect(getTurnChangeDiffMock).toHaveBeenCalledTimes(1);
-      },
+  it("guards Undo when later rows depend on the change", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "cant_undo_dependent", control: "view_change" }}
+      />,
     );
+    expect(html).toContain("Undo");
+    expect(html).toContain("disabled");
+    expect(html).toContain("later edits depend on this change");
+  });
+
+  it("uses neutral copy when Undo expired without a dependent row", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "expired", control: "view_change" }}
+      />,
+    );
+    expect(html).toContain("Undo is no longer available");
+    expect(html).not.toContain("later edits depend");
   });
 });

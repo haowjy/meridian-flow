@@ -59,7 +59,7 @@ describe("ContextFS manuscript effective view", () => {
           documentId: "manifest-doc",
           members: [CREATED_DOC_ID],
         }),
-        writeFromMarkdown: async () => Ok(null),
+        seedFromMarkdown: async () => Ok(null),
         writeDocument: async () => {
           throw new Error("not used");
         },
@@ -121,7 +121,7 @@ describe("ContextFS manuscript effective view", () => {
           documentId: "manifest-doc",
           members: [BRANCH_DOC_ID, CREATED_DOC_ID],
         }),
-        writeFromMarkdown: async () => Ok(null),
+        seedFromMarkdown: async () => Ok(null),
         writeDocument: async () => {
           throw new Error("not used");
         },

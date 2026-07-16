@@ -79,6 +79,7 @@ export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
           totalCostUsd: "0",
           responseCount: 0,
           requestParams: input.requestParams ?? null,
+          metadata: input.metadata ?? null,
           createdAt: input.createdAt === undefined ? undefined : toDate(input.createdAt),
         })
         .onConflictDoNothing({ target: schema.turns.id })

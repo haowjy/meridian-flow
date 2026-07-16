@@ -3,6 +3,7 @@
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   type DocumentCoordinator,
+  type DocumentLockOptions,
   DocumentNotFoundError,
   type UpdateJournal,
 } from "@meridian/agent-edit";
@@ -58,26 +59,29 @@ function createCoordinator(
   }
 
   return {
-    withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-      return mutex.run(docId, async () => {
-        const live = liveDoc(docId);
-        if (live) return fn(live);
+    withDocument<T>(
+      docId: string,
+      fn: (doc: Y.Doc) => Promise<T>,
+      options?: DocumentLockOptions,
+    ): Promise<T> {
+      return mutex.run(
+        docId,
+        async () => {
+          if (!liveDoc(docId) && !(await persistedState(docId))) {
+            throw new DocumentNotFoundError(docId);
+          }
 
-        const persisted = await persistedState(docId);
-        if (!persisted) throw new DocumentNotFoundError(docId);
-
-        // Direct connections and WebSockets acquire the same registered room, so
-        // a writer opening during this await can only join this canonical Y.Doc.
-        const handle = await openLiveDoc(docId);
-        try {
-          await applyMissing(handle.doc, persisted);
-          return await fn(handle.doc);
-        } finally {
-          // The callback owns durable journaling. Disconnect only after it has
-          // completed so room teardown cannot persist an earlier state.
-          await handle.release();
-        }
-      });
+          const handle = await openLiveDoc(docId);
+          try {
+            const persisted = await persistedState(docId);
+            if (persisted) await applyMissing(handle.doc, persisted);
+            return await fn(handle.doc);
+          } finally {
+            await handle.release();
+          }
+        },
+        options,
+      );
     },
 
     recover(docId: string): Promise<void> {

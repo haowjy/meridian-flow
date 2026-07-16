@@ -51,6 +51,7 @@ export async function persistAndAppendEvents<T>(
   deps: PersistenceDeps,
   threadId: ThreadId,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
+  options?: { afterEvents?: (result: T) => Promise<void> },
 ): Promise<{ result: T; events: OrchestratorEvent[] }> {
   return deps.repos.transaction(async () => {
     const persisted = await operation();
@@ -58,6 +59,7 @@ export async function persistAndAppendEvents<T>(
       await projectReadModelEvent(deps.repos, event);
       await deps.eventWriter.appendEvent(threadId, event);
     }
+    await options?.afterEvents?.(persisted.result);
     return persisted;
   });
 }

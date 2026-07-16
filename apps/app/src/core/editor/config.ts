@@ -16,6 +16,7 @@ import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
+import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -269,6 +270,7 @@ export function createStandaloneEditorExtensions({
       projectId: figureRenderContext?.projectId,
       documentId: figureRenderContext?.documentId,
     }),
+    LiveRangeNavigationExtension,
   ];
 }
 

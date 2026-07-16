@@ -17,6 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
+import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
@@ -32,6 +33,7 @@ import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { TurnEditsCard } from "./TurnEditsCard";
+import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -40,6 +42,8 @@ export type AssistantTurnProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** True when this turn produced an AI draft (write tool rows read "Drafted"). */
   draftWrite?: boolean;
+  changeTrail?: ChangeTrailShell;
+  navigateToChange?: NavigateToTrailChange;
 };
 
 function AssistantTurnComponent({
@@ -48,6 +52,8 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToInterrupt,
   draftWrite = false,
+  changeTrail,
+  navigateToChange,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -86,12 +92,14 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {liveLineageDocuments.length > 0 ? (
+      {liveLineageDocuments.length > 0 || changeTrail?.state === "settled" ? (
         <TurnEditsCard
           threadId={resolvedThreadId}
           turn={turn}
           documents={liveLineageDocuments}
           receipt={liveLineage.receipt}
+          changeTrail={changeTrail}
+          navigateToChange={navigateToChange}
         />
       ) : null}
 
@@ -235,18 +243,8 @@ function firstSegmentBlock(segment: TurnSegment): Block | undefined {
   }, undefined);
 }
 
-export const AssistantTurn = memo(AssistantTurnComponent, areAssistantTurnPropsEqual);
+export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
-
-function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
-  return (
-    prev.threadId === next.threadId &&
-    prev.turn === next.turn &&
-    Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
-    prev.onRespondToInterrupt === next.onRespondToInterrupt &&
-    Boolean(prev.draftWrite) === Boolean(next.draftWrite)
-  );
-}
 
 /**
  * Activity zone is rendered in two visual modes. The routing skeleton is the

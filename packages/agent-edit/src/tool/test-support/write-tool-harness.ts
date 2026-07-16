@@ -9,14 +9,18 @@ import {
 } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { snapshotBlocks } from "../../apply/echo.js";
 import { createAgentEditCodec } from "../../codec-adapter.js";
-import { createAgentEditCore, type UndoNotificationPort } from "../../index.js";
+import { toDocHandle } from "../../handles.js";
+import { createAgentEditCore, type ReversalNoticePort } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
+import { digestRenderedContent } from "../../observation-snapshot.js";
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { ObservationSnapshotStore } from "../../ports/observation-snapshot.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
@@ -34,8 +38,7 @@ export function harness(
     lifecycle?: boolean;
     undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
-    undoNotificationPort?: UndoNotificationPort;
-    onBaselineDegraded?: Parameters<typeof createAgentEditCore>[0]["onBaselineDegraded"];
+    reversalNoticePort?: ReversalNoticePort;
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseLifecycleError"];
@@ -46,13 +49,13 @@ export function harness(
       typeof createAgentEditCore
     >[0]["onResponseCommitterTransition"];
     onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
-    onUndoNotificationFailed?: Parameters<
-      typeof createAgentEditCore
-    >[0]["onUndoNotificationFailed"];
+    onReversalNoticeFailed?: Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"];
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
+    afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
+    observationSnapshots?: ObservationSnapshotStore;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -61,16 +64,47 @@ export function harness(
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
-  const core = createAgentEditCore({
+  const initialObservationEntries = [...coordinator.docs].flatMap(([documentId, doc]) =>
+    snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+      documentId,
+      clientID: block.clientID as number,
+      clock: block.clock as number,
+      value: {
+        kind: "rendered" as const,
+        digest: digestRenderedContent(block.renderedContent as string),
+      },
+    })),
+  );
+  const observationSnapshots: ObservationSnapshotStore = options.observationSnapshots ?? {
+    async seal() {},
+    async load(responseId) {
+      const entries =
+        responseId === "test-observed-response"
+          ? [...coordinator.docs].flatMap(([documentId, doc]) =>
+              snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+                documentId,
+                clientID: block.clientID as number,
+                clock: block.clock as number,
+                value: {
+                  kind: "rendered" as const,
+                  digest: digestRenderedContent(block.renderedContent as string),
+                },
+              })),
+            )
+          : initialObservationEntries;
+      return { responseId, entries };
+    },
+  };
+  const rawCore = createAgentEditCore({
     journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
     model,
+    observationSnapshots,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
-    ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
-    ...(options.onBaselineDegraded ? { onBaselineDegraded: options.onBaselineDegraded } : {}),
+    ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),
     ...(options.onResponseLifecycleError
       ? { onResponseLifecycleError: options.onResponseLifecycleError }
       : {}),
@@ -81,13 +115,45 @@ export function harness(
       ? { onResponseCommitterTransition: options.onResponseCommitterTransition }
       : {}),
     ...(options.onIdempotencyHit ? { onIdempotencyHit: options.onIdempotencyHit } : {}),
-    ...(options.onUndoNotificationFailed
-      ? { onUndoNotificationFailed: options.onUndoNotificationFailed }
+    ...(options.onReversalNoticeFailed
+      ? { onReversalNoticeFailed: options.onReversalNoticeFailed }
       : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
       : {}),
+    ...(options.afterResponsePreflight
+      ? { afterResponsePreflight: options.afterResponsePreflight }
+      : {}),
   });
+  const core = {
+    ...rawCore,
+    write(
+      command: Parameters<typeof rawCore.write>[0],
+      writeContext: Parameters<typeof rawCore.write>[1] = {},
+    ) {
+      if ((command.command === "undo" || command.command === "redo") && !writeContext.actor) {
+        return rawCore.write(command, {
+          ...writeContext,
+          actor: {
+            kind: "agent",
+            turnId: writeContext.turnId ?? "test-reversal",
+            threadId: writeContext.threadId ?? THREAD_ID,
+            responseId: "test-observed-response",
+          },
+        });
+      }
+      return rawCore.write(command, writeContext);
+    },
+    reverse(input: Parameters<typeof rawCore.reverse>[0]) {
+      return rawCore.reverse({
+        ...input,
+        actor:
+          input.actor.type === "agent" && !("responseId" in input.actor)
+            ? { ...input.actor, responseId: "test-observed-response" }
+            : input.actor,
+      });
+    },
+  };
   return {
     core,
     coordinator,

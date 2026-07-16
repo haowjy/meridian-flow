@@ -15,7 +15,7 @@ function documentSyncProbe() {
       ensured.push(documentId);
     },
     readAsMarkdown: async (documentId) => ({ ok: false, error: { code: "not_found", documentId } }),
-    writeFromMarkdown: async (documentId) => ({
+    seedFromMarkdown: async (documentId) => ({
       ok: false,
       error: { code: "not_found", documentId },
     }),

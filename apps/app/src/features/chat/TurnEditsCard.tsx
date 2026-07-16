@@ -1,35 +1,36 @@
 /**
- * TurnEditsCard — the inert, per-turn record of what a turn EDITED.
+ * TurnEditsCard — the existing per-turn Changes view for what a turn edited.
  *
  * INVARIANT: record, not control panel — no draft affordance may be added here.
  * Review / Apply / Discard belong to the composer-attached DraftDock. The only
- * control this card ever carries is the transient `Undo` (a canon verb): it
- * folds the live-write undo/redo the old TurnChangeFooter owned.
+ * draft control this card carries is Undo. Expanded trail rows may carry the
+ * safety-specific forward actions Restore and Delete again.
  *
  * Shape: a collapsed card at the end of every turn that edited documents
  * (created files count — they produce mutation rows like any edit). The header
  * carries only the document count; expanding lists each document.
  *
- * Data source is a prop seam: `useTurnLiveLineage` passes live and draft
- * edited documents. Any lineage row carries undo authority; the endpoint routes
- * the operation to the matching live or draft journal per document.
+ * Turn lineage owns Undo authority. Authorized trail detail owns durable row
+ * evidence, navigation, and forward-action identity.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Turn, TurnChangeDiffResponse, TurnReceiptChip } from "@meridian/contracts/protocol";
+import type { Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
-
 import type { ReversalDirection } from "@/client/api/reverse-api";
-import { getTurnChangeDiff } from "@/client/api/turn-change-diff-api";
+import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
 import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
+import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { TurnChangeDiffDialog } from "./TurnChangeDiffDialog";
+import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
+import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type TurnEditDocument = {
+  documentId?: string;
   path: string;
   uri: string;
   scope: "live" | "draft";
@@ -40,36 +41,27 @@ export type TurnEditsCardProps = {
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
+  changeTrail?: ChangeTrailShell;
+  navigateToChange?: NavigateToTrailChange;
 };
 
-export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsCardProps) {
+export function TurnEditsCard({
+  threadId,
+  turn,
+  documents,
+  receipt,
+  changeTrail,
+  navigateToChange,
+}: TurnEditsCardProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diff, setDiff] = useState<TurnChangeDiffResponse | null>(null);
-  const [diffError, setDiffError] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
-  const hasEditedDocuments = documents.length > 0;
+  const hasEditedDocuments = documents.length > 0 || Boolean(changeTrail);
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-
-  async function openDiff() {
-    if (diffLoading) return;
-    setDiffOpen(true);
-    if (diff) return;
-    setDiffLoading(true);
-    try {
-      setDiffError(false);
-      setDiff(await getTurnChangeDiff(threadId, turn.id));
-    } catch {
-      setDiffError(true);
-    } finally {
-      setDiffLoading(false);
-    }
-  }
+  const guardCopy = undoGuardCopy(receipt);
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
@@ -118,10 +110,10 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
             ✎
           </span>
           <span className="min-w-0 flex-1 truncate font-medium text-prose-foreground">
-            {documentCountLabel(documents.length)}
+            {documentCountLabel(Math.max(documents.length, changeTrail?.documentCount ?? 0))}
           </span>
         </button>
-        {hasEditedDocuments && receipt?.control !== "view_change" ? (
+        {hasEditedDocuments ? (
           <Button
             type="button"
             variant="quiet"
@@ -130,45 +122,97 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
               event.stopPropagation();
               void reverseTurn();
             }}
-            disabled={pending}
+            disabled={pending || receipt == null || receipt.control === "view_change"}
+            title={guardCopy}
             className="shrink-0 text-jade-text"
           >
             {receipt?.control === "redo" ? t`Redo` : t`Undo`}
           </Button>
-        ) : hasEditedDocuments ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            className="shrink-0"
-            onClick={(event) => {
-              event.stopPropagation();
-              void openDiff();
-            }}
-          >
-            {t`View change`}
-          </Button>
         ) : null}
       </div>
-      {diffOpen ? (
-        <TurnChangeDiffDialog
-          diff={diffError ? { version: 1, source: "branch", documents: [] } : diff}
-          error={diffError}
-          loading={diffLoading}
-          onClose={() => setDiffOpen(false)}
-        />
-      ) : null}
       {expanded ? (
-        <ul id={panelId} className="flex flex-col border-border-subtle border-t py-1">
-          {documents.map((doc) => (
-            <li key={doc.uri}>
-              <DocumentRow document={doc} onOpenContextUri={openContextUri} />
-            </li>
-          ))}
-        </ul>
+        <div id={panelId} className="border-border-subtle border-t py-1">
+          <ul className="flex flex-col">
+            {documents.map((doc) => (
+              <li key={doc.uri}>
+                <DocumentRow document={doc} onOpenContextUri={openContextUri} />
+              </li>
+            ))}
+          </ul>
+          {changeTrail && navigateToChange ? (
+            <ChangeViewDetail
+              threadId={threadId}
+              shell={changeTrail}
+              navigateToChange={navigateToChange}
+            />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
+}
+
+function ChangeViewDetail({
+  threadId,
+  shell,
+  navigateToChange,
+}: {
+  threadId: string;
+  shell: ChangeTrailShell;
+  navigateToChange: NavigateToTrailChange;
+}) {
+  const { detail } = useAuthorizedChangeTrailDetail(threadId, shell, true);
+  if (shell.state !== "settled") return null;
+  if (detail.isError) {
+    return (
+      <div className="px-3 py-2 text-caption text-ink-muted">
+        <p>
+          <Trans>Couldn't load change details.</Trans>
+        </p>
+        <Button size="sm" onClick={() => void detail.refetch()}>
+          <Trans>Try again</Trans>
+        </Button>
+      </div>
+    );
+  }
+  return detail.data?.map((document) => {
+    if (document.unavailable && !document.changes) {
+      return (
+        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
+          <Trans>Document no longer available</Trans>
+        </p>
+      );
+    }
+    return (
+      <section key={document.documentId} aria-label={document.documentTitle}>
+        {document.unavailable ? (
+          <p className="px-3 py-1 text-caption text-ink-muted">
+            <Trans>Document no longer available</Trans>
+          </p>
+        ) : null}
+        {document.changes && document.changes.length > 0 ? (
+          <ChangeViewRows
+            threadId={threadId}
+            trailId={shell.trailId}
+            documentId={document.documentId}
+            changes={document.changes}
+            navigateToChange={navigateToChange}
+            anchorUnavailable={document.unavailable}
+          />
+        ) : null}
+      </section>
+    );
+  });
+}
+
+function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
+  if (receipt?.state === "cant_undo_dependent") {
+    return t`Undo is unavailable because later edits depend on this change`;
+  }
+  if (receipt?.control === "view_change" || receipt == null) {
+    return t`Undo is no longer available`;
+  }
+  return undefined;
 }
 
 /** Full-width document row: hover washes the row, click opens the live file. */

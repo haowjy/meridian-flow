@@ -174,6 +174,7 @@ export function journalWithMissingMutationTarget(
     compact: journal.compact.bind(journal),
     persistUndo: journal.persistUndo.bind(journal),
     persistRedo: journal.persistRedo.bind(journal),
+    persistRedoBatch: journal.persistRedoBatch.bind(journal),
     readReversals: journal.readReversals.bind(journal),
     reversalOpSeqsForHandles: journal.reversalOpSeqsForHandles.bind(journal),
   };

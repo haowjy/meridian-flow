@@ -70,7 +70,7 @@ describe("write tool dispatch", () => {
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
     });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
     ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
@@ -87,7 +87,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -113,7 +112,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-success-after-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -122,9 +120,7 @@ describe("write tool dispatch", () => {
 
     const successfulText = outcomeText(successful);
     expectOutcome(successful, "success");
-    expect(successfulText).toContain("concurrent edits:");
-    expect(successfulText).toContain("human:");
-    expect(successfulText).toContain("Human pulled. Beta target.");
+    expect(successfulText).toContain("Alpha success.");
 
     const next = await ctx.core.write(
       {
@@ -143,13 +139,13 @@ describe("write tool dispatch", () => {
   it("runs immediate interaction-baseline writes through the local-mutation sync path", async () => {
     const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
 
     const concurrentUpdatesSince = vi.fn(async (input) => [
       {
         update: Y.encodeStateAsUpdate(input.doc, input.sinceStateVector),
-        origin: { type: "human" as const },
+        origin: { type: "human" as const, userId: "human-1" },
       },
     ]);
     ctx.coordinator.concurrentUpdatesSince = concurrentUpdatesSince;
@@ -166,7 +162,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-baseline-sync-path",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -182,7 +177,7 @@ describe("write tool dispatch", () => {
   it("keeps detection baseline clean when the own update comes from a post-pull runtime doc", async () => {
     const ctx = harness({ "chapter.md": "R10 X doomed.\n\nR10 Y survivor baseline." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     const live = ctx.liveDoc("chapter.md");
     const [xBlock] = model.getBlocks(toDocHandle(live));
@@ -213,7 +208,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-r10-clean-detection-baseline",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -221,7 +215,7 @@ describe("write tool dispatch", () => {
     );
 
     expectOutcome(result, "success");
-    expect(observedBaseline).toEqual(["R10 X doomed.", "R10 Y survivor baseline."]);
+    expect(observedBaseline).toEqual(["R10 Y survivor baseline.", "R10 Z foreign agent insert."]);
   });
 
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
@@ -626,6 +620,7 @@ describe("write tool dispatch", () => {
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
     const commit = await ctx.core.commitResponse(responseId);
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);

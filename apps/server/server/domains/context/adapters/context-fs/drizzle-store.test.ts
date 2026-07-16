@@ -107,7 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
-          writeFromMarkdown: async (documentId: string, markdown: string) => {
+          seedFromMarkdown: async (documentId: string, markdown: string) => {
             await beforeCollabWrite?.();
             const [row] = await db
               .select({ filetype: documents.fileType })

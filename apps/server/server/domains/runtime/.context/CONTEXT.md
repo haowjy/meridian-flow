@@ -40,7 +40,7 @@ skeleton and delegates the moving parts.
 | `tool-dispatch.ts` | Permission check, tool execution ordering, result event shaping. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
-| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; can inject one-turn transient undo notifications after working state. |
+| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
@@ -117,16 +117,25 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
-- **Undo notifications** — `runTurn` atomically consumes pending user undo/redo
-  rows once, immediately before the first provider stream, after the request has
-  been built and debug capture has succeeded. The undo-notifications repository
-  owns coalescing by write handle (last direction wins), and the runtime injects
-  net undone edits only into the first model request. Mid-stream undos remain
-  pending for the next turn.
+- **Safety notices** — before every provider stream, `runTurn` drains the single
+  notice port for the thread and its active documents, then injects notices as a
+  transient system message. Notices never enter the turn graph. Undo/redo uses
+  `kind: "undo"`; rejections and late sweeps recorded mid-turn therefore reach
+  the next model call in the same agentic loop.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
-  the orchestrator commits response-scoped agent-edit writes; cancellation paths
-  roll the response buffer back before finalizing the turn as cancelled.
+  the orchestrator commits response-scoped agent-edit writes. Staged tool results
+  finalize in the same database transaction as that commit; a pending result
+  left by a pre-commit process failure is rejected before a later turn assembles
+  model context. Cancellation paths roll the response buffer back before
+  finalizing the turn as cancelled.
+- **Observation snapshots are request-derived** — tool results persist canonical
+  block identity plus the exact rendered source they exposed. Final context
+  assembly derives the response candidate only from unpruned serialized tool
+  results; omitted/pruned evidence earns no credit after restart or in-process.
+  A commit rejection rewrites the affected tool result as an explicit failure
+  before the next model call, so a discarded write cannot remain reported as
+  successful.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.

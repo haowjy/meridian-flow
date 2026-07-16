@@ -77,6 +77,7 @@ function toOrchestratorTurn(row: typeof turns.$inferSelect): Turn {
     error: row.error,
     requestParams: null,
     responseMetadata: null,
+    metadata: row.metadata as Turn["metadata"],
     blocks: [],
     siblingIds: [],
     responses: [],

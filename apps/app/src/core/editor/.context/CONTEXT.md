@@ -84,6 +84,17 @@ runtime behavior, so keeping it outside `extensions/inline-review/` preserves th
 extension boundary: view model in the extension, reconstruction side effect in
 the runtime module.
 
+## Change-trail navigation
+
+`change-trail-navigation.ts` is the authorize/open/sync/validate boundary for
+historical trail clicks. It temporarily retains the target `DocumentSession`
+until the synced Y.Doc anchor has passed `@meridian/agent-edit`'s item-ID block
+validation and the mounted live editor accepts the range. The always-installed
+`LiveRangeNavigationExtension` owns the temporary decoration and scrolling;
+zero-width deletion anchors render a caret-like boundary rather than inventing
+a replacement range. Chat supplies route resolution, but must not decode,
+validate, or map anchors itself.
+
 ## Per-operation discard (dock Changes cards)
 
 The dock Changes view's per-card **Discard** rejects one operation without

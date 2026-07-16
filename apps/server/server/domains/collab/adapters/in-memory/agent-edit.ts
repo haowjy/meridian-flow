@@ -2,6 +2,7 @@
 import {
   type DocumentCoordinator,
   type DocumentLifecycle,
+  type DocumentLockOptions,
   DocumentNotFoundError,
   type PersistedUpdate,
   type ReversalStore,
@@ -143,8 +144,12 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   return {
     ensureEmpty,
 
-    withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-      return mutex.run(docId, async () => fn(requireDoc(docId)));
+    withDocument<T>(
+      docId: string,
+      fn: (doc: Y.Doc) => Promise<T>,
+      options?: DocumentLockOptions,
+    ): Promise<T> {
+      return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },
 
     recover(docId: string): Promise<void> {

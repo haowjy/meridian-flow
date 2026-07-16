@@ -3,6 +3,7 @@ import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { ReversalActor } from "../ports/types.js";
 import { parseWriteHandle } from "../ports/update-journal.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
@@ -11,6 +12,7 @@ import type { ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
 import type {
+  InteractionContext,
   RedoCommand,
   RedoResult,
   TurnRedoResult,
@@ -28,8 +30,9 @@ export interface ReverseInput {
   threadId: string;
   direction: "undo" | "redo";
   selection: ReversalSelection;
-  actor: { type: "user"; userId: string } | { type: "agent" };
+  actor: ReversalActor;
   requireEffect?: boolean;
+  interactionContext?: InteractionContext;
 }
 
 export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
@@ -98,26 +101,50 @@ export function createWriteReversalEndpoints(deps: {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
-      await responseCommitter.commitResponse(context.responseId);
+      // This pre-reversal flush has no wrapping database transaction: the journal write is
+      // immediately durable, so it does not need the server response unit-of-work facade.
+      const committed = await responseCommitter.commitResponse(context.responseId);
+      if (committed.status === "rejected") {
+        return stagedCommitRejection(committed.rejections);
+      }
     }
     const selection = commandSelection(command);
     if (!selection.ok) return status("invalid_write", selection.message);
 
-    return writeReversal.run({
+    const result = await writeReversal.run({
       docId: address.documentId,
       session,
       commandName: command.command,
       direction,
       selection: selection.selection,
+      actor:
+        context.actor?.kind === "human"
+          ? { type: "user", userId: context.actor.userId }
+          : {
+              type: "agent",
+              ...((context.actor?.kind === "agent" ? context.actor.responseId : context.responseId)
+                ? {
+                    responseId:
+                      context.actor?.kind === "agent"
+                        ? context.actor.responseId
+                        : context.responseId,
+                  }
+                : {}),
+            },
+      interactionContext: context.interactionContext,
     });
+    if (result.status === "destructive_write_rejected") {
+      await runtimeStore.evictRuntime(session, address.documentId);
+    }
+    return result;
   }
 
   async function runHostedReversal(
     input: ReverseInput,
   ): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
+    const session = localSession(input.threadId, input.threadId);
     responseCommitter.dropForThread(input.docId, input.threadId);
     const liveBefore = input.requireEffect ? await encodedLiveDocument(input.docId) : null;
-    const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
     const outcome =
       input.direction === "undo"
         ? await writeReversal
@@ -127,6 +154,7 @@ export function createWriteReversalEndpoints(deps: {
               direction: "undo",
               selection: input.selection,
               actor: input.actor,
+              interactionContext: input.interactionContext,
             })
             .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
@@ -136,6 +164,7 @@ export function createWriteReversalEndpoints(deps: {
               direction: "redo",
               selection: input.selection,
               actor: input.actor,
+              interactionContext: input.interactionContext,
             })
             .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
@@ -172,6 +201,18 @@ export function createWriteReversalEndpoints(deps: {
     localSessions.set(id, session);
     return session;
   }
+}
+
+function stagedCommitRejection(
+  rejections: readonly import("./types.js").ResponseCommitDocumentRejection[],
+) {
+  const affectedWriteIds = [
+    ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
+  ];
+  return status(
+    "destructive_write_rejected",
+    `The buffered response was rejected before undo/redo. Superseded tool calls: ${affectedWriteIds.join(", ") || "none reported"}. Read the affected documents and retry.`,
+  );
 }
 
 export function commandSelection(
