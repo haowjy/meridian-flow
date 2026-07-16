@@ -154,14 +154,14 @@ function HomeComponent() {
                   }
                 }}
                 placeholder="you@example.com"
-                className="h-[48px] w-full rounded-[8px] border border-border bg-white px-4 text-base text-foreground shadow-card outline-none transition focus:border-ring focus:ring-3 focus:ring-[var(--color-status-streaming-ring-strong)] sm:flex-1"
+                className="h-[48px] w-full rounded-[8px] border border-border bg-white px-4 text-base text-foreground shadow-card outline-none transition focus:border-ring focus:ring-3 focus:ring-[var(--color-status-streaming-ring)] sm:flex-1"
                 aria-describedby={emailDescribedBy}
                 aria-invalid={hasEmailValidationError ? true : undefined}
                 disabled={isSubmitting}
               />
               <button
                 type="submit"
-                className="inline-flex h-[48px] w-full shrink-0 items-center justify-center rounded-[8px] border border-primary bg-primary px-7 text-base font-bold text-primary-foreground shadow-button transition hover:border-[var(--color-mark-to)] hover:bg-[var(--color-mark-to)] hover:shadow-hero focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-status-streaming-ring-strong)] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+                className="inline-flex h-[48px] w-full shrink-0 items-center justify-center rounded-[8px] border border-primary bg-primary px-7 text-base font-bold text-primary-foreground shadow-button transition hover:border-[var(--color-mark-to)] hover:bg-[var(--color-mark-to)] hover:shadow-hero focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-status-streaming-ring)] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? "Joining…" : "Join waitlist"}

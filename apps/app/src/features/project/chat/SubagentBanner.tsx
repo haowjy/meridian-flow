@@ -24,7 +24,7 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
   return (
     <div
       className={cn(
-        "sticky top-0 z-10 flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface-warm px-4 py-2 text-xs",
+        "sticky top-0 z-10 flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs",
       )}
     >
       {parent ? (
@@ -50,7 +50,9 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
       <span className="text-muted-foreground">
         <Trans>Subagent:</Trans>
       </span>
-      <span className="font-medium text-ink-strong">{subagent.title?.trim() || "Subtask"}</span>
+      <span className="font-medium text-prose-foreground">
+        {subagent.title?.trim() || "Subtask"}
+      </span>
 
       <span className="text-ink-subtle">•</span>
       <Badge variant="status" className={display.badgeClass}>

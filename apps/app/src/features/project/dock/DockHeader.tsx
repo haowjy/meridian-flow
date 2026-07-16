@@ -1,12 +1,12 @@
 /**
  * DockHeader — the single header row for the tabbed right dock.
  *
- * The header is the dock's tab strip: a recessed chrome band
- * (`bg-sidebar-accent`, no bottom border) speaking the same tonal grammar as
- * `ContextTabBar`. Layout: `[left slot] … [view tabs] [close]`. The left slot
- * hosts the chat select/rename dropdown while Chat is active; the tabs
- * themselves carry the view identity, so there is no separate section title.
- * The left slot truncates before the tabs or close ever compress.
+ * The header is part of the dock's ONE uniform chrome surface — it paints
+ * nothing of its own (the dock slot owns the material) and carries no bottom
+ * border. Layout: `[left slot] … [segmented view switch] [close]`. The left
+ * slot hosts the chat select/rename dropdown while Chat is active; the view
+ * switch carries the view identity, so there is no separate section title.
+ * The left slot truncates before the switch or close ever compress.
  *
  * Replaces the per-occupant RailHeader chrome in the dock: same `h-10` shell
  * and the canonical `PanelToggleButton` close, so the collapse control still
@@ -37,8 +37,11 @@ export type DockHeaderProps = {
 
 export function DockHeader({ view, views, onSelectView, onClose, threadSelect }: DockHeaderProps) {
   return (
-    <header className="flex h-10 shrink-0 items-stretch bg-sidebar-accent pl-2">
-      <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+    <header className="flex h-10 shrink-0 items-stretch pl-2">
+      {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
+          inside, and clipping here shears the trigger's hover pill (it
+          reaches 6px left of the slot for optical text alignment). */}
+      <div className="flex min-w-0 flex-1 items-center pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
       <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
@@ -55,14 +58,14 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
 }
 
 /**
- * DockViewSwitch — static tabs in the tab strip's exact grammar, mode-switch
- * scale: the active view is a chip surfacing the dock's own field tone
- * (`bg-sidebar`, rounded top, Obsidian-style bottom flares) out of the
- * recessed header band; inactive views get the inset hover pill. Selection is
- * the tonal step, never an outline. The set is fixed — tabs never close or
- * grow — so no dividers or `+`; with one tab always active, the doc strip's
- * inactive-neighbor divider rule never fires anyway. No count or badge on any
- * segment — the composer DraftDock strip carries discovery.
+ * DockViewSwitch — a contained segmented switch, deliberately NOT tabs: the
+ * dock is one uniform chrome surface and nothing "rises" out of it (only the
+ * page does that, via the document tab strip). The recessed track gives the
+ * control a complete boundary — a bare pressed pill floating at the window's
+ * top corner read as a tab with its base cut off. The active segment surfaces
+ * the paper tone inside the track; selection is tonal, never an outline. The
+ * set is fixed — views never close or grow. No count or badge on any segment —
+ * the composer DraftDock strip carries discovery.
  */
 function DockViewSwitch({
   views,
@@ -77,9 +80,7 @@ function DockViewSwitch({
     <div
       role="tablist"
       aria-label={t`Dock view`}
-      // Chips surface the dock's own field tone — see the tab-chip grammar
-      // in globals.css.
-      className="flex shrink-0 items-stretch [--tab-chip-surface:var(--color-sidebar)]"
+      className="flex shrink-0 items-center self-center rounded-lg bg-foreground/6 p-0.5"
     >
       {views.map((segment) => {
         const active = segment === view;
@@ -91,10 +92,10 @@ function DockViewSwitch({
             aria-selected={active}
             onClick={() => onSelectView(segment)}
             className={cn(
-              "focus-ring relative shrink-0 px-3 text-xs",
+              "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors",
               active
-                ? "tab-chip-active text-foreground"
-                : "tab-chip-inactive text-muted-foreground hover:text-foreground",
+                ? "bg-background font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <DockViewLabel view={segment} />

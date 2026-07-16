@@ -41,7 +41,7 @@ Lives entirely under `features/debug/`; mounts exactly once from
   production translations with debug labels. Each file states this in its
   header.
 - **Design tokens only.** Semantic utilities from `globals.css`
-  (`bg-card`, `bg-surface-subtle`, `border-border`, `border-border-subtle`,
+  (`bg-card`, `bg-muted`, `border-border`, `border-border-subtle`,
   `text-meta`, `text-xs`, `text-foreground`, `text-muted-foreground`,
   `focus-ring`, `surface-card`, etc.). No hex, rgba, or magic px.
 

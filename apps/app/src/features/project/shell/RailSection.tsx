@@ -97,7 +97,7 @@ export function RailKindIcon({ tone, children }: { tone?: string; children: Reac
   return (
     <span
       className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-md border border-border-subtle bg-surface-subtle",
+        "grid size-6 shrink-0 place-items-center rounded-md border border-border-subtle bg-muted",
         tone,
       )}
       aria-hidden

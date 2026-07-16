@@ -1,0 +1,8 @@
+# TODO — must-do follow-ups (project shell)
+
+- Move the AI write mode control (Draft | Auto-apply,
+  shell/AiWriteModeControl.tsx) OUT of the left sidebar and into the
+  chat/thread surface (user call, 2026-07-15: "shouldn't even be there").
+  It is the loudest object on the shelf and is thread-adjacent
+  behavior, not navigation. Placement/interaction design goes through
+  design-lead/tech-lead (new behavior); the sidebar slot just gets deleted.

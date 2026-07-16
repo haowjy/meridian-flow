@@ -53,7 +53,7 @@ export function JsonTree({ value, className }: JsonTreeProps) {
   return (
     <pre
       className={cn(
-        "max-h-72 overflow-auto rounded-md border border-border-subtle bg-surface-subtle p-2 text-meta font-mono leading-snug text-foreground",
+        "max-h-72 overflow-auto rounded-md border border-border-subtle bg-muted p-2 text-meta font-mono leading-snug text-foreground",
         className,
       )}
     >

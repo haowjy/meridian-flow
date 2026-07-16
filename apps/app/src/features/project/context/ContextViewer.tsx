@@ -80,7 +80,10 @@ export function ContextViewer({
   const activeIsTracked = activeTab?.kind === "tracked";
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
+    <div
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
+      role={active ? "main" : undefined}
+    >
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -90,7 +93,9 @@ export function ContextViewer({
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* The page sheet — the lit paper rising out of the L-shaped chrome;
+          the center slot's chrome shows in the corner notches. */}
+      <div className="page-sheet">
         {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just

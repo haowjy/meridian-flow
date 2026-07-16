@@ -9,7 +9,7 @@
  * descends and stays open, `..` ascends (to the scheme list above the
  * roots), and clicking a file adopts its location + name. Every hop rewrites
  * the field and re-selects the name segment for overtyping. The row sits on
- * canvas, aligned to the prose column, and the surface-warm field carries
+ * canvas, aligned to the prose column, and the card field carries
  * the form's shape.
  */
 import { t } from "@lingui/core/macro";
@@ -223,7 +223,7 @@ export function TempDocumentSaveBar({
           <PopoverAnchor asChild>
             <Input
               ref={inputRef}
-              className="h-8 min-w-0 max-w-96 flex-1 bg-surface-warm"
+              className="h-8 min-w-0 max-w-96 flex-1 bg-card"
               aria-label={t`Save location`}
               autoComplete="off"
               spellCheck={false}

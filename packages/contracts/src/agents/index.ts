@@ -1,8 +1,8 @@
 /**
  * Agent catalog contract — the project-scoped list of selectable agents.
  *
- * Serves the composer agent picker, thread-header provenance chip, and the
- * Library screen's agents section. This is deliberately a *summary* shape:
+ * Serves the composer agent picker and thread-header provenance chip. This is
+ * deliberately a *summary* shape:
  * full definition records (body, meta, skill links, revisions) stay behind
  * the packages-domain API and are never needed to render a chip or picker row.
  *
@@ -25,7 +25,7 @@ export interface ProjectAgentSummary {
   slug: string;
   /** Display name from definition meta (`meta.name`). */
   name: string;
-  /** One-line description shown in picker rows and Library cards. */
+  /** One-line description shown in picker rows. */
   description: string;
   /** Definition origin — drives picker grouping and source badges. */
   source: AgentSource;
@@ -59,5 +59,3 @@ export type {
 } from "./definitions.js";
 
 export * from "./install.js";
-
-export * from "./library.js";

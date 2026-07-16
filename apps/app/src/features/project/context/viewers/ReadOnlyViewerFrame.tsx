@@ -27,7 +27,7 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
     <section className="flex h-full min-h-0 flex-col bg-background">
       {header ? (
         <header
-          className="flex shrink-0 items-center gap-2 border-b border-border bg-surface-subtle px-4 pb-2.5 pt-2.5"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-4 pb-2.5 pt-2.5"
           style={{
             paddingTop: "calc(0.625rem + env(safe-area-inset-top))",
             paddingLeft: "calc(1rem + env(safe-area-inset-left))",
@@ -51,7 +51,7 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
       </div>
       {footer ? (
         <footer
-          className="flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-subtle px-4 pb-2 pt-2 text-meta text-muted-foreground"
+          className="flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-muted px-4 pb-2 pt-2 text-meta text-muted-foreground"
           style={{
             paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))",
             paddingLeft: "calc(1rem + env(safe-area-inset-left))",
