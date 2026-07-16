@@ -184,8 +184,60 @@ describe("ChangeViewRows", () => {
       />,
       async () => {
         await click("Restore");
+        expect(document.body.textContent).toContain(
+          "This passage can't be restored in place. Copy it instead.",
+        );
         await click("Copy");
         expect(copyText).toHaveBeenCalledWith("The writer's exact words.");
+        expect(document.body.textContent).toContain("Copied");
+      },
+    );
+  });
+
+  it("keeps Restore available and explains a failed request", async () => {
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[protectedChange("sweep")]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+        runAction={vi.fn(async () => {
+          throw new Error("request failed");
+        })}
+      />,
+      async () => {
+        await click("Restore");
+        expect(document.body.textContent).toContain(
+          "Couldn't restore the passage. Try again, or copy it instead.",
+        );
+        expect(button("Restore").disabled).toBe(false);
+        expect(button("Copy")).toBeTruthy();
+      },
+    );
+  });
+
+  it("explains clipboard failure", async () => {
+    const change = protectedChange("sweep");
+    change.forwardActions = {
+      restore: { status: "settled", outcome: "anchor_unavailable" },
+    };
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[change]}
+        navigateToChange={vi.fn(async () => ({ kind: "unavailable" as const }))}
+        copyText={vi.fn(async () => {
+          throw new Error("clipboard denied");
+        })}
+      />,
+      async () => {
+        await click("Copy");
+        expect(document.body.textContent).toContain(
+          "Couldn't copy. Select the saved text and copy it manually.",
+        );
       },
     );
   });
@@ -313,9 +365,7 @@ describe("ChangeViewRows", () => {
         runAction={runAction}
       />,
       async () => {
-        expect(document.body.textContent).toContain(
-          "↻ This edit brought back text you had deleted",
-        );
+        expect(document.body.textContent).toContain("↻ AI brought back text you deleted");
         await click("Delete again");
         expect(document.body.textContent).toContain("Deleted again");
         expect(
