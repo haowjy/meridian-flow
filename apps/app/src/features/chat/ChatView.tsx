@@ -32,7 +32,7 @@ import { displayThreadTitle } from "@/lib/thread-title";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
-import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
+import { ComposerWriteModeControl, findContextWork } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { useDraftReview } from "./DraftReviewProvider";
@@ -101,7 +101,7 @@ export function ChatView({
   const { drafts } = useDraftReview();
   const contextWorkId = useContextWorkId(projectId, threadId);
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
-  const contextWork = works?.find((work) => work.id === contextWorkId) ?? null;
+  const contextWork = findContextWork(works, contextWorkId);
   const draftMode = contextWork?.aiWriteMode === "draft";
   // Generating signal: the current thread's latest assistant turn is streaming
   // AND the Work is in draft mode. That is the cleanest "this streaming turn is
@@ -184,8 +184,8 @@ export function ChatView({
                     onSelectedSlugChange={setDraftAgentSlug}
                   />
                 )}
-                {projectId && contextWorkId ? (
-                  <ComposerWriteModeControl projectId={projectId} workId={contextWorkId} />
+                {projectId && contextWork ? (
+                  <ComposerWriteModeControl projectId={projectId} work={contextWork} />
                 ) : null}
               </>
             }
