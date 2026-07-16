@@ -5,9 +5,26 @@
  * leaving Draft with content-bearing pending changes, and the N it shows is the
  * content-aware count shared with the dock.
  */
+
+import type { Work } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
-import { confirmPushCount, shouldConfirmPush } from "./AiWriteModeControl";
+import { confirmPushCount, contextWork, shouldConfirmPush } from "./ComposerWriteModeControl";
+
+const work = (id: string): Work => ({ id, projectId: "project-1", aiWriteMode: "draft" }) as Work;
+
+describe("contextWork", () => {
+  it("selects the thread-bound Work rather than the project's first Work", () => {
+    expect(contextWork([work("default-work"), work("thread-work")], "thread-work")?.id).toBe(
+      "thread-work",
+    );
+  });
+
+  it("returns null until the bound Work is available", () => {
+    expect(contextWork(null, "thread-work")).toBeNull();
+    expect(contextWork([work("default-work")], "thread-work")).toBeNull();
+  });
+});
 
 describe("shouldConfirmPush", () => {
   it("confirms only when leaving Draft with pending changes", () => {
