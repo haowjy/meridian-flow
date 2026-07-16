@@ -77,7 +77,7 @@ describe("TurnEditsCard", () => {
     );
 
     expect(html).toContain("data-turn-edits-card");
-    expect(html).toContain("Edited 1 document");
+    expect(html).toContain("AI edited 1 chapter");
     expect(html).toContain("Undo");
     expect(html).not.toContain("Redo");
   });
@@ -92,7 +92,7 @@ describe("TurnEditsCard", () => {
       />,
     );
 
-    expect(html).toContain("Edited 1 document");
+    expect(html).toContain("AI edited 1 chapter");
     expect(html).toContain("Undo");
   });
 
@@ -138,9 +138,8 @@ describe("TurnEditsCard", () => {
         receipt={{ state: "cant_undo_dependent", control: "view_change" }}
       />,
     );
-    expect(html).toContain("Undo");
-    expect(html).toContain("disabled");
-    expect(html).toContain("later edits depend on this change");
+    expect(html).toContain("Can&#x27;t undo");
+    expect(html).toContain("Later edits build on this change.");
   });
 
   it("uses neutral copy when Undo expired without a dependent row", () => {
@@ -152,7 +151,7 @@ describe("TurnEditsCard", () => {
         receipt={{ state: "expired", control: "view_change" }}
       />,
     );
-    expect(html).toContain("Undo is no longer available");
-    expect(html).not.toContain("later edits depend");
+    expect(html).toContain("This change is too old to undo.");
+    expect(html).not.toContain("Later edits build");
   });
 });
