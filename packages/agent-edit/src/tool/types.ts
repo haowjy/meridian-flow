@@ -48,6 +48,20 @@ export type WriteOutcome = WriteOutcomeBase &
 
 export type WriteSuccessPhase = "staged" | "committed";
 
+/** Canonical block evidence carried durably beside the tool result that rendered it. */
+interface WriteObservationEvidenceBase {
+  clientID: number;
+  clock: number;
+  /** Exact substring of the tool output that proves the rendering reached model context. */
+  sourceText: string;
+}
+
+export type WriteObservationEvidence = WriteObservationEvidenceBase &
+  (
+    | { kind: "rendered"; renderedContent: string }
+    | { kind: "explicit_deletion"; capturedBody: string }
+  );
+
 interface WriteOutcomeBase {
   command: WriteCommandName;
   isError: boolean;
@@ -59,6 +73,8 @@ interface WriteOutcomeBase {
   text: string;
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];
+  /** Host metadata; never rendered independently of the tool result. */
+  observations?: readonly WriteObservationEvidence[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -145,8 +161,6 @@ export interface ResponseCommitterTransitionDetail {
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
-  /** Full document state at the interaction boundary before the host pulled foreign bytes. */
-  baselineSnapshot?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
   /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
@@ -194,7 +208,7 @@ export interface WriteContext {
 }
 
 export type MutationActor =
-  | { kind: "agent"; turnId: string; threadId: string; responseId: string }
+  | { kind: "agent"; turnId: string; threadId: string; responseId?: string }
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 

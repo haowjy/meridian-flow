@@ -32,6 +32,18 @@ describe("write tool renderer", () => {
     expect(renderer.expand?.(writeToolView())).toBeNull();
   });
 
+  it("labels read calls as reads rather than writes", () => {
+    const html = renderToStaticMarkup(
+      renderer.title?.(
+        writeToolView({
+          input: { path: "manuscript://chapter-1.md", command: "read" },
+        }),
+      ),
+    );
+    expect(html).toContain("Read");
+    expect(html).not.toContain("Wrote");
+  });
+
   it("surfaces failure verb and error text for rejected writes", () => {
     const structuredOutput = {
       code: "tool_error",

@@ -2,6 +2,13 @@
  * Runtime orchestrator behavior tests: verify turn setup, gateway handoff,
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
+
+import {
+  createObservationAuthority,
+  type ObservationSnapshot,
+  type WriteCommand,
+} from "@meridian/agent-edit";
+import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -102,6 +109,398 @@ async function collectEvents(
 }
 
 describe("runtime orchestrator behavior", () => {
+  it("surfaces an unobserved destructive-write rejection in the tool result", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request) {
+        requests.push(request);
+        yield {
+          type: "end",
+          result: {
+            content:
+              requests.length === 1
+                ? [
+                    {
+                      type: "tool_use",
+                      toolCallId: "call-blind-write",
+                      toolName: "write",
+                      input: { command: "replace" },
+                    },
+                  ]
+                : [{ type: "text", text: "I will re-read." }],
+            toolCalls: [],
+            finishReason: requests.length === 1 ? "tool_use" : "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate() {
+        throw new Error("not used");
+      },
+    };
+    const { repos, eventWriter, projectId } = await setupOrchestrator(undefined, gateway);
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter,
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call) {
+          return {
+            toolCallId: call.id,
+            output: [{ type: "text", text: "status: success" }],
+            metadata: { documentId: "doc-1", stagedWrite: true },
+          };
+        },
+      },
+      responseWrites: {
+        async commitResponse(responseId, _context, beforeTransactionCommit) {
+          const result = {
+            status: "rejected" as const,
+            responseId,
+            rejections: [
+              {
+                documentId: "doc-1",
+                reason: "observation_required" as const,
+                affectedWriteIds: ["write-1"],
+                conflictedBlockHashes: ["abcd"],
+              },
+            ],
+          };
+          await beforeTransactionCommit(result);
+          return result;
+        },
+        async rollbackResponse() {},
+      },
+    });
+    const events = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "replace it" }),
+    );
+
+    expect(JSON.stringify(requests[1]?.messages)).toContain(
+      "status: rejected_response_requires_reread",
+    );
+    expect(JSON.stringify(requests[1]?.messages)).toContain("Write did not land");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.result",
+        toolCallId: "call-blind-write",
+        isError: true,
+      }),
+    );
+    expect(JSON.stringify(events)).not.toContain('"text":"status: success"');
+  });
+
+  it("credits a real persisted read when the next response destructively writes", async () => {
+    const documentId = crypto.randomUUID();
+    const snapshots = new Map<string, ObservationSnapshot>();
+    const snapshotStore = {
+      async seal(snapshot: ObservationSnapshot) {
+        snapshots.set(snapshot.responseId, snapshot);
+      },
+      async load(responseId: string) {
+        return snapshots.get(responseId) ?? null;
+      },
+    };
+    const authority = createObservationAuthority({ store: snapshotStore });
+    const harness = createWriteToolHarness(
+      { [documentId]: "Original writer paragraph." },
+      { observationSnapshots: snapshotStore },
+    );
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request) {
+        requests.push(request);
+        const callNumber = requests.length;
+        if (callNumber <= 2) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                {
+                  type: "tool_use",
+                  toolCallId: `call-${callNumber}`,
+                  toolName: "write",
+                  input:
+                    callNumber === 1
+                      ? { command: "read", file: documentId }
+                      : {
+                          command: "replace",
+                          file: documentId,
+                          find: "Original writer paragraph.",
+                          content: "Revised paragraph.",
+                        },
+                },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "done" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate() {
+        throw new Error("not used");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const toolExecutor: ToolExecutor = {
+      async executeTool(call, ctx) {
+        const outcome = await harness.core.write(call.arguments as WriteCommand, {
+          sessionId: ctx.threadId,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+          responseId: ctx.responseId,
+          tool_use_id: call.id,
+          actor: {
+            kind: "agent",
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            responseId: ctx.responseId ?? "missing-response",
+          },
+        });
+        return {
+          toolCallId: call.id,
+          output: JSON.parse(JSON.stringify(outcome.content ?? outcome.text)),
+          ...(outcome.isError ? { isError: true } : {}),
+          metadata: JSON.parse(
+            JSON.stringify({
+              documentId,
+              ...(outcome.observations ? { observationEvidence: outcome.observations } : {}),
+              ...(outcome.status === "success" && outcome.phase === "staged"
+                ? { stagedWrite: true }
+                : {}),
+            }),
+          ),
+        };
+      },
+    };
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor,
+      observationRendering: { authority, budgetBytes: () => 10_000 },
+      responseWrites: {
+        async commitResponse(responseId, _context, beforeTransactionCommit) {
+          const result = await harness.core.commitResponse(responseId);
+          if (result.status === "rejected") {
+            await beforeTransactionCommit(result);
+            return result;
+          }
+          const mapped = {
+            status: "committed" as const,
+            concurrentEdits: result.documents.flatMap((document) =>
+              document.concurrentEdits
+                ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
+                : [],
+            ),
+          };
+          await beforeTransactionCommit(mapped);
+          return mapped;
+        },
+        async rollbackResponse(responseId) {
+          await harness.core.rollbackResponse(responseId);
+        },
+      },
+    });
+
+    const runtimeEvents = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "revise it" }),
+    );
+
+    expect(requests, JSON.stringify(runtimeEvents)).toHaveLength(3);
+    expect([...snapshots.values()].some((snapshot) => snapshot.entries.length > 0)).toBe(true);
+    const finalRead = await harness.core.write({ command: "read", file: documentId });
+    expect(finalRead.text).toContain("Revised paragraph.");
+  });
+
+  it("keeps a committed write finalized when the process fails after the atomic commit unit", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const firstGateway = gatewayFromResults([
+      {
+        content: [{ type: "tool_use", toolCallId: "write-1", toolName: "write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const base = {
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call: { id: string }) {
+          return {
+            toolCallId: call.id,
+            output: [{ type: "text" as const, text: "status: success" }],
+            metadata: { documentId: "doc-1", stagedWrite: true },
+          };
+        },
+      },
+    };
+    const crashingDeps = createTestOrchestratorDeps({
+      ...base,
+      gateway: firstGateway,
+      responseWrites: {
+        async commitResponse(_responseId, _context, beforeTransactionCommit) {
+          await beforeTransactionCommit({ status: "committed", concurrentEdits: [] });
+          throw new Error("process failed after atomic response commit");
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await collectEvents(
+      await createOrchestrator(crashingDeps).runTurn({ threadId: thread.id, userText: "write" }),
+    );
+
+    const persistedAfterCrash = JSON.stringify(await repos.blocks.listByThread(thread.id));
+    expect(persistedAfterCrash).toContain("status: success");
+    expect(persistedAfterCrash).not.toContain("pending_commit");
+
+    const resumedRequests: GenerateRequest[] = [];
+    const resumedGateway: Gateway = {
+      ...textGateway(),
+      async *stream(request) {
+        resumedRequests.push(request);
+        yield* textGateway().stream(request);
+      },
+    };
+    await collectEvents(
+      await createOrchestrator(
+        createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
+      ).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+    expect(JSON.stringify(resumedRequests[0]?.messages)).toContain("status: success");
+    expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain("pending_commit");
+  });
+
+  it("reconciles a pre-commit crash to a typed rejection before the next model request", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const base = {
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call: { id: string }) {
+          return {
+            toolCallId: call.id,
+            output: [{ type: "text" as const, text: "status: success" }],
+            metadata: { documentId: "doc-1", stagedWrite: true },
+          };
+        },
+      },
+    };
+    await collectEvents(
+      await createOrchestrator(
+        createTestOrchestratorDeps({
+          ...base,
+          gateway: gatewayFromResults([
+            {
+              content: [{ type: "tool_use", toolCallId: "write-1", toolName: "write", input: {} }],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          ]),
+          responseWrites: {
+            async commitResponse() {
+              throw new Error("process failed before response commit");
+            },
+            async rollbackResponse() {},
+          },
+        }),
+      ).runTurn({ threadId: thread.id, userText: "write" }),
+    );
+    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).toContain("pending_commit");
+
+    const resumedRequests: GenerateRequest[] = [];
+    const resumedGateway: Gateway = {
+      ...textGateway(),
+      async *stream(request) {
+        resumedRequests.push(request);
+        yield* textGateway().stream(request);
+      },
+    };
+    await collectEvents(
+      await createOrchestrator(
+        createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
+      ).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+    const resumedContext = JSON.stringify(resumedRequests[0]?.messages);
+    expect(resumedContext).toContain("status: rejected_response_requires_reread");
+    expect(resumedContext).toContain("Write did not land");
+    expect(resumedContext).not.toContain("pending_commit");
+    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).not.toContain(
+      "pending_commit",
+    );
+  });
+
   it("rolls back turn setup when journaling fails", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
@@ -227,7 +626,6 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
       },
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };
@@ -302,23 +700,34 @@ describe("runtime orchestrator behavior", () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const snapshots = new Map<string, ObservationSnapshot>();
+    const authority = createObservationAuthority({
+      store: {
+        async seal(snapshot) {
+          snapshots.set(snapshot.responseId, snapshot);
+        },
+        async load(responseId) {
+          return snapshots.get(responseId) ?? null;
+        },
+      },
+    });
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
+      observationRendering: { authority, budgetBytes: () => 10_000 },
       toolExecutor: {
         executeTool: async (call) => ({
           toolCallId: call.id,
           output: [{ type: "text", text: "status: success" }],
-          metadata: { documentId: "doc-1" },
+          metadata: { documentId: "doc-1", stagedWrite: true },
         }),
       },
       responseWrites: {
-        setReadRequiredFence() {},
-        async commitResponse() {
-          return {
+        async commitResponse(_responseId, _context, beforeTransactionCommit) {
+          const result = {
             status: "committed" as const,
             concurrentEdits: [
               {
@@ -326,11 +735,27 @@ describe("runtime orchestrator behavior", () => {
                 concurrentEdits: {
                   human: ["abcd"],
                   agent: [],
-                  renderedBlocks: { human: ["abcd|Human changed line."], agent: [] },
+                  runs: [
+                    {
+                      origin: "human" as const,
+                      blocks: ["abcd|Human changed line."],
+                      tombstones: [],
+                      observations: [
+                        {
+                          kind: "rendered" as const,
+                          clientID: 7,
+                          clock: 11,
+                          renderedContent: "paragraph|Human changed line.",
+                        },
+                      ],
+                    },
+                  ],
                 },
               },
             ],
           };
+          await beforeTransactionCommit(result);
+          return result;
         },
         async rollbackResponse() {},
       },
@@ -348,9 +773,16 @@ describe("runtime orchestrator behavior", () => {
     );
 
     const secondRequest = JSON.stringify(requests[1]?.messages);
-    expect(secondRequest).toContain("concurrent edits:\\n  human: abcd");
-    expect(secondRequest).toContain("current blocks:");
+    expect(secondRequest).toContain("concurrent edits:\\n  human:");
     expect(secondRequest).toContain("abcd|Human changed line.");
+    expect([...snapshots.values()].at(-1)?.entries).toEqual([
+      {
+        documentId: "doc-1",
+        clientID: 7,
+        clock: 11,
+        value: expect.objectContaining({ kind: "rendered" }),
+      },
+    ]);
   });
 
   it("drains undo and newly recorded late-sweep notices before each model call", async () => {
@@ -433,7 +865,6 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({ toolCallId: call.id, output: "tool result" }),
       },
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse() {
           await notices.record({
             kind: "late_sweep",
@@ -464,8 +895,10 @@ describe("runtime orchestrator behavior", () => {
     expect(JSON.stringify(requests[0]?.messages)).toContain(
       "The writer reversed the following edits before this message",
     );
-    expect(JSON.stringify(requests[1]?.messages)).toContain("Before-state journal reference: 42");
-    expect(JSON.stringify(requests[1]?.messages)).toContain("hash-swept|Writer body.");
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain(
+      "Before-state journal reference: 42",
+    );
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain("hash-swept");
   });
 
   it("does not let debug capture failure prevent a notice-bearing model call", async () => {
@@ -693,7 +1126,6 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "draft_closed", responseId, mode: "draft" };
@@ -774,8 +1206,6 @@ describe("runtime orchestrator behavior", () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
-    let fenced = false;
-    let fencedDocumentIds: readonly string[] = [];
     let commitCount = 0;
     let headAtRejection: string | null | undefined;
     const deps = createTestOrchestratorDeps({
@@ -787,20 +1217,12 @@ describe("runtime orchestrator behavior", () => {
       toolExecutor: {
         async executeTool(call) {
           if (call.name === "read") {
-            fenced = false;
             return { toolCallId: call.id, output: "current document" };
-          }
-          if (call.id === "write-after-read" && fenced) {
-            return { toolCallId: call.id, output: "read required", isError: true };
           }
           return { toolCallId: call.id, output: "staged write" };
         },
       },
       responseWrites: {
-        setReadRequiredFence(_threadId, documentIds) {
-          fenced = true;
-          fencedDocumentIds = documentIds;
-        },
         async commitResponse(responseId) {
           commitCount += 1;
           if (commitCount === 1) {
@@ -871,8 +1293,6 @@ describe("runtime orchestrator behavior", () => {
         JSON.stringify(message).includes("read-after-reject"),
       ),
     ).toBe(true);
-    expect(fenced).toBe(false);
-    expect(fencedDocumentIds).toEqual(["chapter-one.md", "chapter-two.md"]);
     expect(events.some((event) => event.type === "turn.error")).toBe(false);
     expect(commitCount).toBe(3);
   });
@@ -907,7 +1327,6 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };
@@ -989,7 +1408,6 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };

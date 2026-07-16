@@ -3,7 +3,6 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
-import { BaselineIntegrationError } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { result, status } from "./response-format.js";
@@ -46,9 +45,6 @@ export function writeError(cause: unknown): InternalWriteResult {
   if (isResponseLifecycleError(cause)) {
     return status("invalid_write", cause.message, { error: cause.detail });
   }
-  if (cause instanceof BaselineIntegrationError) {
-    return status("internal_error", cause.message);
-  }
   return status("internal_error", "Retry — transient edit system failure.");
 }
 
@@ -56,8 +52,13 @@ export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function agentMeta(turnId: string): UpdateMeta {
-  return { origin: `agent:${turnId}`, actorTurnId: turnId, seq: 0 };
+export function agentMeta(turnId: string, authoringResponseId?: string): UpdateMeta {
+  return {
+    origin: `agent:${turnId}`,
+    actorTurnId: turnId,
+    seq: 0,
+    ...(authoringResponseId ? { authoringResponseId } : {}),
+  };
 }
 
 export function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
@@ -65,7 +66,7 @@ export function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { ty
 }
 
 export function mutationMeta(actor: MutationActor): UpdateMeta {
-  if (actor.kind === "agent") return agentMeta(actor.turnId);
+  if (actor.kind === "agent") return agentMeta(actor.turnId, actor.responseId);
   if (actor.kind === "human") return { origin: `human:${actor.userId}`, seq: 0 };
   return { origin: `system:${actor.origin}`, seq: 0 };
 }

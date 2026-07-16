@@ -33,6 +33,7 @@ import type {
   SyncError,
   UpdateOrigin,
 } from "../index.js";
+import { type AuthorshipSource, createDocumentAuthority } from "./document-authority.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -173,8 +174,31 @@ export function createMarkdownDocumentEngine(
     }, yjsOrigin);
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
     const meta = deps.metaForOrigin(origin);
-    const seq = await deps.journal.append(documentId, update, meta);
-    Y.applyUpdate(liveDoc, update, yjsOrigin);
+    let seq = 0;
+    const unsupported = async (): Promise<never> => {
+      throw new Error("Document authority strategy is unavailable for markdown authorship");
+    };
+    await createDocumentAuthority({
+      readMutableAuthority: () => ({ documentId, generation: 0n, doc: liveDoc }),
+      admitImmediate: async ({ update: admittedUpdate }) => {
+        seq = await deps.journal.append(documentId, admittedUpdate, meta);
+        Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+        return { sequence: BigInt(seq), joined: 0 };
+      },
+      readFrozenCut: unsupported,
+      readCurrentRevision: unsupported,
+      lowerCertifiedMutation: unsupported,
+      loadCheckpoint: unsupported,
+      unresolvedSettlements: unsupported,
+      replaceGeneration: unsupported,
+      disconnectGeneration: unsupported,
+      stagePush: unsupported,
+      completePush: unsupported,
+    }).mutate({
+      kind: "attributedFreshAuthorship",
+      source: authorshipSource(origin),
+      update,
+    });
     return Ok({
       documentId,
       markdown: serializeForSchema(draft, schemaType),
@@ -363,6 +387,12 @@ export function createMarkdownDocumentEngine(
       meta: latest?.meta ?? deps.metaForOrigin(input.origin),
     });
   }
+}
+
+function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
+  if (origin.type === "user") return { kind: "writer" };
+  if (origin.type === "import") return { kind: "import", policy: "writer_protected" };
+  return { kind: "seed", policy: origin.type === "agent" ? "agent" : "writer_protected" };
 }
 
 function identityPreservingContent(

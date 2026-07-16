@@ -82,7 +82,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
-  it("fresh-process write requires no prior read", async () => {
+  it("denies a fresh-process destructive write without an authoring snapshot", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const responseContext = {
       ...context,
@@ -109,8 +109,8 @@ describe("runtime store", () => {
       { ...context, turnId: "turn-fresh-process-no-read" },
     );
 
-    expect(outcomeText(edit)).toContain("status: success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
+    expect(outcomeText(edit)).toContain("status: rejected_response_requires_reread");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta shield."]);
   });
 
   it("rejects stale unconfirmed scoped replacement without mutating", async () => {
@@ -269,13 +269,40 @@ describe("runtime store", () => {
       lifecycle: restartedLifecycle,
       codec,
       model,
+      observationSnapshots: {
+        async seal() {},
+        async load(responseId) {
+          return {
+            responseId,
+            entries: [
+              {
+                documentId: "chapter.md",
+                clientID: 0,
+                clock: 0,
+                value: { kind: "rendered", digest: "unobserved" },
+              },
+            ],
+          };
+        },
+      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
     expect(
       outcomeText(await restarted.write({ command: "read", file: "chapter.md" }, context)),
     ).toContain("Alpha sword.");
 
-    const restartedRedo = await restarted.write({ command: "redo", file: "chapter.md" }, context);
+    const restartedRedo = await restarted.write(
+      { command: "redo", file: "chapter.md" },
+      {
+        ...context,
+        actor: {
+          kind: "agent",
+          turnId: "test-restarted-redo",
+          threadId: THREAD_ID,
+          responseId: "test-observed-response",
+        },
+      },
+    );
     expect(outcomeText(restartedRedo)).toContain("status: reconciled");
     expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
     expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
@@ -299,6 +326,22 @@ describe("runtime store", () => {
       lifecycle: restartedLifecycle,
       codec,
       model,
+      observationSnapshots: {
+        async seal() {},
+        async load(responseId) {
+          return {
+            responseId,
+            entries: [
+              {
+                documentId: "chapter.md",
+                clientID: 0,
+                clock: 0,
+                value: { kind: "rendered", digest: "unobserved" },
+              },
+            ],
+          };
+        },
+      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
     await secondRestart.write({ command: "read", file: "chapter.md" }, context);
@@ -328,6 +371,22 @@ describe("runtime store", () => {
       lifecycle: initial.lifecycle,
       codec,
       model,
+      observationSnapshots: {
+        async seal() {},
+        async load(responseId) {
+          return {
+            responseId,
+            entries: [
+              {
+                documentId: "chapter.md",
+                clientID: 0,
+                clock: 0,
+                value: { kind: "rendered", digest: "unobserved" },
+              },
+            ],
+          };
+        },
+      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coreB = createAgentEditCore({
@@ -336,6 +395,22 @@ describe("runtime store", () => {
       lifecycle: initial.lifecycle,
       codec,
       model,
+      observationSnapshots: {
+        async seal() {},
+        async load(responseId) {
+          return {
+            responseId,
+            entries: [
+              {
+                documentId: "chapter.md",
+                clientID: 0,
+                clock: 0,
+                value: { kind: "rendered", digest: "unobserved" },
+              },
+            ],
+          };
+        },
+      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
 
@@ -346,7 +421,18 @@ describe("runtime store", () => {
       outcomeText(await coreB.write({ command: "read", file: "chapter.md" }, context)),
     ).toContain("Alpha sword.");
 
-    const redoA = await coreA.write({ command: "redo", file: "chapter.md" }, context);
+    const redoA = await coreA.write(
+      { command: "redo", file: "chapter.md" },
+      {
+        ...context,
+        actor: {
+          kind: "agent",
+          turnId: "test-concurrent-redo",
+          threadId: THREAD_ID,
+          responseId: "test-observed-response",
+        },
+      },
+    );
     expect(outcomeText(redoA)).toContain("status: reconciled");
     const redoB = await coreB.write({ command: "redo", file: "chapter.md" }, context);
     expect(outcomeText(redoB)).toBe("status: nothing_to_redo");

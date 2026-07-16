@@ -52,7 +52,9 @@ describe("handleWorkDraftAcceptRequest", () => {
           draftReview: {
             accept: async () => ({
               status: "concurrent_conflict",
+              reason: "draft_base_divergence",
               conflictedBlocks: ["block-a"],
+              conflicts: [],
             }),
           } as never,
         },
@@ -67,7 +69,12 @@ describe("handleWorkDraftAcceptRequest", () => {
       },
     );
 
-    expect(response).toEqual({ status: "concurrent_conflict", conflictedBlocks: ["block-a"] });
+    expect(response).toEqual({
+      status: "concurrent_conflict",
+      reason: "draft_base_divergence",
+      conflictedBlocks: ["block-a"],
+      conflicts: [],
+    });
   });
 });
 

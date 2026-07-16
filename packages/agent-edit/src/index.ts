@@ -17,7 +17,6 @@ export interface AgentEditCore {
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
-  setReadRequiredFence: ReturnType<typeof createWriteTool>["setReadRequiredFence"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -36,26 +35,62 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     undoTurn: tool.undoTurn,
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
-    setReadRequiredFence: tool.setReadRequiredFence,
   };
 }
 
+export {
+  classifyDestructiveEffect,
+  type DestructiveEffect,
+  type DestructiveEffectInput,
+  type VisibleProseOccurrence,
+} from "./apply/destructive-classification.js";
 export type { BlockSnapshot } from "./apply/echo.js";
 export {
   applyConcurrentUpdates,
-  DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
+  CONCURRENT_REWRITE_DENSITY,
+  DEFAULT_CONCURRENT_RUN_GAP,
   diffSnapshots,
+  lineageCovered,
+  renderConcurrentRuns,
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";
-export type { ConcurrentEditInfo } from "./apply/types.js";
+export type {
+  ConcurrentEditInfo,
+  ConcurrentEditRun,
+  ConcurrentRunObservation,
+} from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
+export {
+  applyConcurrentRenderBudget,
+  type ConcurrentRenderBudget,
+  renderedRunBytes,
+} from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
+export type {
+  LineageRange,
+  ResponseCausalCutV1,
+  SealedWriterLineageV3,
+  SettlementLineageEvidenceV2,
+  WriterLineageRange,
+  WriterProtectionRootView,
+} from "./lineage/range-set.js";
+export {
+  groupLineageRanges,
+  intersectLineageRanges,
+  lineageRangesContain,
+  normalizeLineageRanges,
+  parseSealedWriterLineageV3,
+  parseSettlementLineageEvidenceV2,
+  sealedWriterLineageV3,
+  subtractLineageRanges,
+  validateWriterProtectionScope,
+} from "./lineage/range-set.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { LiveBlockRangeTarget } from "./model/navigation-target.js";
@@ -68,6 +103,17 @@ export {
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
+  ExplicitDeletionObservation,
+  ObservationAuthority,
+  ObservationCandidate,
+  RenderedObservation,
+} from "./observation-snapshot.js";
+export {
+  createObservationAuthority,
+  digestRenderedContent,
+  observationCoversRendering,
+} from "./observation-snapshot.js";
+export type {
   ActorSession,
   ActorSessionDocumentState,
   ActorSessionStore,
@@ -79,6 +125,15 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type { AgentEditModel, BlockLookup, DocumentModel, TextRun } from "./ports/model.js";
+export type {
+  CanonicalBlockIdentity,
+  ObservationEntry,
+  ObservationKey,
+  ObservationSnapshot,
+  ObservationSnapshotStore,
+  ObservationValue,
+} from "./ports/observation-snapshot.js";
+export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -101,6 +156,23 @@ export type {
   WriteMutationRow,
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
+export type {
+  MappedContinuation,
+  PmSourceContinuation,
+  ProseMirrorLoweringResult,
+} from "./prosemirror-lowering.js";
+export {
+  lowerProseMirrorTransform,
+  propagateContinuations,
+  validateLoweredTargetPartition,
+} from "./prosemirror-lowering.js";
+export type {
+  RestorationCertificatePort,
+  SemanticEditIRV1,
+  SemanticOutputRun,
+  Utf16Span,
+} from "./semantic-edit-ir.js";
+export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { WriteCommandCategory } from "./tool/command-schema.js";
 export {
   MUTATING_WRITE_COMMANDS,
@@ -131,6 +203,7 @@ export type {
   WriteErrorStatus,
   WriteFunction,
   WriteIdempotencyHitDetail,
+  WriteObservationEvidence,
   WriteOutcome,
   WriteResultBlock,
   WriteStatus,

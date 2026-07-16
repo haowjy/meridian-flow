@@ -62,7 +62,12 @@
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
-import type { ConcurrentEditInfo } from "@meridian/agent-edit";
+import {
+  applyConcurrentRenderBudget,
+  type ConcurrentEditInfo,
+  type ObservationAuthority,
+  type WriteObservationEvidence,
+} from "@meridian/agent-edit";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -94,7 +99,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { safetyNoticeSystemMessage } from "./context-builder.js";
+import { observationDocumentIds, safetyNoticeSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -154,33 +159,43 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
+  observationRendering?: {
+    authority: ObservationAuthority;
+    /** Aggregate exact-body allowance derived from the selected registry model. */
+    budgetBytes(request: GenerateRequest): number;
+    /** Freeze each branch-local authority prefix before request serialization begins. */
+    freezeCausalCuts?(
+      documentIds: readonly string[],
+    ): Promise<readonly import("@meridian/contracts").ResponseCausalCutV1[]>;
+  };
   responseWrites: {
     commitResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<
-      | {
-          status: "committed";
-          concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
-        }
-      | {
-          status: "rejected";
-          responseId: string;
-          rejections: Array<
-            import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
-              documentName?: string;
-            }
-          >;
-        }
-      | { status: "draft_closed"; responseId: string; mode: "draft" }
-    >;
-    setReadRequiredFence(threadId: ThreadId, documentIds: readonly string[]): void;
+      beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
+    ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
     ): Promise<void>;
   };
 }
+
+type ResponseWriteCommitOutcome =
+  | {
+      status: "committed";
+      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+    }
+  | {
+      status: "rejected";
+      responseId: string;
+      rejections: Array<
+        import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
+          documentName?: string;
+        }
+      >;
+    }
+  | { status: "draft_closed"; responseId: string; mode: "draft" };
 
 function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
   return (
@@ -198,18 +213,13 @@ function isTextContentBlockArray(value: unknown): value is Array<{ type: "text";
 
 function formatConcurrentEdits(info: ConcurrentEditInfo): string {
   const lines = ["concurrent edits:"];
-  if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
-  if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
-  if (info.renderedBlocks) {
-    lines.push("current blocks:");
-    if (info.renderedBlocks.human.length > 0) {
-      lines.push("  human:", ...info.renderedBlocks.human.map((line) => `    ${line}`));
-    }
-    if (info.renderedBlocks.agent.length > 0) {
-      lines.push("  agent:", ...info.renderedBlocks.agent.map((line) => `    ${line}`));
+  for (const run of info.runs) {
+    lines.push(`  ${run.origin}:`, ...run.blocks.map((block) => `    ${block}`));
+    for (const tombstone of run.tombstones) {
+      lines.push(`    ${tombstone.hash}| [explicit deletion]`, tombstone.capturedBody);
     }
   }
-  if (info.reviewCommand) lines.push(info.reviewCommand);
+  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
   return lines.join("\n");
 }
 
@@ -407,6 +417,8 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
+  await reconcileOrphanedPendingWrites(deps, input.threadId);
+
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
@@ -481,6 +493,29 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
   };
 }
 
+async function reconcileOrphanedPendingWrites(
+  deps: OrchestratorDeps,
+  threadId: ThreadId,
+): Promise<void> {
+  const blocks = await deps.repos.blocks.listByThread(threadId);
+  for (const block of blocks) {
+    if (block.blockType !== "tool_result" || block.pruned) continue;
+    const content = block.content as {
+      output?: unknown;
+      metadata?: { stagedWrite?: unknown };
+    } | null;
+    if (content?.metadata?.stagedWrite !== true || !isTextContentBlockArray(content.output))
+      continue;
+    if (!content.output.some(({ text }) => text.startsWith("status: pending_commit"))) continue;
+    await persistUncommittedWriteResult({
+      deps,
+      threadId,
+      block,
+      text: "The response ended before its staged write could commit. Re-read and retry.",
+    });
+  }
+}
+
 async function persistModelResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunTurnInput;
@@ -490,6 +525,7 @@ async function persistModelResponse(input: {
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
+  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
 }): Promise<{
   responseId: string;
   updatedTurn: Turn;
@@ -503,96 +539,112 @@ async function persistModelResponse(input: {
   let blockSeq = input.blockSeq;
   const responseSeq = currentAssistantTurn.responseCount;
   const toolCalls = collectToolCalls(result);
-  const persistedResponse = await persistAndAppendEvents(deps, runInput.threadId, async () => {
-    const responseId = crypto.randomUUID();
-    const computedCost = await turnAccounting.computeAndDebit(
-      result,
-      thread,
-      runInput.threadId,
-      currentAssistantTurn.id,
-      treeBudget,
-      responseId,
-    );
-    const costUsd = computedCost.costUsd;
-    const response: ModelResponseReceivedRow = {
-      id: responseId,
-      turnId: currentAssistantTurn.id,
-      sequence: responseSeq,
-      provider: result.provider,
-      model: result.model,
-      providerRequestId: result.providerRequestId ?? null,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens ?? null,
-      cacheReadTokens: result.usage.cacheReadTokens ?? null,
-      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-      costUsd,
-      millicredits: computedCost.millicredits,
-      priceSource: computedCost.priceSource,
-      pricingSnapshot: computedCost.pricingSnapshot,
-      finishReason: result.finishReason,
-      rawUsage: toJsonValue(result.usage),
-    };
-    const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
-
-    const createdBlocks: Block[] = [];
-    const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
-    for (const part of result.content) {
-      const blockInput = contentPartToBlockInput(
-        part,
-        updatedTurn.id,
-        blockSeq++,
-        response.id,
-        result.provider,
+  const persistedResponse = await persistAndAppendEvents(
+    deps,
+    runInput.threadId,
+    async () => {
+      const responseId = crypto.randomUUID();
+      const computedCost = await turnAccounting.computeAndDebit(
+        result,
+        thread,
+        runInput.threadId,
+        currentAssistantTurn.id,
+        treeBudget,
+        responseId,
       );
-      if (blockInput) {
-        const block = contentForBlockInput(blockInput);
+      const costUsd = computedCost.costUsd;
+      const response: ModelResponseReceivedRow = {
+        id: responseId,
+        turnId: currentAssistantTurn.id,
+        sequence: responseSeq,
+        provider: result.provider,
+        model: result.model,
+        providerRequestId: result.providerRequestId ?? null,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens ?? null,
+        cacheReadTokens: result.usage.cacheReadTokens ?? null,
+        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+        costUsd,
+        millicredits: computedCost.millicredits,
+        priceSource: computedCost.priceSource,
+        pricingSnapshot: computedCost.pricingSnapshot,
+        finishReason: result.finishReason,
+        rawUsage: toJsonValue(result.usage),
+      };
+      const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+
+      const createdBlocks: Block[] = [];
+      const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
+      for (const part of result.content) {
+        const blockInput = contentPartToBlockInput(
+          part,
+          updatedTurn.id,
+          blockSeq++,
+          response.id,
+          result.provider,
+        );
+        if (blockInput) {
+          const block = contentForBlockInput(blockInput);
+          createdBlocks.push(localBlockFromEvent(block));
+          events.push({ type: "block.upserted", block });
+        }
+      }
+
+      for (const call of toolCalls) {
+        if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
+          continue;
+        }
+        const block = contentForBlockInput({
+          turnId: updatedTurn.id,
+          blockType: "tool_use",
+          sequence: blockSeq++,
+          responseId: response.id,
+          content: {
+            toolCallId: call.id,
+            toolName: call.name,
+            input: toJsonValue(call.arguments),
+          },
+          provider: result.provider,
+          status: "complete",
+        });
         createdBlocks.push(localBlockFromEvent(block));
         events.push({ type: "block.upserted", block });
       }
-    }
 
-    for (const call of toolCalls) {
-      if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
-        continue;
-      }
-      const block = contentForBlockInput({
-        turnId: updatedTurn.id,
-        blockType: "tool_use",
-        sequence: blockSeq++,
+      events.push({
+        type: "usage",
         responseId: response.id,
-        content: {
-          toolCallId: call.id,
-          toolName: call.name,
-          input: toJsonValue(call.arguments),
-        },
+        turnId: updatedTurn.id as string,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens ?? null,
+        cacheReadTokens: result.usage.cacheReadTokens ?? null,
+        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+        costUsd,
+        turnCostUsd: updatedTurn.totalCostUsd,
+        model: result.model,
         provider: result.provider,
-        status: "complete",
       });
-      createdBlocks.push(localBlockFromEvent(block));
-      events.push({ type: "block.upserted", block });
-    }
 
-    events.push({
-      type: "usage",
-      responseId: response.id,
-      turnId: updatedTurn.id as string,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens ?? null,
-      cacheReadTokens: result.usage.cacheReadTokens ?? null,
-      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-      costUsd,
-      turnCostUsd: updatedTurn.totalCostUsd,
-      model: result.model,
-      provider: result.provider,
-    });
-
-    return {
-      result: { responseId, updatedTurn, createdBlocks },
-      events,
-    };
-  });
+      return {
+        result: { responseId, updatedTurn, createdBlocks },
+        events,
+      };
+    },
+    {
+      ...(input.observationCandidate && deps.observationRendering
+        ? {
+            afterEvents: async (persisted) => {
+              await deps.observationRendering?.authority.sealSuccessfulResponse(
+                persisted.responseId,
+                input.observationCandidate as import("@meridian/agent-edit").ObservationCandidate,
+              );
+            },
+          }
+        : {}),
+    },
+  );
 
   return {
     responseId: persistedResponse.result.responseId,
@@ -702,6 +754,93 @@ async function persistPermissionDenial(input: {
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
 }
 
+async function persistRejectedWriteResult(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  block: Block;
+  rejection: import("@meridian/agent-edit").ResponseCommitDocumentRejection;
+}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+  return persistUncommittedWriteResult({
+    deps: input.deps,
+    threadId: input.threadId,
+    block: input.block,
+    text: `No sealed observation covered the destructive change in ${input.rejection.documentId}. Re-read and retry.`,
+  });
+}
+
+async function persistUncommittedWriteResult(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  block: Block;
+  text: string;
+}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+  const content = input.block.content as { toolCallId?: string } | null;
+  const toolCallId = content?.toolCallId ?? "";
+  const output = [
+    {
+      type: "text" as const,
+      text: ["status: rejected_response_requires_reread", "Write did not land.", input.text].join(
+        "\n\n",
+      ),
+    },
+  ];
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const block = contentForBlockInput({
+      id: input.block.id,
+      turnId: input.block.turnId,
+      responseId: input.block.responseId,
+      blockType: "tool_result",
+      sequence: input.block.sequence,
+      content: { toolCallId, output, isError: true },
+      provider: input.block.provider,
+      status: "complete",
+    });
+    return {
+      result: localBlockFromEvent(block),
+      events: [
+        { type: "block.upserted", block },
+        { type: "tool.result", toolCallId, output, isError: true },
+      ],
+    };
+  });
+  return { block: persisted.result, events: persisted.events };
+}
+
+async function persistCommittedWriteResult(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  block: Block;
+  committedOutput: unknown;
+}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+  const content = input.block.content as {
+    toolCallId?: string;
+    metadata?: Record<string, unknown>;
+  } | null;
+  const committedOutput = input.committedOutput;
+  const metadata = content?.metadata ?? {};
+  const toolCallId = content?.toolCallId ?? "";
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const block = contentForBlockInput({
+      id: input.block.id,
+      turnId: input.block.turnId,
+      responseId: input.block.responseId,
+      blockType: "tool_result",
+      sequence: input.block.sequence,
+      content: toJsonValue({ toolCallId, output: committedOutput, metadata }),
+      provider: input.block.provider,
+      status: "complete",
+    });
+    return {
+      result: localBlockFromEvent(block),
+      events: [
+        { type: "block.upserted", block },
+        { type: "tool.result", toolCallId, output: toJsonValue(committedOutput) },
+      ],
+    };
+  });
+  return { block: persisted.result, events: persisted.events };
+}
+
 async function completeTurn(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -736,9 +875,19 @@ async function buildGenerateRequest(input: {
   gatewaySignal?: AbortSignal;
 }): Promise<{
   request: GenerateRequest;
+  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
   thread: Thread;
   resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
+  const activeDocumentIds = await input.deps.activeDocuments.listDocumentIds(
+    input.runInput.threadId,
+  );
+  const cutDocumentIds = [
+    ...new Set([...activeDocumentIds, ...observationDocumentIds(input.blocks)]),
+  ].sort();
+  const responseCausalCuts = input.deps.observationRendering?.freezeCausalCuts
+    ? await input.deps.observationRendering.freezeCausalCuts(cutDocumentIds)
+    : cutDocumentIds.map(initialInMemoryCausalCut);
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
     turns: input.turns,
@@ -750,6 +899,9 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
+    observationAuthority: input.deps.observationRendering?.authority,
+    requestId: `${input.turns.at(-1)?.id ?? input.thread.id}:${input.blocks.length}`,
+    responseCausalCuts,
   });
 
   return {
@@ -759,6 +911,22 @@ async function buildGenerateRequest(input: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
     },
+    ...(assembled.observationCandidate
+      ? { observationCandidate: assembled.observationCandidate }
+      : {}),
+  };
+}
+
+function initialInMemoryCausalCut(
+  documentId: string,
+): import("@meridian/contracts").ResponseCausalCutV1 {
+  return {
+    id: crypto.randomUUID(),
+    version: 1,
+    documentId,
+    authorityId: documentId,
+    generation: 1n,
+    admittedThrough: 0n,
   };
 }
 
@@ -856,17 +1024,21 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
+      const observationCandidate = built.observationCandidate;
 
       {
         const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
         const notices = await deps.notices.drainForModelContext(input.threadId, activeDocumentIds);
         if (notices.length > 0) {
-          const insertAt = request.messages.findIndex((message) => message.role !== "system");
-          request.messages.splice(
-            insertAt === -1 ? request.messages.length : insertAt,
-            0,
-            safetyNoticeSystemMessage(notices),
-          );
+          const noticeMessage = safetyNoticeSystemMessage(notices);
+          if (noticeMessage) {
+            const insertAt = request.messages.findIndex((message) => message.role !== "system");
+            request.messages.splice(
+              insertAt === -1 ? request.messages.length : insertAt,
+              0,
+              noticeMessage,
+            );
+          }
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.
@@ -979,6 +1151,7 @@ async function* generateEvents(
         treeBudget,
         turnAccounting,
         blockSeq,
+        ...(observationCandidate ? { observationCandidate } : {}),
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
@@ -1012,7 +1185,10 @@ async function* generateEvents(
           return;
         }
 
-        const writeBlocksByDocument = new Map<string, Block>();
+        const writeBlocksByDocument = new Map<
+          string,
+          Array<{ block: Block; committedOutput: unknown }>
+        >();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
@@ -1085,8 +1261,17 @@ async function* generateEvents(
           currentAssistantTurn = interruptState.currentTurn;
           blockSeq = interruptState.blockSeqRef.value;
           yield* dispatched.events;
-          if (!dispatched.cancelled && typeof dispatched.metadata?.documentId === "string") {
-            writeBlocksByDocument.set(dispatched.metadata.documentId, dispatched.block);
+          if (
+            !dispatched.cancelled &&
+            dispatched.metadata?.stagedWrite === true &&
+            typeof dispatched.metadata.documentId === "string"
+          ) {
+            const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
+            blocks.push({
+              block: dispatched.block,
+              committedOutput: dispatched.metadata.committedOutput,
+            });
+            writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
           if (dispatched.cancelled || input.signal?.aborted) {
             await rollbackActiveResponse();
@@ -1099,20 +1284,65 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        const concurrentEdits = await deps.responseWrites.commitResponse(responseId, {
-          threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
-        });
+        const finalizedWrites: Array<{
+          documentId: string;
+          index: number;
+          block: Block;
+          events: OrchestratorEvent[];
+        }> = [];
+        const concurrentEdits = await deps.responseWrites.commitResponse(
+          responseId,
+          {
+            threadId: input.threadId,
+            turnId: currentAssistantTurn.id,
+          },
+          async (result) => {
+            for (const [documentId, blocks] of writeBlocksByDocument) {
+              const rejection =
+                result.status === "rejected"
+                  ? result.rejections.find((candidate) => candidate.documentId === documentId)
+                  : undefined;
+              for (const [index, write] of blocks.entries()) {
+                const finalized =
+                  result.status === "committed"
+                    ? await persistCommittedWriteResult({
+                        deps,
+                        threadId: input.threadId,
+                        block: write.block,
+                        committedOutput: write.committedOutput,
+                      })
+                    : rejection
+                      ? await persistRejectedWriteResult({
+                          deps,
+                          threadId: input.threadId,
+                          block: write.block,
+                          rejection,
+                        })
+                      : await persistUncommittedWriteResult({
+                          deps,
+                          threadId: input.threadId,
+                          block: write.block,
+                          text: "The response closed before its staged write could commit. Re-read and retry.",
+                        });
+                finalizedWrites.push({ documentId, index, ...finalized });
+              }
+            }
+          },
+        );
         activeResponseId = undefined;
+        for (const finalized of finalizedWrites) {
+          const writes = writeBlocksByDocument.get(finalized.documentId);
+          const write = writes?.[finalized.index];
+          if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
+          const blockIndex = allBlocks.findIndex((existing) => existing.id === finalized.block.id);
+          if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
+          yield* finalized.events;
+        }
         if (concurrentEdits.status === "draft_closed") {
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
         if (concurrentEdits.status === "rejected") {
-          deps.responseWrites.setReadRequiredFence(
-            input.threadId,
-            concurrentEdits.rejections.map((rejection) => rejection.documentId),
-          );
           eventSink.emit({
             timestamp: new Date().toISOString(),
             level: "warn",
@@ -1170,9 +1400,14 @@ async function* generateEvents(
           continue;
         }
 
-        // Backfill concurrent edit info into the last write tool_result block per document.
+        const renderBudget = {
+          remainingBytes:
+            deps.observationRendering?.budgetBytes(request) ?? Number.MAX_SAFE_INTEGER,
+        };
+        // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
-          const block = writeBlocksByDocument.get(documentId);
+          const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
+          const block = writeBlocksByDocument.get(documentId)?.at(-1)?.block;
           if (!block) continue;
           const content = block.content as {
             toolCallId?: string;
@@ -1188,18 +1423,59 @@ async function* generateEvents(
           const updatedOutput = [
             {
               ...metadataBlock,
-              text: `${metadataBlock.text}\n${formatConcurrentEdits(edits)}`,
+              text: `${metadataBlock.text}\n${formatConcurrentEdits(boundedEdits)}`,
             },
             ...remainingBlocks,
           ];
-          const updatedContent = { ...content, output: updatedOutput };
+          const observationEvidence: WriteObservationEvidence[] = [];
+          for (const run of boundedEdits.runs) {
+            for (const observation of run.observations) {
+              if (observation.kind === "rendered") {
+                observationEvidence.push({
+                  kind: "rendered" as const,
+                  clientID: observation.clientID,
+                  clock: observation.clock,
+                  renderedContent: observation.renderedContent,
+                  sourceText:
+                    run.blocks.find((line) =>
+                      line.includes(
+                        observation.renderedContent.slice(
+                          observation.renderedContent.indexOf("|") + 1,
+                        ),
+                      ),
+                    ) ??
+                    observation.renderedContent.slice(observation.renderedContent.indexOf("|") + 1),
+                });
+              } else {
+                observationEvidence.push({
+                  kind: "explicit_deletion" as const,
+                  clientID: observation.clientID,
+                  clock: observation.clock,
+                  capturedBody: observation.capturedBody,
+                  sourceText:
+                    run.tombstones.find(
+                      (tombstone) => tombstone.capturedBody === observation.capturedBody,
+                    )?.capturedBody ?? observation.capturedBody,
+                });
+              }
+            }
+          }
+          const updatedContent = {
+            ...content,
+            output: updatedOutput,
+            metadata: {
+              ...((content as { metadata?: Record<string, unknown> }).metadata ?? {}),
+              documentId,
+              observationEvidence,
+            },
+          };
           const updatedBlockRow = contentForBlockInput({
             id: block.id,
             turnId: block.turnId,
             responseId: block.responseId,
             blockType: "tool_result",
             sequence: block.sequence,
-            content: updatedContent,
+            content: toJsonValue(updatedContent),
             provider: block.provider,
             status: "complete",
           });
@@ -1213,7 +1489,14 @@ async function* generateEvents(
           );
           const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
           if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-          writeBlocksByDocument.set(documentId, persistedBackfill.result);
+          const documentBlocks = writeBlocksByDocument.get(documentId) ?? [];
+          const lastWrite = documentBlocks.at(-1);
+          if (lastWrite) {
+            documentBlocks[documentBlocks.length - 1] = {
+              ...lastWrite,
+              block: persistedBackfill.result,
+            };
+          }
           yield* persistedBackfill.events;
         }
 

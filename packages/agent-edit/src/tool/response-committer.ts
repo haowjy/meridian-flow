@@ -9,6 +9,7 @@ import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
+import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { withLiveDocument } from "./coordinator.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -70,6 +71,8 @@ export interface ResponseCommitOptions {
     commit(): void | Promise<void>;
     abort(): void | Promise<void>;
   }): void;
+  /** Host hook executed inside its response transaction after the outcome is known. */
+  beforeTransactionCommit?(result: ResponseCommitResult): void | Promise<void>;
 }
 
 export interface ResponseStagePreflightInput {
@@ -103,6 +106,7 @@ export interface ResponseStageUpdateInput {
   /** Runtime state immediately before this staged update was applied. */
   preOwnSnapshot?: Uint8Array;
   interactionContext?: InteractionContext;
+  semanticEditIr?: SemanticEditIRV1;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -381,6 +385,7 @@ export function createResponseCommitter(deps: {
               runtime: docBuffer.runtime,
               afterOwnVector,
               deletedHashes: hashes.deletedHashes,
+              touchedHashes: hashes.touchedHashes,
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
               interactionContext: docBuffer.interactionContext,
               ownTurnId: lastTurnId,
@@ -446,6 +451,7 @@ export function createResponseCommitter(deps: {
               runtime: docBuffer.runtime,
               afterOwnVector: Y.encodeStateVector(docBuffer.runtime.doc),
               deletedHashes: new Set(hashes.deletedHashes),
+              touchedHashes: new Set(hashes.touchedHashes),
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
               interactionContext: docBuffer.interactionContext,
               ownTurnId: docBuffer.updates.at(-1)?.turnId,
@@ -477,6 +483,7 @@ export function createResponseCommitter(deps: {
                 runtime: docBuffer.runtime,
                 afterOwnVector,
                 deletedHashes: hashes.deletedHashes,
+                touchedHashes: hashes.touchedHashes,
                 preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
                 interactionContext: docBuffer.interactionContext,
                 ownTurnId: lastTurnId,
@@ -574,7 +581,6 @@ export function createResponseCommitter(deps: {
           liveResponseState(responseId),
         ),
       };
-      fenceLateSweeps(docBuffers, result.documents);
       applyDiscardedClaims(buffer, result);
       finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
       return result;
@@ -626,7 +632,6 @@ export function createResponseCommitter(deps: {
           documents,
           liveResponseState(responseId),
         );
-        fenceLateSweeps(docBuffers, result.documents);
         applyDiscardedClaims(buffer, result);
         finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
         return result;
@@ -659,12 +664,6 @@ export function createResponseCommitter(deps: {
         const awarenessDegraded =
           recheckedDocuments === null ||
           !recheckedDocuments.some((document) => document.lateSweep !== undefined);
-        if (awarenessDegraded) {
-          const committedDocumentIds = docBuffers.map((docBuffer) => docBuffer.docId);
-          for (const sessionId of new Set(docBuffers.map((docBuffer) => docBuffer.session.id))) {
-            runtimeStore.setReadRequiredFence(sessionId, committedDocumentIds);
-          }
-        }
         const result = responseCommitResult(
           responseId,
           buffer,
@@ -673,7 +672,6 @@ export function createResponseCommitter(deps: {
           liveResponseState(responseId),
           awarenessDegraded ? { awarenessDegraded: true } : {},
         );
-        fenceLateSweeps(docBuffers, result.documents);
         assertRecoveryResultHonest(result, journalCommitKind);
         applyDiscardedClaims(buffer, result);
         finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
@@ -744,20 +742,6 @@ export function createResponseCommitter(deps: {
       if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
       return document;
     });
-  }
-
-  function fenceLateSweeps(
-    docBuffers: readonly ResponseDocumentBuffer[],
-    documents: readonly ResponseCommitDocumentResult[],
-  ): void {
-    const swept = new Set(
-      documents.filter((document) => document.lateSweep).map((document) => document.documentId),
-    );
-    for (const docBuffer of docBuffers) {
-      if (swept.has(docBuffer.docId)) {
-        runtimeStore.setReadRequiredFence(docBuffer.session.id, [docBuffer.docId]);
-      }
-    }
   }
 
   async function captureRecoveryBodies(
@@ -962,9 +946,6 @@ export function createResponseCommitter(deps: {
   }
 
   function stageUpdate(input: ResponseStageUpdateInput): InternalWriteResult | null {
-    if (runtimeStore.isReadFenced(input.session.id, input.docId)) {
-      return readRequiredRejection(input.docId);
-    }
     assertCanStage({
       responseId: input.responseId,
       docId: input.docId,
@@ -1010,11 +991,13 @@ export function createResponseCommitter(deps: {
       mutation: {
         threadId: input.session.threadId,
         turnId: input.turnId,
+        authoringResponseId: input.actor.responseId,
         actorKind: "agent",
         writeId:
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
+        ...(input.semanticEditIr ? { semanticEditIr: input.semanticEditIr } : {}),
         ...mutationMode(interactionContext),
       },
       writeId: input.writeId ?? "w0",
@@ -1217,13 +1200,6 @@ export function createResponseCommitter(deps: {
     deps.onLifecycleError?.(event);
     return new ResponseLifecycleError(event);
   }
-}
-
-function readRequiredRejection(docId: string): InternalWriteResult {
-  return {
-    status: "rejected_response_requires_reread",
-    text: `status: rejected_response_requires_reread\n\nThis document must be read after a rejected response before it can be changed. Run write(command="read", file="${docId}") and retry.`,
-  };
 }
 
 function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string {

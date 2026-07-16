@@ -11,6 +11,8 @@ export type BranchJournalRow = {
   turnId: TurnId | null;
   actorUserId: UserId | null;
   updateData: Uint8Array;
+  /** Immutable live-journal watermark captured with this draft mutation. */
+  draftBaseUpdateSeq: number;
   status: "active" | "pushed" | "discarded" | "rollback_pending";
   updateMeta?: unknown;
 };

@@ -323,6 +323,62 @@
       "when": 1783741449249,
       "tag": "0045_change_trail_lifecycle_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784081871404,
+      "tag": "0046_observation_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784085055618,
+      "tag": "0047_draft_base",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784093667800,
+      "tag": "0048_settlement_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784097980928,
+      "tag": "0049_colorful_banshee",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784104053761,
+      "tag": "0050_aromatic_king_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1784127295424,
+      "tag": "0051_response_causal_cuts",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1784129742430,
+      "tag": "0052_bored_ares",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784133695344,
+      "tag": "0053_premium_hex",
+      "breakpoints": true
     }
   ]
 }

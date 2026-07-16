@@ -22,6 +22,7 @@ import {
 } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
+import { type DraftApplyRefusal, draftApplyRefusalFromResponse } from "./draft-apply-refusal";
 import {
   acceptIsBlocked,
   conflictForSelection,
@@ -85,6 +86,7 @@ export type DraftReviewController = {
   inlineDiscardError: InlineReviewMessageCode | null;
   needsRereview: boolean;
   conflictedBlocks: ReadonlySet<string>;
+  applyRefusal: DraftApplyRefusal | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -133,6 +135,7 @@ export function useDraftReviewController(
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const [reviewRoomName, setReviewRoomName] = useState<string | null>(null);
   const [reviewRoomError, setReviewRoomError] = useState(false);
+  const [applyRefusal, setApplyRefusal] = useState<DraftApplyRefusal | null>(null);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
@@ -519,6 +522,7 @@ export function useDraftReviewController(
         documentId,
         draftId,
       );
+      setApplyRefusal(null);
       acceptMutation.mutate(
         {
           projectId,
@@ -531,6 +535,7 @@ export function useDraftReviewController(
         },
         {
           onSuccess(response) {
+            setApplyRefusal(draftApplyRefusalFromResponse(response));
             if (response.status === "stale_draft") {
               void queryClient.invalidateQueries({
                 queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
@@ -615,6 +620,7 @@ export function useDraftReviewController(
       inlineDiscardError,
       needsRereview,
       conflictedBlocks,
+      applyRefusal,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -650,6 +656,7 @@ export function useDraftReviewController(
       inlineDiscardError,
       needsRereview,
       conflictedBlocks,
+      applyRefusal,
       enterInlineReview,
       exitInlineReview,
       exitReview,

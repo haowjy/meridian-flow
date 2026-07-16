@@ -32,8 +32,9 @@ with a single unified `ContextPort` that resolves durable project schemes
 - **Collab-aware markdown bridge** (`context/collab-document-sync.ts`) — maps
   ContextFS provenance to collab origins. Agent/human writes use the richer
   collab write APIs that return attribution metadata; system/import writes use
-  the markdown write API directly. Atomic `edit()` is preserved for agent/human
-  writes.
+  the markdown write API directly. The certified `ContextPort.edit` boundary is
+  a closed command surface; its current command is a fresh end-of-document
+  append. Opaque caller callbacks do not cross the boundary.
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
   for `move`/`delete` operations.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;

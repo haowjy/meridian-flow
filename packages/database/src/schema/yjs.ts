@@ -1,4 +1,12 @@
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts";
+import type {
+  DocumentAuthorityId,
+  DocumentId,
+  ModelResponseId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -17,7 +25,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
-import { threads, turns } from "./agent-threads";
+import { modelResponses, threads, turns } from "./agent-threads";
 import { documents, works } from "./content";
 import { users } from "./users";
 
@@ -31,6 +39,9 @@ type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
 type PushKind = "whole" | "selective";
+type BranchPushSettlementState = "pending" | "blocked" | "completed";
+type BranchPushSettlementClaimKind = "warm" | "recovery";
+type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
@@ -104,6 +115,8 @@ export const branchWriteJournal = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     updateData: byteaColumn("update_data").notNull(),
+    /** Immutable live-journal head captured when this draft mutation row is created. */
+    draftBaseUpdateSeq: bigint("draft_base_update_seq", { mode: "number" }).notNull(),
     updateMeta: jsonb("update_meta"),
     status: text("status").$type<BranchWriteJournalStatus>().notNull().default("active"),
     pushedAt: timestamp("pushed_at", { withTimezone: true }),
@@ -159,6 +172,103 @@ export const pushLineage = pgTable(
     index("push_lineage_branch").on(table.branchId),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
+  ],
+);
+
+/** Durable authority for classifying and completing one staged branch push. */
+export const branchPushSettlementOutbox = pgTable(
+  "branch_push_settlement_outbox",
+  {
+    pushId: bigint("push_id", { mode: "number" })
+      .primaryKey()
+      .references(() => pushLineage.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    state: text("state").$type<BranchPushSettlementState>().notNull().default("pending"),
+    documentTitle: text("document_title").notNull(),
+    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
+    pushUpdate: byteaColumn("push_update").notNull(),
+    lineageEvidence: jsonb("lineage_evidence").$type<unknown>().notNull(),
+    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
+    beforeContentRef: bigint("before_content_ref", { mode: "number" }),
+    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
+    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
+      .notNull()
+      .default(0),
+    settledJoinVersion: bigint("settled_join_version", { mode: "number" }),
+    claimToken: uuid("claim_token"),
+    claimEpoch: bigint("claim_epoch", { mode: "number" }).notNull().default(1),
+    claimKind: text("claim_kind").$type<BranchPushSettlementClaimKind>(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastErrorCode: text("last_error_code"),
+    lastError: text("last_error"),
+    blockedAt: timestamp("blocked_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("branch_push_settlement_outbox_recovery")
+      .on(table.availableAt, table.leaseExpiresAt, table.createdAt)
+      .where(sql`${table.state} = 'pending'`),
+    index("branch_push_settlement_outbox_document_unresolved")
+      .on(table.documentId)
+      .where(sql`${table.state} <> 'completed'`),
+    check(
+      "branch_push_settlement_outbox_state_valid",
+      sql`${table.state} IN ('pending', 'blocked', 'completed')`,
+    ),
+    check(
+      "branch_push_settlement_outbox_terminal_shape",
+      sql`(
+        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL)
+      )`,
+    ),
+    check(
+      "branch_push_settlement_outbox_claim_shape",
+      sql`${table.state} <> 'pending' OR (
+        (${table.claimToken} IS NOT NULL AND ${table.claimKind} IS NOT NULL AND ${table.claimedAt} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)
+        OR (${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+      )`,
+    ),
+    check(
+      "branch_push_settlement_outbox_claim_kind_valid",
+      sql`${table.claimKind} IS NULL OR ${table.claimKind} IN ('warm', 'recovery')`,
+    ),
+    check(
+      "branch_push_settlement_outbox_counters_valid",
+      sql`${table.attemptCount} >= 0 AND ${table.joinVersion} >= 0 AND ${table.claimEpoch} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion} AND (${table.settledJoinVersion} IS NULL OR ${table.settledJoinVersion} <= ${table.joinVersion})`,
+    ),
+  ],
+);
+
+/** Exact admitted updates joined to a not-yet-completed staged push. */
+export const branchPushOutboxUpdates = pgTable(
+  "branch_push_outbox_updates",
+  {
+    pushId: bigint("push_id", { mode: "number" })
+      .notNull()
+      .references(() => branchPushSettlementOutbox.pushId, { onDelete: "cascade" }),
+    ordinal: bigint("ordinal", { mode: "number" }).notNull(),
+    sourceKind: text("source_kind").$type<BranchPushSettlementUpdateSource>().notNull(),
+    sourceId: bigint("source_id", { mode: "number" }).notNull(),
+    update: byteaColumn("update").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.pushId, table.sourceKind, table.sourceId] }),
+    uniqueIndex("branch_push_outbox_updates_ordinal").on(table.pushId, table.ordinal),
+    check("branch_push_outbox_updates_ordinal_valid", sql`${table.ordinal} >= 0`),
+    check(
+      "branch_push_outbox_updates_source_kind_valid",
+      sql`${table.sourceKind} IN ('journal', 'staged_push', 'initial_reconcile')`,
+    ),
   ],
 );
 
@@ -315,6 +425,9 @@ export const documentYjsCheckpoints = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
+    authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
+    attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     upToSeq: bigint("up_to_seq", { mode: "number" }).notNull(),
@@ -334,6 +447,10 @@ export const documentYjsUpdates = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
+    authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
+    admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
+    batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
@@ -346,13 +463,24 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
+    authoringResponseId: uuid("authoring_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "restrict" }),
     reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
     reversalActorUserId: uuid("reversal_actor_user_id")
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],
+  (table) => [
+    index("document_yjs_updates_document_id").on(table.documentId, table.id),
+    uniqueIndex("document_yjs_updates_authority_admission").on(
+      table.authorityId,
+      table.authorityGeneration,
+      table.admissionSequence,
+      table.batchOrdinal,
+    ),
+  ],
 );
 
 export const documentYjsReversals = pgTable(
@@ -370,6 +498,9 @@ export const documentYjsReversals = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
+    authoringResponseId: uuid("authoring_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "restrict" }),
     // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
@@ -445,6 +576,9 @@ export const agentEditMutations = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
+    authoringResponseId: uuid("authoring_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "restrict" }),
     actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
     userId: text("user_id"),
     // Durable idempotency key for the edit mutation, distinct from reversal handles.
@@ -530,6 +664,14 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     .$type<DocumentId>()
     .primaryKey()
     .references(() => documents.id, { onDelete: "cascade" }),
+  authorityId: uuid("authority_id")
+    .$type<DocumentAuthorityId>()
+    .notNull()
+    .default(sql`gen_random_uuid()`),
+  authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull().default(sql`1`),
+  nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
+    .notNull()
+    .default(sql`1`),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
   /** Must stay aligned with COLLAB_SCHEMA_VERSION in @meridian/prosemirror-schema. */
   schemaVersion: integer("schema_version").notNull().default(3),

@@ -3,6 +3,7 @@ import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { ReversalActor } from "../ports/types.js";
 import { parseWriteHandle } from "../ports/update-journal.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
@@ -29,7 +30,7 @@ export interface ReverseInput {
   threadId: string;
   direction: "undo" | "redo";
   selection: ReversalSelection;
-  actor: { type: "user"; userId: string } | { type: "agent" };
+  actor: ReversalActor;
   requireEffect?: boolean;
   interactionContext?: InteractionContext;
 }
@@ -99,16 +100,11 @@ export function createWriteReversalEndpoints(deps: {
   ) {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    if (runtimeStore.isReadFenced(session.id, address.documentId)) {
-      return readRequiredRejection(address.filePath);
-    }
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
       // This pre-reversal flush has no wrapping database transaction: the journal write is
       // immediately durable, so it does not need the server response unit-of-work facade.
       const committed = await responseCommitter.commitResponse(context.responseId);
       if (committed.status === "rejected") {
-        const documentIds = committed.rejections.map((rejection) => rejection.documentId);
-        runtimeStore.setReadRequiredFence(session.id, documentIds);
         return stagedCommitRejection(committed.rejections);
       }
     }
@@ -121,10 +117,23 @@ export function createWriteReversalEndpoints(deps: {
       commandName: command.command,
       direction,
       selection: selection.selection,
+      actor:
+        context.actor?.kind === "human"
+          ? { type: "user", userId: context.actor.userId }
+          : {
+              type: "agent",
+              ...((context.actor?.kind === "agent" ? context.actor.responseId : context.responseId)
+                ? {
+                    responseId:
+                      context.actor?.kind === "agent"
+                        ? context.actor.responseId
+                        : context.responseId,
+                  }
+                : {}),
+            },
       interactionContext: context.interactionContext,
     });
     if (result.status === "destructive_write_rejected") {
-      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
       await runtimeStore.evictRuntime(session, address.documentId);
     }
     return result;
@@ -134,11 +143,6 @@ export function createWriteReversalEndpoints(deps: {
     input: ReverseInput,
   ): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     const session = localSession(input.threadId, input.threadId);
-    if (input.actor.type === "agent" && runtimeStore.isReadFenced(session.id, input.docId)) {
-      return toOutcome(input.direction, readRequiredRejection(input.docId)) as
-        | UndoResult
-        | RedoResult;
-    }
     responseCommitter.dropForThread(input.docId, input.threadId);
     const liveBefore = input.requireEffect ? await encodedLiveDocument(input.docId) : null;
     const outcome =
@@ -197,13 +201,6 @@ export function createWriteReversalEndpoints(deps: {
     localSessions.set(id, session);
     return session;
   }
-}
-
-function readRequiredRejection(file: string) {
-  return status(
-    "rejected_response_requires_reread",
-    `This document must be read after a rejected response before it can be changed. Run write(command="read", file="${file}") and retry.`,
-  );
 }
 
 function stagedCommitRejection(

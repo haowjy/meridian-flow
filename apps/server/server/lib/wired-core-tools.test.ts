@@ -66,7 +66,6 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       text: "",
     }),
     invalidateThread: async () => {},
-    setReadRequiredFence: () => {},
   };
 }
 
@@ -81,7 +80,6 @@ function responseFinalizerWithCommit(commitResult: ResponseCommitSuccessResult) 
       stagedCreates: { committed: [], discarded: [] },
     }),
     resolveThreadWriteMode: async () => "direct" as const,
-    setReadRequiredFence: () => {},
   };
 }
 
@@ -96,13 +94,11 @@ function noopResponseFinalizer() {
       stagedCreates: { committed: [], discarded: [] },
     }),
     resolveThreadWriteMode: async () => "direct" as const,
-    setReadRequiredFence: () => {},
   };
 }
 
 describe("agent-edit response write lifecycle", () => {
-  it("transports commit rejection and delegates the READ-REQUIRED fence", async () => {
-    const fenced: Array<{ threadId: string; documentIds: readonly string[] }> = [];
+  it("transports commit rejection", async () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
@@ -135,7 +131,6 @@ describe("agent-edit response write lifecycle", () => {
         finalizeResponseRollback: async () => ({
           stagedCreates: { committed: [], discarded: [] },
         }),
-        setReadRequiredFence: (threadId, documentIds) => fenced.push({ threadId, documentIds }),
       },
     });
 
@@ -145,8 +140,6 @@ describe("agent-edit response write lifecycle", () => {
         turnId: "turn-1",
       }),
     ).resolves.toMatchObject({ status: "rejected", responseId: "response-rejected" });
-    lifecycle.setReadRequiredFence("thread-1", ["doc-1"]);
-    expect(fenced).toEqual([{ threadId: "thread-1", documentIds: ["doc-1"] }]);
   });
 
   it("commits response through the collab finalizer and maps concurrent edits", async () => {
@@ -160,7 +153,7 @@ describe("agent-edit response write lifecycle", () => {
         {
           documentId: "doc-1",
           updateCount: 1,
-          concurrentEdits: { human: ["abcd"], agent: [] },
+          concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
           lateSweep: {
             affectedBlockHashes: ["abcd"],
             capturedDeletedBodies: [{ hash: "abcd", body: "Writer body." }],
@@ -192,7 +185,6 @@ describe("agent-edit response write lifecycle", () => {
         finalizeResponseRollback: async () => ({
           stagedCreates: { committed: [], discarded: [] },
         }),
-        setReadRequiredFence: () => {},
       },
     });
 
@@ -200,7 +192,9 @@ describe("agent-edit response write lifecycle", () => {
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
     ).resolves.toEqual({
       status: "committed",
-      concurrentEdits: [{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }],
+      concurrentEdits: [
+        { documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [], runs: [] } },
+      ],
     });
 
     expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);
@@ -262,7 +256,6 @@ describe("agent-edit response write lifecycle", () => {
         finalizeResponseRollback: async () => ({
           stagedCreates: { committed: [], discarded: [] },
         }),
-        setReadRequiredFence: () => {},
       },
     });
 
@@ -299,7 +292,6 @@ describe("agent-edit response write lifecycle", () => {
           calls.push({ responseId, threadId: ctx.threadId, turnId: ctx.turnId });
           return { stagedCreates: { committed: [], discarded: [] } };
         },
-        setReadRequiredFence: () => {},
       },
     });
 

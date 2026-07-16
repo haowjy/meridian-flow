@@ -4,9 +4,15 @@
  * when the work-drafts query stays stale.
  */
 import { act, useEffect, useMemo, useRef, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
 function draftGroup(documentId: string, draftId: string): ThreadDraftGroup {
   const contextPath = `work://drafts/${documentId}.md`;
@@ -38,6 +44,7 @@ type ControllerStub = {
   accept: ReturnType<typeof vi.fn>;
   reject: ReturnType<typeof vi.fn>;
   needsRereview: boolean;
+  applyRefusal: null;
 };
 
 const harnessRef: {
@@ -55,6 +62,7 @@ const harnessRef: {
     accept: vi.fn(),
     reject: vi.fn(),
     needsRereview: false,
+    applyRefusal: null,
   },
 };
 
@@ -73,7 +81,7 @@ vi.mock("./DraftReviewProvider", async (importOriginal) => {
   };
 });
 
-const { useDraftDock } = await import("./DraftDock");
+const { DraftApplyRefusalNotice, useDraftDock } = await import("./DraftDock");
 
 function DockHarness() {
   const dock = useDraftDock({ generating: false });
@@ -99,6 +107,7 @@ function PumpHarness() {
         setIsPending(false);
       }),
       needsRereview: false,
+      applyRefusal: null,
     }),
     [isPending],
   );
@@ -127,7 +136,33 @@ beforeEach(() => {
     accept: vi.fn(),
     reject: vi.fn(),
     needsRereview: false,
+    applyRefusal: null,
   };
+});
+
+describe("DraftDock Apply refusal", () => {
+  it("explains draft-base divergence and renders the writer's live words", () => {
+    const html = renderToStaticMarkup(
+      <DraftApplyRefusalNotice
+        refusal={{
+          reason: "unsynced_live_edits",
+          passages: [{ body: "The writer added this live sentence." }],
+        }}
+      />,
+    );
+    expect(html).toContain("your live document changed since this draft was prepared");
+    expect(html).toContain("The writer added this live sentence.");
+  });
+
+  it("renders protected resurrection refusal copy", () => {
+    const html = renderToStaticMarkup(
+      <DraftApplyRefusalNotice
+        refusal={{ reason: "protected_resurrection", passages: [{ body: "Deleted line." }] }}
+      />,
+    );
+    expect(html).toContain("bring back text you deleted");
+    expect(html).toContain("Deleted line.");
+  });
 });
 
 describe("useDraftDock disposition lock", () => {

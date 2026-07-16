@@ -1,4 +1,4 @@
-/** Authoritative thread-shell and separately authorized manuscript-detail reads. */
+/** Thread-owned trail reads that retain captured evidence when the live document is unavailable. */
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -11,8 +11,8 @@ import type { DocumentAccessPort } from "../../../lib/document-access.js";
 import type {
   ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
-  TrailChangeV1,
 } from "../domain/trail-read-kernel.js";
+import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 
 export type ChangeTrailReader = ReturnType<typeof createDrizzleChangeTrailReader>;
 
@@ -75,18 +75,16 @@ export function createDrizzleChangeTrailReader(
 
     return Promise.all(
       rows.map(async (row) => {
-        if (
-          row.changes === null ||
-          row.documentTitle === null ||
-          !(await documentAccess.canAccessDocument(input.userId, row.documentId))
-        ) {
+        if (row.changes === null || row.documentTitle === null) {
           return { documentId: row.documentId, unavailable: true as const };
         }
+        const unavailable = !(await documentAccess.canAccessDocument(input.userId, row.documentId));
         return {
           trailId: input.trailId,
           documentId: row.documentId,
           documentTitle: row.documentTitle,
-          changes: row.changes as TrailChangeV1[],
+          changes: parseTrailChangesV1(row.changes),
+          ...(unavailable ? { unavailable: true as const } : {}),
         };
       }),
     );

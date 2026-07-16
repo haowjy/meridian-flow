@@ -86,15 +86,12 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<void>;
-  setReadRequiredFence(
-    threadId: ToolHandlerContext["threadId"],
-    documentIds: readonly string[],
-  ): void;
 }
 
 export type ResponseWriteLifecycleCommitResult =
@@ -308,9 +305,6 @@ export function createAgentEditResponseWriteLifecycle(
   }
 
   return {
-    setReadRequiredFence(threadId, documentIds): void {
-      deps.documentSync.setReadRequiredFence(threadId, documentIds);
-    },
     trackStagedCreate(input: StagedCreateCleanup): void {
       const records = stagedCreates.get(input.responseId) ?? [];
       if (
@@ -326,31 +320,38 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+      beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
-      const result = await deps.documentSync.finalizeResponseCommit(responseId, ctx);
+      const mapResult = (
+        result: Awaited<ReturnType<typeof deps.documentSync.finalizeResponseCommit>>,
+      ): ResponseWriteLifecycleCommitResult => {
+        if (result.status === "draft_closed") {
+          return { status: result.status, responseId: result.responseId, mode: result.mode };
+        }
+        if (result.status === "rejected") {
+          return {
+            status: "rejected",
+            responseId: result.responseId,
+            rejections: result.rejections,
+          };
+        }
+        return {
+          status: "committed",
+          concurrentEdits: result.documents.flatMap((document) =>
+            document.concurrentEdits
+              ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
+              : [],
+          ),
+        };
+      };
+      const result = await deps.documentSync.finalizeResponseCommit(
+        responseId,
+        ctx,
+        async (commitResult) => beforeTransactionCommit?.(mapResult(commitResult)),
+      );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
-      if (result.status === "draft_closed") {
-        return {
-          status: result.status,
-          responseId: result.responseId,
-          mode: result.mode,
-        };
-      }
-      if (result.status === "rejected") {
-        return { status: "rejected", responseId: result.responseId, rejections: result.rejections };
-      }
-      const concurrentEdits = result.documents.flatMap((document) =>
-        document.concurrentEdits
-          ? [
-              {
-                documentId: document.documentId,
-                concurrentEdits: document.concurrentEdits,
-              },
-            ]
-          : [],
-      );
-      return { status: "committed", concurrentEdits };
+      return mapResult(result);
     },
 
     async rollbackResponse(
@@ -447,11 +448,17 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       }
       return {
         output: outcome.content ?? outcome.text,
-        // Only attach documentId metadata for staged mutating writes (create/insert/replace
-        // within a response). This is used by the orchestrator to track which tool_result
-        // block to backfill concurrent edit info into after commitResponse. Non-mutating
-        // commands (read/undo/redo) must NOT overwrite the backfill target.
-        ...(stagedWrite ? { metadata: { documentId: address.documentId } } : {}),
+        ...(stagedWrite || outcome.observations?.length
+          ? {
+              metadata: {
+                documentId: address.documentId,
+                ...(outcome.observations?.length
+                  ? { observationEvidence: outcome.observations }
+                  : {}),
+                ...(stagedWrite ? { stagedWrite: true } : {}),
+              },
+            }
+          : {}),
       };
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {

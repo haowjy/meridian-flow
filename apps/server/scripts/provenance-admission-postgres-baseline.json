@@ -1,0 +1,18 @@
+{
+  "fixture": {
+    "admissions": 100,
+    "words": 10000,
+    "transactions": 100,
+    "journalBytes": 52167
+  },
+  "environment": {
+    "cpu": "AMD Ryzen 9 5900X (12 cores / 24 threads)",
+    "os": "Linux 7.0.11 x86_64"
+  },
+  "observedMs": {
+    "mean": 4.226439,
+    "p50": 4.059513,
+    "p95": 5.005885,
+    "p99": 12.552857
+  }
+}

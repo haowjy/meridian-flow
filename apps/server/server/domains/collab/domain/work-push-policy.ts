@@ -60,6 +60,7 @@ export function createWorkPushPolicy(input: {
             branchId,
             pushedByUserId: policyInput.pushedByUserId,
             resetPolicy: "auto",
+            overlapPolicy: "apply_and_trail",
           });
         }
       }

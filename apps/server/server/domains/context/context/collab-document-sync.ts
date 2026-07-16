@@ -114,17 +114,23 @@ export async function writeCollabMarkdown(input: {
 export async function editCollabMarkdown(input: {
   documentSync: MarkdownDocumentStore;
   documentId: string;
-  transform: (markdown: string) => string;
+  command: import("../ports/context-port.js").ContextEditCommand;
   provenance?: WriteProvenance;
 }): Promise<CollabMarkdownResult> {
-  const { documentSync, documentId, transform, provenance } = input;
+  const { documentSync, documentId, command, provenance } = input;
+  const resolve = (markdown: string) => {
+    switch (command.kind) {
+      case "append":
+        return `${markdown}${command.content}`;
+    }
+  };
   const collabOrigin = provenance ? provenanceToWriteOrigin(provenance) : null;
 
   if (collabOrigin) {
     try {
       const result = await documentSync.editDocument({
         documentId,
-        transform,
+        transform: resolve,
         origin: collabOrigin,
         threadId: threadIdFromProvenance(provenance),
       });
@@ -139,7 +145,7 @@ export async function editCollabMarkdown(input: {
 
   const write = await documentSync.seedFromMarkdown(
     documentId,
-    transform(before.value),
+    resolve(before.value),
     provenanceToSeedOrigin(provenance),
   );
   if (!write.ok) return { ok: false, error: syncFault(write.error) };

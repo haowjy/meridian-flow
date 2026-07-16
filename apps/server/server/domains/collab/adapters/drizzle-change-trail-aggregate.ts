@@ -20,7 +20,11 @@ export type ChangeTrailAggregateWriter = ChangeTrailPersistence & {
   reconcileTerminalOwners(): Promise<void>;
 };
 
-import type { NormalizedTrail, TrailChangeV1 } from "../domain/trail-read-kernel.js";
+import {
+  canonicalChangeKey,
+  type NormalizedTrail,
+  type TrailChangeV1,
+} from "../domain/trail-read-kernel.js";
 
 function deterministicUuid(namespace: string): string {
   const bytes = Buffer.from(createHash("sha256").update(namespace).digest().subarray(0, 16));
@@ -48,7 +52,7 @@ export function mergeTrailChanges(
     ...[...incoming].sort((a, b) => a.ordinal - b.ordinal),
   ];
   for (const change of ordered) {
-    const key = `${change.documentId ?? "deleted"}:${change.beforeBlockId ?? change.afterBlockId ?? change.changeId}`;
+    const key = canonicalChangeKey(change);
     const prior = folded.get(key);
     if (!prior) {
       folded.set(key, change);
@@ -65,12 +69,30 @@ export function mergeTrailChanges(
           : change.afterTextAtReceipt === null
             ? "delete"
             : "modify",
-      swept: prior.swept ?? change.swept,
+      swept: change.swept ?? prior.swept,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(key);
     else folded.set(key, combined);
   }
   return [...folded.values()].map((change, ordinal) => ({ ...change, ordinal }));
+}
+
+/** Applies final sweep classification without erasing the push's ordinary edit history. */
+export function refinePushChanges(
+  provisional: readonly TrailChangeV1[],
+  classifiedSweeps: readonly TrailChangeV1[],
+): TrailChangeV1[] {
+  const classifiedKeys = new Set(classifiedSweeps.map(canonicalChangeKey));
+  const ordinary = provisional
+    .filter((change) => !classifiedKeys.has(canonicalChangeKey(change)))
+    .map(withoutProvisionalSweep);
+  return mergeTrailChanges(ordinary, classifiedSweeps);
+}
+
+function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
+  if (change.writerProtection?.kind === "resurrection") return change;
+  const { writerProtection: _writerProtection, ...ordinary } = change;
+  return { ...ordinary, swept: null };
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
@@ -93,20 +115,27 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailShells)
           .where(eq(changeTrailShells.id, trailId))
           .limit(1);
-        const version = (existingShell?.version ?? 0) + 1;
-        await tx
-          .insert(changeTrailShells)
-          .values({
-            id: trailId,
-            threadId: trail.owner.threadId as ThreadId,
-            turnId: trail.owner.kind === "turn" ? (trail.owner.turnId as TurnId) : null,
-            ownerKind: trail.owner.kind,
-            version,
-            changeCount: trail.counts.changes,
-            sweptChangeCount: trail.counts.swept,
-            documentCount: trail.counts.documents,
-          })
-          .onConflictDoNothing();
+        if (input.refineCurrentVersion && !existingShell) {
+          throw new Error(`Cannot refine missing change trail ${trailId}`);
+        }
+        const version = input.refineCurrentVersion
+          ? (existingShell?.version as number)
+          : (existingShell?.version ?? 0) + 1;
+        if (!input.refineCurrentVersion) {
+          await tx
+            .insert(changeTrailShells)
+            .values({
+              id: trailId,
+              threadId: trail.owner.threadId as ThreadId,
+              turnId: trail.owner.kind === "turn" ? (trail.owner.turnId as TurnId) : null,
+              ownerKind: trail.owner.kind,
+              version,
+              changeCount: trail.counts.changes,
+              sweptChangeCount: trail.counts.swept,
+              documentCount: trail.counts.documents,
+            })
+            .onConflictDoNothing();
+        }
 
         const existingDetails = await tx
           .select({
@@ -115,10 +144,35 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           })
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
-        const changes = mergeTrailChanges(
-          existingDetails.flatMap((detail) => detail.changes as TrailChangeV1[]),
-          trail.changes,
+        const incomingPushIds = new Set(trail.changes.map((change) => change.pushId));
+        if (input.replacePushId) incomingPushIds.add(input.replacePushId);
+        const persistedChanges = existingDetails.flatMap(
+          (detail) => detail.changes as TrailChangeV1[],
         );
+        const persistedPushChanges = persistedChanges.filter((change) =>
+          incomingPushIds.has(change.pushId),
+        );
+        const incomingKeys = new Set(trail.changes.map(canonicalChangeKey));
+        const refinementIsComplete = input.replacePushId
+          ? true
+          : persistedPushChanges.length === incomingKeys.size &&
+            persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
+        const replacement = input.replacePushId
+          ? refinePushChanges(persistedPushChanges, trail.changes)
+          : trail.changes;
+        const changes = input.refineCurrentVersion
+          ? refinementIsComplete
+            ? mergeTrailChanges(
+                persistedChanges.filter((change) => !incomingPushIds.has(change.pushId)),
+                replacement,
+              )
+            : persistedChanges
+          : mergeTrailChanges(
+              input.replacePushId
+                ? persistedChanges.filter((change) => change.pushId !== input.replacePushId)
+                : persistedChanges,
+              replacement,
+            );
         const documentIds = new Set([
           ...existingDetails.map((detail) => detail.documentId),
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
@@ -175,16 +229,32 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             updatedAt: new Date(),
           })
           .where(eq(changeTrailShells.id, trailId));
-        await tx.insert(changeTrailDeliveryOutbox).values({
-          eventId: deterministicUuid(`change-trail-event:${trailId}:${version}:updated`),
-          threadId: trail.owner.threadId as ThreadId,
-          trailId,
-          version,
-          eventKind: "updated",
+        const counts = {
           changeCount: allChanges.length,
           sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
           documentCount: details.length,
-        });
+        };
+        if (input.refineCurrentVersion) {
+          await tx
+            .update(changeTrailDeliveryOutbox)
+            .set(counts)
+            .where(
+              and(
+                eq(changeTrailDeliveryOutbox.trailId, trailId),
+                eq(changeTrailDeliveryOutbox.version, version),
+                eq(changeTrailDeliveryOutbox.eventKind, "updated"),
+              ),
+            );
+        } else {
+          await tx.insert(changeTrailDeliveryOutbox).values({
+            eventId: deterministicUuid(`change-trail-event:${trailId}:${version}:updated`),
+            threadId: trail.owner.threadId as ThreadId,
+            trailId,
+            version,
+            eventKind: "updated",
+            ...counts,
+          });
+        }
       }
     },
     async reopenOwners(owners) {

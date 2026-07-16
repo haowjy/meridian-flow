@@ -6,6 +6,8 @@ import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
+import type { ObservationSnapshotStore } from "../ports/observation-snapshot.js";
+import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import type {
   ResponseCommitterTransitionDetail,
@@ -21,6 +23,9 @@ export interface CreateWriteToolOptions {
   lifecycle?: DocumentLifecycle;
   codec: AgentEditCodec;
   model: AgentEditModel;
+  /** Durable lookup authority for the response that authored a mutation. */
+  observationSnapshots?: ObservationSnapshotStore;
+  semanticProvenance?: SemanticProvenanceWriter;
   actorSessionStore?: ActorSessionStore;
   idempotency?: {
     maxEntries?: number;
@@ -31,13 +36,6 @@ export interface CreateWriteToolOptions {
   createRuntimeDoc?: () => Y.Doc;
   reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
-  onBaselineDegraded?: (event: {
-    documentId: string;
-    responseId: string;
-    from: "interaction";
-    to: "preOwnSnapshot";
-    reason: string;
-  }) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;

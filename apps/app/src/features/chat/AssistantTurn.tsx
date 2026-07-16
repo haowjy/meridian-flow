@@ -23,7 +23,6 @@ import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
-import { ChangeTrail } from "./ChangeTrail";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -44,7 +43,6 @@ export type AssistantTurnProps = {
   /** True when this turn produced an AI draft (write tool rows read "Drafted"). */
   draftWrite?: boolean;
   changeTrail?: ChangeTrailShell;
-  trailGapPending?: boolean;
   navigateToChange?: NavigateToTrailChange;
 };
 
@@ -55,7 +53,6 @@ function AssistantTurnComponent({
   onRespondToInterrupt,
   draftWrite = false,
   changeTrail,
-  trailGapPending,
   navigateToChange,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
@@ -95,20 +92,13 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {liveLineageDocuments.length > 0 ? (
+      {liveLineageDocuments.length > 0 || changeTrail?.state === "settled" ? (
         <TurnEditsCard
           threadId={resolvedThreadId}
           turn={turn}
           documents={liveLineageDocuments}
           receipt={liveLineage.receipt}
-        />
-      ) : null}
-      {changeTrail && navigateToChange ? (
-        <ChangeTrail
-          threadId={resolvedThreadId}
-          shell={changeTrail}
-          gapPending={trailGapPending}
-          turnComplete={!isLive}
+          changeTrail={changeTrail}
           navigateToChange={navigateToChange}
         />
       ) : null}

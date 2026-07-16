@@ -1,12 +1,11 @@
 // Journal batch commit and live projection for mutating writes.
 import * as Y from "yjs";
-
+import { classifyDestructiveBlocks } from "../apply/destructive-classification.js";
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
   type ConcurrentDetectionResult,
   computeEcho,
-  diffSnapshots,
   snapshotBlocks,
 } from "../apply/echo.js";
 import type {
@@ -17,8 +16,16 @@ import type {
 } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
+import { sealedWriterLineageV3, subtractLineageRanges } from "../lineage/range-set.js";
+import { digestRenderedContent, observationCoversRendering } from "../observation-snapshot.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
+import type {
+  ObservationKey,
+  ObservationSnapshot,
+  ObservationSnapshotStore,
+  ObservationValue,
+} from "../ports/observation-snapshot.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
@@ -99,6 +106,7 @@ export interface SafetyGateInput {
   runtime: MutationCommitRuntime;
   afterOwnVector: Uint8Array;
   deletedHashes: ReadonlySet<string>;
+  touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
   ownTurnId?: string;
@@ -110,11 +118,16 @@ export interface CapturedConcurrentDetection {
   detection: ConcurrentDetectionResult;
   detectionSnapshot: Uint8Array;
   liveStateVector: Uint8Array;
+  observationSnapshot: ObservationSnapshot | null;
 }
 
 export type SafetyGateResult =
   | { verdict: "pass"; concurrent: CapturedConcurrentDetection }
-  | { verdict: "reject"; conflictedBlockHashes: string[] };
+  | {
+      verdict: "reject";
+      reason: "observation_required" | "human_conflict";
+      conflictedBlockHashes: string[];
+    };
 
 export interface DestructiveSweepReport {
   affectedBlockHashes: string[];
@@ -125,7 +138,13 @@ export interface DestructiveSweepReport {
 
 export interface ApplyWithRecheckResult {
   concurrent: CapturedConcurrentDetection;
+  observationCut?: AtomicObservationCut;
   lateSweep?: DestructiveSweepReport;
+}
+
+export interface AtomicObservationCut {
+  readonly liveBefore: readonly BlockSnapshot[];
+  readonly liveAfter: readonly BlockSnapshot[];
 }
 
 export type JournalBatchCommit = {
@@ -137,6 +156,7 @@ type LiveCommitResult =
       ok: true;
       concurrentUpdates: ConcurrentUpdate[];
       journalCommitKind: JournalCommitKind;
+      observationCut?: AtomicObservationCut;
       lateSweep?: DestructiveSweepReport;
     }
   | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
@@ -146,6 +166,7 @@ type MutationSyncResult =
       ok: true;
       summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind | null;
+      observationCut?: AtomicObservationCut;
       lateSweep?: DestructiveSweepReport;
     }
   | {
@@ -177,6 +198,7 @@ export interface MutationCommit {
     preflight?: CapturedConcurrentDetection,
   ): Promise<ApplyWithRecheckResult>;
   recheckCommittedUpdate(liveDoc: Y.Doc, input: SafetyGateInput): Promise<ApplyWithRecheckResult>;
+  lookupObservation(responseId: string, key: ObservationKey): Promise<ObservationValue | null>;
 }
 
 export function createMutationCommit(deps: {
@@ -184,8 +206,9 @@ export function createMutationCommit(deps: {
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: AgentEditCodec;
+  observationSnapshots?: ObservationSnapshotStore;
 }): MutationCommit {
-  const { journal, coordinator, model, codec } = deps;
+  const { journal, coordinator, model, codec, observationSnapshots } = deps;
 
   return {
     syncAfterLocalMutation,
@@ -196,7 +219,38 @@ export function createMutationCommit(deps: {
     preflightSafetyGate,
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
+    lookupObservation,
   };
+
+  async function recordWriterProtectionScope(
+    docId: string,
+    responseId: string,
+    cut: AtomicObservationCut,
+    concurrent: CapturedConcurrentDetection,
+  ): Promise<void> {
+    if (!journal.recordWriterProtectionScope) return;
+    const responseCausalCutId = concurrent.observationSnapshot?.causalCuts?.find(
+      (candidate) => candidate.documentId === docId,
+    )?.id;
+    if (!responseCausalCutId) return;
+    const knownAgentLineage = concurrent.detection.lineageOrigins.filter(
+      (lineage) => lineage.origin === "agent",
+    );
+    const ranges = subtractLineageRanges(
+      cut.liveBefore.flatMap((block) => block.lineage ?? []),
+      cut.liveAfter.flatMap((block) => block.lineage ?? []),
+      knownAgentLineage,
+    );
+    await journal.recordWriterProtectionScope({
+      docId,
+      responseId,
+      token: sealedWriterLineageV3({
+        documentId: docId,
+        protectedRoots: ranges,
+        responseCausalCutId,
+      }),
+    });
+  }
 
   async function syncAfterLocalMutation(
     input: LocalMutationSyncInput,
@@ -204,6 +258,7 @@ export function createMutationCommit(deps: {
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
+    let observationCut: AtomicObservationCut | undefined;
     const response = await withLiveDocument(
       coordinator,
       input.docId,
@@ -211,8 +266,7 @@ export function createMutationCommit(deps: {
       input.docId,
       async (liveDoc) => {
         const gate = await preflightSafetyGate(liveDoc, input);
-        if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
-        const beforeJournalSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
+        if (gate.verdict === "reject") return safetyGateRejection(input.docId, gate);
         const committed = await commitJournalBatch([
           {
             docId: input.docId,
@@ -224,10 +278,11 @@ export function createMutationCommit(deps: {
         journalCommitKind = committed.journalCommitKind;
         captured = gate.concurrent;
         const beforeApplySnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
-        lateSweep = lateSweepFromSnapshots(input, beforeJournalSnapshot, beforeApplySnapshot);
         // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
         // never insert an await immediately before Y.applyUpdate.
         Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+        observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
+        lateSweep = destructiveReport(input, gate.concurrent, observationCut);
         return null;
       },
     );
@@ -236,21 +291,19 @@ export function createMutationCommit(deps: {
     }
     const concurrent = captured
       ? applyCapturedConcurrentToRuntime(input.runtime, captured)
-      : { humanTouchedHashes: new Set<string>(), touchedHashes: new Set<string>() };
+      : emptyConcurrentDetection();
     return {
       ok: true,
       summary: summarizeMutationEcho(input, concurrent),
       journalCommitKind,
+      observationCut: requiredCut(observationCut),
       ...(lateSweep ? { lateSweep } : {}),
     };
   }
 
   function summarizeMutationEcho(
     input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = {
-      humanTouchedHashes: new Set(),
-      touchedHashes: new Set(),
-    },
+    concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
   ): SyncedMutationSummary {
     const after =
       input.afterSnapshot ?? snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
@@ -275,29 +328,32 @@ export function createMutationCommit(deps: {
     preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult> {
-    const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
+    const detectionDoc = input.preOwnSnapshot
+      ? docFromSnapshot(input.preOwnSnapshot)
+      : input.runtime.doc;
+    const detectionVector = Y.encodeStateVector(detectionDoc);
     const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
     try {
       const updates = await concurrentUpdatesSince(
         coordinator,
         input.docId,
         preOwnDoc ?? input.runtime.doc,
-        detection.doc,
-        detection.vector,
+        detectionDoc,
+        detectionVector,
         input.interactionContext?.afterJournalId,
         input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
       );
       return applyConcurrentOnDoc(
-        detection.doc,
+        detectionDoc,
         input.runtime,
         updates,
-        detection.vector,
+        detectionVector,
         input.ownTurnId,
       );
     } finally {
       preOwnDoc?.destroy();
-      detection.destroy?.();
+      if (detectionDoc !== input.runtime.doc) detectionDoc.destroy();
     }
   }
 
@@ -305,6 +361,7 @@ export function createMutationCommit(deps: {
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
+    let observationCut: AtomicObservationCut | undefined;
     const response = await withLiveDocument(
       coordinator,
       input.docId,
@@ -315,13 +372,11 @@ export function createMutationCommit(deps: {
           ...input,
           ownTurnId: input.turnId,
         });
-        if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
-        const beforeJournalSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
+        if (gate.verdict === "reject") return safetyGateRejection(input.docId, gate);
         const journalCommit = await commitJournalBatch(journalEntries(input));
         journalCommitKind = journalCommit.journalCommitKind;
         captured = gate.concurrent;
         const beforeApplySnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
-        lateSweep = lateSweepFromSnapshots(input, beforeJournalSnapshot, beforeApplySnapshot);
         // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
         // never insert an await immediately before Y.applyUpdate.
         Y.applyUpdate(
@@ -329,6 +384,8 @@ export function createMutationCommit(deps: {
           mergeUpdates(input.updates.map((entry) => entry.update)),
           input.liveOrigin,
         );
+        observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
+        lateSweep = destructiveReport(input, gate.concurrent, observationCut);
         return null;
       },
     );
@@ -338,6 +395,7 @@ export function createMutationCommit(deps: {
       ok: true,
       concurrentUpdates: [...(captured?.updates ?? [])],
       journalCommitKind: journalCommitKind ?? "durable",
+      observationCut: requiredCut(observationCut),
       ...(lateSweep ? { lateSweep } : {}),
     };
   }
@@ -358,11 +416,18 @@ export function createMutationCommit(deps: {
   ): Promise<SafetyGateResult> {
     const concurrent = await captureConcurrentDetection(liveDoc, input);
     if (input.actor.kind === "system") return { verdict: "pass", concurrent };
-    const conflictedBlockHashes = intersectHashes(
-      input.deletedHashes,
-      concurrent.detection.humanTouchedHashes,
-    );
-    if (conflictedBlockHashes.length > 0) return { verdict: "reject", conflictedBlockHashes };
+    const destructiveHashes = candidateDestructiveHashes(input);
+    if (
+      input.actor.kind === "agent" &&
+      destructiveHashes.length > 0 &&
+      !hasDocumentObservation(concurrent.observationSnapshot, input.docId)
+    ) {
+      return {
+        verdict: "reject",
+        reason: "observation_required",
+        conflictedBlockHashes: destructiveHashes,
+      };
+    }
     return { verdict: "pass", concurrent };
   }
 
@@ -371,41 +436,27 @@ export function createMutationCommit(deps: {
     input: SafetyGateInput & { update: Uint8Array; liveOrigin: ConcurrentUpdateOrigin },
     preflight?: CapturedConcurrentDetection,
   ): Promise<ApplyWithRecheckResult> {
-    const beforeAwaitSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
     const current = preflight
       ? await captureConcurrentDetection(liveDoc, input, preflight)
       : await captureConcurrentDetection(liveDoc, input);
     const beforeApplySnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
-    const liveDiff = diffSnapshots(beforeAwaitSnapshot, beforeApplySnapshot);
-    const liveTouchedHashes = new Set([...liveDiff.changed, ...liveDiff.deleted]);
-    const affectedBlockHashes = [
-      ...new Set([
-        ...intersectHashes(input.deletedHashes, current.detection.humanTouchedHashes),
-        ...intersectHashes(input.deletedHashes, liveTouchedHashes),
-      ]),
-    ];
-    const capturedDeletedBodies = mergeCapturedBodies(
-      affectedBlockHashes,
-      beforeApplySnapshot,
-      beforeAwaitSnapshot,
-      snapshotFromUpdate(current.detectionSnapshot),
-      ...(input.preOwnSnapshot ? [snapshotFromUpdate(input.preOwnSnapshot)] : []),
-    );
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+    const observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
+    const lateSweep = destructiveReport(input, current, observationCut);
+    if (input.actor.kind === "agent" && input.actor.responseId) {
+      await recordWriterProtectionScope(
+        input.docId,
+        input.actor.responseId,
+        observationCut,
+        current,
+      );
+    }
     return {
       concurrent: current,
-      ...(affectedBlockHashes.length > 0
-        ? {
-            lateSweep: {
-              affectedBlockHashes,
-              capturedDeletedBodies,
-              sweptContent: true as const,
-              beforeContentRef: input.interactionContext?.afterJournalId ?? null,
-            },
-          }
-        : {}),
+      observationCut,
+      ...(lateSweep ? { lateSweep } : {}),
     };
   }
 
@@ -436,6 +487,26 @@ export function createMutationCommit(deps: {
     };
   }
 
+  async function lookupObservation(
+    responseId: string,
+    key: ObservationKey,
+  ): Promise<ObservationValue | null> {
+    const snapshot = await observationSnapshots?.load(responseId);
+    if (!snapshot) return null;
+    return (
+      snapshot.entries.find(
+        (entry) =>
+          entry.documentId === key.documentId &&
+          entry.clientID === key.clientID &&
+          entry.clock === key.clock,
+      )?.value ?? null
+    );
+  }
+
+  function snapshotLive(doc: Y.Doc): readonly BlockSnapshot[] {
+    return snapshotBlocks(toDocHandle(doc), model, codec);
+  }
+
   function snapshotFromUpdate(update: Uint8Array): BlockSnapshot[] {
     const doc = docFromSnapshot(update);
     try {
@@ -462,45 +533,6 @@ export function createMutationCommit(deps: {
     });
   }
 
-  function lateSweepFromSnapshots(
-    input: SafetyGateInput,
-    beforeAwaitSnapshot: readonly BlockSnapshot[],
-    beforeApplySnapshot: readonly BlockSnapshot[],
-  ): DestructiveSweepReport | undefined {
-    const liveDiff = diffSnapshots(beforeAwaitSnapshot, beforeApplySnapshot);
-    const affectedBlockHashes = intersectHashes(
-      input.deletedHashes,
-      new Set([...liveDiff.changed, ...liveDiff.deleted]),
-    );
-    if (affectedBlockHashes.length === 0) return undefined;
-    return {
-      affectedBlockHashes,
-      capturedDeletedBodies: mergeCapturedBodies(
-        affectedBlockHashes,
-        beforeApplySnapshot,
-        beforeAwaitSnapshot,
-      ),
-      sweptContent: true,
-      beforeContentRef: input.interactionContext?.afterJournalId ?? null,
-    };
-  }
-
-  function mergeCapturedBodies(
-    affectedHashes: readonly string[],
-    ...snapshots: readonly (readonly BlockSnapshot[])[]
-  ): { hash: string; body: string }[] {
-    const bodies = new Map<string, string>();
-    for (const snapshot of snapshots) {
-      for (const captured of captureSnapshotBodies(snapshot, affectedHashes)) {
-        if (!bodies.has(captured.hash)) bodies.set(captured.hash, captured.body);
-      }
-    }
-    return affectedHashes.map((hash) => {
-      const body = bodies.get(hash);
-      return { hash, body: body ?? "body_unavailable" };
-    });
-  }
-
   async function captureConcurrentDetection(
     liveDoc: Y.Doc,
     input: SafetyGateInput,
@@ -508,11 +540,7 @@ export function createMutationCommit(deps: {
   ): Promise<CapturedConcurrentDetection> {
     const detectionDoc = previous
       ? docFromSnapshot(previous.detectionSnapshot)
-      : docFromSnapshot(
-          input.interactionContext?.baselineSnapshot ??
-            input.preOwnSnapshot ??
-            Y.encodeStateAsUpdate(input.runtime.doc),
-        );
+      : docFromSnapshot(input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc));
     const baselineVector = previous?.liveStateVector ?? Y.encodeStateVector(detectionDoc);
     try {
       const updates = await concurrentUpdatesSince(
@@ -537,6 +565,11 @@ export function createMutationCommit(deps: {
         detection: mergeConcurrentDetection(previous?.detection, incremental),
         detectionSnapshot: Y.encodeStateAsUpdate(detectionDoc),
         liveStateVector: Y.encodeStateVector(liveDoc),
+        observationSnapshot:
+          previous?.observationSnapshot ??
+          (input.actor.kind === "agent" && input.actor.responseId
+            ? ((await observationSnapshots?.load(input.actor.responseId)) ?? null)
+            : null),
       };
     } finally {
       detectionDoc.destroy();
@@ -560,9 +593,6 @@ export function createMutationCommit(deps: {
     _syncVector: Uint8Array,
     turnId: string | undefined,
   ): ConcurrentDetectionResult {
-    if (updates.length === 0) {
-      return { humanTouchedHashes: new Set(), touchedHashes: new Set() };
-    }
     const result = applyConcurrentUpdates(
       toDocHandle(detectionDoc),
       model,
@@ -578,18 +608,101 @@ export function createMutationCommit(deps: {
     return result;
   }
 
-  function detectionBaseline(
-    runtime: MutationCommitRuntime,
-    baselineSnapshot: Uint8Array | undefined,
-  ): { doc: Y.Doc; vector: Uint8Array; destroy?: () => void } {
-    if (!baselineSnapshot) return { doc: runtime.doc, vector: Y.encodeStateVector(runtime.doc) };
-    const detectionDoc = docFromSnapshot(baselineSnapshot);
+  function destructiveReport(
+    input: SafetyGateInput,
+    concurrent: CapturedConcurrentDetection,
+    cut: AtomicObservationCut,
+  ): DestructiveSweepReport | undefined {
+    if (input.actor.kind !== "agent") return undefined;
+    const protectedLineage = concurrent.detection.baselineBlocks
+      .filter((block) => wasObserved(concurrent.observationSnapshot, input.docId, block))
+      .flatMap((block) => block.lineage ?? []);
+    const affectedBlockHashes = classifyDestructiveBlocks({
+      before: cut.liveBefore,
+      after: cut.liveAfter,
+      protectedLineage,
+      lineageOrigins: concurrent.detection.lineageOrigins,
+    })
+      .filter((block) => !wasObserved(concurrent.observationSnapshot, input.docId, block))
+      .map((block) => block.hash)
+      .sort();
+    if (affectedBlockHashes.length === 0) return undefined;
     return {
-      doc: detectionDoc,
-      vector: Y.encodeStateVector(detectionDoc),
-      destroy: () => detectionDoc.destroy(),
+      affectedBlockHashes,
+      capturedDeletedBodies: captureSnapshotBodies(cut.liveBefore, affectedBlockHashes),
+      sweptContent: true,
+      beforeContentRef: input.interactionContext?.afterJournalId ?? null,
     };
   }
+
+  function candidateDestructiveHashes(input: SafetyGateInput): string[] {
+    const before = input.preOwnSnapshot
+      ? new Set(snapshotFromUpdate(input.preOwnSnapshot).map((block) => block.hash))
+      : null;
+    return [
+      ...new Set(
+        [...input.deletedHashes, ...input.touchedHashes].filter(
+          (hash) => !before || before.has(hash),
+        ),
+      ),
+    ].sort();
+  }
+}
+
+function hasDocumentObservation(snapshot: ObservationSnapshot | null, documentId: string): boolean {
+  return snapshot?.entries.some((entry) => entry.documentId === documentId) ?? false;
+}
+
+function wasObserved(
+  snapshot: ObservationSnapshot | null,
+  documentId: string,
+  block: BlockSnapshot,
+): boolean {
+  if (
+    block.clientID === undefined ||
+    block.clock === undefined ||
+    block.renderedContent === undefined
+  )
+    return false;
+  const observed = snapshot?.entries.find(
+    (entry) =>
+      entry.documentId === documentId &&
+      entry.clientID === block.clientID &&
+      entry.clock === block.clock,
+  );
+  return observationCoversRendering({
+    observation: observed?.value ?? null,
+    renderedContent: block.renderedContent,
+    digestRenderedContent,
+  });
+}
+
+function freezeObservationCut(
+  liveBefore: readonly BlockSnapshot[],
+  liveAfter: readonly BlockSnapshot[],
+): AtomicObservationCut {
+  return Object.freeze({
+    liveBefore: freezeBlockSnapshots(liveBefore),
+    liveAfter: freezeBlockSnapshots(liveAfter),
+  });
+}
+
+function freezeBlockSnapshots(blocks: readonly BlockSnapshot[]): readonly BlockSnapshot[] {
+  return Object.freeze(
+    blocks.map((block) =>
+      Object.freeze({
+        ...block,
+        lineage: Object.freeze(
+          (block.lineage ?? []).map((lineage) => Object.freeze({ ...lineage })),
+        ),
+      }),
+    ),
+  );
+}
+
+function requiredCut(cut: AtomicObservationCut | undefined): AtomicObservationCut {
+  if (!cut) throw new Error("Mutation completed without an atomic observation cut");
+  return cut;
 }
 
 function ownUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrigin | undefined {
@@ -669,28 +782,36 @@ function mergeConcurrentDetection(
     ...incremental.humanTouchedHashes,
   ]);
   const touchedHashes = new Set([...previous.touchedHashes, ...incremental.touchedHashes]);
-  if (!previous.info && !incremental.info) return { humanTouchedHashes, touchedHashes };
+  const lineageOrigins = [...previous.lineageOrigins, ...incremental.lineageOrigins];
+  if (!previous.info && !incremental.info)
+    return {
+      humanTouchedHashes,
+      touchedHashes,
+      baselineBlocks: previous.baselineBlocks,
+      lineageOrigins,
+    };
   return {
     humanTouchedHashes,
     touchedHashes,
+    baselineBlocks: previous.baselineBlocks,
+    lineageOrigins,
     info: {
       human: [...human],
       agent: [...agent],
-      renderedBlocks: {
-        human: [
-          ...(previous.info?.renderedBlocks?.human ?? []),
-          ...(incremental.info?.renderedBlocks?.human ?? []),
-        ],
-        agent: [
-          ...(previous.info?.renderedBlocks?.agent ?? []),
-          ...(incremental.info?.renderedBlocks?.agent ?? []),
-        ],
-      },
-      ...(previous.info?.collapsed || incremental.info?.collapsed ? { collapsed: true } : {}),
-      ...((incremental.info?.reviewCommand ?? previous.info?.reviewCommand)
-        ? { reviewCommand: incremental.info?.reviewCommand ?? previous.info?.reviewCommand }
+      runs: [...(previous.info?.runs ?? []), ...(incremental.info?.runs ?? [])],
+      ...(previous.info?.syncOverflow || incremental.info?.syncOverflow
+        ? { syncOverflow: true }
         : {}),
     },
+  };
+}
+
+function emptyConcurrentDetection(): ConcurrentDetectionResult {
+  return {
+    humanTouchedHashes: new Set(),
+    touchedHashes: new Set(),
+    baselineBlocks: [],
+    lineageOrigins: [],
   };
 }
 
@@ -698,5 +819,18 @@ function destructiveWriteRejection(conflictedBlockHashes: readonly string[]): In
   return status(
     "destructive_write_rejected",
     `Rejected: your edit would delete blocks the writer changed since your last read. Affected blocks: [${conflictedBlockHashes.join(", ")}]. Re-read and replan.`,
+  );
+}
+
+function safetyGateRejection(
+  docId: string,
+  gate: Extract<SafetyGateResult, { verdict: "reject" }>,
+): InternalWriteResult {
+  if (gate.reason === "human_conflict") {
+    return destructiveWriteRejection(gate.conflictedBlockHashes);
+  }
+  return status(
+    "rejected_response_requires_reread",
+    `This response has no sealed observation for ${docId}. Read the document in a new response before making a destructive change.`,
   );
 }

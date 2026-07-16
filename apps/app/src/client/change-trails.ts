@@ -1,5 +1,12 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
-import { getJson } from "./api/http-client";
+import type {
+  TrailForwardAction,
+  TrailForwardActionResult,
+  TrailForwardActionStateV1,
+} from "@meridian/contracts";
+import { getJson, postJson } from "./api/http-client";
+
+export type { TrailForwardAction, TrailForwardActionResult, TrailForwardActionStateV1 };
 
 export type ChangeTrailShell = {
   trailId: string;
@@ -19,9 +26,16 @@ export type TrailChange = {
   changeId: string;
   ordinal: number;
   documentId: string | null;
+  pushId?: string | null;
+  receiptId?: string | null;
   kind: "insert" | "modify" | "delete";
+  beforeBlockId?: string | null;
+  afterBlockId?: string | null;
+  beforeBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
   beforeText: string | null;
   afterTextAtReceipt: string | null;
+  /** Canonical live block retained for server-side Restore fallback planning. */
+  afterBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
   navigation:
     | {
         kind: "live_block_range";
@@ -38,10 +52,28 @@ export type TrailChange = {
   swept: null | {
     removed: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
   };
+  /** Writer-protection evidence; absent on ordinary historical rows. */
+  writerProtection?:
+    | {
+        kind: "sweep";
+        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
+      }
+    | {
+        kind: "resurrection";
+        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
+      };
+  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
   reversible: boolean;
 };
+
 export type ChangeTrailDocument =
-  | { documentId: string; unavailable: true }
+  | {
+      documentId: string;
+      unavailable: true;
+      trailId?: string;
+      documentTitle?: string;
+      changes?: TrailChange[];
+    }
   | {
       trailId: string;
       documentId: string;
@@ -125,4 +157,17 @@ export async function readChangeTrail(
     `/api/threads/${threadId}/change-trails/${trailId}`,
   );
   return result.documents;
+}
+
+/** Forward writer actions are server-owned so validation and journal persistence share one lock. */
+export async function applyTrailForwardAction(input: {
+  threadId: string;
+  trailId: string;
+  changeId: string;
+  action: TrailForwardAction;
+}): Promise<TrailForwardActionResult> {
+  return postJson<TrailForwardActionResult>(
+    `/api/threads/${input.threadId}/change-trails/${input.trailId}/changes/${input.changeId}/${input.action}`,
+    {},
+  );
 }

@@ -1,3 +1,4 @@
+import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -11,6 +12,7 @@ export type JournalCommitKind = "durable" | "staged";
 type JournalMutationBase = {
   threadId: string;
   turnId: string | null;
+  authoringResponseId?: string;
   /** Stable write attempt id; provider tool ids are scoped by response/turn before persistence. */
   writeId?: string;
   /** Pre-reserved durable ordinal rendered as w<N>. */
@@ -18,6 +20,8 @@ type JournalMutationBase = {
   actorKind: "agent" | "human" | "system";
   userId?: string;
   systemOrigin?: string;
+  /** Certified semantic input bound to this exact lowered Yjs update. */
+  semanticEditIr?: SemanticEditIRV1;
 };
 
 export type JournalMutation = JournalMutationBase &
@@ -94,8 +98,20 @@ export interface JournalReadOptions {
 /** Ordered Yjs update log: append/read/checkpoint/compact only. */
 export interface UpdateJournal {
   append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
+  /** Journal-first transport admission; hosts may atomically join settlement state. */
+  appendWriterUpdate?(
+    docId: string,
+    update: Uint8Array,
+    meta: UpdateMeta,
+  ): Promise<{ seq: number; joinedSettlement: boolean }>;
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  /** Attaches range evidence while a staged response mutation is still pending persistence. */
+  recordWriterProtectionScope?(input: {
+    docId: string;
+    responseId: string;
+    token: import("../lineage/range-set.js").SealedWriterLineageV3;
+  }): Promise<void>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
   compact(docId: string, before: Date): Promise<CompactionResult>;

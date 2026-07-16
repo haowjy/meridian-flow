@@ -2,7 +2,11 @@
 import type { Database } from "@meridian/database";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 
-export { mergeTrailChanges, trailIdForOwner } from "./drizzle-change-trail-aggregate.js";
+export {
+  mergeTrailChanges,
+  refinePushChanges,
+  trailIdForOwner,
+} from "./drizzle-change-trail-aggregate.js";
 
 import { createDrizzleChangeTrailAggregateWriter } from "./drizzle-change-trail-aggregate.js";
 

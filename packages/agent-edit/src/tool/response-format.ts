@@ -114,6 +114,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
+    ...(result.observations ? { observations: result.observations } : {}),
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
@@ -126,25 +127,17 @@ export function formatConcurrent(
   options: { excludeHashes?: ReadonlySet<string> } = {},
 ): string[] {
   const lines = ["concurrent edits:"];
-  appendConcurrentBucket(lines, "human", info.human, info.renderedBlocks?.human, options);
-  appendConcurrentBucket(lines, "agent", info.agent, info.renderedBlocks?.agent, options);
-  if (info.reviewCommand) lines.push(info.reviewCommand);
-  return lines;
-}
-
-function appendConcurrentBucket(
-  lines: string[],
-  label: "human" | "agent",
-  hashes: readonly string[],
-  renderedBlocks: readonly string[] | undefined,
-  options: { excludeHashes?: ReadonlySet<string> },
-): void {
-  if (hashes.length === 0) return;
-  lines.push(`  ${label}: ${hashes.join(", ")}`);
-  for (const block of renderedBlocks ?? []) {
-    if (options.excludeHashes?.has(blockHash(block))) continue;
-    lines.push(`    ${block}`);
+  for (const run of info.runs) {
+    lines.push(`  ${run.origin}:`);
+    for (const block of run.blocks) {
+      if (!options.excludeHashes?.has(blockHash(block))) lines.push(`    ${block}`);
+    }
+    for (const tombstone of run.tombstones) {
+      lines.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
+    }
   }
+  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
+  return lines;
 }
 
 function blockHash(serialized: string): string {

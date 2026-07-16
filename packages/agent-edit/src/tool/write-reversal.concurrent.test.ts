@@ -75,7 +75,6 @@ describe("write reversal under concurrent edits", () => {
         ...context,
         interactionContext: {
           mode: "live",
-          baselineSnapshot: Y.encodeStateAsUpdate(liveDoc),
           afterJournalId: beforeContentRef,
           liveJournalSeq: beforeContentRef,
         },
@@ -96,7 +95,7 @@ describe("write reversal under concurrent edits", () => {
     ]);
   });
 
-  it("preflights every redo group before persisting any selected group", async () => {
+  it("denies a blind multi-group redo before persisting any selected group", async () => {
     const scenario = await ReversalScenario.read({
       "chapter.md": "Base.\n\nFirst target.\n\nSecond target.",
     });
@@ -117,8 +116,6 @@ describe("write reversal under concurrent edits", () => {
         actor,
       });
     }
-
-    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
     const snapshot = await scenario.ctx.journal.read("chapter.md");
     const liveJournalSeq = snapshot.updates.at(-1)?.seq ?? 0;
     await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
@@ -133,7 +130,12 @@ describe("write reversal under concurrent edits", () => {
       { command: "redo", file: "chapter.md", all: true },
       {
         ...context,
-        interactionContext: { mode: "live", baselineSnapshot, liveJournalSeq },
+        actor: {
+          kind: "agent",
+          turnId: "blind-redo",
+          threadId: THREAD_ID,
+        },
+        interactionContext: { mode: "live", liveJournalSeq },
       },
     );
 
@@ -151,19 +153,18 @@ describe("write reversal under concurrent edits", () => {
       direction: "redo",
       selection: { kind: "all" },
       actor,
-      interactionContext: { mode: "live", baselineSnapshot, liveJournalSeq },
+      interactionContext: { mode: "live", liveJournalSeq },
     });
-    expect(userRedo.status).toBe("reconciled");
+    expect(userRedo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base."]);
   });
 
-  it("rejects an agent undo before persistence when it would sweep a human edit", async () => {
+  it("reports an unobserved human edit using the authoring response snapshot", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent block." },
       { ...context, turnId: "turn-agent-undo-gate" },
     );
-    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
     const beforeUndo = await scenario.ctx.journal.read("chapter.md");
     const afterJournalId = beforeUndo.updates.at(-1)?.seq ?? 0;
     await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
@@ -177,30 +178,37 @@ describe("write reversal under concurrent edits", () => {
       { command: "undo", file: "chapter.md", all: true },
       {
         ...context,
+        actor: {
+          kind: "agent",
+          turnId: "turn-agent-undo-gate",
+          threadId: THREAD_ID,
+          responseId: "frozen-response",
+        },
         interactionContext: {
           mode: "live",
-          baselineSnapshot,
           afterJournalId,
           liveJournalSeq: afterJournalId,
         },
       },
     );
 
-    expect(undo.status).toBe("destructive_write_rejected");
-    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(persistedBefore);
-    expect(await scenario.ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toEqual(
-      [],
+    expect(undo.status).toBe("reconciled");
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(
+      persistedBefore + 1,
     );
-    expect(scenario.blockTexts()).toEqual(["Base.", "Writer: Beta"]);
+    expect(
+      await scenario.ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID }),
+    ).toMatchObject([{ status: "reversed", authoringResponseId: "frozen-response" }]);
+    expect(scenario.blockTexts()).toEqual(["Base."]);
     await expect(
       scenario.ctx.core.write(
         { command: "insert", file: "chapter.md", content: "Blind write." },
         context,
       ),
-    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+    ).resolves.toMatchObject({ status: "success", isError: false });
   });
 
-  it("applies a user undo that sweeps human content, reports it, and restores agent content on redo", async () => {
+  it("applies explicit user undo without observation provenance and restores agent content on redo", async () => {
     const notifications: Array<{
       direction: "undo" | "redo";
       sweptContent: boolean;
@@ -224,7 +232,6 @@ describe("write reversal under concurrent edits", () => {
       { command: "insert", file: "chapter.md", content: "Agent block." },
       { ...context, turnId: "turn-user-swept-undo" },
     );
-    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
     const snapshot = await scenario.ctx.journal.read("chapter.md");
     const afterJournalId = snapshot.updates.at(-1)?.seq ?? 0;
     await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
@@ -241,19 +248,18 @@ describe("write reversal under concurrent edits", () => {
       actor,
       interactionContext: {
         mode: "live",
-        baselineSnapshot,
         afterJournalId,
         liveJournalSeq: afterJournalId,
       },
     });
 
-    expect(undo.status).toBe("reconciled");
+    expect(undo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base."]);
 
     expect(notifications[0]).toEqual({
       direction: "undo",
-      sweptContent: true,
-      beforeContentRef: afterJournalId,
+      sweptContent: false,
+      beforeContentRef: null,
     });
 
     const redo = await scenario.ctx.core.reverse({
@@ -305,7 +311,6 @@ describe("write reversal under concurrent edits", () => {
       { command: "insert", file: "chapter.md", content: "Agent block." },
       { ...context, turnId: "turn-agent-owned" },
     );
-    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
     const baselineDoc = cloneDoc(scenario.ctx.liveDoc("chapter.md"));
     await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
       const block = model.getBlocks(remote)[1];
@@ -323,7 +328,7 @@ describe("write reversal under concurrent edits", () => {
 
     const undo = await scenario.ctx.core.write(
       { command: "undo", file: "chapter.md", all: true },
-      { ...context, interactionContext: { mode: "live", baselineSnapshot } },
+      { ...context, interactionContext: { mode: "live" } },
     );
 
     expect(undo.status).not.toBe("destructive_write_rejected");

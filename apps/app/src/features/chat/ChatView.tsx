@@ -199,7 +199,6 @@ export function ChatView({
         onRespondToInterrupt={handleRespondToInterrupt}
         draftTurnIds={draftTurnIds}
         changeTrails={changeTrails.byId}
-        trailGapPending={changeTrails.gapPending}
       />
     </ChatSurface>
   );

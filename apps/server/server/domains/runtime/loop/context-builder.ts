@@ -44,6 +44,8 @@
  *   into a single system message — they appear as multi-line system
  *   content, not as turn-structured data.
  */
+
+import type { WriteObservationEvidence } from "@meridian/agent-edit";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
@@ -65,8 +67,26 @@ export interface BuildContextInput {
   skillsSystemPromptSection?: string;
 }
 
-export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
+export type RequestObservationEvidence = WriteObservationEvidence & { documentId: string };
+
+/** Documents whose persisted tool output can serialize observation evidence into this request. */
+export function observationDocumentIds(blocks: readonly Block[]): string[] {
+  const ids = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockType !== "tool_result" || block.pruned) continue;
+    const content = block.content as Parameters<typeof evidenceProvenByOutput>[0];
+    for (const evidence of evidenceProvenByOutput(content)) ids.add(evidence.documentId);
+  }
+  return [...ids].sort();
+}
+
+export function buildContext(input: BuildContextInput): {
+  messages: Message[];
+  tools?: Tool[];
+  observationEvidence: RequestObservationEvidence[];
+} {
   const messages: Message[] = [];
+  const observationEvidence: RequestObservationEvidence[] = [];
 
   const composed = input.thread.composedSystemPrompt;
   if (composed && isThreadPromptFrozen(input.thread)) {
@@ -91,6 +111,7 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   // Group blocks by turn, then sort each group by sequence number.
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
+    if (block.pruned) continue;
     const key = block.turnId as string;
     const list = blocksByTurn.get(key) ?? [];
     list.push(block);
@@ -132,11 +153,16 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
             toolCallId?: string;
             output?: JsonValue;
             isError?: boolean;
+            metadata?: {
+              documentId?: unknown;
+              observationEvidence?: unknown;
+            };
           } | null;
           const toolCallId = content?.toolCallId ?? "";
           messages.push(
             toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
           );
+          observationEvidence.push(...evidenceProvenByOutput(content));
           continue;
         }
         const part = blockToContentPart(block);
@@ -151,7 +177,41 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   return {
     messages,
     tools: input.tools?.length ? input.tools : undefined,
+    observationEvidence,
   };
+}
+
+function evidenceProvenByOutput(
+  content: {
+    output?: JsonValue;
+    metadata?: { documentId?: unknown; observationEvidence?: unknown };
+  } | null,
+): RequestObservationEvidence[] {
+  const documentId = content?.metadata?.documentId;
+  const evidence = content?.metadata?.observationEvidence;
+  if (typeof documentId !== "string" || !Array.isArray(evidence)) return [];
+  const serializedOutput = JSON.stringify(content?.output ?? null);
+  return evidence.flatMap((value) => {
+    if (
+      !isWriteObservationEvidence(value) ||
+      !serializedOutput.includes(JSON.stringify(value.sourceText).slice(1, -1))
+    ) {
+      return [];
+    }
+    return [{ documentId, ...value }];
+  });
+}
+
+function isWriteObservationEvidence(value: unknown): value is WriteObservationEvidence {
+  if (typeof value !== "object" || value === null) return false;
+  const evidence = value as WriteObservationEvidence;
+  return (
+    Number.isSafeInteger(evidence.clientID) &&
+    Number.isSafeInteger(evidence.clock) &&
+    typeof evidence.sourceText === "string" &&
+    ((evidence.kind === "rendered" && typeof evidence.renderedContent === "string") ||
+      (evidence.kind === "explicit_deletion" && typeof evidence.capturedBody === "string"))
+  );
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
@@ -231,8 +291,9 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function safetyNoticeSystemMessage(notices: readonly Notice[]): Message {
-  return system(formatSafetyNotices(notices));
+export function safetyNoticeSystemMessage(notices: readonly Notice[]): Message | null {
+  const content = formatSafetyNotices(notices);
+  return content ? system(content) : null;
 }
 
 export function formatSafetyNotices(notices: readonly Notice[]): string {
@@ -250,41 +311,12 @@ function formatSafetyNotice(notice: Notice): string {
   if (notice.kind === "rejection") return notice.message;
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
-  if (notice.kind === "late_sweep") {
-    const bodies = capturedBodies(notice);
-    const beforeContentRef = notice.data.beforeContentRef;
-    return [
-      `Your committed structural edit tombstoned concurrent writer content in ${documentName}:`,
-      ...bodies.map(({ hash, body }) => `- ${hash}|${body}`),
-      `Before-state journal reference: ${beforeContentRef ?? "unavailable"}.`,
-      "Review the current document and help recover the swept content if needed.",
-    ].join("\n");
-  }
-  if (notice.kind === "push_swept") {
-    const bodies = capturedBodies(notice);
-    const hashes = Array.isArray(notice.data.affectedBlockHashes)
-      ? notice.data.affectedBlockHashes.filter((hash): hash is string => typeof hash === "string")
-      : [];
-    const reversible = notice.data.reversible === true;
-    return [
-      `Your auto-push to ${documentName} applied changes that affected blocks the writer recently edited.`,
-      `Affected blocks: ${hashes.join(", ") || "unavailable"}.`,
-      ...(reversible ? ["The writer can undo the change."] : []),
-      "The earlier content of swept blocks is shown below:",
-      ...bodies.map(({ hash, body }) =>
-        body === "body_unavailable"
-          ? `- ${hash}: This block's earlier content could not be recovered.`
-          : `- ${hash}: ${body}`,
-      ),
-      "Review the current document state.",
-    ].join("\n");
-  }
-  if (notice.kind === "checkpoint_sweep") {
-    const discardedBlockCount = notice.data.discardedBlockCount;
-    return [
-      `A checkpoint restore discarded ${typeof discardedBlockCount === "number" ? discardedBlockCount : "some"} concurrent blocks in ${documentName}.`,
-      `Before-state journal reference: ${notice.data.beforeContentRef ?? "unavailable"}.`,
-    ].join("\n");
+  if (
+    notice.kind === "late_sweep" ||
+    notice.kind === "push_swept" ||
+    notice.kind === "checkpoint_sweep"
+  ) {
+    return "";
   }
   if (notice.kind === "awareness_degraded") {
     const documentNames = Array.isArray(notice.data.documentNames)
@@ -340,16 +372,6 @@ function formatUndoNotices(notices: readonly Notice[]): string {
         "They are signaling these changes were unwanted.",
       ].join("\n")
     : "";
-}
-
-function capturedBodies(notice: Notice): { hash: string; body: string }[] {
-  return Array.isArray(notice.data.capturedDeletedBodies)
-    ? notice.data.capturedDeletedBodies.flatMap((entry) => {
-        if (typeof entry !== "object" || entry === null) return [];
-        const { hash, body } = entry as { hash?: unknown; body?: unknown };
-        return typeof hash === "string" && typeof body === "string" ? [{ hash, body }] : [];
-      })
-    : [];
 }
 
 function stringData(notice: Notice, key: string): string | null {

@@ -288,7 +288,6 @@ describe("write reversal retention", () => {
       actor: { type: "agent" },
       interactionContext: {
         mode: "live",
-        baselineSnapshot: Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md")),
       },
     });
 
@@ -338,7 +337,6 @@ describe("write reversal retention", () => {
       actor: { type: "agent" },
       interactionContext: {
         mode: "live",
-        baselineSnapshot: Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md")),
       },
     });
 
@@ -440,7 +438,6 @@ describe("write reversal retention", () => {
       actor: { type: "agent" },
       interactionContext: {
         mode: "live",
-        baselineSnapshot: Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md")),
       },
     });
 

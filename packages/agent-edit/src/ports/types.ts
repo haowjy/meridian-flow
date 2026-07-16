@@ -14,6 +14,10 @@ export interface UpdateMeta {
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
+  /** Successful model response that authored an agent mutation or reversal. */
+  authoringResponseId?: string;
+  /** Commit-sealed writer ancestry removed without observation coverage. */
+  sealedWriterLineage?: import("../lineage/range-set.js").SealedWriterLineageV3;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
   reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */
@@ -45,7 +49,9 @@ export interface CompactionResult {
 
 export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 
-export type ReversalActor = { type: "agent" } | { type: "user"; userId: string };
+export type ReversalActor =
+  | { type: "agent"; responseId?: string }
+  | { type: "user"; userId: string };
 
 /**
  * Durable metadata linking an agent turn to its persisted undo update.
@@ -57,6 +63,8 @@ export interface ReversalRecord {
   /** Original turn is retained as context; reversal identity is the write handle. */
   turnId: string | null;
   threadId: string;
+  /** Successful model response that authored an agent reversal, when applicable. */
+  authoringResponseId?: string;
   /** Stable model-facing write handles reversed by the same undo update. */
   writeIds: string[];
   status: ReversalStatus;

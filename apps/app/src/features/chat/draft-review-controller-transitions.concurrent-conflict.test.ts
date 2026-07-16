@@ -18,7 +18,12 @@ describe("draft review concurrent conflict", () => {
       type: "applySucceeded",
       documentId: "document-1",
       draftId: "draft-1",
-      response: { status: "concurrent_conflict", conflictedBlocks: ["block-a"] },
+      response: {
+        status: "concurrent_conflict",
+        reason: "draft_base_divergence",
+        conflictedBlocks: ["block-a"],
+        conflicts: [],
+      },
     });
 
     expect(conflicted.surface).toMatchObject({ kind: "inline", draftId: "draft-1" });

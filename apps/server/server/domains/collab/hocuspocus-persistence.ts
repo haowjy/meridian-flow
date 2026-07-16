@@ -3,7 +3,7 @@ import type { Hocuspocus } from "@hocuspocus/server";
 import { bytesEqual, type UpdateJournal, type UpdateMeta } from "@meridian/agent-edit";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
+import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
@@ -13,6 +13,10 @@ import {
   BranchStaleUpdateError,
   type BranchStore,
 } from "./domain/branch-coordinator.js";
+import { createDocumentAuthority } from "./domain/document-authority.js";
+import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
+import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
+import { validateClientUpdateAdmission } from "./domain/provenance.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -29,8 +33,10 @@ type HocuspocusPersistenceDeps = {
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
+  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  offlineReconciliation?: OfflineReconciliation;
 };
 
 export type HocuspocusPersistenceService = Pick<
@@ -38,6 +44,9 @@ export type HocuspocusPersistenceService = Pick<
   | "resolveBranchHocuspocusRoom"
   | "loadHocuspocusDocument"
   | "loadHocuspocusBranchState"
+  | "admitLiveWriterUpdate"
+  | "currentLiveGeneration"
+  | "validateBranchWriterUpdate"
   | "persistConnectionUpdate"
   | "persistBranchConnectionUpdate"
   | "storeHocuspocusDocument"
@@ -47,7 +56,10 @@ export type HocuspocusPersistenceService = Pick<
   | "closeHocuspocusBranchRoom"
   | "rejectStaleBranchSyncStep1"
   | "getPersistenceQueueMetrics"
->;
+> & {
+  writerIngressBarrier: WriterIngressBarrier;
+  disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
+};
 
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
@@ -55,7 +67,31 @@ export function createHocuspocusPersistenceService(
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
+  const liveAppendTails = new Map<string, Promise<void>>();
+  const ingressGenerations = new Map<string, number>();
+  const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
+  const retiredStateVectors = new Map<string, Uint8Array>();
+  const retiredLiveDocuments = new WeakSet<Y.Doc>();
+  const liveGenerations = new Map<string, bigint>();
   let nextPendingId = 1;
+
+  const writerIngressBarrier: WriterIngressBarrier = {
+    async drain(documentId) {
+      const generation = ingressGenerations.get(documentId) ?? 0;
+      const admitted = admittedByDocument.get(documentId);
+      if (admitted) {
+        await Promise.all(
+          [...admitted].flatMap(([admissionGeneration, promise]) =>
+            admissionGeneration <= generation ? [promise] : [],
+          ),
+        );
+      }
+      return generation;
+    },
+    isGenerationCurrent(documentId, generation) {
+      return (ingressGenerations.get(documentId) ?? 0) === generation;
+    },
+  };
 
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
@@ -82,6 +118,17 @@ export function createHocuspocusPersistenceService(
         pendingAppends.delete(id);
       });
     pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
+  }
+
+  function enqueueLiveAppend(documentId: string, operation: () => Promise<void>): void {
+    const previous = liveAppendTails.get(documentId) ?? Promise.resolve();
+    const current = previous.then(operation);
+    const settled = current.catch(() => undefined);
+    liveAppendTails.set(documentId, settled);
+    void settled.finally(() => {
+      if (liveAppendTails.get(documentId) === settled) liveAppendTails.delete(documentId);
+    });
+    trackAppend(documentId, current);
   }
 
   function rejectReservedClientIdUpdate(input: {
@@ -114,6 +161,29 @@ export function createHocuspocusPersistenceService(
         documentId,
         error: cause instanceof Error ? cause.message : String(cause),
       },
+    });
+  }
+
+  function emitOfflineReconciliationFailure(documentId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.hocuspocus",
+      name: "offline_reconciliation.failed_after_durability",
+      payload: {
+        documentId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+
+  function emitOfflineReconciliationDegraded(documentId: string): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "collab.hocuspocus",
+      name: "offline_reconciliation.evidence_degraded",
+      payload: { documentId },
     });
   }
 
@@ -162,7 +232,40 @@ export function createHocuspocusPersistenceService(
     return deps.branchCoordinator;
   }
 
+  async function validateBranchWriterUpdate(input: {
+    branchId: string;
+    expectedGeneration: number;
+    update: Uint8Array;
+  }): Promise<void> {
+    const branch = await requireBranchStore().getBranch(input.branchId);
+    if (
+      branch?.status !== "active" ||
+      branch.kind !== "work_draft" ||
+      branch.generation !== input.expectedGeneration
+    ) {
+      throw new BranchStaleUpdateError(input.branchId);
+    }
+    const authoritative = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(authoritative, branch.state);
+      const { reservedClientId } = validateClientUpdateAdmission(authoritative, input.update);
+      if (reservedClientId !== null) throw new Error("reserved-writer-client-id");
+    } finally {
+      authoritative.destroy();
+    }
+  }
+
   return {
+    writerIngressBarrier,
+    async currentLiveGeneration(documentId) {
+      const generation =
+        liveGenerations.get(documentId) ?? (await deps.readAuthorityGeneration?.(documentId)) ?? 1n;
+      liveGenerations.set(documentId, generation);
+      return generation;
+    },
+
+    validateBranchWriterUpdate,
+
     async resolveBranchHocuspocusRoom(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
       if (
@@ -198,33 +301,135 @@ export function createHocuspocusPersistenceService(
       }));
     },
 
-    persistConnectionUpdate(input) {
-      const reservedClientId = reservedClientIdInUpdate(input.update);
+    async admitLiveWriterUpdate(input) {
+      const trackedGeneration = liveGenerations.get(input.documentId);
+      const currentGeneration =
+        trackedGeneration ??
+        (deps.readAuthorityGeneration ? await deps.readAuthorityGeneration(input.documentId) : 1n);
+      liveGenerations.set(input.documentId, currentGeneration);
+      if (currentGeneration !== input.expectedGeneration) {
+        recordDroppedConnectionUpdate(input.documentId);
+        throw new Error("stale-authority-generation");
+      }
+      const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
+      const retiredStateVector = retiredStateVectors.get(input.documentId);
+      if (
+        retiredStateVector &&
+        replaysRetiredGeneration(
+          input.update,
+          authoritativeDoc ?? new Y.Doc({ gc: false }),
+          retiredStateVector,
+        )
+      ) {
+        recordDroppedConnectionUpdate(input.documentId);
+        throw new Error("stale-authority-generation");
+      }
+      const { reservedClientId } = validateClientUpdateAdmission(
+        authoritativeDoc ?? new Y.Doc({ gc: false }),
+        input.update,
+      );
       if (reservedClientId !== null) {
         rejectReservedClientIdUpdate({ ...input, reservedClientId });
-        return;
+        throw new Error("reserved-writer-client-id");
       }
-      trackAppend(
-        input.documentId,
-        deps.journal
-          .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
-          .then(() => deps.onLiveUpdatePersisted?.(input.documentId)),
-      );
+      const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
+      ingressGenerations.set(input.documentId, generation);
+      const admitted = admittedByDocument.get(input.documentId) ?? new Map();
+      admittedByDocument.set(input.documentId, admitted);
+      const unsupported = async (): Promise<never> => {
+        throw new Error("Document authority strategy is unavailable at writer ingress");
+      };
+      const authority = createDocumentAuthority({
+        readMutableAuthority: () => ({
+          documentId: input.documentId,
+          generation: 0n,
+          doc: authoritativeDoc ?? new Y.Doc({ gc: false }),
+        }),
+        admitImmediate: async ({ update }) => {
+          const admitted = (await deps.journal.appendWriterUpdate?.(
+            input.documentId,
+            update,
+            deps.metaForOrigin(input.origin),
+          )) ?? {
+            seq: await deps.journal.append(
+              input.documentId,
+              update,
+              deps.metaForOrigin(input.origin),
+            ),
+            joinedSettlement: false,
+          };
+          return {
+            sequence: BigInt(admitted.seq),
+            joined: admitted.joinedSettlement ? 1 : 0,
+          };
+        },
+        readFrozenCut: unsupported,
+        readCurrentRevision: unsupported,
+        lowerCertifiedMutation: unsupported,
+        loadCheckpoint: unsupported,
+        unresolvedSettlements: unsupported,
+        replaceGeneration: unsupported,
+        disconnectGeneration: unsupported,
+        stagePush: unsupported,
+        completePush: unsupported,
+      });
+      const append = authority
+        .mutate({
+          kind: "attributedFreshAuthorship",
+          source: { kind: "writer" },
+          update: input.update,
+        })
+        .then((result) => ({
+          seq: Number(result.sequence),
+          joinedSettlement: (result.joined ?? 0) > 0,
+        }))
+        .catch((cause) => {
+          recordDroppedConnectionUpdate(input.documentId);
+          emitPersistenceAppendFailure(input.documentId, cause);
+          throw cause;
+        });
+      admitted.set(generation, append);
+      try {
+        const result = await append;
+        deps.onLiveUpdatePersisted?.(input.documentId);
+        return { joinedSettlement: result.joinedSettlement };
+      } finally {
+        admitted.delete(generation);
+        if (admitted.size === 0) admittedByDocument.delete(input.documentId);
+      }
+    },
+
+    persistConnectionUpdate(input) {
+      // Durability authority is the awaited pre-apply admission hook. This queue
+      // retains only post-apply reconciliation work and may lag acknowledgements.
+      if (input.origin.type !== "user" || !input.reconcileOffline) return;
+      const convergedState = Y.encodeStateAsUpdate(input.document);
+      enqueueLiveAppend(input.documentId, async () => {
+        try {
+          const result = await deps.offlineReconciliation?.reconcile({
+            documentId: input.documentId,
+            incomingUpdate: input.update,
+            convergedState,
+          });
+          if (result?.degraded) emitOfflineReconciliationDegraded(input.documentId);
+        } catch (cause) {
+          emitOfflineReconciliationFailure(input.documentId, cause);
+        }
+      });
     },
 
     async persistBranchConnectionUpdate(input) {
-      const reservedClientId = reservedClientIdInUpdate(input.update);
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
-      if (reservedClientId !== null) {
+      try {
+        await validateBranchWriterUpdate(input);
+      } catch (cause) {
         recordDroppedConnectionUpdate(queueKey);
         deps.emitAgentEditInvariantViolation({
-          message: `Rejected connection update for branch ${input.branchId}: Yjs clientID ${reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
           branchId: input.branchId,
           originType: input.origin.type,
-          reservedClientId,
-          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
         });
-        return;
+        throw cause;
       }
       const current = await requireBranchStore().getBranch(input.branchId);
       if (
@@ -252,6 +457,7 @@ export function createHocuspocusPersistenceService(
     },
 
     async storeHocuspocusDocument(documentId, document) {
+      if (retiredLiveDocuments.has(document)) return;
       await drainPending(documentId);
       const reservedClientId = unsafeCheckpointDocuments.get(documentId);
       if (reservedClientId !== undefined) {
@@ -293,6 +499,17 @@ export function createHocuspocusPersistenceService(
       )) {
         hocuspocus.closeConnections(roomName);
       }
+    },
+
+    async disconnectLiveGeneration(documentId, _generation) {
+      liveGenerations.set(documentId, _generation + 1n);
+      const hocuspocus = deps.hocuspocus();
+      const document = hocuspocus?.documents.get(documentId);
+      if (!hocuspocus || !document) return;
+      retiredStateVectors.set(documentId, Y.encodeStateVector(document));
+      retiredLiveDocuments.add(document);
+      hocuspocus.closeConnections(documentId);
+      hocuspocus.documents.delete(documentId);
     },
 
     async rejectStaleBranchSyncStep1(input) {
@@ -337,13 +554,6 @@ function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSna
   return false;
 }
 
-function reservedClientIdInUpdate(update: Uint8Array): number | null {
-  return (
-    Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
-      .client ?? null
-  );
-}
-
 function documentContainsState(document: Y.Doc, state: Uint8Array): boolean {
   if (!stateVectorCovers(Y.encodeStateVector(document), Y.encodeStateVectorFromUpdate(state))) {
     return false;
@@ -365,4 +575,28 @@ function stateVectorCovers(candidate: Uint8Array, required: Uint8Array): boolean
     if ((candidateClocks.get(client) ?? 0) < requiredClock) return false;
   }
   return true;
+}
+
+function replaysRetiredGeneration(
+  update: Uint8Array,
+  current: Y.Doc,
+  retiredStateVector: Uint8Array,
+): boolean {
+  const currentClocks = Y.decodeStateVector(Y.encodeStateVector(current));
+  const retiredClocks = Y.decodeStateVector(retiredStateVector);
+  const decoded = Y.decodeUpdate(update);
+  if (
+    decoded.structs.some((struct) => {
+      const end = struct.id.clock + struct.length;
+      const currentClock = currentClocks.get(struct.id.client) ?? 0;
+      const retiredClock = retiredClocks.get(struct.id.client) ?? 0;
+      return end > currentClock && struct.id.clock < retiredClock;
+    })
+  )
+    return true;
+  for (const [client, ranges] of decoded.ds.clients) {
+    const retainedClock = Math.min(currentClocks.get(client) ?? 0, retiredClocks.get(client) ?? 0);
+    if (ranges.some(({ clock, len }) => clock < retainedClock && clock + len > 0)) return true;
+  }
+  return false;
 }

@@ -90,7 +90,6 @@ type PartitionedConcurrentUpdate =
       effectiveUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-      collapsed?: boolean;
     }
   | {
       type: "human";
@@ -98,7 +97,6 @@ type PartitionedConcurrentUpdate =
       residualUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-      collapsed?: boolean;
     };
 
 export function createBranchAgentEditCoordinator(input: {
@@ -173,6 +171,7 @@ export function createBranchAgentEditCoordinator(input: {
                 turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,
                 updateMeta: pending?.meta ?? null,
+                ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
               if (!committed) return result;
               autoPushBranchId = workDraftBranchId;
@@ -276,14 +275,12 @@ export function createBranchAgentEditCoordinator(input: {
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
                 deletedHashes: item.deletedHashes,
-                collapsed: item.collapsed,
               }
             : {
                 update: item.residualUpdate,
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
                 deletedHashes: item.deletedHashes,
-                collapsed: item.collapsed,
               },
         );
       } finally {
@@ -317,6 +314,14 @@ export function createBranchAgentEditJournal(input: {
           };
         }),
       );
+    },
+
+    async recordWriterProtectionScope({ docId, responseId, token }) {
+      input.pendingJournalEntries?.recordWriterProtectionScope({
+        documentId: docId,
+        responseId,
+        token,
+      });
     },
 
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
@@ -414,6 +419,11 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
 type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
   shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
+  recordWriterProtectionScope(input: {
+    documentId: string;
+    responseId: string;
+    token: NonNullable<JournalBatchAppendEntry["meta"]["sealedWriterLineage"]>;
+  }): void;
 };
 
 export function createBranchPendingJournalEntries(
@@ -462,6 +472,13 @@ export function createBranchPendingJournalEntries(
       if (remaining.length > 0) byDocument.set(documentId, remaining);
       else byDocument.delete(documentId);
       return batch;
+    },
+    recordWriterProtectionScope({ documentId, responseId, token }) {
+      for (const entry of byDocument.get(documentId) ?? []) {
+        if (entry.mutation?.authoringResponseId === responseId) {
+          entry.meta.sealedWriterLineage = token;
+        }
+      }
     },
   };
 }
@@ -612,6 +629,7 @@ function liveAttributionRows(updates: readonly PersistedUpdate[]): BranchJournal
       turnId: (update.meta.actorTurnId ?? null) as BranchJournalRow["turnId"],
       actorUserId: actorUserId as BranchJournalRow["actorUserId"],
       updateData: update.update,
+      draftBaseUpdateSeq: 0,
       status: "pushed",
       updateMeta: update.meta,
     };
@@ -657,7 +675,6 @@ function partitionConcurrentUpdates(
           effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
           touchedHashes: touchedHashes ?? (effectiveUpdate ? {} : undefined),
           deletedHashes,
-          collapsed: coverage.collapsed,
         });
       }
     }
@@ -684,7 +701,6 @@ function partitionConcurrentUpdates(
             coverage.humanDeletedHashes.size > 0
               ? { human: [...coverage.humanDeletedHashes] }
               : undefined,
-          collapsed: coverage.collapsed,
         });
       }
     } finally {

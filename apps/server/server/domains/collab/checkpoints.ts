@@ -10,6 +10,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { NoticePort } from "../notices/index.js";
+import type { DocumentAuthority } from "./domain/document-authority.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./index.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
@@ -18,6 +19,7 @@ type CheckpointRecord = {
   id: string;
   documentId: string;
   state: Uint8Array;
+  attributionManifest?: unknown;
   reason: string;
   createdAt: string;
 };
@@ -49,6 +51,7 @@ type CheckpointServiceDeps = {
   notices?: NoticePort;
   model?: YProsemirrorDocumentModel;
   codec?: AgentEditCodec;
+  authority?(documentId: DocumentId): DocumentAuthority;
 };
 
 export type CheckpointService = Pick<CollabDomain, "checkpoint" | "restore" | "listCheckpoints">;
@@ -87,12 +90,20 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
                 beforeContentRef: await deps.latestUpdateSeq(documentId),
               }))
             : null;
-        const result = await deps.markdownDocuments.restoreFromYDoc(
-          documentId as DocumentId,
-          restored,
-          SYSTEM_ORIGIN,
-        );
-        if (!result.ok) return result;
+        if (deps.authority) {
+          await deps.authority(documentId as DocumentId).mutate({
+            kind: "authoritySnapshotReplacement",
+            checkpointId,
+            replaceGeneration: true,
+          });
+        } else {
+          const result = await deps.markdownDocuments.restoreFromYDoc(
+            documentId as DocumentId,
+            restored,
+            SYSTEM_ORIGIN,
+          );
+          if (!result.ok) return result;
+        }
         if (safetySnapshot) {
           const afterHashes = new Set(safetySnapshot.after.map(({ hash }) => hash));
           const discarded = safetySnapshot.before.filter(({ hash }) => !afterHashes.has(hash));

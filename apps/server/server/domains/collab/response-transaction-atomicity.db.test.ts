@@ -24,7 +24,6 @@ describe("change trail (postgres)", () => {
     await harness.seedAndStage("retry-response");
     const before = await harness.captureState();
     const staged = harness.stagedUpdates("retry-response");
-    expect(harness.pendingWatermarkDocuments()).toHaveLength(2);
 
     harness.failSecondJournalInsert = true;
     await expect(harness.commit("retry-response")).rejects.toThrow(
@@ -80,7 +79,6 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     await harness.seedAndStage("outer-rollback-response");
     const before = await harness.captureState();
-    expect(harness.pendingWatermarkDocuments()).toHaveLength(2);
 
     await expect(
       runInDrizzleTransaction(db, async () => {
@@ -139,6 +137,83 @@ describe("change trail (postgres)", () => {
     });
     expect(await commitHarness.noticeRows()).toEqual([
       expect.objectContaining({ kind: "late_sweep", scopeKind: "thread", scopeId: THREAD_ID }),
+    ]);
+  });
+
+  it("persists a writer edit journaled after the observation cut as swept", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000821";
+    await harness.seedProbeTimelineSweep(responseId);
+
+    await expect(harness.commit(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        expect.objectContaining({
+          lateSweep: expect.objectContaining({
+            affectedBlockHashes: expect.any(Array),
+          }),
+        }),
+      ],
+    });
+    await harness.waitForAutoPushes();
+    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
+    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+
+    const trail = await harness.trailRows();
+    expect(trail.shells).toEqual([
+      expect.objectContaining({ sweptChangeCount: 1, changeCount: expect.any(Number) }),
+    ]);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
+    expect(trail.details).toEqual([
+      expect.objectContaining({
+        changes: expect.arrayContaining([
+          expect.objectContaining({
+            beforeText: expect.stringContaining("Writer concurrent edit"),
+            swept: expect.objectContaining({
+              removed: expect.objectContaining({
+                status: "available",
+                markdown: expect.stringContaining("Writer concurrent edit"),
+              }),
+            }),
+          }),
+        ]),
+      }),
+    ]);
+  });
+
+  it("S10 preserves a pulled writer edit as ordinary when the response observed it", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000822";
+    await harness.seedProbeTimelineObserved(responseId);
+
+    await expect(harness.commit(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [expect.not.objectContaining({ lateSweep: expect.anything() })],
+    });
+    await harness.waitForAutoPushes();
+    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.pollTrails();
+    await harness.pollTrails();
+
+    const trail = await harness.trailRows();
+    expect(trail.shells).toEqual([
+      expect.objectContaining({
+        state: "settled",
+        sweptChangeCount: 0,
+        changeCount: expect.any(Number),
+        documentCount: 1,
+      }),
+    ]);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(0);
+    expect(trail.details).toEqual([
+      expect.objectContaining({
+        changes: expect.arrayContaining([
+          expect.objectContaining({
+            swept: null,
+            beforeText: expect.stringContaining("Writer concurrent edit: Writer block."),
+          }),
+        ]),
+      }),
     ]);
   });
 });

@@ -140,7 +140,7 @@ export function createRuntimeToolRegistry(deps: {
       const port = await resolvePort(ctx);
       const edited = await port.edit(
         action.uri,
-        (content) => (action.mode === "append" ? `${content}${action.text}` : content),
+        { kind: "append", content: action.text },
         { origin: agentOrigin(ctx) },
       );
       if (!edited.ok) {

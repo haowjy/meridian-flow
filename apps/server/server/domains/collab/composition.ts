@@ -1,4 +1,5 @@
 /** Composition root for the server collab domain over @meridian/agent-edit. */
+import { createHash } from "node:crypto";
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   type AgentEditCore,
@@ -7,6 +8,7 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
+  type ObservationSnapshotStore,
   parseDocumentAddress,
   type ResponseLifecycleClaimDiscardedDetail,
   type ReversalNoticeFailedDetail,
@@ -28,7 +30,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, works } from "@meridian/database/schema";
+import { documents, turns, works } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
@@ -37,10 +39,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import {
-  runAfterDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../shared/drizzle-transaction.js";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { Ok, type Result } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
@@ -51,11 +50,17 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import {
+  readDocumentAuthority,
+  replaceDocumentAuthorityGeneration,
+} from "./adapters/drizzle-document-authority.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzleLiveTurnDependencyStore,
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
+import { createDrizzleObservationSnapshotStore } from "./adapters/drizzle-observation-snapshots.js";
+import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -90,12 +95,19 @@ import {
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import { createDocumentAuthority, DocumentAuthorityError } from "./domain/document-authority.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
+import {
+  createOfflineReconciliation,
+  type OfflineReconciliation,
+} from "./domain/offline-reconciliation.js";
+import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
+import { createSemanticProvenanceWriter } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -108,12 +120,18 @@ import {
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { closeBranchRooms } from "./hocuspocus-rooms.js";
-import type { CollabDomain, DocumentWriteHook, WriteMode } from "./index.js";
+import type {
+  CollabDomain,
+  DocumentWriteHook,
+  ResponseWriteCommitFinalizeResult,
+  WriteMode,
+} from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
+  observationSnapshots?: ObservationSnapshotStore;
   threads: {
     findById(threadId: ThreadId): Promise<unknown>;
   };
@@ -183,7 +201,6 @@ export async function recordNoticeAfterDurability(
   input: {
     notices: NoticePort;
     eventSink?: EventSink;
-    setFence(documentIds: readonly string[]): void;
     threadId: string;
     documentIds: readonly string[];
     kind: string;
@@ -196,7 +213,6 @@ export async function recordNoticeAfterDurability(
   try {
     await record();
   } catch (cause) {
-    input.setFence(input.documentIds);
     if (input.eventSink) {
       emitEvent(input.eventSink, {
         level: "error",
@@ -245,6 +261,7 @@ type CheckpointRecord = {
   id: string;
   documentId: string;
   state: Uint8Array;
+  attributionManifest?: unknown;
   reason: string;
   createdAt: string;
 };
@@ -276,9 +293,16 @@ export type CollabFacadeDeps = {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  observationSnapshots?: ObservationSnapshotStore;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
+  replaceAuthorityGeneration?(input: {
+    documentId: DocumentId;
+    checkpointId: string;
+    expectedGeneration: bigint;
+  }): Promise<bigint>;
+  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
   resolveDocumentFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -294,6 +318,8 @@ export type CollabFacadeDeps = {
   branchPush?: BranchPushService;
   branchPushStore?: BranchPushStore;
   concurrentJournalWatermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>;
+  offlineReconciliation?: OfflineReconciliation;
+  trailForwardActions?: ReturnType<typeof createDrizzleTrailForwardActions>;
   manifestMembership?: {
     resolveManifestMembership(input: {
       projectId: ProjectId;
@@ -311,9 +337,7 @@ export type CollabFacadeDeps = {
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
-  bindReadRequiredFence?(
-    handler: (threadId: ThreadId, documentIds: readonly string[]) => void,
-  ): void;
+  onWriterIngressBarrier?(barrier: WriterIngressBarrier): void;
 };
 
 export function createReversalNoticePort(deps: {
@@ -377,6 +401,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
   const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
+  const observationSnapshots =
+    deps.observationSnapshots ?? createDrizzleObservationSnapshotStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -425,6 +451,26 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
+  const offlineSchema = buildDocumentSchema();
+  const offlineReconciliation = createOfflineReconciliation({
+    journal,
+    observations: observationSnapshots,
+    changeTrails,
+    model: yProsemirrorModel(offlineSchema),
+    codec: createAgentEditCodec(mdxCodec({ schema: offlineSchema })),
+    digestRenderedContent: (content) => createHash("sha256").update(content).digest("hex"),
+    identifyUpdate: (update) => createHash("sha256").update(update).digest("hex"),
+    resolveThreadId: async (turnId) => {
+      const [row] = await deps.db
+        .select({ threadId: turns.threadId })
+        .from(turns)
+        .where(eq(turns.id, turnId as TurnId))
+        .limit(1);
+      return row?.threadId ?? null;
+    },
+    resolveDocumentTitle: async (documentId) =>
+      documentTitleFromUri(await documentUriResolver(documentId)) ?? "Untitled document",
+  });
   const branchPushStore = createDrizzleBranchPushStore(
     deps.db,
     {
@@ -434,7 +480,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     changeTrails,
     deps.notices,
   );
-  let setReadRequiredFence = (_threadId: ThreadId, _documentIds: readonly string[]) => {};
+  let writerIngressBarrier: WriterIngressBarrier | undefined;
+  const branchPushIngressBarrier: WriterIngressBarrier = {
+    drain: (documentId) => writerIngressBarrier?.drain(documentId) ?? Promise.resolve(0),
+    isGenerationCurrent: (documentId, generation) =>
+      writerIngressBarrier?.isGenerationCurrent(documentId, generation) ?? true,
+  };
   const branchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
@@ -444,65 +495,31 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
+    observations: observationSnapshots,
     notices: deps.notices,
-    recordNoticeAfterDurability: deps.notices
-      ? async ({ notice, threadIds, documentIds }) => {
-          const threadId = threadIds[0];
-          if (!threadId) {
-            try {
-              await deps.notices?.record(notice);
-            } catch (cause) {
-              if (deps.eventSink) {
-                emitEvent(deps.eventSink, {
-                  level: "error",
-                  source: "collab.safety_notices",
-                  name: "unowned_record_failed_after_durability",
-                  payload: {
-                    kind: notice.kind,
-                    documentIds: [...documentIds],
-                    cause: unknownToEventPayload(cause),
-                  },
-                });
-              }
-            }
-            return;
-          }
-          await recordNoticeAfterDurability(
-            {
-              notices: deps.notices as NoticePort,
-              eventSink: deps.eventSink,
-              setFence: (ids) => {
-                for (const ownerThreadId of threadIds) {
-                  setReadRequiredFence(ownerThreadId, ids);
-                }
-              },
-              threadId,
-              documentIds,
-              kind: notice.kind,
-              recordDegraded: () =>
-                recordAwarenessDegradedNotice({
-                  notices: deps.notices as NoticePort,
-                  resolveDocumentUri: documentUriResolver,
-                  threadId,
-                  documentIds,
-                }),
-            },
-            () => (deps.notices as NoticePort).record(notice),
-          );
-        }
-      : undefined,
+    writerIngressBarrier: branchPushIngressBarrier,
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
+  });
+  const trailForwardActions = createDrizzleTrailForwardActions({
+    db: deps.db,
+    coordinator,
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
   });
 
   return createFacade({
     journal,
     coordinator,
     lifecycle,
+    observationSnapshots,
     store,
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
+    },
+    onWriterIngressBarrier(barrier) {
+      writerIngressBarrier = barrier;
     },
     eventSink: deps.eventSink,
     documentUriResolver,
@@ -534,6 +551,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPulls,
     branchPush,
     concurrentJournalWatermarks,
+    offlineReconciliation,
+    trailForwardActions,
     branchPushStore,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
@@ -549,9 +568,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           : null;
     },
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
-    bindReadRequiredFence(handler) {
-      setReadRequiredFence = handler;
-    },
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -559,6 +575,24 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       ]);
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
+    },
+    readAuthorityGeneration: async (documentId) =>
+      (await readDocumentAuthority(deps.db, documentId)).generation,
+    replaceAuthorityGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
+      const result = await replaceDocumentAuthorityGeneration(deps.db, {
+        documentId,
+        checkpointId: Number(checkpointId),
+        expectedGeneration,
+      });
+      if (result.ok) return result.generation;
+      throw new DocumentAuthorityError(
+        result.code === "authority_busy"
+          ? "authority_busy"
+          : result.code === "checkpoint_incomplete"
+            ? "checkpoint_incomplete"
+            : "invalid_mutation",
+        `Authority replacement failed: ${result.code}`,
+      );
     },
   });
 }
@@ -597,6 +631,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
+  const semanticProvenance = createSemanticProvenanceWriter();
   const createLiveCore = () =>
     createAgentEditCore({
       journal: deps.journal,
@@ -604,6 +639,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       lifecycle: deps.lifecycle,
       codec,
       model,
+      semanticProvenance,
+      observationSnapshots: deps.observationSnapshots,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       ...agentEditObservabilityOptions(deps),
@@ -642,6 +679,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             lifecycle: deps.lifecycle,
             codec,
             model,
+            semanticProvenance,
+            observationSnapshots: deps.observationSnapshots,
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
@@ -654,27 +693,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             threadId: threadId ? (threadId as ThreadId) : null,
           });
         },
-        beforeThreadInteraction: deps.branchPulls
+        pullThreadPeer: deps.branchPulls
           ? async ({ documentId, threadId }) =>
               deps.branchPulls?.pullThreadPeer({ documentId, threadId })
           : undefined,
-        captureLiveInteraction: (documentId) =>
-          deps.coordinator.withDocument(documentId, async (doc) => {
-            const snapshot = await deps.journal.readForReconstruction(documentId);
-            return {
-              mode: "live" as const,
-              baselineSnapshot: Y.encodeStateAsUpdate(doc),
-              liveJournalSeq: snapshot.updates.reduce(
-                (latest, update) => Math.max(latest, update.seq),
-                0,
-              ),
-            };
-          }),
       })
     : asThreadPeerAgentEditCore(liveUtilityCore);
-  deps.bindReadRequiredFence?.((threadId, documentIds) =>
-    agentEditCore.setReadRequiredFence(threadId, documentIds),
-  );
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     schema,
@@ -1003,15 +1027,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
-  const checkpoints = createCheckpointService({
-    coordinator: deps.coordinator,
-    store: deps.store,
-    latestUpdateSeq,
-    markdownDocuments,
-    notices: deps.notices,
-    model,
-    codec,
-  });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,
     branchStore: deps.branchStore,
@@ -1020,8 +1035,64 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     eventSink: deps.eventSink,
     metaForOrigin,
     latestUpdateSeq,
+    readAuthorityGeneration: deps.readAuthorityGeneration,
     emitAgentEditInvariantViolation,
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
+    offlineReconciliation: deps.offlineReconciliation,
+  });
+  deps.onWriterIngressBarrier?.(hocuspocusPersistence.writerIngressBarrier);
+  const authorityCallbacks =
+    deps.replaceAuthorityGeneration && deps.readAuthorityGeneration
+      ? {
+          replace: deps.replaceAuthorityGeneration,
+          readGeneration: deps.readAuthorityGeneration,
+        }
+      : null;
+  const checkpoints = createCheckpointService({
+    coordinator: deps.coordinator,
+    store: deps.store,
+    latestUpdateSeq,
+    markdownDocuments,
+    notices: deps.notices,
+    model,
+    codec,
+    ...(authorityCallbacks
+      ? {
+          authority: (documentId: DocumentId) =>
+            createDocumentAuthority({
+              readMutableAuthority: async () => ({
+                documentId,
+                generation: await authorityCallbacks.readGeneration(documentId),
+                doc: await deps.coordinator.withDocument(documentId, async (doc) => doc),
+              }),
+              loadCheckpoint: async (checkpointId) => {
+                const checkpoint = await deps.store.getCheckpoint(checkpointId);
+                return checkpoint
+                  ? {
+                      checkpointId,
+                      state: checkpoint.state,
+                      attributionManifest: checkpoint.attributionManifest,
+                    }
+                  : null;
+              },
+              unresolvedSettlements: async () => 0,
+              replaceGeneration: async (_checkpoint, expectedGeneration) =>
+                authorityCallbacks.replace({
+                  documentId,
+                  checkpointId: _checkpoint.checkpointId,
+                  expectedGeneration,
+                }),
+              disconnectGeneration: (generation) =>
+                hocuspocusPersistence.disconnectLiveGeneration(documentId, generation),
+              admitImmediate: unsupportedAuthorityOperation,
+              readFrozenCut: unsupportedAuthorityOperation,
+              readCurrentRevision: unsupportedAuthorityOperation,
+              lowerCertifiedMutation: unsupportedAuthorityOperation,
+              stagePush: unsupportedAuthorityOperation,
+              completePush: unsupportedAuthorityOperation,
+            }),
+        }
+      : {}),
   });
 
   function readWithStagedResponseOverlay<T>(
@@ -1205,7 +1276,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 if (pushed.status === "push_concurrent_conflict") {
                   return {
                     status: "concurrent_conflict" as const,
+                    reason: pushed.reason,
                     conflictedBlocks: pushed.conflictedBlocks,
+                    conflicts: pushed.conflicts,
                   };
                 }
               } else {
@@ -1218,7 +1291,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 if (pushed.status === "push_concurrent_conflict") {
                   return {
                     status: "concurrent_conflict" as const,
+                    reason: pushed.reason,
                     conflictedBlocks: pushed.conflictedBlocks,
+                    conflicts: pushed.conflicts,
                   };
                 }
               }
@@ -1242,7 +1317,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               if (pushed.status === "push_concurrent_conflict") {
                 return {
                   status: "concurrent_conflict" as const,
+                  reason: pushed.reason,
                   conflictedBlocks: pushed.conflictedBlocks,
+                  conflicts: pushed.conflicts,
                 };
               }
             } else {
@@ -1254,7 +1331,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               if (pushed.status === "push_concurrent_conflict") {
                 return {
                   status: "concurrent_conflict" as const,
+                  reason: pushed.reason,
                   conflictedBlocks: pushed.conflictedBlocks,
+                  conflicts: pushed.conflicts,
                 };
               }
             }
@@ -1375,10 +1454,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.getTurnReceiptChip(threadId, turnId);
     },
 
-    async finalizeResponseCommit(responseId, ctx) {
+    async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
       const stagedCreateIds = agentEditCore.stagedCreatedDocumentIds(responseId, ctx.threadId);
-      const result = await agentEditCore.commitResponse(responseId);
-      if (result.status === "rejected") {
+      const mapResult = async (
+        result: import("@meridian/agent-edit").ResponseCommitResult,
+      ): Promise<ResponseWriteCommitFinalizeResult> => {
+        if (result.status !== "rejected") {
+          return {
+            status: "committed",
+            documents: result.documents,
+            stagedCreates: result.stagedCreates,
+            ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
+          };
+        }
         const rejections = await Promise.all(
           result.rejections.map(async (rejection) => {
             const uri = await (deps.documentUriResolver ?? (async () => null))(
@@ -1395,16 +1483,20 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           rejections,
           stagedCreates: { committed: [], discarded: [...stagedCreateIds] },
         };
-      }
+      };
+      const result = await agentEditCore.commitResponse(responseId, {
+        beforeTransactionCommit: async (commitResult) => {
+          await beforeTransactionCommit?.(await mapResult(commitResult));
+        },
+      });
+      if (result.status === "rejected") return mapResult(result);
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
-        agentEditCore.setReadRequiredFence(ctx.threadId, documentIds);
         if (deps.notices)
           await recordNoticeAfterDurability(
             {
               notices: deps.notices,
               eventSink: deps.eventSink,
-              setFence: (ids) => agentEditCore.setReadRequiredFence(ctx.threadId, ids),
               threadId: ctx.threadId,
               documentIds,
               kind: "awareness_degraded",
@@ -1422,13 +1514,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       for (const document of result.documents) {
         const { lateSweep } = document;
         if (lateSweep) {
-          agentEditCore.setReadRequiredFence(ctx.threadId, [document.documentId]);
           if (deps.notices)
             await recordNoticeAfterDurability(
               {
                 notices: deps.notices,
                 eventSink: deps.eventSink,
-                setFence: (ids) => agentEditCore.setReadRequiredFence(ctx.threadId, ids),
                 threadId: ctx.threadId,
                 documentIds: [document.documentId],
                 kind: "late_sweep",
@@ -1472,18 +1562,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           "collab.response_finalize",
         );
       }
-      return {
-        status: "committed",
-        documents: result.documents,
-        stagedCreates: result.stagedCreates,
-        ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
-      };
+      return mapResult(result);
     },
-
-    setReadRequiredFence(threadId, documentIds) {
-      agentEditCore.setReadRequiredFence(threadId, documentIds);
-    },
-
     async finalizeResponseRollback(responseId, ctx) {
       const activeBranchRows = deps.branchPushStore?.listJournalRowsForTurn
         ? await deps.branchPushStore.listJournalRowsForTurn({
@@ -1522,24 +1602,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
-          captureInteractionContext: (documentId) =>
-            deps.coordinator.withDocument(documentId, async (doc) => {
-              const snapshot = await deps.journal.readForReconstruction(documentId);
-              return {
-                mode: "live" as const,
-                baselineSnapshot: Y.encodeStateAsUpdate(doc),
-                liveJournalSeq: snapshot.updates.reduce(
-                  (latest, update) => Math.max(latest, update.seq),
-                  0,
-                ),
-              };
-            }),
         },
         {
           threadId: ctx.threadId,
           turnId: ctx.turnId,
           direction: "undo",
-          actor: { type: "agent" },
+          actor: { type: "agent", responseId },
         },
       );
 
@@ -1608,6 +1676,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     pushToLive(input) {
       if (!deps.branchPush) throw new Error("Branch push service is not configured");
       return deps.branchPush.pushToLive(input);
+    },
+    recoverPendingLiveSettlements(input) {
+      return deps.branchPush?.recoverPendingLiveSettlements(input) ?? Promise.resolve(0);
     },
     pushSelectedToLive(input) {
       if (!deps.branchPush) throw new Error("Branch push service is not configured");
@@ -1733,6 +1804,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
 
+    admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
+
+    currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+
+    validateBranchWriterUpdate: hocuspocusPersistence.validateBranchWriterUpdate,
+
+    writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
+
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
     persistBranchConnectionUpdate: hocuspocusPersistence.persistBranchConnectionUpdate,
@@ -1750,6 +1829,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
+
+    applyTrailForwardAction(input) {
+      return (
+        deps.trailForwardActions?.apply(input) ??
+        Promise.resolve({ status: "anchor_unavailable" as const })
+      );
+    },
   };
 }
 
@@ -1768,48 +1854,21 @@ export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
-  beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
+  pullThreadPeer?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
     | {
-        changed?: boolean;
-        baselineSnapshot?: Uint8Array;
         branchGeneration: number;
         afterJournalId?: number;
         liveJournalSeq?: number;
       }
     | undefined
   >;
-  captureLiveInteraction?(documentId: string): Promise<{
-    mode: "live";
-    baselineSnapshot: Uint8Array;
-    liveJournalSeq: number;
-  }>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const responseOwners = new Map<string, { threadId?: ThreadId; core: AgentEditCore }>();
-  const pendingInteractionBaselines = new Map<
-    string,
-    {
-      snapshot: Uint8Array;
-      afterJournalId: number;
-      liveJournalSeq?: number;
-      interactionId: string;
-      branchGeneration: number;
-    }
-  >();
   const maxThreadCores = input.maxThreadCores ?? 128;
-
-  function clearPendingBaselinesForThread(threadId: ThreadId, docId?: string): void {
-    const prefix = `${threadId}\0`;
-    for (const key of pendingInteractionBaselines.keys()) {
-      if (!key.startsWith(prefix)) continue;
-      if (docId && key !== pendingBaselineKey(threadId, docId)) continue;
-      pendingInteractionBaselines.delete(key);
-    }
-  }
-
   async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
@@ -1843,7 +1902,6 @@ export function createThreadPeerAgentEditCore(input: {
       await evicted?.invalidateThread("", oldest);
       cores.delete(oldest);
       activeResponseIds.delete(oldest);
-      clearPendingBaselinesForThread(oldest);
     }
   }
 
@@ -1867,22 +1925,7 @@ export function createThreadPeerAgentEditCore(input: {
     activeResponseIds.set(id, active);
   }
 
-  function interactionIdFromContext(context: {
-    responseId?: string;
-    tool_use_id?: string;
-    turnId?: string;
-  }): string | null {
-    return context.tool_use_id ?? context.responseId ?? context.turnId ?? null;
-  }
-
-  function clearPendingBaselinesForInteraction(interactionId: string): void {
-    for (const [key, pending] of pendingInteractionBaselines) {
-      if (pending.interactionId === interactionId) pendingInteractionBaselines.delete(key);
-    }
-  }
-
   async function untrackResponse(responseId: string): Promise<void> {
-    clearPendingBaselinesForInteraction(responseId);
     const owner = responseOwners.get(responseId);
     responseOwners.delete(responseId);
     if (owner?.threadId) {
@@ -1904,15 +1947,6 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
       trackResponse(context.threadId, context.responseId, threadCore);
-      let interactionContext:
-        | {
-            mode: "threadPeer";
-            baselineSnapshot?: Uint8Array;
-            afterJournalId: number;
-            liveJournalSeq?: number;
-            branchGeneration: number;
-          }
-        | undefined;
       const responseAlreadyBufferedDocument = Boolean(
         context.responseId &&
           documentId &&
@@ -1921,95 +1955,40 @@ export function createThreadPeerAgentEditCore(input: {
       if (
         documentId &&
         context.threadId &&
-        input.beforeThreadInteraction &&
+        input.pullThreadPeer &&
         !responseAlreadyBufferedDocument
       ) {
-        const baselineKey = pendingBaselineKey(context.threadId, documentId);
-        const interactionId = interactionIdFromContext(context);
-        const pulled = await input.beforeThreadInteraction({
+        const pulled = await input.pullThreadPeer({
           documentId,
           threadId: context.threadId as ThreadId,
         });
-        const pendingBaseline = pendingInteractionBaselines.get(baselineKey);
-        const currentGeneration = pulled?.branchGeneration;
-        const generationMatches =
-          pendingBaseline &&
-          pendingBaseline.interactionId === interactionId &&
-          pendingBaseline.branchGeneration === currentGeneration;
-        if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
-        const usablePending = generationMatches ? pendingBaseline : undefined;
-        if (pulled?.changed && pulled.baselineSnapshot) {
-          interactionContext = {
-            mode: "threadPeer",
-            baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
-            afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
-            liveJournalSeq: usablePending?.liveJournalSeq ?? pulled.liveJournalSeq,
-            branchGeneration: usablePending?.branchGeneration ?? pulled.branchGeneration,
-          };
-          if (!usablePending && interactionId) {
-            // This cache is scoped to one tool interaction (response id, or turn id
-            // for non-streamed tests). It preserves the original pre-pull baseline
-            // across a failed retry, but the interaction id and branch generation
-            // fence it off from later writes so attribution remains cold.
-            pendingInteractionBaselines.set(baselineKey, {
-              snapshot: pulled.baselineSnapshot,
-              interactionId,
-              branchGeneration: pulled.branchGeneration,
-              afterJournalId: pulled.afterJournalId ?? 0,
-              liveJournalSeq: pulled.liveJournalSeq,
-            });
-          }
-        } else {
-          interactionContext = usablePending
+        if (!context.responseId) await threadCore.invalidateThread(documentId, context.threadId);
+        return threadCore.write(command, {
+          ...context,
+          ...(pulled
             ? {
-                mode: "threadPeer",
-                baselineSnapshot: usablePending.snapshot,
-                afterJournalId: usablePending.afterJournalId,
-                liveJournalSeq: usablePending.liveJournalSeq,
-                branchGeneration: usablePending.branchGeneration,
-              }
-            : pulled
-              ? {
-                  mode: "threadPeer",
+                interactionContext: {
+                  mode: "threadPeer" as const,
+                  branchGeneration: pulled.branchGeneration,
                   afterJournalId: pulled.afterJournalId ?? 0,
                   liveJournalSeq: pulled.liveJournalSeq,
-                  branchGeneration: pulled.branchGeneration,
-                }
-              : undefined;
-        }
-        if (!context.responseId && interactionContext) {
-          await threadCore.invalidateThread(documentId, context.threadId);
-        }
-      }
-      try {
-        const result = await threadCore.write(command, {
-          ...context,
-          ...(interactionContext ? { interactionContext } : {}),
+                },
+              }
+            : {}),
         });
-        if (documentId && context.threadId && interactionContext) {
-          const key = pendingBaselineKey(context.threadId, documentId);
-          if (isSuccessfulAgentWrite(result)) {
-            runAfterDrizzleCommit(() => {
-              pendingInteractionBaselines.delete(key);
-            });
-          } else {
-            pendingInteractionBaselines.delete(key);
-          }
-        }
-        return result;
-      } catch (cause) {
-        if (documentId && context.threadId && interactionContext) {
-          pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
-        }
-        throw cause;
       }
+      return threadCore.write(command, context);
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
     },
-    async commitResponse(responseId) {
+    async commitResponse(responseId, options) {
       const owner = responseOwners.get(responseId);
-      if (!owner) return input.liveUtilityCore.commitResponse(responseId);
+      if (!owner) {
+        const result = await input.liveUtilityCore.commitResponse(responseId, options);
+        await options?.beforeTransactionCommit?.(result);
+        return result;
+      }
       return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
         const result = await owner.core.commitResponse(responseId, {
           deferFinalization: (participant) => {
@@ -2018,6 +1997,7 @@ export function createThreadPeerAgentEditCore(input: {
             }
           },
         });
+        await options?.beforeTransactionCommit?.(result);
         enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
         return result;
       });
@@ -2045,9 +2025,6 @@ export function createThreadPeerAgentEditCore(input: {
         return result;
       });
     },
-    setReadRequiredFence(sessionId, docIds) {
-      coreForSync(sessionId).setReadRequiredFence(sessionId, docIds);
-    },
     async getAvailability(docId, threadId) {
       return (await coreFor(threadId)).getAvailability(docId, threadId);
     },
@@ -2057,18 +2034,8 @@ export function createThreadPeerAgentEditCore(input: {
     async redo(docId, threadId) {
       return (await coreFor(threadId)).redo(docId, threadId);
     },
-    async reverse(inputReverse) {
-      await input.beforeThreadInteraction?.({
-        documentId: inputReverse.docId as DocumentId,
-        threadId: inputReverse.threadId as ThreadId,
-      });
-      const interactionContext =
-        inputReverse.interactionContext ??
-        (await input.captureLiveInteraction?.(inputReverse.docId));
-      return input.liveUtilityCore.reverse({
-        ...inputReverse,
-        ...(interactionContext ? { interactionContext } : {}),
-      });
+    reverse(inputReverse) {
+      return input.liveUtilityCore.reverse(inputReverse);
     },
     async undoTurn(docId, threadId) {
       return (await coreFor(threadId)).undoTurn(docId, threadId);
@@ -2095,7 +2062,6 @@ export function createThreadPeerAgentEditCore(input: {
         }
         cores.delete(id);
         activeResponseIds.delete(id);
-        clearPendingBaselinesForThread(id, docId || undefined);
       } else {
         for (const [id, core] of [...cores]) {
           try {
@@ -2105,7 +2071,6 @@ export function createThreadPeerAgentEditCore(input: {
           }
           cores.delete(id);
           activeResponseIds.delete(id);
-          clearPendingBaselinesForThread(id, docId || undefined);
         }
         try {
           await input.liveUtilityCore.invalidateThread(docId, threadId);
@@ -2212,17 +2177,8 @@ function attributionFromMeta(meta: UpdateMeta): {
   return { originType: null, actorTurnId: null, actorUserId: null };
 }
 
-function pendingBaselineKey(threadId: string, documentId: string): string {
-  return `${threadId}\0${documentId}`;
-}
-
-function isSuccessfulAgentWrite(result: unknown): boolean {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "status" in result &&
-    (result as { status?: unknown }).status === "success"
-  );
+async function unsupportedAuthorityOperation(): Promise<never> {
+  throw new Error("Document authority strategy is unavailable in this production adapter");
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {
@@ -2244,26 +2200,6 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
     }
 
     console.error(message);
-  };
-}
-
-function agentEditBaselineDegradationObserver(
-  eventSink?: EventSink,
-): (event: {
-  documentId: string;
-  responseId: string;
-  from: "interaction";
-  to: "preOwnSnapshot";
-  reason: string;
-}) => void {
-  return (event) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "collab.agent_edit",
-      name: "response_baseline.degraded",
-      payload: { ...event },
-    });
   };
 }
 
@@ -2323,7 +2259,6 @@ function agentEditObservabilityOptions(
   Parameters<typeof createAgentEditCore>[0],
   | "reversalNoticePort"
   | "onInvariantViolation"
-  | "onBaselineDegraded"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
@@ -2333,7 +2268,6 @@ function agentEditObservabilityOptions(
   return {
     ...(deps.reversalNoticePort ? { reversalNoticePort: deps.reversalNoticePort } : {}),
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
-    onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
     onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
     onResponseCommitterTransition: agentEditResponseCommitterTransitionObserver(deps.eventSink),

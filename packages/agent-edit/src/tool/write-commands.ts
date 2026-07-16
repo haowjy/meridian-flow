@@ -7,16 +7,11 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
+import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { DocumentRenderer } from "./document-renderer.js";
-import {
-  BaselineIntegrationError,
-  baselineIntegratesBuffered,
-  interactionContextForAttempt,
-  mutationMode,
-  responseAwareBaselineSnapshot,
-} from "./interaction-mode.js";
+import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { MutationCommit } from "./mutation-commit.js";
@@ -26,7 +21,6 @@ import type { RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
-  errorMessage,
   errorResponse,
   isUnconfirmedDestructiveReplace,
   mutationMeta,
@@ -39,7 +33,7 @@ import { scopedToolUseId } from "./write-idempotency.js";
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "onBaselineDegraded" | "coordinator"
+    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "coordinator" | "semanticProvenance"
   >;
   threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
@@ -95,13 +89,34 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    runtimeStore.clearReadRequiredFence(session.id, address.documentId);
-    if (command.format === "outline") {
-      return readSuccess(
-        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+    const selected = new Set(selection.blocks);
+    const observations = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec)
+      .filter((_, index) => selected.has(options.model.getBlocks(toDocHandle(runtime.doc))[index]))
+      .flatMap((block) =>
+        block.clientID !== undefined && block.clock !== undefined && block.renderedContent
+          ? [
+              {
+                kind: "rendered" as const,
+                clientID: block.clientID,
+                clock: block.clock,
+                renderedContent: block.renderedContent,
+                sourceText: block.serialized,
+              },
+            ]
+          : [],
       );
+    if (command.format === "outline") {
+      return {
+        ...readSuccess(
+          renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+        ),
+        observations,
+      };
     }
-    return readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
+    return {
+      ...readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks)),
+      observations,
+    };
   }
 
   async function create(
@@ -130,13 +145,6 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const fenced = readRequiredFenceResult(
-      runtimeStore,
-      session,
-      address.documentId,
-      address.filePath,
-    );
-    if (fenced) return fenced;
     const overwriting = command.overwrite === true;
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
@@ -221,6 +229,7 @@ export function createWriteCommands(deps: {
       if (!resolved.ok) {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
+      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
@@ -233,6 +242,11 @@ export function createWriteCommands(deps: {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       }
+      options.semanticProvenance?.writeCertifiedFacts(
+        toDocHandle(runtime.doc),
+        resolved.ir,
+        beforeVector,
+      );
       touchedHashes = new Set(applied.changedBlocks ?? []);
       deletedHashes = new Set(applied.deletedBlocks ?? []);
     } else {
@@ -303,6 +317,7 @@ export function createWriteCommands(deps: {
             mutation: {
               threadId: session.threadId,
               turnId,
+              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
               actorKind: actor.kind,
               ...(actor.kind === "human" ? { userId: actor.userId } : {}),
               ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
@@ -321,7 +336,6 @@ export function createWriteCommands(deps: {
         ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
-          undefined,
           writeIdentity.durableId,
         ),
       });
@@ -332,19 +346,12 @@ export function createWriteCommands(deps: {
     }
     if (!committed.ok) {
       if (committed.journalCommitKind !== "durable") {
-        if (committed.response.status === "destructive_write_rejected") {
-          runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
-        }
         await runtimeStore.evictRuntime(session, address.documentId);
         return committed.response;
       }
       await runtimeStore.recoverCommittedResponseProjection([
         { docId: address.documentId, session, runtime, commandName: command.command },
       ]);
-    }
-
-    if (committed.ok && committed.lateSweep) {
-      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
     }
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
@@ -378,13 +385,6 @@ export function createWriteCommands(deps: {
       });
     }
     const runtime = runtimeFor(session, address.documentId);
-    const fenced = readRequiredFenceResult(
-      runtimeStore,
-      session,
-      address.documentId,
-      address.filePath,
-    );
-    if (fenced) return fenced;
     let synced = await requireSynced(
       session,
       address.documentId,
@@ -412,6 +412,7 @@ export function createWriteCommands(deps: {
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
     }
+    validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const actor = mutationActor(session, address.documentId, context);
@@ -422,14 +423,8 @@ export function createWriteCommands(deps: {
       context,
       command.tool_use_id,
     );
-    const detectionBaseline = detectionBaselineSnapshot(
-      address.documentId,
-      context,
-      preOwnSnapshot,
-    );
     const interactionContext = interactionContextForAttempt(
       context.interactionContext,
-      detectionBaseline,
       writeIdentity.durableId,
     );
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
@@ -448,6 +443,11 @@ export function createWriteCommands(deps: {
     );
     if (!applied.ok)
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
+    options.semanticProvenance?.writeCertifiedFacts(
+      toDocHandle(runtime.doc),
+      resolved.ir,
+      beforeVector,
+    );
 
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
@@ -500,6 +500,7 @@ export function createWriteCommands(deps: {
           touchedHashes: new Set(applied.changedBlocks ?? []),
           deletedHashes: new Set(applied.deletedBlocks ?? []),
           preOwnSnapshot,
+          semanticEditIr: resolved.ir,
           ...(interactionContext ? { interactionContext } : {}),
         });
         if (rejected) {
@@ -527,9 +528,11 @@ export function createWriteCommands(deps: {
         mutation: {
           threadId: session.threadId,
           turnId,
+          ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
           actorKind: actor.kind,
           ...(actor.kind === "human" ? { userId: actor.userId } : {}),
           ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+          ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
           writeId: writeIdentity.durableId,
           wId: writeIdentity.ordinal,
           ...mutationMode(interactionContext),
@@ -551,9 +554,6 @@ export function createWriteCommands(deps: {
     }
     if (!syncedMutation.ok) {
       if (syncedMutation.journalCommitKind !== "durable") {
-        if (syncedMutation.response.status === "destructive_write_rejected") {
-          runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
-        }
         await runtimeStore.evictRuntime(session, address.documentId);
         return syncedMutation.response;
       }
@@ -572,10 +572,6 @@ export function createWriteCommands(deps: {
       };
     }
 
-    if (syncedMutation.lateSweep) {
-      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
-    }
-
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       phase: "committed",
@@ -587,37 +583,21 @@ export function createWriteCommands(deps: {
     });
   }
 
-  function detectionBaselineSnapshot(
-    docId: string,
-    context: WriteContext,
-    preOwnSnapshot?: Uint8Array,
-  ): Uint8Array | undefined {
-    const interactionContext = context.interactionContext;
-    if (!interactionContext?.baselineSnapshot) return preOwnSnapshot;
-    if (!context.responseId) return interactionContext.baselineSnapshot;
-    const bufferedUpdates = responseCommitter.bufferedUpdatesForDoc(context.responseId, docId);
-    try {
-      return responseAwareBaselineSnapshot(interactionContext.baselineSnapshot, bufferedUpdates);
-    } catch (cause) {
-      const fallback =
-        preOwnSnapshot && baselineIntegratesBuffered(preOwnSnapshot, bufferedUpdates)
-          ? { snapshot: preOwnSnapshot, to: "preOwnSnapshot" as const }
-          : null;
-      if (!fallback) {
-        throw new BaselineIntegrationError(
-          `Staged response updates are not integrable into the cold/request-local detection baselines: ${errorMessage(cause)}`,
-          { cause },
-        );
-      }
-      options.onBaselineDegraded?.({
-        documentId: docId,
-        responseId: context.responseId,
-        from: "interaction",
-        to: fallback.to,
-        reason: errorMessage(cause),
-      });
-      return fallback.snapshot;
-    }
+  function validateResolvedIr(
+    ir: import("../semantic-edit-ir.js").SemanticEditIRV1,
+    documentId: string,
+    doc: Y.Doc,
+  ): void {
+    validateSemanticEditIRV1(ir, {
+      expectedDocumentId: documentId,
+      expectedInputRevision: revisionOf(doc),
+    });
+  }
+
+  function revisionOf(doc: Y.Doc): string {
+    return [...options.model.encodeStateVector(toDocHandle(doc))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   async function nextWriteIdentity(
@@ -654,20 +634,6 @@ export function createWriteCommands(deps: {
       responseId: context.responseId ?? turnId,
     };
   }
-}
-
-function readRequiredFenceResult(
-  runtimeStore: RuntimeStore,
-  session: ActorSession,
-  documentId: string,
-  filePath: string,
-): InternalWriteResult | null {
-  // The fence proves model visibility, so transparent runtime restoration is not enough.
-  if (!runtimeStore.isReadFenced(session.id, documentId)) return null;
-  return status(
-    "rejected_response_requires_reread",
-    `This document must be read after a rejected response before it can be changed. Run write(command="read", file="${filePath}") and retry.`,
-  );
 }
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {

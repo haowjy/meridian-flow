@@ -3,6 +3,7 @@
  * runtime service graph. App startup supplies process-level resources; this file
  * chooses concrete server adapters and assembles domain services behind ports.
  */
+import { createObservationAuthority } from "@meridian/agent-edit";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -63,6 +64,8 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
+import { createDrizzleResponseObservations } from "../domains/runtime/adapters/drizzle-response-observations.js";
+import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
   createChildRunCoordinator,
@@ -208,6 +211,29 @@ export type ProductionAppPorts = {
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
 };
+
+const OBSERVATION_RENDER_SAFETY_TOKENS = 16_000;
+
+function observationRenderBudgetBytes(request: {
+  model?: string;
+  messages: unknown;
+  tools?: unknown;
+}): number {
+  const modelId = request.model ?? MODEL_REGISTRY.defaultModel;
+  const model = MODEL_REGISTRY.providers
+    .flatMap((provider) => provider.models)
+    .find((candidate) => candidate.id === modelId);
+  if (!model) return 0;
+  const fixedRequestBytes = new TextEncoder().encode(
+    JSON.stringify({ messages: request.messages, tools: request.tools }),
+  ).byteLength;
+  // Three UTF-8 bytes per remaining token deliberately underestimates capacity.
+  const capacityBytes = Math.max(
+    0,
+    (model.contextWindow - model.maxOutputTokens - OBSERVATION_RENDER_SAFETY_TOKENS) * 3,
+  );
+  return Math.max(0, capacityBytes - fixedRequestBytes);
+}
 
 export async function createProductionAppPorts(input: {
   db: Database;
@@ -358,14 +384,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
     retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
-    onRetryExhausted: (threadId, documentId) =>
-      ports.documentSync.setReadRequiredFence(threadId as never, [documentId]),
+    recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
   const toolRegistry = createToolRegistry();
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
+  const responseObservations = createDrizzleResponseObservations(ports.db);
+  const observationAuthority = createObservationAuthority({ store: responseObservations.store });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -464,6 +491,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     notices: ports.notices,
     activeDocuments: ports.activeDocuments,
+    observationRendering: {
+      authority: observationAuthority,
+      budgetBytes: observationRenderBudgetBytes,
+      freezeCausalCuts: responseObservations.freezeCausalCuts,
+    },
   });
   runTurnProxy.bind(orchestrator);
 

@@ -448,6 +448,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(documentYjsCheckpoints)
         .values({
           documentId: DOC_ID as never,
+          authorityId: DOC_ID as never,
+          authorityGeneration: 1n,
+          attributionManifest: { version: 1, floor: null, attributions: [] },
           state: Buffer.from(Y.encodeStateAsUpdate(live)),
           stateVector: Buffer.from(Y.encodeStateVector(live)),
           upToSeq: 1,
@@ -809,6 +812,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: branch.branchId,
           generation: branch.generation,
           updateData: Buffer.from(new Uint8Array([1, 2, 3])),
+          draftBaseUpdateSeq: 0,
           source: "agent",
           threadId: THREAD_ID as never,
           turnId: TURN_ID as never,
@@ -851,6 +855,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: branch.branchId,
           generation: branch.generation,
           updateData: Buffer.from(update),
+          draftBaseUpdateSeq: 0,
           source: "agent",
         })
         .returning();
@@ -874,6 +879,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               turnId: null,
               actorUserId: null,
               updateData: update,
+              draftBaseUpdateSeq: journalRow.draftBaseUpdateSeq,
               status: "active",
             },
           ],
@@ -898,6 +904,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadIds: [],
             journalOwners: [],
             changes: [],
+          },
+          pendingLiveSettlement: {
+            documentTitle: "document",
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+            pushUpdate: update,
+            postCutUpdates: [],
+            provenanceView: [],
+            lineageEvidence: { version: 2, items: [] },
+            responseEvidence: [],
+            joinVersion: 0,
+            settledJoinVersion: null,
+            claim: {
+              token: "00000000-0000-4000-8000-000000000699",
+              epoch: 1,
+              kind: "warm",
+              leaseExpiresAt: new Date(Date.now() + 30_000),
+            },
+            attemptCount: 0,
+            state: "pending",
+            beforeContentRef: null,
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "receipt",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
           },
         }),
       ).rejects.toThrow("changed before its push could commit");
@@ -938,6 +972,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadIds: [],
             journalOwners: [],
             changes: [],
+          },
+          pendingLiveSettlement: {
+            documentTitle: "document",
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
+            pushUpdate: update,
+            postCutUpdates: [],
+            provenanceView: [],
+            lineageEvidence: { version: 2, items: [] },
+            responseEvidence: [],
+            joinVersion: 0,
+            settledJoinVersion: null,
+            claim: {
+              token: "00000000-0000-4000-8000-000000000699",
+              epoch: 1,
+              kind: "warm",
+              leaseExpiresAt: new Date(Date.now() + 30_000),
+            },
+            attemptCount: 0,
+            state: "pending",
+            beforeContentRef: null,
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "receipt",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
           },
         }),
       ).rejects.toThrow("changed before its push could commit");
@@ -1044,6 +1106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
         {
@@ -1051,6 +1114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_target_floor",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "active",
         },
         {
@@ -1058,6 +1122,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 2,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
         {
@@ -1065,6 +1130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "discarded",
         },
         {
@@ -1072,6 +1138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_pushed",
           generation: 3,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
         {
@@ -1079,6 +1146,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: "branch_other_document",
           generation: 1,
           updateData: update,
+          draftBaseUpdateSeq: 0,
           status: "pushed",
         },
       ]);
@@ -1213,6 +1281,45 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         persistence.loadHocuspocusBranchState("missing-review-branch", 1),
       ).resolves.toBeUndefined();
+    });
+    it("captures an immutable live journal draftBase for each new draft row", async () => {
+      const live = docWithText("base");
+      const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: live,
+      });
+      await store.appendJournal?.({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: new Uint8Array(),
+        source: "agent",
+      });
+
+      const beforeSecond = Y.encodeStateVector(live);
+      live.getText("content").insert(live.getText("content").length, " later");
+      const secondSeq = await livePersistence.journal.append(
+        DOC_ID,
+        Y.encodeStateAsUpdate(live, beforeSecond),
+        { origin: `human:${USER_ID}`, seq: 0 },
+      );
+      await store.appendJournal?.({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: new Uint8Array(),
+        source: "agent",
+      });
+
+      const rows = await db
+        .select({ draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branch.branchId))
+        .orderBy(branchWriteJournal.id);
+      expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
     });
     it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {
       const branch = await store.ensureWorkDraftBranch({

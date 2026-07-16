@@ -1,4 +1,6 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
+
+import type { SemanticEditIRV1 } from "@meridian/agent-edit";
 import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -10,7 +12,7 @@ import {
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import { BranchCorruptError } from "./branch-resolver.js";
-import { sync } from "./branch-sync.js";
+import { createDocumentAuthority } from "./document-authority.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
@@ -57,6 +59,7 @@ export type AppendBranchJournalInput = {
   turnId?: string | null;
   actorUserId?: string | null;
   updateMeta?: unknown;
+  semanticEditIr?: SemanticEditIRV1;
 };
 
 export type ResetBranchSnapshotInput = {
@@ -291,8 +294,10 @@ export function createBranchCoordinator(input: {
     if (!input.store.resetBranchSnapshot) {
       throw new Error("Branch store does not support branch reset");
     }
-    const state = Y.encodeStateAsUpdate(upstream);
-    const stateVector = Y.encodeStateVector(upstream);
+    const resetDoc = createCollabYDoc({ gc: false });
+    await replicateFrozenCut(upstream, resetDoc);
+    const state = Y.encodeStateAsUpdate(resetDoc);
+    const stateVector = Y.encodeStateVector(resetDoc);
     const ok = await input.store.resetBranchSnapshot({
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
@@ -304,12 +309,11 @@ export function createBranchCoordinator(input: {
       schemaVersion,
     });
     if (!ok) {
+      resetDoc.destroy();
       cached.delete(snapshot.branchId);
       dirtyTransientBranches.delete(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
-    const resetDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(resetDoc, state);
     dirtyTransientBranches.delete(snapshot.branchId);
     cached.set(snapshot.branchId, {
       generation: snapshot.generation + 1,
@@ -340,6 +344,53 @@ export function createBranchCoordinator(input: {
       } catch (cause) {
         if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
       }
+    }
+  }
+
+  async function replicateFrozenCut(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
+    let admittedUpdate: Uint8Array | undefined;
+    const cutState = Y.encodeStateAsUpdate(source);
+    const frozenSource = cloneDoc(source);
+    try {
+      const authority = createDocumentAuthority({
+        readMutableAuthority: () => ({ documentId: "branch", generation: 0n, doc: target }),
+        readFrozenCut: async (cutId) =>
+          cutId === "captured-upstream"
+            ? {
+                cutId,
+                documentId: "branch",
+                authorityId: "captured-upstream",
+                generation: 0n,
+                doc: frozenSource,
+              }
+            : null,
+        admitImmediate: async ({ update }) => {
+          admittedUpdate = update;
+          Y.applyUpdate(target, update);
+          return { sequence: 0n, joined: 0 };
+        },
+        readCurrentRevision: unsupportedAuthorityOperation,
+        lowerCertifiedMutation: unsupportedAuthorityOperation,
+        loadCheckpoint: unsupportedAuthorityOperation,
+        unresolvedSettlements: unsupportedAuthorityOperation,
+        replaceGeneration: unsupportedAuthorityOperation,
+        disconnectGeneration: unsupportedAuthorityOperation,
+        stagePush: unsupportedAuthorityOperation,
+        completePush: unsupportedAuthorityOperation,
+      });
+      await authority.mutate({
+        kind: "identityReplication",
+        sourceAuthorityCutId: "captured-upstream",
+        plan: { kind: "wholeDocument" },
+      });
+      if (!admittedUpdate) throw new Error("Identity replication produced no branch update");
+      // Prove the aggregate used the immutable cut rather than rereading its mutable caller.
+      if (!bytesEqual(cutState, Y.encodeStateAsUpdate(frozenSource))) {
+        throw new Error("Captured authority cut changed during replication");
+      }
+      return admittedUpdate;
+    } finally {
+      frozenSource.destroy();
     }
   }
 
@@ -419,7 +470,7 @@ export function createBranchCoordinator(input: {
     },
 
     pullFromDoc(branchId, upstream) {
-      return runWithRetry(branchId, async (_snapshot, doc) => sync(upstream, doc));
+      return runWithRetry(branchId, async (_snapshot, doc) => replicateFrozenCut(upstream, doc));
     },
 
     async pullFromBranch(branchId, upstreamBranchId) {
@@ -522,12 +573,50 @@ export function createBranchCoordinator(input: {
             const doc = cloneDoc(cachedDoc);
             const updateData = encodeDeltaUpdate(inputJournal.sourceDoc, doc);
             if (!updateData) return false;
-            Y.applyUpdate(doc, updateData);
-            await persist(snapshot, doc, {
-              ...inputJournal,
-              updateData,
-              generation: snapshot.generation,
-            });
+            const semanticIr = inputJournal.semanticEditIr;
+            if (inputJournal.source === "agent" && semanticIr) {
+              const authority = createDocumentAuthority({
+                readMutableAuthority: () => ({
+                  documentId: snapshot.documentId,
+                  generation: BigInt(snapshot.generation),
+                  doc,
+                }),
+                // A response may lower several certified IRs into one atomic branch delta.
+                // The package validated each IR against its chained runtime revision before
+                // the ambient response transaction began; rereading the pre-batch target here
+                // would reject every IR after the first and force the durable unit to split.
+                readCurrentRevision: async () => semanticIr.inputRevision,
+                lowerCertifiedMutation: async () => updateData,
+                admitImmediate: async ({ update }) => {
+                  Y.applyUpdate(doc, update);
+                  await persist(snapshot, doc, {
+                    ...inputJournal,
+                    updateData: update,
+                    generation: snapshot.generation,
+                  });
+                  return { sequence: 0n, joined: 0 };
+                },
+                readFrozenCut: unsupportedAuthorityOperation,
+                loadCheckpoint: unsupportedAuthorityOperation,
+                unresolvedSettlements: unsupportedAuthorityOperation,
+                replaceGeneration: unsupportedAuthorityOperation,
+                disconnectGeneration: unsupportedAuthorityOperation,
+                stagePush: unsupportedAuthorityOperation,
+                completePush: unsupportedAuthorityOperation,
+              });
+              await authority.mutate({
+                kind: "certifiedSemanticMutation",
+                actor: "agent",
+                ir: semanticIr,
+              });
+            } else {
+              Y.applyUpdate(doc, updateData);
+              await persist(snapshot, doc, {
+                ...inputJournal,
+                updateData,
+                generation: snapshot.generation,
+              });
+            }
             return true;
           });
         } catch (cause) {
@@ -604,4 +693,8 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
 
 function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
   return yjsDeltaUpdate(from, to);
+}
+
+async function unsupportedAuthorityOperation(): Promise<never> {
+  throw new Error("Document authority strategy is unavailable for this branch operation");
 }
