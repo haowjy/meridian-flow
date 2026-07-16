@@ -12,9 +12,9 @@
  * failed push leaves the writer in Draft with nothing changed.
  */
 import { Plural, Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/protocol";
+import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { type ReactNode, type Ref, useId, useState } from "react";
+import { type ReactNode, type Ref, useId, useRef, useState } from "react";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
@@ -45,51 +45,26 @@ export function ComposerWriteModeControl({ projectId, work }: { projectId: strin
       value={work.aiWriteMode}
       disabled={updateWriteMode.isPending || workDrafts.groups == null}
       pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
-      onChange={(aiWriteMode) =>
-        updateWriteMode.mutate(
-          aiWriteMode === "direct" ? { aiWriteMode, confirmedPush: true } : aiWriteMode,
-        )
-      }
-      onApplyAndSwitch={() =>
-        // The server pushes the whole work branch before changing the policy.
-        // Any non-updated result leaves the writer in Draft.
-        new Promise<boolean>((resolve) => {
-          updateWriteMode.mutate(
-            { aiWriteMode: "direct", confirmedPush: true },
-            {
-              onSuccess: (result) => resolve(result.status === "updated"),
-              onError: () => resolve(false),
-            },
-          );
-        })
+      onSelectDraft={() => updateWriteMode.mutate("draft")}
+      onRequestAutoApply={(confirmedPush) =>
+        updateWriteMode
+          .mutateAsync(
+            confirmedPush
+              ? { aiWriteMode: "direct", confirmedPush: true }
+              : { aiWriteMode: "direct" },
+          )
+          .catch(() => null)
       }
     />
   );
 }
 
-/**
- * The confirm-and-push count the writer sees. Its caller derives this from the
- * same content-aware draft groups as the dock, so an empty dock cannot coexist
- * with a warning about invisible changes. `null` collapses to 0.
- */
-export function confirmPushCount(pendingChangeCount: number | null): number {
-  return pendingChangeCount ?? 0;
-}
-
-/**
- * Whether clicking Auto-apply must confirm-and-push rather than flip silently:
- * only when leaving Draft with pending changes (§3.4). N = 0 is a free flip.
- */
-export function shouldConfirmPush(value: AiWriteMode, pendingChangeCount: number | null): boolean {
-  return value === "draft" && confirmPushCount(pendingChangeCount) > 0;
-}
-
-export function AiWriteModeControl({
+function AiWriteModeControl({
   value,
   disabled,
   pendingChangeCount,
-  onChange,
-  onApplyAndSwitch,
+  onSelectDraft,
+  onRequestAutoApply,
 }: {
   value: AiWriteMode;
   disabled: boolean;
@@ -98,40 +73,55 @@ export function AiWriteModeControl({
    * treated as no pending changes and permits a silent switch.
    */
   pendingChangeCount: number | null;
-  onChange: (value: AiWriteMode) => void;
+  onSelectDraft: () => void;
   /**
    * Runs the confirm-and-push: server pushes the pending changes, then flips
    * `pushPolicy='auto'`, in that order (§3.4). Resolves `true` on success (mode
    * is now Auto-apply), `false` if the push failed and the writer stays in
    * Draft.
    */
-  onApplyAndSwitch: () => Promise<boolean>;
+  onRequestAutoApply: (confirmedPush: boolean) => Promise<UpdateWorkWriteModeResponse | null>;
 }) {
   const groupName = useId();
-  const pendingCount = confirmPushCount(pendingChangeCount);
+  const autoApplyRef = useRef<HTMLInputElement>(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [applying, setApplying] = useState(false);
   const [pushFailed, setPushFailed] = useState(false);
+  const [serverPendingCount, setServerPendingCount] = useState<number | null>(null);
 
-  const selectAutoApply = () => {
-    // N = 0 is a free, silent flip (§3.4). Only pending changes need the
-    // confirm-and-push, and only when leaving Draft.
-    if (shouldConfirmPush(value, pendingChangeCount)) {
+  const selectAutoApply = async () => {
+    // The client count is only a fast path for showing the pending UI. The
+    // unconfirmed request is always sent, even when this cache says zero; only
+    // the server may decide that there is nothing requiring confirmation.
+    if (value === "draft" && (pendingChangeCount ?? 0) > 0) {
       setPushFailed(false);
+      setServerPendingCount(null);
       setConfirmOpen(true);
-      return;
     }
-    onChange("direct");
+    setApplying(true);
+    const result = await onRequestAutoApply(false);
+    setApplying(false);
+    if (result?.status === "confirmation_required") {
+      setServerPendingCount(result.pendingChangeCount);
+      setConfirmOpen(true);
+    } else if (result?.status === "updated") {
+      setConfirmOpen(false);
+    } else if (confirmOpen || (pendingChangeCount ?? 0) > 0) {
+      setPushFailed(true);
+    }
   };
 
   const confirmApplyAndSwitch = async () => {
     setApplying(true);
     setPushFailed(false);
-    const ok = await onApplyAndSwitch();
+    const result = await onRequestAutoApply(true);
     setApplying(false);
-    if (ok) {
+    if (result?.status === "updated") {
       setConfirmOpen(false);
+    } else if (result?.status === "confirmation_required") {
+      setServerPendingCount(result.pendingChangeCount);
+      setPushFailed(true);
     } else {
       // Policy did not flip (§3.4) — keep the popover open and tell the truth.
       setPushFailed(true);
@@ -161,7 +151,7 @@ export function AiWriteModeControl({
             value="draft"
             selected={value === "draft"}
             disabled={disabled}
-            onSelect={() => onChange("draft")}
+            onSelect={onSelectDraft}
           >
             <Trans>Draft</Trans>
           </AiWriteModeOption>
@@ -172,13 +162,22 @@ export function AiWriteModeControl({
               value="direct"
               selected={value === "direct"}
               disabled={disabled}
-              onSelect={selectAutoApply}
+              inputRef={autoApplyRef}
+              onSelect={() => void selectAutoApply()}
             >
               <Trans>Auto-apply</Trans>
             </AiWriteModeOption>
           </PopoverAnchor>
         </div>
-        <PopoverContent align="start" side="top" className="w-72">
+        <PopoverContent
+          align="start"
+          side="top"
+          className="w-72"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            autoApplyRef.current?.focus();
+          }}
+        >
           <PopoverHeader>
             <PopoverTitle>
               <Trans>Switch to Auto-apply?</Trans>
@@ -187,12 +186,16 @@ export function AiWriteModeControl({
               <p className="text-caption text-destructive" role="alert">
                 <Trans>Couldn't apply everything. Nothing changed, so you're still in Draft.</Trans>
               </p>
+            ) : serverPendingCount == null ? (
+              <PopoverDescription className="text-caption">
+                <Trans>Checking pending changes…</Trans>
+              </PopoverDescription>
             ) : (
               <PopoverDescription className="text-caption">
                 <Trans>
                   This applies all{" "}
                   <Plural
-                    value={pendingCount}
+                    value={serverPendingCount}
                     one="# pending draft change"
                     other="# pending draft changes"
                   />{" "}
@@ -205,8 +208,16 @@ export function AiWriteModeControl({
             <Button variant="ghost" size="sm" disabled={applying} onClick={closeConfirm}>
               <Trans>Cancel</Trans>
             </Button>
-            <Button size="sm" disabled={applying} onClick={() => void confirmApplyAndSwitch()}>
-              {applying ? <Trans>Applying…</Trans> : <Trans>Apply {pendingCount} and switch</Trans>}
+            <Button
+              size="sm"
+              disabled={applying || serverPendingCount == null}
+              onClick={() => void confirmApplyAndSwitch()}
+            >
+              {applying ? (
+                <Trans>Applying…</Trans>
+              ) : (
+                <Trans>Apply {serverPendingCount ?? 0} and switch</Trans>
+              )}
             </Button>
           </div>
         </PopoverContent>
@@ -223,6 +234,7 @@ function AiWriteModeOption({
   onSelect,
   children,
   ref,
+  inputRef,
   ...anchorProps
 }: {
   name: string;
@@ -234,6 +246,7 @@ function AiWriteModeOption({
   // Threaded so `PopoverAnchor asChild` can attach to the label DOM node and
   // position the confirm popover on the option itself.
   ref?: Ref<HTMLLabelElement>;
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   return (
     <label
@@ -245,6 +258,7 @@ function AiWriteModeOption({
       {...anchorProps}
     >
       <input
+        ref={inputRef}
         type="radio"
         name={name}
         value={value}
