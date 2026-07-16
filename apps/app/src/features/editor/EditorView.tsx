@@ -38,7 +38,8 @@ import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-run
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
-import { FloatingEditorToolbar } from "./EditorToolbar";
+import { EditorToolbar } from "./EditorToolbar";
+import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -240,7 +241,7 @@ function SessionEditorView({
         enableDraftInlineReview: inReview,
         editorProps: {
           attributes: {
-            class: "prose-tokens focus-ring min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
+            class: editorProseClass(showToolbar ? "docked" : "none"),
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
           handleTextInput(view, from, _to, text) {
@@ -421,7 +422,7 @@ function SessionEditorView({
         editor={editor}
         toolbar={
           showToolbar ? (
-            <FloatingEditorToolbar
+            <EditorToolbar
               editor={editor}
               onFigureButtonClick={() => figureInputRef.current?.click()}
               figureUploadBusy={figureUploadState.kind === "uploading"}
@@ -464,9 +465,7 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
       {belowToolbar}
       <TrackedEditorCanvas
         editor={null}
-        toolbar={
-          showToolbar ? <FloatingEditorToolbar editor={null} figureUploadDisabled /> : undefined
-        }
+        toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
       />
     </section>
   );
@@ -492,7 +491,6 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
-      toolbarPositionClassName="inset-x-0 mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16"
       scrollRef={scrollRef}
       scrollClassName={cn(
         "meridian-editor main-pane relative",
@@ -500,8 +498,8 @@ function TrackedEditorCanvas({
       )}
       onScroll={onScroll}
     >
-      <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
-        <EditorContent editor={editor} className="min-h-full" />
+      <div className={cn(editorColumnCanvas, editorColumnFill)}>
+        <EditorContent editor={editor} className={editorColumnFill} />
       </div>
       {dropOverlay}
       {uploadStatus}

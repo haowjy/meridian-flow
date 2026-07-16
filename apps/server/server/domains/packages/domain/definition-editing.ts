@@ -132,48 +132,6 @@ export async function saveSkillDefinition(
   };
 }
 
-export async function getAgentDefinition(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<AgentDefinitionDetail> {
-  const agent =
-    (await tx.findAgentDefinition(projectId, slug)) ?? (await tx.findAgentDefinition(null, slug));
-  if (!agent) {
-    throw new DefinitionEditError(`Agent not found: ${slug}`);
-  }
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(agent, packageInstalls);
-  const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
-  return toAgentDefinitionDetail(agent, {
-    body: agent.body,
-    meta: agent.meta,
-    config: agent.config,
-    packageName,
-    skillLinks,
-  });
-}
-
-export async function getSkillDefinition(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<SkillDefinitionDetail> {
-  const skill =
-    (await tx.findSkillDefinition(projectId, slug)) ?? (await tx.findSkillDefinition(null, slug));
-  if (!skill) {
-    throw new DefinitionEditError(`Skill not found: ${slug}`);
-  }
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(skill, packageInstalls);
-  return toSkillDefinitionDetail(skill, {
-    body: skill.body,
-    meta: skill.meta,
-    files: skill.files,
-    packageName,
-  });
-}
-
 export async function listAgentDefinitionRevisions(
   tx: PackageWriteTransaction,
   projectId: string,

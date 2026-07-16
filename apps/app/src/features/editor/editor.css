@@ -148,7 +148,7 @@
 }
 
 .meridian-editor .ProseMirror th {
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
   font-weight: 650;
 }
 
@@ -162,7 +162,7 @@
   gap: 0.5rem;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-warm);
+  background: var(--color-card);
   padding: 0.75rem;
 }
 
@@ -390,7 +390,7 @@
 }
 
 .meridian-editor--drag-active .ProseMirror {
-  background: color-mix(in srgb, var(--color-surface-warm) 65%, transparent);
+  background: color-mix(in srgb, var(--color-card) 65%, transparent);
 }
 
 .meridian-editor-drop-overlay {
@@ -443,7 +443,7 @@
   gap: 0.625rem;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-warm);
+  background: var(--color-card);
   padding: 0.75rem;
   transition:
     border-color 150ms ease,
@@ -454,7 +454,7 @@
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-md);
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
 }
 
 .meridian-editor .ProseMirror .meridian-figure-node__media img {

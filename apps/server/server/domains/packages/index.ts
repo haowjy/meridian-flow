@@ -85,7 +85,6 @@ export {
   updateLocalMarsPackage,
 } from "./domain/package-sync.js";
 export { buildMarsPackageZip } from "./domain/package-zip.js";
-export { listProjectLibraryInventory } from "./domain/project-library.js";
 export { resolveAgentSkills } from "./domain/resolution.js";
 export {
   type SkillExecutionDescriptor,

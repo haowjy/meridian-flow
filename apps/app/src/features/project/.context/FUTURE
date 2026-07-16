@@ -1,0 +1,38 @@
+# FUTURE — nice-to-have follow-ups (project shell)
+
+- Dark mode activation (whole-app slice, new behavior → design-lead/tech-lead):
+  the 墨 night-study ladder is designed and recorded in
+  packages/design-tokens/src/ink-jade.css (header comment) — page stays lit,
+  walls double their whisper, actives lighten, inks flip. Needs a theme toggle
+  + `.dark` overrides for the FULL token set (cards, borders, review tints),
+  not just the shell ladder.
+- PaneHeader chip seating unification: the centered chat title chip
+  (features/chat/ThreadSwitcherPopover.tsx, variant="tab") sizes itself
+  `h-9` against the h-10 band because PaneHeader centers its title slot;
+  ContextTabBar seats chips via items-stretch instead. The stronger move is
+  one adaptive band-chip geometry (PaneHeader items-stretch + grammar-owned
+  fit) so no consumer knows the band height. Reviewer-endorsed, low urgency
+  while both values are stable.
+- Chats as a working-set tab strip (user floated 2026-07-15): multiple chat
+  tabs + "+" in the centered chat band, like document tabs. Needs an
+  "open chats" model (close ≠ delete, overflow, ordering) and resolves how
+  chat navigation relates to the sidebar → design-lead/tech-lead. The
+  single-title tab chip shipped in slice 7 is the compatible first step.
+- Editor destination with open tabs but NO active document (navigate away
+  and back): tabs float as labels over the empty state, connected to
+  nothing. Candidate fix: restore the last-active tab on return (small
+  route/store behavior — user was asked 2026-07-15, no decision yet). See
+  features/project/context/ContextTabBar.tsx.
+- Clay secondary (palette proposal, not adopted): a cinnabar-family secondary
+  surface (~oklch(0.92 0.012 29)) if secondary chips ever need to leave the
+  page-neutral ladder.
+- Future pin/favorite mark: red is now spent on the shelf surface — a pin mark
+  cannot rely on cinnabar alone if the rail ever warms toward red; use shape/weight or
+  the reserved gold voice.
+- DockViewSwitch ARIA: the contained segmented switch still uses
+  role="tablist"/"tab" markup (dock/DockHeader.tsx). Decide whether tabs
+  semantics (views of one surface) or a radiogroup/toggle-group better
+  matches the interaction, and align keyboard behavior with the choice.
+- Invalid explicit `?thread=` id: useResolvedChatThread trusts the route id
+  without existence-checking it (chat/chat-thread-resolution.ts); behavior
+  for a stale/foreign id is undocumented — decide and document.

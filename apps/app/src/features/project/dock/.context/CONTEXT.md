@@ -1,6 +1,6 @@
 # features/project/dock — Contracts, architecture, rationale
 
-Reference depth for the tabbed dock container and work-scoped Changes view.
+Reference depth for the dock view container and work-scoped Changes view.
 Read [`AGENTS.md`](../AGENTS.md) first.
 
 ## Contracts
@@ -43,19 +43,24 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 `useDockViewStore` is a Zustand store keyed by `ScreenKey`:
 
 - **Session-only, no `persist`.** A fresh reload starts from each screen's
-  default. A stale tab choice across reloads is worse than a fresh start.
+  default. A stale view choice across reloads is worse than a fresh start.
 - **No placement data.** Width, collapse, and grid placement are owned by the
   surface-prefs store (`layout/surface-prefs-store.ts`), not here.
-- **Explicit choice only.** The store only records writer-initiated tab switches;
+- **Explicit choice only.** The store only records writer-initiated view switches;
   the default is not written to the store.
 
 ### Slot material contract
 
 The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
-`bg-sidebar`, `rounded-l-xl`, `shadow-rail-right`. Dock components (header,
+`bg-sidebar` plus the `border-l` seam against the center pane. Dock components (header,
 Changes view, occupant body) must not paint a hardcoded background — the slot
-paints the material. Transparent/surface-subtle fills are correct; `bg-background`
-or `bg-card` are bugs (the dock is a sidebar).
+paints the material. Transparent/surface-subtle fills are correct, and tonal
+steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
+(`bg-sidebar`). One bounded exception: `DockHeader`'s view switch is a
+contained segmented track (a recessed ink-mix well) whose active segment
+surfaces paper (`bg-background`) — the paper stays inside the track's
+boundary, so the dock still reads as one chrome surface. Any other
+`bg-background` or `bg-card` in the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
@@ -72,22 +77,18 @@ drives these actions:
 The review session owner is `useDraftReviewController` in the chat feature; the
 dock only renders review state and dispatches actions.
 
-### Claim-based inline-review runtime registration
+### Claim-based inline-review editor registration
 
-The editor (`EditorView`) registers its inline-review plugin into a
-module-level runtime slot when a draft review session is active. The dock's
-`focusReviewOperation` reads the editor reference from this slot to highlight
-and scroll manuscript spans. The slot exists because:
+The draft review controller (`useDraftReviewController`) holds the active
+review editor in a claim-based ref (`inlineRuntimeRef`): the review editor
+registers on mount, and release is a **no-op unless the caller still holds
+the claim** — on a review document switch the new editor may register before
+the old one's effect cleanup runs, and that stale cleanup must not clear the
+fresh claim. The dock's `focusReviewOperation` reads the editor from this ref
+to highlight and scroll manuscript spans; warm hidden editors never stomp the
+reference because only the active review editor claims it.
 
-- Warm hidden editors (rendered but not visible, e.g. in other dock tabs) used to
-  stomp the runtime reference when they mounted — the slot would point at the
-  wrong editor.
-- The claim-based registration only succeeds when the registering editor is the
-  *active* review editor; `DraftInlineReviewExtension` claims the slot on mount,
-  and `EditorView` receives `reviewDraftId` and `isReviewDraftActive` flags to
-  gate extension installation.
-
-See [`core/editor/inline-review-runtime.ts`](../../../../core/editor/inline-review-runtime.ts) and
+See [`features/chat/useDraftReviewController.ts`](../../../chat/useDraftReviewController.ts) and
 [`core/editor/.context/CONTEXT.md`](../../../../core/editor/.context/CONTEXT.md).
 
 ## Architecture
@@ -139,9 +140,7 @@ Never:
 ```
 
 This trap applies anywhere `border-subtle` (or any custom color token class) is
-combined with a standard Tailwind border-color class in a `cn()` call. The dock
-header (`border-b border-border-subtle`) is safe because it never conditionally
-swaps the border color.
+combined with a standard Tailwind border-color class in a `cn()` call.
 
 ### Operation card text is DOM-only
 
@@ -164,7 +163,7 @@ reconstruction fails silently or produces a no-op update. QA/probe drafts must
 come from real chat flows where the agent wrote to a draft.
 
 This is the same trap that has surfaced 4× across the draft-undo and
-dock-tabs arcs. See [KB: Draft Review Lifecycle](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md).
+dock-tabs arcs. See [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
 
 ## Rationale
 
@@ -177,7 +176,7 @@ stable and the browser from wasting layout work on hidden content.
 ### Session-only view store
 
 Persisting the view choice means a writer who opens the app in a fresh session
-gets a stale tab. The default (occupant's native view) is the right starting
+gets a stale view. The default (occupant's native view) is the right starting
 point every time. The writer's explicit choice is remembered within a session
 so switching screens and coming back restores it.
 

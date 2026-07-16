@@ -8,10 +8,9 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
-import { useThreadStore } from "@/client/stores";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
-import { resolveChatThreadId } from "./chat-thread-resolution";
+import { useResolvedChatThread } from "./chat-thread-resolution";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
@@ -48,20 +47,10 @@ export function ChatScreen({
   writeThreadToRoute = true,
   onSelectContextPath,
 }: ChatScreenProps) {
-  const pendingThreadId = useThreadStore((state) => {
-    for (const [tid, ps] of Object.entries(state.pendingStreamByThreadId)) {
-      if (ps.deferredSend?.projectId === projectId) return tid;
-    }
-    return null;
-  });
-
-  const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
-
-  const resolvedThreadId = resolveChatThreadId({
+  const { resolvedThreadId, projectThreads, isError, refetch } = useResolvedChatThread(
+    projectId,
     explicitThreadId,
-    pendingThreadId,
-    projectThreads,
-  });
+  );
 
   useEffect(() => {
     if (!writeThreadToRoute || explicitThreadId || !resolvedThreadId) return;

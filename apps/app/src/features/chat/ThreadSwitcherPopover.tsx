@@ -37,12 +37,20 @@ export function ThreadSwitcherPopover({
   title,
   onSelectThread,
   onRename,
+  variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string;
   title: string;
   onSelectThread: (threadId: string) => void;
   onRename: () => void;
+  /**
+   * `quiet` — hover-pill trigger for chrome that stays chrome (the dock).
+   * `tab` — the active-tab chip grammar: the chat pane's page material
+   * continues up into the band, same as the document tab strip. Use only
+   * where the pane below the band is `page-sheet`.
+   */
+  variant?: "quiet" | "tab";
 }) {
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
@@ -110,7 +118,15 @@ export function ThreadSwitcherPopover({
         <button
           type="button"
           aria-expanded={open}
-          className="focus-ring -ml-1.5 flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent"
+          className={cn(
+            "focus-ring flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left",
+            variant === "tab"
+              ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
+                // chip's base (and its flares) sit on the band's bottom edge
+                // where the page begins.
+                "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
+              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
+          )}
         >
           <PaneTitle className="min-w-0">{title}</PaneTitle>
           {triggerHasAttention ? (
@@ -235,7 +251,9 @@ function ThreadSwitchItem({
     <li
       className={cn(
         "group flex min-w-0 items-center rounded-md transition-colors",
-        active ? "bg-primary/10 text-foreground" : "hover:bg-sidebar-accent",
+        // Pressed neutral, not an accent wash — routine selection never
+        // spends jade (same grammar as the sidebar's neutral rows).
+        active ? "bg-sidebar-accent text-foreground" : "hover:bg-sidebar-accent/50",
       )}
     >
       <button

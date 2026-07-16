@@ -230,8 +230,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <div
         onClick={multi ? () => setExpanded((value) => !value) : undefined}
         className={cn(
-          "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-ink-strong",
-          multi && "cursor-pointer transition-colors hover:bg-surface-subtle",
+          "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-prose-foreground",
+          multi && "cursor-pointer transition-colors hover:bg-muted",
         )}
       >
         {multi ? (
@@ -397,7 +397,7 @@ function DockRowLine({
   return (
     <DockRowShell
       onOpen={onOpen}
-      className={cn("text-ink-strong", reviewAlways && "bg-jade-text/[0.06]")}
+      className={cn("text-prose-foreground", reviewAlways && "bg-jade-text/[0.06]")}
     >
       <span aria-hidden className="shrink-0 text-ink-subtle">
         ○
@@ -444,7 +444,7 @@ function DockRowShell({
     <div
       onClick={onOpen}
       className={cn(
-        "group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-surface-subtle",
+        "group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-muted",
         className,
       )}
     >

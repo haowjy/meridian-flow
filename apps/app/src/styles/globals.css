@@ -13,8 +13,6 @@
 @theme {
   --container-chat-column: 48rem;
   --container-home: 45rem;
-  --shadow-rail-left: 6px 0 18px -6px rgba(16, 33, 28, 0.1);
-  --shadow-rail-right: -6px 0 18px -6px rgba(16, 33, 28, 0.1);
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -123,8 +121,8 @@
 }
 
 /* Calm "this thread is live" pulse. Uses --motion-pulse-duration for the
-   cycle and --status-streaming-ring(-strong) for the halo so the dot,
-   its glow, and its cadence are all token-driven. */
+   cycle and --status-streaming-ring for the halo so the dot, its glow, and
+   its cadence are all token-driven. */
 @utility streaming-dot {
   @apply size-1.5 shrink-0 rounded-full bg-status-streaming;
   box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
@@ -142,7 +140,7 @@
   }
   50% {
     opacity: 0.55;
-    box-shadow: 0 0 0 5px var(--color-status-streaming-ring-strong);
+    box-shadow: 0 0 0 5px var(--color-status-streaming-ring);
   }
 }
 
@@ -223,7 +221,7 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[14px_4px_14px_14px] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-muted px-[18px] py-[14px] text-prose-foreground;
 }
 
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
@@ -351,10 +349,10 @@
     @apply w-full border-collapse;
   }
   & thead {
-    @apply bg-surface-subtle text-left text-foreground;
+    @apply bg-muted text-left text-foreground;
   }
   & tbody tr:nth-child(even) {
-    @apply bg-surface-warm/60;
+    @apply bg-card/60;
   }
   & tr {
     @apply border-b border-border-subtle last:border-0;
@@ -380,7 +378,11 @@
 @utility focus-ring {
   @apply outline-none;
   &:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-border-focus), 0 0 0 4px rgba(46, 125, 107, 0.12);
+    /* Outer glow derives from the ring token so surfaces that re-point the
+       ring (shelf → ink) don't leak a jade halo from a hardcoded literal. */
+    box-shadow:
+      0 0 0 2px var(--color-border-focus),
+      0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent);
   }
 }
 
@@ -402,12 +404,179 @@
 
 /** Brand-mark disc — cream warmed with a hint of jade (disc-cream-ring frame). */
 @utility mark-disc-fill {
-  fill: color-mix(in oklab, var(--color-cream) 88%, var(--color-primary) 12%);
+  /* brand-jade, not primary: canon disc under scoped re-themes. */
+  fill: color-mix(in oklab, var(--color-cream) 88%, var(--color-brand-jade) 12%);
 }
 
 /** Project pane header title — Home, Chat, Settings, thread switcher label. */
 @utility pane-title {
   @apply text-sm font-medium text-foreground;
+}
+
+/*
+ * Shelf surface — the left rail: the chrome's grey-gold one shade darker
+ * (see the palette story in design-tokens/ink-jade.css). Paints the shelf
+ * material — the shelf tone plus its depth-shadow atmosphere pooling at the
+ * floor — and locally RE-POINTS the semantic tokens, so rail content written
+ * against the normal grammar (bg-sidebar-accent rows, text-foreground,
+ * text-ink-muted, border-border-subtle, focus-ring) reads correctly without
+ * per-component forks. Portalled content (menus, popovers, dialogs) mounts
+ * on <body> and keeps page styling — only what literally sits on the shelf
+ * re-themes. Border/muted voices are mixed from the shelf's own pigments
+ * (colored greys — one light source).
+ */
+/*
+ * Page sheet — the lit paper rising out of the chrome. Every center pane
+ * wears this below its h-10 chrome band (PaneHeader or the document tab
+ * strip). Top-RIGHT corner only (shared tab radius, tucking under the chrome
+ * toward the dock): the top-LEFT is deliberately square — the sheet sits
+ * flush against the rail edge, and the roundness against the shelf belongs
+ * to the CHROME FIELD's own top-left corner (center slot / route pane), not
+ * the sheet (user call, 2026-07-15). The center slot paints the chrome; the
+ * sheet is the ONE sanctioned surface paint on top of it.
+ */
+@utility page-sheet {
+  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
+}
+
+/*
+ * Chrome field — the center cell's material: the whisper chrome with its
+ * rounded top-left curving against the darker shelf (the grid backdrop).
+ * Two elements can occupy that cell — the center slot (Editor/Chat surfaces)
+ * and the route-pane wrapper (Home/Library) — and both MUST paint identically,
+ * so the concept has one name. Bands (PaneHeader, the tab strip) paint
+ * nothing; they sit transparent on this field.
+ */
+@utility chrome-field {
+  /* 3px (sharper than the 6px tab voice — architecture, not a control;
+     user-tuned live 2026-07-15). The curve exists only against the shelf:
+     ProjectShell zeroes --chrome-corner when the left rail is collapsed,
+     otherwise the shelf backdrop pokes through the notch at the screen edge. */
+  overflow: hidden;
+  border-top-left-radius: var(--chrome-corner, 3px);
+  background-color: var(--color-sidebar);
+}
+
+/*
+ * Dock surface — the chrome material (≡ the tab band) with airlight pooling
+ * at its floor. One utility (not `bg-sidebar` + a gradient class) because
+ * tailwind-merge can't tell a custom bg-image utility from a bg-color and
+ * would drop one of the pair.
+ */
+@utility dock-surface {
+  background-color: var(--color-sidebar);
+  background-image: var(--background-image-dock-airlight);
+}
+
+@utility shelf-surface {
+  /* The rail keeps the app's ONE black ink (rule: text is consistent
+     app-wide in light mode) — body text is untouched. Only what fails on the
+     tinted ground remaps through shelf role tokens from design-tokens: surface
+     tones, hairlines, muted/hint inks, error ink, and the focus border. The
+     outer ring follows the rail's shared black ink instead of page-tuned jade. */
+  background-color: var(--color-shelf);
+  background-image: var(--background-image-shelf-depth);
+  --color-sidebar: var(--color-shelf);
+  --color-sidebar-accent: var(--color-shelf-active);
+  --color-ink-subtle: var(--color-shelf-ink-subtle);
+  --color-muted-foreground: var(--color-shelf-ink-muted);
+  --color-border-subtle: var(--color-shelf-border);
+  --color-border: var(--color-shelf-border-strong);
+  --color-accent: var(--color-shelf-hover);
+  --color-muted: var(--color-shelf-muted);
+  --color-destructive: var(--color-shelf-destructive);
+  --color-border-focus: var(--color-shelf-ring);
+  --color-ring: var(--color-foreground);
+}
+
+/*
+ * Shelf hover overrides — chrome `sidebar-accent` (/50 especially) reads
+ * near-white on the darker shelf. Descendant rules win over Tailwind utilities
+ * so shelf rows keep the shared class names without per-component forks.
+ */
+.shelf-surface .hover\:bg-sidebar-accent\/50:hover {
+  background-color: var(--color-shelf-hover);
+}
+.shelf-surface .hover\:bg-sidebar-accent\/40:hover {
+  background-color: var(--color-shelf-muted);
+}
+.shelf-surface .hover\:bg-sidebar-accent:hover {
+  background-color: var(--color-shelf-hover);
+}
+
+/*
+ * Tab-chip grammar — geometry for the places a surface RISES out of the
+ * chrome: the document tab strip (`ContextTabBar`) and the centered chat
+ * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
+ * the chrome band; the ACTIVE chip surfaces the field tone below it — rounded
+ * top plus Obsidian-style bottom flares (corner fills outside the chip so its
+ * base curves outward into the page instead of meeting the band at a hard
+ * right angle). An INACTIVE chip carries an inset rounded hover pill covering
+ * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
+ * this grammar — the dock is one uniform surface; its view switch is a
+ * contained segmented track that presses into the chrome.)
+ *
+ * The variation point is the surfacing color: consumers set
+ * `--tab-chip-surface` on the strip (canvas for document tabs). These
+ * utilities own geometry and surface paint only — DOM, text color, and a11y
+ * stay local to each consumer. Chips must be `relative` (the flares and pill
+ * are absolutely-positioned pseudos).
+ *
+ * No transition on the active chip: activation swaps geometry instantly, so
+ * a background fade would flash the outgoing chip as a full-height rectangle
+ * mid-fade — tab switches must snap. Only the hover pill transitions.
+ */
+@utility tab-chip-active {
+  margin-top: --spacing(1);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+  background-color: var(--tab-chip-surface);
+  &::before,
+  &::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    bottom: 0;
+    width: var(--radius-md);
+    height: var(--radius-md);
+  }
+  &::before {
+    left: calc(-1 * var(--radius-md));
+    background: radial-gradient(
+      circle at 0 0,
+      transparent calc(var(--radius-md) - 0.5px),
+      var(--tab-chip-surface) var(--radius-md)
+    );
+  }
+  &::after {
+    right: calc(-1 * var(--radius-md));
+    background: radial-gradient(
+      circle at 100% 0,
+      transparent calc(var(--radius-md) - 0.5px),
+      var(--tab-chip-surface) var(--radius-md)
+    );
+  }
+}
+@utility tab-chip-inactive {
+  /* isolate + z-index:-1 keeps the pill behind the chip's content without
+     escaping under the strip's own background. */
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: --spacing(1) --spacing(0.5);
+    z-index: -1;
+    border-radius: var(--radius-md);
+    transition: background-color var(--default-transition-duration)
+      var(--default-transition-timing-function);
+  }
+  /* Same hover gate Tailwind applies to `hover:` utilities — no sticky
+     hover pills on touch. */
+  @media (hover: hover) {
+    &:hover::before {
+      background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
+    }
+  }
 }
 
 /** Link-style control — always reads as clickable (not hover-only). */
@@ -443,7 +612,7 @@
 
 /** Small bordered action (Retry, secondary actions in chat). */
 @utility soft-button {
-  @apply focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-focus hover:bg-surface-subtle;
+  @apply focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-focus hover:bg-muted;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to

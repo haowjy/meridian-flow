@@ -26,13 +26,81 @@
 - Schema: `pending_notices` + `pending_notice_deliveries` tables; actor
   columns on `agent_edit_mutations` and `document_yjs_updates`; legacy
   `pending_undo_notifications` dropped (migrations 0038–0041).
+- New look: an earthen value ladder — one warm grey-gold family separated by
+  lightness. The left rail is the chrome's grey-gold one shade darker with
+  the app's standard black ink (12.6:1); the tab band and right dock share
+  the brighter chrome; the page is warm paper, always the brightest surface,
+  rising from the chrome with rounded top corners matching the tabs. Jade stays the action color (send/save/new); no colored walls.
+  The pinned chat composer uses the manuscript background with a border
+  (works in dock and center). Region separation is tonal — no shell divider
+  lines. Both rails carry faint floor atmosphere (shadow on the shelf,
+  airlight on the dock). All rail text tiers verified ≥4.5:1.
+- The dock's Chat/Changes switch is a contained segmented track (recessed
+  well, paper active segment); the dock header shares the dock's own surface.
+  Resize handles have no visible grip — cursor and focus ring only.
+- The centered chat header's title is a real tab now — the chat page rises
+  into the band, same grammar as document tabs. The switcher dropdown uses
+  pressed-neutral active rows (no jade wash on routine selection; agent
+  picker swept to match).
+- The dock header always names the thread the chat body actually shows (it
+  could sit on a static "Chat" before), the rename field can't overlap the
+  view switch, its hover pill isn't clipped anymore, and the dock can't be
+  resized below usable width.
+- "No pending changes" in the dock is a proper empty state (icon, title,
+  caption) instead of a bare sentence.
+- Removed duplicate design tokens: `surface-warm`/`surface-subtle` (use
+  `card`/`muted`), `ink-strong` (use `prose-foreground`),
+  `status-streaming-ring-strong` (one ring token), `gradient-mark`,
+  `gold-text`, `mark-from`; popovers share the card surface.
 - Renaming a tracked document now keeps its persisted filetype aligned with the
   editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
   and overlapping writes keep the same document identity.
-- The tracked and temporary document editors now share one left-pinned floating
-  formatting card, keeping controls aligned with the text while chapters scroll.
+- The editor chrome lost its lines: the tab strip separates by tone alone
+  (recessed strip, canvas-colored active tab), and the formatting toolbar is a
+  bare docked row aligned to the text column — shared exactly by tracked and
+  temporary documents, so nothing shifts when switching tabs.
+- Temporary documents warn “Only on this device” until saved, and saving can
+  never discard words typed while the save was in flight.
+- Saving a temporary document is one VS Code-style line: a single location
+  field speaking the context-URI grammar (`manuscript://folder/name`), a
+  folder browser that opens while the field is focused, and Enter to save.
+  Picking a folder keeps the name and selects it for overtyping; new folders
+  in the typed path are created on save.
+- The save-location browser is navigable: clicking a folder descends into it
+  (the list stays open), `..` climbs out — up to the scheme list — and files
+  are listed alongside folders so existing names are visible before saving;
+  clicking a file adopts its name. A trailing slash browses into that folder.
+- Name collisions are caught while typing, in the same red note the file
+  tree's rename uses — "A file named X already exists in this location." with
+  an Open existing shortcut — and Save is disabled until the name is free.
+  There is deliberately no overwrite path onto existing documents.
+- Save-location browser keyboard flow: arrow keys rove the list — including
+  the collision note's Open existing action — with a single Tab exiting it,
+  Escape returns to the field, and clicking the field reopens the browser.
+  Contexts show their identity icons instead of folder icons.
+- Scheme identity icons re-derived: Manuscript gets a custom quill-and-scroll
+  (no longer the same glyph as every file row), Knowledge Base a library
+  shelf, Scratch a notebook pen (the old brain meant a scheme that no longer
+  exists). User and Uploads unchanged.
+- A save conflict from another device reopens the browser with the notice —
+  never just a silent red border — and editing the name dismisses it. Saving
+  can no longer double-submit when edited mid-flight.
 - The editor tab bar keeps its “New tab” plus button available when no documents
   are open and identifies it on hover.
+- Tabs are clickable across their whole surface, hover highlights the full tab,
+  the active tab curves outward into the page at its base, and a divider sets
+  the plus button apart from the open tabs.
+- Clicking below the last line of any document places the cursor — tracked
+  documents now match temporary ones.
+- Corners are sharper everywhere: buttons, fields, menus, tabs, and the
+  composer read semi-rectangular instead of pill-like.
+- Focus is calm: clicking into a text field shifts its border to a soft jade
+  hairline instead of flaring a glow ring, text selection inside fields is a
+  light tint instead of a solid pill, and buttons show a focus ring only
+  during keyboard navigation.
+- The dock's Chat/Changes and Context/Changes switch is now static tabs in the
+  same shape as document tabs — a recessed header band with the active view
+  surfacing out of it — and the redundant section title is gone.
 - Tracked writes can no longer replace storage-backed binary files, and one
   exhaustive filetype registry now drives editor-schema classification.
 - Mobile context rows now honor server file metadata for image icons, including

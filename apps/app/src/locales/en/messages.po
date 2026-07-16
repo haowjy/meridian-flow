@@ -19,12 +19,6 @@ msgstr ""
 msgid "· {0} of {1} reviewed"
 msgstr "· {0} of {1} reviewed"
 
-#. placeholder {0}: state.snapshot.name
-#. placeholder {1}: formatDestination(state.snapshot.destination)
-#: src/features/project/context/TempDocumentEditor.tsx
-msgid "“{0}” already exists in {1}."
-msgstr "“{0}” already exists in {1}."
-
 #: src/features/chat/tool-result-preview.ts
 msgid "(fetched)"
 msgstr "(fetched)"
@@ -33,21 +27,10 @@ msgstr "(fetched)"
 msgid "(untitled)"
 msgstr "(untitled)"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "(you have not modified)"
-msgstr "(you have not modified)"
-
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
-
-#. placeholder {0}: pkg.agentCount
-#. placeholder {1}: pkg.skillCount
-#: src/features/library/install/PackageUpdateFlow.tsx
-#: src/features/library/LibraryScreen.tsx
-msgid "{0} agents, {1} skills"
-msgstr "{0} agents, {1} skills"
 
 #. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
@@ -70,10 +53,6 @@ msgstr "{minutes}m"
 msgid "{name} · reviewed"
 msgstr "{name} · reviewed"
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "{packageName} is ready in your library."
-msgstr "{packageName} is ready in your library."
-
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
@@ -91,6 +70,10 @@ msgstr "<0>{0}</0> will be permanently deleted."
 #: src/features/chat/DraftDock.tsx
 msgid "✓ All changes reviewed"
 msgstr "✓ All changes reviewed"
+
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "A file named {noteName} already exists in this location."
+msgstr "A file named {noteName} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {trimmed} already exists in this location."
@@ -126,41 +109,9 @@ msgstr "Actions"
 msgid "Add a caption for this figure."
 msgstr "Add a caption for this figure."
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Add a package"
-msgstr "Add a package"
-
-#: src/features/library/LibraryScreen.tsx
-msgid "Add package"
-msgstr "Add package"
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Added"
 msgstr "Added"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Added agent {slug}"
-msgstr "Added agent {slug}"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Added skill {slug}"
-msgstr "Added skill {slug}"
-
-#: src/features/library/editor/AgentSkillLinksEditor.tsx
-msgid "Agent can use this skill"
-msgstr "Agent can use this skill"
-
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Agent description"
-msgstr "Agent description"
-
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Agent instructions"
-msgstr "Agent instructions"
-
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Agent name"
-msgstr "Agent name"
 
 #: src/features/home/PackageShowcase.tsx
 msgid "Agent Packages"
@@ -171,25 +122,17 @@ msgstr "Agent Packages"
 msgid "Agent: {0}"
 msgstr "Agent: {0}"
 
-#: src/features/library/LibraryScreen.tsx
-msgid "Agents"
-msgstr "Agents"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Agents:"
-msgstr "Agents:"
-
 #: src/features/editor/DraftEntryBanner.tsx
 msgid "AI changes ready for review"
 msgstr "AI changes ready for review"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "AI edits wait here for your review."
+msgstr "AI edits wait here for your review."
+
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
-
-#: src/features/library/editor/DefinitionSaveBar.tsx
-msgid "All changes saved"
-msgstr "All changes saved"
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Alt text"
@@ -207,10 +150,6 @@ msgstr "Another chat needs attention"
 msgid "Answer the question"
 msgstr "Answer the question"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Applies to new chats."
-msgstr "Applies to new chats."
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Apply"
@@ -225,18 +164,9 @@ msgstr "Apply {pendingCount} and switch"
 msgid "Apply all"
 msgstr "Apply all"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Apply update"
-msgstr "Apply update"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
-
-#: src/features/project/context/TempDocumentEditor.tsx
-msgid "as"
-msgstr "as"
 
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -267,10 +197,6 @@ msgstr "Back to chat"
 #: src/features/chat/IndependentChatView.tsx
 msgid "Back to home"
 msgstr "Back to home"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Back to library"
-msgstr "Back to library"
 
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
@@ -303,29 +229,14 @@ msgstr "Breadcrumb"
 msgid "Built-in"
 msgstr "Built-in"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Built-in agents are read-only here. Duplicate to edit when that flow ships."
-msgstr "Built-in agents are read-only here. Duplicate to edit when that flow ships."
-
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Built-in skills are read-only here. Duplicate to edit when that flow ships."
-msgstr "Built-in skills are read-only here. Duplicate to edit when that flow ships."
-
 #: src/features/editor/EditorToolbar.tsx
 msgid "Bullet list"
 msgstr "Bullet list"
-
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Bundled files"
-msgstr "Bundled files"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Buy extra usage"
 msgstr "Buy extra usage"
 
-#: src/features/library/editor/RestoreOriginalDialog.tsx
-#: src/features/library/install/PackageInstallFlow.tsx
-#: src/features/library/install/PackageUpdateFlow.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/ContextPaneController.tsx
 #: src/features/project/shell/AiWriteModeControl.tsx
@@ -381,11 +292,6 @@ msgstr "Choose a listed option"
 msgid "Choose an option"
 msgstr "Choose an option"
 
-#: src/features/library/editor/AgentSkillLinksEditor.tsx
-msgid "Choose which skills new chats can use. Changes apply to new chats only."
-msgstr "Choose which skills new chats can use. Changes apply to new chats only."
-
-#: src/features/library/install/PackageUpdateFlow.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -424,19 +330,10 @@ msgstr "Collapse dock"
 msgid "Collapse sidebar  ["
 msgstr "Collapse sidebar  ["
 
-#. placeholder {0}: collisionLabel(collision)
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Collision: {0} already exists — will keep your existing version (skipped)"
-msgstr "Collision: {0} already exists — will keep your existing version (skipped)"
-
 #. placeholder {0}: proposal.contributingTurnIds.length
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Combines {0} AI turns"
 msgstr "Combines {0} AI turns"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Coming soon"
-msgstr "Coming soon"
 
 #: src/features/project/lifecycle.ts
 msgid "Completed"
@@ -463,33 +360,13 @@ msgstr "Context"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Could not check for updates. The install source may no longer be available."
-msgstr "Could not check for updates. The install source may no longer be available."
-
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
 msgstr "Could not load files."
 
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "Could not load history."
-msgstr "Could not load history."
-
 #: src/features/chat/TurnChangeDiffDialog.tsx
 msgid "Could not load the diff for this turn."
 msgstr "Could not load the diff for this turn."
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Could not load the package gallery."
-msgstr "Could not load the package gallery."
-
-#: src/features/library/editor/EditorStates.tsx
-msgid "Could not load this definition."
-msgstr "Could not load this definition."
-
-#: src/features/library/editor/DefinitionSaveBar.tsx
-msgid "Could not save"
-msgstr "Could not save"
 
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
@@ -531,10 +408,6 @@ msgstr "Couldn't load recent documents."
 msgid "Couldn't load results."
 msgstr "Couldn't load results."
 
-#: src/features/library/LibraryScreen.tsx
-msgid "Couldn't load the library for this project."
-msgstr "Couldn't load the library for this project."
-
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
@@ -559,11 +432,7 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Couldn't save this document."
-#~ msgstr "Couldn't save this document."
-
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Couldn't save to your project. Nothing was lost — your words are still here."
 msgstr "Couldn't save to your project. Nothing was lost — your words are still here."
 
@@ -591,10 +460,6 @@ msgstr "Custom amount (USD)"
 msgid "Data Analysis"
 msgstr "Data Analysis"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Default"
-msgstr "Default"
-
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -620,19 +485,6 @@ msgstr "Demo image"
 msgid "Describe the image for accessibility"
 msgstr "Describe the image for accessibility"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Description"
-msgstr "Description"
-
-#: src/features/project/context/TempDocumentEditor.tsx
-msgid "Destination folder"
-msgstr "Destination folder"
-
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Details"
-msgstr "Details"
-
 #: src/routes/dev-login.tsx
 msgid "Dev login"
 msgstr "Dev login"
@@ -642,7 +494,6 @@ msgid "Dev-login failed"
 msgstr "Dev-login failed"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/library/editor/UnsavedChangesDialog.tsx
 #: src/features/project/ContextPaneController.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard"
@@ -661,10 +512,6 @@ msgstr "Discard all changes?"
 msgid "Discard this document?"
 msgstr "Discard this document?"
 
-#: src/features/project/ContextPaneController.tsx
-#~ msgid "Discard this temporary document?"
-#~ msgstr "Discard this temporary document?"
-
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
 msgstr "Dock view"
@@ -676,10 +523,6 @@ msgstr "Document"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
 msgstr "Documents the AI reads in this chat appear here."
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Done"
-msgstr "Done"
 
 #: src/features/project/context/viewers/DownloadCard.tsx
 msgid "Download {name}"
@@ -713,7 +556,6 @@ msgstr "Drop an image file to insert a figure."
 msgid "Drop image to upload a figure"
 msgstr "Drop image to upload a figure"
 
-#: src/components/app/EditedBadge.tsx
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
 msgstr "Edited"
@@ -738,10 +580,6 @@ msgstr "Editor"
 msgid "Editor formatting toolbar"
 msgstr "Editor formatting toolbar"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Effort"
-msgstr "Effort"
-
 #: src/features/account/SettingsDialog.tsx
 msgid "Email"
 msgstr "Email"
@@ -749,6 +587,10 @@ msgstr "Email"
 #: src/features/chat/FormBlock.tsx
 msgid "Enabled"
 msgstr "Enabled"
+
+#: src/features/project/context/file-suggestions/FileSuggestionList.tsx
+msgid "Enclosing folder"
+msgstr "Enclosing folder"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Enter an amount in USD."
@@ -785,10 +627,6 @@ msgstr "Expand sidebar"
 msgid "expires {0}"
 msgstr "expires {0}"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Export"
-msgstr "Export"
-
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
 msgstr "Extra usage"
@@ -796,10 +634,6 @@ msgstr "Extra usage"
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "Failed to load image"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Featured"
-msgstr "Featured"
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "fig:result"
@@ -813,7 +647,6 @@ msgstr "Figure could not be loaded."
 msgid "Figure upload failed."
 msgstr "Figure upload failed."
 
-#: src/features/project/context/TempDocumentEditor.tsx
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr "File name"
@@ -838,12 +671,6 @@ msgstr "Folder name"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/definition-source-line.ts
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "from {packageName}"
-msgstr "from {packageName}"
-
 #: src/features/chat/TurnChangeDiffDialog.tsx
 msgid "From the draft journal"
 msgstr "From the draft journal"
@@ -852,10 +679,6 @@ msgstr "From the draft journal"
 msgid "From the saved apply receipt"
 msgstr "From the saved apply receipt"
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "github.com/lab/my-package"
-msgstr "github.com/lab/my-package"
-
 #: src/features/project/lifecycle.ts
 msgid "Grilling"
 msgstr "Grilling"
@@ -863,10 +686,6 @@ msgstr "Grilling"
 #: src/features/editor/EditorToolbar.tsx
 msgid "Heading"
 msgstr "Heading"
-
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "History"
-msgstr "History"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/HomePaneController.tsx
@@ -901,10 +720,6 @@ msgstr "Idle"
 msgid "Image artifact"
 msgstr "Image artifact"
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Includes setup instructions — the agent will configure its environment on first use."
-msgstr "Includes setup instructions — the agent will configure its environment on first use."
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
 msgstr "Includes your edits"
@@ -914,38 +729,9 @@ msgstr "Includes your edits"
 msgid "Inserted {0} as a figure."
 msgstr "Inserted {0} as a figure."
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Install"
-msgstr "Install"
-
-#: src/features/library/LibraryScreen.tsx
-msgid "Install a package to add agents and skills."
-msgstr "Install a package to add agents and skills."
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Install package"
-msgstr "Install package"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Install preview"
-msgstr "Install preview"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "Installed"
 msgstr "Installed"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Installed package"
-msgstr "Installed package"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Installing…"
-msgstr "Installing…"
-
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Instructions"
-msgstr "Instructions"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Interface language"
@@ -962,22 +748,6 @@ msgstr "Italic"
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
 msgstr "Keep"
-
-#: src/features/library/editor/UnsavedChangesDialog.tsx
-msgid "Keep editing"
-msgstr "Keep editing"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Kept agent {slug} as-is"
-msgstr "Kept agent {slug} as-is"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Kept as-is — you have customized these:"
-msgstr "Kept as-is — you have customized these:"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Kept skill {slug} as-is"
-msgstr "Kept skill {slug} as-is"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
@@ -1003,17 +773,9 @@ msgstr "Large"
 msgid "Last name"
 msgstr "Last name"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "latest"
-msgstr "latest"
-
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr "Leading or trailing whitespace detected in file or folder name."
-
-#: src/features/library/LibraryPaneController.tsx
-msgid "Library"
-msgstr "Library"
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
@@ -1061,10 +823,6 @@ msgstr "Loading file…"
 msgid "Loading files…"
 msgstr "Loading files…"
 
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "Loading history…"
-msgstr "Loading history…"
-
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "Loading image"
@@ -1105,10 +863,6 @@ msgstr "Manage billing"
 msgid "Manuscript"
 msgstr "Manuscript"
 
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Markdown body used when the skill runs."
-msgstr "Markdown body used when the skill runs."
-
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
@@ -1135,10 +889,6 @@ msgstr "Missing figure source"
 msgid "missing kind"
 msgstr "missing kind"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Model"
-msgstr "Model"
-
 #: src/features/billing/UsageCard.tsx
 msgid "Monthly usage"
 msgstr "Monthly usage"
@@ -1159,11 +909,7 @@ msgstr "Must be at least {value}"
 msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Name"
-msgstr "Name"
-
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/use-temp-document-save.ts
 msgid "Name is required"
 msgstr "Name is required"
 
@@ -1178,14 +924,6 @@ msgstr "Needs your answer"
 #: src/components/app/NewBadge.tsx
 msgid "New"
 msgstr "New"
-
-#: src/features/library/LibraryScreen.tsx
-msgid "New agent"
-msgstr "New agent"
-
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "New chapter"
-#~ msgstr "New chapter"
 
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
@@ -1223,17 +961,9 @@ msgstr "New reply since you last opened"
 msgid "New tab"
 msgstr "New tab"
 
-#: src/features/project/context/ContextTabBar.tsx
-#~ msgid "New temporary document"
-#~ msgstr "New temporary document"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
-
-#: src/features/library/LibraryScreen.tsx
-msgid "No agents yet."
-msgstr "No agents yet."
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "No alt text yet"
@@ -1279,21 +1009,9 @@ msgstr "No matching chats"
 msgid "No matching files"
 msgstr "No matching files"
 
-#: src/features/project/context/TempDocumentEditor.tsx
-msgid "No matching folders"
-msgstr "No matching folders"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "No new agents or skills — dependencies only, or everything already exists."
-msgstr "No new agents or skills — dependencies only, or everything already exists."
-
-#: src/features/library/LibraryScreen.tsx
-msgid "No packages installed."
-msgstr "No packages installed."
-
 #: src/features/project/dock/DockChangesView.tsx
-msgid "No pending changes."
-msgstr "No pending changes."
+msgid "No pending changes"
+msgstr "No pending changes"
 
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
@@ -1307,25 +1025,13 @@ msgstr "No projects yet."
 msgid "No results yet."
 msgstr "No results yet."
 
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "No revisions yet."
-msgstr "No revisions yet."
-
-#: src/features/library/editor/AgentSkillLinksEditor.tsx
-msgid "No skills linked to this agent."
-msgstr "No skills linked to this agent."
-
-#: src/features/library/LibraryScreen.tsx
-msgid "No skills yet."
-msgstr "No skills yet."
-
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "Not Found"
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Not saved to your project yet."
-#~ msgstr "Not saved to your project yet."
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Nothing here yet"
+msgstr "Nothing here yet"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1344,13 +1050,13 @@ msgstr "Object"
 msgid "Older"
 msgstr "Older"
 
-#: src/features/project/context/TempDocumentEditor.tsx
-msgid "On this device"
-msgstr "On this device"
-
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
 msgstr "One surface for every chat in this project. Jump into any chat, or start a new one."
+
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Only on this device"
+msgstr "Only on this device"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see its uploads."
@@ -1368,7 +1074,7 @@ msgstr "Open a project to see its results."
 msgid "Open context files"
 msgstr "Open context files"
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Open existing"
 msgstr "Open existing"
 
@@ -1405,10 +1111,6 @@ msgstr "Open the latest review before applying a change."
 msgid "Opening document…"
 msgstr "Opening document…"
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Or paste a package URL"
-msgstr "Or paste a package URL"
-
 #: src/features/project/context/ContextViewer.tsx
 msgid "Or pick a file from the tree."
 msgstr "Or pick a file from the tree."
@@ -1416,14 +1118,6 @@ msgstr "Or pick a file from the tree."
 #: src/features/billing/UsageCard.tsx
 msgid "Over your monthly usage"
 msgstr "Over your monthly usage"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Package installed"
-msgstr "Package installed"
-
-#: src/features/library/LibraryScreen.tsx
-msgid "Packages"
-msgstr "Packages"
 
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent unknown"
@@ -1449,17 +1143,9 @@ msgstr "Popular"
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Preview"
-msgstr "Preview"
-
 #: src/features/project/context/viewers/DownloadCard.tsx
 msgid "Preview not available"
 msgstr "Preview not available"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Previewing…"
-msgstr "Previewing…"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
@@ -1493,14 +1179,6 @@ msgstr "Read"
 #: src/features/chat/tool-renderers.tsx
 msgid "Read file"
 msgstr "Read file"
-
-#: src/features/library/editor/DefinitionSaveBar.tsx
-msgid "Read-only"
-msgstr "Read-only"
-
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Read-only in this editor."
-msgstr "Read-only in this editor."
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
@@ -1565,7 +1243,6 @@ msgstr "Removed"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/context/TempDocumentEditor.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
@@ -1600,31 +1277,6 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "Restore"
-msgstr "Restore"
-
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-#: src/features/library/editor/RestoreOriginalButton.tsx
-#: src/features/library/editor/RestoreOriginalDialog.tsx
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Restore original"
-msgstr "Restore original"
-
-#: src/features/library/editor/RestoreOriginalDialog.tsx
-msgid "Restore original?"
-msgstr "Restore original?"
-
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "Restoring creates a new revision. History is kept."
-msgstr "Restoring creates a new revision. History is kept."
-
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-#: src/features/library/editor/RestoreOriginalDialog.tsx
-msgid "Restoring…"
-msgstr "Restoring…"
-
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -1634,14 +1286,6 @@ msgstr "Results"
 #: src/features/project/context/ContextViewer.tsx
 msgid "Resume {resumeDocumentName}"
 msgstr "Resume {resumeDocumentName}"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Retired agent {slug}"
-msgstr "Retired agent {slug}"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Retired skill {slug}"
-msgstr "Retired skill {slug}"
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
@@ -1664,10 +1308,6 @@ msgstr "Review"
 msgid "Reviewing changes"
 msgstr "Reviewing changes"
 
-#: src/features/library/editor/DefinitionHistoryPanel.tsx
-msgid "Revision history"
-msgstr "Revision history"
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
 msgstr "Rewrote"
@@ -1685,42 +1325,31 @@ msgstr "Running {toolName}"
 msgid "Running skill…"
 msgstr "Running skill…"
 
-#: src/features/library/editor/DefinitionSaveBar.tsx
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Save"
 msgstr "Save"
 
-#: src/features/library/editor/UnsavedChangesDialog.tsx
-msgid "Save and switch"
-msgstr "Save and switch"
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Save location"
+msgstr "Save location"
 
-#: src/features/library/editor/UnsavedChangesDialog.tsx
-msgid "Save changes?"
-msgstr "Save changes?"
-
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Save temporary document"
 msgstr "Save temporary document"
-
-#: src/features/project/context/TempDocumentEditor.tsx
-msgid "Save to"
-msgstr "Save to"
-
-#: src/features/library/editor/DefinitionSaveBar.tsx
-msgid "Saved"
-msgstr "Saved"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally · offline"
 msgstr "Saved locally · offline"
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Saved the snapshot and kept your newer words here."
 msgstr "Saved the snapshot and kept your newer words here."
 
-#: src/features/library/editor/DefinitionSaveBar.tsx
-#: src/features/library/editor/UnsavedChangesDialog.tsx
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Saved to the earlier location — your new save location stays with this copy."
+msgstr "Saved to the earlier location — your new save location stays with this copy."
+
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Saving…"
 msgstr "Saving…"
 
@@ -1749,17 +1378,9 @@ msgstr "Searched context"
 msgid "Select a document."
 msgstr "Select a document."
 
-#: src/features/library/LibraryDetailPane.tsx
-msgid "Select an agent or skill"
-msgstr "Select an agent or skill"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Select…"
 msgstr "Select…"
-
-#: src/features/library/LibraryDetailPane.tsx
-msgid "Selection is no longer available"
-msgstr "Selection is no longer available"
 
 #: src/features/chat/Composer.tsx
 msgid "Send message"
@@ -1801,26 +1422,9 @@ msgstr "Signing in…"
 msgid "skill"
 msgstr "skill"
 
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Skill description"
-msgstr "Skill description"
-
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "Skill instructions"
-msgstr "Skill instructions"
-
 #: src/features/chat/tool-renderers.tsx
 msgid "skill…"
 msgstr "skill…"
-
-#: src/features/library/editor/AgentSkillLinksEditor.tsx
-#: src/features/library/LibraryScreen.tsx
-msgid "Skills"
-msgstr "Skills"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Skills:"
-msgstr "Skills:"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
@@ -1901,10 +1505,6 @@ msgstr "Task Assignment"
 msgid "Temporary document editor"
 msgstr "Temporary document editor"
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Test this agent"
-msgstr "Test this agent"
-
 #: src/features/account/SettingsDialog.tsx
 msgid "Text size"
 msgstr "Text size"
@@ -1945,10 +1545,6 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr "The figure uploaded, but the editor could not insert it."
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "The saved document could not be verified. Your temporary document is safe."
-#~ msgstr "The saved document could not be verified. Your temporary document is safe."
-
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
@@ -1961,10 +1557,6 @@ msgstr "Thinking part {0}"
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
 msgstr "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
-
-#: src/features/library/editor/RestoreOriginalDialog.tsx
-msgid "This brings back the installed package version. Your edit history is kept as earlier revisions."
-msgstr "This brings back the installed package version. Your edit history is kept as earlier revisions."
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
@@ -1995,10 +1587,6 @@ msgstr "This folder is empty."
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder no longer exists."
 msgstr "This folder no longer exists."
-
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-msgid "This is what the agent reads when deciding to use this skill. Changes apply to new threads."
-msgstr "This is what the agent reads when deciding to use this skill. Changes apply to new threads."
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
@@ -2033,12 +1621,6 @@ msgstr "Toggle folder {0}"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
-#: src/features/library/editor/EditorStates.tsx
-#: src/features/library/install/PackageInstallFlow.tsx
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Try again"
-msgstr "Try again"
-
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
@@ -2064,10 +1646,6 @@ msgstr "Undo"
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
-#: src/features/library/editor/DefinitionSaveBar.tsx
-msgid "Unsaved changes"
-msgstr "Unsaved changes"
-
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Untitled document"
 msgstr "Untitled document"
@@ -2076,33 +1654,9 @@ msgstr "Untitled document"
 msgid "Untitled project"
 msgstr "Untitled project"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Update applied"
-msgstr "Update applied"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Update available"
-msgstr "Update available"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Update failed."
-msgstr "Update failed."
-
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
 msgstr "Updated"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Updated agent {slug}"
-msgstr "Updated agent {slug}"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Updated skill {slug}"
-msgstr "Updated skill {slug}"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Updates"
-msgstr "Updates"
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Upload figure"
@@ -2133,20 +1687,6 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "User Files"
-#~ msgstr "User Files"
-
-#. placeholder {0}: pkg.version
-#: src/features/library/LibraryScreen.tsx
-msgid "v{0} · {counts}"
-msgstr "v{0} · {counts}"
-
-#. placeholder {0}: pkg.version
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Version {0}"
-msgstr "Version {0}"
-
 #: src/features/chat/TurnEditsCard.tsx
 msgid "View change"
 msgstr "View change"
@@ -2166,14 +1706,6 @@ msgstr "What are you working on?"
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
-
-#: src/features/library/install/PackageInstallFlow.tsx
-msgid "Will install:"
-msgstr "Will install:"
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "Will update:"
-msgstr "Will update:"
 
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -2216,14 +1748,6 @@ msgstr "Yesterday"
 msgid "you answered"
 msgstr "you answered"
 
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "You have the latest version."
-msgstr "You have the latest version."
-
-#: src/features/library/editor/UnsavedChangesDialog.tsx
-msgid "You have unsaved edits. Save before switching, or discard them."
-msgstr "You have unsaved edits. Save before switching, or discard them."
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 msgstr "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
@@ -2235,10 +1759,6 @@ msgstr "Your message"
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
-
-#: src/features/library/install/PackageUpdateFlow.tsx
-msgid "your version preserved"
-msgstr "your version preserved"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
