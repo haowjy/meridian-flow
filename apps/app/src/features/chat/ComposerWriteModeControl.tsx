@@ -30,11 +30,6 @@ import { cn } from "@/lib/utils";
 
 import { pendingDockedDraftCount } from "./docked-drafts";
 
-export function findContextWork(works: Work[] | null, workId: string | null): Work | null {
-  if (!workId) return null;
-  return works?.find((candidate) => candidate.id === workId) ?? null;
-}
-
 /** Binds the presentation control to the Work resolved for the active thread. */
 export function ComposerWriteModeControl({ projectId, work }: { projectId: string; work: Work }) {
   const updateWriteMode = useUpdateWorkWriteMode(projectId, work.id);
@@ -69,16 +64,16 @@ function AiWriteModeControl({
   value: AiWriteMode;
   disabled: boolean;
   /**
-   * Content-aware pending document count shared with the dock. `null` is
-   * treated as no pending changes and permits a silent switch.
+   * Content-aware pending document count shared with the dock. This is only a
+   * fast path for opening the popover while the server request determines the
+   * authoritative journal-row count.
    */
   pendingChangeCount: number | null;
   onSelectDraft: () => void;
   /**
-   * Runs the confirm-and-push: server pushes the pending changes, then flips
-   * `pushPolicy='auto'`, in that order (§3.4). Resolves `true` on success (mode
-   * is now Auto-apply), `false` if the push failed and the writer stays in
-   * Draft.
+   * Requests Auto-apply with or without explicit writer confirmation. The
+   * unconfirmed response either completes a zero-pending switch or vends the
+   * authoritative count; only the popover action passes `true`.
    */
   onRequestAutoApply: (confirmedPush: boolean) => Promise<UpdateWorkWriteModeResponse | null>;
 }) {

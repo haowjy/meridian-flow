@@ -4,7 +4,7 @@
  * owning thread routing itself.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
@@ -19,6 +19,7 @@ export type ChatScreenProps = {
   projectId: string;
   /** Explicit `?thread=` from the route. Null = resolve via fallback chain. */
   threadId: string | null;
+  activeWork: Work | null;
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
   /**
@@ -43,6 +44,7 @@ export type ChatScreenProps = {
 export function ChatScreen({
   projectId,
   threadId: explicitThreadId,
+  activeWork,
   onSelectThread,
   writeThreadToRoute = true,
   onSelectContextPath,
@@ -79,6 +81,7 @@ export function ChatScreen({
     <ChatScreenLoaded
       projectId={projectId}
       threadId={resolvedThreadId}
+      activeWork={activeWork}
       onSelectThread={onSelectThread}
       onSelectContextPath={onSelectContextPath}
     />
@@ -88,11 +91,13 @@ export function ChatScreen({
 function ChatScreenLoaded({
   projectId,
   threadId,
+  activeWork,
   onSelectThread,
   onSelectContextPath,
 }: {
   projectId: string;
   threadId: string;
+  activeWork: Work | null;
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 }) {
@@ -138,6 +143,7 @@ function ChatScreenLoaded({
             threadId={threadId}
             projectId={projectId}
             activeThread={thread}
+            activeWork={activeWork}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
             key={`${projectId}:${threadId}`}

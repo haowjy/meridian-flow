@@ -14,7 +14,7 @@
  * tree position across center↔dock moves — the chat is never reconciled away.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import { DockShell } from "../dock/DockShell";
@@ -32,6 +32,7 @@ export const CHAT_DOCK_WIDTH = "clamp(20rem,28vw,26rem)";
 export type ChatSurfaceProps = {
   projectId: string;
   activeThreadId: string | null;
+  activeWork: Work | null;
   /** Active screen — drives the dock view set when this surface is docked. */
   activeScreen: ScreenKey;
   onSelectThread: (threadId: string) => void;
@@ -50,6 +51,7 @@ export type ChatSurfaceProps = {
 export function ChatSurface({
   projectId,
   activeThreadId,
+  activeWork,
   activeScreen,
   onSelectThread,
   placement,
@@ -95,6 +97,7 @@ export function ChatSurface({
         <ChatScreen
           projectId={projectId}
           threadId={activeThreadId}
+          activeWork={activeWork}
           onSelectThread={onSelectThread}
           onSelectContextPath={onSelectContextPath}
           // Both placements now carry external chrome (PaneHeader for center, the
