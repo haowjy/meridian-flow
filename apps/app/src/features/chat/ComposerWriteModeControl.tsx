@@ -16,7 +16,7 @@ import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { type ReactNode, type Ref, useId, useState } from "react";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
+import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -30,24 +30,15 @@ import { cn } from "@/lib/utils";
 
 import { pendingDockedDraftCount } from "./docked-drafts";
 
-export function contextWork(works: Work[] | null, workId: string): Work | null {
+export function findContextWork(works: Work[] | null, workId: string | null): Work | null {
+  if (!workId) return null;
   return works?.find((candidate) => candidate.id === workId) ?? null;
 }
 
 /** Binds the presentation control to the Work resolved for the active thread. */
-export function ComposerWriteModeControl({
-  projectId,
-  workId,
-}: {
-  projectId: string;
-  workId: string;
-}) {
-  const { works } = useWorks(projectId);
-  const work = contextWork(works, workId);
-  const updateWriteMode = useUpdateWorkWriteMode(projectId, workId);
-  const workDrafts = useWorkDrafts(projectId, workId);
-
-  if (!work) return null;
+export function ComposerWriteModeControl({ projectId, work }: { projectId: string; work: Work }) {
+  const updateWriteMode = useUpdateWorkWriteMode(projectId, work.id);
+  const workDrafts = useWorkDrafts(projectId, work.id);
 
   return (
     <AiWriteModeControl

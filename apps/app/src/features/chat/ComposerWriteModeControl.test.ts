@@ -9,20 +9,21 @@
 import type { Work } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
-import { confirmPushCount, contextWork, shouldConfirmPush } from "./ComposerWriteModeControl";
+import { confirmPushCount, findContextWork, shouldConfirmPush } from "./ComposerWriteModeControl";
 
 const work = (id: string): Work => ({ id, projectId: "project-1", aiWriteMode: "draft" }) as Work;
 
-describe("contextWork", () => {
+describe("findContextWork", () => {
   it("selects the thread-bound Work rather than the project's first Work", () => {
-    expect(contextWork([work("default-work"), work("thread-work")], "thread-work")?.id).toBe(
+    expect(findContextWork([work("default-work"), work("thread-work")], "thread-work")?.id).toBe(
       "thread-work",
     );
   });
 
   it("returns null until the bound Work is available", () => {
-    expect(contextWork(null, "thread-work")).toBeNull();
-    expect(contextWork([work("default-work")], "thread-work")).toBeNull();
+    expect(findContextWork(null, "thread-work")).toBeNull();
+    expect(findContextWork([work("default-work")], null)).toBeNull();
+    expect(findContextWork([work("default-work")], "thread-work")).toBeNull();
   });
 });
 
