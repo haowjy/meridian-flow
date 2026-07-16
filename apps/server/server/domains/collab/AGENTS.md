@@ -21,14 +21,18 @@ propagation between them.
   bytes to the current Y.Doc; the transport fences each connection to its opened
   generation and rejects retired-identity insertion or delete-set replay.
 - **Safety provenance is journal-derived.** Ordinary prose birth class comes
-  from authenticated journal attribution. Only sparse certified exceptions use
-  the reserved Yjs provenance types, inside the same update as their prose.
+  from authenticated journal attribution. Certified semantic mutations may add
+  sparse continuation/restoration facts in the reserved Yjs provenance types,
+  atomically with their prose update; ordinary authorship adds no reserved fact.
 - **Closure means card review.** `branch-review-closure.ts` computes
   journal-backed closure classes so review cards apply/discard coherent sets.
 
 ## What lives here
 
-- `domain/document-authority.ts` is the sole mutation-policy capability: it validates fresh authorship, certified semantic edits, frozen-cut identity replication, and fenced snapshot replacement before persistence.
+- `domain/document-authority.ts` is the sole content-admission policy capability:
+  it validates fresh authorship, certified semantic edits, frozen-cut identity
+  replication, and fenced snapshot replacement before persistence; push planning
+  and settlement remain owned by their transition modules.
 - Branch pulls and certified thread-peer commits enter that capability through the
   branch coordinator adapter; response-transaction persistence remains one durable unit.
 - `composition.ts` wires package core, live journal/coordinator, branch stores,
@@ -37,7 +41,8 @@ propagation between them.
   `branch-push-plan.ts`, `branch-trail-projection.ts`, and
   `branch-push-executor.ts` own push decisions and trail projection;
   `branch-push-transition.ts` is the sole ordering owner for capture, prepare,
-  born-owned commit, settlement, fenced apply/completion, and recovery across every push mode. `branch-review*.ts` owns discard/undo/redo.
+  born-owned commit, settlement, fenced apply/completion, and recovery across
+  every push mode. `branch-review*.ts` owns discard/undo/redo.
 - `domain/ports/change-trail-persistence.ts` is the persistence boundary.
   `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
   dispatcher, work processor, and reconciler remain separate lifecycle owners.
@@ -57,6 +62,10 @@ propagation between them.
   Connection updates do not fire document activity/projection hooks.
 - Client admission must reject reserved client IDs and any insertion/deletion in
   the reserved provenance namespace before journal/apply/broadcast/ack.
+- Settlement changes require all three verification layers: the durable-only
+  killed-process oracle, a real production-composition PostgreSQL/Hocuspocus
+  harness using production-shaped sync updates, and writer-visible release probes.
+  Passing fixture-shaped oracle cases alone is not release evidence.
 - Live sync-step-2 updates run journal-attributed offline reconciliation after
   the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware

@@ -99,7 +99,8 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
   branch-id order, then live coordinator locks in document-id order.
 - **One push commit seam**: whole, selective, and companion pushes execute via
-  `branch-push-executor.ts`; `branch-push-transition.ts` alone orders capture through fenced completion; a durable commit requires its trail bundle.
+  `branch-push-executor.ts`; `branch-push-transition.ts` alone orders capture
+  through fenced completion; a durable commit requires its trail bundle.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
@@ -149,12 +150,18 @@ history is preserved for attribution, echo, and undo dependency checking.
   existing aggregate version; only journal or staged-push authority joined after
   the durable commit publishes another trail version. A complete empty
   classification removes that push's provisional changes in the same version.
-- **Settlement equivalence oracle**: PostgreSQL settlement regressions use the shared
-  killed-process oracle in `test-support/durable-settlement-oracle.ts`. Fixtures run a
-  warm control, stop an identical subject at the durable commit boundary, destroy all
-  warm Y.Docs/coordinators/facades, rebuild from PostgreSQL, recover, and compare the
-  normalized trail, bodies, identities, causal membership, eligible ranges, apply and
-  completion results, and forward actions.
+- **Settlement verification stack**: the shared killed-process oracle in
+  `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
+  Fixtures run a warm control, stop an identical subject at the durable commit
+  boundary, destroy all warm Y.Docs/coordinators/facades, rebuild from PostgreSQL,
+  recover, and compare normalized trail, bodies, identities, causal membership,
+  eligible ranges, apply/completion, and forward actions. It is necessary but not
+  sufficient: `lib/compose.runtime-settlement.db.test.ts` must also drive the real
+  `createProductionAppPorts` + `composeAppServices` + Hocuspocus + worker-drain chain
+  with production-shaped sync-step-2 full-state updates, and S2/S10 release probes
+  must verify the writer-visible Restore/Copy and trail flows. Fixture deltas once
+  passed the full oracle while the production observation adapter dropped causal
+  cuts and repeated full-state structs broke first-birth attribution.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
