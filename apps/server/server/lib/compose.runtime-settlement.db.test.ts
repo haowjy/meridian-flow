@@ -272,7 +272,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         Y.applyUpdate(coldRoom.document, update);
         intervening.destroy();
 
-        const change = ((details?.changes ?? []) as Array<{ changeId: string }>)[0];
+        const change = (
+          (details?.changes ?? []) as Array<{
+            changeId: string;
+            writerProtection?: { kind: string };
+          }>
+        ).find((candidate) => candidate.writerProtection?.kind === "sweep");
         if (!trail || !change) throw new Error("S2 trail has no restorable swept change");
         const action = {
           threadId: THREAD_ID,
@@ -308,15 +313,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const retained = reloaded as {
           unavailable?: boolean;
           changes?: Array<{
-            writerProtection?: { body?: { markdown?: string } };
+            writerProtection?: { kind?: string; body?: { markdown?: string } };
             forwardActions?: { restore?: { status?: string } };
           }>;
         };
-        expect(retained.unavailable).toBe(true);
-        expect(retained.changes?.[0]?.writerProtection?.body?.markdown?.trim()).toBe(
-          "Writer V2 unseen.",
+        const retainedSweep = retained.changes?.find(
+          (candidate) => candidate.writerProtection?.kind === "sweep",
         );
-        expect(retained.changes?.[0]?.forwardActions?.restore?.status).toBe("applied");
+        expect(retained.unavailable).toBe(true);
+        expect(retainedSweep?.writerProtection?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
+        expect(retainedSweep?.forwardActions?.restore?.status).toBe("applied");
         await unloadRuntime(runtime.hocuspocus);
       }
     }
