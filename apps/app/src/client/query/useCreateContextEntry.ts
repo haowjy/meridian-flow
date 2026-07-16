@@ -7,29 +7,38 @@ import { projectQueryKeys } from "./project-query-keys";
 import { contextRequestOptionsForScheme, useContextWorkId } from "./useContextWorkId";
 
 /**
- * Mutation hook for creating a file or folder inside the given scheme's
- * context tree.
+ * Mutation hook for creating a file or folder inside a context tree. The
+ * target scheme travels with each mutation (not the hook) so one instance can
+ * serve saves whose destination the writer picks at submit time.
  *
  * On success, invalidates the cached context tree for that scheme so the new
  * entry appears in `ContextTreePanel` on the next read.
  */
 export function useCreateContextEntry(
   projectId: string,
-  scheme: ProjectContextTreeScheme,
   options?: { activeThreadId?: string | null },
 ) {
   const queryClient = useQueryClient();
   const workId = useContextWorkId(projectId, options?.activeThreadId ?? null);
-  const contextOpts = contextRequestOptionsForScheme(scheme, workId);
   return useMutation({
-    mutationFn: (args: { type: "file" | "folder"; path: string; content?: string }) =>
-      createContextEntry(projectId, scheme, args, contextOpts),
-    onSuccess: () => {
+    mutationFn: (args: {
+      scheme: ProjectContextTreeScheme;
+      type: "file" | "folder";
+      path: string;
+      content?: string;
+    }) =>
+      createContextEntry(
+        projectId,
+        args.scheme,
+        { type: args.type, path: args.path, content: args.content },
+        contextRequestOptionsForScheme(args.scheme, workId),
+      ),
+    onSuccess: (_result, args) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.contextTree(
           projectId,
-          scheme,
-          isWorkScopedProjectContextScheme(scheme) ? workId : undefined,
+          args.scheme,
+          isWorkScopedProjectContextScheme(args.scheme) ? workId : undefined,
         ),
       });
     },

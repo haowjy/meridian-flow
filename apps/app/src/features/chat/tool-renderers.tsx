@@ -122,7 +122,7 @@ function ResultRows({ tool }: { tool: ToolView }) {
     <ul className="space-y-2">
       {rows.map((row) => (
         <li key={`${row.title}|${row.subtitle ?? ""}|${row.snippet ?? ""}`} className="space-y-0.5">
-          <div className="text-compact font-medium text-ink-strong">{row.title}</div>
+          <div className="text-compact font-medium text-prose-foreground">{row.title}</div>
           {row.subtitle ? (
             <div className="truncate font-mono text-meta text-muted-foreground">{row.subtitle}</div>
           ) : null}

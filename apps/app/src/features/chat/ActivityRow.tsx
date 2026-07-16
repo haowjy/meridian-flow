@@ -162,7 +162,7 @@ export function ActivityRow({
   const titleRowContent = (
     <div className="flex w-full items-start gap-2.5">
       {title ? (
-        <span className="text-ink-strong min-w-0 flex-1 truncate text-compact">{title}</span>
+        <span className="text-prose-foreground min-w-0 flex-1 truncate text-compact">{title}</span>
       ) : null}
       {dot}
       {hasInlineFold ? (
@@ -191,7 +191,7 @@ export function ActivityRow({
             onClick={handleClick}
             aria-expanded={hasInlineFold ? open : undefined}
             aria-controls={hasInlineFold ? panelId : undefined}
-            className="focus-ring -mx-1 flex w-[calc(100%+0.5rem)] cursor-pointer items-start rounded-md px-1 py-0.5 text-left transition-colors hover:bg-surface-subtle"
+            className="focus-ring -mx-1 flex w-[calc(100%+0.5rem)] cursor-pointer items-start rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted"
           >
             {titleRowContent}
           </button>

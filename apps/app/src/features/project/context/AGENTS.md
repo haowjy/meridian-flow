@@ -51,7 +51,9 @@ Shared across both shells:
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`,
   `TempDocumentEditor.tsx`, `temp-document-name.ts`; device-local content lives
-  in `../../../client/stores/temp-docs-store.ts`
+  in `../../../client/stores/temp-docs-store.ts`. The save bar is one VS Code
+  style URI field (`temp-save-uri.ts` parse/format; `TempDocumentSaveBar.tsx`
+  draft/commit choreography)
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,

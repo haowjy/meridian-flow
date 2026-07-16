@@ -7,8 +7,8 @@
  */
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "@/lib/utils";
 import type { ContextEntryNameSeverity } from "./context-entry-name";
+import { ValidationNote } from "./validation-note";
 
 type Anchor = { top: number; left: number; width: number };
 
@@ -45,7 +45,6 @@ export function InlineValidationOverlay({
 
   return createPortal(
     <div
-      role={severity.level === "error" ? "alert" : "status"}
       style={{
         position: "fixed",
         top: anchor.top,
@@ -54,14 +53,8 @@ export function InlineValidationOverlay({
         maxWidth: 260,
         zIndex: 50,
       }}
-      className={cn(
-        "rounded-sm border bg-background px-1.5 py-1 text-meta leading-snug shadow-md",
-        severity.level === "error"
-          ? "border-destructive text-destructive"
-          : "border-destructive-border text-foreground",
-      )}
     >
-      {severity.message}
+      <ValidationNote severity={severity} className="shadow-md" />
     </div>,
     document.body,
   );

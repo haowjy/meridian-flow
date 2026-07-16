@@ -125,7 +125,7 @@ function ChangeViewRow({
     >
       <button
         type="button"
-        className="focus-ring text-left font-medium text-ink-strong"
+        className="focus-ring text-left font-medium text-prose-foreground"
         onClick={() => void reveal()}
       >
         {protection?.kind === "resurrection" ? (
@@ -140,7 +140,7 @@ function ChangeViewRow({
           <Trans>Deleted text</Trans>
         )}
       </button>
-      {body ? <p className="whitespace-pre-wrap text-ink-strong">{body}</p> : null}
+      {body ? <p className="whitespace-pre-wrap text-prose-foreground">{body}</p> : null}
       {protection && !body ? (
         <p className="text-ink-muted">
           <Trans>Earlier content could not be recovered</Trans>

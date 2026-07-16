@@ -72,8 +72,8 @@ export function ProjectShell({
   const dockOccupant = visibleOccupantOf(layout, "dock");
   const leftWidth = leftOccupant ? layout[leftOccupant].width : 0;
   const dockWidth = dockOccupant ? layout[dockOccupant].width : 0;
-  // Route pane goes in `center` whenever there is no center surface (Home,
-  // Settings). Context no longer renders a route pane (the tab strip absorbs
+  // A route pane goes in `center` whenever there is no center surface. Context
+  // no longer renders a route pane (the tab strip absorbs
   // the sidebar/dock toggles in-line), so it leaves `routePaneArea` null and
   // the center surface owns the column outright.
   const hasRoutePane = children !== null && children !== undefined && children !== false;
@@ -128,12 +128,19 @@ export function ProjectShell({
       slots={DESKTOP_PROJECT_SLOTS}
       layout={layout}
       surfaces={surfaces}
-      className="relative h-full w-full"
+      // bg-shelf: the grid's backdrop matches the shelf — it shows only in the
+      // chrome field's rounded top-left notch against the rail.
+      className="relative h-full w-full bg-shelf"
       gridTemplateAreas={desktopGridTemplate.areas}
       gridTemplateColumns={desktopGridTemplate.columns}
       gridTemplateRows={desktopGridTemplate.rows}
       style={
         {
+          // No rail, no curve: zero the chrome-field corner while the left
+          // rail is collapsed; when open, leave the var unset so the utility's
+          // own fallback applies — globals.css is the single owner of the
+          // corner radius value.
+          "--chrome-corner": leftOccupant ? undefined : "0px",
           "--project-left-width": `${leftWidth}px`,
           // Resize handles render as transparent absolute overlays centered on
           // these grid seams; zero-width tracks remove the visible empty strip.
@@ -146,7 +153,10 @@ export function ProjectShell({
     >
       {routePaneArea ? (
         <div
-          className="relative z-0 flex min-h-0 flex-col"
+          // chrome-field: route panes fill the center cell with
+          // no center surface behind them — they must paint exactly what the
+          // center slot would (band + rising page-sheet grammar).
+          className="chrome-field relative z-0 flex min-h-0 flex-col"
           style={{ gridArea: routePaneArea }}
           data-project-route-pane
         >
@@ -174,7 +184,7 @@ export function ProjectShell({
             gridRef={gridRef}
             cssVariableName="--project-dock-width"
             widthPx={dockWidth}
-            minWidthPx={SLOT_WIDTH_BOUNDS.dock?.min ?? 240}
+            minWidthPx={SLOT_WIDTH_BOUNDS.dock?.min ?? 280}
             maxWidthPx={SLOT_WIDTH_BOUNDS.dock?.max ?? 520}
             onCommit={onSetDockWidth}
             ariaLabel={t`Resize right rail`}

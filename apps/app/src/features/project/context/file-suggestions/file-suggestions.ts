@@ -37,6 +37,32 @@ export function flattenFileSuggestionTrees(trees: readonly FileSuggestionTree[])
   return entries;
 }
 
+/**
+ * Direct children of one folder, directories first — the browse view of a
+ * navigable destination picker. `path` is the folder's own path (`/` for a
+ * scheme root); scheme-root entries themselves (`path === "/"`) are never
+ * children.
+ */
+export function folderChildren(
+  entries: readonly FileSuggestion[],
+  scheme: ProjectContextTreeScheme,
+  path: string,
+): FileSuggestion[] {
+  const children = entries.filter(
+    (entry) => entry.scheme === scheme && entry.path !== "/" && parentPath(entry.path) === path,
+  );
+  return [
+    ...children.filter((c) => c.kind === "dir"),
+    ...children.filter((c) => c.kind === "file"),
+  ];
+}
+
+/** Parent folder path of an entry path: `/a/b` → `/a`, `/a` → `/`. */
+export function parentPath(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index <= 0 ? "/" : path.slice(0, index);
+}
+
 type MatchOptions = {
   kinds?: readonly FileSuggestionKind[];
   schemes?: readonly ProjectContextTreeScheme[];
@@ -54,9 +80,15 @@ export function matchFileSuggestions(
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const kinds = options.kinds ? new Set(options.kinds) : null;
   const schemes = options.schemes ? new Set(options.schemes) : null;
+  const filtered = entries.filter(
+    (entry) => (!kinds || kinds.has(entry.kind)) && (!schemes || schemes.has(entry.scheme)),
+  );
 
-  return entries
-    .filter((entry) => (!kinds || kinds.has(entry.kind)) && (!schemes || schemes.has(entry.scheme)))
+  // Empty query: every entry ranks 0, so the pipeline reduces to the depth
+  // sort (stable ties keep tree order) — skip the rank/map/filter ritual.
+  if (!normalizedQuery) return filtered.sort((a, b) => a.parents.length - b.parents.length);
+
+  return filtered
     .map((entry, order) => ({ entry, order, rank: matchRank(entry, normalizedQuery) }))
     .filter((match) => match.rank !== null)
     .sort(

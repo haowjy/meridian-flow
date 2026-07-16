@@ -139,24 +139,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   }
 
+  const containerClassName = flush
+    ? "bg-composer-surface"
+    : cn(
+        "border transition-[border-color] focus-within:border-border-focus",
+        variant === "hero"
+          ? "rounded-composer border-border bg-card shadow-hero"
+          : "rounded-composer-pinned border-composer-border bg-composer-surface",
+      );
+
   return (
-    <div
-      className={cn(
-        "px-4 pt-4 pb-3",
-        // Hero floats on the manuscript page as a raised lift surface; the
-        // pinned composer sits flush on the warm dock as a recessed field —
-        // surface-warm reads as a warm field on BOTH the bright page and the
-        // chrome, so callers don't need a per-context fill. `flush` hands the
-        // border/radius/shadow to a shared outer box (DraftDock composer-unit).
-        flush
-          ? "bg-surface-warm"
-          : "border border-border transition-[border-color,box-shadow] focus-within:border-border-focus",
-        !flush &&
-          (variant === "hero"
-            ? "bg-card rounded-composer shadow-hero"
-            : "bg-surface-warm rounded-composer-pinned shadow-input"),
-      )}
-    >
+    <div className={cn("px-4 pt-4 pb-3", containerClassName)}>
       <Textarea
         ref={textareaRef}
         value={text}
@@ -170,8 +163,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // v2.6.1 does not merge the two classes so both end up on the element.
         style={{ fieldSizing: "fixed" }}
         className={cn(
-          "composer-input field-sizing-fixed focus-ring resize-none border-0 bg-transparent px-1.5 py-1 shadow-none",
-          "focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent",
+          // No focus treatment of its own: the composer box (focus-within
+          // border above) is the field — the inner textarea must not add a
+          // second indicator.
+          "composer-input field-sizing-fixed resize-none border-0 bg-transparent px-1.5 py-1 outline-none",
+          "dark:bg-transparent",
           "max-h-60 overflow-y-auto placeholder:text-muted-foreground",
           variant === "hero" ? "min-h-[52px]" : "min-h-[40px]",
         )}
@@ -189,7 +185,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           disabled={streaming ? false : !canSend}
           aria-label={streaming ? t`Stop` : t`Send message`}
           className={cn(
-            "focus-ring transition-all duration-200 ease-out",
+            "transition-all duration-200 ease-out",
             // Rounded square at rest (send) → circle while running (stop). Height
             // matches the toolbar's other controls (sm / 32px).
             streaming ? "rounded-full" : "rounded-field",

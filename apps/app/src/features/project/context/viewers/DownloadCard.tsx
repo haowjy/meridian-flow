@@ -26,7 +26,7 @@ export type DownloadCardProps = {
 export function DownloadCard({ url, name, heading, body }: DownloadCardProps) {
   return (
     <div className="grid h-full min-h-0 place-items-center px-6 py-10 text-center">
-      <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-surface-subtle/40 px-8 py-10 shadow-sm">
+      <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-muted/40 px-8 py-10 shadow-sm">
         <div className="grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
           <FileText className="size-6" aria-hidden />
         </div>
