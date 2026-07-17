@@ -17,7 +17,8 @@ import {
   type onUnsyncedChangesParameters,
   WebSocketStatus,
 } from "@hocuspocus/provider";
-import { type SafetyNoticeWsMessage, yjsWsPath } from "@meridian/contracts/protocol";
+import { type SafetyNoticeWsMessage, YJS_WS_CLOSE, yjsWsPath } from "@meridian/contracts/protocol";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 
@@ -27,15 +28,23 @@ import { buildSameOriginWsUrl } from "./dev-transport";
 import type { ConnectionState } from "./ThreadTransport";
 
 const TERMINAL_DENIAL_CODES = new Set([4401, 4403]);
+const SCHEMA_REFUSAL_CODES: ReadonlySet<number> = new Set([
+  YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code,
+  YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
+]);
 const HOCUSPOCUS_BRANCH_RESET_REASONS = new Set(["branch-generation-stale", "branch-stale-doc"]);
 
 let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
 
 function getSharedWebsocket(): HocuspocusProviderWebsocket {
   sharedWebsocket ??= new HocuspocusProviderWebsocket({
-    url: buildSameOriginWsUrl(yjsWsPath()),
+    url: buildSameOriginWsUrl(schemaVersionedYjsWsPath()),
   });
   return sharedWebsocket;
+}
+
+export function schemaVersionedYjsWsPath(): string {
+  return `${yjsWsPath()}?schema=${COLLAB_SCHEMA_VERSION}`;
 }
 
 function mapStatus(status: WebSocketStatus): ConnectionState {
@@ -54,6 +63,18 @@ function terminalState(reason: string, code?: number): ConnectionState {
 
 function resetState(reason: string, code?: number): ConnectionState {
   return { kind: "reset", reason, code };
+}
+
+export function classifyDocumentTransportClose(
+  roomName: string,
+  event: { code: number; reason: string },
+): ConnectionState | null {
+  if (isTerminalDenialClose(event)) return terminalState(event.reason, event.code);
+  if (SCHEMA_REFUSAL_CODES.has(event.code)) return resetState(event.reason, event.code);
+  if (roomName.startsWith("branch:") && HOCUSPOCUS_BRANCH_RESET_REASONS.has(event.reason)) {
+    return resetState(event.reason, event.code);
+  }
+  return null;
 }
 
 export type HocuspocusDocumentTransportOptions = {
@@ -138,13 +159,8 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (isTerminalDenialClose(event)) {
-      publishTerminal(terminalState(event.reason, event.code));
-      return;
-    }
-    if (roomName.startsWith("branch:") && HOCUSPOCUS_BRANCH_RESET_REASONS.has(event.reason)) {
-      publishTerminal(resetState(event.reason, event.code));
-    }
+    const state = classifyDocumentTransportClose(roomName, event);
+    if (state) publishTerminal(state);
   }
 
   function handleStateless({ payload }: onStatelessParameters): void {

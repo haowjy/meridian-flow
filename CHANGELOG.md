@@ -4,8 +4,10 @@
 
 - `apps/app`: collaboration schema fences now pause editing, hide presence,
   explain the refusal above the chapter, and keep a read-only preview of every
-  part of the manuscript this client can safely render; quarantined local
-  sessions cannot reconnect until later validation clears them.
+  part of the manuscript this client can safely render; a superseded bundle
+  silently reloads once before showing that fence, while stale document heads
+  stop on an honest unavailable surface instead of syncing forever; quarantined
+  local sessions cannot reconnect until later validation clears them.
 - `@meridian/contracts`: Yjs collaboration closes now register schema-version
   refusals (`4406 client-schema-superseded`, `4407 document-schema-stale`).
 - `apps/server`: Yjs connect admission now refuses clients older than each live

@@ -37,7 +37,11 @@ import type * as Y from "yjs";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
-import type { SchemaFence } from "./schema-fence";
+import {
+  attemptClientSchemaReload,
+  clearClientSchemaReloadGuard,
+  type SchemaFence,
+} from "./schema-fence";
 
 export type { SchemaFence } from "./schema-fence";
 
@@ -234,6 +238,11 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
+        if (state.kind === "reset" && state.reason === "client-schema-superseded") {
+          if (!attemptClientSchemaReload(this.roomKey)) {
+            this.raiseSchemaFence({ reason: "client-superseded", detail: state.reason });
+          }
+        }
         this.recomputeStatus();
       }) ?? null;
     this.unsubscribeSafetyNotices =
@@ -435,6 +444,7 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
   }
 

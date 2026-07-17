@@ -34,6 +34,12 @@ Yjs document session. It must stay structurally aligned with
   `quarantineRoom()` raises any open session before writing storage and returns
   whether persistence succeeded; witness callers must handle `false` rather
   than assuming the fence will survive refresh.
+- A `4406 client-schema-superseded` transport reset reloads silently once before
+  raising the `client-superseded` fence. Its sessionStorage guard is keyed by
+  schema version plus room and clears only after that room completes server
+  sync. A repeated refusal therefore shows the fence without reloading again.
+  `4407 document-schema-stale` is not a fence and never reloads; the editor is
+  replaced with the locked temporarily-unavailable chapter surface.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.

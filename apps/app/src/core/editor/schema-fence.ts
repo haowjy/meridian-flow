@@ -27,6 +27,43 @@ function browserStorage(): Storage | null {
   }
 }
 
+function browserSessionStorage(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function clientSchemaReloadGuardKey(roomKey: string): string {
+  return `meridian:schema-reload:v${COLLAB_SCHEMA_VERSION}:${roomKey}`;
+}
+
+/** Reload only after durably recording the attempt, so a stale bundle cannot loop. */
+export function attemptClientSchemaReload(roomKey: string): boolean {
+  const storage = browserSessionStorage();
+  if (!storage) return false;
+  try {
+    const key = clientSchemaReloadGuardKey(roomKey);
+    if (storage.getItem(key) !== null) return false;
+    storage.setItem(key, "1");
+    globalThis.location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearClientSchemaReloadGuard(roomKey: string): void {
+  const storage = browserSessionStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(clientSchemaReloadGuardKey(roomKey));
+  } catch {
+    // A blocked storage backend cannot retain a loop guard either.
+  }
+}
+
 export function schemaFenceQuarantineKey(roomKey: string): string {
   return `meridian:schema-fence:v${COLLAB_SCHEMA_VERSION}:${roomKey}`;
 }

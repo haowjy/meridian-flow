@@ -10,7 +10,7 @@
  * every connection-state change — never a frozen startup value.
  */
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Awareness } from "y-protocols/awareness";
 
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
@@ -21,6 +21,7 @@ import {
   type DocumentSessionTransportProvider,
   documentSessionPersistenceKey,
 } from "./document-session";
+import { clientSchemaReloadGuardKey } from "./schema-fence";
 
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: ConnectionState) => void;
@@ -103,6 +104,30 @@ function track(session: DocumentSession): {
   const unsubscribe = session.subscribe((snap) => snapshots.push(snap));
   return { snapshots, unsubscribe };
 }
+
+function installBrowserReloadHarness() {
+  const values = new Map<string, string>();
+  const storage: Storage = {
+    get length() {
+      return values.size;
+    },
+    clear: () => values.clear(),
+    getItem: (key: string) => values.get(key) ?? null,
+    key: (index: number) => [...values.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      values.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    },
+  };
+  const reload = vi.fn();
+  vi.stubGlobal("sessionStorage", storage);
+  vi.stubGlobal("location", { reload });
+  return { storage, reload };
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("DocumentSession status derivation", () => {
   it("starts detached and attaches transport once without replacing its Y.Doc", async () => {
@@ -329,6 +354,87 @@ describe("DocumentSession status derivation", () => {
       status: "access-lost",
       connectionState: { kind: "reset", code: 4205 },
     });
+    void session.destroy();
+  });
+
+  it("silently reloads once for a superseded client, then fences a repeated refusal", () => {
+    const { storage, reload } = installBrowserReloadHarness();
+    const firstTransport = makeFakeTransport();
+    const firstSession = new DocumentSession({
+      roomKey: "doc-superseded",
+      enableIndexedDb: false,
+      transportFactory: firstTransport.factory,
+    });
+
+    firstTransport.current().emit({
+      kind: "reset",
+      reason: "client-schema-superseded",
+      code: 4406,
+    });
+
+    expect(reload).toHaveBeenCalledOnce();
+    expect(firstSession.getSnapshot().schemaFence).toBeNull();
+    expect(storage.getItem(clientSchemaReloadGuardKey("doc-superseded"))).not.toBeNull();
+
+    const secondTransport = makeFakeTransport();
+    const secondSession = new DocumentSession({
+      roomKey: "doc-superseded",
+      enableIndexedDb: false,
+      transportFactory: secondTransport.factory,
+    });
+    secondTransport.current().emit({
+      kind: "reset",
+      reason: "client-schema-superseded",
+      code: 4406,
+    });
+
+    expect(reload).toHaveBeenCalledOnce();
+    expect(secondSession.getSnapshot().schemaFence).toEqual({
+      reason: "client-superseded",
+      detail: "client-schema-superseded",
+    });
+    void firstSession.destroy();
+    void secondSession.destroy();
+  });
+
+  it("clears the superseded-client reload guard after a successful document sync", async () => {
+    const { storage } = installBrowserReloadHarness();
+    const guardKey = clientSchemaReloadGuardKey("doc-recovered");
+    storage.setItem(guardKey, "1");
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "doc-recovered",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+
+    current().emit({ kind: "connected" });
+    current().resolveFirstSync();
+    await session.whenSynced();
+    await flushMicrotasks();
+
+    expect(storage.getItem(guardKey)).toBeNull();
+    await session.destroy();
+  });
+
+  it("surfaces a stale document head without reloading or raising a schema fence", async () => {
+    const { reload } = installBrowserReloadHarness();
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "doc-stale",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+
+    current().emit({ kind: "reset", reason: "document-schema-stale", code: 4407 });
+    await flushMicrotasks();
+
+    expect(session.getSnapshot()).toMatchObject({
+      status: "access-lost",
+      connectionState: { kind: "reset", reason: "document-schema-stale", code: 4407 },
+      schemaFence: null,
+    });
+    expect(reload).not.toHaveBeenCalled();
     void session.destroy();
   });
 

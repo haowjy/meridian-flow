@@ -150,6 +150,13 @@ function SessionEditorView({ session, ...props }: SessionEditorViewProps) {
 
   useEffect(() => session.subscribe(setSnapshot), [session]);
 
+  if (
+    snapshot.connectionState?.kind === "reset" &&
+    snapshot.connectionState.reason === "document-schema-stale"
+  ) {
+    return <UnavailableSessionEditorView {...props} />;
+  }
+
   if (initiallyFenced.current || (snapshot.schemaFence && liveEditorRetired)) {
     return (
       <FencedSessionEditorView
@@ -167,6 +174,26 @@ function SessionEditorView({ session, ...props }: SessionEditorViewProps) {
       schemaFence={snapshot.schemaFence}
       onSchemaFenceApplied={() => setLiveEditorRetired(true)}
     />
+  );
+}
+
+function UnavailableSessionEditorView({ className, belowToolbar }: EditorViewProps) {
+  return (
+    <section
+      className={cn(
+        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
+        className,
+      )}
+    >
+      {belowToolbar}
+      <div
+        className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-muted-foreground text-sm"
+        data-document-schema-stale
+        role="alert"
+      >
+        <Trans>This chapter is temporarily unavailable</Trans>
+      </div>
+    </section>
   );
 }
 

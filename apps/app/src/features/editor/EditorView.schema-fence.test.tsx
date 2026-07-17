@@ -179,4 +179,42 @@ describe("EditorView schema fence", () => {
       "Replayed manuscript prose",
     );
   });
+
+  it("replaces a stale-head editor with the honest unavailable surface", async () => {
+    const ydoc = createCollabYDoc();
+    const snapshot: DocumentSessionSnapshot = {
+      documentId: "document-stale-head",
+      roomKey: "document-stale-head",
+      room: { kind: "live", documentId: "document-stale-head" },
+      status: "access-lost",
+      connectionState: { kind: "reset", reason: "document-schema-stale", code: 4407 },
+      localPersistenceSynced: true,
+      safetyNotice: null,
+      schemaFence: null,
+    };
+    harness.session = {
+      document: ydoc,
+      roomKey: snapshot.roomKey,
+      getSnapshot: () => snapshot,
+      subscribe: (listener: (value: DocumentSessionSnapshot) => void) => {
+        listener(snapshot);
+        return vi.fn();
+      },
+      destroy: () => ydoc.destroy(),
+    } as unknown as DocumentSessionType;
+    const container = document.getElementById("root");
+    if (!container) throw new Error("missing root");
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<EditorView documentId="document-stale-head" />);
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector("[data-document-schema-stale]")?.textContent).toBe(
+      "This chapter is temporarily unavailable",
+    );
+    expect(document.querySelector(".ProseMirror")).toBeNull();
+    expect(document.body.textContent).not.toContain("Syncing");
+  });
 });
