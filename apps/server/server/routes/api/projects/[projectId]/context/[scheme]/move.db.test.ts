@@ -223,5 +223,79 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         provisionalName: false,
       });
     });
+
+    it("moves a folder and its children across schemes", async () => {
+      const { workId, port } = await arrangeUntitled();
+      await expect(
+        port.mkdir(`scratch://${workId}/Source/Nested`, {
+          origin: { type: "human", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ ok: true });
+      await expect(
+        port.write(`scratch://${workId}/Source/Nested/chapter.md`, "Chapter", {
+          origin: { type: "human", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ ok: true });
+
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            path: "Source",
+            sourceWorkId: workId,
+            destinationScheme: "manuscript",
+            destinationFolderPath: "Act 1",
+          },
+        }),
+      ).resolves.toEqual({
+        status: "moved",
+        scheme: "manuscript",
+        path: "Act 1/Source",
+        name: "Source",
+      });
+      await expect(port.stat("manuscript://Act 1/Source/Nested/chapter.md")).resolves.toMatchObject(
+        {
+          ok: true,
+        },
+      );
+      await expect(
+        port.stat(`scratch://${workId}/Source/Nested/chapter.md`),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "not_found" },
+      });
+    });
+
+    it("returns the exact existing folder locator instead of nesting into it", async () => {
+      const { workId, port } = await arrangeUntitled();
+      await expect(port.mkdir(`scratch://${workId}/Source/Children`)).resolves.toMatchObject({
+        ok: true,
+      });
+      await expect(port.mkdir("manuscript://Act 1/Source")).resolves.toMatchObject({ ok: true });
+
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            path: "Source",
+            sourceWorkId: workId,
+            destinationScheme: "manuscript",
+            destinationFolderPath: "Act 1",
+          },
+        }),
+      ).resolves.toEqual({
+        status: "conflict",
+        collision: { scheme: "manuscript", path: "Act 1/Source" },
+      });
+      await expect(port.list("manuscript://Act 1/Source")).resolves.toEqual({
+        ok: true,
+        value: [],
+      });
+      await expect(port.list(`scratch://${workId}/Source`)).resolves.toMatchObject({ ok: true });
+    });
   });
 }

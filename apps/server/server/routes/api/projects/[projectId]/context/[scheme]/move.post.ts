@@ -1,28 +1,50 @@
 /** Exposes ContextPort.move for cross-folder and cross-scheme writer moves. */
 
+import {
+  type ContextEntryValidationError,
+  validateContextEntryName,
+  validateContextEntryPath,
+} from "@meridian/contracts/context-entry-validation";
 import type {
   MoveContextEntryRequest,
-  MoveContextEntrySuccess,
+  MoveContextEntryResult,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import type { ContextPort } from "../../../../../../domains/context/index.js";
+import {
+  createError,
+  defineEventHandler,
+  getRouterParam,
+  readBody,
+  setResponseStatus,
+} from "nitro/h3";
+import {
+  type ContextPort,
+  parseUnifiedContextUri,
+} from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
-import { contextErrorToHttp, parseScheme, sanitizePath, toUri } from "./_helpers.js";
+import { contextErrorToHttp, parseScheme, toUri } from "./_helpers.js";
 
-function parseFolderPath(raw: unknown): string {
+function validationError(field: string, error: ContextEntryValidationError): never {
+  throw createError({
+    statusCode: 400,
+    message: `Invalid \`${field}\`: ${error.reason}`,
+    data: { field, reason: error.reason, segment: error.segment, character: error.character },
+  });
+}
+
+function parsePath(raw: unknown, field: "path" | "destinationFolderPath", allowRoot = false) {
   if (typeof raw !== "string") {
-    throw createError({ statusCode: 400, message: "`destinationFolderPath` is required" });
+    throw createError({ statusCode: 400, message: `\`${field}\` is required` });
   }
-  const path = raw.trim();
-  if (!path) return "";
-  return sanitizePath(path);
+  const result = validateContextEntryPath(raw, { allowRoot });
+  if (!result.ok) validationError(field, result);
+  return result.value;
 }
 
 function parseOptionalWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") {
@@ -51,26 +73,25 @@ export function parseMoveContextEntryBody(raw: unknown): MoveContextEntryRequest
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const body = raw as Partial<MoveContextEntryRequest>;
-  if (typeof body.path !== "string" || body.path.trim() === "") {
-    throw createError({ statusCode: 400, message: "`path` is required" });
-  }
   if (!isProjectContextTreeScheme(body.destinationScheme)) {
     throw createError({ statusCode: 400, message: "`destinationScheme` is invalid" });
   }
-  if (body.newName !== undefined && (typeof body.newName !== "string" || !body.newName.trim())) {
-    throw createError({ statusCode: 400, message: "`newName` must be a non-empty string" });
-  }
-  const newName = body.newName?.trim();
-  if (newName?.includes("/") || newName === "." || newName === "..") {
-    throw createError({ statusCode: 400, message: "`newName` must be a single path segment" });
+  let newName: string | undefined;
+  if (body.newName !== undefined) {
+    if (typeof body.newName !== "string") {
+      throw createError({ statusCode: 400, message: "`newName` must be a string" });
+    }
+    const result = validateContextEntryName(body.newName);
+    if (!result.ok) validationError("newName", result);
+    newName = result.value;
   }
 
   const sourceWorkId = parseOptionalWorkId(body.sourceWorkId, "sourceWorkId");
   const destinationWorkId = parseOptionalWorkId(body.destinationWorkId, "destinationWorkId");
   return {
-    path: sanitizePath(body.path),
+    path: parsePath(body.path, "path"),
     destinationScheme: body.destinationScheme,
-    destinationFolderPath: parseFolderPath(body.destinationFolderPath),
+    destinationFolderPath: parsePath(body.destinationFolderPath, "destinationFolderPath", true),
     ...(newName ? { newName } : {}),
     ...(sourceWorkId ? { sourceWorkId } : {}),
     ...(destinationWorkId ? { destinationWorkId } : {}),
@@ -81,11 +102,8 @@ function basename(path: string): string {
   return path.split("/").filter(Boolean).at(-1) ?? "";
 }
 
-function joinPath(...parts: string[]): string {
-  return parts
-    .flatMap((part) => part.split("/"))
-    .filter(Boolean)
-    .join("/");
+function joinPath(parent: string, name: string): string {
+  return parent ? `${parent}/${name}` : name;
 }
 
 async function resolveMovePort(input: {
@@ -120,7 +138,7 @@ export async function moveContextEntry(input: {
   userId: string;
   sourceScheme: ProjectContextTreeScheme;
   body: MoveContextEntryRequest;
-}): Promise<MoveContextEntrySuccess> {
+}): Promise<MoveContextEntryResult> {
   assertWorkScope(input.sourceScheme, input.body.sourceWorkId, "sourceWorkId");
   assertWorkScope(input.body.destinationScheme, input.body.destinationWorkId, "destinationWorkId");
   const name = input.body.newName ?? basename(input.body.path);
@@ -128,14 +146,28 @@ export async function moveContextEntry(input: {
   const result = await input.port.move(
     toUri(input.sourceScheme, input.body.path, input.body.sourceWorkId),
     toUri(input.body.destinationScheme, destinationPath, input.body.destinationWorkId),
-    { origin: { type: "human", userId: input.userId } },
+    { exactTarget: true, origin: { type: "human", userId: input.userId } },
   );
-  if (!result.ok) contextErrorToHttp(result.error);
+  if (!result.ok) {
+    if (result.error.code === "conflict") {
+      const collision = parseUnifiedContextUri(result.error.uri);
+      if (!collision.ok) contextErrorToHttp(collision.error);
+      return {
+        status: "conflict",
+        collision: {
+          scheme: collision.value.scheme,
+          path: collision.value.path,
+          ...(collision.value.authority ? { workId: collision.value.authority } : {}),
+        },
+      };
+    }
+    contextErrorToHttp(result.error);
+  }
   return {
     status: "moved",
     scheme: input.body.destinationScheme,
-    path: destinationPath,
-    name,
+    path: result.value.destinationPath,
+    name: basename(result.value.destinationPath),
   };
 }
 
@@ -152,5 +184,7 @@ export default defineEventHandler(async (event) => {
     sourceScheme,
     body,
   });
-  return moveContextEntry({ port, userId: user.userId, sourceScheme, body });
+  const result = await moveContextEntry({ port, userId: user.userId, sourceScheme, body });
+  if (result.status === "conflict") setResponseStatus(event, 409);
+  return result;
 });

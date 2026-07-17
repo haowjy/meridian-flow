@@ -157,10 +157,14 @@ export interface ContextWriteOptions {
 
 export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
+  /** Treat destinationUri as the final target, never as a Unix-style container. */
+  exactTarget?: boolean;
 }
 
 export interface ContextMoveResult {
   movedNodeId?: string;
+  /** Scheme-relative path durably committed by the tree mutation. */
+  destinationPath: string;
 }
 
 /** Certified context edits are closed semantic commands, never opaque callbacks. */

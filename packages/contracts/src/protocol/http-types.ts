@@ -116,6 +116,7 @@ export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContext
 export type MoveContextEntryRequest = {
   path: string;
   destinationScheme: ProjectContextTreeScheme;
+  /** Scheme-relative parent folder; the empty string means the scheme root. */
   destinationFolderPath: string;
   newName?: string;
   sourceWorkId?: string;
@@ -128,7 +129,17 @@ export type MoveContextEntrySuccess = {
   path: string;
   name: string;
 };
-export type MoveContextEntryConflict = { status: "conflict" };
+/** Canonical, server-normalized location used by Open-existing recovery. */
+export type MoveContextEntryLocator = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  /** Present only for scratch/uploads locations. */
+  workId?: string;
+};
+export type MoveContextEntryConflict = {
+  status: "conflict";
+  collision: MoveContextEntryLocator;
+};
 export type MoveContextEntryResult = MoveContextEntrySuccess | MoveContextEntryConflict;
 
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
