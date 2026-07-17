@@ -96,19 +96,12 @@ Contracts:
   home as read-only spans left of the name. Enter with a home built moves
   (+renames); name-only Enter renames in place — naming isn't homing.
   Placement happens once: any explicit save graduates the document.
-- **Path grammar** (everything homed): the full human path is one editable
-  input (`Manuscript/Act 2/chapter-12` — `/` typing grammar; rest renders
-  `›`). The popover tracks the caret's segment (root labels, then folders,
-  case-insensitive with canonical casing); typed segments matching nothing are
-  tagged "new folder" and created by the move (`identity-path.ts` owns the
-  grammar). No rest-state entry currently reaches this grammar (the crumbs
-  went inert; the per-segment navigator slice reclaims it as its typed
-  fallback — homed rename/move goes through the chip's Move-to popup). Enter
-  is the single rename/move/both commit; Esc AND blur revert. Validation flows
-  through the contracts module via `context-entry-name.ts`.
+- Homed rename/move goes through the chip's Move-to popup. The future
+  per-segment navigator owns its own typed fallback and API if it needs one;
+  the identity bar does not retain an unreachable full-path editor.
 - **Commit seam**: `use-identity-commit.ts` is the only writer through the
-  rename/move endpoints for the bar's three surfaces (placement field, path
-  field, Move-to popup): rename in place, move (`moveContextEntry`, slash-less
+  rename/move endpoints for the bar's two surfaces (placement field and
+  Move-to popup): rename in place, move (`moveContextEntry`, slash-less
   scheme-relative paths), or queued placement for `new` tabs. Conflicts return
   the canonical collision locator for Open-existing. **Graduation is total**:
   every commit through this seam is an explicit writer save — the HTTP move

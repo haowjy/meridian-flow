@@ -38,7 +38,7 @@ vi.mock("./file-suggestions", async (importOriginal) => {
 });
 vi.mock("./untitled-reconciler", () => ({ clearQueuedRenameFailure: vi.fn() }));
 
-const { IdentityPathField } = await import("./IdentityPathField");
+const { IdentityPlacementField } = await import("./IdentityPlacementField");
 
 const provisionalTab: ContextTab = {
   kind: "new",
@@ -46,19 +46,18 @@ const provisionalTab: ContextTab = {
   name: "Untitled",
 };
 
-describe("IdentityPathField placement ghost", () => {
+describe("IdentityPlacementField placement ghost", () => {
   it.each([
     "Tab",
     "ArrowRight",
   ])("accepts the ghost with %s and leaves the caret at its end", async (key) => {
     await withReactRoot(
-      <IdentityPathField
+      <IdentityPlacementField
         projectId="project-1"
         activeThreadId={null}
         defaultWorkId={null}
         tab={provisionalTab}
         location={tabLocation(provisionalTab)}
-        mode={{ kind: "placement" }}
         failure={null}
         commit={vi.fn()}
         onExit={() => {}}

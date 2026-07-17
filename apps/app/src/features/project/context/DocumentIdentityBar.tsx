@@ -24,7 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityMovePopup } from "./IdentityMovePopup";
-import { type IdentityFieldMode, IdentityPathField } from "./IdentityPathField";
+import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
 import {
@@ -43,7 +43,7 @@ export type DocumentIdentityBarProps = {
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 
-type Surface = { kind: "field"; mode: IdentityFieldMode } | { kind: "popup" } | null;
+type Surface = "placement" | "popup" | null;
 
 export function DocumentIdentityBar({
   projectId,
@@ -70,12 +70,8 @@ export function DocumentIdentityBar({
   const renameFailure = useQueuedRenameFailure(tab.documentId);
   useEffect(() => {
     if (!renameFailure) return;
-    setSurface({ kind: "field", mode: { kind: "placement" } });
+    setSurface("placement");
   }, [renameFailure]);
-
-  const openField = (mode: IdentityFieldMode) => {
-    if (location.editable) setSurface({ kind: "field", mode });
-  };
 
   // The chip is the pointing surface: placement while never-placed, the
   // Move-to popup once placed. Viewer docs get the popup too when moving them
@@ -97,15 +93,13 @@ export function DocumentIdentityBar({
           IDENTITY_BAR_BAND_CLASS,
         )}
       >
-        {surface?.kind === "field" ? (
-          <IdentityPathField
-            key={surface.mode.kind}
+        {surface === "placement" ? (
+          <IdentityPlacementField
             projectId={projectId}
             activeThreadId={activeThreadId}
             defaultWorkId={defaultWorkId}
             tab={tab}
             location={location}
-            mode={surface.mode}
             failure={renameFailure}
             commit={commit}
             onExit={(reason) => {
@@ -124,12 +118,12 @@ export function DocumentIdentityBar({
         <IdentityChipSlot
           documentId={tab.documentId}
           location={location}
-          show={showChip && surface?.kind !== "field"}
+          show={showChip && surface !== "placement"}
           popup={
             chipOpensPopup
               ? {
-                  open: surface?.kind === "popup",
-                  onOpenChange: (open) => setSurface(open ? { kind: "popup" } : null),
+                  open: surface === "popup",
+                  onOpenChange: (open) => setSurface(open ? "popup" : null),
                   projectId,
                   activeThreadId,
                   defaultWorkId,
@@ -139,8 +133,8 @@ export function DocumentIdentityBar({
               : null
           }
           onChooseHome={() => {
-            if (chipOpensPopup) setSurface({ kind: "popup" });
-            else openField({ kind: "placement" });
+            if (chipOpensPopup) setSurface("popup");
+            else if (location.editable) setSurface("placement");
           }}
         />
       </div>

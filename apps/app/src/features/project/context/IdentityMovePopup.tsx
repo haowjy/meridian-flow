@@ -21,8 +21,8 @@ import {
   parentPath as parentFolderPath,
   useFileSuggestions,
 } from "./file-suggestions";
+import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
 import type { TabLocation } from "./identity-location";
-import { MOVE_DESTINATION_SCHEMES } from "./identity-path";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
 import { ValidationNote } from "./validation-note";
 
@@ -107,7 +107,7 @@ function MovePopupContent({
 
   const suggestionOptions = useMemo(
     () => ({
-      schemes: [...new Set([...MOVE_DESTINATION_SCHEMES, location.scheme])],
+      schemes: [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
       kinds: ["dir", "file"] as const,
       activeThreadId,
       workId: defaultWorkId ?? location.workId,
@@ -124,7 +124,7 @@ function MovePopupContent({
             ? { ...entry, hint: t`current home` }
             : entry,
         )
-    : MOVE_DESTINATION_SCHEMES.map((scheme) => ({
+    : WRITABLE_IDENTITY_DESTINATIONS.map((scheme) => ({
         scheme,
         path: "/",
         name: schemeLabel(scheme),
