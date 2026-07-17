@@ -375,9 +375,15 @@ function PreferencesSection({
     <div>
       <SectionHeading
         title={<Trans>Preferences</Trans>}
-        description={<Trans>How Meridian looks and reads for you, on every device.</Trans>}
+        description={<Trans>Appearance and behavior settings.</Trans>}
       />
+
+      {/* Device-local — stored on this machine only */}
       <div className="space-y-4">
+        <UiSectionLabel variant="group">
+          <Trans>This device</Trans>
+        </UiSectionLabel>
+
         <div className={rowClassName}>
           <span className={labelClassName}>
             <Trans>Language</Trans>
@@ -419,6 +425,13 @@ function PreferencesSection({
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      {/* Account-wide — follows you across devices */}
+      <div className="mt-6 space-y-4">
+        <UiSectionLabel variant="group">
+          <Trans>Account</Trans>
+        </UiSectionLabel>
 
         <div className="flex items-center justify-between gap-6">
           <div className="min-w-0">
