@@ -111,7 +111,12 @@ them prompt.
 
 ## Build and test
 
-`pnpm check` is the full gate (lint + negative-space + typecheck + test + graph).
+`pnpm check` is the build-and-unit gate (lint + negative-space + typecheck +
+test + graph). It is necessary but never sufficient for slices that touch
+runtime behavior. Those slices require a probe session before merge: run the
+full dev stack, exercise the real workflows the slice affects, observe
+logs/streams/DB state, and compare against a baseline. The probe verdict is
+the merge gate for runtime correctness.
 
 ## Commit discipline
 
