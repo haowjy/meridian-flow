@@ -117,7 +117,7 @@ function phoneSections(): PhoneSettingsSectionItem[] {
  */
 const SECTION_CONTENT: Record<
   SettingsSection,
-  (presentation: SectionPresentation, workingSetSyncEnabled: boolean) => ReactNode
+  (presentation: SectionPresentation, workingSetSyncEnabled: boolean | null) => ReactNode
 > = {
   profile: (presentation) => <ProfileSection presentation={presentation} />,
   preferences: (presentation, workingSetSyncEnabled) => (
@@ -133,12 +133,16 @@ function SectionContent({
 }: {
   section: SettingsSection | undefined;
   presentation: SectionPresentation;
-  workingSetSyncEnabled: boolean;
+  workingSetSyncEnabled: boolean | null;
 }) {
   return section ? SECTION_CONTENT[section](presentation, workingSetSyncEnabled) : null;
 }
 
-export function SettingsDialog({ workingSetSyncEnabled }: { workingSetSyncEnabled: boolean }) {
+export function SettingsDialog({
+  workingSetSyncEnabled,
+}: {
+  workingSetSyncEnabled: boolean | null;
+}) {
   const search = useSearch({ strict: false }) as { settings?: SettingsSection };
   const { open, switchSection, close } = useSettingsNavigation();
   // `null` until the media query resolves (first client effect) — render no
@@ -326,7 +330,7 @@ function PreferencesSection({
   workingSetSyncEnabled,
 }: {
   presentation?: SectionPresentation;
-  workingSetSyncEnabled: boolean;
+  workingSetSyncEnabled: boolean | null;
 }) {
   const { i18n } = useLingui();
   const currentLocale = i18n.locale as SupportedLocale;
@@ -336,10 +340,21 @@ function PreferencesSection({
   const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
   const triggerClassName = cn("focus-ring", stacked ? "w-full" : "flex-1");
   const router = useRouter();
-  const [resumeAcrossDevices, setResumeAcrossDevices] = useState(workingSetSyncEnabled);
+  const [resumeAcrossDevices, setResumeAcrossDevices] = useState(workingSetSyncEnabled ?? false);
   const [savingResumePreference, setSavingResumePreference] = useState(false);
 
-  useEffect(() => setResumeAcrossDevices(workingSetSyncEnabled), [workingSetSyncEnabled]);
+  useEffect(() => {
+    if (workingSetSyncEnabled !== null) setResumeAcrossDevices(workingSetSyncEnabled);
+  }, [workingSetSyncEnabled]);
+
+  async function retryResumePreference() {
+    setSavingResumePreference(true);
+    try {
+      await router.invalidate();
+    } finally {
+      setSavingResumePreference(false);
+    }
+  }
 
   async function changeResumePreference(enabled: boolean) {
     setResumeAcrossDevices(enabled);
@@ -411,15 +426,32 @@ function PreferencesSection({
               <Trans>Resume where I left off on any device</Trans>
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              <Trans>Reopens your last document and chat when you switch devices</Trans>
+              {workingSetSyncEnabled === null ? (
+                <Trans>
+                  Your saved preference is unavailable. Sync is paused until retry succeeds.
+                </Trans>
+              ) : (
+                <Trans>Reopens your last document and chat when you switch devices</Trans>
+              )}
             </p>
           </div>
-          <Switch
-            checked={resumeAcrossDevices}
-            disabled={savingResumePreference}
-            onCheckedChange={(enabled) => void changeResumePreference(enabled)}
-            aria-label={t`Resume where I left off on any device`}
-          />
+          {workingSetSyncEnabled === null ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={savingResumePreference}
+              onClick={() => void retryResumePreference()}
+            >
+              <Trans>Retry</Trans>
+            </Button>
+          ) : (
+            <Switch
+              checked={resumeAcrossDevices}
+              disabled={savingResumePreference}
+              onCheckedChange={(enabled) => void changeResumePreference(enabled)}
+              aria-label={t`Resume where I left off on any device`}
+            />
+          )}
         </div>
       </div>
     </div>

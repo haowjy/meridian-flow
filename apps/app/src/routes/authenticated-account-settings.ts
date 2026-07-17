@@ -1,12 +1,10 @@
 /** Bounded auxiliary account-settings read for the authenticated route loader. */
 import type { AccountSettings } from "@meridian/contracts/protocol";
 
-const DEFAULT_SETTINGS: AccountSettings = { workingSetSyncEnabled: true };
-
 export async function loadAccountSettingsWithDeadline(
   load: (signal: AbortSignal) => Promise<AccountSettings>,
   timeoutMs = 2_000,
-): Promise<AccountSettings> {
+): Promise<AccountSettings | null> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -20,7 +18,7 @@ export async function loadAccountSettingsWithDeadline(
     return await Promise.race([load(controller.signal), deadline]);
   } catch (error) {
     console.error("Failed to load account settings during SSR:", error);
-    return DEFAULT_SETTINGS;
+    return null;
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }

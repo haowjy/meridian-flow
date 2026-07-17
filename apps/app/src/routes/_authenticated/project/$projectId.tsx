@@ -178,7 +178,7 @@ function RouteComponent() {
       key={projectId}
       projectId={projectId}
       workingSet={routeData.workingSet}
-      workingSetSyncEnabled={user.workingSetSyncEnabled}
+      workingSetSyncEnabled={user.workingSetSyncEnabled === true}
       activeScreen={resolvedScreen}
       activeThreadId={activeThreadId}
       activeContextScheme={scheme ?? null}

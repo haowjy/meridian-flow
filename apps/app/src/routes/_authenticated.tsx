@@ -80,7 +80,11 @@ export const Route = createFileRoute("/_authenticated")({
     // every other authenticated route mounts the same shell and wants the list.
     if (location.pathname === "/") {
       const settings = await settingsPromise;
-      const currentUser = { userId: user.id, email: user.email ?? null, ...settings };
+      const currentUser = {
+        userId: user.id,
+        email: user.email ?? null,
+        workingSetSyncEnabled: settings?.workingSetSyncEnabled ?? null,
+      };
       return { user: currentUser, projects: null, now };
     }
 
@@ -95,7 +99,9 @@ export const Route = createFileRoute("/_authenticated")({
       userId: user.id,
       email: user.email ?? null,
       workingSetSyncEnabled:
-        settingsResult.status === "fulfilled" ? settingsResult.value.workingSetSyncEnabled : true,
+        settingsResult.status === "fulfilled"
+          ? (settingsResult.value?.workingSetSyncEnabled ?? null)
+          : null,
     };
     return {
       user: currentUser,
@@ -109,7 +115,7 @@ export const Route = createFileRoute("/_authenticated")({
 
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
-  configureWorkingSetSync(user.userId, user.workingSetSyncEnabled);
+  configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // Rehydrate localStorage-backed UI stores on the client only (all use
