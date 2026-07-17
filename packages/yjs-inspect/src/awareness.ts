@@ -3,7 +3,7 @@
 import { createDecoder, readVarUint, readVarUint8Array } from "lib0/decoding";
 import type { AwarenessClientDelta, AwarenessSummary } from "./types.js";
 
-const NULL_STATE = new Uint8Array([0x6e, 0x75, 0x6c, 0x6c]);
+const NULL_STATE = /* @__PURE__ */ new Uint8Array([0x6e, 0x75, 0x6c, 0x6c]);
 
 function isNullState(bytes: Uint8Array): boolean {
   return (

@@ -18,14 +18,11 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "meridian:debug-overlay";
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 
-/**
- * Build-time gate. If false, the overlay module exports a no-op `enabled` and
- * the build pipeline strips its imports as dead code.
- */
-export const DEBUG_FEATURE_ALLOWED: boolean =
-  import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1";
+export { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+
+const STORAGE_KEY = "meridian:debug-overlay";
 
 function readQueryParamForce(): boolean {
   if (typeof window === "undefined") return false;

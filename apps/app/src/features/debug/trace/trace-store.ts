@@ -1,0 +1,166 @@
+/**
+ * Bounded client-side capture for dev-only observability events.
+ *
+ * This module intentionally has no React or transport dependency: any producer
+ * can append the shared EventRecord envelope through the public API.
+ */
+import type { EventRecord } from "@meridian/contracts/observability";
+
+export const TRACE_STORE_CAPACITY = 2_000;
+
+export interface TraceSnapshot {
+  readonly entries: readonly EventRecord[];
+  readonly ringDropped: number;
+  readonly tapErrors: number;
+}
+
+export interface TraceFilters {
+  streamId: string;
+  messageClass: string;
+  direction: "" | "client_to_server" | "server_to_client";
+  correlation: string;
+}
+
+let ring: Array<EventRecord | undefined> | undefined;
+const listeners = new Set<() => void>();
+const eventListeners = new Set<(record: EventRecord) => void>();
+const eventQueue: Array<{
+  record: EventRecord;
+  listeners: Array<(record: EventRecord) => void>;
+}> = [];
+let publishingEvents = false;
+let start = 0;
+let size = 0;
+let ringDropped = 0;
+let tapErrors = 0;
+let snapshot: TraceSnapshot = { entries: [], ringDropped, tapErrors };
+let publishPending = false;
+let snapshotDirty = false;
+
+function getRing(): Array<EventRecord | undefined> {
+  ring ??= new Array(TRACE_STORE_CAPACITY);
+  return ring;
+}
+
+function rebuildSnapshot(): void {
+  const entries = new Array<EventRecord>(size);
+  if (size > 0) {
+    const retained = getRing();
+    for (let index = 0; index < size; index += 1) {
+      entries[index] = retained[(start + index) % TRACE_STORE_CAPACITY] as EventRecord;
+    }
+  }
+  snapshot = { entries, ringDropped, tapErrors };
+  snapshotDirty = false;
+}
+
+function publish(): void {
+  for (const listener of listeners) listener();
+}
+
+function publishEvent(record: EventRecord): void {
+  eventQueue.push({ record, listeners: [...eventListeners] });
+  if (publishingEvents) return;
+
+  publishingEvents = true;
+  try {
+    for (let index = 0; index < eventQueue.length; index += 1) {
+      const queued = eventQueue[index] as (typeof eventQueue)[number];
+      for (const listener of queued.listeners) {
+        try {
+          listener(queued.record);
+        } catch {
+          // Debug consumers cannot be allowed to disrupt the observed transport.
+        }
+      }
+    }
+  } finally {
+    eventQueue.length = 0;
+    publishingEvents = false;
+  }
+}
+
+/** Coalesce typing bursts so subscribers render once per JavaScript turn. */
+function schedulePublish(): void {
+  if (publishPending) return;
+  publishPending = true;
+  queueMicrotask(() => {
+    publishPending = false;
+    publish();
+  });
+}
+
+/** Append an event, evicting the oldest event once the ring is full. */
+export function appendTraceEvent(record: EventRecord): void {
+  const retained = getRing();
+  if (size < TRACE_STORE_CAPACITY) {
+    retained[(start + size) % TRACE_STORE_CAPACITY] = record;
+    size += 1;
+  } else {
+    retained[start] = record;
+    start = (start + 1) % TRACE_STORE_CAPACITY;
+    ringDropped += 1;
+  }
+  snapshotDirty = true;
+  publishEvent(record);
+  schedulePublish();
+}
+
+/** Record a producer/tap failure without requiring a synthetic EventRecord. */
+export function noteTapError(): void {
+  tapErrors += 1;
+  snapshotDirty = true;
+  schedulePublish();
+}
+
+export function subscribeToTraceStore(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Observe each append synchronously, including records evicted before the UI publish. */
+export function subscribeToTraceEvents(listener: (record: EventRecord) => void): () => void {
+  eventListeners.add(listener);
+  return () => eventListeners.delete(listener);
+}
+
+export function getTraceSnapshot(): TraceSnapshot {
+  if (snapshotDirty) rebuildSnapshot();
+  return snapshot;
+}
+
+/** Clear captured events and session counters from the viewer. */
+export function clearTraceEvents(): void {
+  ring?.fill(undefined);
+  start = 0;
+  size = 0;
+  ringDropped = 0;
+  tapErrors = 0;
+  snapshotDirty = true;
+  schedulePublish();
+}
+
+/** Shared projection used by the table and all three export paths. */
+export function filterTraceEntries(
+  entries: readonly EventRecord[],
+  filters: TraceFilters,
+): EventRecord[] {
+  const correlationNeedle = filters.correlation.trim().toLocaleLowerCase();
+  return entries.filter((record) => {
+    const stream = record.stream;
+    if (filters.streamId && stream?.streamId !== filters.streamId) return false;
+    if (filters.messageClass && stream?.messageClass !== filters.messageClass) return false;
+    if (filters.direction && stream?.direction !== filters.direction) return false;
+    if (!correlationNeedle) return true;
+
+    const haystack = [
+      record.correlation?.documentId,
+      record.correlation?.branchId,
+      stream?.streamId,
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .join("\n")
+      .toLocaleLowerCase();
+    return haystack.includes(correlationNeedle);
+  });
+}
