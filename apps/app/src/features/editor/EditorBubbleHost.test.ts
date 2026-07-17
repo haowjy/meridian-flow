@@ -1,7 +1,12 @@
+// @vitest-environment jsdom
 import type { Editor } from "@tiptap/core";
 import { describe, expect, it, vi } from "vitest";
 
-import { type BubbleContext, selectBubbleContext } from "./EditorBubbleHost";
+import {
+  type BubbleContext,
+  isEditorBubbleFocusTarget,
+  selectBubbleContext,
+} from "./EditorBubbleHost";
 
 const EmptyBubble: BubbleContext["Component"] = () => null;
 
@@ -32,5 +37,17 @@ describe("selectBubbleContext", () => {
     expect(
       selectBubbleContext(editor, [context("table", true), context("link", false)])?.context.id,
     ).toBe("table");
+  });
+});
+
+describe("isEditorBubbleFocusTarget", () => {
+  it("keeps focus in bubble-owned portalled content", () => {
+    const bubble = document.createElement("div");
+    const portal = document.createElement("div");
+    portal.dataset.editorBubbleFocusScope = "";
+    const input = portal.appendChild(document.createElement("input"));
+
+    expect(isEditorBubbleFocusTarget(bubble, input)).toBe(true);
+    expect(isEditorBubbleFocusTarget(bubble, document.createElement("input"))).toBe(false);
   });
 });

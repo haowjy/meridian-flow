@@ -70,6 +70,17 @@ export function selectBubbleContext(
 
 const BubbleActions = createContext<Pick<EditorBubbleHostHandle, "close"> | null>(null);
 
+export function isEditorBubbleFocusTarget(
+  bubble: HTMLElement | null,
+  target: EventTarget | null,
+): boolean {
+  return (
+    target instanceof Element &&
+    (bubble?.contains(target) === true ||
+      target.closest("[data-editor-bubble-focus-scope]") !== null)
+  );
+}
+
 /** Lets bubble content dismiss itself without expanding the registration interface. */
 export function useEditorBubble(): Pick<EditorBubbleHostHandle, "close"> {
   const value = useContext(BubbleActions);
@@ -213,11 +224,29 @@ export const EditorBubbleHost = forwardRef<
   }, [active, dismissed]);
 
   useEffect(() => {
-    const trackBubbleFocus = () =>
-      setBubbleFocused(bubbleRef.current?.contains(document.activeElement) ?? false);
+    let pendingBlur: number | undefined;
+    const trackBubbleFocus = (event: FocusEvent) => {
+      if (pendingBlur !== undefined) window.clearTimeout(pendingBlur);
+      pendingBlur = undefined;
+      if (event.type === "focusin") {
+        setBubbleFocused(isEditorBubbleFocusTarget(bubbleRef.current, event.target));
+        return;
+      }
+      if (isEditorBubbleFocusTarget(bubbleRef.current, event.relatedTarget)) {
+        setBubbleFocused(true);
+        return;
+      }
+      // Chromium can omit relatedTarget while focus crosses a portal. Wait for
+      // the subsequent focusin before deciding that focus left the bubble.
+      pendingBlur = window.setTimeout(() => {
+        pendingBlur = undefined;
+        setBubbleFocused(isEditorBubbleFocusTarget(bubbleRef.current, document.activeElement));
+      });
+    };
     document.addEventListener("focusin", trackBubbleFocus);
     document.addEventListener("focusout", trackBubbleFocus);
     return () => {
+      if (pendingBlur !== undefined) window.clearTimeout(pendingBlur);
       document.removeEventListener("focusin", trackBubbleFocus);
       document.removeEventListener("focusout", trackBubbleFocus);
     };
@@ -257,7 +286,9 @@ export const EditorBubbleHost = forwardRef<
     <Popover
       open={visible}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) close();
+        if (!nextOpen && !isEditorBubbleFocusTarget(bubbleRef.current, document.activeElement)) {
+          close();
+        }
       }}
     >
       <PopoverAnchor virtualRef={anchorRef} />
@@ -272,9 +303,14 @@ export const EditorBubbleHost = forwardRef<
         aria-label={active?.context.accessibleName()}
         onPointerDownCapture={(event) => {
           setBubbleFocused(true);
-          // Keep ProseMirror's selection live while a command button runs.
-          // Text fields still take focus normally.
-          if ((event.target as Element).closest("button, a")) event.preventDefault();
+          const target = event.target;
+          if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+            // Focus before the editor's portal-crossing blur can hide the host.
+            event.preventDefault();
+            target.focus();
+          }
+          // Keep ProseMirror's selection live while a command control runs.
+          if (target instanceof Element && target.closest("button, a")) event.preventDefault();
         }}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}

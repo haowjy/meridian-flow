@@ -159,6 +159,7 @@ function CodeBubble({ editor, match }: { editor: Editor; match: BubbleMatch }) {
           <div
             id={listId}
             role="listbox"
+            data-editor-bubble-focus-scope
             className="absolute top-9 z-50 max-h-64 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           >
             {filtered.length ? (
