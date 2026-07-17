@@ -180,3 +180,139 @@ describe("working-set browser storage", () => {
     expect(() => storage.removeItem("key")).not.toThrow();
   });
 });
+
+describe("suspect baseline recovery", () => {
+  const serverRowAt = (revision: number) => ({
+    userId: "user-a",
+    projectId: "project-1",
+    recentRoutes: [{ scheme: "kb" as const, path: `/rev-${revision}.md` }],
+    lastThreadId: "thread-server",
+    revision,
+    updatedAt: "2026-07-17T00:00:00.000Z",
+  });
+
+  it("reconciles offline conflict before pushing (S4 interleaving)", async () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const get = vi.fn().mockResolvedValueOnce(serverRowAt(23)).mockResolvedValue(serverRowAt(23));
+    const put = vi.fn().mockResolvedValue({ revision: 24 });
+    const driver = new WorkingSetSyncDriver(store, put, get);
+
+    driver.configure("user-a", true);
+    driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
+    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    expect(store.read("project-1")?.pending).toMatchObject({ baseRevision: 22, localVersion: 1 });
+
+    driver.markSuspectOnReconnect();
+    driver.flush();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(put).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(store.read("project-1")?.pending).toBeUndefined();
+    expect(store.read("project-1")?.snapshot.recentRoutes[0]).toEqual({
+      scheme: "kb",
+      path: "/rev-23.md",
+    });
+
+    driver.promoteRoute("project-1", { scheme: "kb", path: "/after-reconcile.md" });
+    driver.flush();
+    await vi.runAllTimersAsync();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put.mock.calls[0]?.[1].recentRoutes[0]).toEqual({
+      scheme: "kb",
+      path: "/after-reconcile.md",
+    });
+    vi.useRealTimers();
+  });
+
+  it("pushes after offline recovery when the server row still matches", async () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const get = vi.fn().mockResolvedValue(serverRowAt(22));
+    const put = vi.fn().mockResolvedValue({ revision: 23 });
+    const driver = new WorkingSetSyncDriver(store, put, get);
+
+    driver.configure("user-a", true);
+    driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
+    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+
+    driver.markSuspectOnReconnect();
+    driver.flush();
+    await vi.runAllTimersAsync();
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put.mock.calls[0]?.[1].recentRoutes[0]).toEqual({ scheme: "kb", path: "/local.md" });
+    vi.useRealTimers();
+  });
+
+  it("withholds further PUTs after failure until a successful GET", async () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const get = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(serverRowAt(22));
+    const put = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValue({ revision: 23 });
+    const driver = new WorkingSetSyncDriver(store, put, get);
+
+    driver.configure("user-a", true);
+    driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
+    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    driver.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(put).toHaveBeenCalledTimes(1);
+
+    driver.flush();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
+
+    driver.flush();
+    await vi.runAllTimersAsync();
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(put).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("does not resurrect a confirmed baseline from loader data while suspect", async () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const get = vi.fn().mockResolvedValue(serverRowAt(22));
+    const put = vi.fn().mockResolvedValue({ revision: 23 });
+    const driver = new WorkingSetSyncDriver(store, put, get);
+
+    driver.configure("user-a", true);
+    driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
+    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    driver.markSuspectOnReconnect();
+    driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
+
+    driver.flush();
+    await vi.runAllTimersAsync();
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});

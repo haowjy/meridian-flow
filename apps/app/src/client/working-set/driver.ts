@@ -1,9 +1,13 @@
 /** Serialized report-and-sweep driver for device working-set state. */
 
-import type { WorkingSetRoute } from "@meridian/contracts/protocol";
+import type { ProjectWorkingSet, WorkingSetRoute } from "@meridian/contracts/protocol";
 import { getProjectWorkingSet, updateProjectWorkingSet } from "@/client/api/projects-api";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
-import { planWorkingSetHydration, type WorkingSetHydrationPlan } from "./hydration";
+import {
+  planSuspectBaselineConfirmation,
+  planWorkingSetHydration,
+  type WorkingSetHydrationPlan,
+} from "./hydration";
 import {
   clearSnapshotRoutes,
   DeviceWorkingSetStore,
@@ -31,12 +35,14 @@ type PutWorkingSet = (
   snapshot: ProjectWorkingSetRecord["snapshot"],
   keepalive: boolean,
 ) => Promise<WorkingSetResponse>;
+type GetWorkingSet = (projectId: string) => Promise<ProjectWorkingSet | null>;
 
 export class WorkingSetSyncDriver {
   private userId: string | null = null;
   private sessionGeneration = 0;
   private enabled = false;
   private readonly baselines = new Map<string, number | null>();
+  private readonly suspectBaselines = new Set<string>();
   private readonly scheduled = new Set<string>();
   private readonly failures = new Map<string, number>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -45,6 +51,7 @@ export class WorkingSetSyncDriver {
   constructor(
     private readonly store: DeviceWorkingSetStore,
     private readonly put: PutWorkingSet,
+    private readonly get: GetWorkingSet = getProjectWorkingSet,
   ) {}
 
   configure(userId: string, enabled: boolean): void {
@@ -53,6 +60,7 @@ export class WorkingSetSyncDriver {
       this.userId = userId;
       this.sessionGeneration += 1;
       this.baselines.clear();
+      this.suspectBaselines.clear();
       this.scheduled.clear();
       this.failures.clear();
       if (this.timer) clearTimeout(this.timer);
@@ -67,10 +75,12 @@ export class WorkingSetSyncDriver {
     const plan = planWorkingSetHydration(true, result, this.store.read(projectId));
     if (plan.status === "read-degraded") {
       this.baselines.delete(projectId);
+      this.suspectBaselines.delete(projectId);
       return plan;
     }
+    if (this.suspectBaselines.has(projectId)) return plan;
     if (plan.status === "local") {
-      this.baselines.set(projectId, plan.revision);
+      this.confirmBaseline(projectId, plan.revision);
       if (this.store.read(projectId)?.pending) this.schedule(projectId, 0);
       return plan;
     }
@@ -79,7 +89,7 @@ export class WorkingSetSyncDriver {
         recentRoutes: plan.row.recentRoutes,
         lastThreadId: plan.row.lastThreadId,
       });
-      this.baselines.set(projectId, plan.row.revision);
+      this.confirmBaseline(projectId, plan.row.revision);
     }
     return plan;
   }
@@ -88,11 +98,13 @@ export class WorkingSetSyncDriver {
     if (!this.enabled) return { status: "disabled" };
     const generation = this.sessionGeneration;
     try {
-      const row = await getProjectWorkingSet(projectId);
+      const row = await this.get(projectId);
       if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
+      this.suspectBaselines.delete(projectId);
       return this.hydrate(projectId, row ? { status: "row", row } : { status: "absent" });
     } catch {
       if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
+      this.markSuspect(projectId);
       return this.hydrate(projectId, { status: "unavailable" });
     }
   }
@@ -121,11 +133,26 @@ export class WorkingSetSyncDriver {
     this.report(projectId, (snapshot) => setSnapshotThread(snapshot, threadId));
   }
 
+  markSuspectOnReconnect(): void {
+    for (const projectId of this.baselines.keys()) {
+      this.suspectBaselines.add(projectId);
+    }
+  }
+
   flush(keepalive = false): void {
     for (const projectId of this.store.projectIds()) {
       if (this.store.read(projectId)?.pending) this.scheduled.add(projectId);
     }
     void this.sweep(keepalive);
+  }
+
+  private confirmBaseline(projectId: string, revision: number | null): void {
+    this.baselines.set(projectId, revision);
+    this.suspectBaselines.delete(projectId);
+  }
+
+  private markSuspect(projectId: string): void {
+    if (this.baselines.has(projectId)) this.suspectBaselines.add(projectId);
   }
 
   private report(projectId: string, mutate: Parameters<DeviceWorkingSetStore["report"]>[2]): void {
@@ -142,6 +169,22 @@ export class WorkingSetSyncDriver {
     }, delay);
   }
 
+  private async confirmSuspectBaseline(projectId: string): Promise<boolean> {
+    const generation = this.sessionGeneration;
+    try {
+      const row = await this.get(projectId);
+      if (generation !== this.sessionGeneration || !this.enabled) return false;
+      const result = row ? { status: "row" as const, row } : { status: "absent" as const };
+      const confirmation = planSuspectBaselineConfirmation(result, this.store.read(projectId));
+      if (confirmation.status === "read-degraded") return false;
+      if (confirmation.adopt) this.store.adopt(projectId, confirmation.adopt);
+      this.confirmBaseline(projectId, confirmation.revision);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async sweep(keepalive: boolean): Promise<void> {
     if (this.sweeping) return;
     this.sweeping = true;
@@ -152,17 +195,29 @@ export class WorkingSetSyncDriver {
         const record = this.store.read(projectId);
         if (!canSweepWorkingSet(this.enabled, this.baselines.has(projectId), record)) continue;
         if (!record?.pending) continue;
-        const sentVersion = record.pending.localVersion;
+        if (this.suspectBaselines.has(projectId)) {
+          const confirmed = await this.confirmSuspectBaseline(projectId);
+          if (!confirmed) {
+            const failures = (this.failures.get(projectId) ?? 0) + 1;
+            this.failures.set(projectId, failures);
+            this.schedule(projectId, Math.min(1_000 * 2 ** (failures - 1), MAX_BACKOFF_MS));
+            break;
+          }
+        }
+        const current = this.store.read(projectId);
+        if (!current?.pending) continue;
+        const sentVersion = current.pending.localVersion;
         const sentGeneration = this.sessionGeneration;
         try {
-          const response = await this.put(projectId, record.snapshot, keepalive);
+          const response = await this.put(projectId, current.snapshot, keepalive);
           if (sentGeneration !== this.sessionGeneration) continue;
           this.failures.delete(projectId);
-          this.baselines.set(projectId, response.revision);
+          this.confirmBaseline(projectId, response.revision);
           const ack = this.store.acknowledge(projectId, sentVersion, response.revision);
           if (ack.status === "advanced") this.scheduled.add(projectId);
         } catch {
           if (sentGeneration !== this.sessionGeneration) continue;
+          this.markSuspect(projectId);
           const failures = (this.failures.get(projectId) ?? 0) + 1;
           this.failures.set(projectId, failures);
           this.schedule(projectId, Math.min(1_000 * 2 ** (failures - 1), MAX_BACKOFF_MS));
@@ -202,7 +257,10 @@ function browserDriver(): WorkingSetSyncDriver | null {
   );
   if (!listenersInstalled) {
     listenersInstalled = true;
-    window.addEventListener("online", () => driver?.flush());
+    window.addEventListener("online", () => {
+      driver?.markSuspectOnReconnect();
+      driver?.flush();
+    });
     window.addEventListener("pagehide", () => driver?.flush(true));
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") driver?.flush(true);

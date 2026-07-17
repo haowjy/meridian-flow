@@ -1,7 +1,11 @@
 import type { ProjectWorkingSet } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
-import { planWorkingSetHydration, reduceWorkingSetHydration } from "./hydration";
+import {
+  planSuspectBaselineConfirmation,
+  planWorkingSetHydration,
+  reduceWorkingSetHydration,
+} from "./hydration";
 
 const row: ProjectWorkingSet = {
   userId: "user-1",
@@ -55,6 +59,40 @@ describe("working-set hydration precedence", () => {
   it("short-circuits outside the reducer when the account toggle is off", () => {
     expect(planWorkingSetHydration(false, { status: "row", row }, undefined)).toEqual({
       status: "disabled",
+    });
+  });
+});
+
+describe("suspect baseline confirmation", () => {
+  it("stays read-degraded when the fresh GET is unavailable", () => {
+    expect(planSuspectBaselineConfirmation({ status: "unavailable" }, undefined)).toEqual({
+      status: "read-degraded",
+    });
+  });
+
+  it("confirms a matching local lineage without adoption", () => {
+    const local = {
+      snapshot: { recentRoutes: [], lastThreadId: "thread-local" },
+      pending: { baseRevision: 4, localVersion: 2 },
+    };
+    expect(planSuspectBaselineConfirmation({ status: "row", row }, local)).toEqual({
+      status: "confirmed",
+      revision: 4,
+    });
+  });
+
+  it("adopts server data when the row moved past pending lineage", () => {
+    const local = {
+      snapshot: { recentRoutes: [], lastThreadId: "thread-local" },
+      pending: { baseRevision: 3, localVersion: 2 },
+    };
+    expect(planSuspectBaselineConfirmation({ status: "row", row }, local)).toEqual({
+      status: "confirmed",
+      revision: 4,
+      adopt: {
+        recentRoutes: [{ scheme: "kb", path: "/server.md" }],
+        lastThreadId: "thread-server",
+      },
     });
   });
 });

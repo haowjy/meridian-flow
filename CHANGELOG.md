@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
+- `apps/app`: working-set sync uses suspect-baseline recovery — after PUT
+  failure, offline→online, or sync re-enable, sweeps GET-before-PUT and
+  reconcile server conflicts before pushing (#217).
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
   single default Work for chat-independent Scratch surfaces.
