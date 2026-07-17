@@ -49,10 +49,11 @@ Shared across both shells:
   `context-tab-from-file.ts`, `context-tab-from-draft.ts`, `context-last-route.ts`;
   the parent `../ContextPaneController.tsx` owns reconciliation and selection
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
-  `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` (the universal
-  breadcrumb band at the top of every open document — inline rename lives
-  there). New untitled tabs use the same Yjs-first editor as tracked
-  documents; the detached session is materialized by `untitled-reconciler.ts`.
+  `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPathField.tsx`
+  + `IdentityMovePopup.tsx` (the universal breadcrumb band — inline rename AND
+  move live there, committed through `use-identity-commit.ts`). New untitled
+  tabs use the same Yjs-first editor as tracked documents; the detached
+  session is materialized by `untitled-reconciler.ts`.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,

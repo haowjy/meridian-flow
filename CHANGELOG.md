@@ -3,13 +3,20 @@
 ## [Unreleased]
 
 - `apps/app`: universal document identity bar — every open document shows a
-  quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas; untitled
-  drafts carry a jade “Name this draft” chip and the device-only warning
-  shares the same slot (2s grace, tracked per document). Click the path to
-  rename in place with live validation reasons and Open-existing collision
-  recovery; a rename queued on a still-materializing draft that later fails
-  reopens the field with recovery instead of dropping silently. Replaces the
-  provisional-only untitled rename line.
+  quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas with a
+  permanent “Choose a home” chip (jade while untitled, quiet outline once
+  homed) and the device-only warning in the same slot (2s grace, tracked per
+  document). Untitled drafts place themselves through an empty field with the
+  content-derived name as ghost text and a destination browser that opens on
+  the scheme roots; homed documents rename AND move by editing the path
+  directly (typed segments create folders, tagged “new folder”) or through
+  the chip's Move-to popup. Collisions surface the canonical locator with
+  Open-existing recovery; intents queued on still-materializing drafts report
+  failures instead of dropping them. Replaces the provisional-only untitled
+  rename line.
+- `apps/server`: context moves gain `clearProvisionalName` — the writer-facing
+  move route ends provisional naming on every explicit placement (even when
+  the name stays Untitled-N), while port-level system moves preserve it.
 - `apps/server`, `@meridian/contracts`: context entries can move across folders,
   schemes, and Work scopes over HTTP; Scratch documents can be promoted to the
   Manuscript without changing their Yjs authority or provisional-name state.

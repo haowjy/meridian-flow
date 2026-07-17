@@ -79,33 +79,46 @@ Contracts:
 - **Keystroke path**: at rest the bar renders from tab metadata only. The
   content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
   only while the edit field is open on a provisional doc.
-- **Edit mode** (phase 1): click the path → basename field with the folder
-  prefix as read-only spans (`/` separators — typing grammar; rest renders
-  `›`). Enter commits through the shipped rename seam (`renameContextEntry`
-  for tracked, `queueUntitledRename` for `new`); Esc AND blur revert — Enter
-  is the only commit. Basenames are whitespace-trimmed before validation and
-  commit; whitespace-only input is name-required invalid. Validation reasons
-  and collisions render live (300ms debounce) as a `ValidationNote` under the
-  bar; collision adds Open-existing recovery. Full-path editing and the
-  move-first popup land with the cross-folder move seam (phase 2); until then
-  viewer tabs keep tree-action rename.
-- **Queued-rename receipts**: a `new`-tab rename applies when the document
+- **Placement grammar** (untitled docs never explicitly renamed or homed:
+  provisional AND still at the default Scratch root): path or chip click opens
+  an EMPTY field — the content-derived suggestion is ghost placeholder text
+  (Tab/→ accepts it; Enter on an empty field accepts it implicitly). The
+  popover opens on the scheme roots (Manuscript / Knowledge Base / Scratch —
+  the roots ARE the context choice); picking drills into folders, building the
+  home as read-only spans left of the name. Enter with a home built moves
+  (+renames); name-only Enter renames in place — naming isn't homing.
+  Placement happens once: any explicit save graduates the document.
+- **Path grammar** (everything homed): the full human path is one editable
+  input (`Manuscript/Act 2/chapter-12` — `/` typing grammar; rest renders
+  `›`). Segment clicks land the selection on that segment; the popover tracks
+  the caret's segment (root labels, then folders, case-insensitive with
+  canonical casing); typed segments matching nothing are tagged "new folder"
+  and created by the move (`identity-path.ts` owns the grammar). Enter is the
+  single rename/move/both commit; Esc AND blur revert. Validation flows
+  through the contracts module via `context-entry-name.ts`.
+- **Commit seam**: `use-identity-commit.ts` is the only writer through the
+  rename/move endpoints for the bar's three surfaces (placement field, path
+  field, Move-to popup): rename in place, move (`moveContextEntry`, slash-less
+  scheme-relative paths), or queued placement for `new` tabs. Conflicts return
+  the canonical collision locator for Open-existing. **Graduation is total**:
+  every commit through this seam is an explicit writer save — the HTTP move
+  route sets `clearProvisionalName`, and the client mirrors it on every
+  receipt.
+- **Queued receipts**: a `new`-tab rename/placement applies when the document
   materializes; its outcome is reconciler *state*
   (`queuedRenameFailure(documentId)`), never a promise — the edit session is
   over when the intent is queued. A failed receipt reopens the field with the
   writer's name restored and the conflict/error recovery note; the receipt
   clears when the writer edits or leaves the field. Failures must never drop
   silently.
-- **Chip slot**: single occupancy, right edge. Provisional documents carry the
-  jade "Name this draft" invitation — clicking opens the naming field, and the
-  copy says so. Named documents carry no chip in phase 1: the standing
-  "Choose a home" move chip arrives with the move-first popup, and no enabled
-  control may promise a move it cannot perform. The device-only warning
-  (warning tokens, `TriangleAlert`) outranks the invitation after unsynced
-  words persist for a 2s sustained grace — the clock is the reconciler's
-  per-document `pendingSince`, so remounting chrome (tab switches) cannot
-  restart the window. Server 409 remains a race guard with Open-existing
-  recovery.
+- **Chip slot**: single occupancy, right edge. "Choose a home" is permanent
+  (D4): jade while provisional (opens placement), quiet outline once homed
+  (opens the Move-to popup, anchored at the current folder). Viewer docs get
+  the popup too; uploads viewers carry no chip (no dead buttons). The
+  device-only warning (warning tokens, `TriangleAlert`) outranks the chip
+  after unsynced words persist for a 2s sustained grace — the clock is the
+  reconciler's per-document `pendingSince`, so remounting chrome (tab
+  switches) cannot restart the window.
 
 The tab strip still follows the settled tonal treatment: it paints nothing,
 active tabs continue the canvas upward, inactive neighbors alone receive short
