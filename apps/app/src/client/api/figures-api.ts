@@ -11,7 +11,7 @@ import {
   type UploadFigureAssetResponse,
 } from "@meridian/contracts/protocol";
 
-import { signedUrlRefreshDelayMs } from "@/core/editor/figure-workflow";
+import { signedUrlRefreshDelayMs } from "@/core/editor/image-workflow";
 
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 

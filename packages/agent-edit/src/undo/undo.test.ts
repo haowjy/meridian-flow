@@ -1,6 +1,6 @@
 // Reconcile coverage for cold journal undo/redo reconstruction.
 
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -22,7 +22,9 @@ import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 import { createThreadOriginRegistry } from "./thread-origin-registry.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";

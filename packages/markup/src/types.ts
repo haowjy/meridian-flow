@@ -8,6 +8,14 @@ import type { CodecParseErrorLocation } from "./error.js";
 
 export type { CodecParseErrorLocation, PMNode };
 
+/** Stable asset identity ↔ current project-relative path translation boundary. */
+export interface AssetPathResolver {
+  /** Return the current (or tombstoned last-known) path for an asset document. */
+  pathForAsset(assetDocumentId: string): string;
+  /** Return an asset document id only for a path known to the current project. */
+  assetForPath(path: string): string | null;
+}
+
 /** ProseMirror mark attribute bag — JSON-serializable values only. */
 export type MarkAttrs = Record<string, unknown>;
 
@@ -19,11 +27,13 @@ export interface ParsedContent {
 /** Context threaded through block/mark serialize calls. */
 export interface SerializeContext {
   schema: Schema;
+  assetPathResolver: AssetPathResolver;
 }
 
 /** Context threaded through block/mark parse calls. */
 export interface ParseContext {
   schema: Schema;
+  assetPathResolver: AssetPathResolver;
 }
 
 /** Block-level: one registration per PM block node type. */

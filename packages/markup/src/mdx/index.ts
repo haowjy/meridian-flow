@@ -44,8 +44,12 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   };
 }
 
-export function mdxCodec(options: { schema: Schema; components?: ComponentRegistry }) {
-  return createMarkupCodec({ schema: options.schema })
+export function mdxCodec(options: {
+  schema: Schema;
+  components?: ComponentRegistry;
+  assetPathResolver: import("../types.js").AssetPathResolver;
+}) {
+  return createMarkupCodec({ schema: options.schema, assetPathResolver: options.assetPathResolver })
     .use(mdx({ components: options.components }))
     .build({ requireSchemaBlockCoverage: true });
 }

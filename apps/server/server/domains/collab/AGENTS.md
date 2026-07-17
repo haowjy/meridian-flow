@@ -95,6 +95,9 @@ propagation between them.
 - All seed and text-write callers use `domain/markdown-document.ts`; it resolves
   filetype and constructs content for the document's actual schema. The
   markdown-only seeding that caused #196 is historical, not the current engine.
+- Production codec composition receives the preloaded, mutable manuscript asset
+  path resolver. Every live, branch, projection, preview, and agent-edit codec
+  must share it; the rejecting resolver is only valid for asset-free fixtures.
 
 ## Diagnostic anti-patterns
 

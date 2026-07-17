@@ -58,8 +58,11 @@ export function markdown(): MarkupPlugin {
   };
 }
 
-export function markdownCodec(options: { schema: Schema }) {
-  return createMarkupCodec({ schema: options.schema })
+export function markdownCodec(options: {
+  schema: Schema;
+  assetPathResolver: import("../types.js").AssetPathResolver;
+}) {
+  return createMarkupCodec(options)
     .use(markdown())
     .build({ requiredBlockNames: markdownRequiredBlockNames });
 }

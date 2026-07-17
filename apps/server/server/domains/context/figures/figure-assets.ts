@@ -58,6 +58,7 @@ export interface FigureAssetServiceOptions {
   signedUrlExpiresAt: () => string;
   generateId?: () => string;
   eventSink: EventSink;
+  assetPaths?: { remember(assetDocumentId: string, path: string): void };
 }
 
 export interface FigureAssetService {
@@ -181,6 +182,7 @@ function toReference(input: {
   alt: string;
   label: string | null;
   caption: string | null;
+  assetPath: string;
 }): FigureAssetReference {
   const figure = {
     src: `asset:${input.record.assetDocumentId}`,
@@ -190,6 +192,7 @@ function toReference(input: {
   };
   return {
     assetDocumentId: input.record.assetDocumentId,
+    assetPath: input.assetPath,
     storageUrl: input.record.storageUrl,
     mimeType: input.record.mimeType,
     fileType: input.record.fileType,
@@ -268,6 +271,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         });
         return err("repository_error", "Failed to create figure asset document");
       }
+      options.assetPaths?.remember(assetDocumentId, assetUri.slice("manuscript://".length));
 
       let asset: DocumentFileRecord | null;
       try {
@@ -301,6 +305,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
           alt,
           label,
           caption,
+          assetPath: assetUri.slice("manuscript://".length),
         }),
       );
     },

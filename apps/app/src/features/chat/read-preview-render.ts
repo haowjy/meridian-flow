@@ -10,12 +10,12 @@
  * TipTap extensions normally own DOM rendering, so this module supplies the
  * small explicit node/mark map needed for read-only preview HTML.
  */
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { DOMSerializer, Fragment, type Mark, type Node as PMNode } from "@tiptap/pm/model";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 
 const NODE_TO_DOM = {
   paragraph: () => ["p", 0],

@@ -23,6 +23,7 @@ import {
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
+  createDrizzleAssetPathResolver,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
@@ -273,11 +274,13 @@ export async function createProductionAppPorts(input: {
   const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db, activeDocuments);
   const preferences = createDrizzleProjectPreferencesRepository({ db });
+  const assetPathResolver = await createDrizzleAssetPathResolver(db);
   const documentSync = createCollabDomain({
     db,
     eventSink,
     notices,
     threads: threadRepos.threads,
+    assetPathResolver,
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
@@ -300,6 +303,7 @@ export async function createProductionAppPorts(input: {
     contextPorts,
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     eventSink,
+    assetPaths: assetPathResolver,
   });
   const runtimeTools = createRuntimeToolRegistry({
     db,

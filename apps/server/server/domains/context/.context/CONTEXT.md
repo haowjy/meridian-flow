@@ -37,6 +37,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   append. Opaque caller callbacks do not cross the boundary.
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
   for `move`/`delete` operations.
+- **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — preloads
+  persisted `manuscript://assets/` identities for codec composition and is
+  updated immediately when figure upload creates a binary asset.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme

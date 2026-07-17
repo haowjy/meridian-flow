@@ -325,6 +325,8 @@ export interface FigureNodeReference {
 
 export interface FigureAssetReference {
   assetDocumentId: string;
+  /** Project-relative markdown path for codec and clipboard translation. */
+  assetPath: string;
   storageUrl: string;
   mimeType: string;
   fileType: BinaryDocumentFileType;
