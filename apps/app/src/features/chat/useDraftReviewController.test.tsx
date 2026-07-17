@@ -15,7 +15,7 @@ const acceptMutateMock = vi.fn(
     input: { operationIds?: readonly string[] },
     options: { onSuccess: (response: unknown) => void },
   ) => {
-    if (input.operationIds) {
+    if (input.operationIds?.length === 1) {
       operationAcceptMutateMock(input, options);
       return;
     }
@@ -36,6 +36,7 @@ vi.mock("@/client/api/drafts-api", () => ({
     liveRevisionToken: 0,
     branchId: "branch-1",
     reviewRoomName: "branch:branch-1",
+    operations: [{ operationId: "operation-1" }, { operationId: "operation-2" }],
   }),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
@@ -80,6 +81,31 @@ describe("useDraftReviewController", () => {
       expect(operationAcceptMutateMock).toHaveBeenCalledOnce();
       expect(wholeDraftAcceptMutateMock).not.toHaveBeenCalled();
       expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith("project-1", "document-1", "committed");
+    });
+  });
+
+  it("submits every operation from the confirmed preview when applying all", async () => {
+    let controller: ReturnType<typeof useDraftReviewController> | null = null;
+    acceptMutateMock.mockClear();
+    wholeDraftAcceptMutateMock.mockClear();
+
+    function Probe() {
+      const value = useDraftReviewController("project-1", "work-1", "thread-1");
+      useEffect(() => {
+        controller = value;
+      }, [value]);
+      return null;
+    }
+
+    await withReactRoot(<Probe />, async () => {
+      await act(async () => {
+        await controller?.accept("document-1", "draft-1");
+      });
+
+      expect(wholeDraftAcceptMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ operationIds: ["operation-1", "operation-2"] }),
+        expect.any(Object),
+      );
     });
   });
 });

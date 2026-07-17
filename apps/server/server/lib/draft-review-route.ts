@@ -121,7 +121,7 @@ export async function handleWorkDraftAcceptRequest(
     branchId?: string;
     userId: UserId;
     draftRevisionToken: number;
-    operationIds?: string[];
+    operationIds: string[];
     signal?: AbortSignal;
   },
 ): Promise<DraftAcceptResponse> {

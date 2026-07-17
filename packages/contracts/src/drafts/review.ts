@@ -151,7 +151,8 @@ export type DraftApplyRefusal = {
 
 type DraftAcceptRequestBase = {
   draftRevisionToken: number;
-  operationIds?: string[];
+  /** Exact operation set shown by the preview this Apply confirms. */
+  operationIds: string[];
 };
 
 export type DraftAcceptRequest =
