@@ -1877,6 +1877,7 @@ export function createThreadPeerAgentEditCore(input: {
         branchGeneration: number;
         afterJournalId?: number;
         liveJournalSeq?: number;
+        attributionBaseline: Uint8Array;
       }
     | undefined
   >;
@@ -1990,6 +1991,7 @@ export function createThreadPeerAgentEditCore(input: {
                   branchGeneration: pulled.branchGeneration,
                   afterJournalId: pulled.afterJournalId ?? 0,
                   liveJournalSeq: pulled.liveJournalSeq,
+                  attributionBaseline: pulled.attributionBaseline,
                 },
               }
             : {}),

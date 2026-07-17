@@ -110,6 +110,8 @@ describe("runtime store", () => {
     );
 
     expect(outcomeText(edit)).toContain("status: rejected_response_requires_reread");
+    expect(outcomeText(edit)).toContain("Beta shield.");
+    expect(edit.content?.[1]?.text).toContain("Beta shield.");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta shield."]);
   });
 

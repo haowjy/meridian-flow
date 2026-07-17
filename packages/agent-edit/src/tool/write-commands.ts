@@ -212,6 +212,7 @@ export function createWriteCommands(deps: {
       command.tool_use_id,
     );
     const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
+    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     let touchedHashes = new Set<string>();
@@ -292,15 +293,26 @@ export function createWriteCommands(deps: {
         throw cause;
       }
       markSynced(session, address.documentId, runtime);
+      const summary = mutationCommit.summarizeMutationEcho({
+        runtime,
+        before,
+        touchedHashes,
+        deletedHashes,
+        interactionContext: context.interactionContext,
+      });
       return formatApplySuccess({
         phase: "staged",
         writeId: writeIdentity.handle,
-        echo: [
-          {
-            mode: "truncated",
-            blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
-          },
-        ],
+        echo:
+          summary.echo.length > 0
+            ? summary.echo
+            : [
+                {
+                  mode: "truncated",
+                  blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
+                },
+              ],
+        concurrentEdits: summary.concurrentEdits,
       });
     }
 
@@ -310,6 +322,7 @@ export function createWriteCommands(deps: {
         docId: address.documentId,
         commandName: command.command,
         runtime,
+        before,
         updates: [
           {
             update,
@@ -358,12 +371,18 @@ export function createWriteCommands(deps: {
     return formatApplySuccess({
       phase: "committed",
       writeId: writeIdentity.handle,
-      echo: [
-        {
-          mode: "truncated",
-          blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
-        },
-      ],
+      echo:
+        committed.ok && committed.summary.echo.length > 0
+          ? committed.summary.echo
+          : [
+              {
+                mode: "truncated",
+                blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
+              },
+            ],
+      ...(committed.ok && committed.summary.concurrentEdits
+        ? { concurrentEdits: committed.summary.concurrentEdits }
+        : {}),
       ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
     });
   }

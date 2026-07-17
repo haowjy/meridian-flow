@@ -84,6 +84,7 @@ describe("useAcceptDraft pending lifecycle", () => {
               draftId: "branch-1",
               branchId: "branch-1",
               draftRevisionToken: 1,
+              operationIds: ["operation-1"],
             });
           });
           // Flush the resolved server call and the onSuccess invalidation kickoff.

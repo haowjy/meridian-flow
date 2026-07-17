@@ -15,8 +15,6 @@ if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
 }
 
-const expectEnhancements = process.env.EXPECT_CROSS_WORK_ENHANCEMENTS === "1";
-
 describe("cross-Work merge mechanics probe (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
@@ -53,9 +51,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     expect(observation.protection.restoreAvailable).toBe(true);
     expect(observation.protection.restoreOutcome).toBe("applied");
     expect(observation.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
-    if (expectEnhancements) {
-      expect(JSON.stringify(observation.echo)).toContain("Writer-approved Work A text.");
-    }
+    expect(JSON.stringify(observation.echo)).toContain("Writer-approved Work A text.");
     harness.destroyWarmState();
   });
 });
