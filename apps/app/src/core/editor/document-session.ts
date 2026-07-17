@@ -166,6 +166,8 @@ export class DocumentSession {
   private readonly localPersistenceSyncedPromise: Promise<void>;
   private readonly transportAttachedPromise: Promise<void>;
   private resolveTransportAttached!: () => void;
+  private readonly lifecycleCompletedPromise: Promise<void>;
+  private resolveLifecycleCompleted!: () => void;
 
   constructor({
     roomKey,
@@ -188,6 +190,9 @@ export class DocumentSession {
     }
     this.transportAttachedPromise = new Promise((resolve) => {
       this.resolveTransportAttached = resolve;
+    });
+    this.lifecycleCompletedPromise = new Promise((resolve) => {
+      this.resolveLifecycleCompleted = resolve;
     });
     this.localPersistenceSyncedPromise = this.watchLocalPersistence();
     if (transportFactory) this.attachTransport(transportFactory);
@@ -257,10 +262,14 @@ export class DocumentSession {
     };
   }
 
-  async whenSynced(): Promise<void> {
-    await this.localPersistenceSyncedPromise;
-    await this.transportAttachedPromise;
-    await this.transportProvider?.whenSynced;
+  /** Resolve after first local + server sync, or when destruction ends that lifecycle. */
+  whenSynced(): Promise<void> {
+    const syncSequence = async () => {
+      await this.localPersistenceSyncedPromise;
+      await this.transportAttachedPromise;
+      await this.transportProvider?.whenSynced;
+    };
+    return Promise.race([syncSequence(), this.lifecycleCompletedPromise]);
   }
 
   waitForCurrentSync(timeoutMs: number): Promise<void> {
@@ -318,6 +327,7 @@ export class DocumentSession {
     if (this.destroyed) return;
     this.destroyed = true;
     this.resolveTransportAttached();
+    this.resolveLifecycleCompleted();
     this.status = "destroyed";
     this.emit();
 

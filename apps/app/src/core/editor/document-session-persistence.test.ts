@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const persistence = vi.hoisted(() => ({
   clearData: vi.fn(async () => {}),
   destroy: vi.fn(async () => {}),
+  createWhenSynced: vi.fn<() => Promise<void>>(() => Promise.resolve()),
 }));
 
 vi.mock("y-indexeddb", () => ({
   IndexeddbPersistence: class {
-    readonly whenSynced = Promise.resolve();
+    readonly whenSynced = persistence.createWhenSynced();
     readonly clearData = persistence.clearData;
     readonly destroy = persistence.destroy;
   },
@@ -21,6 +22,7 @@ describe("DocumentSession persistence cleanup", () => {
   afterEach(() => {
     persistence.clearData.mockClear();
     persistence.destroy.mockClear();
+    persistence.createWhenSynced.mockReset().mockResolvedValue();
   });
 
   it("preserves IndexedDB when a never-attached session is destroyed", async () => {
@@ -62,5 +64,15 @@ describe("DocumentSession persistence cleanup", () => {
 
     expect(persistence.clearData).toHaveBeenCalledOnce();
     expect(persistence.destroy).not.toHaveBeenCalled();
+  });
+
+  it("settles whenSynced when a detached session is destroyed before local sync", async () => {
+    persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));
+    const session = new DocumentSession({ roomKey: "doc-local-pending", enableIndexedDb: true });
+    const synced = session.whenSynced();
+
+    await session.destroy();
+
+    await expect(synced).resolves.toBeUndefined();
   });
 });

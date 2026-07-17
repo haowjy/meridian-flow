@@ -125,6 +125,20 @@ describe("DocumentSession status derivation", () => {
     await session.destroy();
   });
 
+  it("settles whenSynced when an attached session is destroyed before server sync", async () => {
+    const { factory } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "doc-server-pending",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+    const synced = session.whenSynced();
+
+    await session.destroy();
+
+    await expect(synced).resolves.toBeUndefined();
+  });
+
   it("builds a versioned IndexedDB persistence key from COLLAB_SCHEMA_VERSION", () => {
     expect(documentSessionPersistenceKey("doc-abc")).toBe(
       `meridian:document:v${COLLAB_SCHEMA_VERSION}:doc-abc`,
