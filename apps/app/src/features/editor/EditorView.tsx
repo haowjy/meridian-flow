@@ -10,7 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeNode, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
@@ -27,15 +27,20 @@ import {
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
+import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
+  createEditorAssetPathResolver,
   imageAltFromFilename,
   imageAttrsFromUpload,
   isImageFile,
+  resolveAssetPathsFromClipboard,
+  resolveAssetRefsForClipboard,
 } from "@/core/editor/image-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import { markdownTableClipboardParser } from "@/core/editor/markdown-paste";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
@@ -164,6 +169,11 @@ function SessionEditorView({
   const registry = getDocumentSessionRegistry();
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const assetPathResolverRef = useRef(createEditorAssetPathResolver());
+  const assetPathResolver = assetPathResolverRef.current;
+  const { tree: manuscriptTree } = useProjectContextTree(projectId ?? "", "manuscript", {
+    enabled: Boolean(projectId),
+  });
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,6 +182,20 @@ function SessionEditorView({
   const [imageUploadState, setImageUploadState] = useState<ImageUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
   const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!manuscriptTree) return;
+    const remember = (node: ProjectContextTreeNode) => {
+      if (node.kind === "file") {
+        if (!node.editable && node.fileType === "image") {
+          assetPathResolver.remember(node.documentId, node.path.replace(/^\//, ""));
+        }
+        return;
+      }
+      for (const child of node.children) remember(child);
+    };
+    remember(manuscriptTree);
+  }, [assetPathResolver, manuscriptTree]);
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
@@ -192,24 +216,47 @@ function SessionEditorView({
       }
 
       setImageUploadState({ kind: "uploading", filename: file.name, percent: null });
-      const reference = await uploadFigure({
-        projectId,
-        hostDocumentId: documentId,
-        file,
-        alt: imageAltFromFilename(file.name),
-        onProgress: ({ percent }) =>
-          setImageUploadState({ kind: "uploading", filename: file.name, percent }),
-      });
-      return imageAttrsFromUpload(reference);
+      try {
+        const reference = await uploadFigure({
+          projectId,
+          hostDocumentId: documentId,
+          file,
+          alt: imageAltFromFilename(file.name),
+          onProgress: ({ percent }) =>
+            setImageUploadState({ kind: "uploading", filename: file.name, percent }),
+        });
+        assetPathResolver.remember(reference.assetDocumentId, reference.assetPath);
+        setImageUploadState({ kind: "success", filename: file.name });
+        clearUploadLater();
+        return imageAttrsFromUpload(reference);
+      } catch (error) {
+        setImageUploadState({
+          kind: "error",
+          message: error instanceof Error ? error.message : t`Image upload failed.`,
+        });
+        clearUploadLater();
+        throw error;
+      }
     },
-    [documentId, projectId],
+    [assetPathResolver, clearUploadLater, documentId, projectId],
   );
 
   const handleImageFile = useCallback(
     async (file: File, insertPos?: number) => {
+      const targetEditor = editorRef.current;
+      let mappedPos = insertPos;
+      const mapPosition = ({
+        transaction,
+      }: {
+        transaction: { mapping: { map(pos: number, assoc?: number): number } };
+      }) => {
+        if (mappedPos !== undefined) mappedPos = transaction.mapping.map(mappedPos, 1);
+      };
+      if (targetEditor && mappedPos !== undefined) targetEditor.on("transaction", mapPosition);
       try {
         const attrs = await uploadImageFile(file);
-        const inserted = insertImageNode(editorRef.current, attrs, insertPos);
+        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
+        const inserted = insertImageNode(targetEditor, attrs, mappedPos);
         setImageUploadState(
           inserted
             ? { kind: "success", filename: file.name }
@@ -218,15 +265,11 @@ function SessionEditorView({
                 message: t`The image uploaded, but the editor could not insert it.`,
               },
         );
-        clearUploadLater();
-      } catch (error) {
-        setImageUploadState({
-          kind: "error",
-          message: error instanceof Error ? error.message : t`Image upload failed.`,
-        });
+      } catch {
+        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
       }
     },
-    [clearUploadLater, uploadImageFile],
+    [uploadImageFile],
   );
 
   const editorBubbleContexts = useMemo(
@@ -267,7 +310,7 @@ function SessionEditorView({
             const file = item?.getAsFile();
             if (!file) return false;
             event.preventDefault();
-            void handleImageFile(file);
+            void handleImageFile(file, _view.state.selection.from);
             return true;
           },
           handleDrop(view, event) {
@@ -280,6 +323,9 @@ function SessionEditorView({
             void handleImageFile(file, pos);
             return true;
           },
+          clipboardTextParser: markdownTableClipboardParser(undefined, assetPathResolver),
+          transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetPathResolver),
+          transformPasted: (slice) => resolveAssetPathsFromClipboard(slice, assetPathResolver),
           handleDOMEvents: {
             dragenter(_view, event) {
               if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
@@ -427,7 +473,8 @@ function SessionEditorView({
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           event.currentTarget.value = "";
-          if (file) void handleImageFile(file);
+          const pos = editor?.state.selection.from;
+          if (file) void handleImageFile(file, pos);
         }}
       />
       <TrackedEditorCanvas

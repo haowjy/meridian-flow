@@ -121,6 +121,8 @@ function ImageBubble({
             const replacement = await upload(file);
             update(replacement);
             close({ focusEditor: true });
+          } catch {
+            // The shared upload coordinator presents the localized failure receipt.
           } finally {
             setUploading(false);
           }
