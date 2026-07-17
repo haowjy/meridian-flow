@@ -75,6 +75,18 @@ describe("resolveDraftOnlyTab", () => {
 });
 
 describe("new untitled tabs", () => {
+  it("re-mints a colliding id without moving or deselecting the tab", () => {
+    const { openTab, remintNewTab, selectTab } = useContextTabsStore.getState();
+    openTab(PROJECT, { kind: "new", documentId: "new-1", name: "Untitled" });
+    openTab(PROJECT, editableTab({ documentId: "doc-2" }));
+    selectTab(PROJECT, "new-1");
+
+    remintNewTab(PROJECT, "new-1", "new-2");
+
+    expect(tabs().map((tab) => tab.documentId)).toEqual(["new-2", "doc-2"]);
+    expect(useContextTabsStore.getState().byProject[PROJECT]?.activeTabId).toBe("new-2");
+  });
+
   it("materializes in place without changing tab order or active identity", () => {
     const { openTab, materializeNewTab, selectTab } = useContextTabsStore.getState();
     openTab(PROJECT, { kind: "new", documentId: "new-1", name: "Untitled" });

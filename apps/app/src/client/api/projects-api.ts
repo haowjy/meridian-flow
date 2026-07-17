@@ -155,17 +155,22 @@ export type CreateUntitledContextDocumentResponse = {
   path: string;
   name: string;
 };
+export type CreateUntitledContextDocumentResult =
+  | CreateUntitledContextDocumentResponse
+  | { status: "conflict" };
 
 export async function createUntitledContextDocument(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   body: { documentId: string; folderPath?: string },
   opts?: ProjectContextRequestOptions,
-): Promise<CreateUntitledContextDocumentResponse> {
-  const response = await postJson<CreateUntitledContextDocumentResponse>(
+): Promise<CreateUntitledContextDocumentResult> {
+  const response = await postJson<CreateUntitledContextDocumentResponse | { error: true }>(
     apiProjectContextCreateUntitledPath(projectId, scheme, opts),
     body,
+    { acceptStatuses: [409] },
   );
+  if ("error" in response) return { status: "conflict" };
   return {
     ...response,
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,

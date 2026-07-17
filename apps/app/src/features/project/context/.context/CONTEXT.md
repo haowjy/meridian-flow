@@ -54,7 +54,9 @@ schedule the same deferred, idempotent sweep. The sweep creates through
 `create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
 sync, then drains the entry. A closed tab is not special: the same entry drives
 a headless attach/flush. A never-materialized empty is the only path that clears
-IndexedDB. Named/viewed documents never enter this engine.
+IndexedDB. A foreign UUID conflict clones the Yjs state into a newly minted
+detached session and replaces the new tab's identity in place before retrying.
+Named/viewed documents never enter this engine.
 
 After create returns, the placeholder becomes a normal route-owned `tracked`
 tab in place. `provisionalName` comes from the tree DTO and controls the rename

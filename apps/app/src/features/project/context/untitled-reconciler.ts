@@ -6,12 +6,12 @@
  */
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
-
 import {
   type CreateUntitledContextDocumentResponse,
   createUntitledContextDocument,
   renameContextEntry,
 } from "@/client/api/projects-api";
+import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 const STORAGE_KEY = "meridian:pending-untitled";
@@ -31,6 +31,7 @@ export type PendingUntitled = {
 };
 
 type Candidate = {
+  onReminted: (documentId: string) => void;
   onMaterialized: (result: CreateUntitledContextDocumentResponse) => void;
   onRenamed: (name: string, path: string) => void;
 };
@@ -118,7 +119,10 @@ class UntitledReconciler {
       this.running = false;
     }
     if (failed && this.entries.size > 0) this.armRetry();
-    else this.retryMs = RETRY_BASE_MS;
+    else {
+      this.retryMs = RETRY_BASE_MS;
+      if (this.entries.size > 0) this.schedule();
+    }
   }
 
   private async reconcile(entry: PendingUntitled): Promise<void> {
@@ -149,6 +153,10 @@ class UntitledReconciler {
         },
         { workId: entry.home.workId },
       );
+      if (result.status === "conflict") {
+        await this.remint(entry, session);
+        return;
+      }
       this.candidates.get(entry.documentId)?.onMaterialized(result);
 
       const rename = this.renameIntents.get(entry.documentId);
@@ -187,6 +195,29 @@ class UntitledReconciler {
     } finally {
       registry.release(owner);
     }
+  }
+
+  private async remint(entry: PendingUntitled, session: DocumentSession): Promise<void> {
+    const replacementId = crypto.randomUUID();
+    const registry = getDocumentSessionRegistry();
+    const replacement = registry.getDetached(replacementId);
+    await replacement.whenLocalPersistenceSynced();
+    Y.applyUpdate(replacement.document, Y.encodeStateAsUpdate(session.document));
+
+    const candidate = this.candidates.get(entry.documentId);
+    const rename = this.renameIntents.get(entry.documentId);
+    this.entries.delete(entry.documentId);
+    this.entries.set(replacementId, { ...entry, documentId: replacementId });
+    this.candidates.delete(entry.documentId);
+    if (candidate) this.candidates.set(replacementId, candidate);
+    this.renameIntents.delete(entry.documentId);
+    if (rename) this.renameIntents.set(replacementId, rename);
+    this.persist();
+    this.emit();
+    candidate?.onReminted(replacementId);
+    // The tab/session retainers release the old room after the identity swap.
+    // Ordinary teardown preserves its IndexedDB copy; only confirmed empty
+    // documents are allowed to clear persistence.
   }
 
   private persist(): void {

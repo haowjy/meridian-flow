@@ -76,6 +76,7 @@ type ContextTabsState = {
 
 type ContextTabsActions = {
   openTab: (projectId: string, tab: ContextTab) => void;
+  remintNewTab: (projectId: string, documentId: string, replacementId: string) => void;
   materializeNewTab: (projectId: string, documentId: string, tab: ServerContextTab) => void;
   updateTrackedTab: (
     projectId: string,
@@ -147,6 +148,26 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               )
             : [...slice.tabs, tab];
           return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
+        });
+      },
+
+      remintNewTab: (projectId, documentId, replacementId) => {
+        set((state) => {
+          const slice = sliceFor(state, projectId);
+          if (
+            !slice.tabs.some(
+              (candidate) => candidate.kind === "new" && candidate.documentId === documentId,
+            )
+          )
+            return state;
+          return patchSlice(state, projectId, {
+            tabs: slice.tabs.map((candidate) =>
+              candidate.kind === "new" && candidate.documentId === documentId
+                ? { ...candidate, documentId: replacementId }
+                : candidate,
+            ),
+            activeTabId: slice.activeTabId === documentId ? replacementId : slice.activeTabId,
+          });
         });
       },
 
@@ -270,6 +291,7 @@ export function useContextTabsActions(): ContextTabsActions {
   return useContextTabsStore(
     useShallow((s) => ({
       openTab: s.openTab,
+      remintNewTab: s.remintNewTab,
       materializeNewTab: s.materializeNewTab,
       updateTrackedTab: s.updateTrackedTab,
       closeTab: s.closeTab,

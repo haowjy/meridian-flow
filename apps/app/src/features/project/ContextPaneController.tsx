@@ -72,8 +72,15 @@ export function ContextViewerSurfaceController({
     getUntitledReconciler().schedule();
   }, []);
   const { tabs, activeTabId } = useContextTabs(projectId);
-  const { openTab, closeTab, materializeNewTab, updateTrackedTab, pruneWorkScopedTabs, selectTab } =
-    useContextTabsActions();
+  const {
+    openTab,
+    closeTab,
+    remintNewTab,
+    materializeNewTab,
+    updateTrackedTab,
+    pruneWorkScopedTabs,
+    selectTab,
+  } = useContextTabsActions();
   const serverTabs = tabs.filter((tab) => tab.kind !== "new");
   const activeTab = findContextTabForRoute(
     tabs,
@@ -389,6 +396,7 @@ export function ContextViewerSurfaceController({
       )
       .map((tab) =>
         registerUntitledCandidate(tab.documentId, {
+          onReminted: (documentId) => remintNewTab(projectId, tab.documentId, documentId),
           onMaterialized: (result) => {
             const stillOpen = useContextTabsStore
               .getState()
@@ -427,7 +435,15 @@ export function ContextViewerSurfaceController({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [defaultWorkId, materializeNewTab, onSelectContextPath, projectId, tabs, updateTrackedTab]);
+  }, [
+    defaultWorkId,
+    materializeNewTab,
+    onSelectContextPath,
+    projectId,
+    remintNewTab,
+    tabs,
+    updateTrackedTab,
+  ]);
 
   return (
     <ContextViewer
