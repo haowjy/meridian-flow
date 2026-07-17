@@ -90,7 +90,7 @@ export function ProjectView(props: ProjectViewProps) {
   // before any gated child for each project entry; the driver makes a strict-
   // mode replay of the same loader revision an adoption no-op.
   const [entryHydration] = useState<WorkingSetHydrationPlan>(() =>
-    hydrateWorkingSet(props.projectId, props.workingSet),
+    hydrateWorkingSet(props.projectId, props.workingSet, props.workingSetSyncEnabled),
   );
   const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
   const workingSetHydration = retriedHydration ?? entryHydration;
@@ -128,7 +128,7 @@ export function ProjectView(props: ProjectViewProps) {
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
         <ProjectDraftReviewProvider projectId={props.projectId} threadId={props.activeThreadId}>
-          <HydratedProject {...props} workingSetHydration={workingSetHydration} />
+          <HydratedProject {...props} />
         </ProjectDraftReviewProvider>
       ) : null}
     </div>
@@ -153,9 +153,7 @@ function ProjectDraftReviewProvider({
   );
 }
 
-type HydratedProjectProps = ProjectViewProps & { workingSetHydration: WorkingSetHydrationPlan };
-
-function HydratedProject(props: HydratedProjectProps) {
+function HydratedProject(props: ProjectViewProps) {
   const usePhone = usePhoneShell();
   useEffect(() => {
     const reconciler = getUntitledReconciler();

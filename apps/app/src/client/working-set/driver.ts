@@ -217,7 +217,9 @@ export function configureWorkingSetSync(userId: string, enabled: boolean): void 
 export function hydrateWorkingSet(
   projectId: string,
   result: ProjectRouteData["workingSet"],
+  enabled: boolean,
 ): WorkingSetHydrationPlan {
+  if (!enabled) return { status: "disabled" };
   return browserDriver()?.hydrate(projectId, result) ?? { status: "disabled" };
 }
 

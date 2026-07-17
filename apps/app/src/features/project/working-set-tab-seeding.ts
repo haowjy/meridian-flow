@@ -6,9 +6,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { getProjectContextTree } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { contextRequestOptionsForScheme } from "@/client/query/useContextWorkId";
+import { projectContextTreeQueryOptions } from "@/client/query/useProjectContextTree";
 import { useContextTabsStore } from "@/client/stores";
 import { readRecentRoutes, workingSetRouteEquals } from "@/client/working-set";
 import { contextTabFromFile } from "./context/context-tab-from-file";
@@ -37,16 +35,9 @@ export async function seedWorkingSetTabs({
       const workScoped = isWorkScopedProjectContextScheme(route.scheme);
       if (workScoped && route.workId !== routeWorkId) return;
       const workId: string | null = workScoped ? (route.workId ?? null) : null;
-      const result = await queryClient.fetchQuery({
-        queryKey: projectQueryKeys.contextTree(projectId, route.scheme, workId),
-        queryFn: () =>
-          getProjectContextTree(
-            projectId,
-            route.scheme,
-            contextRequestOptionsForScheme(route.scheme, workId),
-          ),
-        staleTime: 30_000,
-      });
+      const result = await queryClient.fetchQuery(
+        projectContextTreeQueryOptions(projectId, route.scheme, workId),
+      );
       const file = findContextFile(result.tree, route.path);
       if (!file || !isWorkingSetRouteDesired(route, readRecentRoutes(projectId))) return;
       useContextTabsStore
