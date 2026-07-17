@@ -61,6 +61,14 @@ content and commands. The link control is its first tenant: it opens only for
 selected text or an existing link, and uses TipTap's link commands to add, edit,
 or remove the mark without introducing a second document representation.
 
+### Detecting a mark at a caret
+
+`editor.isActive("link")` can miss an empty selection at a mark boundary,
+notably the link's start. `linkAttributesAtSelection` uses `getMarkRange` for
+carets so the link control remains available at either edge. Future contextual
+controls that open on a mark-touching caret should use the same resolution
+pattern rather than gating on `isActive` alone.
+
 Props:
 
 - `editor: Editor | null` — the TipTap instance. `null` is valid (pre-mount shell).
