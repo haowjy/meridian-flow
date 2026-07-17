@@ -3,6 +3,7 @@
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import { updateProjectWorkingSet } from "@/client/api/projects-api";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
+import { planWorkingSetHydration, type WorkingSetHydrationPlan } from "./hydration";
 import {
   clearSnapshotRoutes,
   DeviceWorkingSetStore,
@@ -38,6 +39,7 @@ export class WorkingSetSyncDriver {
   private readonly baselines = new Map<string, number | null>();
   private readonly scheduled = new Set<string>();
   private readonly failures = new Map<string, number>();
+  private readonly hydrated = new Map<string, { key: string; plan: WorkingSetHydrationPlan }>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sweeping = false;
 
@@ -54,10 +56,38 @@ export class WorkingSetSyncDriver {
       this.baselines.clear();
       this.scheduled.clear();
       this.failures.clear();
+      this.hydrated.clear();
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
     }
     this.enabled = enabled;
+  }
+
+  hydrate(projectId: string, result: ProjectRouteData["workingSet"]): WorkingSetHydrationPlan {
+    if (!this.enabled) return { status: "disabled" };
+    const key = result.status === "row" ? `row:${result.row.revision}` : result.status;
+    const previous = this.hydrated.get(projectId);
+    if (previous?.key === key) return previous.plan;
+
+    const plan = planWorkingSetHydration(true, result, this.store.read(projectId));
+    this.hydrated.set(projectId, { key, plan });
+    if (plan.status === "read-degraded") {
+      this.baselines.delete(projectId);
+      return plan;
+    }
+    if (plan.status === "local") {
+      this.baselines.set(projectId, plan.revision);
+      if (this.store.read(projectId)?.pending) this.schedule(projectId, 0);
+      return plan;
+    }
+    if (plan.status === "server") {
+      this.store.adopt(projectId, {
+        recentRoutes: plan.row.recentRoutes,
+        lastThreadId: plan.row.lastThreadId,
+      });
+      this.baselines.set(projectId, plan.row.revision);
+    }
+    return plan;
   }
 
   establishBaseline(projectId: string, result: ProjectRouteData["workingSet"]): void {
@@ -71,6 +101,10 @@ export class WorkingSetSyncDriver {
 
   readRecentRoutes(projectId: string): WorkingSetRoute[] {
     return this.store.read(projectId)?.snapshot.recentRoutes ?? [];
+  }
+
+  readRecord(projectId: string): ProjectWorkingSetRecord | undefined {
+    return this.store.read(projectId);
   }
 
   promoteRoute(projectId: string, route: WorkingSetRoute): void {
@@ -190,8 +224,19 @@ export function establishWorkingSetBaseline(
   browserDriver()?.establishBaseline(projectId, result);
 }
 
+export function hydrateWorkingSet(
+  projectId: string,
+  result: ProjectRouteData["workingSet"],
+): WorkingSetHydrationPlan {
+  return browserDriver()?.hydrate(projectId, result) ?? { status: "disabled" };
+}
+
 export function readRecentRoutes(projectId: string): WorkingSetRoute[] {
   return browserDriver()?.readRecentRoutes(projectId) ?? [];
+}
+
+export function readRememberedThread(projectId: string): string | null {
+  return browserDriver()?.readRecord(projectId)?.snapshot.lastThreadId ?? null;
 }
 
 export function promoteRoute(projectId: string, route: WorkingSetRoute): void {

@@ -28,7 +28,10 @@ export type WorkingSetStorage = Pick<Storage, "getItem" | "setItem" | "removeIte
 
 const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: null };
 
-function routeEquals(left: WorkingSetRoute | undefined, right: WorkingSetRoute): boolean {
+export function workingSetRouteEquals(
+  left: WorkingSetRoute | undefined,
+  right: WorkingSetRoute,
+): boolean {
   return (
     left !== undefined &&
     left.scheme === right.scheme &&
@@ -41,7 +44,9 @@ function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): bo
   return (
     left.lastThreadId === right.lastThreadId &&
     left.recentRoutes.length === right.recentRoutes.length &&
-    left.recentRoutes.every((route, index) => routeEquals(route, right.recentRoutes[index]))
+    left.recentRoutes.every((route, index) =>
+      workingSetRouteEquals(route, right.recentRoutes[index] as WorkingSetRoute),
+    )
   );
 }
 
@@ -190,6 +195,12 @@ export class DeviceWorkingSetStore {
     return result;
   }
 
+  adopt(projectId: string, snapshot: WorkingSetSnapshot): void {
+    if (!this.state) return;
+    this.state.projects[projectId] = { snapshot };
+    this.persist();
+  }
+
   private persist(): void {
     if (!this.state) return;
     try {
@@ -204,12 +215,12 @@ export function promoteSnapshotRoute(
   snapshot: WorkingSetSnapshot,
   route: WorkingSetRoute,
 ): WorkingSetSnapshot {
-  if (routeEquals(snapshot.recentRoutes[0], route)) return snapshot;
+  if (workingSetRouteEquals(snapshot.recentRoutes[0], route)) return snapshot;
   return {
     ...snapshot,
     recentRoutes: [
       route,
-      ...snapshot.recentRoutes.filter((entry) => !routeEquals(entry, route)),
+      ...snapshot.recentRoutes.filter((entry) => !workingSetRouteEquals(entry, route)),
     ].slice(0, 3),
   };
 }
@@ -222,7 +233,9 @@ export function removeSnapshotRoute(
   snapshot: WorkingSetSnapshot,
   route: WorkingSetRoute,
 ): WorkingSetSnapshot {
-  const recentRoutes = snapshot.recentRoutes.filter((entry) => !routeEquals(entry, route));
+  const recentRoutes = snapshot.recentRoutes.filter(
+    (entry) => !workingSetRouteEquals(entry, route),
+  );
   return recentRoutes.length === snapshot.recentRoutes.length
     ? snapshot
     : { ...snapshot, recentRoutes };

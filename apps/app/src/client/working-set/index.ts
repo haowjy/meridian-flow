@@ -4,8 +4,12 @@ export {
   clearRoutes,
   configureWorkingSetSync,
   establishWorkingSetBaseline,
+  hydrateWorkingSet,
   promoteRoute,
   readRecentRoutes,
+  readRememberedThread,
   removeRoute,
   setThread,
 } from "./driver";
+export type { WorkingSetHydrationPlan } from "./hydration";
+export { workingSetRouteEquals } from "./store";

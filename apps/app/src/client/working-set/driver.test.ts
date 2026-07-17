@@ -22,6 +22,40 @@ describe("working-set sweep eligibility", () => {
 });
 
 describe("working-set identity sessions", () => {
+  it("adopts a server revision once and returns its seeding plan on a strict-mode replay", () => {
+    const storage = {
+      getItem: () => null,
+      setItem: vi.fn(),
+      removeItem: () => undefined,
+    };
+    const store = new DeviceWorkingSetStore(storage);
+    const driver = new WorkingSetSyncDriver(store, vi.fn());
+    const result = {
+      status: "row" as const,
+      row: {
+        userId: "user-a",
+        projectId: "project-1",
+        recentRoutes: [{ scheme: "kb" as const, path: "/server.md" }],
+        lastThreadId: "thread-server",
+        revision: 3,
+        updatedAt: "2026-07-17T00:00:00.000Z",
+      },
+    };
+    driver.configure("user-a", true);
+
+    const first = driver.hydrate("project-1", result);
+    const second = driver.hydrate("project-1", result);
+
+    expect(second).toBe(first);
+    expect(store.read("project-1")).toEqual({
+      snapshot: {
+        recentRoutes: [{ scheme: "kb", path: "/server.md" }],
+        lastThreadId: "thread-server",
+      },
+    });
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores an old user's acknowledgement before sweeping the new user's pending record", async () => {
     vi.useFakeTimers();
     const store = new DeviceWorkingSetStore({
