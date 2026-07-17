@@ -39,7 +39,10 @@ function selectionIsInsideNode(props: NodeViewProps): boolean {
   const position = props.getPos();
   if (position === undefined) return false;
   const { from, to } = props.editor.state.selection;
-  return from >= position + 1 && to <= position + props.node.nodeSize - 1;
+  return (
+    (from >= position + 1 && to <= position + props.node.nodeSize - 1) ||
+    (from === position && to === position + props.node.nodeSize)
+  );
 }
 
 function usePreviewVisibility(props: NodeViewProps): boolean {
