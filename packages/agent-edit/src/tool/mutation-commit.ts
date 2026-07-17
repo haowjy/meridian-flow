@@ -35,7 +35,7 @@ import type {
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import { formatApplyRejection } from "./response-format.js";
+import { formatSafetyRejection } from "./safety-rejection.js";
 import type { InteractionContext, MutationActor, WriteCommand } from "./types.js";
 
 export interface MutationCommitRuntime {
@@ -548,19 +548,7 @@ export function createMutationCommit(deps: {
       },
       gate.concurrent.detection,
     );
-    const message =
-      gate.reason === "human_conflict"
-        ? `Rejected: your edit would delete blocks the writer changed since your last read. Affected blocks: [${gate.conflictedBlockHashes.join(", ")}]. Replan from the concurrent echo below.`
-        : `This response has no sealed observation for ${input.docId}. Replan from the concurrent echo below, then read in a new response before another destructive change.`;
-    return formatApplyRejection({
-      status:
-        gate.reason === "human_conflict"
-          ? "destructive_write_rejected"
-          : "rejected_response_requires_reread",
-      message,
-      echo: summary.echo,
-      concurrentEdits: summary.concurrentEdits,
-    });
+    return formatSafetyRejection({ docId: input.docId, action: "edit", gate, summary });
   }
 
   function snapshotFromUpdate(update: Uint8Array): BlockSnapshot[] {

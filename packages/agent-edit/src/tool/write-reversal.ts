@@ -28,6 +28,7 @@ import type {
 } from "./mutation-commit.js";
 import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
+import { formatSafetyRejection } from "./safety-rejection.js";
 import type {
   InteractionContext,
   MutationActor,
@@ -487,7 +488,7 @@ export function createWriteReversal(deps: {
         let preflightRejected = false;
         let capturedPreflight: CapturedConcurrentDetection | undefined;
         for (const prepared of input.plans) {
-          const gate = await mutationCommit.preflightSafetyGate(liveDoc, {
+          const safetyInput = {
             docId: input.docId,
             runtime: input.runtime,
             actor: reversalMutationActor(input.actor, input.session, prepared.plan),
@@ -497,10 +498,30 @@ export function createWriteReversal(deps: {
             interactionContext: input.interactionContext,
             preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
             ownTurnId: prepared.plan.turnId ?? undefined,
-          });
+          };
+          const gate = await mutationCommit.preflightSafetyGate(liveDoc, safetyInput);
           if (gate.verdict === "reject") {
             if (input.actor.type === "agent") {
-              return destructiveReversalRejection(gate.conflictedBlockHashes);
+              const concurrentSnapshot = snapshotFromYUpdate(gate.concurrent.detectionSnapshot);
+              try {
+                return formatSafetyRejection({
+                  docId: input.docId,
+                  action: input.direction,
+                  gate,
+                  summary: mutationCommit.summarizeMutationEcho(
+                    {
+                      runtime: input.runtime,
+                      before,
+                      touchedHashes: safetyInput.touchedHashes,
+                      deletedHashes: safetyInput.deletedHashes,
+                      afterSnapshot: snapshotBlocks(toDocHandle(concurrentSnapshot), model, codec),
+                    },
+                    gate.concurrent.detection,
+                  ),
+                });
+              } finally {
+                concurrentSnapshot.destroy();
+              }
             }
             preflightRejected = true;
           } else {
@@ -833,15 +854,6 @@ function reversalMutationActor(
   };
 }
 
-function destructiveReversalRejection(
-  conflictedBlockHashes: readonly string[],
-): InternalWriteResult {
-  return status(
-    "destructive_write_rejected",
-    `Rejected: your undo would delete blocks the writer changed since your last read. Affected blocks: [${conflictedBlockHashes.join(", ")}]. Re-read and replan.`,
-  );
-}
-
 function formatDependentUndoRefusal(
   selectedWriteIds: readonly string[],
   blockingWriteIds: readonly string[],
@@ -1007,6 +1019,12 @@ function docFromSnapshot(
 function cloneDoc(source: Y.Doc): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  return doc;
+}
+
+function snapshotFromYUpdate(update: Uint8Array): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, update);
   return doc;
 }
 

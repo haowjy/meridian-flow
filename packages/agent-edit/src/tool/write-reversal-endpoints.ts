@@ -206,6 +206,8 @@ export function createWriteReversalEndpoints(deps: {
 function stagedCommitRejection(
   rejections: readonly import("./types.js").ResponseCommitDocumentRejection[],
 ) {
+  const echoed = rejections.find((rejection) => rejection.agentResponse)?.agentResponse;
+  if (echoed) return echoed;
   const affectedWriteIds = [
     ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
   ];

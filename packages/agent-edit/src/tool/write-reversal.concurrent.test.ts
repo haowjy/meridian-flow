@@ -139,7 +139,8 @@ describe("write reversal under concurrent edits", () => {
       },
     );
 
-    expect(redo.status).toBe("destructive_write_rejected");
+    expect(redo.status).toBe("rejected_response_requires_reread");
+    expect(redo.text).toContain("Writer: First target.");
     expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(
       beforeJournalLength,
     );

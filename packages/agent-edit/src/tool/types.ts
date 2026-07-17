@@ -260,6 +260,8 @@ export interface ResponseCommitDocumentRejection {
   documentId: string;
   conflictedBlockHashes: readonly string[];
   affectedWriteIds: readonly string[];
+  /** Agent-visible refusal retaining the safety gate's concurrent echo. */
+  agentResponse?: import("./internal-result.js").InternalWriteResult;
 }
 
 export interface ResponseCommitRejectedResult {
