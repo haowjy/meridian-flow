@@ -135,10 +135,14 @@ dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
 The pill's **Streams** action opens the full-height `TraceViewer` drawer. Its
 plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
 `EventRecord` ring and exposes the producer boundary `appendTraceEvent` /
-`noteTapError`; it has no dependency on the taps that feed it. The viewer
-provides composable stream, message-class, direction, and correlation filters;
-frozen live-tail inspection; record detail; and filtered JSONL copy, download,
-and accessibility-tree output. Future lenses project over this same store
+`noteTapError`; producers append the shared contracts envelope, never a
+viewer-specific record. The store drops the oldest record at capacity, counts
+ring drops and tap errors, and coalesces subscriber notification per JavaScript
+turn without coalescing captured records. The viewer provides composable
+stream, message-class, direction, and correlation filters; frozen live-tail
+inspection; record detail; and filtered JSONL copy, download, and
+accessibility-tree output. Freeze snapshots the current projection while
+capture and eviction continue. Future lenses project over this same store
 rather than adding data paths.
 
 The dev-only shared Hocuspocus socket carries a `TappedWebSocket` observer
@@ -148,13 +152,20 @@ dev, before the lazily-created shared socket can send its first frame; capture i
 always on for the page lifetime and the runtime toggle gates only the viewer.
 Server-side
 collab operations still emit zero success-path structured events — the server
-half (correlation receipts, SSE feed) is
+half (S4: correlation receipts, SSE feed, durability columns, and thread-WS
+coverage) is
 [#239](https://github.com/haowjy/meridian-flow/issues/239) in cluster
-[#235](https://github.com/haowjy/meridian-flow/issues/235).
+[#235](https://github.com/haowjy/meridian-flow/issues/235). The current viewer
+is the client-Yjs core, not the final multi-source surface: S6 adds the LLM
+calls lens only after S4's feed and S5's gateway events exist. Burst grouping
+is intentionally deferred beside the S4 viewer merge; see `.context/FUTURE`.
 
-## Document session — not available
+## Document sessions
 
-There is no global document session registry today (owned by the
-`EditorView` mount). When the product-lift track exposes a registry, add a new
-`PillSection` inline in `DebugPill` (there is no section registry — the pill
-renders its handful of sections directly).
+`core/editor/document-session-registry.ts` is the process-wide owner of live
+and generation-fenced branch `DocumentSession`s; editor views consume sessions
+rather than owning their lifetime. The debug surface does not currently expose
+a document-session summary. If one is needed, read through the registry's
+public `observe`/session snapshot contracts instead of reaching into its maps
+or creating another editor/session registry. Add the small read-only section
+inline in `DebugPill` (there is no section registry).
