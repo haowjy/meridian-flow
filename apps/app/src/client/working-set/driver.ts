@@ -31,6 +31,8 @@ type PutWorkingSet = (
 ) => Promise<WorkingSetResponse>;
 
 export class WorkingSetSyncDriver {
+  private userId: string | null = null;
+  private sessionGeneration = 0;
   private enabled = false;
   private readonly baselines = new Map<string, number | null>();
   private readonly scheduled = new Set<string>();
@@ -44,7 +46,16 @@ export class WorkingSetSyncDriver {
   ) {}
 
   configure(userId: string, enabled: boolean): void {
-    this.store.setUser(userId);
+    if (this.userId !== userId) {
+      this.store.setUser(userId);
+      this.userId = userId;
+      this.sessionGeneration += 1;
+      this.baselines.clear();
+      this.scheduled.clear();
+      this.failures.clear();
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+    }
     this.enabled = enabled;
   }
 
@@ -109,13 +120,16 @@ export class WorkingSetSyncDriver {
         if (!canSweepWorkingSet(this.enabled, this.baselines.has(projectId), record)) continue;
         if (!record?.pending) continue;
         const sentVersion = record.pending.localVersion;
+        const sentGeneration = this.sessionGeneration;
         try {
           const response = await this.put(projectId, record.snapshot, keepalive);
+          if (sentGeneration !== this.sessionGeneration) continue;
           this.failures.delete(projectId);
           this.baselines.set(projectId, response.revision);
           const ack = this.store.acknowledge(projectId, sentVersion, response.revision);
           if (ack.status === "advanced") this.scheduled.add(projectId);
         } catch {
+          if (sentGeneration !== this.sessionGeneration) continue;
           const failures = (this.failures.get(projectId) ?? 0) + 1;
           this.failures.set(projectId, failures);
           this.schedule(projectId, Math.min(1_000 * 2 ** (failures - 1), MAX_BACKOFF_MS));

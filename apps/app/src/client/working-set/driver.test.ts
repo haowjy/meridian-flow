@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { canSweepWorkingSet } from "./driver";
+import { canSweepWorkingSet, WorkingSetSyncDriver } from "./driver";
+import { DeviceWorkingSetStore, type WorkingSetSnapshot } from "./store";
 
 const pendingRecord = {
   snapshot: { recentRoutes: [], lastThreadId: null },
@@ -17,5 +18,44 @@ describe("working-set sweep eligibility", () => {
         snapshot: pendingRecord.snapshot,
       }),
     ).toBe(false);
+  });
+});
+
+describe("working-set identity sessions", () => {
+  it("ignores an old user's acknowledgement before sweeping the new user's pending record", async () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const responses: Array<(response: { revision: number }) => void> = [];
+    const put = vi.fn(
+      (_projectId: string, _snapshot: WorkingSetSnapshot, _keepalive: boolean) =>
+        new Promise<{ revision: number }>((resolve) => {
+          responses.push(resolve);
+        }),
+    );
+    const driver = new WorkingSetSyncDriver(store, put);
+
+    driver.configure("user-a", true);
+    driver.establishBaseline("project-1", { status: "absent" });
+    driver.setThread("project-1", "thread-a");
+    driver.flush();
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+
+    driver.configure("user-b", true);
+    driver.establishBaseline("project-1", { status: "absent" });
+    driver.setThread("project-1", "thread-b");
+    driver.flush();
+
+    responses[0]?.({ revision: 1 });
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(2));
+    expect(put.mock.calls[1]?.[1]).toEqual({ recentRoutes: [], lastThreadId: "thread-b" });
+    expect(store.read("project-1")?.pending?.localVersion).toBe(1);
+
+    responses[1]?.({ revision: 1 });
+    await vi.waitFor(() => expect(store.read("project-1")?.pending).toBeUndefined());
+    vi.useRealTimers();
   });
 });
