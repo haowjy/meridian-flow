@@ -85,6 +85,8 @@
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
   single default Work for chat-independent Scratch surfaces.
+- `apps/server`: add a gated real-Postgres cross-Work merge probe covering
+  stale manual Apply, `apply_and_trail` settlement, agent echo, and cold Restore.
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane

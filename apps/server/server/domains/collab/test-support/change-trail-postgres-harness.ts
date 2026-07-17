@@ -156,6 +156,7 @@ export async function resetDatabase(): Promise<void> {
 export async function closeDatabase(): Promise<void> {
   await db.$client.end();
 }
+
 export function markdownFromUpdate(update: Uint8Array): string {
   const doc = new Y.Doc({ gc: false });
   try {
@@ -413,7 +414,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       listEditedDocumentsForTurn: async () => [],
       getTurnReceiptChip: async () => null,
     } as never,
-    threads: { findById: async () => ({ id: THREAD_ID }) },
+    threads: { findById: async (threadId: ThreadId) => ({ id: threadId }) },
     notices,
     eventSink: {
       emit(event) {
@@ -1424,6 +1425,22 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedObservedCertifiedDelete,
     seedCheckpointRestoredExplicitDelete,
     seedSelectivePush,
+    crossWorkProbeFixture: () => ({
+      db,
+      schema,
+      persistence,
+      liveCoordinator,
+      collab,
+      branchStore,
+      branchCoordinator,
+      realBranchPush,
+      trailDelivery,
+      hocuspocus,
+      model,
+      markupCodec,
+      agentEditCodec,
+      deliveredEvents,
+    }),
     pollTrails: () => trailDelivery.drain(),
     failNextTrailRetry() {
       failNextTrailRetry = true;
