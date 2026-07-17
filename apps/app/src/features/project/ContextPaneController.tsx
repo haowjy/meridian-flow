@@ -121,7 +121,7 @@ export function ContextViewerSurfaceController({
   }, [activeTab, projectId, selectTab]);
 
   // Device-local routes are unavailable during SSR. Read after hydration so
-  // the server and first client render agree, then mirror persistence writes.
+  // the server and first client render agree, then keep the resume label current.
   useEffect(() => {
     const route = readRecentRoutes(projectId)[0];
     setRememberedRoute(route ? { projectId, route } : null);
