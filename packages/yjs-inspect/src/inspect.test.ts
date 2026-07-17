@@ -1,6 +1,7 @@
 /** Verifies protocol classification, update correlation, and content safety. */
 
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   createEncoder,
   toUint8Array,
@@ -275,7 +276,7 @@ function overlaps(
 describe("decode-journal CLI", () => {
   it("exits nonzero and names every unrecognized row id", () => {
     const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
-      cwd: process.cwd(),
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
       encoding: "utf8",
       input: "1 0000\n42 not-an-update\n2 0000\ngarbage\n",
     });
