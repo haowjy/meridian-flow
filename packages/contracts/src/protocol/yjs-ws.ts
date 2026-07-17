@@ -8,6 +8,15 @@ export const YJS_WS_PATH_PREFIX = "/ws/yjs";
 export const YJS_BRANCH_ROOM_PREFIX = "branch:";
 const BRANCH_GENERATION_SEPARATOR = ":gen:";
 
+/** Typed close contracts emitted by the Yjs collaboration socket. */
+export const YJS_WS_CLOSE = {
+  AUTH_FAILED: { code: 4401, reason: "auth_failed" },
+  PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
+  BRANCH_STALE: { code: 4205, reason: "branch-stale-doc" },
+  CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
+  DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
+} as const;
+
 export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }
   | { kind: "branch"; branchId: string; generation: number };
