@@ -1,6 +1,10 @@
 /** Device-local persistence for each project's ordered context-tab desk. */
 
-import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  type DocumentFileType,
+  isProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 
 import type { ContextTab } from "./context-tabs-store";
 
@@ -18,24 +22,15 @@ type PersistedContextDesks = {
 
 export type ContextDeskStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const FILETYPES = new Set([
-  "markdown",
-  "python",
-  "typescript",
-  "javascript",
-  "json",
-  "shell",
-  "yaml",
-  "text",
-  "csv",
-  "notebook",
-  "pdf",
-  "png",
-  "jpg",
-  "svg",
-]);
-const SCHEMA_TYPES = new Set(["document", "code"]);
-const DOCUMENT_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
+// Typed against the contracts union so the compiler forces this table to
+// track DocumentFileType — a drifted literal set here would silently reject
+// whole persisted desks.
+const DOCUMENT_FILE_TYPES = {
+  docx: true,
+  image: true,
+  pdf: true,
+  binary: true,
+} as const satisfies Record<DocumentFileType, true>;
 
 function optionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
@@ -69,22 +64,24 @@ function parseTab(value: unknown): ContextTab | null {
   ) {
     return null;
   }
-  if (
-    tab.kind === "tracked" &&
-    tab.editable === true &&
-    typeof tab.filetype === "string" &&
-    FILETYPES.has(tab.filetype) &&
-    typeof tab.schemaType === "string" &&
-    SCHEMA_TYPES.has(tab.schemaType) &&
-    (tab.provisionalName === undefined || typeof tab.provisionalName === "boolean")
-  ) {
-    return value as ContextTab;
+  if (tab.kind === "tracked" && tab.editable === true) {
+    // The contracts registry is the single validator: the filetype must be a
+    // known tracked type AND carry the schemaType the registry assigns it.
+    const classification = classifyFiletype(typeof tab.filetype === "string" ? tab.filetype : null);
+    if (
+      classification.kind === "tracked" &&
+      classification.schemaType === tab.schemaType &&
+      (tab.provisionalName === undefined || typeof tab.provisionalName === "boolean")
+    ) {
+      return value as ContextTab;
+    }
+    return null;
   }
   if (
     tab.kind === "viewer" &&
     tab.editable === false &&
     typeof tab.fileType === "string" &&
-    DOCUMENT_FILE_TYPES.has(tab.fileType) &&
+    tab.fileType in DOCUMENT_FILE_TYPES &&
     optionalString(tab.mimeType)
   ) {
     return value as ContextTab;
