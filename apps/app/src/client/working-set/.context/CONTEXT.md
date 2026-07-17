@@ -20,4 +20,3 @@ project layer resolves each against its live context tree, opens it inactive,
 and checks that the route remains desired immediately before the async commit.
 Work-scoped routes are meaningful only when their stored work matches the live
 route work.
-
