@@ -1,9 +1,9 @@
 /**
- * DownloadCard — the shared "Preview not available — Download original" card
- * used by the binary fallback viewer and the PDF viewer's inline-render
- * fallback.
+ * DownloadFallback — the shared "Preview not available — Download original"
+ * empty state used by the binary fallback viewer and the PDF viewer's
+ * inline-render fallback.
  *
- * Behaves like a single centred card with a primary download CTA; the caller
+ * A quiet centred message with a primary download CTA; the caller
  * supplies the explanatory body so each context can phrase it appropriately
  * (binary fallback names the mime type; PDF fallback explains the browser
  * can't render PDFs inline).
@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
-export type DownloadCardProps = {
+export type DownloadFallbackProps = {
   url: string;
   name: string;
   /** Optional headline override. Defaults to "Preview not available". */
@@ -23,7 +23,7 @@ export type DownloadCardProps = {
   body: ReactNode;
 };
 
-export function DownloadCard({ url, name, heading, body }: DownloadCardProps) {
+export function DownloadFallback({ url, name, heading, body }: DownloadFallbackProps) {
   return (
     // Quiet centered empty-state on the page material — same grammar as the
     // editor's zero-tab state, no card box. Jade stays on the one action.

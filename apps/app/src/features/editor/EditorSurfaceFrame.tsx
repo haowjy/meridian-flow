@@ -80,9 +80,14 @@ export function EditorSurfaceFrame({
         onMouseDown={
           editor
             ? (event) => {
-                if (event.button !== 0 || event.defaultPrevented) return;
-                // Inside the prose node ProseMirror owns the press.
-                if ((event.target as HTMLElement).closest(".ProseMirror")) return;
+                if (event.button !== 0 || event.defaultPrevented || editor.isDestroyed) return;
+                // The hijack covers inert gutter layout only: ProseMirror owns
+                // presses in the prose ([contenteditable]), and interactive or
+                // live-status children ([role], controls) keep native behavior
+                // — including selectable text in upload error messages.
+                const target = event.target as Element;
+                if (target.closest("[contenteditable], [role], a, button, input, textarea, select"))
+                  return;
                 focusEditorFromGutterPress(editor, event);
               }
             : undefined
