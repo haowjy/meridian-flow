@@ -143,8 +143,10 @@ rather than adding data paths.
 
 The dev-only shared Hocuspocus socket carries a `TappedWebSocket` observer
 seam (`core/transport/tapped-websocket.ts`); `trace/yjs-wire-tap.ts` maps its
-frames to metadata-only `EventRecord`s and is registered while the overlay is
-enabled (installed from the overlay mount, torn down on disable). Server-side
+frames to metadata-only `EventRecord`s. Registration happens at module evaluation in
+dev, before the lazily-created shared socket can send its first frame; capture is
+always on for the page lifetime and the runtime toggle gates only the viewer.
+Server-side
 collab operations still emit zero success-path structured events — the server
 half (correlation receipts, SSE feed) is
 [#239](https://github.com/haowjy/meridian-flow/issues/239) in cluster

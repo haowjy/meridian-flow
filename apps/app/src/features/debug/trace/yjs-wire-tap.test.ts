@@ -89,6 +89,17 @@ describe("createYjsWireTap", () => {
     });
   });
 
+  it("never infers an outgoing client when the room attachment is unknown", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+    const bytes = syncUpdateFrame("document-1", insertUpdate());
+
+    tap.onFrame("client_to_server", bytes, 1);
+
+    expect(records[0]?.correlation?.yjsSpans).toBeDefined();
+    expect(records[0]?.correlation?.yjsClient).toBeUndefined();
+  });
+
   it("uses the socket fallback for unknown frames and keeps sequence across reconnects", () => {
     const records: EventRecord[] = [];
     const tap = createYjsWireTap((record) => records.push(record), vi.fn());

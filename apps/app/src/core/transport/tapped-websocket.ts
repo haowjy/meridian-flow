@@ -26,12 +26,11 @@ export function notifyYjsRoomAttached(roomName: string, yjsClient: number): void
 }
 
 function notifyFrame(
+  tap: YjsWireTap,
   direction: YjsWireDirection,
   data: ArrayBuffer | ArrayBufferView<ArrayBuffer>,
   socketEpoch: number,
 ): void {
-  const tap = currentTap;
-  if (!tap) return;
   const bytes =
     data instanceof Uint8Array
       ? data
@@ -68,17 +67,24 @@ export class TappedWebSocket extends WebSocket {
       }
     });
     this.addEventListener("message", (event) => {
+      const tap = currentTap;
+      if (!tap) return;
       if (event.data instanceof ArrayBuffer) {
-        notifyFrame("server_to_client", event.data, this.#socketEpoch);
+        notifyFrame(tap, "server_to_client", event.data, this.#socketEpoch);
       }
     });
   }
 
   override send(data: string | ArrayBuffer | Blob | ArrayBufferView<ArrayBuffer>): void {
+    const tap = currentTap;
+    if (!tap) {
+      super.send(data);
+      return;
+    }
     if (data instanceof ArrayBuffer) {
-      notifyFrame("client_to_server", data, this.#socketEpoch);
+      notifyFrame(tap, "client_to_server", data, this.#socketEpoch);
     } else if (ArrayBuffer.isView(data)) {
-      notifyFrame("client_to_server", data, this.#socketEpoch);
+      notifyFrame(tap, "client_to_server", data, this.#socketEpoch);
     }
     // Hocuspocus sends binary frames. Unexpected strings or Blobs still pass
     // through unchanged rather than broadening the observer's byte contract.

@@ -57,13 +57,12 @@ export function createYjsWireTap(
         const correlation = identity.correlation;
         if (update) correlation.yjsSpans = update.spansKey;
 
-        const attachedClient =
-          direction === "client_to_server" &&
-          (frame.messageClass === "sync.update" || frame.messageClass === "sync.step2") &&
-          frame.documentName !== null
-            ? roomClients.get(frame.documentName)
-            : undefined;
-        const yjsClient = attachedClient ?? singleStructClient(update);
+        const yjsClient =
+          direction === "client_to_server"
+            ? frame.documentName === null
+              ? undefined
+              : roomClients.get(frame.documentName)
+            : singleStructClient(update);
         if (yjsClient !== undefined) correlation.yjsClient = yjsClient;
 
         emit({
