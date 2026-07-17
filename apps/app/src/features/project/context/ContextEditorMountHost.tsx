@@ -63,8 +63,7 @@ export type ContextEditorMountHostProps = {
   activeTabId: string | null;
   /** Whether the context destination is currently visible. */
   active: boolean;
-  onUntitledBecameNonEmpty?: (documentId: string) => boolean;
-  untitledHomeReady?: boolean;
+  onUntitledBecameNonEmpty?: (documentId: string) => void;
   onUntitledRenamed?: (documentId: string, name: string, path: string) => void;
   onOpenExisting?: (
     scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
@@ -100,7 +99,6 @@ export function ContextEditorMountHost({
   activeTabId,
   active,
   onUntitledBecameNonEmpty,
-  untitledHomeReady = true,
   onUntitledRenamed,
   onOpenExisting,
 }: ContextEditorMountHostProps) {
@@ -199,7 +197,7 @@ export function ContextEditorMountHost({
               // Defensive: aria-hidden hides background editors from AT.
               aria-hidden={!isActive}
             >
-              {tab.kind === "new" && untitledHomeReady && onUntitledBecameNonEmpty ? (
+              {tab.kind === "new" && onUntitledBecameNonEmpty ? (
                 <UntitledInputObserver
                   documentId={tab.documentId}
                   onBecameNonEmpty={onUntitledBecameNonEmpty}
@@ -325,7 +323,7 @@ function UntitledInputObserver({
   onBecameNonEmpty,
 }: {
   documentId: string;
-  onBecameNonEmpty: (documentId: string) => boolean;
+  onBecameNonEmpty: (documentId: string) => void;
 }) {
   useEffect(() => {
     const session = getDocumentSessionRegistry().getDetached(documentId);
@@ -334,7 +332,7 @@ function UntitledInputObserver({
     let observing = true;
     const observe = () => {
       if (!armed || untitledDocumentIsEmpty(fragment)) return;
-      if (!onBecameNonEmpty(documentId)) return;
+      onBecameNonEmpty(documentId);
       armed = false;
       fragment.unobserveDeep(observe);
       observing = false;

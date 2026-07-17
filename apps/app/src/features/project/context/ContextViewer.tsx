@@ -42,8 +42,7 @@ export type ContextViewerProps = {
   /** Replay the remembered route through the normal tree-validated open. */
   onResumeDocument: () => void;
   onNewDocument: () => void;
-  onUntitledBecameNonEmpty: (documentId: string) => boolean;
-  untitledHomeReady: boolean;
+  onUntitledBecameNonEmpty: (documentId: string) => void;
   onUntitledRenamed: (documentId: string, name: string, path: string) => void;
   onOpenExisting: (
     scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
@@ -71,7 +70,6 @@ export function ContextViewer({
   onResumeDocument,
   onNewDocument,
   onUntitledBecameNonEmpty,
-  untitledHomeReady,
   onUntitledRenamed,
   onOpenExisting,
 }: ContextViewerProps) {
@@ -115,7 +113,6 @@ export function ContextViewer({
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
               onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
-              untitledHomeReady={untitledHomeReady}
               onUntitledRenamed={onUntitledRenamed}
               onOpenExisting={onOpenExisting}
             />

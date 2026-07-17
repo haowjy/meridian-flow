@@ -1,15 +1,26 @@
 /**
  * Untitled reconciler — drains the crash-safe list of locally-authored documents.
  *
- * The registry is the only work source. Events merely schedule the same
- * idempotent sweep; document input never performs network or IndexedDB work.
+ * The persisted registry is the only work source. Input only appends an id;
+ * network, IndexedDB, and home resolution happen in scheduled sweeps. A pending
+ * entry is removed only after an explicit no-row check or a durable server ack.
  */
 
-import type { CreateUntitledContextDocumentResponse } from "@meridian/contracts/protocol";
+import type {
+  CreateUntitledContextDocumentResponse,
+  CreateUntitledContextDocumentResult,
+  ProjectContextTreeNode,
+  RenameContextEntryResult,
+} from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
-import { createUntitledContextDocument, renameContextEntry } from "@/client/api/projects-api";
-import type { DocumentSession } from "@/core/editor/document-session";
+import {
+  createUntitledContextDocument,
+  getProjectContextTree,
+  listProjectWorks,
+  renameContextEntry,
+} from "@/client/api/projects-api";
+import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 const STORAGE_KEY = "meridian:pending-untitled";
@@ -25,7 +36,8 @@ export type UntitledHome = {
 export type PendingUntitled = {
   documentId: string;
   projectId: string;
-  home: UntitledHome;
+  /** Resolved by a sweep; input can be captured before the works query settles. */
+  home?: UntitledHome;
 };
 
 type Candidate = {
@@ -36,6 +48,57 @@ type Candidate = {
 
 type RenameIntent = { name: string; resolve: () => void; reject: (error: unknown) => void };
 
+type ReconcilerSession = Pick<
+  DocumentSession,
+  | "document"
+  | "fragmentName"
+  | "whenLocalPersistenceSynced"
+  | "flushLocalPersistence"
+  | "waitForDurableSync"
+  | "getSnapshot"
+>;
+
+type SessionRegistryPort = {
+  getDetached(documentId: string): ReconcilerSession;
+  attachDetached(documentId: string): ReconcilerSession;
+  retain(owner: string, ids: Iterable<string>): void;
+  release(owner: string): void;
+  destroyRoom(documentId: string, options?: { clearPersistence?: boolean }): Promise<void>;
+};
+
+type StoragePort = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+type SchedulerPort = {
+  queue(task: () => void): void;
+  setTimer(task: () => void, delayMs: number): unknown;
+  clearTimer(timer: unknown): void;
+  onOnline(task: () => void): () => void;
+};
+
+type ApiPort = {
+  resolveHome(projectId: string): Promise<UntitledHome | null>;
+  create(
+    entry: PendingUntitled & { home: UntitledHome },
+  ): Promise<CreateUntitledContextDocumentResult>;
+  serverDocumentExists(entry: PendingUntitled & { home: UntitledHome }): Promise<boolean>;
+  rename(
+    entry: PendingUntitled & { home: UntitledHome },
+    path: string,
+    name: string,
+  ): Promise<RenameContextEntryResult>;
+};
+
+export type UntitledReconcilerDeps = {
+  storage: StoragePort;
+  scheduler: SchedulerPort;
+  api: ApiPort;
+  sessions: SessionRegistryPort;
+  newDocumentId: () => string;
+};
+
 export function untitledHomeUri(
   _projectId: string,
   activeWorkId: string | null,
@@ -43,21 +106,39 @@ export function untitledHomeUri(
   return activeWorkId ? { scheme: "scratch", workId: activeWorkId } : null;
 }
 
-class UntitledReconciler {
+export class UntitledReconciler {
   private readonly entries = new Map<string, PendingUntitled>();
   private readonly candidates = new Map<string, Candidate>();
   private readonly renameIntents = new Map<string, RenameIntent>();
   private running = false;
   private scheduled = false;
+  private started = false;
   private retryMs = RETRY_BASE_MS;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: unknown = null;
+  private removeOnlineListener: (() => void) | null = null;
   private readonly listeners = new Set<() => void>();
 
-  constructor() {
-    if (typeof window === "undefined") return;
-    for (const entry of readRegistry()) this.entries.set(entry.documentId, entry);
-    window.addEventListener("online", this.schedule);
+  constructor(private readonly deps: UntitledReconcilerDeps) {}
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    for (const entry of readRegistry(this.deps.storage)) {
+      if (!this.entries.has(entry.documentId)) this.entries.set(entry.documentId, entry);
+    }
+    this.removeOnlineListener = this.deps.scheduler.onOnline(this.schedule);
+    this.emit();
     this.schedule();
+  }
+
+  dispose(): void {
+    if (!this.started) return;
+    this.started = false;
+    this.removeOnlineListener?.();
+    this.removeOnlineListener = null;
+    if (this.retryTimer !== null) this.deps.scheduler.clearTimer(this.retryTimer);
+    this.retryTimer = null;
+    this.scheduled = false;
   }
 
   registerCandidate(documentId: string, candidate: Candidate): () => void {
@@ -93,20 +174,21 @@ class UntitledReconciler {
   }
 
   readonly schedule = (): void => {
-    if (this.entries.size === 0 || this.scheduled) return;
+    if (!this.started || this.entries.size === 0 || this.scheduled) return;
     this.scheduled = true;
-    queueMicrotask(() => {
+    this.deps.scheduler.queue(() => {
       this.scheduled = false;
       void this.sweep();
     });
   };
 
   private async sweep(): Promise<void> {
-    if (this.running || this.entries.size === 0) return;
+    if (!this.started || this.running || this.entries.size === 0) return;
     this.running = true;
     let failed = false;
     try {
       for (const entry of [...this.entries.values()]) {
+        if (!this.started) break;
         try {
           await this.reconcile(entry);
         } catch {
@@ -116,6 +198,7 @@ class UntitledReconciler {
     } finally {
       this.running = false;
     }
+    if (!this.started) return;
     if (failed && this.entries.size > 0) this.armRetry();
     else {
       this.retryMs = RETRY_BASE_MS;
@@ -124,86 +207,76 @@ class UntitledReconciler {
   }
 
   private async reconcile(entry: PendingUntitled): Promise<void> {
-    const registry = getDocumentSessionRegistry();
+    const home = entry.home ?? (await this.deps.api.resolveHome(entry.projectId));
+    if (!home) throw new Error("Untitled home is not available yet");
+    const resolvedEntry = entry.home
+      ? (entry as PendingUntitled & { home: UntitledHome })
+      : { ...entry, home };
+    if (!entry.home) {
+      this.entries.set(entry.documentId, resolvedEntry);
+      this.persist();
+    }
+
     const owner = `untitled-reconciler:${entry.documentId}`;
-    const session = registry.getDetached(entry.documentId);
-    registry.retain(owner, [entry.documentId]);
+    const session = this.deps.sessions.getDetached(entry.documentId);
+    this.deps.sessions.retain(owner, [entry.documentId]);
     try {
       await session.whenLocalPersistenceSynced();
-
-      if (untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName))) {
-        const rename = this.renameIntents.get(entry.documentId);
-        this.renameIntents.delete(entry.documentId);
-        rename?.reject(new Error("An empty untitled document is not materialized"));
-        this.entries.delete(entry.documentId);
-        this.persist();
-        this.emit();
-        await registry.destroyRoom(entry.documentId, { clearPersistence: true });
+      const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
+      if (empty && !(await this.deps.api.serverDocumentExists(resolvedEntry))) {
+        this.rejectRename(entry.documentId, "An empty untitled document is not materialized");
+        await this.drain(entry.documentId, true);
         return;
       }
 
-      const result = await createUntitledContextDocument(
-        entry.projectId,
-        entry.home.scheme,
-        {
-          documentId: entry.documentId,
-          ...(entry.home.folderPath ? { folderPath: entry.home.folderPath } : {}),
-        },
-        { workId: entry.home.workId },
-      );
+      const result = await this.deps.api.create(resolvedEntry);
       if (result.status === "conflict") {
-        await this.remint(entry, session);
+        await this.remint(resolvedEntry, session);
         return;
       }
       this.candidates.get(entry.documentId)?.onMaterialized(result);
+      await this.applyQueuedRename(resolvedEntry, result);
 
-      const rename = this.renameIntents.get(entry.documentId);
-      if (rename) {
-        try {
-          const renameResult = await renameContextEntry(
-            entry.projectId,
-            entry.home.scheme,
-            { path: result.path, newName: rename.name },
-            { workId: entry.home.workId },
-          );
-          if (renameResult.status === "conflict") {
-            throw new Error("A document with that name already exists");
-          }
-          const path = replaceBasename(result.path, rename.name);
-          this.candidates.get(entry.documentId)?.onRenamed(rename.name, path);
-          this.renameIntents.delete(entry.documentId);
-          rename.resolve();
-        } catch (error) {
-          this.renameIntents.delete(entry.documentId);
-          rename.reject(error);
-        }
-      }
-
-      const attached = registry.attachDetached(entry.documentId);
-      await attached.whenSynced();
-      if (attached.getSnapshot().status === "access-lost") {
-        this.entries.delete(entry.documentId);
-        this.persist();
-        this.emit();
-        await registry.destroyRoom(entry.documentId, { clearPersistence: true });
-        return;
-      }
-      if (attached.getSnapshot().status !== "synced")
-        throw new Error("Untitled document not synced");
-      this.entries.delete(entry.documentId);
-      this.persist();
-      this.emit();
+      const attached = this.deps.sessions.attachDetached(entry.documentId);
+      await attached.waitForDurableSync();
+      const snapshot = attached.getSnapshot();
+      if (snapshot.status !== "synced") throw syncFailure(snapshot);
+      await this.drain(entry.documentId, false);
     } finally {
-      registry.release(owner);
+      this.deps.sessions.release(owner);
     }
   }
 
-  private async remint(entry: PendingUntitled, session: DocumentSession): Promise<void> {
-    const replacementId = crypto.randomUUID();
-    const registry = getDocumentSessionRegistry();
-    const replacement = registry.getDetached(replacementId);
+  private async applyQueuedRename(
+    entry: PendingUntitled & { home: UntitledHome },
+    result: CreateUntitledContextDocumentResponse,
+  ): Promise<void> {
+    const rename = this.renameIntents.get(entry.documentId);
+    if (!rename) return;
+    try {
+      const renameResult = await this.deps.api.rename(entry, result.path, rename.name);
+      if (renameResult.status === "conflict") {
+        throw new Error("A document with that name already exists");
+      }
+      const path = replaceBasename(result.path, rename.name);
+      this.candidates.get(entry.documentId)?.onRenamed(rename.name, path);
+      this.renameIntents.delete(entry.documentId);
+      rename.resolve();
+    } catch (error) {
+      this.renameIntents.delete(entry.documentId);
+      rename.reject(error);
+    }
+  }
+
+  private async remint(
+    entry: PendingUntitled & { home: UntitledHome },
+    session: ReconcilerSession,
+  ): Promise<void> {
+    const replacementId = this.deps.newDocumentId();
+    const replacement = this.deps.sessions.getDetached(replacementId);
     await replacement.whenLocalPersistenceSynced();
     Y.applyUpdate(replacement.document, Y.encodeStateAsUpdate(session.document));
+    await replacement.flushLocalPersistence();
 
     const candidate = this.candidates.get(entry.documentId);
     const rename = this.renameIntents.get(entry.documentId);
@@ -216,19 +289,30 @@ class UntitledReconciler {
     this.persist();
     this.emit();
     candidate?.onReminted(replacementId);
-    // The tab/session retainers release the old room after the identity swap.
-    // Ordinary teardown preserves its IndexedDB copy; only confirmed empty
-    // documents are allowed to clear persistence.
+  }
+
+  private async drain(documentId: string, clearPersistence: boolean): Promise<void> {
+    this.entries.delete(documentId);
+    this.persist();
+    this.emit();
+    if (clearPersistence) {
+      await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
+    }
+  }
+
+  private rejectRename(documentId: string, message: string): void {
+    const rename = this.renameIntents.get(documentId);
+    this.renameIntents.delete(documentId);
+    rename?.reject(new Error(message));
   }
 
   private persist(): void {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...this.entries.values()]));
+    this.deps.storage.setItem(STORAGE_KEY, JSON.stringify([...this.entries.values()]));
   }
 
   private armRetry(): void {
-    if (this.retryTimer) return;
-    this.retryTimer = setTimeout(() => {
+    if (this.retryTimer !== null) return;
+    this.retryTimer = this.deps.scheduler.setTimer(() => {
       this.retryTimer = null;
       this.schedule();
     }, this.retryMs);
@@ -240,9 +324,16 @@ class UntitledReconciler {
   }
 }
 
-function readRegistry(): PendingUntitled[] {
+function syncFailure(snapshot: DocumentSessionSnapshot): Error {
+  if (snapshot.status === "access-lost") {
+    return new Error("Untitled document access is temporarily unavailable");
+  }
+  return new Error("Untitled document not durably synced");
+}
+
+function readRegistry(storage: StoragePort): PendingUntitled[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    const parsed: unknown = JSON.parse(storage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isPendingUntitled);
   } catch {
@@ -256,9 +347,10 @@ function isPendingUntitled(value: unknown): value is PendingUntitled {
   return (
     typeof entry.documentId === "string" &&
     typeof entry.projectId === "string" &&
-    entry.home?.scheme === "scratch" &&
-    typeof entry.home.workId === "string" &&
-    (entry.home.folderPath === undefined || typeof entry.home.folderPath === "string")
+    (entry.home === undefined ||
+      (entry.home.scheme === "scratch" &&
+        typeof entry.home.workId === "string" &&
+        (entry.home.folderPath === undefined || typeof entry.home.folderPath === "string")))
   );
 }
 
@@ -273,12 +365,7 @@ function nodeHasContent(value: unknown): boolean {
     return value.toArray().some(nodeHasContent);
   }
   if (!value || typeof value !== "object") return typeof value === "string" && value.length > 0;
-  const node = value as {
-    type?: string;
-    text?: string;
-    attrs?: Record<string, unknown>;
-    content?: unknown[];
-  };
+  const node = value as { type?: string; text?: string; content?: unknown[] };
   if (node.text?.length) return true;
   if (node.type && !["doc", "paragraph", "heading"].includes(node.type)) return true;
   return (node.content ?? []).some(nodeHasContent);
@@ -288,10 +375,71 @@ function replaceBasename(path: string, name: string): string {
   return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
 }
 
+function treeContainsDocument(
+  nodes: readonly ProjectContextTreeNode[],
+  documentId: string,
+): boolean {
+  return nodes.some((node) =>
+    node.kind === "dir"
+      ? treeContainsDocument(node.children, documentId)
+      : node.documentId === documentId,
+  );
+}
+
+function browserDeps(): UntitledReconcilerDeps {
+  const registry = getDocumentSessionRegistry();
+  return {
+    storage: localStorage,
+    scheduler: {
+      queue: queueMicrotask,
+      setTimer: (task, delayMs) => setTimeout(task, delayMs),
+      clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+      onOnline: (task) => {
+        window.addEventListener("online", task);
+        return () => window.removeEventListener("online", task);
+      },
+    },
+    sessions: registry,
+    newDocumentId: () => crypto.randomUUID(),
+    api: {
+      async resolveHome(projectId) {
+        const works = await listProjectWorks(projectId);
+        return untitledHomeUri(projectId, works.defaultWorkId);
+      },
+      create(entry) {
+        return createUntitledContextDocument(
+          entry.projectId,
+          entry.home.scheme,
+          {
+            documentId: entry.documentId,
+            ...(entry.home.folderPath ? { folderPath: entry.home.folderPath } : {}),
+          },
+          { workId: entry.home.workId },
+        );
+      },
+      async serverDocumentExists(entry) {
+        const response = await getProjectContextTree(entry.projectId, entry.home.scheme, {
+          workId: entry.home.workId,
+        });
+        return treeContainsDocument(response.tree.children, entry.documentId);
+      },
+      rename(entry, path, name) {
+        return renameContextEntry(
+          entry.projectId,
+          entry.home.scheme,
+          { path, newName: name },
+          { workId: entry.home.workId },
+        );
+      },
+    },
+  };
+}
+
 let shared: UntitledReconciler | null = null;
 
 export function getUntitledReconciler(): UntitledReconciler {
-  shared ??= new UntitledReconciler();
+  if (!shared && typeof window !== "undefined") shared = new UntitledReconciler(browserDeps());
+  if (!shared) throw new Error("Untitled reconciler is browser-only");
   return shared;
 }
 

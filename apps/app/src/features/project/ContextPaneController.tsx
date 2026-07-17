@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useDefaultWorkId } from "@/client/query/useWorks";
-import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
+import { useContextTabs, useContextTabsActions } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
@@ -29,12 +29,10 @@ import {
 } from "./context/context-tree";
 import {
   appendPendingUntitled,
-  getUntitledReconciler,
   isUntitledPending,
-  registerUntitledCandidate,
   untitledDocumentIsEmpty,
-  untitledHomeUri,
 } from "./context/untitled-reconciler";
+import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
@@ -68,19 +66,9 @@ export function ContextViewerSurfaceController({
   const defaultWorkId = useDefaultWorkId(projectId);
   const routeWorkId = workId ?? defaultWorkId;
 
-  useEffect(() => {
-    getUntitledReconciler().schedule();
-  }, []);
   const { tabs, activeTabId } = useContextTabs(projectId);
-  const {
-    openTab,
-    closeTab,
-    remintNewTab,
-    materializeNewTab,
-    updateTrackedTab,
-    pruneWorkScopedTabs,
-    selectTab,
-  } = useContextTabsActions();
+  const { openTab, closeTab, updateTrackedTab, pruneWorkScopedTabs, selectTab } =
+    useContextTabsActions();
   const serverTabs = tabs.filter((tab) => tab.kind !== "new");
   const activeTab = findContextTabForRoute(
     tabs,
@@ -379,71 +367,12 @@ export function ContextViewerSurfaceController({
 
   const handleUntitledBecameNonEmpty = useCallback(
     (documentId: string) => {
-      const home = untitledHomeUri(projectId, defaultWorkId);
-      if (!home) return false;
-      appendPendingUntitled({ documentId, projectId, home });
-      return true;
+      appendPendingUntitled({ documentId, projectId });
     },
-    [defaultWorkId, projectId],
+    [projectId],
   );
 
-  useEffect(() => {
-    const cleanups = tabs
-      .filter(
-        (tab) =>
-          tab.kind === "new" ||
-          (tab.kind === "tracked" && tab.provisionalName && isUntitledPending(tab.documentId)),
-      )
-      .map((tab) =>
-        registerUntitledCandidate(tab.documentId, {
-          onReminted: (documentId) => remintNewTab(projectId, tab.documentId, documentId),
-          onMaterialized: (result) => {
-            const stillOpen = useContextTabsStore
-              .getState()
-              .byProject[projectId]?.tabs.some(
-                (candidate) => candidate.documentId === tab.documentId,
-              );
-            if (!stillOpen) return;
-            materializeNewTab(projectId, tab.documentId, {
-              kind: "tracked",
-              documentId: tab.documentId,
-              scheme: result.scheme,
-              path: result.path,
-              name: result.name,
-              workId: defaultWorkId ?? undefined,
-              editable: true,
-              filetype: "markdown",
-              schemaType: "document",
-              provisionalName: true,
-            });
-            if (
-              useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
-            ) {
-              onSelectContextPath(result.path, result.scheme);
-            }
-          },
-          onRenamed: (name, path) => {
-            updateTrackedTab(projectId, tab.documentId, { name, path, provisionalName: false });
-            if (
-              useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
-            ) {
-              onSelectContextPath(path, "scratch");
-            }
-          },
-        }),
-      );
-    return () => {
-      for (const cleanup of cleanups) cleanup();
-    };
-  }, [
-    defaultWorkId,
-    materializeNewTab,
-    onSelectContextPath,
-    projectId,
-    remintNewTab,
-    tabs,
-    updateTrackedTab,
-  ]);
+  useUntitledTabBridge({ projectId, tabs, defaultWorkId, onSelectContextPath });
 
   return (
     <ContextViewer
@@ -466,7 +395,6 @@ export function ContextViewerSurfaceController({
         onSelectContextPath("", activeContextScheme ?? undefined);
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
-      untitledHomeReady={defaultWorkId !== null}
       onUntitledRenamed={(documentId, name, path) => {
         updateTrackedTab(projectId, documentId, { name, path, provisionalName: false });
         onSelectContextPath(path, "scratch");
