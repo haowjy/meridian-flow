@@ -13,6 +13,30 @@
 import { readFile } from "node:fs/promises";
 import { summarizeUpdate } from "../src/index.js";
 
+const usage = `Usage: pnpm tsx packages/yjs-inspect/examples/decode-journal.ts [file]
+
+Read update rows from a file, or from stdin when no file is given.
+Rows may be bare hex, hex:<hex>, base64:<base64>, sequence<TAB>hex,
+or psql expanded records containing update_hex | <hex>.`;
+
+function inputFileFromArgs(): string | undefined {
+  const args = process.argv.slice(2);
+  const unknownFlag = args.find(
+    (argument) => argument.startsWith("-") && argument !== "--help" && argument !== "-h",
+  );
+  if (unknownFlag) {
+    console.error(`Unknown option: ${unknownFlag}\n\n${usage}`);
+    process.exit(1);
+  }
+
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(usage);
+    process.exit(0);
+  }
+
+  return args[0];
+}
+
 function decodeRow(line: string): Uint8Array | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -116,7 +140,7 @@ function decodeRows(input: string): JournalRow[] {
   return rows;
 }
 
-const file = process.argv[2];
+const file = inputFileFromArgs();
 const input = file
   ? await readFile(file, "utf8")
   : await new Promise<string>((resolve, reject) => {

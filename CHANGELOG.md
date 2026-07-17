@@ -15,7 +15,7 @@
   empty state instead of a boxed card; rail↔chrome corner joins the shared
   radius.
 
-- `@meridian/yjs-inspect`: inspect complete Hocuspocus frames and summarize Yjs updates with merge-valid struct/delete spans and canonical correlation keys; invalid updates return safe identifying metadata, and the journal decoder rejects incomplete expanded records.
+- `@meridian/yjs-inspect`: inspect complete Hocuspocus frames and summarize Yjs updates with merge-valid struct/delete spans and canonical correlation keys; invalid updates return safe identifying metadata, and the journal decoder rejects incomplete expanded records and handles CLI flags explicitly.
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);
