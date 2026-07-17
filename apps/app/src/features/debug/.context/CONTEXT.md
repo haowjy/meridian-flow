@@ -142,7 +142,9 @@ downloads stay in the child window rather than leaking back to the opener.
 Its plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
 `EventRecord` ring and exposes the producer boundary `appendTraceEvent` /
 `noteTapError`; producers append the shared contracts envelope, never a
-viewer-specific record. The store drops the oldest record at capacity, counts
+viewer-specific record. In debug-enabled builds, `window.__meridianTrace`
+provides agents with metadata-only queries, stats, clearing, and next-event waits
+without coupling automation to the viewer DOM. The store drops the oldest record at capacity, counts
 ring drops and tap errors, and coalesces subscriber notification per JavaScript
 turn without coalescing captured records. The viewer provides composable
 stream, message-class, direction, and correlation filters; frozen live-tail
