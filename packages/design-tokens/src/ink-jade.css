@@ -169,6 +169,19 @@
   --color-syntax-builtin: oklch(0.46 0.09 195); /* cool jade — built-ins, types */
   --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
 
+  /* Collaboration carets — Ink & Jade hues pushed slightly brighter and
+     more chromatic than syntax ink so tiny marks remain distinguishable.
+     Hues stay clear of the paper/writer gold band (~84–100) except deep
+     gold, which relies on its dark, saturated ink to read as a mark. */
+  --color-collab-cursor-1: oklch(0.52 0.13 165); /* jade */
+  --color-collab-cursor-2: oklch(0.56 0.18 29); /* cinnabar */
+  --color-collab-cursor-3: oklch(0.58 0.16 45); /* terracotta */
+  --color-collab-cursor-4: oklch(0.58 0.13 84); /* deep gold */
+  --color-collab-cursor-5: oklch(0.55 0.12 195); /* cool jade */
+  --color-collab-cursor-6: oklch(0.55 0.12 120); /* moss */
+  --color-collab-cursor-7: oklch(0.54 0.09 250); /* slate blue */
+  --color-collab-cursor-8: oklch(0.52 0.1 310); /* plum ink */
+
   --color-status-streaming: var(--color-primary);
   --color-status-streaming-ring: color-mix(in oklab, var(--color-status-streaming) 15%, transparent);
   --color-status-done-bg: oklch(0.92 0.035 175);
@@ -176,14 +189,15 @@
   --color-status-live-bg: var(--ink-jade-recess);
   --color-status-live-foreground: var(--color-muted-foreground);
   --color-status-live-dot: var(--color-muted-foreground);
-  /* Warning / caution — warm amber, held distinct from cinnabar/destructive
-     (error) and gold (writer). Used for collision/overwrite notices. `bg` is a
-     soft field fill, `foreground` clears ~7:1 on it, `status-warning` is the
-     saturated dot/indicator. */
-  --color-warning-bg: oklch(0.965 0.03 85);
-  --color-warning-border: oklch(0.9 0.06 84);
-  --color-warning-foreground: oklch(0.42 0.08 70);
-  --color-status-warning: oklch(0.72 0.15 75);
+  /* Warning / caution — destructive's anatomy at orange: pale field,
+     pigmented hairline, readable ink (>6:1 on the field), vivid mark. The
+     45–84 hue band keeps caution apart from cinnabar (error) and writer-gold.
+     Contract: warning ink never stands naked — `foreground` only ever sits
+     on `bg`, never as bare warning-colored text on paper. */
+  --color-warning-bg: oklch(0.955 0.022 84);
+  --color-warning-border: oklch(0.885 0.03 80);
+  --color-warning-foreground: oklch(0.45 0.11 55);
+  --color-status-warning: oklch(0.66 0.2 48);
   /* Deep jade — the www CTA hover ground (one step deeper than primary). */
   --color-mark-to: oklch(0.4 0.07 176);
   --color-prose-foreground: oklch(0.3 0.006 100);
