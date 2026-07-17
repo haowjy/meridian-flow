@@ -31,6 +31,12 @@ export type CrossWorkProbeObservation = {
     conflictedBlockCount: number;
     conflictEcho: unknown;
   };
+  rereview: {
+    initialStatus: string | null;
+    selectedOperationIds: string[];
+    applyStatus: string | null;
+    manuscriptAfterApply: string | null;
+  };
   manuscript: {
     beforeAApply: string;
     afterAApply: string;
@@ -240,14 +246,61 @@ export async function runCrossWorkProbe(
   const beforeBApply = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
     serializeMarkdown(fixture, doc),
   );
-  const bResult = await realBranchPush.pushToLive({
-    branchId: branchB.branchId,
-    pushedByUserId: USER_ID as never,
-    ...(probeCase === "auto" ? { overlapPolicy: "apply_and_trail" as const } : {}),
-  });
+  const reviewedPreview =
+    probeCase === "manual"
+      ? await collab.draftReview.preview({
+          projectId: PROJECT_ID,
+          workId: WORK_B_ID,
+          documentId: ALPHA_ID,
+        })
+      : null;
+  const bResult =
+    reviewedPreview?.status === "active"
+      ? await collab.draftReview.accept({
+          projectId: PROJECT_ID,
+          workId: WORK_B_ID,
+          documentId: ALPHA_ID,
+          branchId: branchB.branchId,
+          userId: USER_ID as never,
+          draftRevisionToken: reviewedPreview.draftRevisionToken,
+          operationIds: reviewedPreview.operations.map((operation) => operation.operationId),
+        })
+      : await realBranchPush.pushToLive({
+          branchId: branchB.branchId,
+          pushedByUserId: USER_ID as never,
+          ...(probeCase === "auto" ? { overlapPolicy: "apply_and_trail" as const } : {}),
+        });
   const afterBApply = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
     serializeMarkdown(fixture, doc),
   );
+  let rereviewSelectedOperationIds: string[] = [];
+  let rereviewApplyStatus: string | null = null;
+  let manuscriptAfterRereview: string | null = null;
+  if (probeCase === "manual" && bResult.status === "concurrent_conflict") {
+    const refreshedPreview = await collab.draftReview.preview({
+      projectId: PROJECT_ID,
+      workId: WORK_B_ID,
+      documentId: ALPHA_ID,
+    });
+    if (refreshedPreview.status === "active") {
+      rereviewSelectedOperationIds = refreshedPreview.operations
+        .filter((operation) => JSON.stringify(operation).includes("Work B echo probe."))
+        .map((operation) => operation.operationId);
+      const rereviewResult = await collab.draftReview.accept({
+        projectId: PROJECT_ID,
+        workId: WORK_B_ID,
+        documentId: ALPHA_ID,
+        branchId: branchB.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: refreshedPreview.draftRevisionToken,
+        operationIds: rereviewSelectedOperationIds,
+      });
+      rereviewApplyStatus = rereviewResult.status;
+      manuscriptAfterRereview = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
+        serializeMarkdown(fixture, doc),
+      );
+    }
+  }
   await trailDelivery.drain();
 
   const bTrailIds = new Set(
@@ -311,7 +364,10 @@ export async function runCrossWorkProbe(
       );
     }
   }
-  const bConflict = bResult.status === "push_concurrent_conflict" ? bResult : undefined;
+  const bConflict =
+    bResult.status === "push_concurrent_conflict" || bResult.status === "concurrent_conflict"
+      ? bResult
+      : undefined;
 
   return {
     case: probeCase,
@@ -324,6 +380,12 @@ export async function runCrossWorkProbe(
       ...(bConflict ? { reason: bConflict.reason } : {}),
       conflictedBlockCount: bConflict?.conflictedBlocks.length ?? 0,
       conflictEcho: serializable("conflictEcho" in bResult ? bResult.conflictEcho : null),
+    },
+    rereview: {
+      initialStatus: probeCase === "manual" ? bResult.status : null,
+      selectedOperationIds: rereviewSelectedOperationIds,
+      applyStatus: rereviewApplyStatus,
+      manuscriptAfterApply: manuscriptAfterRereview,
     },
     manuscript: { beforeAApply, afterAApply, beforeBApply, afterBApply },
     approvedTextSurvived: afterBApply.includes("Writer-approved Work A text."),
