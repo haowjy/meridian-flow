@@ -161,6 +161,8 @@ export interface ResponseCommitterTransitionDetail {
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
+  /** Durable peer state captured before the host pulls concurrent upstream changes. */
+  attributionBaseline?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
   /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */

@@ -35,7 +35,7 @@ import type {
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import { status } from "./response-format.js";
+import { formatApplyRejection } from "./response-format.js";
 import type { InteractionContext, MutationActor, WriteCommand } from "./types.js";
 
 export interface MutationCommitRuntime {
@@ -54,6 +54,7 @@ export interface MutationEchoInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   afterSnapshot?: readonly BlockSnapshot[];
+  interactionContext?: InteractionContext;
 }
 
 export interface JournaledUpdate {
@@ -81,6 +82,7 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 
 export interface ImmediateCommitInput extends LiveProjectionInput {
   runtime: MutationCommitRuntime;
+  before?: readonly BlockSnapshot[];
 }
 
 export interface LocalMutationSyncInput {
@@ -127,6 +129,7 @@ export type SafetyGateResult =
       verdict: "reject";
       reason: "observation_required" | "human_conflict";
       conflictedBlockHashes: string[];
+      concurrent: CapturedConcurrentDetection;
     };
 
 export interface DestructiveSweepReport {
@@ -155,6 +158,7 @@ type LiveCommitResult =
   | {
       ok: true;
       concurrentUpdates: ConcurrentUpdate[];
+      summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind;
       observationCut?: AtomicObservationCut;
       lateSweep?: DestructiveSweepReport;
@@ -266,7 +270,7 @@ export function createMutationCommit(deps: {
       input.docId,
       async (liveDoc) => {
         const gate = await preflightSafetyGate(liveDoc, input);
-        if (gate.verdict === "reject") return safetyGateRejection(input.docId, gate);
+        if (gate.verdict === "reject") return rejectionWithEcho(input, gate);
         const committed = await commitJournalBatch([
           {
             docId: input.docId,
@@ -313,8 +317,16 @@ export function createMutationCommit(deps: {
       agentTouchedHashes: input.touchedHashes,
       agentDeletedHashes: input.deletedHashes,
     });
+    const pulledEcho = input.interactionContext?.attributionBaseline
+      ? computeEcho({
+          before: snapshotFromUpdate(input.interactionContext.attributionBaseline),
+          after: input.before,
+          agentTouchedHashes: input.touchedHashes,
+          agentDeletedHashes: input.deletedHashes,
+        })
+      : [];
     return {
-      echo,
+      echo: [...pulledEcho, ...echo],
       concurrentEdits: concurrent.info,
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
@@ -372,7 +384,7 @@ export function createMutationCommit(deps: {
           ...input,
           ownTurnId: input.turnId,
         });
-        if (gate.verdict === "reject") return safetyGateRejection(input.docId, gate);
+        if (gate.verdict === "reject") return rejectionWithEcho(input, gate);
         const journalCommit = await commitJournalBatch(journalEntries(input));
         journalCommitKind = journalCommit.journalCommitKind;
         captured = gate.concurrent;
@@ -394,6 +406,18 @@ export function createMutationCommit(deps: {
     return {
       ok: true,
       concurrentUpdates: [...(captured?.updates ?? [])],
+      summary: summarizeMutationEcho(
+        {
+          runtime: input.runtime,
+          before:
+            input.before ??
+            snapshotFromUpdate(input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc)),
+          touchedHashes: input.touchedHashes,
+          deletedHashes: input.deletedHashes,
+          interactionContext: input.interactionContext,
+        },
+        captured?.detection,
+      ),
       journalCommitKind: journalCommitKind ?? "durable",
       observationCut: requiredCut(observationCut),
       ...(lateSweep ? { lateSweep } : {}),
@@ -426,6 +450,7 @@ export function createMutationCommit(deps: {
         verdict: "reject",
         reason: "observation_required",
         conflictedBlockHashes: destructiveHashes,
+        concurrent,
       };
     }
     return { verdict: "pass", concurrent };
@@ -507,6 +532,37 @@ export function createMutationCommit(deps: {
     return snapshotBlocks(toDocHandle(doc), model, codec);
   }
 
+  function rejectionWithEcho(
+    input: SafetyGateInput,
+    gate: Extract<SafetyGateResult, { verdict: "reject" }>,
+  ): InternalWriteResult {
+    const summary = summarizeMutationEcho(
+      {
+        runtime: input.runtime,
+        before: snapshotFromUpdate(
+          input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc),
+        ),
+        touchedHashes: input.touchedHashes,
+        deletedHashes: input.deletedHashes,
+        afterSnapshot: snapshotFromUpdate(gate.concurrent.detectionSnapshot),
+      },
+      gate.concurrent.detection,
+    );
+    const message =
+      gate.reason === "human_conflict"
+        ? `Rejected: your edit would delete blocks the writer changed since your last read. Affected blocks: [${gate.conflictedBlockHashes.join(", ")}]. Replan from the concurrent echo below.`
+        : `This response has no sealed observation for ${input.docId}. Replan from the concurrent echo below, then read in a new response before another destructive change.`;
+    return formatApplyRejection({
+      status:
+        gate.reason === "human_conflict"
+          ? "destructive_write_rejected"
+          : "rejected_response_requires_reread",
+      message,
+      echo: summary.echo,
+      concurrentEdits: summary.concurrentEdits,
+    });
+  }
+
   function snapshotFromUpdate(update: Uint8Array): BlockSnapshot[] {
     const doc = docFromSnapshot(update);
     try {
@@ -540,7 +596,11 @@ export function createMutationCommit(deps: {
   ): Promise<CapturedConcurrentDetection> {
     const detectionDoc = previous
       ? docFromSnapshot(previous.detectionSnapshot)
-      : docFromSnapshot(input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc));
+      : docFromSnapshot(
+          input.interactionContext?.attributionBaseline ??
+            input.preOwnSnapshot ??
+            Y.encodeStateAsUpdate(input.runtime.doc),
+        );
     const baselineVector = previous?.liveStateVector ?? Y.encodeStateVector(detectionDoc);
     try {
       const updates = await concurrentUpdatesSince(
@@ -813,24 +873,4 @@ function emptyConcurrentDetection(): ConcurrentDetectionResult {
     baselineBlocks: [],
     lineageOrigins: [],
   };
-}
-
-function destructiveWriteRejection(conflictedBlockHashes: readonly string[]): InternalWriteResult {
-  return status(
-    "destructive_write_rejected",
-    `Rejected: your edit would delete blocks the writer changed since your last read. Affected blocks: [${conflictedBlockHashes.join(", ")}]. Re-read and replan.`,
-  );
-}
-
-function safetyGateRejection(
-  docId: string,
-  gate: Extract<SafetyGateResult, { verdict: "reject" }>,
-): InternalWriteResult {
-  if (gate.reason === "human_conflict") {
-    return destructiveWriteRejection(gate.conflictedBlockHashes);
-  }
-  return status(
-    "rejected_response_requires_reread",
-    `This response has no sealed observation for ${docId}. Read the document in a new response before making a destructive change.`,
-  );
 }

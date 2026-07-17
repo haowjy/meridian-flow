@@ -23,6 +23,33 @@ export interface ApplySuccessResponseInput {
   lateSweep?: DestructiveSweepReport;
 }
 
+export interface ApplyRejectionResponseInput {
+  status: "destructive_write_rejected" | "rejected_response_requires_reread";
+  message: string;
+  echo: ApplyEchoHunk[];
+  concurrentEdits?: ConcurrentEditInfo;
+}
+
+/** Formats a refused mutation with the same current-state echo contract as success. */
+export function formatApplyRejection(input: ApplyRejectionResponseInput): InternalWriteResult {
+  const metaLines = [`status: ${input.status}`, "", input.message];
+  const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+  if (input.concurrentEdits) {
+    metaLines.push(
+      ...formatConcurrent(input.concurrentEdits, {
+        excludeHashes: blockHashes(echoLines),
+      }),
+    );
+  }
+  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
+  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+  return {
+    status: input.status,
+    text: content.map((block) => block.text).join("\n\n"),
+    content,
+  };
+}
+
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
   const metaLines = ["status: success"];
   if (input.writeId) metaLines.push(`write id: ${input.writeId}`);
@@ -126,16 +153,18 @@ export function formatConcurrent(
   info: ConcurrentEditInfo,
   options: { excludeHashes?: ReadonlySet<string> } = {},
 ): string[] {
-  const lines = ["concurrent edits:"];
+  const runs: string[] = [];
   for (const run of info.runs) {
-    lines.push(`  ${run.origin}:`);
+    const entries: string[] = [];
     for (const block of run.blocks) {
-      if (!options.excludeHashes?.has(blockHash(block))) lines.push(`    ${block}`);
+      if (!options.excludeHashes?.has(blockHash(block))) entries.push(`    ${block}`);
     }
     for (const tombstone of run.tombstones) {
-      lines.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
+      entries.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
     }
+    if (entries.length > 0) runs.push(`  ${run.origin}:`, ...entries);
   }
+  const lines = runs.length > 0 ? ["concurrent edits:", ...runs] : [];
   if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
   return lines;
 }

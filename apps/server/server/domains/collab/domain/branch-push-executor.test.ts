@@ -3980,6 +3980,7 @@ class ThreadPeerPushHarness {
       pullThreadPeer: async () => ({
         branchGeneration: this.work.generation,
         afterJournalId: 0,
+        attributionBaseline: this.thread.state,
       }),
     });
   }
