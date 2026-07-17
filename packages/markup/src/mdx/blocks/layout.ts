@@ -8,8 +8,8 @@ import {
   isMdxJsxFlowElement,
   jsxAttribute,
   type MdastJsxFlow,
-  parseBlockAst,
   parseComponentProps,
+  parseRecognizedBlockAst,
   stringifyBlock,
 } from "../../helpers.js";
 import { getRuntime } from "../../runtime.js";
@@ -35,7 +35,9 @@ export function createLayoutCodec(): BlockCodec<MdastJsxFlow> {
       const align = parseAlign(parsed.props.align);
       if (parsed.props.align !== undefined && align === null) return invalidJsxFallback(ast, ctx);
 
-      const child = parseBlockAst(ast.children[0], ctx);
+      const childAst = ast.children[0];
+      if (isMdxJsxFlowElement(childAst)) return invalidJsxFallback(ast, ctx);
+      const child = parseRecognizedBlockAst(childAst, ctx, new Set(["layout"]));
       if (!child || !isAlignable(child)) return invalidJsxFallback(ast, ctx);
 
       const widthsValue = parsed.props.widths;
@@ -136,6 +138,7 @@ function applyLayout(
 }
 
 function widthsFromFirstRow(table: PMNode): string | null {
+  validateColwidths(table);
   const firstRow = table.firstChild;
   if (!firstRow) return null;
   const slots: string[] = [];
@@ -148,4 +151,21 @@ function widthsFromFirstRow(table: PMNode): string | null {
     hasWidth ||= width !== null;
   });
   return hasWidth ? slots.join(",") : null;
+}
+
+function validateColwidths(table: PMNode): void {
+  table.forEach((row) => {
+    row.forEach((cell) => {
+      const colwidth = cell.attrs.colwidth;
+      if (colwidth === null || colwidth === undefined) return;
+      if (
+        !Array.isArray(colwidth) ||
+        colwidth.length !== 1 ||
+        !Number.isSafeInteger(colwidth[0]) ||
+        colwidth[0] <= 0
+      ) {
+        throw new Error("pm->mdast: table cell colwidth must be null or one positive integer");
+      }
+    });
+  });
 }

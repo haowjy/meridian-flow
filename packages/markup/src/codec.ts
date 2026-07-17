@@ -109,9 +109,10 @@ function buildMarkupCodec(
     markMap,
     parseMarkdown,
     stringifyMarkdown,
+    serializeBlock: serializeWithHooks,
   });
 
-  const serializeOne = (block: PMNode, ctx: SerializeContext): string => {
+  const serializeWithHooks = (block: PMNode, ctx: SerializeContext): string => {
     const codec = blockMap.get(block.type.name);
     if (!codec) throw new Error(`pm->mdast: unsupported block node "${block.type.name}"`);
     const ordinary = codec.serialize(block, ctx);
@@ -119,8 +120,11 @@ function buildMarkupCodec(
       (current, hook) => hook(block, current, ctx),
       ordinary,
     );
-    return ensureTrailingNewline(serialized);
+    return serialized;
   };
+
+  const serializeOne = (block: PMNode, ctx: SerializeContext): string =>
+    ensureTrailingNewline(serializeWithHooks(block, ctx));
 
   const serializeBody = (block: PMNode, ctx: SerializeContext): string => {
     const body = trimOneTrailingNewline(serializeOne(block, ctx));

@@ -55,11 +55,7 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
   const runtime = getRuntime(ctx);
   const out: MdastBlock[] = [];
   node.forEach((child) => {
-    const codec = runtime.blockMap.get(child.type.name);
-    if (!codec) {
-      throw new Error(`pm->mdast: unsupported block node "${child.type.name}"`);
-    }
-    const serialized = codec.serialize(child, ctx);
+    const serialized = runtime.serializeBlock(child, ctx);
     out.push(...demoteAutolinks(runtime.parseMarkdown(serialized)).children);
   });
   return out;
@@ -79,6 +75,21 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
     if (parsed) return parsed;
   }
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
+}
+
+/** Parse only through an explicitly registered codec, without raw-text recovery. */
+export function parseRecognizedBlockAst(
+  ast: unknown,
+  ctx: ParseContext,
+  excludedCodecNames: ReadonlySet<string> = new Set(),
+): PMNode | null {
+  const runtime = getRuntime(ctx);
+  for (const codec of runtime.blocks) {
+    if (excludedCodecNames.has(codec.name)) continue;
+    const parsed = codec.parse(ast, ctx);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): MdastInline[] {

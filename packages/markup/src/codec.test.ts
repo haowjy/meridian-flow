@@ -397,6 +397,37 @@ describe("mdx codec round-trip corpus", () => {
     }
   });
 
+  it("round-trips styled blocks through nested block serializers", () => {
+    const originals = [
+      schema.node("blockquote", null, [
+        schema.node("paragraph", { align: "right" }, [t("inside quote")]),
+      ]),
+      schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [
+          schema.node("paragraph", { align: "center" }, [t("inside list")]),
+        ]),
+      ]),
+    ];
+
+    for (const original of originals) {
+      const serialized = codec.serializeBlock(original);
+      expect(serialized).toContain("Layout align=");
+      expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
+    }
+  });
+
+  it("rejects nested Layout and unknown JSX children as one invalid wrapper", () => {
+    for (const input of [
+      '<Layout align="center">\n  <Layout align="right">\n    prose\n  </Layout>\n</Layout>',
+      '<Layout align="center">\n  <Unknown />\n</Layout>',
+    ]) {
+      const invalid = firstParsedBlock(codec, input);
+      expect(invalid.type.name === "paragraph" || invalid.type.name === "code_block").toBe(true);
+      expect(invalid.textContent).toContain('<Layout align="center">');
+      expect(invalid.attrs.align ?? null).toBeNull();
+    }
+  });
+
   it("validates widths and normalizes them onto every cell in each column", () => {
     const input =
       '<Layout widths="120,,80">\n  | A | B | C |\n  | - | - | - |\n  | 1 | 2 | 3 |\n</Layout>';
@@ -429,6 +460,26 @@ describe("mdx codec round-trip corpus", () => {
     const changedTable = table.type.create(table.attrs, [changedRow, table.child(1)]);
     expect(() => codec.serializeBlock(changedTable)).toThrow(
       "table cell spans are not representable",
+    );
+
+    const zeroSpan = firstCell.type.create({ ...firstCell.attrs, colspan: 0 }, firstCell.content);
+    const zeroRow = firstRow.type.create(firstRow.attrs, [zeroSpan, firstRow.child(1)]);
+    const zeroTable = table.type.create(table.attrs, [zeroRow, table.child(1)]);
+    expect(() => codec.serializeBlock(zeroTable)).toThrow("table cell spans are not representable");
+  });
+
+  it("throws rather than silently dropping malformed column widths", () => {
+    const table = firstParsedBlock(codec, "| A |\n| - |\n| 1 |");
+    const firstRow = table.child(0);
+    const firstCell = firstRow.child(0);
+    const malformedCell = firstCell.type.create(
+      { ...firstCell.attrs, colwidth: [0] },
+      firstCell.content,
+    );
+    const malformedRow = firstRow.type.create(firstRow.attrs, [malformedCell]);
+    const malformedTable = table.type.create(table.attrs, [malformedRow, table.child(1)]);
+    expect(() => codec.serializeBlock(malformedTable)).toThrow(
+      "table cell colwidth must be null or one positive integer",
     );
   });
 

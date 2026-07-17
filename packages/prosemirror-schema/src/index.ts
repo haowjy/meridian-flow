@@ -197,7 +197,7 @@ const customMarks = {
  * the old version. Lives here because this package owns the schema shape the
  * version tracks — client and server must import the same value.
  */
-export const COLLAB_SCHEMA_VERSION = 5;
+export const COLLAB_SCHEMA_VERSION = 4;
 
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
 
