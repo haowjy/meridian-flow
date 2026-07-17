@@ -74,6 +74,7 @@ export type { AiWriteMode, Work };
 
 export type ListWorksResponse = {
   works: Work[];
+  defaultWorkId: Work["id"];
 };
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = [

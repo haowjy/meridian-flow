@@ -243,8 +243,11 @@ export function createWorkContextDocumentStore(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
+  membershipObserver?: ContextDocumentMembershipObserver,
 ): ContextDocumentStore {
-  return new SourceResolvedContextDocumentStore(db, () =>
-    ensureWorkContextSource(db, workId, scheme),
+  return new SourceResolvedContextDocumentStore(
+    db,
+    () => ensureWorkContextSource(db, workId, scheme),
+    membershipObserver,
   );
 }

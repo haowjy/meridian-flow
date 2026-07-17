@@ -1,4 +1,5 @@
 /** Route seam coverage for create-with-content followed by the public read projection. */
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -36,6 +37,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { handleContextReadRequest } = await import(
       "../../../../../../lib/context-read-route.js"
     );
+    const { createDrizzleDocumentAccess } = await import(
+      "../../../../../../lib/document-access.js"
+    );
     const { truncateDrizzleTables } = await import(
       "../../../../../../test-support/drizzle-reset.js"
     );
@@ -43,6 +47,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const USER_ID = "00000000-0000-4000-8000-000000000921";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000922";
+    const WORK_ID = "00000000-0000-4000-8000-000000000923";
     const db = createDb(DATABASE_URL, { max: 4 });
 
     beforeEach(async () => {
@@ -285,6 +290,147 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: personalProject.id as never,
       });
       expect(deletedMembership.members).not.toContain(userDocumentId);
+    });
+
+    it("registers scratch documents in the live project manifest and resolves their project", async () => {
+      await db.insert(schema.contextSources).values({
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Scratch Work",
+      });
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        onStoreDocument: ({ documentName, document }) =>
+          collab.storeHocuspocusDocument(documentName, document),
+      });
+      collab.bindHocuspocus(hocuspocus);
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+      const port = contextPorts.forWork(WORK_ID, PROJECT_ID, USER_ID, new Set([WORK_ID]));
+
+      const created = await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "scratch",
+        workId: WORK_ID,
+        body: parseCreateContextEntryBody({
+          type: "file",
+          path: "/notes.md",
+          content: "scratch content",
+        }),
+      });
+      if (created.status !== "created" || !created.documentId) {
+        throw new Error("scratch creation did not return a document id");
+      }
+
+      await collab.drainHocuspocusPersistence();
+      const liveMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(liveMembership.members).toContain(created.documentId);
+      await expect(
+        createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
+      ).resolves.toBe(PROJECT_ID);
+
+      await expect(port.delete(`scratch://${WORK_ID}/notes.md`)).resolves.toEqual({
+        ok: true,
+        value: undefined,
+      });
+      await collab.drainHocuspocusPersistence();
+      const membershipAfterDelete = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(membershipAfterDelete.members).not.toContain(created.documentId);
+    });
+
+    it("backfills observer-less scratch documents into an existing live manifest", async () => {
+      const projectSourceId = "00000000-0000-4000-8000-000000000925";
+      const workSourceId = "00000000-0000-4000-8000-000000000926";
+      const scratchDocumentId = "00000000-0000-4000-8000-000000000924";
+      await db.insert(schema.contextSources).values({
+        id: projectSourceId,
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Scratch Work",
+      });
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      collab.bindHocuspocus(new Hocuspocus({ yDocOptions: { gc: false, gcFilter: () => true } }));
+
+      await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });
+
+      await db.insert(schema.contextSources).values({
+        id: workSourceId,
+        workId: WORK_ID,
+        name: "Scratch",
+        slug: "scratch",
+        scope: "work",
+      });
+      await db.insert(schema.documents).values({
+        id: scratchDocumentId,
+        contextSourceId: workSourceId,
+        name: "legacy-notes",
+        extension: "md",
+        fileType: "markdown",
+      });
+
+      await expect(
+        collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+      ).resolves.toMatchObject({ members: [scratchDocumentId] });
+    });
+
+    it("denies the websocket document path for Work content after project deletion", async () => {
+      const workSourceId = "00000000-0000-4000-8000-000000000926";
+      const scratchDocumentId = "00000000-0000-4000-8000-000000000924";
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Deleted Project Work",
+      });
+      await db.insert(schema.contextSources).values({
+        id: workSourceId,
+        workId: WORK_ID,
+        name: "Scratch",
+        slug: "scratch",
+        scope: "work",
+      });
+      await db.insert(schema.documents).values({
+        id: scratchDocumentId,
+        contextSourceId: workSourceId,
+        name: "retained-id",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await db
+        .update(schema.projects)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.projects.id, PROJECT_ID));
+
+      const access = createDrizzleDocumentAccess(db);
+      await expect(access.canAccessDocument(USER_ID as never, scratchDocumentId)).resolves.toBe(
+        false,
+      );
+      await expect(access.projectIdForDocument(scratchDocumentId)).resolves.toBeNull();
     });
   });
 }
