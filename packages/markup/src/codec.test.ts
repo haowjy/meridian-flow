@@ -432,6 +432,11 @@ describe("mdx codec round-trip corpus", () => {
     );
   });
 
+  it("rejects the align-left ghost state", () => {
+    const ghost = schema.nodes.paragraph.create({ align: "left" }, t("prose"));
+    expect(() => codec.serializeBlock(ghost)).toThrow('invalid Layout align value "left"');
+  });
+
   it("stabilizes JSX leaf components with nested JSON props", () => {
     expectStable(codec, '<StatBlock value={42} config={{"hp":10,"tags":["a","b"],"ok":true}} />');
   });

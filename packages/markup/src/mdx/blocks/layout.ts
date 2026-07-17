@@ -63,6 +63,9 @@ export function serializeLayoutBlock(
 ): string {
   if (!isAlignable(node)) return serialized;
   const align = parseAlign(node.attrs.align);
+  if (node.attrs.align !== null && node.attrs.align !== undefined && align === null) {
+    throw new Error(`pm->mdast: invalid Layout align value "${String(node.attrs.align)}"`);
+  }
   const widths = node.type.name === "table" ? widthsFromFirstRow(node) : null;
   if (align === null && widths === null) return serialized;
 
