@@ -32,8 +32,8 @@ Lives entirely under `features/debug/`; mounts exactly once from
   track. Every section is wrapped in `DebugErrorBoundary` so a single missing
   hook or shape change degrades to "not available" instead of tearing down
   the overlay.
-- **Dev-only, build-stripped.** `DEBUG_FEATURE_ALLOWED` in
-  `use-debug-enabled.ts` is `import.meta.env.DEV ||
+- **Dev-only, build-stripped.** `DEBUG_FEATURE_ALLOWED` is defined in
+  `core/debug-gate.ts` and re-exported by `use-debug-enabled.ts`; it is `import.meta.env.DEV ||
   import.meta.env.VITE_DEBUG_OVERLAY === "1"`. Vite strips the false branch
   from production builds, taking the overlay and its imports with it.
 - **i18n exception.** This feature never ships to end users. All strings are
@@ -130,13 +130,15 @@ dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
   `useState` initializer makes the first client render diverge from server
   HTML → *"Hydration failed"*.
 
-## Realtime stream inspector — planned
+## Realtime stream inspector — transport seam staged
 
 The debug overlay does not currently expose WebSocket frame traffic or Yjs
-protocol summaries. Browser network tooling (`agent-browser`, HAR) is blind to
+protocol summaries. The dev-only shared Hocuspocus socket now has a
+`TappedWebSocket` observer seam, and `trace/yjs-wire-tap.ts` maps its frames to
+metadata-only `EventRecord`s, but no tap is registered until the viewer
+integration lands. Browser network tooling (`agent-browser`, HAR) is blind to
 WebSocket traffic, and server-side collab operations emit zero success-path
-structured events. A realtime stream inspector covering thread WS and Yjs
-transports is tracked in issue cluster
+structured events. The full realtime stream inspector is tracked in issue cluster
 [#235](https://github.com/haowjy/meridian-flow/issues/235), with the planned
 dependency order: Yjs decoder
 ([#238](https://github.com/haowjy/meridian-flow/issues/238)) then frontend
