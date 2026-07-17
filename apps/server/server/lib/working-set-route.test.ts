@@ -52,6 +52,18 @@ describe("working-set route core", () => {
     );
   });
 
+  it("rejects malformed thread and work UUIDs at the parse boundary", () => {
+    expectBadRequest(() =>
+      parsePutWorkingSetRequest({ recentRoutes: [], lastThreadId: "missing" }),
+    );
+    expectBadRequest(() =>
+      parsePutWorkingSetRequest({
+        recentRoutes: [{ scheme: "scratch", path: "/a", workId: "work-1" }],
+        lastThreadId: null,
+      }),
+    );
+  });
+
   it("rejects work and thread references outside the project", async () => {
     await expect(
       handlePutWorkingSetRequest(dependencies({ work: { id: "work-2", projectId: "project-2" } }), {
