@@ -21,7 +21,7 @@ export interface TraceFilters {
   correlation: string;
 }
 
-const ring = /* @__PURE__ */ new Array<EventRecord | undefined>(TRACE_STORE_CAPACITY);
+let ring: Array<EventRecord | undefined> | undefined;
 const listeners = new Set<() => void>();
 let start = 0;
 let size = 0;
@@ -31,10 +31,18 @@ let snapshot: TraceSnapshot = { entries: [], ringDropped, tapErrors };
 let publishPending = false;
 let snapshotDirty = false;
 
+function getRing(): Array<EventRecord | undefined> {
+  ring ??= new Array(TRACE_STORE_CAPACITY);
+  return ring;
+}
+
 function rebuildSnapshot(): void {
   const entries = new Array<EventRecord>(size);
-  for (let index = 0; index < size; index += 1) {
-    entries[index] = ring[(start + index) % TRACE_STORE_CAPACITY] as EventRecord;
+  if (size > 0) {
+    const retained = getRing();
+    for (let index = 0; index < size; index += 1) {
+      entries[index] = retained[(start + index) % TRACE_STORE_CAPACITY] as EventRecord;
+    }
   }
   snapshot = { entries, ringDropped, tapErrors };
   snapshotDirty = false;
@@ -56,11 +64,12 @@ function schedulePublish(): void {
 
 /** Append an event, evicting the oldest event once the ring is full. */
 export function appendTraceEvent(record: EventRecord): void {
+  const retained = getRing();
   if (size < TRACE_STORE_CAPACITY) {
-    ring[(start + size) % TRACE_STORE_CAPACITY] = record;
+    retained[(start + size) % TRACE_STORE_CAPACITY] = record;
     size += 1;
   } else {
-    ring[start] = record;
+    retained[start] = record;
     start = (start + 1) % TRACE_STORE_CAPACITY;
     ringDropped += 1;
   }
@@ -87,7 +96,7 @@ export function getTraceSnapshot(): TraceSnapshot {
 
 /** Clear captured events and session counters from the viewer. */
 export function clearTraceEvents(): void {
-  ring.fill(undefined);
+  ring?.fill(undefined);
   start = 0;
   size = 0;
   ringDropped = 0;

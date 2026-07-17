@@ -20,7 +20,6 @@ import {
 import { type SafetyNoticeWsMessage, yjsWsPath } from "@meridian/contracts/protocol";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import type { DocumentSessionTransportProvider } from "@/core/editor/document-session";
 
 import { buildSameOriginWsUrl } from "./dev-transport";
@@ -35,7 +34,11 @@ let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
 function getSharedWebsocket(): HocuspocusProviderWebsocket {
   sharedWebsocket ??= new HocuspocusProviderWebsocket({
     url: buildSameOriginWsUrl(yjsWsPath()),
-    ...(DEBUG_FEATURE_ALLOWED ? { WebSocketPolyfill: TappedWebSocket } : {}),
+    // Keep the build-time gate local so production removes the tap adapter,
+    // while the authenticated composition root owns dev-time installation.
+    ...(import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1"
+      ? { WebSocketPolyfill: TappedWebSocket }
+      : {}),
   });
   return sharedWebsocket;
 }
@@ -167,7 +170,9 @@ export function createHocuspocusDocumentTransport({
     onClose: handleClose,
     onStateless: handleStateless,
   });
-  if (DEBUG_FEATURE_ALLOWED) notifyYjsRoomAttached(roomName, document.clientID);
+  if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
+    notifyYjsRoomAttached(roomName, document.clientID);
+  }
 
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
