@@ -10,6 +10,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import * as Y from "yjs";
 
 import { renameContextEntryWithConflict } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -17,10 +18,17 @@ import type { ContextTab } from "@/client/stores";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
 import { invalidContextEntryNameReason } from "./context-entry-name";
-import { FileSuggestionList, folderChildren, useFileSuggestions } from "./file-suggestions";
+import {
+  FileSuggestionList,
+  folderChildren,
+  parentPath as parentFolderPath,
+  useFileSuggestions,
+} from "./file-suggestions";
+import { suggestedTempDocumentName } from "./temp-document-name";
 import { queueUntitledRename } from "./untitled-reconciler";
 import { ValidationNote } from "./validation-note";
 
@@ -50,8 +58,11 @@ export function TempDocumentSaveBar({
         .filter(Boolean)
         .join("/")}${parentPath === "/" ? "" : "/"}`
     : "scratch://";
-  const [draft, setDraft] = useState(`${prefix}${tab.name}`);
+  const [draft, setDraft] = useState(
+    () => `${prefix}${suggestedUntitledName(tab.documentId) || tab.name}`,
+  );
   const [open, setOpen] = useState(false);
+  const [browsePath, setBrowsePath] = useState(parentPath);
   const [error, setError] = useState<string | null>(null);
   const [serverConflict, setServerConflict] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -66,10 +77,11 @@ export function TempDocumentSaveBar({
     [activeThreadId, tracked?.scheme, tracked?.workId],
   );
   const { suggestions: allEntries } = useFileSuggestions(projectId, "", options);
-  const entries = tracked ? folderChildren(allEntries, tracked.scheme, parentPath) : [];
+  const currentEntries = tracked ? folderChildren(allEntries, tracked.scheme, parentPath) : [];
+  const entries = tracked ? folderChildren(allEntries, tracked.scheme, browsePath) : [];
   const name = draft.slice(draft.lastIndexOf("/") + 1).trim();
   const collision =
-    entries.find((entry) => entry.name === name && entry.path !== tracked?.path) ?? null;
+    currentEntries.find((entry) => entry.name === name && entry.path !== tracked?.path) ?? null;
   const validation = name ? invalidContextEntryNameReason(name) : t`Name is required`;
 
   async function submit() {
@@ -166,12 +178,19 @@ export function TempDocumentSaveBar({
               header={collisionNote}
               suggestions={entries}
               onSelect={(entry) => {
-                if (entry.kind === "file") onOpenExisting(tracked?.scheme ?? "scratch", entry.path);
+                if (entry.kind === "dir") {
+                  setBrowsePath(entry.path);
+                  return;
+                }
+                onOpenExisting(tracked?.scheme ?? "scratch", entry.path);
               }}
               onClose={() => {
                 setOpen(false);
                 inputRef.current?.focus();
               }}
+              onNavigateUp={
+                browsePath === "/" ? undefined : () => setBrowsePath(parentFolderPath(browsePath))
+              }
               hideParents
               emptyMessage={t`Nothing here yet`}
             />
@@ -220,4 +239,28 @@ function DeviceOnlyWarning() {
 
 function replaceBasename(path: string, name: string): string {
   return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
+}
+
+function suggestedUntitledName(documentId: string): string {
+  const session = getDocumentSessionRegistry().getDetached(documentId);
+  const text = firstXmlText(session.document.getXmlFragment(session.fragmentName));
+  if (!text) return "";
+  return suggestedTempDocumentName({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  });
+}
+
+function firstXmlText(node: Y.XmlFragment | Y.XmlElement): string {
+  for (const child of node.toArray()) {
+    if (child instanceof Y.XmlText) {
+      const text = child.toString().trim();
+      if (text) return text;
+    }
+    if (child instanceof Y.XmlElement) {
+      const text = firstXmlText(child);
+      if (text) return text;
+    }
+  }
+  return "";
 }

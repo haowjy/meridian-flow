@@ -309,6 +309,7 @@ function UntitledRenameLine({
   const pending = useUntitledPending(tab.documentId);
   return (
     <TempDocumentSaveBar
+      key={tab.kind}
       projectId={projectId}
       activeThreadId={null}
       tab={tab}
