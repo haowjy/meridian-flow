@@ -85,6 +85,8 @@
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
   single default Work for chat-independent Scratch surfaces.
+- `apps/server`: opening or reconnecting to a Review now catches its chapter
+  draft up with the live manuscript first, instead of leaving an inactive draft stale.
 - `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
   protected — a conflicting stale cross-Work Apply refuses
   (`push_concurrent_conflict`) and lands in ordinary re-review; any sweep of

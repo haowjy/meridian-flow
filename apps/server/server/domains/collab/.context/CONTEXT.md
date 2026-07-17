@@ -67,6 +67,9 @@ Propagation is sync-only: no basis reconstruction, draft projection, accept toke
 reactivation fence, or scope routing. Cold attribution uses persisted branch
 journal rows and live journal metadata; memory-only runtime maps are never an
 attribution authority.
+Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
+maximum), on branch review room open/reconnect, and at agent tool boundaries. The
+room trigger is fire-and-forget; Hocuspocus admission never waits for the pull.
 
 ## Live manifest membership
 
