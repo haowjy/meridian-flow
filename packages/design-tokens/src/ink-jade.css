@@ -169,6 +169,14 @@
   --color-syntax-builtin: oklch(0.46 0.09 195); /* cool jade — built-ins, types */
   --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
 
+  /* Collaboration carets — Ink & Jade hues pushed slightly brighter and
+     more chromatic than syntax ink so tiny marks remain distinguishable. */
+  --color-collab-cursor-1: oklch(0.52 0.13 165); /* jade */
+  --color-collab-cursor-2: oklch(0.56 0.18 29); /* cinnabar */
+  --color-collab-cursor-3: oklch(0.58 0.16 45); /* terracotta */
+  --color-collab-cursor-4: oklch(0.58 0.13 84); /* deep gold */
+  --color-collab-cursor-5: oklch(0.55 0.12 195); /* cool jade */
+
   --color-status-streaming: var(--color-primary);
   --color-status-streaming-ring: color-mix(in oklab, var(--color-status-streaming) 15%, transparent);
   --color-status-done-bg: oklch(0.92 0.035 175);

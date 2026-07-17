@@ -79,16 +79,18 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 
 const lowlight = createLowlight(common);
 
-/** Visually distinct cursor colors for multi-user collaboration. */
+/**
+ * Visually distinct Ink & Jade cursor colors for multi-user collaboration.
+ * CollaborationCaret writes these into inline CSS properties, where custom
+ * property references remain valid; keeping them unresolved also makes the
+ * design-token package the only palette source.
+ */
 const CURSOR_COLORS = [
-  "#e06c75",
-  "#61afef",
-  "#e5c07b",
-  "#c678dd",
-  "#56b6c2",
-  "#d19a66",
-  "#98c379",
-  "#be5046",
+  "var(--color-collab-cursor-1)",
+  "var(--color-collab-cursor-2)",
+  "var(--color-collab-cursor-3)",
+  "var(--color-collab-cursor-4)",
+  "var(--color-collab-cursor-5)",
 ] as const;
 
 const DEFAULT_USER: EditorUser = {
