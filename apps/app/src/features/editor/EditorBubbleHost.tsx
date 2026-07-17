@@ -121,7 +121,10 @@ export const EditorBubbleHost = forwardRef<
 
   const close = useCallback(
     (options?: { focusEditor?: boolean }) => {
-      if (active) setDismissed(active);
+      if (active && editor) {
+        const passiveMatch = active.context.match(editor);
+        setDismissed(passiveMatch ? { context: active.context, match: passiveMatch } : active);
+      }
       setEntered(null);
       setFocusRequest(null);
       if (options?.focusEditor && editor && !editor.isDestroyed) editor.commands.focus();
