@@ -3,7 +3,11 @@ import { toDocHandle } from "@meridian/agent-edit";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { createDrizzleTrailForwardActions } from "../adapters/drizzle-trail-forward-actions.js";
+import {
+  createDrizzleTrailForwardActions,
+  planTrailForwardAction,
+} from "../adapters/drizzle-trail-forward-actions.js";
+import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -50,7 +54,7 @@ export type CrossWorkProbeObservation = {
     trailChanges: unknown[];
     notices: unknown[];
     deliveredEvents: unknown[];
-    restoreAvailable: boolean;
+    restoreActionable: boolean;
     restoreOutcome: string | null;
     manuscriptAfterRestore: string | null;
   };
@@ -326,24 +330,33 @@ export async function runCrossWorkProbe(
   const protectedTrail = trailChanges.some(
     (change) => asRecord(asRecord(change).writerProtection).kind === "sweep",
   );
-  const restoreAvailable = trailChanges.some((change) => {
-    const protection = asRecord(change).writerProtection;
-    const body = asRecord(asRecord(protection).body);
-    return asRecord(protection).kind === "sweep" && body.status === "available";
-  });
+  let restoreActionable = false;
   let restoreOutcome: string | null = null;
   let manuscriptAfterRestore: string | null = null;
-  if (probeCase === "auto" && restoreAvailable) {
+  if (probeCase === "auto") {
     const restorable = detailRows
       .flatMap((row) =>
-        (Array.isArray(row.changes) ? row.changes : []).map((change) => ({ row, change })),
+        parseTrailChangesV1(Array.isArray(row.changes) ? row.changes : []).map((change) => ({
+          row,
+          change,
+        })),
       )
       .find(({ change }) => {
-        const protection = asRecord(change).writerProtection;
-        return asRecord(protection).kind === "sweep";
+        return change.writerProtection?.kind === "sweep";
       });
-    const changeId = asRecord(restorable?.change).changeId;
-    if (restorable && typeof changeId === "string") {
+    if (restorable) {
+      restoreActionable = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
+        Boolean(
+          planTrailForwardAction({
+            liveDoc: doc,
+            change: restorable.change,
+            action: "restore",
+            model,
+            codec: agentEditCodec,
+          }),
+        ),
+      );
+      if (!restoreActionable) throw new Error("protected sweep row has no Restore action");
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
       const restored = await createDrizzleTrailForwardActions({
@@ -354,7 +367,7 @@ export async function runCrossWorkProbe(
       }).apply({
         threadId: THREAD_B_ID,
         trailId: restorable.row.trailId,
-        changeId,
+        changeId: restorable.change.changeId,
         action: "restore",
         userId: USER_ID as never,
       });
@@ -399,7 +412,7 @@ export async function runCrossWorkProbe(
           (event) => asRecord(event).threadId === (THREAD_B_ID as unknown as string),
         ),
       ) as unknown[],
-      restoreAvailable,
+      restoreActionable,
       restoreOutcome,
       manuscriptAfterRestore,
     },
