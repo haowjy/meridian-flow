@@ -1,4 +1,5 @@
 /** Shared docked-toolbar and scrolling layout for document editor surfaces. */
+import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import type { MouseEvent as ReactMouseEvent, ReactNode, Ref, UIEventHandler } from "react";
 
@@ -36,10 +37,17 @@ function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLD
   // Focusing on mousedown (not click) matches ProseMirror's own timing;
   // preventDefault stops the press from re-blurring the editor it just focused.
   event.preventDefault();
-  editor
-    .chain()
-    .focus(pos ? pos.pos : "end")
-    .run();
+  if (!pos) {
+    editor.commands.focus("end");
+    return;
+  }
+  // posAtCoords in the inter-paragraph gap returns a block-boundary position;
+  // fed raw to focus() it parks the selection at doc level — remote collab
+  // cursors then render BETWEEN <p>s as a phantom uneditable row. near()
+  // always resolves into the adjacent textblock.
+  const { state, view } = editor;
+  view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(pos.pos))));
+  view.focus();
 }
 
 export function EditorSurfaceFrame({
