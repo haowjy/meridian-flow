@@ -64,8 +64,18 @@ export function UntitledRenameLine({
   const [error, setError] = useState<string | null>(null);
   const [serverConflict, setServerConflict] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showDeviceOnly, setShowDeviceOnly] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const writerOwnsName = useRef(false);
+
+  useEffect(() => {
+    if (!deviceOnly) {
+      setShowDeviceOnly(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowDeviceOnly(true), 2_000);
+    return () => window.clearTimeout(timer);
+  }, [deviceOnly]);
 
   useEffect(() => {
     let timer: number | null = null;
@@ -163,7 +173,7 @@ export function UntitledRenameLine({
   return (
     <section className={cn(editorColumnChrome, "@container py-2")} aria-label={t`Rename document`}>
       <div className="flex items-center gap-2">
-        {deviceOnly ? <DeviceOnlyWarning /> : null}
+        {showDeviceOnly ? <DeviceOnlyWarning /> : null}
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverAnchor asChild>
             <Input

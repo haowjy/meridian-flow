@@ -66,8 +66,8 @@ eventually dissolves the line without another invalidation channel.
 `UntitledRenameLine.tsx` survives only as the ambient provisional rename line.
 It is the lower-priority tenant of `EditorBannerSlot` (draft chrome wins), uses
 a basename-only field and local collision browser, and commits on Enter. There
-is no Save button and no content handover. While the pending entry
-exists it shows the amber “Only on this device” badge; the badge disappears only
+is no Save button and no content handover. When a pending entry remains device-only
+for two seconds it shows the amber “Only on this device” badge; the badge disappears
 when the reconciler confirms server sync. Server 409 remains a race guard with
 Open-existing recovery. Moving remains a tree action.
 

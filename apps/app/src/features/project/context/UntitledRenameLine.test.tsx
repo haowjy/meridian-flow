@@ -1,6 +1,6 @@
 /** Writer-facing behavior checks for the provisional document rename line. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
@@ -71,6 +71,41 @@ describe("UntitledRenameLine", () => {
       expect(select).toHaveBeenCalledOnce();
     });
   });
+
+  it("waits for two sustained seconds before showing the device-only warning", async () => {
+    vi.useFakeTimers();
+    try {
+      const document = new Y.Doc();
+      mocks.getDetached.mockReturnValue({
+        document,
+        fragmentName: "default",
+      });
+      let setDeviceOnly: ((value: boolean) => void) | null = null;
+      function Harness() {
+        const [deviceOnly, setDeviceOnlyState] = useState(true);
+        setDeviceOnly = setDeviceOnlyState;
+        return renameLine(trackedTab, deviceOnly);
+      }
+
+      await withQueryClient(<Harness />, async () => {
+        expect(window.document.body.textContent).not.toContain("Only on this device");
+
+        await act(async () => vi.advanceTimersByTime(1_000));
+        await act(async () => setDeviceOnly?.(false));
+        await act(async () => vi.advanceTimersByTime(2_000));
+        expect(window.document.body.textContent).not.toContain("Only on this device");
+
+        await act(async () => setDeviceOnly?.(true));
+        await act(async () => vi.advanceTimersByTime(1_999));
+        expect(window.document.body.textContent).not.toContain("Only on this device");
+
+        await act(async () => vi.advanceTimersByTime(1));
+        expect(window.document.body.textContent).toContain("Only on this device");
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 async function withRenameLine(
@@ -78,18 +113,23 @@ async function withRenameLine(
   deviceOnly: boolean,
   run: () => Promise<void> | void,
 ) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  await withReactRoot(
-    <QueryClientProvider client={queryClient}>
-      <UntitledRenameLine
-        projectId="project-1"
-        activeThreadId={null}
-        tab={tab}
-        deviceOnly={deviceOnly}
-        onRenamed={vi.fn()}
-        onOpenExisting={vi.fn()}
-      />
-    </QueryClientProvider>,
-    run,
+  await withQueryClient(renameLine(tab, deviceOnly), run);
+}
+
+function renameLine(tab: Extract<ContextTab, { kind: "tracked" | "new" }>, deviceOnly: boolean) {
+  return (
+    <UntitledRenameLine
+      projectId="project-1"
+      activeThreadId={null}
+      tab={tab}
+      deviceOnly={deviceOnly}
+      onRenamed={vi.fn()}
+      onOpenExisting={vi.fn()}
+    />
   );
+}
+
+async function withQueryClient(node: ReactNode, run: () => Promise<void> | void) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await withReactRoot(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>, run);
 }

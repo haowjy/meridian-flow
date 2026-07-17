@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: provisional document rename fields hide internal context URIs,
+  select the full basename on focus, and delay the device-only warning until
+  the state persists for two seconds.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
