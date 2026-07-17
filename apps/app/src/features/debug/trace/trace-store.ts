@@ -21,7 +21,7 @@ export interface TraceFilters {
   correlation: string;
 }
 
-const ring = new Array<EventRecord | undefined>(TRACE_STORE_CAPACITY);
+const ring = /* @__PURE__ */ new Array<EventRecord | undefined>(TRACE_STORE_CAPACITY);
 const listeners = new Set<() => void>();
 let start = 0;
 let size = 0;
