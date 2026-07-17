@@ -72,7 +72,10 @@ function dirname(path: string): string | undefined {
 function RouteComponent() {
   const { projectId } = Route.useParams();
   const routeData = Route.useLoaderData();
-  establishWorkingSetBaseline(projectId, routeData.workingSet);
+  useState(() => {
+    establishWorkingSetBaseline(projectId, routeData.workingSet);
+    return null;
+  });
   useProjectRouteCacheSeed(projectId, routeData);
   const { screen, thread, scheme, folder, path, results } = Route.useSearch();
   const navigate = useNavigate();

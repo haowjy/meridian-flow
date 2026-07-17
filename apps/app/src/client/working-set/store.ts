@@ -28,8 +28,13 @@ export type WorkingSetStorage = Pick<Storage, "getItem" | "setItem" | "removeIte
 
 const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: null };
 
-function routeEquals(left: WorkingSetRoute, right: WorkingSetRoute): boolean {
-  return left.scheme === right.scheme && left.path === right.path && left.workId === right.workId;
+function routeEquals(left: WorkingSetRoute | undefined, right: WorkingSetRoute): boolean {
+  return (
+    left !== undefined &&
+    left.scheme === right.scheme &&
+    left.path === right.path &&
+    left.workId === right.workId
+  );
 }
 
 function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): boolean {

@@ -119,6 +119,7 @@ export class WorkingSetSyncDriver {
           const failures = (this.failures.get(projectId) ?? 0) + 1;
           this.failures.set(projectId, failures);
           this.schedule(projectId, Math.min(1_000 * 2 ** (failures - 1), MAX_BACKOFF_MS));
+          break;
         }
       }
     } finally {
