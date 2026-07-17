@@ -303,4 +303,32 @@ describe("resizable table rendering", () => {
     expect(view.table.dataset.align).toBeUndefined();
     expect(view.table.style.marginLeft).toBe("");
   });
+
+  it("clears rendered column widths when the layout is reset", () => {
+    const current = createTableEditor();
+    const table = current.state.doc.firstChild;
+    if (!table) throw new Error("table is missing");
+    const firstRow = table.firstChild;
+    if (!firstRow) throw new Error("table row is missing");
+    const resizedRow = firstRow.type.create(
+      firstRow.attrs,
+      firstRow.content.replaceChild(
+        0,
+        firstRow
+          .child(0)
+          .type.create({ ...firstRow.child(0).attrs, colwidth: [302] }, firstRow.child(0).content),
+      ),
+    );
+    const resized = table.type.create(table.attrs, table.content.replaceChild(0, resizedRow));
+    const view = new MeridianTableView(resized, 100);
+    const firstColumn = view.colgroup.firstElementChild as HTMLElement | null;
+
+    expect(firstColumn?.style.width).toBe("302px");
+    selectText(current, "H1");
+    expect(resetTableLayout(current.state, current.view.dispatch)).toBe(true);
+    const reset = current.state.doc.firstChild;
+    if (!reset) throw new Error("reset table is missing");
+    expect(view.update(reset)).toBe(true);
+    expect(firstColumn?.style.width).toBe("");
+  });
 });

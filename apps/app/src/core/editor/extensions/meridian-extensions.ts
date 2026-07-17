@@ -164,8 +164,25 @@ export class MeridianTableView extends TableView {
 
   override update(node: ProseMirrorNode): boolean {
     if (!super.update(node)) return false;
+    if (!this.hasColumnWidths(node)) {
+      for (const column of this.colgroup.children) {
+        (column as HTMLElement).style.removeProperty("width");
+      }
+    }
     this.applyAlignment(node);
     return true;
+  }
+
+  private hasColumnWidths(node: ProseMirrorNode): boolean {
+    let hasWidth = false;
+    node.descendants((child) => {
+      if (Array.isArray(child.attrs.colwidth) && child.attrs.colwidth.some(Boolean)) {
+        hasWidth = true;
+        return false;
+      }
+      return !hasWidth;
+    });
+    return hasWidth;
   }
 
   private applyAlignment(node: ProseMirrorNode) {
