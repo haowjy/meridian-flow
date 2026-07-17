@@ -29,8 +29,8 @@ vi.mock("./file-suggestions", async (importOriginal) => {
   };
 });
 vi.mock("./untitled-reconciler", () => ({
-  clearQueuedRenameFailure: vi.fn(),
-  useQueuedRenameFailure: () => null,
+  clearQueuedIdentityFailure: vi.fn(),
+  useQueuedIdentityFailure: () => null,
   useUntitledPendingSince: () => null,
 }));
 vi.mock("./use-identity-commit", () => ({

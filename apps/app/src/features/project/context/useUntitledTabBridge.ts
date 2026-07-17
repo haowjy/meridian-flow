@@ -46,21 +46,12 @@ export function useUntitledTabBridge({
               onSelectContextPath(result.path, result.scheme);
             }
           },
-          onRenamed: (name, path) => {
-            updateTrackedTab(projectId, tab.documentId, { name, path, provisionalName: false });
-            if (
-              useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
-            ) {
-              onSelectContextPath(path, "scratch");
-            }
-          },
-          onMoved: (result) => {
+          onIdentityCommitted: (result) => {
             updateTrackedTab(projectId, tab.documentId, {
               scheme: result.scheme,
               path: result.path,
               name: result.name,
               workId: result.scheme === "scratch" ? (defaultWorkId ?? undefined) : undefined,
-              // Explicit writer placement: graduation is total (D8).
               provisionalName: false,
             });
             if (

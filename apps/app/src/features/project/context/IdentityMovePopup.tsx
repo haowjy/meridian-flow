@@ -22,7 +22,7 @@ import {
   useFileSuggestions,
 } from "./file-suggestions";
 import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
-import type { TabLocation } from "./identity-location";
+import { identityDestination, type TabLocation } from "./identity-location";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
 import { ValidationNote } from "./validation-note";
 
@@ -248,7 +248,7 @@ function MovePopupContent({
           onKeyDown={(event) => {
             if (event.key === "Enter" && canCommit) {
               void run({
-                destination: destinationChanged && browse ? browse : null,
+                destination: identityDestination(location, defaultWorkId, browse ?? undefined),
                 name: trimmed,
               });
             }
@@ -263,12 +263,9 @@ function MovePopupContent({
             variant="ghost"
             disabled={saving}
             onClick={() => {
-              // The deliberate stay-put: a provisional doc graduates in place,
-              // and a pending name edit still commits. A graduated doc with
-              // nothing changed just closes.
               if ((location.provisional || nameChanged) && !nameReason) {
                 void run({
-                  destination: { scheme: location.scheme, folderPath: location.parentPath },
+                  destination: identityDestination(location, defaultWorkId),
                   name: trimmed || location.leaf,
                 });
                 return;
@@ -284,7 +281,10 @@ function MovePopupContent({
           size="sm"
           disabled={!canCommit}
           onClick={() =>
-            void run({ destination: destinationChanged && browse ? browse : null, name: trimmed })
+            void run({
+              destination: identityDestination(location, defaultWorkId, browse ?? undefined),
+              name: trimmed,
+            })
           }
         >
           {destinationChanged ? <Trans>Move to {destinationName}</Trans> : <Trans>Save name</Trans>}

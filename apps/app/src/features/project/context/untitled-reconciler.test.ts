@@ -70,7 +70,6 @@ function harness() {
       resolveHome,
       create,
       serverDocumentExists: exists,
-      rename: vi.fn(async () => ({ status: "renamed" as const })),
       move: vi.fn(async () => ({
         status: "moved" as const,
         scheme: "manuscript" as const,
@@ -279,24 +278,28 @@ describe("untitled reconciliation durability", () => {
   });
 });
 
-describe("queued rename receipts", () => {
-  it("records a conflict receipt when the queued rename 409s after materialization", async () => {
+describe("queued identity receipts", () => {
+  it("records a conflict receipt when the queued identity conflicts after materialization", async () => {
     const h = harness();
-    (h.deps.api.rename as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "conflict" as const,
+      collision: { scheme: "scratch" as const, path: "taken.md", workId: "work-1" },
     });
     const reconciler = new UntitledReconciler(h.deps);
     reconciler.start();
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queuePlacement("doc-1", { name: "taken.md" });
+    reconciler.queueIdentity("doc-1", {
+      name: "taken.md",
+      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+    });
 
     await h.runQueue();
 
     // Materialization itself succeeded: the entry drains and the document is
-    // no longer device-only — only the rename receipt reports the failure.
+    // no longer device-only — only the identity receipt reports the failure.
     expect(storedEntries(h.values)).toEqual([]);
     expect(reconciler.has("doc-1")).toBe(false);
-    expect(reconciler.queuedRenameFailure("doc-1")).toEqual({
+    expect(reconciler.queuedIdentityFailure("doc-1")).toEqual({
       kind: "conflict",
       name: "taken.md",
       scheme: "scratch",
@@ -304,39 +307,45 @@ describe("queued rename receipts", () => {
       workId: "work-1",
     });
 
-    reconciler.clearQueuedRenameFailure("doc-1");
-    expect(reconciler.queuedRenameFailure("doc-1")).toBeNull();
+    reconciler.clearQueuedIdentityFailure("doc-1");
+    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
   });
 
   it("replaces a stale failure when a newer name is queued", async () => {
     const h = harness();
-    (h.deps.api.rename as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       status: "conflict" as const,
+      collision: { scheme: "scratch" as const, path: "taken.md", workId: "work-1" },
     });
     const reconciler = new UntitledReconciler(h.deps);
     reconciler.start();
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queuePlacement("doc-1", { name: "taken.md" });
+    reconciler.queueIdentity("doc-1", {
+      name: "taken.md",
+      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+    });
     await h.runQueue();
-    expect(reconciler.queuedRenameFailure("doc-1")?.kind).toBe("conflict");
+    expect(reconciler.queuedIdentityFailure("doc-1")?.kind).toBe("conflict");
 
-    reconciler.queuePlacement("doc-1", { name: "free-name.md" });
-    expect(reconciler.queuedRenameFailure("doc-1")).toBeNull();
+    reconciler.queueIdentity("doc-1", {
+      name: "free-name.md",
+      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+    });
+    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
   });
 
   it("applies a queued placement through the move seam and reports its conflicts", async () => {
     const h = harness();
-    const onMoved = vi.fn();
+    const onIdentityCommitted = vi.fn();
     const reconciler = new UntitledReconciler(h.deps);
     reconciler.start();
     reconciler.registerCandidate("doc-1", {
       onReminted: vi.fn(),
       onMaterialized: vi.fn(),
-      onRenamed: vi.fn(),
-      onMoved,
+      onIdentityCommitted,
     });
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queuePlacement("doc-1", {
+    reconciler.queueIdentity("doc-1", {
       name: "Opening.md",
       destination: { scheme: "manuscript", folderPath: "Act 1" },
     });
@@ -345,16 +354,18 @@ describe("queued rename receipts", () => {
     expect(h.deps.api.move).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
       "/Untitled",
-      "Opening.md",
-      { scheme: "manuscript", folderPath: "Act 1" },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
     );
-    expect(onMoved).toHaveBeenCalledWith({
+    expect(onIdentityCommitted).toHaveBeenCalledWith({
       status: "moved",
       scheme: "manuscript",
       path: "/Act 1/Opening.md",
       name: "Opening.md",
     });
-    expect(reconciler.queuedRenameFailure("doc-1")).toBeNull();
+    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
 
     // Conflict path: the canonical locator lands as a receipt.
     (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -362,12 +373,12 @@ describe("queued rename receipts", () => {
       collision: { scheme: "manuscript" as const, path: "Act 1/Opening.md" },
     });
     reconciler.append({ documentId: "doc-2", projectId: "project-1", home: HOME });
-    reconciler.queuePlacement("doc-2", {
+    reconciler.queueIdentity("doc-2", {
       name: "Opening.md",
       destination: { scheme: "manuscript", folderPath: "Act 1" },
     });
     await h.runQueue();
-    expect(reconciler.queuedRenameFailure("doc-2")).toEqual({
+    expect(reconciler.queuedIdentityFailure("doc-2")).toEqual({
       kind: "conflict",
       name: "Opening.md",
       scheme: "manuscript",

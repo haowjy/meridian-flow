@@ -1,29 +1,16 @@
-/**
- * The identity bar's single commit seam: rename in place, move (optionally
- * renaming), or queue a placement for a not-yet-materialized untitled doc.
- * Both typed surfaces (path field, placement field) and the Move-to popup
- * commit through here, so rename/move semantics cannot drift between them.
- */
+/** Derives and transports one explicit writer request for a document's final identity. */
+
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { moveContextEntry, renameContextEntry } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
-import { queueUntitledPlacement, queueUntitledRename } from "./untitled-reconciler";
+import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
+import { queueUntitledIdentity } from "./untitled-reconciler";
 
-export type IdentityDestination = {
-  scheme: ProjectContextTreeScheme;
-  /** Tree-style parent folder path: `/`, `/Act 2`. */
-  folderPath: string;
-};
-
-export type IdentityCommitTarget = {
-  /** Null commits a rename in place. */
-  destination: IdentityDestination | null;
-  name: string;
-};
+export type IdentityCommitTarget = DesiredIdentity;
+export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
 export type IdentityCommitOutcome =
   | { status: "committed" }
@@ -33,8 +20,7 @@ export type IdentityCommitOutcome =
     }
   | { status: "error"; message: string };
 
-/** Every commit through this seam is an explicit writer save, so the
- *  document graduates: provisional naming ends with it (D8). */
+/** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
   scheme: ProjectContextTreeScheme;
   /** Tree-style path with a leading slash. */
@@ -43,12 +29,42 @@ export type IdentityCommitted = {
   workId?: string;
 };
 
+type IdentityCommitPlan =
+  | { kind: "queue"; desired: DesiredIdentity }
+  | { kind: "no-op" }
+  | { kind: "rename"; desired: DesiredIdentity }
+  | { kind: "move" | "graduate"; desired: DesiredIdentity };
+
 function stripLeadingSlash(path: string): string {
   return path.replace(/^\/+/, "");
 }
 
 function replaceBasename(path: string, name: string): string {
   return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
+}
+
+export function deriveIdentityCommitPlan(
+  tab: ContextTab,
+  target: DesiredIdentity,
+  defaultWorkId: string | null,
+): IdentityCommitPlan {
+  const location = tabLocation(tab);
+  const desired = {
+    destination: identityDestination(location, defaultWorkId, target.destination),
+    name: target.name.trim(),
+  };
+  if (tab.kind === "new") return { kind: "queue", desired };
+
+  const current = identityDestination(location, defaultWorkId);
+  const sameDestination =
+    desired.destination.scheme === current.scheme &&
+    desired.destination.folderPath === current.folderPath &&
+    desired.destination.workId === current.workId;
+  const sameName = desired.name === location.leaf;
+  if (sameDestination && sameName) {
+    return location.provisional ? { kind: "graduate", desired } : { kind: "no-op" };
+  }
+  return sameDestination ? { kind: "rename", desired } : { kind: "move", desired };
 }
 
 export function useIdentityCommit({
@@ -61,55 +77,24 @@ export function useIdentityCommit({
   tab: ContextTab;
   defaultWorkId: string | null;
   onCommitted: (documentId: string, next: IdentityCommitted) => void;
-}): (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome> {
+}): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const queryClient = useQueryClient();
 
   return async (target) => {
-    const name = target.name.trim();
-
-    if (tab.kind === "new") {
-      // Not yet materialized: the reconciler applies the intent after create;
-      // failures land as receipts that reopen the field.
-      if (target.destination) {
-        queueUntitledPlacement(tab.documentId, name, {
-          scheme: target.destination.scheme,
-          folderPath: stripLeadingSlash(target.destination.folderPath),
-          ...(isWorkScopedProjectContextScheme(target.destination.scheme) && defaultWorkId
-            ? { workId: defaultWorkId }
-            : {}),
-        });
-      } else {
-        queueUntitledRename(tab.documentId, name);
-      }
+    const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
+    if (plan.kind === "queue") {
+      queueUntitledIdentity(tab.documentId, plan.desired);
       return { status: "committed" };
     }
+    if (plan.kind === "no-op") return { status: "committed" };
+    if (tab.kind === "new") return { status: "committed" };
 
-    const destination = target.destination;
-    const destinationWorkId =
-      destination && isWorkScopedProjectContextScheme(destination.scheme)
-        ? ((tab.scheme === destination.scheme ? tab.workId : undefined) ??
-          defaultWorkId ??
-          undefined)
-        : undefined;
-    const sameDestination =
-      destination !== null &&
-      destination.scheme === tab.scheme &&
-      destination.folderPath === (tab.path.slice(0, tab.path.lastIndexOf("/")) || "/") &&
-      destinationWorkId === tab.workId;
-    const provisional = tab.kind === "tracked" && Boolean(tab.provisionalName);
-    // Identical values on a graduated document commit nothing — no request,
-    // no churn. (A provisional doc's same-place commit is the deliberate
-    // stay-put and DOES go to the server: it graduates in place.)
-    if (sameDestination && name === tab.name && !provisional) {
-      return { status: "committed" };
-    }
     try {
-      if (!destination) {
-        if (name === tab.name) return { status: "committed" };
+      if (plan.kind === "rename") {
         const result = await renameContextEntry(
           projectId,
           tab.scheme,
-          { path: tab.path, newName: name },
+          { path: tab.path, newName: plan.desired.name },
           tab.workId ? { workId: tab.workId } : undefined,
         );
         if (result.status === "conflict") {
@@ -117,7 +102,7 @@ export function useIdentityCommit({
             status: "conflict",
             locator: {
               scheme: tab.scheme,
-              path: replaceBasename(tab.path, name),
+              path: replaceBasename(tab.path, plan.desired.name),
               ...(tab.workId ? { workId: tab.workId } : {}),
             },
           };
@@ -127,13 +112,14 @@ export function useIdentityCommit({
         });
         onCommitted(tab.documentId, {
           scheme: tab.scheme,
-          path: replaceBasename(tab.path, name),
-          name,
+          path: replaceBasename(tab.path, plan.desired.name),
+          name: plan.desired.name,
           ...(tab.workId ? { workId: tab.workId } : {}),
         });
         return { status: "committed" };
       }
 
+      const destination = plan.desired.destination;
       const moved = await moveContextEntry(projectId, tab.scheme, {
         path: stripLeadingSlash(tab.path),
         ...(tab.workId ? { sourceWorkId: tab.workId } : {}),
@@ -141,8 +127,8 @@ export function useIdentityCommit({
         destinationFolderPath: stripLeadingSlash(
           destination.folderPath === "/" ? "" : destination.folderPath,
         ),
-        ...(destinationWorkId ? { destinationWorkId } : {}),
-        ...(name !== tab.name ? { newName: name } : {}),
+        ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
+        ...(plan.desired.name !== tab.name ? { newName: plan.desired.name } : {}),
       });
       if (moved.status === "conflict") {
         return {
@@ -159,14 +145,14 @@ export function useIdentityCommit({
           queryKey: projectQueryKeys.contextTree(projectId, tab.scheme, tab.workId),
         }),
         queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextTree(projectId, moved.scheme, destinationWorkId),
+          queryKey: projectQueryKeys.contextTree(projectId, moved.scheme, destination.workId),
         }),
       ]);
       onCommitted(tab.documentId, {
         scheme: moved.scheme,
         path: `/${moved.path}`,
         name: moved.name,
-        ...(destinationWorkId ? { workId: destinationWorkId } : {}),
+        ...(destination.workId ? { workId: destination.workId } : {}),
       });
       return { status: "committed" };
     } catch {

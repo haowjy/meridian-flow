@@ -13,7 +13,6 @@ import type {
   MoveContextEntrySuccess,
   ProjectContextTreeNode,
   ProjectContextTreeScheme,
-  RenameContextEntryResult,
 } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
@@ -22,10 +21,10 @@ import {
   getProjectContextTree,
   listProjectWorks,
   moveContextEntry,
-  renameContextEntry,
 } from "@/client/api/projects-api";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type { DesiredIdentity } from "./identity-location";
 
 const STORAGE_KEY = "meridian:pending-untitled";
 const RETRY_BASE_MS = 1_000;
@@ -47,30 +46,18 @@ export type PendingUntitled = {
 type Candidate = {
   onReminted: (documentId: string) => void;
   onMaterialized: (result: CreateUntitledContextDocumentResponse) => void;
-  onRenamed: (name: string, path: string) => void;
-  /** Queued placement landed: the document moved (path has a leading slash)
-   *  and graduated out of provisional naming (explicit writer placement). */
-  onMoved?: (result: MoveContextEntrySuccess) => void;
+  /** Queued desired identity landed after materialization. */
+  onIdentityCommitted?: (result: MoveContextEntrySuccess) => void;
 };
-
-export type PlacementDestination = {
-  scheme: ProjectContextTreeScheme;
-  /** Scheme-relative parent folder WITHOUT a leading slash; "" = root. */
-  folderPath: string;
-  workId?: string;
-};
-
-/** Queued name (+ optional home) to apply when the document materializes. */
-type PlacementIntent = { name: string; destination?: PlacementDestination };
 
 /**
- * Receipt for a queued rename/placement that could not be applied when its
+ * Receipt for a queued desired identity that could not be applied when its
  * document materialized. Held in reconciler state (not a promise) so the
  * identity bar can surface recovery even though the writer's edit session
  * ended when the intent was queued. `conflict` carries the canonical
  * colliding locator (leading-slash path) for Open-existing.
  */
-export type QueuedRenameFailure =
+export type QueuedIdentityFailure =
   | {
       kind: "conflict";
       name: string;
@@ -116,16 +103,10 @@ type ApiPort = {
     entry: PendingUntitled & { home: UntitledHome },
   ): Promise<CreateUntitledContextDocumentResult>;
   serverDocumentExists(entry: PendingUntitled & { home: UntitledHome }): Promise<boolean>;
-  rename(
-    entry: PendingUntitled & { home: UntitledHome },
-    path: string,
-    name: string,
-  ): Promise<RenameContextEntryResult>;
   move(
     entry: PendingUntitled & { home: UntitledHome },
     path: string,
-    name: string,
-    destination: PlacementDestination,
+    desired: DesiredIdentity,
   ): Promise<MoveContextEntryResult>;
 };
 
@@ -147,8 +128,8 @@ export function untitledHomeUri(
 export class UntitledReconciler {
   private readonly entries = new Map<string, PendingUntitled>();
   private readonly candidates = new Map<string, Candidate>();
-  private readonly renameIntents = new Map<string, PlacementIntent>();
-  private readonly renameFailures = new Map<string, QueuedRenameFailure>();
+  private readonly identityIntents = new Map<string, DesiredIdentity>();
+  private readonly identityFailures = new Map<string, QueuedIdentityFailure>();
   /** documentId → epoch ms when the entry first became pending (in-memory). */
   private readonly pendingSinceMs = new Map<string, number>();
   private running = false;
@@ -217,12 +198,12 @@ export class UntitledReconciler {
     return this.entries.has(documentId) ? (this.pendingSinceMs.get(documentId) ?? null) : null;
   }
 
-  queuedRenameFailure(documentId: string): QueuedRenameFailure | null {
-    return this.renameFailures.get(documentId) ?? null;
+  queuedIdentityFailure(documentId: string): QueuedIdentityFailure | null {
+    return this.identityFailures.get(documentId) ?? null;
   }
 
-  clearQueuedRenameFailure(documentId: string): void {
-    if (this.renameFailures.delete(documentId)) this.emit();
+  clearQueuedIdentityFailure(documentId: string): void {
+    if (this.identityFailures.delete(documentId)) this.emit();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -230,13 +211,13 @@ export class UntitledReconciler {
     return () => this.listeners.delete(listener);
   };
 
-  /** Queue a rename (and optional home) to apply when the document
+  /** Queue a desired identity to apply when the document
    *  materializes. Replaces any earlier intent; the outcome lands as a
-   *  receipt (`queuedRenameFailure`), never a promise — the writer's edit
+   *  receipt (`queuedIdentityFailure`), never a promise — the writer's edit
    *  session is over when this is called. */
-  queuePlacement(documentId: string, intent: PlacementIntent): void {
-    this.renameIntents.set(documentId, intent);
-    this.clearQueuedRenameFailure(documentId);
+  queueIdentity(documentId: string, desired: DesiredIdentity): void {
+    this.identityIntents.set(documentId, desired);
+    this.clearQueuedIdentityFailure(documentId);
     this.schedule();
   }
 
@@ -291,8 +272,8 @@ export class UntitledReconciler {
       await session.whenLocalPersistenceSynced();
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
       if (empty && !(await this.deps.api.serverDocumentExists(resolvedEntry))) {
-        // The document ceased to exist before materializing; a queued rename
-        // stays intent-only and re-applies if the writer types again.
+        // The document ceased to exist before materializing; queued identity
+        // stays desired-state only and re-applies if the writer types again.
         await this.drain(entry.documentId, true);
         return;
       }
@@ -303,7 +284,7 @@ export class UntitledReconciler {
         return;
       }
       this.candidates.get(entry.documentId)?.onMaterialized(result);
-      await this.applyQueuedPlacement(resolvedEntry, result);
+      await this.applyQueuedIdentity(resolvedEntry, result);
 
       const attached = this.deps.sessions.attachDetached(entry.documentId);
       await attached.waitForDurableSync();
@@ -315,47 +296,32 @@ export class UntitledReconciler {
     }
   }
 
-  private async applyQueuedPlacement(
+  private async applyQueuedIdentity(
     entry: PendingUntitled & { home: UntitledHome },
     result: CreateUntitledContextDocumentResponse,
   ): Promise<void> {
-    const intent = this.renameIntents.get(entry.documentId);
-    if (!intent) return;
-    this.renameIntents.delete(entry.documentId);
+    const desired = this.identityIntents.get(entry.documentId);
+    if (!desired) return;
+    this.identityIntents.delete(entry.documentId);
     try {
-      if (intent.destination) {
-        const moved = await this.deps.api.move(entry, result.path, intent.name, intent.destination);
-        if (moved.status === "conflict") {
-          this.renameFailures.set(entry.documentId, {
-            kind: "conflict",
-            name: intent.name,
-            scheme: moved.collision.scheme,
-            path: `/${moved.collision.path}`,
-            ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
-          });
-          this.emit();
-          return;
-        }
-        this.candidates.get(entry.documentId)?.onMoved?.({ ...moved, path: `/${moved.path}` });
-        return;
-      }
-      const renameResult = await this.deps.api.rename(entry, result.path, intent.name);
-      if (renameResult.status === "conflict") {
-        this.renameFailures.set(entry.documentId, {
+      const moved = await this.deps.api.move(entry, result.path, desired);
+      if (moved.status === "conflict") {
+        this.identityFailures.set(entry.documentId, {
           kind: "conflict",
-          name: intent.name,
-          scheme: entry.home.scheme,
-          path: replaceBasename(result.path, intent.name),
-          workId: entry.home.workId,
+          name: desired.name,
+          scheme: moved.collision.scheme,
+          path: `/${moved.collision.path}`,
+          ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
         });
         this.emit();
         return;
       }
-      this.candidates
-        .get(entry.documentId)
-        ?.onRenamed(intent.name, replaceBasename(result.path, intent.name));
+      this.candidates.get(entry.documentId)?.onIdentityCommitted?.({
+        ...moved,
+        path: `/${moved.path}`,
+      });
     } catch {
-      this.renameFailures.set(entry.documentId, { kind: "error", name: intent.name });
+      this.identityFailures.set(entry.documentId, { kind: "error", name: desired.name });
       this.emit();
     }
   }
@@ -371,17 +337,17 @@ export class UntitledReconciler {
     await replacement.flushLocalPersistence();
 
     const candidate = this.candidates.get(entry.documentId);
-    const rename = this.renameIntents.get(entry.documentId);
-    const failure = this.renameFailures.get(entry.documentId);
+    const desired = this.identityIntents.get(entry.documentId);
+    const failure = this.identityFailures.get(entry.documentId);
     const since = this.pendingSinceMs.get(entry.documentId);
     this.entries.delete(entry.documentId);
     this.entries.set(replacementId, { ...entry, documentId: replacementId });
     this.candidates.delete(entry.documentId);
     if (candidate) this.candidates.set(replacementId, candidate);
-    this.renameIntents.delete(entry.documentId);
-    if (rename) this.renameIntents.set(replacementId, rename);
-    this.renameFailures.delete(entry.documentId);
-    if (failure) this.renameFailures.set(replacementId, failure);
+    this.identityIntents.delete(entry.documentId);
+    if (desired) this.identityIntents.set(replacementId, desired);
+    this.identityFailures.delete(entry.documentId);
+    if (failure) this.identityFailures.set(replacementId, failure);
     this.pendingSinceMs.delete(entry.documentId);
     if (since !== undefined) this.pendingSinceMs.set(replacementId, since);
     this.persist();
@@ -464,10 +430,6 @@ function nodeHasContent(value: unknown): boolean {
   return (node.content ?? []).some(nodeHasContent);
 }
 
-function replaceBasename(path: string, name: string): string {
-  return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
-}
-
 function treeContainsDocument(
   nodes: readonly ProjectContextTreeNode[],
   documentId: string,
@@ -516,21 +478,14 @@ function browserDeps(): UntitledReconcilerDeps {
         });
         return treeContainsDocument(response.tree.children, entry.documentId);
       },
-      rename(entry, path, name) {
-        return renameContextEntry(
-          entry.projectId,
-          entry.home.scheme,
-          { path, newName: name },
-          { workId: entry.home.workId },
-        );
-      },
-      move(entry, path, name, destination) {
+      move(entry, path, desired) {
+        const { destination, name } = desired;
         const currentName = path.slice(path.lastIndexOf("/") + 1);
         return moveContextEntry(entry.projectId, entry.home.scheme, {
           path: path.replace(/^\/+/, ""),
           sourceWorkId: entry.home.workId,
           destinationScheme: destination.scheme,
-          destinationFolderPath: destination.folderPath,
+          destinationFolderPath: destination.folderPath.replace(/^\/+/, ""),
           ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
           ...(name !== currentName ? { newName: name } : {}),
         });
@@ -578,28 +533,19 @@ export function useUntitledPendingSince(documentId: string): number | null {
   );
 }
 
-export function useQueuedRenameFailure(documentId: string): QueuedRenameFailure | null {
+export function useQueuedIdentityFailure(documentId: string): QueuedIdentityFailure | null {
   const reconciler = getUntitledReconciler();
   return useSyncExternalStore(
     reconciler.subscribe,
-    () => reconciler.queuedRenameFailure(documentId),
+    () => reconciler.queuedIdentityFailure(documentId),
     () => null,
   );
 }
 
-export function clearQueuedRenameFailure(documentId: string): void {
-  getUntitledReconciler().clearQueuedRenameFailure(documentId);
+export function clearQueuedIdentityFailure(documentId: string): void {
+  getUntitledReconciler().clearQueuedIdentityFailure(documentId);
 }
 
-export function queueUntitledRename(documentId: string, name: string): void {
-  getUntitledReconciler().queuePlacement(documentId, { name });
-}
-
-/** Queue a rename + move to apply when the document materializes. */
-export function queueUntitledPlacement(
-  documentId: string,
-  name: string,
-  destination: PlacementDestination,
-): void {
-  getUntitledReconciler().queuePlacement(documentId, { name, destination });
+export function queueUntitledIdentity(documentId: string, desired: DesiredIdentity): void {
+  getUntitledReconciler().queueIdentity(documentId, desired);
 }

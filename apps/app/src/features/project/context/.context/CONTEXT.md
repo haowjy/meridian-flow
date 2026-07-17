@@ -99,17 +99,14 @@ Contracts:
 - Homed rename/move goes through the chip's Move-to popup. The future
   per-segment navigator owns its own typed fallback and API if it needs one;
   the identity bar does not retain an unreachable full-path editor.
-- **Commit seam**: `use-identity-commit.ts` is the only writer through the
-  rename/move endpoints for the bar's two surfaces (placement field and
-  Move-to popup): rename in place, move (`moveContextEntry`, slash-less
-  scheme-relative paths), or queued placement for `new` tabs. Conflicts return
-  the canonical collision locator for Open-existing. **Graduation is total**:
-  every commit through this seam is an explicit writer save — the HTTP move
-  route sets `clearProvisionalName`, and the client mirrors it on every
-  receipt.
-- **Queued receipts**: a `new`-tab rename/placement applies when the document
+- **Commit seam**: both surfaces submit one final `{ destination, name }` to
+  `use-identity-commit.ts`. That seam alone derives no-op, rename, move, or
+  graduation and chooses transport. A same-name explicit Save on a provisional
+  document is therefore always a graduation, regardless of which surface
+  submitted it. Conflicts return the canonical locator for Open-existing.
+- **Queued receipts**: a `new` tab's desired identity applies when the document
   materializes; its outcome is reconciler *state*
-  (`queuedRenameFailure(documentId)`), never a promise — the edit session is
+  (`queuedIdentityFailure(documentId)`), never a promise — the edit session is
   over when the intent is queued. A failed receipt reopens the field with the
   writer's name restored and the conflict/error recovery note; the receipt
   clears when the writer edits or leaves the field. Failures must never drop

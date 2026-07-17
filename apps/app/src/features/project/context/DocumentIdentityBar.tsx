@@ -28,8 +28,8 @@ import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
 import {
-  clearQueuedRenameFailure,
-  useQueuedRenameFailure,
+  clearQueuedIdentityFailure,
+  useQueuedIdentityFailure,
   useUntitledPendingSince,
 } from "./untitled-reconciler";
 import { type IdentityCommitted, useIdentityCommit } from "./use-identity-commit";
@@ -67,11 +67,11 @@ export function DocumentIdentityBar({
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
   // note — the receipt must never be dropped silently.
-  const renameFailure = useQueuedRenameFailure(tab.documentId);
+  const identityFailure = useQueuedIdentityFailure(tab.documentId);
   useEffect(() => {
-    if (!renameFailure) return;
+    if (!identityFailure) return;
     setSurface("placement");
-  }, [renameFailure]);
+  }, [identityFailure]);
 
   // The chip is the pointing surface: placement while never-placed, the
   // Move-to popup once placed. Viewer docs get the popup too when moving them
@@ -100,12 +100,12 @@ export function DocumentIdentityBar({
             defaultWorkId={defaultWorkId}
             tab={tab}
             location={location}
-            failure={renameFailure}
+            failure={identityFailure}
             commit={commit}
             onExit={(reason) => {
               // Leaving the field acknowledges any failure receipt — it must
               // not reopen the editor it just closed.
-              clearQueuedRenameFailure(tab.documentId);
+              clearQueuedIdentityFailure(tab.documentId);
               setSurface(null);
               if (reason === "escape") focusEditorProse(tab.documentId);
             }}

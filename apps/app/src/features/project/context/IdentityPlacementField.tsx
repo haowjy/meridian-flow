@@ -27,9 +27,9 @@ import {
 } from "./file-suggestions";
 import { IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
-import type { TabLocation } from "./identity-location";
+import { identityDestination, type TabLocation } from "./identity-location";
 import { suggestedNameFromFragment } from "./untitled-document-name";
-import { clearQueuedRenameFailure, type QueuedRenameFailure } from "./untitled-reconciler";
+import { clearQueuedIdentityFailure, type QueuedIdentityFailure } from "./untitled-reconciler";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
 import { ValidationNote } from "./validation-note";
 
@@ -52,7 +52,7 @@ export function IdentityPlacementField({
   defaultWorkId: string | null;
   tab: ContextTab;
   location: TabLocation;
-  failure: QueuedRenameFailure | null;
+  failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
@@ -214,14 +214,8 @@ export function IdentityPlacementField({
       setNoteValue(value || name);
       return;
     }
-    if (!destination && name === location.leaf) {
-      onExit("commit");
-      return;
-    }
     await runCommit({
-      destination: destination
-        ? { scheme: destination.scheme, folderPath: destination.folderPath }
-        : null,
+      destination: identityDestination(location, defaultWorkId, destination ?? undefined),
       name,
     });
   }
@@ -258,7 +252,7 @@ export function IdentityPlacementField({
     setConflict(null);
     setRequestError(null);
     setCommitReason(null);
-    clearQueuedRenameFailure(tab.documentId);
+    clearQueuedIdentityFailure(tab.documentId);
   };
 
   return (
