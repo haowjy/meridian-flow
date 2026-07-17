@@ -13,6 +13,7 @@ import {
   ThreadStoreProvider,
   useIndependentProjectsStore,
 } from "@/client/stores";
+import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import {
   isSettingsSection,
@@ -109,7 +110,8 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  const { projects, now } = Route.useLoaderData();
+  const { projects, now, user } = Route.useLoaderData();
+  configureWorkingSetSync(user.userId, user.workingSetSyncEnabled);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // Rehydrate localStorage-backed UI stores on the client only (all use

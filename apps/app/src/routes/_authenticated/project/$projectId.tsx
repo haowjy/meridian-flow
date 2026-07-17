@@ -17,6 +17,7 @@ import {
   seedProjectRouteData,
 } from "@/client/query/project-route-data";
 import { useThreadStore } from "@/client/stores";
+import { establishWorkingSetBaseline, setThread } from "@/client/working-set";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
 import { ProjectView } from "@/features/project/ProjectView";
 import { SCREENS, type ScreenKey } from "@/features/project/shell/screens";
@@ -71,12 +72,17 @@ function dirname(path: string): string | undefined {
 function RouteComponent() {
   const { projectId } = Route.useParams();
   const routeData = Route.useLoaderData();
+  establishWorkingSetBaseline(projectId, routeData.workingSet);
   useProjectRouteCacheSeed(projectId, routeData);
   const { screen, thread, scheme, folder, path, results } = Route.useSearch();
   const navigate = useNavigate();
   const { threadById, threadsLoaded } = useProjectThreadGroups(projectId);
   const handoffPendingThreadIds = useThreadStore((state) => state.handoffPendingThreadIds);
   const activeThreadId = thread && threadsLoaded && threadById.has(thread) ? thread : null;
+
+  useEffect(() => {
+    if (activeThreadId) setThread(projectId, activeThreadId);
+  }, [activeThreadId, projectId]);
 
   useEffect(() => {
     if (!thread || !threadsLoaded || threadById.has(thread)) return;
