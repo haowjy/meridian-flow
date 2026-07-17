@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useTextSize } from "@/hooks/use-text-size";
@@ -378,95 +379,98 @@ function PreferencesSection({
         description={<Trans>Appearance and behavior settings.</Trans>}
       />
 
-      {/* Device-local — stored on this machine only */}
-      <div className="space-y-4">
-        <UiSectionLabel variant="group">
-          <Trans>This device</Trans>
-        </UiSectionLabel>
+      <Tabs defaultValue="device">
+        <TabsList>
+          <TabsTrigger value="device">
+            <Trans>This device</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="account">
+            <Trans>Account</Trans>
+          </TabsTrigger>
+        </TabsList>
 
-        <div className={rowClassName}>
-          <span className={labelClassName}>
-            <Trans>Language</Trans>
-          </span>
-          <Select
-            value={currentLocale}
-            onValueChange={(value) => changeLocale(value as SupportedLocale)}
-          >
-            <SelectTrigger className={triggerClassName} aria-label={t`Interface language`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SUPPORTED_LOCALES.map(({ code, label }) => (
-                <SelectItem key={code} value={code}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className={rowClassName}>
-          <span className={labelClassName}>
-            <Trans>Text size</Trans>
-          </span>
-          <Select
-            value={currentTextSize}
-            onValueChange={(value) => changeTextSize(value as TextSize)}
-          >
-            <SelectTrigger className={triggerClassName} aria-label={t`Reading text size`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TEXT_SIZES.map((textSize) => (
-                <SelectItem key={textSize} value={textSize}>
-                  <TextSizeLabel textSize={textSize} />
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Account-wide — follows you across devices */}
-      <div className="mt-6 space-y-4">
-        <UiSectionLabel variant="group">
-          <Trans>Account</Trans>
-        </UiSectionLabel>
-
-        <div className="flex items-center justify-between gap-6">
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">
-              <Trans>Resume where I left off on any device</Trans>
+        <TabsContent value="device">
+          <div className="space-y-4">
+            <div className={rowClassName}>
+              <span className={labelClassName}>
+                <Trans>Language</Trans>
+              </span>
+              <Select
+                value={currentLocale}
+                onValueChange={(value) => changeLocale(value as SupportedLocale)}
+              >
+                <SelectTrigger className={triggerClassName} aria-label={t`Interface language`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_LOCALES.map(({ code, label }) => (
+                    <SelectItem key={code} value={code}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {workingSetSyncEnabled === null ? (
-                <Trans>
-                  Your saved preference is unavailable. Sync is paused until retry succeeds.
-                </Trans>
-              ) : (
-                <Trans>Reopens your last document and chat when you switch devices</Trans>
-              )}
-            </p>
+
+            <div className={rowClassName}>
+              <span className={labelClassName}>
+                <Trans>Text size</Trans>
+              </span>
+              <Select
+                value={currentTextSize}
+                onValueChange={(value) => changeTextSize(value as TextSize)}
+              >
+                <SelectTrigger className={triggerClassName} aria-label={t`Reading text size`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEXT_SIZES.map((textSize) => (
+                    <SelectItem key={textSize} value={textSize}>
+                      <TextSizeLabel textSize={textSize} />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          {workingSetSyncEnabled === null ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={savingResumePreference}
-              onClick={() => void retryResumePreference()}
-            >
-              <Trans>Retry</Trans>
-            </Button>
-          ) : (
-            <Switch
-              checked={resumeAcrossDevices}
-              disabled={savingResumePreference}
-              onCheckedChange={(enabled) => void changeResumePreference(enabled)}
-              aria-label={t`Resume where I left off on any device`}
-            />
-          )}
-        </div>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="account">
+          <div className="flex items-center justify-between gap-6">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-foreground">
+                <Trans>Resume where I left off on any device</Trans>
+              </div>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {workingSetSyncEnabled === null ? (
+                  <Trans>
+                    Your saved preference is unavailable. Sync is paused until retry succeeds.
+                  </Trans>
+                ) : (
+                  <Trans>Reopens your last document and chat when you switch devices</Trans>
+                )}
+              </p>
+            </div>
+            {workingSetSyncEnabled === null ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingResumePreference}
+                onClick={() => void retryResumePreference()}
+              >
+                <Trans>Retry</Trans>
+              </Button>
+            ) : (
+              <Switch
+                checked={resumeAcrossDevices}
+                disabled={savingResumePreference}
+                onCheckedChange={(enabled) => void changeResumePreference(enabled)}
+                aria-label={t`Resume where I left off on any device`}
+              />
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
