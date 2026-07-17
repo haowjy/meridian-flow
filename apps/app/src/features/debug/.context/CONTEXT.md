@@ -130,21 +130,25 @@ dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
   `useState` initializer makes the first client render diverge from server
   HTML → *"Hydration failed"*.
 
-## Realtime stream inspector — transport seam staged
+## Realtime stream inspector — client half live
 
-The debug overlay does not currently expose WebSocket frame traffic or Yjs
-protocol summaries. The dev-only shared Hocuspocus socket now has a
-`TappedWebSocket` observer seam, and `trace/yjs-wire-tap.ts` maps its frames to
-metadata-only `EventRecord`s, but no tap is registered until the viewer
-integration lands. Browser network tooling (`agent-browser`, HAR) is blind to
-WebSocket traffic, and server-side collab operations emit zero success-path
-structured events. The full realtime stream inspector is tracked in issue cluster
-[#235](https://github.com/haowjy/meridian-flow/issues/235), with the planned
-dependency order: Yjs decoder
-([#238](https://github.com/haowjy/meridian-flow/issues/238)) then frontend
-viewer ([#237](https://github.com/haowjy/meridian-flow/issues/237)) then
-server correlation
-([#239](https://github.com/haowjy/meridian-flow/issues/239)).
+The pill's **Streams** action opens the full-height `TraceViewer` drawer. Its
+plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
+`EventRecord` ring and exposes the producer boundary `appendTraceEvent` /
+`noteTapError`; it has no dependency on the taps that feed it. The viewer
+provides composable stream, message-class, direction, and correlation filters;
+frozen live-tail inspection; record detail; and filtered JSONL copy, download,
+and accessibility-tree output. Future lenses project over this same store
+rather than adding data paths.
+
+The dev-only shared Hocuspocus socket carries a `TappedWebSocket` observer
+seam (`core/transport/tapped-websocket.ts`); `trace/yjs-wire-tap.ts` maps its
+frames to metadata-only `EventRecord`s and is registered while the overlay is
+enabled (installed from the overlay mount, torn down on disable). Server-side
+collab operations still emit zero success-path structured events — the server
+half (correlation receipts, SSE feed) is
+[#239](https://github.com/haowjy/meridian-flow/issues/239) in cluster
+[#235](https://github.com/haowjy/meridian-flow/issues/235).
 
 ## Document session — not available
 
