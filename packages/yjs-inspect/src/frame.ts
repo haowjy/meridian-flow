@@ -1,6 +1,12 @@
 /** Inspects Hocuspocus frames without exposing their content. */
 
-import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
+import {
+  createDecoder,
+  readVarInt,
+  readVarString,
+  readVarUint,
+  readVarUint8Array,
+} from "lib0/decoding";
 import { summarizeAwareness } from "./awareness.js";
 import type {
   AwarenessSummary,
@@ -17,6 +23,10 @@ const OUTER_AUTH = 2;
 const OUTER_QUERY_AWARENESS = 3;
 const OUTER_SYNC_REPLY = 4;
 const OUTER_STATELESS = 5;
+const OUTER_CLOSE = 7;
+const OUTER_SYNC_STATUS = 8;
+const OUTER_PING = 9;
+const OUTER_PONG = 10;
 
 const INNER_SYNC_TYPES: Readonly<Record<number, InnerSyncType>> = {
   0: "step1",
@@ -55,6 +65,17 @@ interface DecodedFrame {
 }
 
 function decodeFrame(bytes: Uint8Array): DecodedFrame {
+  if (bytes.byteLength === 1 && bytes[0] === OUTER_PING) {
+    return {
+      summary: { documentName: null, messageClass: "ping", payloadBytes: 0 },
+    };
+  }
+  if (bytes.byteLength === 1 && bytes[0] === OUTER_PONG) {
+    return {
+      summary: { documentName: null, messageClass: "pong", payloadBytes: 0 },
+    };
+  }
+
   let documentName: string | null = null;
 
   try {
@@ -111,6 +132,34 @@ function decodeFrame(bytes: Uint8Array): DecodedFrame {
           documentName,
           messageClass: "auth",
           payloadBytes: bytes.byteLength - payloadStart,
+        },
+      };
+    }
+
+    if (outerType === OUTER_CLOSE) {
+      if (decoder.pos === bytes.byteLength) {
+        return { summary: { documentName, messageClass: "close", payloadBytes: 0 } };
+      }
+
+      // A lib0 string and byte array share the same length-prefixed envelope.
+      // Count the reason without materializing its content.
+      const reason = readVarUint8Array(decoder);
+      if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
+      return {
+        summary: { documentName, messageClass: "close", payloadBytes: reason.byteLength },
+      };
+    }
+
+    if (outerType === OUTER_SYNC_STATUS) {
+      const payloadStart = decoder.pos;
+      const applied = readVarInt(decoder) === 1;
+      if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
+      return {
+        summary: {
+          documentName,
+          messageClass: "sync.status",
+          applied,
+          payloadBytes: decoder.pos - payloadStart,
         },
       };
     }

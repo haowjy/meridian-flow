@@ -15,6 +15,9 @@ dependency; its outer-frame decoder directly reads the stable lib0 envelope.
 
 Awareness summarization is internal to `inspectFrame`; only its metadata type
 is public. Unknown, truncated, or malformed input must not crash any observer.
+Hocuspocus durability acknowledgements are classified as `sync.status` with an
+`applied` boolean. Close, ping, and pong controls expose only their class and
+payload byte count; close reasons never leave the inspector.
 
 ## Content egress invariant
 
