@@ -11,6 +11,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import type { InvalidUpdate, UpdateSummary } from "../src/index.js";
 import { summarizeUpdate } from "../src/index.js";
 
 const usage = `Usage: pnpm tsx packages/yjs-inspect/examples/decode-journal.ts [file]
@@ -156,8 +157,13 @@ const input = file
 const rows = decodeRows(input);
 if (rows.length === 0) throw new Error("No hex or base64 update rows found");
 
-const inspectedRows = rows.map((row) => ({ row, summary: summarizeUpdate(row.update) }));
-const invalidRows = inspectedRows.filter(({ summary }) => "invalid" in summary);
+const inspectedRows: Array<{ row: JournalRow; summary: UpdateSummary | InvalidUpdate }> = rows.map(
+  (row) => ({ row, summary: summarizeUpdate(row.update) }),
+);
+const invalidRows = inspectedRows.filter(
+  (inspected): inspected is { row: JournalRow; summary: InvalidUpdate } =>
+    "invalid" in inspected.summary,
+);
 if (invalidRows.length > 0) {
   const details = invalidRows.map(({ row, summary }) => `${row.id} (${summary.reason})`).join(", ");
   throw new Error(
