@@ -488,7 +488,16 @@ export function IdentityPathField({
                 (ghost || location.leaf)
               ) {
                 event.preventDefault();
-                setValue(ghost || location.leaf);
+                const accepted = ghost || location.leaf;
+                setValue(accepted);
+                // Keep the field as the active writing surface and put the
+                // caret after the accepted ghost. Relying on the controlled
+                // input update to preserve both is browser-dependent,
+                // especially when Tab initiated the update.
+                window.requestAnimationFrame(() => {
+                  inputRef.current?.focus();
+                  inputRef.current?.setSelectionRange(accepted.length, accepted.length);
+                });
               }
             }}
             onBlur={(event) => {
