@@ -194,7 +194,7 @@ function SessionEditorView({
       try {
         const reference = await uploadFigure({
           projectId,
-          documentId,
+          hostDocumentId: documentId,
           file,
           alt: defaults.alt,
           caption: defaults.caption,

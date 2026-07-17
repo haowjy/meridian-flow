@@ -14,7 +14,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 import { Button } from "@/components/ui/button";
-import { isObjectStoreFigureSrc, signedUrlRefreshDelayMs } from "@/core/editor/figure-workflow";
+import {
+  assetDocumentIdFromFigureSrc,
+  signedUrlRefreshDelayMs,
+} from "@/core/editor/figure-workflow";
 import { cn } from "@/lib/utils";
 
 type MeridianFigureExtensionOptions = {
@@ -59,16 +62,14 @@ function getExtensionOptions(props: NodeViewProps): MeridianFigureExtensionOptio
 
 function useFigureRenderState(input: {
   projectId?: string;
-  documentId?: string;
   src: string;
 }): [RenderState, () => void] {
-  const { projectId, documentId, src } = input;
+  const { projectId, src } = input;
+  const assetDocumentId = assetDocumentIdFromFigureSrc(src);
   const [refreshToken, setRefreshToken] = useState(0);
   const [state, setState] = useState<RenderState>(() => {
     if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
-    return isObjectStoreFigureSrc(src)
-      ? { kind: "loading", url: null }
-      : { kind: "ready", url: src };
+    return assetDocumentId ? { kind: "loading", url: null } : { kind: "ready", url: src };
   });
 
   const refresh = useCallback(() => setRefreshToken((token) => token + 1), []);
@@ -79,16 +80,16 @@ function useFigureRenderState(input: {
       return;
     }
 
-    if (!isObjectStoreFigureSrc(src)) {
+    if (!assetDocumentId) {
       setState({ kind: "ready", url: src });
       return;
     }
 
-    if (!projectId || !documentId) {
+    if (!projectId) {
       setState({
         kind: "error",
         url: null,
-        message: t`This stored figure needs a project and document before it can be rendered.`,
+        message: t`This stored figure needs a project before it can be rendered.`,
       });
       return;
     }
@@ -96,7 +97,7 @@ function useFigureRenderState(input: {
     let cancelled = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const routeProjectId = projectId;
-    const routeDocumentId = documentId;
+    const routeAssetDocumentId = assetDocumentId;
 
     async function loadSignedUrl(skipCache: boolean) {
       setState((current) => ({ kind: "loading", url: current.url }));
@@ -104,8 +105,7 @@ function useFigureRenderState(input: {
       try {
         const signed = await getFigureSignedUrl({
           projectId: routeProjectId,
-          documentId: routeDocumentId,
-          src,
+          assetDocumentId: routeAssetDocumentId,
           skipCache,
         });
         if (cancelled) return;
@@ -128,17 +128,16 @@ function useFigureRenderState(input: {
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [documentId, projectId, refreshToken, src]);
+  }, [assetDocumentId, projectId, refreshToken, src]);
 
   return [state, refresh];
 }
 
 export function FigureNodeView(props: NodeViewProps) {
   const attrs = getFigureAttrs(props);
-  const { projectId, documentId } = getExtensionOptions(props);
+  const { projectId } = getExtensionOptions(props);
   const [renderState, refreshRenderUrl] = useFigureRenderState({
     projectId,
-    documentId,
     src: attrs.src,
   });
 

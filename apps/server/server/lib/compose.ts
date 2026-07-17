@@ -287,18 +287,19 @@ export async function createProductionAppPorts(input: {
     objectStore,
     eventSink,
   });
-  const figureAssets = createFigureAssetService({
-    objectStore,
-    documents: createDrizzleFigureDocumentRepository({ db }),
-    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    eventSink,
-  });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
   const contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
+  });
+  const figureAssets = createFigureAssetService({
+    objectStore,
+    documents: createDrizzleFigureDocumentRepository({ db }),
+    contextPorts,
+    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    eventSink,
   });
   const runtimeTools = createRuntimeToolRegistry({
     db,
