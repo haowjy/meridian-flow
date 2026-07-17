@@ -331,6 +331,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             sizeBytes: e.sizeBytes,
             updatedAt: e.updatedAt,
             readonly,
+            provisionalName: e.provisionalName,
           };
           if (e.kind === "directory") return { ...base, kind: "directory" as const };
           if (e.editable) {

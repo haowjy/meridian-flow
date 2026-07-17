@@ -330,18 +330,20 @@ function UntitledInputObserver({
     const session = getDocumentSessionRegistry().getDetached(documentId);
     const fragment = session.document.getXmlFragment(session.fragmentName);
     let armed = true;
+    let observing = true;
     const observe = () => {
       if (!armed || untitledDocumentIsEmpty(fragment)) return;
       if (!onBecameNonEmpty(documentId)) return;
       armed = false;
       fragment.unobserveDeep(observe);
+      observing = false;
     };
     fragment.observeDeep(observe);
     // IndexedDB may already contain words if React remounted this tab.
     void session.whenLocalPersistenceSynced().then(observe);
     return () => {
       armed = false;
-      fragment.unobserveDeep(observe);
+      if (observing) fragment.unobserveDeep(observe);
     };
   }, [documentId, onBecameNonEmpty]);
   return null;

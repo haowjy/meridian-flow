@@ -7,10 +7,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { renameContextEntryWithConflict } from "@/client/api/projects-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -40,6 +42,7 @@ export function TempDocumentSaveBar({
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 }) {
   const tracked = tab.kind === "tracked" ? tab : null;
+  const queryClient = useQueryClient();
   const parentPath = tracked ? tracked.path.slice(0, tracked.path.lastIndexOf("/")) || "/" : "/";
   const prefix = tracked
     ? `${tracked.scheme}://${tracked.workId ? `${tracked.workId}/` : ""}${parentPath
@@ -89,6 +92,9 @@ export function TempDocumentSaveBar({
         setOpen(true);
         return;
       }
+      await queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.contextTree(projectId, tab.scheme, tab.workId),
+      });
       onRenamed(name, replaceBasename(tab.path, name));
     } catch {
       setError(t`Couldn't rename this document. Try another name.`);
