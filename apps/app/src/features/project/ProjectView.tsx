@@ -12,10 +12,16 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useWorks } from "@/client/query/useWorks";
-import { hydrateWorkingSet, type WorkingSetHydrationPlan } from "@/client/working-set";
+import {
+  hydrateWorkingSet,
+  retryWorkingSetHydration,
+  type WorkingSetHydrationPlan,
+} from "@/client/working-set";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -38,6 +44,7 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
+import { seedWorkingSetTabs } from "./working-set-tab-seeding";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -82,9 +89,36 @@ export function ProjectView(props: ProjectViewProps) {
   // The route keys ProjectView by projectId. This initializer therefore runs
   // before any gated child for each project entry; the driver makes a strict-
   // mode replay of the same loader revision an adoption no-op.
-  const [workingSetHydration] = useState<WorkingSetHydrationPlan>(() =>
+  const [entryHydration] = useState<WorkingSetHydrationPlan>(() =>
     hydrateWorkingSet(props.projectId, props.workingSet),
   );
+  const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
+  const workingSetHydration = retriedHydration ?? entryHydration;
+  const queryClient = useQueryClient();
+  const threadWorkId = useContextWorkId(props.projectId, props.activeThreadId);
+  const { defaultWorkId } = useWorks(props.projectId);
+  const routeWorkId = threadWorkId ?? defaultWorkId;
+  const seededProjectIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (workingSetHydration.status !== "read-degraded") return;
+    const retry = () => {
+      void retryWorkingSetHydration(props.projectId).then(setRetriedHydration);
+    };
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [props.projectId, workingSetHydration.status]);
+
+  useEffect(() => {
+    if (workingSetHydration.status !== "server") return;
+    if (seededProjectIdRef.current === props.projectId) return;
+    seededProjectIdRef.current = props.projectId;
+    void seedWorkingSetTabs({
+      queryClient,
+      projectId: props.projectId,
+      routes: workingSetHydration.row.recentRoutes,
+      routeWorkId,
+    });
+  }, [props.projectId, queryClient, routeWorkId, workingSetHydration]);
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
   // (localStorage), so this is at most one frame — no visible flash. Gating here

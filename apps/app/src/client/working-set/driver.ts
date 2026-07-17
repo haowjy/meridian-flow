@@ -1,7 +1,7 @@
 /** Serialized report-and-sweep driver for device working-set state. */
 
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import { updateProjectWorkingSet } from "@/client/api/projects-api";
+import { getProjectWorkingSet, updateProjectWorkingSet } from "@/client/api/projects-api";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { planWorkingSetHydration, type WorkingSetHydrationPlan } from "./hydration";
 import {
@@ -88,6 +88,19 @@ export class WorkingSetSyncDriver {
       this.baselines.set(projectId, plan.row.revision);
     }
     return plan;
+  }
+
+  async retryHydration(projectId: string): Promise<WorkingSetHydrationPlan> {
+    if (!this.enabled) return { status: "disabled" };
+    const generation = this.sessionGeneration;
+    try {
+      const row = await getProjectWorkingSet(projectId);
+      if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
+      return this.hydrate(projectId, row ? { status: "row", row } : { status: "absent" });
+    } catch {
+      if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
+      return this.hydrate(projectId, { status: "unavailable" });
+    }
   }
 
   establishBaseline(projectId: string, result: ProjectRouteData["workingSet"]): void {
@@ -229,6 +242,10 @@ export function hydrateWorkingSet(
   result: ProjectRouteData["workingSet"],
 ): WorkingSetHydrationPlan {
   return browserDriver()?.hydrate(projectId, result) ?? { status: "disabled" };
+}
+
+export function retryWorkingSetHydration(projectId: string): Promise<WorkingSetHydrationPlan> {
+  return browserDriver()?.retryHydration(projectId) ?? Promise.resolve({ status: "disabled" });
 }
 
 export function readRecentRoutes(projectId: string): WorkingSetRoute[] {

@@ -9,6 +9,7 @@ export {
   readRecentRoutes,
   readRememberedThread,
   removeRoute,
+  retryWorkingSetHydration,
   setThread,
 } from "./driver";
 export type { WorkingSetHydrationPlan } from "./hydration";
