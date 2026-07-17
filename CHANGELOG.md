@@ -10,7 +10,12 @@
   recovery; a rename queued on a still-materializing draft that later fails
   reopens the field with recovery instead of dropping silently. Replaces the
   provisional-only untitled rename line.
-
+- `apps/server`, `@meridian/contracts`: context entries can move across folders,
+  schemes, and Work scopes over HTTP; Scratch documents can be promoted to the
+  Manuscript without changing their Yjs authority or provisional-name state.
+  Move targets now have exact collision semantics, return a canonical collision
+  locator for Open-existing recovery, and share reason-coded path normalization
+  with client create/rename validation.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

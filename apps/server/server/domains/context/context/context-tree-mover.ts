@@ -1,6 +1,6 @@
 /**
  * ContextTreeMover owns filesystem move/delete semantics after URI routing.
- * It prepares ContextLocationToken CAS plans (same-path guard, Unix basename
+ * It prepares ContextLocationToken CAS plans (same-path guard, exact or Unix
  * target resolution, overwrite/type rules, and folder-into-self rejection) and
  * delegates the single durable commit to a ContextTreeMutationStore-backed
  * adapter capability.
@@ -93,7 +93,10 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    return Ok({ movedNodeId: result.value.movedNodeId });
+    return Ok({
+      movedNodeId: result.value.movedNodeId,
+      destinationPath: prepared.value.destinationPath,
+    });
   }
 
   async delete(
@@ -133,7 +136,7 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
-    const targetPath = await this.resolveTarget(destination, sourceBasename);
+    const targetPath = await this.resolveTarget(destination, sourceBasename, options?.exactTarget);
     if (!targetPath.ok) return targetPath;
 
     const existingTarget = await this.inspect({ ...destination, path: targetPath.value });
@@ -192,7 +195,15 @@ export class ContextTreeMover {
   private async resolveTarget(
     destination: ContextTreeDispatch,
     sourceBasename: string,
+    exactTarget = false,
   ): Promise<Result<string, ContextError>> {
+    if (exactTarget) {
+      const targetPath = destination.path.split("/").filter(Boolean).join("/");
+      if (!basename(targetPath)) {
+        return Err({ code: "invalid_operation", uri: destination.canonical });
+      }
+      return Ok(targetPath);
+    }
     const destinationEntry = await this.inspect(destination);
     if (!destinationEntry.ok) return destinationEntry;
     const targetPath =

@@ -427,7 +427,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           overwrite: true,
           destinationFiletype: "markdown",
         }),
-      ).resolves.toEqual({ ok: true, value: { movedNodeId: DOC_MOVE_SOURCE_ID } });
+      ).resolves.toEqual({
+        ok: true,
+        value: { movedNodeId: DOC_MOVE_SOURCE_ID, destinationPath: "new-parent/chapter.md" },
+      });
       await Promise.all(observerWork);
 
       expect(events).toEqual([

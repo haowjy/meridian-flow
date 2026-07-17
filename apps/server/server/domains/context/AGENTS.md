@@ -19,7 +19,7 @@ journaling.
 
 ## HTTP routes
 
-Seven context routes live under
+Eight context routes live under
 `routes/api/projects/[projectId]/context/[scheme]/`. All share `_helpers.ts`
 which provides:
 
@@ -31,4 +31,4 @@ which provides:
 - `parseScheme`, `contextErrorToHttp`, `toUri`.
 
 Routes: `tree.get.ts`, `read.get.ts`, `create.post.ts`, `create-untitled.post.ts`, `rename.post.ts`,
-`delete.post.ts`, `upload.post.ts`.
+`move.post.ts`, `delete.post.ts`, `upload.post.ts`.

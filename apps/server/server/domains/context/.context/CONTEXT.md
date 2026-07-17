@@ -36,7 +36,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   a closed command surface; its current command is a fresh end-of-document
   append. Opaque caller callbacks do not cross the boundary.
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
-  for `move`/`delete` operations.
+  for `move`/`delete` operations. Callers may request exact-target moves so an
+  existing destination folder is a collision rather than a Unix-style container.
+  Successful moves return the domain-committed destination path. The project
+  context HTTP surface exposes cross-folder and cross-scheme moves, including
+  explicit Work authorities on either side when a scheme is Work-scoped.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
@@ -109,6 +113,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   `scratch`/`uploads` stores resolve the project through their Work and deliberately
   register in the live view, not a work-draft view: the ws live-room gate checks the
   live project manifest. Any unregistered document renders a permanently dead editor.
+- Cross-source moves preserve document identity and therefore preserve the same live
+  project-manifest membership; source scope is storage location, not a second
+  manifest namespace. The move commit must not rewrite document Yjs authority or journal rows.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
