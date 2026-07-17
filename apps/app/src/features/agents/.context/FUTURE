@@ -1,0 +1,11 @@
+# features/agents — future work
+
+- `AgentSelector.tsx` / `ComposerAgentControl.tsx`: when post-start agent
+  swapping and per-thread model choice ship, the composer control must still
+  identify what the writer is talking to using the bare name alone — the
+  "AI ·" prefix was deliberately removed (2026-07-17, Jimmy: "we know it's
+  AI") and must not return as the disambiguator. If two selectable things can
+  share a name (agent vs model, or same agent on two models), disambiguate
+  structurally (picker grouping, secondary line, source badge) rather than
+  prefix copy, and keep the composer footer's no-overflow contract: the
+  selector is the row's only flexible element (`shrink` + truncate).
