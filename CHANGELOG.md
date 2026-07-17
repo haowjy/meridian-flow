@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`, `@meridian/contracts`: context entries can move across folders,
+  schemes, and Work scopes over HTTP; Scratch documents can be promoted to the
+  Manuscript without changing their Yjs authority or provisional-name state.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

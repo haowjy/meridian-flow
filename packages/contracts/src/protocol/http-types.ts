@@ -113,6 +113,24 @@ export type RenameContextEntrySuccess = { status: "renamed" };
 export type RenameContextEntryConflict = { status: "conflict" };
 export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContextEntryConflict;
 
+export type MoveContextEntryRequest = {
+  path: string;
+  destinationScheme: ProjectContextTreeScheme;
+  destinationFolderPath: string;
+  newName?: string;
+  sourceWorkId?: string;
+  destinationWorkId?: string;
+};
+
+export type MoveContextEntrySuccess = {
+  status: "moved";
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+};
+export type MoveContextEntryConflict = { status: "conflict" };
+export type MoveContextEntryResult = MoveContextEntrySuccess | MoveContextEntryConflict;
+
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (
     typeof value === "string" && (PROJECT_CONTEXT_TREE_SCHEMES as readonly string[]).includes(value)
