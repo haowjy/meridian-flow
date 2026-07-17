@@ -121,7 +121,11 @@ revertible. After each self-contained change that passes checks
 (typecheck / lint / tests), commit it. Don't accumulate large uncommitted work.
 (This governs local commit cadence.) When a feature branch (never `main`) is
 complete and passes the full gate (`pnpm check` green), push it and open/update
-its PR without asking.
+its PR without asking. **Merging to a stable branch (`main`) is a human
+gate**: agents never merge into it — agent review is not a substitute for the
+human's review. Open the PR, report it, and stop; the human merges (or
+explicitly says "merge it"). Merges between working branches (feature →
+integration lanes) need no gate.
 
 ## Worktree discipline
 
