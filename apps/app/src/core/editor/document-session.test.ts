@@ -382,6 +382,27 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
+  it("raises one orthogonal schema fence and suspends presence", () => {
+    const session = new DocumentSession({ roomKey: "doc-fenced", enableIndexedDb: false });
+    session.awareness.setLocalState({ user: { name: "Writer" } });
+    const { snapshots } = track(session);
+
+    session.raiseSchemaFence({ reason: "invalid-content", detail: "sidebar" });
+    session.raiseSchemaFence({ reason: "repair-detected", detail: "later verdict" });
+
+    expect(session.getSnapshot()).toMatchObject({
+      status: "detached",
+      schemaFence: { reason: "invalid-content", detail: "sidebar" },
+    });
+    expect(session.awareness.getLocalState()).toBeNull();
+    expect(snapshots.at(-1)?.schemaFence).toEqual({
+      reason: "invalid-content",
+      detail: "sidebar",
+    });
+    expect(snapshots.filter((snapshot) => snapshot.schemaFence)).toHaveLength(1);
+    void session.destroy();
+  });
+
   it("emits destroyed after teardown and unsubscribes from transport", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({

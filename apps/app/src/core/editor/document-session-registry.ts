@@ -21,6 +21,12 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
 import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
+import type { SchemaFence } from "./schema-fence";
+import {
+  clearSchemaFenceQuarantine,
+  readSchemaFenceQuarantine,
+  writeSchemaFenceQuarantine,
+} from "./schema-fence";
 
 /** Soft cap — log once when exceeded; no hard eviction (R14). */
 const LIVE_DOC_SOFT_CAP = 50;
@@ -99,9 +105,28 @@ export class DocumentSessionRegistry {
   }
 
   private attachSessionTransport(session: DocumentSession): void {
+    const quarantine = readSchemaFenceQuarantine(session.roomKey);
+    if (quarantine) {
+      session.raiseSchemaFence(quarantine);
+      return;
+    }
     session.attachTransport(({ roomKey, document, awareness }) =>
       createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     );
+  }
+
+  /** Persist a fence and apply it immediately if the room is already open. */
+  quarantineRoom(roomKey: string, fence: SchemaFence): void {
+    writeSchemaFenceQuarantine(roomKey, fence);
+    this.sessions.get(roomKey)?.raiseSchemaFence(fence);
+  }
+
+  readRoomQuarantine(roomKey: string): SchemaFence | null {
+    return readSchemaFenceQuarantine(roomKey);
+  }
+
+  clearRoomQuarantine(roomKey: string): void {
+    clearSchemaFenceQuarantine(roomKey);
   }
 
   private getOrCreateRoom(roomKey: string): DocumentSession {
