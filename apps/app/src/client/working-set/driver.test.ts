@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { canSweepWorkingSet, WorkingSetSyncDriver } from "./driver";
+import { canSweepWorkingSet, getWorkingSetStorage, WorkingSetSyncDriver } from "./driver";
 import { DeviceWorkingSetStore, type WorkingSetSnapshot } from "./store";
 
 const pendingRecord = {
@@ -57,5 +57,21 @@ describe("working-set identity sessions", () => {
     responses[1]?.({ revision: 1 });
     await vi.waitFor(() => expect(store.read("project-1")?.pending).toBeUndefined());
     vi.useRealTimers();
+  });
+});
+
+describe("working-set browser storage", () => {
+  it("falls back when the localStorage getter throws", () => {
+    const blockedWindow = Object.defineProperty({}, "localStorage", {
+      get: () => {
+        throw new DOMException("Access denied", "SecurityError");
+      },
+    }) as Pick<Window, "localStorage">;
+
+    const storage = getWorkingSetStorage(blockedWindow);
+
+    expect(storage.getItem("key")).toBeNull();
+    expect(() => storage.setItem("key", "value")).not.toThrow();
+    expect(() => storage.removeItem("key")).not.toThrow();
   });
 });

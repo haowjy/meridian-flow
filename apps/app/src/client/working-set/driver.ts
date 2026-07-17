@@ -10,6 +10,7 @@ import {
   promoteSnapshotRoute,
   removeSnapshotRoute,
   setSnapshotThread,
+  type WorkingSetStorage,
 } from "./store";
 
 const REPORT_DEBOUNCE_MS = 3_000;
@@ -147,10 +148,24 @@ export class WorkingSetSyncDriver {
 let driver: WorkingSetSyncDriver | null = null;
 let listenersInstalled = false;
 
+const unavailableStorage: WorkingSetStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
+
+export function getWorkingSetStorage(browser: Pick<Window, "localStorage">): WorkingSetStorage {
+  try {
+    return browser.localStorage;
+  } catch {
+    return unavailableStorage;
+  }
+}
+
 function browserDriver(): WorkingSetSyncDriver | null {
   if (typeof window === "undefined") return null;
   driver ??= new WorkingSetSyncDriver(
-    new DeviceWorkingSetStore(window.localStorage),
+    new DeviceWorkingSetStore(getWorkingSetStorage(window)),
     (projectId, snapshot, keepalive) => updateProjectWorkingSet(projectId, snapshot, { keepalive }),
   );
   if (!listenersInstalled) {
