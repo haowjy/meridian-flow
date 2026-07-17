@@ -1,8 +1,8 @@
 /**
  * DraftEntryBanner — in-editor strip shown when the live document has pending
  * AI changes and review is NOT open: the not-in-review counterpart to
- * DraftReviewHeader. Both render in EditorView's belowToolbar slot and the
- * mount host picks exactly one, so the strip reads as one surface in two
+ * DraftReviewHeader. Both are modes of the draft-chrome tenant in
+ * EditorBannerSlot, which guarantees the strip reads as one surface in two
  * modes. The banner is the document-scoped nudge (the dock stays the
  * work-scoped aggregate); its Review action routes through the same
  * openAiDraft entry as the dock rows. Non-dismissible by design: the changes
