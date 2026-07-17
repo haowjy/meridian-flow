@@ -49,7 +49,8 @@ observer sequences and Yjs room attribution when Fast Refresh replaces the taps.
 
 `stream.bytes` on thread records is the UTF-8 encoded frame size, not JavaScript
 string length. Lifecycle records never retain socket URLs or native close-reason
-text. Yjs closes map standard WebSocket codes to a fixed reason vocabulary;
+text, and use their `socket.open` or `socket.close` name as the message class so
+the viewer and agent API share one primary filter. Yjs closes map standard WebSocket codes to a fixed reason vocabulary;
 unknown codes remain numeric-only. Thread and Yjs closes retain `socketEpoch`,
 numeric `code`, and `wasClean`.
 

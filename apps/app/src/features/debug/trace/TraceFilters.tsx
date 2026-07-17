@@ -8,6 +8,7 @@ import type { TraceFilters as TraceFilterState } from "./trace-store";
 
 const ALL_MESSAGE_CLASSES = "__all_message_classes__";
 const BOTH_DIRECTIONS = "__both_directions__";
+const LIFECYCLE_MESSAGE_CLASSES = ["socket.close", "socket.open"] as const;
 
 interface TraceFiltersProps {
   entries: readonly EventRecord[];
@@ -20,7 +21,10 @@ const selectClass = `${fieldClass} focus-ring w-full rounded-md border border-in
 
 export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) {
   const messageClasses = Array.from(
-    new Set(entries.flatMap((record) => record.stream?.messageClass ?? [])),
+    new Set([
+      ...LIFECYCLE_MESSAGE_CLASSES,
+      ...entries.flatMap((record) => record.stream?.messageClass ?? []),
+    ]),
   ).sort();
 
   function patch(next: Partial<TraceFilterState>) {

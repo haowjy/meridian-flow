@@ -41,6 +41,10 @@ describe("createYjsWireTap", () => {
     tap.onSocketOpen(4);
     tap.onFrame("client_to_server", bytes, 4);
 
+    expect(records[0]).toMatchObject({
+      name: "socket.open",
+      stream: { messageClass: "socket.open" },
+    });
     expect(records[0]?.payload).toEqual({ socketEpoch: 4 });
 
     expect(records[1]).toMatchObject({
@@ -132,6 +136,7 @@ describe("createYjsWireTap", () => {
     expect(records[1]).toMatchObject({
       level: "debug",
       name: "socket.close",
+      stream: { messageClass: "socket.close" },
       payload: { socketEpoch: 1, code: 4000, wasClean: true },
     });
     expect(records[3]).toMatchObject({

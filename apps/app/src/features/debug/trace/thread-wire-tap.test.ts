@@ -148,6 +148,7 @@ describe("createThreadWireTap", () => {
     expect(records.map((record) => record.stream?.observerSeq)).toEqual([1, 2, 3]);
     expect(records[1]).toMatchObject({
       name: "socket.close",
+      stream: { messageClass: "socket.close" },
       payload: { socketEpoch: 1, code: 4403, wasClean: true },
     });
   });

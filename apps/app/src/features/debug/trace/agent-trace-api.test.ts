@@ -2,6 +2,7 @@ import type { EventRecord } from "@meridian/contracts/observability";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { meridianTraceAPI } from "./agent-trace-api";
+import { createThreadWireTap } from "./thread-wire-tap";
 import {
   appendTraceEvent,
   clearTraceEvents,
@@ -35,6 +36,19 @@ afterEach(async () => {
 });
 
 describe("agent trace API", () => {
+  it("queries socket lifecycle records by message class and name", () => {
+    const tap = createThreadWireTap(appendTraceEvent, vi.fn());
+    tap.onSocketOpen(1);
+    tap.onSocketClose(1, 1000, true);
+
+    expect(meridianTraceAPI.getEvents({ messageClass: "socket.close" })).toMatchObject([
+      { name: "socket.close", stream: { messageClass: "socket.close" } },
+    ]);
+    expect(meridianTraceAPI.getEvents({ name: "socket.open" })).toMatchObject([
+      { name: "socket.open", stream: { messageClass: "socket.open" } },
+    ]);
+  });
+
   it("returns events matching composable metadata filters", () => {
     appendTraceEvent(event(1));
     appendTraceEvent(

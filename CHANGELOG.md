@@ -9,7 +9,8 @@
   live client Yjs and agent-stream wire traffic as metadata-only records without
   blocking the editor;
   browser agents can query, filter, clear, and await those records through
-  `window.__meridianTrace`.
+  `window.__meridianTrace`; socket lifecycle records are queryable by message
+  class or event name.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

@@ -6,6 +6,7 @@ import { clearTraceEvents, getTraceSnapshot, subscribeToTraceEvents } from "./tr
 export interface AgentTraceFilter {
   transport?: TraceStreamRef["transport"];
   messageClass?: string;
+  name?: string;
   direction?: NonNullable<TraceStreamRef["direction"]>;
   /** Matches the beginning of a stream id. */
   stream?: string;
@@ -30,6 +31,7 @@ function matchesFilter(record: EventRecord, filter: AgentTraceFilter): boolean {
   const stream = record.stream;
   if (filter.transport && stream?.transport !== filter.transport) return false;
   if (filter.messageClass && stream?.messageClass !== filter.messageClass) return false;
+  if (filter.name && record.name !== filter.name) return false;
   if (filter.direction && stream?.direction !== filter.direction) return false;
   if (filter.stream && !stream?.streamId.startsWith(filter.stream)) return false;
   return true;
