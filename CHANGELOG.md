@@ -18,6 +18,13 @@
   "Resume / New document" state while the file tree loads. Settings ›
   Preferences is split into "This device" (language, text size) and
   "Account" (sync toggle) tabs.
+  The full tab desk persists device-locally: reload restores every open
+  tab (including in-flight untitled docs) on all sync branches — inside
+  the sync debounce, with sync off, or offline; a newer server snapshot
+  still replaces the desk. Closing a background tab no longer erases the
+  synced recent list; deleted documents drop out of it on next entry;
+  clearing the desk then reloading default-opens instead of landing on
+  an empty New-document canvas.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
