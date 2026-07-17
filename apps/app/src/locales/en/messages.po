@@ -230,6 +230,10 @@ msgid "Billing"
 msgstr "Billing"
 
 #: src/features/editor/EditorToolbar.tsx
+msgid "Block alignment"
+msgstr "Block alignment"
+
+#: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr "Bold"
 
@@ -261,6 +265,10 @@ msgstr "Caption"
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
 msgstr "Capture experiments, methods, and observations in a structured log."
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Center"
+msgstr "Center"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Change applied."
@@ -328,6 +336,14 @@ msgstr "Closed"
 #: src/features/editor/EditorToolbar.tsx
 msgid "Code"
 msgstr "Code"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code block options"
+msgstr "Code block options"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code language"
+msgstr "Code language"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Collapse changes"
@@ -499,6 +515,10 @@ msgstr "Custom amount (USD)"
 msgid "Data Analysis"
 msgstr "Data Analysis"
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Default alignment"
+msgstr "Default alignment"
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -543,6 +563,14 @@ msgstr "Dev login"
 #: src/routes/dev-login.tsx
 msgid "Dev-login failed"
 msgstr "Dev-login failed"
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Diagram could not be rendered"
+msgstr "Diagram could not be rendered"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Diagram view"
+msgstr "Diagram view"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -617,6 +645,10 @@ msgstr "Drop image to upload a figure"
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Edit"
+msgstr "Edit"
 
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
@@ -1226,6 +1258,10 @@ msgstr "Parent:"
 msgid "Paste or type a link"
 msgstr "Paste or type a link"
 
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Plain text"
+msgstr "Plain text"
+
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
 msgstr "Plans"
@@ -1241,6 +1277,14 @@ msgstr "Popular"
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
 msgstr "Preferences"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Press Enter to use this language"
+msgstr "Press Enter to use this language"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Preview"
+msgstr "Preview"
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
@@ -1372,6 +1416,10 @@ msgstr "Renamed to {trimmed}"
 msgid "Renaming…"
 msgstr "Renaming…"
 
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Rendering diagram…"
+msgstr "Rendering diagram…"
+
 #: src/features/chat/ChatView.tsx
 msgid "Reply to the agent, or steer the analysis…"
 msgstr "Reply to the agent, or steer the analysis…"
@@ -1434,6 +1482,10 @@ msgstr "Reviewing changes"
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
 msgstr "Rewrote"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Right"
+msgstr "Right"
 
 #: src/features/chat/tool-renderers.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -1732,8 +1784,12 @@ msgid "This skill is no longer available in this chat — start a new chat to us
 msgstr "This skill is no longer available in this chat — start a new chat to use the current version."
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "This stored figure needs a project and document before it can be rendered."
-msgstr "This stored figure needs a project and document before it can be rendered."
+#~ msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgstr "This stored figure needs a project and document before it can be rendered."
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "This stored figure needs a project before it can be rendered."
+msgstr "This stored figure needs a project before it can be rendered."
 
 #: src/lib/date-groups.ts
 msgid "This week"
@@ -1771,6 +1827,10 @@ msgstr "Turn cancelled."
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr "Type your answer…"
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Unable to render diagram"
+msgstr "Unable to render diagram"
 
 #: src/features/chat/TurnEditsCard.tsx
 #: src/features/project/dock/DockChangesView.tsx

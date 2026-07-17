@@ -230,6 +230,10 @@ msgid "Billing"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
+msgid "Block alignment"
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr ""
 
@@ -260,6 +264,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Center"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -327,6 +335,14 @@ msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Code"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code block options"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code language"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -499,6 +515,10 @@ msgstr ""
 msgid "Data Analysis"
 msgstr ""
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Default alignment"
+msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -542,6 +562,14 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Dev-login failed"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Diagram could not be rendered"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Diagram view"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -616,6 +644,10 @@ msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Earlier content could not be recovered"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Edit"
 msgstr ""
 
 #: src/features/editor/EditorLinkBubble.tsx
@@ -1226,6 +1258,10 @@ msgstr ""
 msgid "Paste or type a link"
 msgstr ""
 
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Plain text"
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
 msgstr ""
@@ -1240,6 +1276,14 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Press Enter to use this language"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Preview"
 msgstr ""
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
@@ -1372,6 +1416,10 @@ msgstr ""
 msgid "Renaming…"
 msgstr ""
 
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Rendering diagram…"
+msgstr ""
+
 #: src/features/chat/ChatView.tsx
 msgid "Reply to the agent, or steer the analysis…"
 msgstr "回复智能体，或引导分析方向…"
@@ -1433,6 +1481,10 @@ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Right"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1732,7 +1784,11 @@ msgid "This skill is no longer available in this chat — start a new chat to us
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgstr ""
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
 
 #: src/lib/date-groups.ts
@@ -1770,6 +1826,10 @@ msgstr "已取消。"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Unable to render diagram"
 msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx

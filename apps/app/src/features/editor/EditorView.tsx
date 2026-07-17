@@ -39,6 +39,7 @@ import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-run
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
+import { codeBubbleContext } from "./EditorCodeBubble";
 import { linkBubbleContext } from "./EditorLinkBubble";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
@@ -81,7 +82,7 @@ type FigureUploadState =
   | { kind: "error"; message: string };
 
 let editorSessionOwnerSequence = 0;
-const editorBubbleContexts = [linkBubbleContext] as const;
+const editorBubbleContexts = [linkBubbleContext, codeBubbleContext] as const;
 
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
