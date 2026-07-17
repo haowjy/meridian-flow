@@ -223,7 +223,7 @@ export function TempDocumentSaveBar({
           <PopoverAnchor asChild>
             <Input
               ref={inputRef}
-              className="h-8 min-w-0 max-w-96 flex-1 bg-card"
+              className="h-8 min-w-0 max-w-96 flex-1"
               aria-label={t`Save location`}
               autoComplete="off"
               spellCheck={false}
@@ -345,18 +345,27 @@ export function TempDocumentSaveBar({
 /**
  * Warning amber, not gray: this is the one line telling the writer their
  * words aren't in the project yet (cinnabar would read as error; gray buried
- * it). One slot owns the left position; the container width picks the
- * presentation — full sentence when roomy, tooltipped icon when tight.
+ * it). Both variants keep the ink on the warning field — see the never-naked
+ * contract in design-tokens. One slot owns the left position; the container
+ * width picks the presentation — full sentence when roomy, tooltipped icon
+ * when tight.
  */
 function DeviceOnlyWarning() {
   const label = t`Only on this device`;
   return (
-    <div className="min-w-0 shrink-0 text-warning-foreground">
-      <p className="min-w-0 truncate font-medium text-xs @max-md:hidden">{label}</p>
+    <div className="min-w-0 shrink-0">
+      <p className="inline-flex min-w-0 items-center gap-1 rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 font-medium text-warning-foreground text-xs @max-md:hidden">
+        <TriangleAlert aria-hidden className="size-3 shrink-0" />
+        <span className="truncate">{label}</span>
+      </p>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span role="img" aria-label={label} className="hidden @max-md:inline-flex">
-            <TriangleAlert aria-hidden className="size-4" />
+          <span
+            role="img"
+            aria-label={label}
+            className="hidden items-center rounded-full border border-warning-border bg-warning-bg p-1 text-warning-foreground @max-md:inline-flex"
+          >
+            <TriangleAlert aria-hidden className="size-3" />
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={4}>
