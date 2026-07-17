@@ -9,7 +9,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
-import type { KeyboardEvent, ReactNode } from "react";
+import { forwardRef, type KeyboardEvent, type ReactNode, useImperativeHandle, useRef } from "react";
 import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
@@ -17,26 +17,38 @@ import type { FileSuggestion } from "./file-suggestions";
 /** A row with an optional right-edge annotation (e.g. "new folder"). */
 export type AnnotatedFileSuggestion = FileSuggestion & { hint?: string };
 
-export function FileSuggestionList({
-  suggestions,
-  onSelect,
-  onClose,
-  onNavigateUp,
-  hideParents = false,
-  emptyMessage,
-  header,
-}: {
-  suggestions: readonly AnnotatedFileSuggestion[];
-  onSelect: (suggestion: FileSuggestion) => void;
-  onClose: () => void;
-  /** When set, a leading `..` row navigates to the enclosing level. */
-  onNavigateUp?: () => void;
-  /** Browse mode: rows share one folder, so per-row parent labels are noise. */
-  hideParents?: boolean;
-  emptyMessage?: string;
-  /** Rendered above the rows, inside the roving-focus boundary. */
-  header?: ReactNode;
-}) {
+export type FileSuggestionListHandle = {
+  focusFirst(): void;
+  focusLast(): void;
+};
+
+export const FileSuggestionList = forwardRef<
+  FileSuggestionListHandle,
+  {
+    suggestions: readonly AnnotatedFileSuggestion[];
+    onSelect: (suggestion: FileSuggestion) => void;
+    onClose: () => void;
+    /** When set, a leading `..` row navigates to the enclosing level. */
+    onNavigateUp?: () => void;
+    /** Browse mode: rows share one folder, so per-row parent labels are noise. */
+    hideParents?: boolean;
+    emptyMessage?: string;
+    /** Rendered above the rows, inside the roving-focus boundary. */
+    header?: ReactNode;
+  }
+>(function FileSuggestionList(
+  { suggestions, onSelect, onClose, onNavigateUp, hideParents = false, emptyMessage, header },
+  ref,
+) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusStops = () =>
+    Array.from(
+      rootRef.current?.querySelectorAll<HTMLButtonElement>("[data-file-suggestion]") ?? [],
+    );
+  useImperativeHandle(ref, () => ({
+    focusFirst: () => focusStops()[0]?.focus(),
+    focusLast: () => focusStops().at(-1)?.focus(),
+  }));
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -76,7 +88,7 @@ export function FileSuggestionList({
     // The keydown boundary wraps header + rows so one arrow walk covers both;
     // the listbox role stays on the rows alone (the header is not an option).
     // biome-ignore lint/a11y/noStaticElementInteractions: keydown-only composite boundary — the focusables inside carry the interactive roles, and no ARIA role fits a note+listbox composite.
-    <div onKeyDown={handleKeyDown}>
+    <div ref={rootRef} onKeyDown={handleKeyDown}>
       {header}
       <div role="listbox" aria-label={t`File suggestions`}>
         <ul className="flex flex-col gap-0.5 p-1">
@@ -149,4 +161,4 @@ export function FileSuggestionList({
       </div>
     </div>
   );
-}
+});

@@ -4,9 +4,10 @@
  * header actions, whose only keyboard route is this walk (hosts intercept
  * Tab to exit the popover).
  */
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { FileSuggestionList } from "./FileSuggestionList";
+import { FileSuggestionList, type FileSuggestionListHandle } from "./FileSuggestionList";
 import type { FileSuggestion } from "./file-suggestions";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -34,8 +35,10 @@ describe("FileSuggestionList", () => {
   it("walks header actions and rows as one arrow order, and Enter activates", async () => {
     const onOpenExisting = vi.fn();
     const onSelect = vi.fn();
+    const listRef = createRef<FileSuggestionListHandle>();
     await withReactRoot(
       <FileSuggestionList
+        ref={listRef}
         header={
           <button data-file-suggestion type="button" tabIndex={-1} onClick={onOpenExisting}>
             Open existing
@@ -57,7 +60,7 @@ describe("FileSuggestionList", () => {
         ]);
 
         // The header action leads the walk; arrows move through rows and wrap.
-        stops[0]?.focus();
+        listRef.current?.focusFirst();
         pressKey(stops[0] as Element, "ArrowDown");
         expect(focused()?.textContent).toBe("gel");
         pressKey(focused() as Element, "ArrowUp");
@@ -66,8 +69,8 @@ describe("FileSuggestionList", () => {
         expect(focused()?.textContent).toBe("chapter-1");
 
         // Enter on the focused header action fires its click handler.
-        stops[0]?.focus();
-        pressKey(stops[0] as Element, "Enter");
+        listRef.current?.focusFirst();
+        pressKey(focused() as Element, "Enter");
         expect(onOpenExisting).toHaveBeenCalledTimes(1);
         expect(onSelect).not.toHaveBeenCalled();
       },

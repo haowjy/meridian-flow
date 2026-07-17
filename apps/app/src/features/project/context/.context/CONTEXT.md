@@ -126,6 +126,9 @@ Contracts:
   after unsynced words persist for a 2s sustained grace — the clock is the
   reconciler's per-document `pendingSince`, so remounting chrome (tab
   switches) cannot restart the window.
+- **Destination keyboard path**: placement ArrowDown/ArrowUp enters the
+  suggestion list through its typed focus handle; the Move-to popup focuses
+  its first browser row on open. Rows retain arrow wrapping and Enter select.
 
 The tab strip still follows the settled tonal treatment: it paints nothing,
 active tabs continue the canvas upward, inactive neighbors alone receive short

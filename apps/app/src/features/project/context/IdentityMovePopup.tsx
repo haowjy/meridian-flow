@@ -8,7 +8,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -17,6 +17,7 @@ import { schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
   FileSuggestionList,
+  type FileSuggestionListHandle,
   folderChildren,
   parentPath as parentFolderPath,
   useFileSuggestions,
@@ -91,6 +92,7 @@ function MovePopupContent({
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
   onClose: () => void;
 }) {
+  const listRef = useRef<FileSuggestionListHandle>(null);
   // Anchored at the document's current folder; up-navigation climbs to the
   // scheme roots (the roots ARE the context choice).
   const [browse, setBrowse] = useState<Browse>({
@@ -148,6 +150,11 @@ function MovePopupContent({
     : "";
   const canCommit = (destinationChanged || nameChanged) && !nameReason && !saving;
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => listRef.current?.focusFirst());
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   async function run(target: IdentityCommitTarget) {
     setSaving(true);
     setRequestError(null);
@@ -180,6 +187,7 @@ function MovePopupContent({
       </p>
       <div className="max-h-56 overflow-y-auto">
         <FileSuggestionList
+          ref={listRef}
           suggestions={rows}
           onSelect={(entry) => {
             setConflict(null);

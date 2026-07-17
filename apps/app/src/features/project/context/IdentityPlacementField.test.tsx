@@ -47,6 +47,31 @@ const provisionalTab: ContextTab = {
 };
 
 describe("IdentityPlacementField placement ghost", () => {
+  it("enters the destination list from the input with ArrowDown", async () => {
+    await withReactRoot(
+      <IdentityPlacementField
+        projectId="project-1"
+        activeThreadId={null}
+        defaultWorkId={null}
+        tab={provisionalTab}
+        location={tabLocation(provisionalTab)}
+        failure={null}
+        commit={vi.fn()}
+        onExit={() => {}}
+        onOpenExisting={() => {}}
+      />,
+      async () => {
+        const input = document.querySelector<HTMLInputElement>(
+          'input[aria-label="Document name and location"]',
+        );
+        input?.dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+        );
+        expect(document.activeElement?.textContent).toBe("Manuscript");
+      },
+    );
+  });
+
   it.each([
     "Tab",
     "ArrowRight",

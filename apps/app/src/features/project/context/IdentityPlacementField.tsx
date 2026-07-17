@@ -21,6 +21,7 @@ import { schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
   FileSuggestionList,
+  type FileSuggestionListHandle,
   folderChildren,
   parentPath as parentFolderPath,
   useFileSuggestions,
@@ -59,6 +60,7 @@ export function IdentityPlacementField({
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<FileSuggestionListHandle>(null);
   const suggestionTimer = useRef<number | null>(null);
   const [destination, setDestination] = useState<{
     scheme: ProjectContextTreeScheme;
@@ -284,6 +286,12 @@ export function IdentityPlacementField({
               setValue(event.target.value);
             }}
             onKeyDown={(event) => {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                if (event.key === "ArrowDown") listRef.current?.focusFirst();
+                else listRef.current?.focusLast();
+                return;
+              }
               if (event.key === "Enter") void submit();
               if (event.key === "Escape") {
                 event.preventDefault();
@@ -336,6 +344,7 @@ export function IdentityPlacementField({
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <FileSuggestionList
+          ref={listRef}
           header={note}
           suggestions={rows}
           onSelect={(entry) => {
