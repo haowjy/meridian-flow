@@ -67,7 +67,26 @@ workarounds. Don't explain what the code does; explain why it's surprising.
 
 **Debugging.** Temporary console probes are allowed while diagnosing, but must
 use the marked convention in [docs/debugging.md](docs/debugging.md) and be
-deleted or converted to durable observability before push.
+deleted or converted to durable observability before push. In debug-enabled
+builds (`import.meta.env.DEV` or `VITE_DEBUG_OVERLAY=1`), the client exposes
+`window.__meridianTrace` — a programmatic API for querying captured WebSocket
+traffic (both Yjs collab and agent thread streams) as metadata-only
+`EventRecord`s. Use it in browser-automation probe sessions:
+
+```js
+// mark → act → query (non-destructive)
+window.__meridianTrace.clear();
+// ... perform the action under test ...
+window.__meridianTrace.getEvents({ transport: 'yjs', messageClass: 'sync.update' });
+window.__meridianTrace.getEvents({ transport: 'thread', messageClass: 'event' });
+window.__meridianTrace.getStats();  // { captured, ringDropped, tapErrors }
+await window.__meridianTrace.waitForEvent({ messageClass: 'sync.status' }); // 10s timeout
+```
+
+Results are structured clones (immutable). Server-side diagnostics go through
+`EventSink`; structured event JSONL lands in `logs/events/*.jsonl` in dev.
+Full reference: [docs/debugging.md](docs/debugging.md); colocated contracts:
+`apps/app/src/features/debug/.context/`.
 
 
 ## Documentation
