@@ -103,7 +103,10 @@ function RouteComponent() {
 
   function handleSelectScreen(next: ScreenKey) {
     const reset: Partial<ProjectSearch> = { screen: next, results: undefined };
-    if (next !== "context") {
+    // An explicit empty path pins a fresh untitled tab. Keep that pin while
+    // another screen is in front so returning to Editor cannot replay the
+    // previously remembered server document over it.
+    if (next !== "context" && path !== "") {
       reset.scheme = undefined;
       reset.folder = undefined;
       reset.path = undefined;

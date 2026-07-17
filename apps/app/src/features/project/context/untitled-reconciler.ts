@@ -391,7 +391,7 @@ function browserDeps(): UntitledReconcilerDeps {
   return {
     storage: localStorage,
     scheduler: {
-      queue: queueMicrotask,
+      queue: (task) => queueMicrotask(task),
       setTimer: (task, delayMs) => setTimeout(task, delayMs),
       clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
       onOnline: (task) => {
