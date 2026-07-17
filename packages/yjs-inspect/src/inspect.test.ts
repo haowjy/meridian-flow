@@ -102,6 +102,7 @@ function assertSafeEgress(
     if (typeof key === "symbol") {
       throw new Error(`${path} contains a non-JSON-natural symbol key`);
     }
+    if (key.includes(canary)) throw new Error(`${path} contains the content canary in a key`);
     assertSafeEgress(Reflect.get(value, key), canary, `${path}.${key}`, seen);
   }
   seen.delete(value);
@@ -523,6 +524,7 @@ it("rejects content and non-JSON-natural shapes from the egress gate", () => {
   expect(() => assertSafeEgress({ nested: [{ value: canary }] }, canary)).toThrow(
     "contains the content canary",
   );
+  expect(() => assertSafeEgress({ [canary]: 1 }, canary)).toThrow("contains the content canary");
 
   const violations: unknown[] = [
     new Uint8Array(),
