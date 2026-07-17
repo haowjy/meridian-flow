@@ -6,10 +6,19 @@ The two client sockets use their canonical transport seams. `TappedWebSocket`
 observes the shared Hocuspocus socket's final binary frames.
 `SocketLifecycleController` observes the thread/agent socket's lifecycle and
 final string frames. Both are active only behind the build-time debug gate;
-production retains native WebSockets without capture. Neither seam parses or
-retains frames, and observer failures never escape into product transport.
+default production builds retain native WebSockets without capture, while the
+explicit `VITE_DEBUG_OVERLAY=1` build override includes the debug observers.
+Neither seam parses or retains frames, and observer failures never escape into
+product transport.
 `socketEpoch` distinguishes reconnects while each registered tap owns
 page-lifetime sequencing.
+
+Thread close observation runs before the controller's current-socket guard so
+controlled closes from teardown, manual reconnect, and ping timeout remain
+visible. The guard still fences every product callback, state transition, and
+reconnect decision for stale socket generations. Lifecycle observers receive
+only the socket epoch, numeric close code, and `wasClean`; URL and raw close
+reason text do not cross the core observer contract.
 
 Core owns only the late-bound, transport-specific `YjsWireTap` and
 `ThreadWireTap` contracts. The debug feature registers both implementations in
