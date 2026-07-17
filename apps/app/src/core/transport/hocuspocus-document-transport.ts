@@ -20,11 +20,12 @@ import {
 import { type SafetyNoticeWsMessage, yjsWsPath } from "@meridian/contracts/protocol";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import type { DocumentSessionTransportProvider } from "@/core/editor/document-session";
 
 import { buildSameOriginWsUrl } from "./dev-transport";
 import type { ConnectionState } from "./ThreadTransport";
+import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 
 const TERMINAL_DENIAL_CODES = new Set([4401, 4403]);
 const HOCUSPOCUS_BRANCH_RESET_REASONS = new Set(["branch-generation-stale", "branch-stale-doc"]);
@@ -34,6 +35,7 @@ let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
 function getSharedWebsocket(): HocuspocusProviderWebsocket {
   sharedWebsocket ??= new HocuspocusProviderWebsocket({
     url: buildSameOriginWsUrl(yjsWsPath()),
+    ...(DEBUG_FEATURE_ALLOWED ? { WebSocketPolyfill: TappedWebSocket } : {}),
   });
   return sharedWebsocket;
 }
@@ -165,6 +167,7 @@ export function createHocuspocusDocumentTransport({
     onClose: handleClose,
     onStateless: handleStateless,
   });
+  if (DEBUG_FEATURE_ALLOWED) notifyYjsRoomAttached(roomName, document.clientID);
 
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
