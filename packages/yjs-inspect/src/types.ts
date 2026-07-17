@@ -6,7 +6,11 @@ export type YjsMessageClass =
   | "sync.update"
   | "awareness"
   | "stateless"
-  | "auth";
+  | "auth"
+  | "sync.status"
+  | "close"
+  | "ping"
+  | "pong";
 
 export type InnerSyncType = "step1" | "step2" | "update";
 
@@ -18,16 +22,19 @@ interface KnownFrameSummaryBase {
 export interface SyncStep1FrameSummary extends KnownFrameSummaryBase {
   messageClass: "sync.step1";
   innerSyncType: "step1";
+  applied?: never;
 }
 
 export interface SyncStep2FrameSummary extends KnownFrameSummaryBase {
   messageClass: "sync.step2";
   innerSyncType: "step2";
+  applied?: never;
 }
 
 export interface SyncUpdateFrameSummary extends KnownFrameSummaryBase {
   messageClass: "sync.update";
   innerSyncType: "update";
+  applied?: never;
 }
 
 export type SyncFrameSummary =
@@ -38,19 +45,56 @@ export type SyncFrameSummary =
 export interface AwarenessFrameSummary extends KnownFrameSummaryBase {
   messageClass: "awareness";
   innerSyncType?: never;
+  applied?: never;
 }
 
 export interface StatelessFrameSummary extends KnownFrameSummaryBase {
   messageClass: "stateless";
   innerSyncType?: never;
+  applied?: never;
 }
 
 export interface AuthFrameSummary extends KnownFrameSummaryBase {
   messageClass: "auth";
   innerSyncType?: never;
+  applied?: never;
 }
 
-export type NonSyncFrameSummary = AwarenessFrameSummary | StatelessFrameSummary | AuthFrameSummary;
+export interface SyncStatusFrameSummary extends KnownFrameSummaryBase {
+  messageClass: "sync.status";
+  applied: boolean;
+  innerSyncType?: never;
+}
+
+export interface CloseFrameSummary extends KnownFrameSummaryBase {
+  messageClass: "close";
+  innerSyncType?: never;
+  applied?: never;
+}
+
+interface ConnectionControlFrameSummaryBase {
+  documentName: null;
+  payloadBytes: number;
+  innerSyncType?: never;
+  applied?: never;
+}
+
+export interface PingFrameSummary extends ConnectionControlFrameSummaryBase {
+  messageClass: "ping";
+}
+
+export interface PongFrameSummary extends ConnectionControlFrameSummaryBase {
+  messageClass: "pong";
+}
+
+export type NonSyncFrameSummary =
+  | AwarenessFrameSummary
+  | StatelessFrameSummary
+  | AuthFrameSummary
+  | SyncStatusFrameSummary
+  | CloseFrameSummary
+  | PingFrameSummary
+  | PongFrameSummary;
 
 export type KnownFrameSummary = SyncFrameSummary | NonSyncFrameSummary;
 
@@ -58,6 +102,8 @@ export interface UnknownFrameSummary {
   documentName: string | null;
   messageClass: "unknown";
   payloadBytes: number;
+  innerSyncType?: never;
+  applied?: never;
 }
 
 export type FrameSummary = KnownFrameSummary | UnknownFrameSummary;
@@ -105,7 +151,15 @@ export interface AwarenessFrameInspection {
 }
 
 export interface OtherFrameInspection {
-  frame: SyncStep1FrameSummary | StatelessFrameSummary | AuthFrameSummary | UnknownFrameSummary;
+  frame:
+    | SyncStep1FrameSummary
+    | StatelessFrameSummary
+    | AuthFrameSummary
+    | SyncStatusFrameSummary
+    | CloseFrameSummary
+    | PingFrameSummary
+    | PongFrameSummary
+    | UnknownFrameSummary;
   update?: never;
   awareness?: never;
 }

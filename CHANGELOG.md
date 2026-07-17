@@ -22,6 +22,8 @@
 - `@meridian/contracts/observability`: shared JSON-natural observability records
   now include stream references and document, branch, and Yjs correlation fields.
 - `@meridian/yjs-inspect`: inspect complete Hocuspocus frames and summarize Yjs updates with merge-valid struct/delete spans and canonical correlation keys; invalid updates return safe identifying metadata, and the journal decoder rejects incomplete expanded records and handles CLI flags explicitly.
+- `@meridian/yjs-inspect`: classify Hocuspocus durable-sync acknowledgements and
+  close/ping/pong controls without exposing close reasons.
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);

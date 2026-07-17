@@ -59,6 +59,11 @@ The outer Hocuspocus frame envelope (document name + message type) is
 decoded directly from the lib0 encoding with no Hocuspocus import. The
 production package depends only on `yjs` and `lib0`, keeping it liftable out
 of the monorepo. `y-protocols` is a development-only fixture dependency.
+Hocuspocus 4.3 durability acknowledgements use outer type 8 with a varint
+`applied` flag. Ping and pong are connection-level one-byte frames without a
+document envelope, so their summaries carry a null document name. Close
+reasons use the string/byte-array-compatible length prefix and are counted as
+bytes without being materialized as text.
 
 ### Stateless body handling
 
