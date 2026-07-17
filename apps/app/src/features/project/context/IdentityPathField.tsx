@@ -14,15 +14,21 @@
  *   The popover tracks the caret's segment (root labels, then folders);
  *   typed segments that match nothing are tagged "new folder" and are
  *   created by the move. Enter is the single commit: rename, move, or both.
+ *   (No rest-state entry currently reaches this grammar — the crumbs went
+ *   inert while they await the per-segment navigator; the grammar stays for
+ *   that slice to reclaim as its typed fallback.)
  *
- * Esc AND blur revert in both grammars — Enter is the only commit.
+ * Esc AND blur revert in both grammars — Enter or the ✓ button commits, Esc
+ * or the × button cancels; the buttons are additive mirrors of the keys.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
+import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { cn } from "@/lib/utils";
@@ -35,6 +41,7 @@ import {
   parentPath as parentFolderPath,
   useFileSuggestions,
 } from "./file-suggestions";
+import { IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import type { TabLocation } from "./identity-location";
 import {
   canonicalizeFolders,
@@ -437,10 +444,11 @@ export function IdentityPathField({
       <PopoverAnchor asChild>
         <div
           className={cn(
-            // h-4.5 (borders included) inside the bar's 18px content area:
+            // A band-height box (borders included — see identity-bar-geometry):
             // the field occupies exactly the box the crumbs sat in, so
             // entering edit mode never shifts the chrome below.
-            "flex h-4.5 min-w-0 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-meta",
+            "flex min-w-0 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-sm",
+            IDENTITY_BAR_BOX_CLASS,
             placement ? "max-w-96" : "max-w-xl",
           )}
         >
@@ -493,6 +501,28 @@ export function IdentityPathField({
           />
         </div>
       </PopoverAnchor>
+      {/* Explicit commit/cancel affordances — additive mirrors of Enter and
+          Esc. pointerdown is prevented so focus never leaves the input:
+          otherwise the blur-revert contract would close the field before the
+          click lands. Band-height boxes, so they never shift the chrome. */}
+      <IconButton
+        aria-label={t`Save name and location`}
+        className="size-5.5"
+        disabled={saving}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => void submit()}
+      >
+        <Check aria-hidden />
+      </IconButton>
+      <IconButton
+        aria-label={t`Cancel editing`}
+        className="size-5.5"
+        disabled={saving}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onExit("escape")}
+      >
+        <X aria-hidden />
+      </IconButton>
       <PopoverContent
         data-file-suggestion
         align="start"

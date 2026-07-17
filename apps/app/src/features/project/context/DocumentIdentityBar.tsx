@@ -4,13 +4,11 @@
  * document; provisional docs are a *state* of the bar (italic leaf + jade
  * chip), not separate chrome.
  *
- * Two affordances, two grammars:
- * - **Click the path to type.** Provisional docs open the placement field
- *   (name + destination browser from the scheme roots); homed docs open the
- *   full-path field with the clicked segment selected (typed-path move).
- * - **Click the chip to browse.** "Choose a home" is permanent: jade on
- *   provisional docs (opens placement), quiet outline once homed (opens the
- *   Move-to popup). Device-only words outrank it in the same slot.
+ * One affordance: **the chip**. Jade "Choose a home" on provisional docs
+ * (opens the empty placement field); quiet outline "Rename" once homed (opens
+ * the Move-to popup — rename + move live inside). Device-only words outrank
+ * it in the same slot. The breadcrumb itself is inert, reserved for a future
+ * per-segment navigator (see IdentityPath).
  *
  * Keystroke-path contract: at rest the bar renders from tab metadata only.
  * Content observers mount only while a field is open on a provisional doc.
@@ -19,7 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FolderDown, TriangleAlert } from "lucide-react";
-import { type MouseEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -27,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityMovePopup } from "./IdentityMovePopup";
 import { type IdentityFieldMode, IdentityPathField } from "./IdentityPathField";
+import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
 import {
   clearQueuedRenameFailure,
@@ -77,9 +76,6 @@ export function DocumentIdentityBar({
   const openField = (mode: IdentityFieldMode) => {
     if (location.editable) setSurface({ kind: "field", mode });
   };
-  const openTyping = (segment: number | "leaf") => {
-    openField(placementGrammar ? { kind: "placement" } : { kind: "path", initialSegment: segment });
-  };
 
   // The chip is the pointing surface: placement while never-placed, the
   // Move-to popup once placed. Viewer docs get the popup too when moving them
@@ -89,12 +85,18 @@ export function DocumentIdentityBar({
 
   return (
     <div className="@container shrink-0">
-      {/* Fixed 22px band, full pane width. The bar is navigation chrome like
-          the tab strip above it — it spans edge to edge, NOT the prose
-          column. The height is identical at rest and in edit mode (children
-          are h-4.5 boxes in an 18px content area), so the toolbar and prose
-          below never shift when the bar transforms. */}
-      <div className="flex h-5.5 items-center gap-1 px-4 pt-1 font-mono text-ink-subtle text-meta">
+      {/* Fixed-height band, full pane width. The bar is navigation chrome
+          like the tab strip above it — it spans edge to edge, NOT the prose
+          column. Geometry contract lives in identity-bar-geometry.ts: same
+          height at rest and in edit mode, so the toolbar and prose below
+          never shift when the bar transforms. Crumb text is text-sm to match
+          the suggestion-popover rows it sits beside. */}
+      <div
+        className={cn(
+          "flex items-center gap-1 px-4 font-mono text-ink-subtle text-sm",
+          IDENTITY_BAR_BAND_CLASS,
+        )}
+      >
         {surface?.kind === "field" ? (
           <IdentityPathField
             key={surface.mode.kind}
@@ -116,11 +118,7 @@ export function DocumentIdentityBar({
             onOpenExisting={onOpenExisting}
           />
         ) : (
-          <IdentityPath
-            location={location}
-            onEdit={openTyping}
-            onEscape={() => focusEditorProse(tab.documentId)}
-          />
+          <IdentityPath location={location} />
         )}
         <span className="min-w-1 flex-1" />
         <IdentityChipSlot
@@ -151,17 +149,14 @@ export function DocumentIdentityBar({
 }
 
 /** Rest state: the quiet crumb row. Middle folders collapse to `…`; narrow
- *  containers drop the scheme label (glyph only) and folder names. Clicking a
- *  segment opens the typed field with that segment selected. */
-function IdentityPath({
-  location,
-  onEdit,
-  onEscape,
-}: {
-  location: TabLocation;
-  onEdit: (segment: number | "leaf") => void;
-  onEscape: () => void;
-}) {
+ *  containers drop the scheme label (glyph only) and folder names.
+ *
+ *  The crumbs are deliberately inert — the chip is the only edit entry
+ *  point. The breadcrumb is reserved for navigation: the next slice gives
+ *  each segment a VS Code-style dropdown (a mini context-tree navigator
+ *  anchored at that segment), which is why every segment stays its own
+ *  `data-seg` element instead of one flat string. */
+function IdentityPath({ location }: { location: TabLocation }) {
   const SchemeIcon = schemeIcon(location.scheme);
   const separator = (
     <span aria-hidden className="shrink-0 opacity-60">
@@ -205,35 +200,14 @@ function IdentityPath({
       </span>
     </>
   );
-  if (!location.editable) {
-    return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
-  }
-  const segmentFromClick = (event: MouseEvent<HTMLButtonElement>): number | "leaf" => {
-    const raw = (event.target as HTMLElement).closest("[data-seg]")?.getAttribute("data-seg");
-    if (raw === "leaf" || raw === null || raw === undefined) return "leaf";
-    const index = Number(raw);
-    return Number.isNaN(index) ? "leaf" : index;
-  };
-  return (
-    <button
-      type="button"
-      onClick={(event) => onEdit(segmentFromClick(event))}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onEscape();
-      }}
-      aria-label={t`Document name and location`}
-      className="focus-ring flex min-w-0 cursor-text items-center gap-1 rounded-sm text-left"
-    >
-      {segments}
-    </button>
-  );
+  return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
 }
 
 /**
  * Single-occupancy chip slot at the bar's right edge. Severity ladder:
  * device-only words (warning tokens, 2s sustained grace) outrank the
- * permanent "Choose a home" chip — jade while provisional (an invitation),
- * quiet outline once homed (a tool).
+ * permanent home chip — jade "Choose a home" while provisional (an
+ * invitation), quiet outline "Rename" once homed (a tool).
  */
 function IdentityChipSlot({
   documentId,
@@ -276,11 +250,15 @@ function IdentityChipSlot({
   );
 }
 
-const chipClass =
-  "inline-flex h-4.5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-meta motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150";
+const chipClass = cn(
+  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
+  IDENTITY_BAR_BOX_CLASS,
+);
 
-/** "Choose a home" — the permanent re-home affordance (D4). Same label, same
- *  geometry in both states; one token swap between invitation and tool. */
+/** The permanent re-home affordance (D4), whose label graduates with the
+ *  document: jade "Choose a home" while provisional (an invitation), quiet
+ *  outline "Rename" once homed (a tool — rename is the common case; move is
+ *  discoverable inside the popup it opens). Same geometry in both states. */
 function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
   return (
     <Tooltip>
@@ -297,9 +275,9 @@ function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () 
               : "border-border bg-transparent text-ink-subtle",
           )}
         >
-          <FolderDown aria-hidden className="size-2.5" />
+          <FolderDown aria-hidden className="size-3" />
           <span className="@max-md:hidden">
-            <Trans>Choose a home</Trans>
+            {provisional ? <Trans>Choose a home</Trans> : <Trans>Rename</Trans>}
           </span>
         </button>
       </TooltipTrigger>
@@ -310,7 +288,7 @@ function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () 
             belongs.
           </Trans>
         ) : (
-          <Trans>Move this document somewhere else in your project.</Trans>
+          <Trans>Rename this document or move it somewhere else in your project.</Trans>
         )}
       </TooltipContent>
     </Tooltip>
@@ -326,7 +304,7 @@ function DeviceOnlyChip() {
           role="status"
           className={cn(chipClass, "border-warning-border bg-warning-bg text-warning-foreground")}
         >
-          <TriangleAlert aria-hidden className="size-2.5" />
+          <TriangleAlert aria-hidden className="size-3" />
           <span className="@max-md:hidden">{label}</span>
         </span>
       </TooltipTrigger>
