@@ -17,6 +17,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useWorks } from "@/client/query/useWorks";
+import { useContextTabsStore } from "@/client/stores";
 import {
   hydrateWorkingSet,
   retryWorkingSetHydration,
@@ -44,7 +45,11 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
-import { seedWorkingSetTabs } from "./working-set-tab-seeding";
+import {
+  contextDeskReconciliation,
+  seedWorkingSetTabs,
+  validateContextDeskTabs,
+} from "./working-set-tab-seeding";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -98,7 +103,8 @@ export function ProjectView(props: ProjectViewProps) {
   const threadWorkId = useContextWorkId(props.projectId, props.activeThreadId);
   const { defaultWorkId } = useWorks(props.projectId);
   const routeWorkId = threadWorkId ?? defaultWorkId;
-  const seededProjectIdRef = useRef<string | null>(null);
+  const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
+  const reconciledDeskRef = useRef<string | null>(null);
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -109,21 +115,28 @@ export function ProjectView(props: ProjectViewProps) {
   }, [props.projectId, workingSetHydration.status]);
 
   useEffect(() => {
-    if (workingSetHydration.status !== "server") return;
-    if (seededProjectIdRef.current === props.projectId) return;
-    seededProjectIdRef.current = props.projectId;
-    void seedWorkingSetTabs({
-      queryClient,
-      projectId: props.projectId,
-      routes: workingSetHydration.row.recentRoutes,
-      routeWorkId,
-    });
-  }, [props.projectId, queryClient, routeWorkId, workingSetHydration]);
+    if (!deskHydrated) return;
+    const reconciliation = contextDeskReconciliation(workingSetHydration);
+    const reconciliationKey = `${props.projectId}:${reconciliation}`;
+    if (reconciledDeskRef.current === reconciliationKey) return;
+    reconciledDeskRef.current = reconciliationKey;
+    if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
+      void seedWorkingSetTabs({
+        queryClient,
+        projectId: props.projectId,
+        routes: workingSetHydration.row.recentRoutes,
+        routeWorkId,
+      });
+      return;
+    }
+    void validateContextDeskTabs({ queryClient, projectId: props.projectId, routeWorkId });
+  }, [deskHydrated, props.projectId, queryClient, routeWorkId, workingSetHydration]);
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
   // (localStorage), so this is at most one frame — no visible flash. Gating here
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
-  const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
+  const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
+  const hydrated = prefsHydrated && deskHydrated;
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (

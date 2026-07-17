@@ -16,11 +16,8 @@
  *  - `reorderTabs` moves a tab to a new index (pin is deferred — this is the
  *    primitive a future pin/unpin will compose with).
  *
- * Persisted in-memory only: tabs are an ephemeral working set that follows
- * navigation, not a chrome preference. Restoring tabs across
- * reloads would resurrect stale read-route 404s for files that may have since
- * been deleted. (The last-opened FILE is remembered across reloads — as a
- * route, not a tab, so restore rides the tree-validated open; see the canonical `client/working-set` store.)
+ * The ordered per-project desk is persisted device-locally. Project entry
+ * validates restored routes against current trees before they remain usable.
  */
 
 import type {
@@ -33,6 +30,7 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import { DeviceContextDeskStore } from "./context-desk-storage";
 export type ContextTab =
   | {
       kind: "tracked";
@@ -71,6 +69,7 @@ type ProjectTabsSlice = {
 type ContextTabsState = {
   /** projectId → slice. One tab list per project. */
   byProject: Record<string, ProjectTabsSlice>;
+  _deskHydrated: boolean;
 };
 
 type ContextTabsActions = {
@@ -106,6 +105,14 @@ type ContextTabsActions = {
   pruneWorkScopedTabs: (projectId: string, activeWorkId: string | null) => void;
   /** Clear every tab for a project — used when the project is deleted. */
   clearProject: (projectId: string) => void;
+  /** Replace a project's desk without selecting a tab. */
+  replaceTabs: (projectId: string, tabs: ContextTab[]) => void;
+  /** Reconcile an async validation snapshot without clobbering tabs opened meanwhile. */
+  reconcileTabs: (
+    projectId: string,
+    restoredDocumentIds: ReadonlySet<string>,
+    tabs: ContextTab[],
+  ) => void;
 };
 
 // Stable shared reference for the empty slice. Returning a fresh object literal
@@ -128,6 +135,16 @@ function patchSlice(
   next: ProjectTabsSlice,
 ): ContextTabsState {
   return { ...state, byProject: { ...state.byProject, [projectId]: next } };
+}
+
+function contextTabEquals(left: ContextTab, right: ContextTab): boolean {
+  const leftRecord = left as unknown as Record<string, unknown>;
+  const rightRecord = right as unknown as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  return (
+    keys.length === Object.keys(rightRecord).length &&
+    keys.every((key) => leftRecord[key] === rightRecord[key])
+  );
 }
 
 function removeTabs(
@@ -165,6 +182,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
   devtools(
     (set, get) => ({
       byProject: {},
+      _deskHydrated: false,
 
       openTab: (projectId, tab) => {
         set((state) => {
@@ -301,6 +319,39 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return { ...state, byProject: rest };
         });
       },
+
+      replaceTabs: (projectId, tabs) => {
+        set((state) => {
+          const current = sliceFor(state, projectId);
+          const activeTabId = tabs.some((tab) => tab.documentId === current.activeTabId)
+            ? current.activeTabId
+            : null;
+          if (
+            current.activeTabId === activeTabId &&
+            current.tabs.length === tabs.length &&
+            current.tabs.every((tab, index) => contextTabEquals(tab, tabs[index] as ContextTab))
+          ) {
+            return state;
+          }
+          return patchSlice(state, projectId, { tabs: [...tabs], activeTabId });
+        });
+      },
+
+      reconcileTabs: (projectId, restoredDocumentIds, tabs) => {
+        set((state) => {
+          const current = sliceFor(state, projectId);
+          const validated = new Map(tabs.map((tab) => [tab.documentId, tab]));
+          const nextTabs = current.tabs.flatMap((tab) => {
+            if (!restoredDocumentIds.has(tab.documentId)) return [tab];
+            const replacement = validated.get(tab.documentId);
+            return replacement ? [replacement] : [];
+          });
+          const activeTabId = nextTabs.some((tab) => tab.documentId === current.activeTabId)
+            ? current.activeTabId
+            : null;
+          return patchSlice(state, projectId, { tabs: nextTabs, activeTabId });
+        });
+      },
     }),
     { name: "context-tabs-store", enabled: import.meta.env.DEV },
   ),
@@ -309,6 +360,34 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
 /** Selector helper — returns the tab slice for a project (stable empty default). */
 export function useContextTabs(projectId: string): ProjectTabsSlice {
   return useContextTabsStore(useShallow((s) => s.byProject[projectId] ?? EMPTY_SLICE));
+}
+
+let deviceDesk: DeviceContextDeskStore | null = null;
+let pendingUntitled: ((documentId: string) => boolean) | null = null;
+
+useContextTabsStore.subscribe((state, previous) => {
+  if (!state._deskHydrated || state.byProject === previous.byProject) return;
+  deviceDesk?.replace(state.byProject, pendingUntitled ?? (() => false));
+});
+
+/** Loads every project desk before the authenticated workspace is revealed. */
+export function rehydrateContextDesks(
+  userId: string,
+  isUntitledPending: (documentId: string) => boolean,
+): void {
+  if (typeof window === "undefined") return;
+  deviceDesk ??= new DeviceContextDeskStore(localStorage);
+  pendingUntitled = isUntitledPending;
+  const byProject = deviceDesk.setUser(userId, isUntitledPending);
+  useContextTabsStore.setState({ byProject, _deskHydrated: true });
+  // Rewrites legacy/stale exclusions immediately, including completed untitleds.
+  deviceDesk.replace(byProject, isUntitledPending);
+}
+
+/** Persists a non-tab lifecycle transition, such as an untitled becoming pending. */
+export function flushContextDesks(): void {
+  if (!deviceDesk || !pendingUntitled) return;
+  deviceDesk.replace(useContextTabsStore.getState().byProject, pendingUntitled);
 }
 
 export function useContextTabsActions(): ContextTabsActions {
@@ -324,6 +403,8 @@ export function useContextTabsActions(): ContextTabsActions {
       resolveDraftOnlyTab: s.resolveDraftOnlyTab,
       pruneWorkScopedTabs: s.pruneWorkScopedTabs,
       clearProject: s.clearProject,
+      replaceTabs: s.replaceTabs,
+      reconcileTabs: s.reconcileTabs,
     })),
   );
 }

@@ -20,6 +20,7 @@ import {
   listProjectWorks,
   renameContextEntry,
 } from "@/client/api/projects-api";
+import { flushContextDesks } from "@/client/stores";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
@@ -120,12 +121,17 @@ export class UntitledReconciler {
 
   constructor(private readonly deps: UntitledReconcilerDeps) {}
 
-  start(): void {
-    if (this.started) return;
-    this.started = true;
+  /** Loads the crash-safe registry without starting network reconciliation. */
+  rehydrate(): void {
     for (const entry of readRegistry(this.deps.storage)) {
       if (!this.entries.has(entry.documentId)) this.entries.set(entry.documentId, entry);
     }
+  }
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    this.rehydrate();
     this.removeOnlineListener = this.deps.scheduler.onOnline(this.schedule);
     this.emit();
     this.schedule();
@@ -449,6 +455,7 @@ export function registerUntitledCandidate(documentId: string, candidate: Candida
 
 export function appendPendingUntitled(entry: PendingUntitled): void {
   getUntitledReconciler().append(entry);
+  flushContextDesks();
 }
 
 export function isUntitledPending(documentId: string): boolean {

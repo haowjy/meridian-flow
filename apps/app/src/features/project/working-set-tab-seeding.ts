@@ -7,10 +7,18 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 
 import { projectContextTreeQueryOptions } from "@/client/query/useProjectContextTree";
+import type { ContextTab } from "@/client/stores";
 import { useContextTabsStore } from "@/client/stores";
+import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import { readRecentRoutes, workingSetRouteEquals } from "@/client/working-set";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { findContextFile } from "./context/context-tree";
+
+export function contextDeskReconciliation(
+  hydration: WorkingSetHydrationPlan,
+): "server-replace" | "local-keep" {
+  return hydration.status === "server" ? "server-replace" : "local-keep";
+}
 
 export function isWorkingSetRouteDesired(
   route: WorkingSetRoute,
@@ -30,19 +38,55 @@ export async function seedWorkingSetTabs({
   routes: readonly WorkingSetRoute[];
   routeWorkId: string | null;
 }): Promise<void> {
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     routes.map(async (route) => {
       const workScoped = isWorkScopedProjectContextScheme(route.scheme);
-      if (workScoped && route.workId !== routeWorkId) return;
+      if (workScoped && route.workId !== routeWorkId) return null;
       const workId: string | null = workScoped ? (route.workId ?? null) : null;
       const result = await queryClient.fetchQuery(
         projectContextTreeQueryOptions(projectId, route.scheme, workId),
       );
       const file = findContextFile(result.tree, route.path);
-      if (!file || !isWorkingSetRouteDesired(route, readRecentRoutes(projectId))) return;
-      useContextTabsStore
-        .getState()
-        .openTab(projectId, contextTabFromFile(route.scheme, file, workId));
+      if (!file || !isWorkingSetRouteDesired(route, readRecentRoutes(projectId))) return null;
+      return contextTabFromFile(route.scheme, file, workId);
     }),
   );
+  const tabs = results.flatMap((result) =>
+    result.status === "fulfilled" && result.value ? [result.value] : [],
+  );
+  useContextTabsStore.getState().replaceTabs(projectId, tabs);
+}
+
+/** Refreshes restored tab metadata and drops routes that no longer exist. */
+export async function validateContextDeskTabs({
+  queryClient,
+  projectId,
+  routeWorkId,
+}: {
+  queryClient: QueryClient;
+  projectId: string;
+  routeWorkId: string | null;
+}): Promise<void> {
+  const restored = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
+  const results = await Promise.allSettled(
+    restored.map(async (tab): Promise<ContextTab | null> => {
+      if (tab.kind === "new") return tab;
+      const workScoped = isWorkScopedProjectContextScheme(tab.scheme);
+      if (workScoped && tab.workId !== routeWorkId) return null;
+      const workId = workScoped ? (tab.workId ?? null) : null;
+      const result = await queryClient.fetchQuery(
+        projectContextTreeQueryOptions(projectId, tab.scheme, workId),
+      );
+      const file = findContextFile(result.tree, tab.path);
+      return file ? contextTabFromFile(tab.scheme, file, workId) : null;
+    }),
+  );
+  const tabs = results.flatMap((result, index) => {
+    // A transient tree read must not turn read degradation into destructive pruning.
+    if (result.status === "rejected") return [restored[index] as ContextTab];
+    return result.value ? [result.value] : [];
+  });
+  useContextTabsStore
+    .getState()
+    .reconcileTabs(projectId, new Set(restored.map((tab) => tab.documentId)), tabs);
 }

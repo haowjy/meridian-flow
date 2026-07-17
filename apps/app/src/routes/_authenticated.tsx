@@ -10,6 +10,7 @@ import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import {
   loadProjectList,
   ProjectStoreProvider,
+  rehydrateContextDesks,
   ThreadStoreProvider,
   useIndependentProjectsStore,
 } from "@/client/stores";
@@ -20,6 +21,10 @@ import {
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
+import {
+  getUntitledReconciler,
+  isUntitledPending,
+} from "@/features/project/context/untitled-reconciler";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
@@ -121,10 +126,13 @@ function AuthenticatedLayout() {
   // Rehydrate localStorage-backed UI stores on the client only (all use
   // skipHydration to avoid SSR mismatch). Idempotent; fires once after mount.
   useEffect(() => {
+    const untitledReconciler = getUntitledReconciler();
+    untitledReconciler.rehydrate();
+    rehydrateContextDesks(user.userId, isUntitledPending);
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
-  }, []);
+  }, [user.userId]);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same
