@@ -36,7 +36,11 @@ vi.mock("@/client/api/drafts-api", () => ({
     liveRevisionToken: 0,
     branchId: "branch-1",
     reviewRoomName: "branch:branch-1",
-    operations: [{ operationId: "operation-1" }, { operationId: "operation-2" }],
+    operations: [
+      { operationId: "operation-1" },
+      { operationId: "operation-2" },
+      { operationId: "operation-3" },
+    ],
   }),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
@@ -84,7 +88,7 @@ describe("useDraftReviewController", () => {
     });
   });
 
-  it("submits every operation from the confirmed preview when applying all", async () => {
+  it("submits only the operations from the displayed preview when applying all", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     acceptMutateMock.mockClear();
     wholeDraftAcceptMutateMock.mockClear();
@@ -99,11 +103,26 @@ describe("useDraftReviewController", () => {
 
     await withReactRoot(<Probe />, async () => {
       await act(async () => {
+        controller?.inlineReviewModelAvailable(
+          "draft-1:0:1",
+          "document-1",
+          "draft-1",
+          ["operation-1", "operation-2"],
+          { draftRevisionToken: 1, branchId: "branch-1" },
+        );
+      });
+      // A second operation may arrive after the render above. Apply-all must
+      // remain pinned to the model the writer reviewed rather than refetching it.
+      await act(async () => {
         await controller?.accept("document-1", "draft-1");
       });
 
       expect(wholeDraftAcceptMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ operationIds: ["operation-1", "operation-2"] }),
+        expect.objectContaining({
+          branchId: "branch-1",
+          draftRevisionToken: 1,
+          operationIds: ["operation-1", "operation-2"],
+        }),
         expect.any(Object),
       );
     });
