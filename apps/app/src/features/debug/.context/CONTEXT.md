@@ -132,8 +132,13 @@ dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
 
 ## Realtime stream inspector — client half live
 
-The pill's **Streams** action opens the full-height `TraceViewer` drawer. Its
-plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
+The pill's **Streams** action opens `TraceViewer` in a separate browser window
+and portals the React tree into it. The popup shares the opener's JavaScript
+context, so capture state stays in the main page and remains live while the
+editor is used; closing the popup never stops capture. The popup clones the
+opener's active style/link nodes and document attributes, and popup-owned Radix
+portals target its mount container so controls remain styled and interactive.
+Its plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
 `EventRecord` ring and exposes the producer boundary `appendTraceEvent` /
 `noteTapError`; producers append the shared contracts envelope, never a
 viewer-specific record. The store drops the oldest record at capacity, counts

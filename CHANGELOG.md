@@ -5,8 +5,8 @@
 - `tools/dev`: local DB integration suites now drop their dedicated throwaway
   database on exit; `dev:gc-dbs` documentation clarifies that its existing
   prefix sweep also removes orphaned ad-hoc test databases.
-- `apps/app`: the dev debug overlay gains a Streams trace viewer showing live
-  client Yjs wire traffic as metadata-only records.
+- `apps/app`: the dev debug overlay gains a pop-out Streams trace viewer showing
+  live client Yjs wire traffic as metadata-only records without blocking the editor.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

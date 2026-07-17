@@ -1,12 +1,12 @@
 /**
- * Full-height drawer for inspecting captured EventRecords.
+ * Pop-out window for inspecting captured EventRecords without blocking the app.
  * i18n exception: this build-gated debug feature uses inline English by design.
  */
 import type { EventRecord } from "@meridian/contracts/observability";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 import { JsonTree } from "../JsonTree";
 import { TraceExport } from "./TraceExport";
@@ -27,21 +27,74 @@ const EMPTY_FILTERS: TraceFilterState = {
   correlation: "",
 };
 
-export function TraceViewer({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      {open ? <TraceViewerContent /> : null}
-    </Sheet>
+export type TraceViewerTarget = {
+  popup: Window;
+  container: HTMLDivElement;
+};
+
+export function openTraceViewerWindow(): TraceViewerTarget | null {
+  const popup = window.open(
+    "",
+    "meridian-trace-viewer",
+    "popup,width=1440,height=900,resizable=yes,scrollbars=yes",
   );
+  if (!popup) return null;
+
+  popup.document.open();
+  popup.document.write(
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Meridian Streams</title></head><body><div id="trace-viewer-root"></div></body></html>',
+  );
+  popup.document.close();
+
+  copyDocumentAttributes(document.documentElement, popup.document.documentElement);
+  copyDocumentAttributes(document.body, popup.document.body);
+  for (const stylesheet of document.querySelectorAll('style, link[rel~="stylesheet"]')) {
+    popup.document.head.append(stylesheet.cloneNode(true));
+  }
+
+  const container = popup.document.querySelector<HTMLDivElement>("#trace-viewer-root");
+  if (!container) {
+    popup.close();
+    return null;
+  }
+
+  popup.focus();
+  return { popup, container };
 }
 
-function TraceViewerContent() {
+function copyDocumentAttributes(source: HTMLElement, target: HTMLElement): void {
+  for (const attribute of source.attributes) {
+    target.setAttribute(attribute.name, attribute.value);
+  }
+}
+
+export function TraceViewer({
+  target,
+  onClose,
+}: {
+  target: TraceViewerTarget | null;
+  onClose: (target: TraceViewerTarget) => void;
+}) {
+  useEffect(() => {
+    if (!target) return;
+
+    const closePopup = () => target.popup.close();
+    const handlePopupClose = () => onClose(target);
+    target.popup.addEventListener("beforeunload", handlePopupClose);
+    window.addEventListener("beforeunload", closePopup);
+
+    return () => {
+      target.popup.removeEventListener("beforeunload", handlePopupClose);
+      window.removeEventListener("beforeunload", closePopup);
+      if (!target.popup.closed) target.popup.close();
+    };
+  }, [onClose, target]);
+
+  if (!target) return null;
+  return createPortal(<TraceViewerContent portalContainer={target.container} />, target.container);
+}
+
+function TraceViewerContent({ portalContainer }: { portalContainer: HTMLElement }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [frozenEntries, setFrozenEntries] = useState<readonly EventRecord[] | null>(null);
   const [selected, setSelected] = useState<EventRecord | null>(null);
@@ -58,11 +111,14 @@ function TraceViewerContent() {
   }
 
   return (
-    <SheetContent side="right" className="w-11/12 gap-0 p-0 sm:max-w-5xl" aria-label="Trace viewer">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border p-3 pr-12">
+    <section
+      className="flex h-svh min-h-0 flex-col bg-background text-foreground"
+      aria-label="Trace viewer"
+    >
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border p-3">
         <div>
-          <SheetTitle>Streams</SheetTitle>
-          <SheetDescription>Live client observability events</SheetDescription>
+          <h1 className="text-sm font-semibold">Streams</h1>
+          <p className="text-meta text-muted-foreground">Live client observability events</p>
         </div>
         <TraceCounters paused={paused} />
         <Button
@@ -85,6 +141,7 @@ function TraceViewerContent() {
           setFilters={setFilters}
           selected={selected}
           setSelected={setSelected}
+          portalContainer={portalContainer}
         />
       ) : (
         <FrozenTraceBody
@@ -93,9 +150,10 @@ function TraceViewerContent() {
           setFilters={setFilters}
           selected={selected}
           setSelected={setSelected}
+          portalContainer={portalContainer}
         />
       )}
-    </SheetContent>
+    </section>
   );
 }
 
@@ -116,6 +174,7 @@ type TraceBodyProps = {
   setFilters: React.Dispatch<React.SetStateAction<TraceFilterState>>;
   selected: EventRecord | null;
   setSelected: React.Dispatch<React.SetStateAction<EventRecord | null>>;
+  portalContainer: HTMLElement;
 };
 
 function LiveTraceBody(props: TraceBodyProps) {
@@ -137,6 +196,7 @@ function TraceBody({
   setFilters,
   selected,
   setSelected,
+  portalContainer,
 }: TraceBodyProps & { entries: readonly EventRecord[]; following: boolean }) {
   const filteredEntries = useMemo(() => filterTraceEntries(entries, filters), [entries, filters]);
   const selectedInView = selected !== null && filteredEntries.includes(selected);
@@ -149,7 +209,12 @@ function TraceBody({
         onSelect={(streamId) => setFilters((current) => ({ ...current, streamId }))}
       />
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <TraceFilters entries={entries} filters={filters} onChange={setFilters} />
+        <TraceFilters
+          entries={entries}
+          filters={filters}
+          onChange={setFilters}
+          portalContainer={portalContainer}
+        />
         <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
           <TraceTable
             entries={filteredEntries}

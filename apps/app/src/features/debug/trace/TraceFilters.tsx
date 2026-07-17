@@ -17,6 +17,7 @@ interface TraceFiltersProps {
   entries: readonly EventRecord[];
   filters: TraceFilterState;
   onChange: (filters: TraceFilterState) => void;
+  portalContainer: HTMLElement;
 }
 
 const ALL_MESSAGE_CLASSES = "__all_message_classes__";
@@ -24,7 +25,7 @@ const BOTH_DIRECTIONS = "__both_directions__";
 const fieldClass = "h-7 min-w-0 px-2 text-meta md:text-meta";
 const selectClass = `${fieldClass} w-full data-[size=sm]:h-7`;
 
-export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) {
+export function TraceFilters({ entries, filters, onChange, portalContainer }: TraceFiltersProps) {
   const messageClasses = Array.from(
     new Set(entries.flatMap((record) => record.stream?.messageClass ?? [])),
   ).sort();
@@ -51,7 +52,7 @@ export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) 
         <SelectTrigger size="sm" className={selectClass} aria-label="Filter by message class">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent position="popper" align="start">
+        <SelectContent position="popper" align="start" portalContainer={portalContainer}>
           <SelectItem value={ALL_MESSAGE_CLASSES} className="text-meta">
             all message classes
           </SelectItem>
@@ -73,7 +74,7 @@ export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) 
         <SelectTrigger size="sm" className={selectClass} aria-label="Filter by direction">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent position="popper" align="start">
+        <SelectContent position="popper" align="start" portalContainer={portalContainer}>
           <SelectItem value={BOTH_DIRECTIONS} className="text-meta">
             both directions
           </SelectItem>

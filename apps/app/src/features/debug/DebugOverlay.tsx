@@ -3,25 +3,26 @@
  *
  * Renders `null` unless `useDebugEnabled()` reports the overlay is on. When
  * enabled, renders a small floating PILL (bottom-right) that expands to a
- * compact panel and opens the wider trace drawer. The pill stays deliberately
- * thin: only state with no better home lives here. Query-cache inspection is delegated to TanStack Query Devtools
- * and store inspection to Redux DevTools (via the `devtools` middleware), so we
- * don't reinvent mature tools. Per-turn/block inspection moves inline onto the
- * real transcript via `data-turn-id` anchors (see dom-anchors-contract).
+ * compact panel and opens the trace viewer in a separate window. The pill stays
+ * deliberately thin: only state with no better home lives here. Query-cache
+ * inspection is delegated to TanStack Query Devtools and store inspection to
+ * Redux DevTools (via the `devtools` middleware), so we don't reinvent mature
+ * tools. Per-turn/block inspection moves inline onto the real transcript via
+ * `data-turn-id` anchors (see dom-anchors-contract).
  *
  * Key decisions:
  * - Mounted once inside the providers tree in `routes/_authenticated.tsx` so it
  *   can read transport/stores/query through their public hooks. The mount gate
  *   there is an inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY === "1"` for
  *   dead-code elimination.
- * - The pill stays out of the way; the Streams action uses a drawer because a
- *   live event table cannot fit the compact panel.
+ * - The pill stays out of the way; the Streams action uses a pop-out so the
+ *   editor and live event table remain usable at the same time.
  * - Each section is wrapped in `DebugErrorBoundary` so one misbehaving read
  *   degrades to an inline message instead of tearing down the overlay.
  * - i18n exception: DEV-only debug surface; inline English strings bypass
  *   Lingui by design.
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,7 @@ import { DebugErrorBoundary } from "./DebugErrorBoundary";
 import { InlineInspector } from "./InlineInspector";
 import { ConversationSection } from "./sections/ConversationSection";
 import { TransportSection, useConnectionState } from "./sections/TransportSection";
-import { TraceViewer } from "./trace/TraceViewer";
+import { openTraceViewerWindow, TraceViewer, type TraceViewerTarget } from "./trace/TraceViewer";
 import { DEBUG_FEATURE_ALLOWED, useDebugEnabled } from "./use-debug-enabled";
 
 export function DebugOverlay() {
@@ -56,21 +57,32 @@ const CONNECTION_DOT: Record<string, string> = {
 
 function DebugPill({ onDisable }: { onDisable: () => void }) {
   const [open, setOpen] = useState(false);
-  const [streamsOpen, setStreamsOpen] = useState(false);
+  const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
   const conn = useConnectionState();
   const dot = (conn && CONNECTION_DOT[conn.kind]) ?? "bg-muted-foreground";
+  const closeTraceViewer = useCallback((target: TraceViewerTarget) => {
+    setTraceViewerTarget((current) => (current === target ? null : current));
+  }, []);
+
+  function openTraceViewer() {
+    if (traceViewerTarget && !traceViewerTarget.popup.closed) {
+      traceViewerTarget.popup.focus();
+      setOpen(false);
+      return;
+    }
+
+    const target = openTraceViewerWindow();
+    if (!target) return;
+    setTraceViewerTarget(target);
+    setOpen(false);
+  }
 
   return (
     <>
       <DebugErrorBoundary title="Streams">
-        <TraceViewer open={streamsOpen} onOpenChange={setStreamsOpen} />
+        <TraceViewer target={traceViewerTarget} onClose={closeTraceViewer} />
       </DebugErrorBoundary>
-      <div
-        className={cn(
-          "fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2",
-          streamsOpen && "hidden",
-        )}
-      >
+      <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
         {open ? (
           <section
             className="flex max-h-[70svh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-rail-left"
@@ -100,10 +112,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               <button
                 type="button"
                 className="focus-ring rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
-                onClick={() => {
-                  setOpen(false);
-                  setStreamsOpen(true);
-                }}
+                onClick={openTraceViewer}
               >
                 Streams
               </button>
