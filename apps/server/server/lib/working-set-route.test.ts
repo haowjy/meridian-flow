@@ -9,7 +9,7 @@ function expectBadRequest(run: () => unknown): void {
 
 function dependencies(input?: {
   work?: { id: string; projectId: string } | null;
-  thread?: { id: string; projectId: string } | null;
+  threadProjectId?: string | null;
 }): WorkingSetRouteDeps {
   return {
     projectRepo: {
@@ -21,7 +21,9 @@ function dependencies(input?: {
     },
     workingSet: { get: vi.fn(), upsert: vi.fn().mockResolvedValue({ revision: 1 }) },
     works: { findById: vi.fn().mockResolvedValue(input?.work ?? null) },
-    threads: { findById: vi.fn().mockResolvedValue(input?.thread ?? null) },
+    threads: {
+      findProjectIdByIdIncludingDeleted: vi.fn().mockResolvedValue(input?.threadProjectId ?? null),
+    },
   } as unknown as WorkingSetRouteDeps;
 }
 
@@ -63,15 +65,25 @@ describe("working-set route core", () => {
     ).rejects.toMatchObject({ statusCode: 400 });
 
     await expect(
-      handlePutWorkingSetRequest(
-        dependencies({ thread: { id: "thread-2", projectId: "project-2" } }),
-        {
-          userId: "user-1",
-          projectId: "project-1",
-          body: { recentRoutes: [], lastThreadId: "thread-2" },
-        },
-      ),
+      handlePutWorkingSetRequest(dependencies({ threadProjectId: "project-2" }), {
+        userId: "user-1",
+        projectId: "project-1",
+        body: { recentRoutes: [], lastThreadId: "thread-2" },
+      }),
     ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("accepts a soft-deleted thread owned by the project", async () => {
+    const deps = dependencies({ threadProjectId: "project-1" });
+
+    await expect(
+      handlePutWorkingSetRequest(deps, {
+        userId: "user-1",
+        projectId: "project-1",
+        body: { recentRoutes: [], lastThreadId: "thread-1" },
+      }),
+    ).resolves.toEqual({ revision: 1 });
+    expect(deps.threads.findProjectIdByIdIncludingDeleted).toHaveBeenCalledWith("thread-1");
   });
 
   it("rejects unknown thread references and non-owners", async () => {

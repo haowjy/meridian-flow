@@ -74,8 +74,10 @@ export async function handlePutWorkingSetRequest(
   }
 
   if (input.body.lastThreadId !== null) {
-    const thread = await deps.threads.findById(input.body.lastThreadId);
-    if (!thread || thread.projectId !== input.projectId) {
+    const threadProjectId = await deps.threads.findProjectIdByIdIncludingDeleted(
+      input.body.lastThreadId,
+    );
+    if (threadProjectId !== input.projectId) {
       throw createError({
         statusCode: 400,
         message: "`lastThreadId` does not belong to this project",

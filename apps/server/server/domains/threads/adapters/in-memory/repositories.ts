@@ -248,6 +248,9 @@ export function createInMemoryRepositories(
       if (!thread || thread.deletedAt || !(await threadInActiveProject(thread))) return null;
       return projectThread(thread);
     },
+    async findProjectIdByIdIncludingDeleted(id) {
+      return threads.get(id)?.projectId ?? null;
+    },
     async listByUser(userId) {
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
