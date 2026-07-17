@@ -33,7 +33,7 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 const { DocumentSessionRegistry } = await import("./document-session-registry");
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
-  it("keeps a detached room and its Y.Doc intact until normal acquisition attaches it", async () => {
+  it("keeps a detached room and its Y.Doc intact until explicit attachment", async () => {
     providers.length = 0;
     const registry = new DocumentSessionRegistry();
     const detached = registry.getDetached("document-detached");
@@ -48,10 +48,36 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     expect(registry.getDetached("document-detached")).toBe(detached);
 
     expect(registry.get("document-detached")).toBe(detached);
+    expect(providers).toHaveLength(0);
+    expect(detached.getSnapshot().status).toBe("detached");
+
+    expect(registry.attachDetached("document-detached")).toBe(detached);
     expect(detached.document).toBe(document);
     expect(providers).toHaveLength(1);
     expect(detached.getSnapshot().status).toBe("syncing");
     registry.destroyAll();
+  });
+
+  it("starts a fresh teardown grace window after a room is retained again", () => {
+    vi.useFakeTimers();
+    const registry = new DocumentSessionRegistry();
+    registry.retain("owner", ["document-grace"]);
+    const session = registry.get("document-grace");
+
+    registry.release("owner");
+    vi.advanceTimersByTime(2_800);
+    registry.retain("owner", ["document-grace"]);
+    registry.release("owner");
+    vi.advanceTimersByTime(200);
+
+    expect(registry.has("document-grace")).toBe(true);
+    expect(session.getSnapshot().status).not.toBe("destroyed");
+
+    vi.advanceTimersByTime(2_800);
+    expect(registry.has("document-grace")).toBe(false);
+    expect(session.getSnapshot().status).toBe("destroyed");
+    registry.destroyAll();
+    vi.useRealTimers();
   });
 
   it("keeps one session per room while branch rooms remain separate and attached", () => {

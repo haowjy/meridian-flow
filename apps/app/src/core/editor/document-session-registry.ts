@@ -69,18 +69,19 @@ export class DocumentSessionRegistry {
    * source of truth is server branch state.
    */
   getRoom(roomKey: string): DocumentSession {
+    this.cancelPendingTeardown(roomKey);
+    const existing = this.sessions.get(roomKey);
+    if (existing) return existing;
+
     const session = this.getOrCreateRoom(roomKey);
-    if (session.getSnapshot().status === "detached") {
-      session.attachTransport(({ roomKey: key, document, awareness }) =>
-        createHocuspocusDocumentTransport({ roomName: key, document, awareness }),
-      );
-    }
+    this.attachSessionTransport(session);
     return session;
   }
 
   /**
-   * Acquire a live session without materializing its server room. A later
-   * {@link get} or {@link getRoom} attaches transport to this same session.
+   * Acquire a live session without materializing its server room. Ordinary
+   * acquisition leaves an existing detached session untouched; callers attach
+   * it explicitly with {@link attachDetached} after server creation succeeds.
    */
   getDetached(documentId: string): DocumentSession {
     const room = parseYjsRoomName(documentId);
@@ -88,6 +89,19 @@ export class DocumentSessionRegistry {
       throw new Error(`Detached sessions require a live document id: ${documentId}`);
     }
     return this.getOrCreateRoom(documentId);
+  }
+
+  /** Attach transport to a detached live session without replacing its Y.Doc. */
+  attachDetached(documentId: string): DocumentSession {
+    const session = this.getDetached(documentId);
+    if (session.getSnapshot().status === "detached") this.attachSessionTransport(session);
+    return session;
+  }
+
+  private attachSessionTransport(session: DocumentSession): void {
+    session.attachTransport(({ roomKey, document, awareness }) =>
+      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    );
   }
 
   private getOrCreateRoom(roomKey: string): DocumentSession {
@@ -210,6 +224,7 @@ export class DocumentSessionRegistry {
     }
 
     for (const id of keep) {
+      this.cancelPendingTeardown(id);
       if (!this.sessions.has(id)) this.get(id);
     }
 
