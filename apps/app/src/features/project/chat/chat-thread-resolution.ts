@@ -3,7 +3,8 @@
  * from the available sources.
  *
  * Pure precedence function: explicit `?thread=` → pending optimistic thread →
- * first non-subagent (else first) loaded project thread → null. The
+ * remembered synced thread → first non-subagent (else first) loaded project
+ * thread → null. Explicit and remembered ids must resolve in the loaded list.
  * `useResolvedChatThread` hook is the ONE resolution source shared by the
  * chat body (`ChatScreen`) and every header that names the thread
  * (`ChatSurface`'s dock title, `ChatPaneController`) — headers must never
@@ -14,19 +15,25 @@ import type { Thread } from "@meridian/contracts/protocol";
 
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadStore } from "@/client/stores";
+import { readRememberedThread } from "@/client/working-set";
 
 export function resolveChatThreadId({
   explicitThreadId,
   pendingThreadId,
+  rememberedThreadId,
   projectThreads,
 }: {
   explicitThreadId: string | null;
   pendingThreadId: string | null;
+  rememberedThreadId: string | null;
   projectThreads: Thread[] | null;
 }): string | null {
+  const loadedId = (threadId: string | null) =>
+    threadId && projectThreads?.some((thread) => thread.id === threadId) ? threadId : null;
   return (
-    explicitThreadId ??
+    loadedId(explicitThreadId) ??
     pendingThreadId ??
+    loadedId(rememberedThreadId) ??
     (projectThreads && projectThreads.length > 0
       ? (projectThreads.find((t) => t.kind !== "subagent")?.id ?? projectThreads[0].id)
       : null)
@@ -49,6 +56,7 @@ export function useResolvedChatThread(projectId: string, explicitThreadId: strin
   const resolvedThreadId = resolveChatThreadId({
     explicitThreadId,
     pendingThreadId,
+    rememberedThreadId: readRememberedThread(projectId),
     projectThreads,
   });
   return { resolvedThreadId, projectThreads, isError, refetch };
