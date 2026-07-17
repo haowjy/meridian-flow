@@ -84,10 +84,13 @@ export function EditorSurfaceFrame({
                 // The hijack covers inert gutter layout only: ProseMirror owns
                 // presses in the prose ([contenteditable]), and interactive or
                 // live-status children ([role], controls) keep native behavior
-                // — including selectable text in upload error messages.
-                const target = event.target as Element;
-                if (target.closest("[contenteditable], [role], a, button, input, textarea, select"))
-                  return;
+                // — including selectable text in upload error messages. The
+                // closest() match only counts INSIDE the scroller: ancestors
+                // (the pane's tabpanel role, etc.) must not veto gutter presses.
+                const match = (event.target as Element).closest(
+                  "[contenteditable], [role], a, button, input, textarea, select",
+                );
+                if (match && event.currentTarget.contains(match)) return;
                 focusEditorFromGutterPress(editor, event);
               }
             : undefined
