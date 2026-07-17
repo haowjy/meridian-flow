@@ -24,6 +24,11 @@ export interface TraceFilters {
 let ring: Array<EventRecord | undefined> | undefined;
 const listeners = new Set<() => void>();
 const eventListeners = new Set<(record: EventRecord) => void>();
+const eventQueue: Array<{
+  record: EventRecord;
+  listeners: Array<(record: EventRecord) => void>;
+}> = [];
+let publishingEvents = false;
 let start = 0;
 let size = 0;
 let ringDropped = 0;
@@ -54,12 +59,24 @@ function publish(): void {
 }
 
 function publishEvent(record: EventRecord): void {
-  for (const listener of eventListeners) {
-    try {
-      listener(record);
-    } catch {
-      // Debug consumers cannot be allowed to disrupt the observed transport.
+  eventQueue.push({ record, listeners: [...eventListeners] });
+  if (publishingEvents) return;
+
+  publishingEvents = true;
+  try {
+    for (let index = 0; index < eventQueue.length; index += 1) {
+      const queued = eventQueue[index] as (typeof eventQueue)[number];
+      for (const listener of queued.listeners) {
+        try {
+          listener(queued.record);
+        } catch {
+          // Debug consumers cannot be allowed to disrupt the observed transport.
+        }
+      }
     }
+  } finally {
+    eventQueue.length = 0;
+    publishingEvents = false;
   }
 }
 

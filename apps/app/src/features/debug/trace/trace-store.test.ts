@@ -89,6 +89,73 @@ describe("trace store", () => {
     unsubscribeThrowing();
   });
 
+  it("starts subscribers added during dispatch with the next event", () => {
+    const observed: number[] = [];
+    let unsubscribeLate = () => {};
+    const unsubscribeAdder = subscribeToTraceEvents((record) => {
+      if (record.stream?.observerSeq === 1) {
+        unsubscribeLate = subscribeToTraceEvents((next) => {
+          if (next.stream) observed.push(next.stream.observerSeq);
+        });
+      }
+    });
+
+    try {
+      appendTraceEvent(event(1));
+      appendTraceEvent(event(2));
+
+      expect(observed).toEqual([2]);
+    } finally {
+      unsubscribeLate();
+      unsubscribeAdder();
+    }
+  });
+
+  it("finishes the current event before dispatching reentrant appends", () => {
+    const observed: number[] = [];
+    const unsubscribeAppender = subscribeToTraceEvents((record) => {
+      if (record.stream?.observerSeq === 1) appendTraceEvent(event(2));
+    });
+    const unsubscribeObserver = subscribeToTraceEvents((record) => {
+      if (record.stream) observed.push(record.stream.observerSeq);
+    });
+
+    try {
+      appendTraceEvent(event(1));
+
+      expect(observed).toEqual([1, 2]);
+    } finally {
+      unsubscribeObserver();
+      unsubscribeAppender();
+    }
+  });
+
+  it("does not deliver queued events to subscribers added after their append", () => {
+    const observed: number[] = [];
+    let unsubscribeLate = () => {};
+    const unsubscribeAppender = subscribeToTraceEvents((record) => {
+      if (record.stream?.observerSeq === 1) appendTraceEvent(event(2));
+    });
+    const unsubscribeAdder = subscribeToTraceEvents((record) => {
+      if (record.stream?.observerSeq === 1) {
+        unsubscribeLate = subscribeToTraceEvents((next) => {
+          if (next.stream) observed.push(next.stream.observerSeq);
+        });
+      }
+    });
+
+    try {
+      appendTraceEvent(event(1));
+      appendTraceEvent(event(3));
+
+      expect(observed).toEqual([3]);
+    } finally {
+      unsubscribeLate();
+      unsubscribeAdder();
+      unsubscribeAppender();
+    }
+  });
+
   it("clear resets entries and both counters", async () => {
     for (let index = 0; index <= TRACE_STORE_CAPACITY; index += 1) {
       appendTraceEvent(event(index));
