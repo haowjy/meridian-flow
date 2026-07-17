@@ -6,10 +6,9 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-  type WorkingSetRoute,
+import type {
+  ProjectContextTreeScheme,
+  WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
