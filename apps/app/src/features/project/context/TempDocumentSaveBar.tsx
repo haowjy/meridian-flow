@@ -58,9 +58,7 @@ export function TempDocumentSaveBar({
         .filter(Boolean)
         .join("/")}${parentPath === "/" ? "" : "/"}`
     : "scratch://";
-  const [draft, setDraft] = useState(
-    () => `${prefix}${suggestedUntitledName(tab.documentId) || tab.name}`,
-  );
+  const [draft, setDraft] = useState(() => `${prefix}${suggestedUntitledName(tab) || tab.name}`);
   const [open, setOpen] = useState(false);
   const [browsePath, setBrowsePath] = useState(parentPath);
   const [error, setError] = useState<string | null>(null);
@@ -241,26 +239,34 @@ function replaceBasename(path: string, name: string): string {
   return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
 }
 
-function suggestedUntitledName(documentId: string): string {
-  const session = getDocumentSessionRegistry().getDetached(documentId);
-  const text = firstXmlText(session.document.getXmlFragment(session.fragmentName));
+function suggestedUntitledName(tab: RenameTab): string {
+  const session = getDocumentSessionRegistry().getDetached(tab.documentId);
+  const text = firstXmlBlockText(session.document.getXmlFragment(session.fragmentName));
   if (!text) return "";
-  return suggestedTempDocumentName({
+  const suggestion = suggestedTempDocumentName({
     type: "doc",
     content: [{ type: "paragraph", content: [{ type: "text", text }] }],
   });
+  if (!suggestion || tab.kind === "new") return suggestion;
+  const extensionIndex = tab.name.lastIndexOf(".");
+  const extension = extensionIndex > 0 ? tab.name.slice(extensionIndex) : "";
+  return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
 }
 
-function firstXmlText(node: Y.XmlFragment | Y.XmlElement): string {
+function firstXmlBlockText(fragment: Y.XmlFragment): string {
+  const firstElement = fragment.toArray().find((child) => child instanceof Y.XmlElement);
+  return firstElement instanceof Y.XmlElement ? xmlTextContent(firstElement).trim() : "";
+}
+
+function xmlTextContent(node: Y.XmlElement): string {
+  let text = "";
   for (const child of node.toArray()) {
     if (child instanceof Y.XmlText) {
-      const text = child.toString().trim();
-      if (text) return text;
+      text += child.toString();
     }
     if (child instanceof Y.XmlElement) {
-      const text = firstXmlText(child);
-      if (text) return text;
+      text += xmlTextContent(child);
     }
   }
-  return "";
+  return text;
 }
