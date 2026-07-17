@@ -170,12 +170,17 @@
   --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
 
   /* Collaboration carets — Ink & Jade hues pushed slightly brighter and
-     more chromatic than syntax ink so tiny marks remain distinguishable. */
+     more chromatic than syntax ink so tiny marks remain distinguishable.
+     Hues stay clear of the paper/writer gold band (~84–100) except deep
+     gold, which relies on its dark, saturated ink to read as a mark. */
   --color-collab-cursor-1: oklch(0.52 0.13 165); /* jade */
   --color-collab-cursor-2: oklch(0.56 0.18 29); /* cinnabar */
   --color-collab-cursor-3: oklch(0.58 0.16 45); /* terracotta */
   --color-collab-cursor-4: oklch(0.58 0.13 84); /* deep gold */
   --color-collab-cursor-5: oklch(0.55 0.12 195); /* cool jade */
+  --color-collab-cursor-6: oklch(0.55 0.12 120); /* moss */
+  --color-collab-cursor-7: oklch(0.54 0.09 250); /* slate blue */
+  --color-collab-cursor-8: oklch(0.52 0.1 310); /* plum ink */
 
   --color-status-streaming: var(--color-primary);
   --color-status-streaming-ring: color-mix(in oklab, var(--color-status-streaming) 15%, transparent);

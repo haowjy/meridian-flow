@@ -90,6 +90,9 @@ const CURSOR_COLORS = [
   "var(--color-collab-cursor-3)",
   "var(--color-collab-cursor-4)",
   "var(--color-collab-cursor-5)",
+  "var(--color-collab-cursor-6)",
+  "var(--color-collab-cursor-7)",
+  "var(--color-collab-cursor-8)",
 ] as const;
 
 const DEFAULT_USER: EditorUser = {
