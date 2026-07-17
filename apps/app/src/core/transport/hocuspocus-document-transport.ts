@@ -62,6 +62,30 @@ export type HocuspocusDocumentTransportOptions = {
   awareness: Awareness;
 };
 
+/** Initial SyncStep2 plus a later zero-count SyncStatus acknowledgement. */
+export function createDurableSyncBarrier(): {
+  promise: Promise<void>;
+  markInitialSyncComplete: (unsyncedChanges: number) => void;
+  noteUnsyncedChanges: (unsyncedChanges: number) => void;
+} {
+  let initialSyncComplete = false;
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const settleIfReady = (unsyncedChanges: number) => {
+    if (initialSyncComplete && unsyncedChanges === 0) resolve();
+  };
+  return {
+    promise,
+    markInitialSyncComplete(unsyncedChanges) {
+      initialSyncComplete = true;
+      settleIfReady(unsyncedChanges);
+    },
+    noteUnsyncedChanges: settleIfReady,
+  };
+}
+
 export function createHocuspocusDocumentTransport({
   roomName,
   document,
@@ -76,15 +100,7 @@ export function createHocuspocusDocumentTransport({
   const whenSynced = new Promise<void>((resolve) => {
     resolveSynced = resolve;
   });
-  let initialSyncComplete = false;
-  let resolveDurablySynced!: () => void;
-  const whenDurablySynced = new Promise<void>((resolve) => {
-    resolveDurablySynced = resolve;
-  });
-
-  function resolveDurableBarrierIfReady(unsyncedChanges: number): void {
-    if (initialSyncComplete && unsyncedChanges === 0) resolveDurablySynced();
-  }
+  const durableSync = createDurableSyncBarrier();
 
   function publish(state: ConnectionState): void {
     currentState = state;
@@ -105,15 +121,14 @@ export function createHocuspocusDocumentTransport({
 
   function handleSynced(_event: onSyncedParameters): void {
     if (terminal || destroyed) return;
-    initialSyncComplete = true;
     resolveSynced();
-    resolveDurableBarrierIfReady(provider.unsyncedChanges);
+    durableSync.markInitialSyncComplete(provider.unsyncedChanges);
     publish({ kind: "connected" });
   }
 
   function handleUnsyncedChanges({ number }: onUnsyncedChangesParameters): void {
     if (terminal || destroyed) return;
-    resolveDurableBarrierIfReady(number);
+    durableSync.noteUnsyncedChanges(number);
   }
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
@@ -155,9 +170,8 @@ export function createHocuspocusDocumentTransport({
   provider.attach();
 
   if (provider.synced) {
-    initialSyncComplete = true;
     resolveSynced();
-    resolveDurableBarrierIfReady(provider.unsyncedChanges);
+    durableSync.markInitialSyncComplete(provider.unsyncedChanges);
   }
 
   return {
@@ -166,7 +180,7 @@ export function createHocuspocusDocumentTransport({
       return provider.synced;
     },
     whenSynced,
-    whenDurablySynced,
+    whenDurablySynced: durableSync.promise,
     subscribeStatus(listener) {
       listeners.add(listener);
       listener(currentState);
