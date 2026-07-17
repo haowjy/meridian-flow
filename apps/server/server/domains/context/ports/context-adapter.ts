@@ -71,7 +71,7 @@ export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
   commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<AdapterMoveResult, AdapterFault>>;
+  ): Promise<Result<void, AdapterFault>>;
   commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>>;

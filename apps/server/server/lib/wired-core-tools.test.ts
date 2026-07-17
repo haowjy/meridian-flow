@@ -480,6 +480,10 @@ function contextPortFor(documentId: string, filePath: string): ContextPort {
     edit: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
     writeBinary: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
     move: async () => ({ ok: false, error: { code: "invalid_operation", uri: filePath } }),
+    commitWriterLocation: async () => ({
+      ok: false,
+      error: { code: "invalid_operation", uri: filePath },
+    }),
     mkdir: async () => ({ ok: true, value: undefined }),
   };
 }

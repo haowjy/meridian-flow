@@ -39,7 +39,7 @@ export type ContextTargetExpectation =
   | { state: "absent" }
   | { state: "occupied"; token: ContextLocationToken };
 
-export interface PreparedContextMove {
+interface PreparedContextMoveBase {
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
   /** Destination context_sources.id selected by URI routing. */
@@ -50,23 +50,31 @@ export interface PreparedContextMove {
   expectedTarget: ContextTargetExpectation;
   /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
   overwrite: boolean;
-  /** Writer placement: end provisional naming even without a basename change. */
-  clearProvisionalName: boolean;
 }
 
-type PreparedFileMove = Omit<PreparedContextMove, "source"> & {
+type PreparedFileMove = PreparedContextMoveBase & {
   source: Extract<ContextLocationToken, { kind: "file" }>;
+  /** The exact writer-location command ends provisional naming on commit. */
+  graduateProvisionalName: boolean;
+};
+
+type PreparedDirectoryMove = PreparedContextMoveBase & {
+  source: Extract<ContextLocationToken, { kind: "directory" }>;
+};
+
+export type PreparedContextMove = PreparedFileMove | PreparedDirectoryMove;
+
+type PreparedFileMoveCommand = PreparedFileMove & {
   /** New persisted classification for a tracked file; null preserves storage-backed metadata. */
   destinationFiletype: Filetype | null;
 };
 
-type PreparedDirectoryMove = Omit<PreparedContextMove, "source"> & {
-  source: Extract<ContextLocationToken, { kind: "directory" }>;
+type PreparedDirectoryMoveCommand = PreparedDirectoryMove & {
   destinationFiletype?: never;
 };
 
 /** Store-ready move command after ContextFS has resolved any filetype transition. */
-export type ContextTreeMoveCommand = PreparedFileMove | PreparedDirectoryMove;
+export type ContextTreeMoveCommand = PreparedFileMoveCommand | PreparedDirectoryMoveCommand;
 
 export type ContextTreeMutationError =
   | { code: "stale_source" }
@@ -90,7 +98,7 @@ export interface ContextTreeMutationStore {
   /** Clear provisional naming under the same location CAS used by tree mutations. */
   commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;
+  ): Promise<Result<void, ContextTreeMutationError>>;
   commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;

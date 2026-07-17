@@ -326,7 +326,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           token: target as Extract<NonNullable<typeof target>, { kind: "file" }>,
         },
         overwrite: true,
-        clearProvisionalName: false,
+        graduateProvisionalName: false,
         destinationFiletype: "markdown",
       });
       const [targetAfter] = await db
@@ -426,7 +426,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             token: moveTarget as Extract<NonNullable<typeof moveTarget>, { kind: "file" }>,
           },
           overwrite: true,
-          clearProvisionalName: false,
+          graduateProvisionalName: false,
           destinationFiletype: "markdown",
         }),
       ).resolves.toEqual({

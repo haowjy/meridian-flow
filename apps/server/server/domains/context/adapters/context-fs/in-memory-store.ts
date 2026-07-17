@@ -749,7 +749,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
-        if ((basenameChanged || input.clearProvisionalName) && sourceRow.provisionalName) {
+        if (
+          (basenameChanged ||
+            ("graduateProvisionalName" in input && input.graduateProvisionalName)) &&
+          sourceRow.provisionalName
+        ) {
           sourceRow.provisionalName = false;
         }
         if (input.destinationFiletype != null) {
@@ -805,7 +809,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
 
   async commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
+  ): Promise<Result<void, ContextTreeMutationError>> {
     return this.atomic(async () => {
       const sourceNow = await this.inspect(source.sourceId, source.path);
       if (!sameLocation(sourceNow, source)) return Err({ code: "stale_source" });
@@ -813,7 +817,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (!row || row.deletedAt !== null) return Err({ code: "stale_source" });
       row.provisionalName = false;
       this.markMutatorWrite();
-      return Ok({ movedNodeId: source.nodeId });
+      return Ok(undefined);
     });
   }
 

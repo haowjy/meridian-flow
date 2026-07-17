@@ -143,16 +143,10 @@ export async function moveContextEntry(input: {
   assertWorkScope(input.body.destinationScheme, input.body.destinationWorkId, "destinationWorkId");
   const name = input.body.newName ?? basename(input.body.path);
   const destinationPath = joinPath(input.body.destinationFolderPath, name);
-  const result = await input.port.move(
+  const result = await input.port.commitWriterLocation(
     toUri(input.sourceScheme, input.body.path, input.body.sourceWorkId),
     toUri(input.body.destinationScheme, destinationPath, input.body.destinationWorkId),
-    // Every move through this route is an explicit writer placement — it ends
-    // provisional naming even when the name stays Untitled-N (D8 graduation).
-    {
-      exactTarget: true,
-      clearProvisionalName: true,
-      origin: { type: "human", userId: input.userId },
-    },
+    { origin: { type: "human", userId: input.userId } },
   );
   if (!result.ok) {
     if (result.error.code === "conflict") {

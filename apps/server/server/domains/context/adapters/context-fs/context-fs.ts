@@ -708,16 +708,21 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    const source = prepared.source;
-    if (source.kind === "file") {
+    if (prepared.source.kind === "file") {
+      const source = prepared.source;
       if (!(await this.isVisibleDocument(source.nodeId))) {
         return Err({ code: "invalid_operation" });
       }
       const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
-        ...prepared,
         source,
+        destinationSourceId: prepared.destinationSourceId,
+        destinationPath: prepared.destinationPath,
+        expectedTarget: prepared.expectedTarget,
+        overwrite: prepared.overwrite,
+        graduateProvisionalName:
+          "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
         destinationFiletype: destinationFiletype.value,
       });
       if (!committed.ok) return Err(this.mutationFault(committed.error));
@@ -726,7 +731,14 @@ export class ContextFS implements ContextSchemeAdapter {
         path: prepared.destinationPath,
       });
     }
-    const committed = await this.mutationStore.commitMove({ ...prepared, source });
+    const source = prepared.source;
+    const committed = await this.mutationStore.commitMove({
+      source,
+      destinationSourceId: prepared.destinationSourceId,
+      destinationPath: prepared.destinationPath,
+      expectedTarget: prepared.expectedTarget,
+      overwrite: prepared.overwrite,
+    });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
@@ -736,13 +748,13 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private async commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<AdapterMoveResult, AdapterFault>> {
+  ): Promise<Result<void, AdapterFault>> {
     if (!(await this.isVisibleDocument(source.nodeId))) {
       return Err({ code: "invalid_operation" });
     }
     const committed = await this.mutationStore.commitProvisionalGraduation(source);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
-    return Ok({ movedNodeId: committed.value.movedNodeId, path: source.path });
+    return Ok(undefined);
   }
 
   private async commitPreparedDelete(

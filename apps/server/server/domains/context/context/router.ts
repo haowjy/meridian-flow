@@ -298,6 +298,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.move(source.value, destination.value, options);
     },
 
+    async commitWriterLocation(sourceUri, destinationUri, _options) {
+      const source = await resolve(sourceUri);
+      if (!source.ok) return source;
+      const destination = await resolve(destinationUri);
+      if (!destination.ok) return destination;
+      return treeMover.commitWriterLocation(source.value, destination.value);
+    },
+
     async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
       const r = await resolve(uri);
       if (!r.ok) return r;

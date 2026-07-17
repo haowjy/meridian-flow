@@ -53,11 +53,11 @@ function appFor(
     works?: Record<string, { projectId: string; deletedAt?: Date | null }>;
   } = {},
 ) {
-  const move = vi.fn<ContextPort["move"]>(async () => ({
+  const commitWriterLocation = vi.fn<ContextPort["commitWriterLocation"]>(async () => ({
     ok: true as const,
     value: { movedNodeId: "node-1", destinationPath: "Dest/Source.md" },
   }));
-  const port = { move };
+  const port = { commitWriterLocation };
   return {
     projectRepo: {
       findById: vi.fn(async () => ({
@@ -130,7 +130,7 @@ describe("move context route gates", () => {
 
   it("moves into a Work-scoped scheme through a port authorized for that Work", async () => {
     const app = appFor({ works: { [OTHER_WORK_ID]: { projectId: "project-1" } } });
-    app.port.move.mockResolvedValue({
+    app.port.commitWriterLocation.mockResolvedValue({
       ok: true,
       value: { movedNodeId: "node-1", destinationPath: "Drafts/Source.md" },
     });
@@ -158,16 +158,16 @@ describe("move context route gates", () => {
       "user-1",
       new Set([OTHER_WORK_ID]),
     );
-    expect(app.port.move).toHaveBeenCalledWith(
+    expect(app.port.commitWriterLocation).toHaveBeenCalledWith(
       "manuscript://Source.md",
       `scratch://${OTHER_WORK_ID}/Drafts/Source.md`,
-      expect.objectContaining({ exactTarget: true, clearProvisionalName: true }),
+      expect.objectContaining({ origin: { type: "human", userId: "user-1" } }),
     );
   });
 
   it("shapes a collision as a stack-free 409 with its canonical locator", async () => {
     const app = appFor();
-    app.port.move.mockResolvedValue({
+    app.port.commitWriterLocation.mockResolvedValue({
       ok: false,
       error: { code: "conflict", uri: "manuscript://Dest/Source.md" },
     });

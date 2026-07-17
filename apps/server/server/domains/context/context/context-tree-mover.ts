@@ -73,14 +73,8 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     options?: ContextMoveOptions,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    if (source.canonical === destination.canonical) {
-      // The deliberate stay-put: a writer placement onto the document's own
-      // location is a graduation with no tree mutation — clear provisional
-      // naming, touch nothing else. Without the writer-placement flag a
-      // same-canonical move stays invalid.
-      if (options?.clearProvisionalName) return this.graduateInPlace(source);
+    if (source.canonical === destination.canonical)
       return Err({ code: "invalid_operation", uri: destination.canonical });
-    }
     if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
       return Err({ code: "permission_denied", uri: destination.canonical });
     }
@@ -88,9 +82,43 @@ export class ContextTreeMover {
       return Err({ code: "permission_denied", uri: destination.canonical });
     }
 
-    const prepared = await this.prepareMove(source, destination, options);
+    const prepared = await this.prepareMove(source, destination, {
+      target: "container",
+      overwrite: options?.overwrite === true,
+    });
     if (!prepared.ok) return prepared;
 
+    const result = await callAdapter(
+      destination.canonical,
+      () =>
+        destination.adapter.tree?.commitPreparedMove(prepared.value) ??
+        Promise.resolve(Err({ code: "permission_denied" } as const)),
+    );
+    if (!result.ok) return result;
+    return Ok({
+      movedNodeId: result.value.movedNodeId,
+      destinationPath: prepared.value.destinationPath,
+    });
+  }
+
+  async commitWriterLocation(
+    source: ContextTreeDispatch,
+    destination: ContextTreeDispatch,
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    if (source.canonical === destination.canonical) return this.graduateInPlace(source);
+    if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
+      return Err({ code: "permission_denied", uri: destination.canonical });
+    }
+    if (!source.adapter.tree || !destination.adapter.tree) {
+      return Err({ code: "permission_denied", uri: destination.canonical });
+    }
+
+    const prepared = await this.prepareMove(source, destination, {
+      target: "exact",
+      graduateProvisionalName: true,
+      overwrite: false,
+    });
+    if (!prepared.ok) return prepared;
     const result = await callAdapter(
       destination.canonical,
       () =>
@@ -124,7 +152,7 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    return Ok({ movedNodeId: result.value.movedNodeId, destinationPath: fileToken.path });
+    return Ok({ movedNodeId: fileToken.nodeId, destinationPath: fileToken.path });
   }
 
   async delete(
@@ -152,7 +180,9 @@ export class ContextTreeMover {
   private async prepareMove(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    options?: ContextMoveOptions,
+    policy:
+      | { target: "container"; overwrite: boolean }
+      | { target: "exact"; overwrite: false; graduateProvisionalName: true },
   ): Promise<Result<PreparedContextMove, ContextError>> {
     const sourceToken = await this.inspect(source);
     if (!sourceToken.ok) return sourceToken;
@@ -164,7 +194,11 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
-    const targetPath = await this.resolveTarget(destination, sourceBasename, options?.exactTarget);
+    const targetPath = await this.resolveTarget(
+      destination,
+      sourceBasename,
+      policy.target === "exact",
+    );
     if (!targetPath.ok) return targetPath;
 
     const existingTarget = await this.inspect({ ...destination, path: targetPath.value });
@@ -174,7 +208,7 @@ export class ContextTreeMover {
         sourceToken.value,
         existingTarget.value,
         destination.canonical,
-        options,
+        { overwrite: policy.overwrite },
       );
       if (!guard.ok) return guard;
     }
@@ -190,16 +224,24 @@ export class ContextTreeMover {
       }
     }
 
-    return Ok({
+    const expectedTarget = existingTarget.value
+      ? ({ state: "occupied", token: existingTarget.value } as const)
+      : ({ state: "absent" } as const);
+    const prepared = {
       source: sourceToken.value,
       destinationSourceId: destinationSourceId.value,
       destinationPath: targetPath.value,
-      expectedTarget: existingTarget.value
-        ? { state: "occupied", token: existingTarget.value }
-        : { state: "absent" },
-      overwrite: options?.overwrite === true,
-      clearProvisionalName: options?.clearProvisionalName === true,
-    });
+      expectedTarget,
+      overwrite: policy.overwrite,
+    };
+    return sourceToken.value.kind === "file"
+      ? Ok({
+          ...prepared,
+          source: sourceToken.value,
+          graduateProvisionalName:
+            policy.target === "exact" && policy.graduateProvisionalName === true,
+        })
+      : Ok({ ...prepared, source: sourceToken.value });
   }
 
   private async inspect(

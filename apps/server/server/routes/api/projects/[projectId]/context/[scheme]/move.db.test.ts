@@ -143,47 +143,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return row;
     }
 
-    async function documentRow() {
-      const [row] = await db
-        .select()
-        .from(schema.documents)
-        .where(eq(schema.documents.id, DOCUMENT_ID));
-      return row;
-    }
-
-    it("graduates an explicit stay-put placement without mutating location, identity, timestamps, or Yjs", async () => {
-      const { workId, port } = await arrangeUntitled();
-      const rowBefore = await documentRow();
-      const yjsBefore = await yjsState(DOCUMENT_ID);
-
-      await expect(
-        moveContextEntry({
-          port,
-          userId: USER_ID,
-          sourceScheme: "scratch",
-          body: {
-            path: "Untitled 1.md",
-            sourceWorkId: workId,
-            destinationScheme: "scratch",
-            destinationWorkId: workId,
-            destinationFolderPath: "",
-          },
-        }),
-      ).resolves.toEqual({
-        status: "moved",
-        scheme: "scratch",
-        path: "Untitled 1.md",
-        name: "Untitled 1.md",
-      });
-
-      expect(rowBefore?.provisionalName).toBe(true);
-      await expect(documentRow()).resolves.toEqual({
-        ...rowBefore,
-        provisionalName: false,
-      });
-      expect(await yjsState(DOCUMENT_ID)).toEqual(yjsBefore);
-    });
-
     it("promotes scratch into manuscript, graduating provisional naming without touching Yjs authority", async () => {
       const { projectId, workId, collab, port } = await arrangeUntitled();
       const manifestBefore = await collab.resolveManifestMembership({ projectId });
@@ -283,12 +242,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const moved = await port.move(
         `scratch://${workId}/Untitled 1.md`,
         "manuscript://Act 1/Untitled 1.md",
-        { exactTarget: true, origin: { type: "human", userId: USER_ID } },
+        { origin: { type: "human", userId: USER_ID } },
       );
       expect(moved).toMatchObject({ ok: true });
 
-      // ContextPort.move without clearProvisionalName never silently
-      // graduates a document the writer didn't touch.
+      // Generic ContextPort.move never silently graduates a document when only its container changes.
       await expect(promotedRow(projectId)).resolves.toMatchObject({
         folderName: "Act 1",
         name: "Untitled 1",

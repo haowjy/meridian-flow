@@ -722,7 +722,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             folderId: destParentId,
             name,
             extension,
-            ...(basenameChanged || input.clearProvisionalName ? { provisionalName: false } : {}),
+            ...(basenameChanged ||
+            ("graduateProvisionalName" in input && input.graduateProvisionalName)
+              ? { provisionalName: false }
+              : {}),
             ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
             updatedAt: new Date(),
           })
@@ -823,7 +826,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
   async commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
+  ): Promise<Result<void, ContextTreeMutationError>> {
     return this.withMutationTransaction(async () => {
       await this.lockSources([source.sourceId]);
       const graduated = await currentDrizzleDb(this.db)
@@ -839,7 +842,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         )
         .returning({ id: documents.id });
       if (graduated.length !== 1) rollback("stale_source");
-      return Ok({ movedNodeId: source.nodeId });
+      return Ok(undefined);
     });
   }
 

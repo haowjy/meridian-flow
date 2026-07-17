@@ -157,14 +157,6 @@ export interface ContextWriteOptions {
 
 export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
-  /** Treat destinationUri as the final target, never as a Unix-style container. */
-  exactTarget?: boolean;
-  /**
-   * End provisional naming even when the basename is unchanged. Reserved for
-   * explicit writer placements (the HTTP move route); system/agent moves must
-   * never silently graduate a document the writer didn't touch.
-   */
-  clearProvisionalName?: boolean;
 }
 
 export interface ContextMoveResult {
@@ -243,6 +235,13 @@ export interface ContextPort {
     sourceUri: string,
     destinationUri: string,
     options?: ContextMoveOptions,
+  ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /** Commit a file's exact writer-facing identity and end provisional naming. */
+  commitWriterLocation(
+    sourceUri: string,
+    destinationUri: string,
+    options?: ContextWriteOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
   delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;
