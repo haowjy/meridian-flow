@@ -29,6 +29,7 @@ let ringDropped = 0;
 let tapErrors = 0;
 let snapshot: TraceSnapshot = { entries: [], ringDropped, tapErrors };
 let publishPending = false;
+let snapshotDirty = false;
 
 function rebuildSnapshot(): void {
   const entries = new Array<EventRecord>(size);
@@ -36,10 +37,10 @@ function rebuildSnapshot(): void {
     entries[index] = ring[(start + index) % TRACE_STORE_CAPACITY] as EventRecord;
   }
   snapshot = { entries, ringDropped, tapErrors };
+  snapshotDirty = false;
 }
 
 function publish(): void {
-  rebuildSnapshot();
   for (const listener of listeners) listener();
 }
 
@@ -63,12 +64,14 @@ export function appendTraceEvent(record: EventRecord): void {
     start = (start + 1) % TRACE_STORE_CAPACITY;
     ringDropped += 1;
   }
+  snapshotDirty = true;
   schedulePublish();
 }
 
 /** Record a producer/tap failure without requiring a synthetic EventRecord. */
 export function noteTapError(): void {
   tapErrors += 1;
+  snapshotDirty = true;
   schedulePublish();
 }
 
@@ -78,6 +81,7 @@ export function subscribeToTraceStore(listener: () => void): () => void {
 }
 
 export function getTraceSnapshot(): TraceSnapshot {
+  if (snapshotDirty) rebuildSnapshot();
   return snapshot;
 }
 
@@ -88,6 +92,7 @@ export function clearTraceEvents(): void {
   size = 0;
   ringDropped = 0;
   tapErrors = 0;
+  snapshotDirty = true;
   schedulePublish();
 }
 
