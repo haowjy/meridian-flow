@@ -29,7 +29,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../../../test-support/drizzle-reset.js"
     );
     const { createUntitledContextDocument } = await import("./create-untitled.post.js");
-    const { moveContextEntry } = await import("./move.post.js");
+    const { commitContextMove, parseContextMove } = await import(
+      "../../../../../../lib/context-move-route.js"
+    );
+    const moveContextEntry = (input: {
+      port: import("../../../../../../domains/context/index.js").ContextPort;
+      userId: string;
+      sourceScheme: string;
+      body: unknown;
+    }) =>
+      commitContextMove({
+        port: input.port,
+        userId: input.userId,
+        move: parseContextMove({ sourceScheme: input.sourceScheme, body: input.body }),
+      });
 
     const USER_ID = "00000000-0000-4000-8000-000000000941";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000942";

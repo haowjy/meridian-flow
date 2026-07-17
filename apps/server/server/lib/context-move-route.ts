@@ -1,0 +1,245 @@
+/** Plain-data orchestration for committing a writer-visible context identity. */
+
+import {
+  type ContextEntryValidationError,
+  validateContextEntryName,
+  validateContextEntryPath,
+} from "@meridian/contracts/context-entry-validation";
+import type { MoveContextEntryResult } from "@meridian/contracts/protocol";
+import {
+  isProjectContextTreeScheme,
+  isWorkScopedProjectContextScheme,
+} from "@meridian/contracts/protocol";
+import { createError } from "nitro/h3";
+import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
+import {
+  type ContextError,
+  type ContextPort,
+  contextPortForProjectAuthorities,
+  type ProjectContextFsScheme,
+  parseUnifiedContextUri,
+  type UnifiedContextPortFactory,
+  type WorkScopedContextFsScheme,
+} from "../domains/context/index.js";
+import {
+  type ProjectRepository,
+  requireProjectOwner,
+  type WorkRepository,
+} from "../domains/projects/index.js";
+
+export interface ContextMoveRouteDeps {
+  projectRepo: ProjectRepository;
+  workRepo: WorkRepository;
+  contextPorts: UnifiedContextPortFactory;
+}
+
+type ProjectLocator = {
+  scope: "project";
+  scheme: ProjectContextFsScheme;
+  path: string;
+};
+
+type WorkLocator = {
+  scope: "work";
+  scheme: WorkScopedContextFsScheme;
+  workId: string;
+  path: string;
+};
+
+export type ContextMoveLocator = ProjectLocator | WorkLocator;
+
+export interface ParsedContextMove {
+  source: ContextMoveLocator;
+  destination: ContextMoveLocator;
+  name?: string;
+}
+
+function validationError(field: string, error: ContextEntryValidationError): never {
+  throw createError({
+    statusCode: 400,
+    message: `Invalid \`${field}\`: ${error.reason}`,
+    data: { field, reason: error.reason, segment: error.segment, character: error.character },
+  });
+}
+
+function parsePath(raw: unknown, field: "path" | "destinationFolderPath", allowRoot = false) {
+  if (typeof raw !== "string") {
+    throw createError({ statusCode: 400, message: `\`${field}\` is required` });
+  }
+  const result = validateContextEntryPath(raw, { allowRoot });
+  if (!result.ok) validationError(field, result);
+  return result.value;
+}
+
+function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw createError({ statusCode: 400, message: `\`${field}\` must be a non-empty string` });
+  }
+  return raw.trim();
+}
+
+function parseLocator(input: {
+  scheme: unknown;
+  path: string;
+  workId: string | undefined;
+  workIdField: "sourceWorkId" | "destinationWorkId";
+}): ContextMoveLocator {
+  if (!isProjectContextTreeScheme(input.scheme)) {
+    throw createError({ statusCode: 400, message: "Context scheme is invalid" });
+  }
+  if (isWorkScopedProjectContextScheme(input.scheme)) {
+    if (!input.workId) {
+      throw createError({
+        statusCode: 400,
+        message: `\`${input.workIdField}\` is required for ${input.scheme}`,
+      });
+    }
+    return {
+      scope: "work",
+      scheme: input.scheme as WorkScopedContextFsScheme,
+      workId: input.workId,
+      path: input.path,
+    };
+  }
+  if (input.workId) {
+    throw createError({
+      statusCode: 400,
+      message: `\`${input.workIdField}\` is not valid for ${input.scheme}`,
+    });
+  }
+  return { scope: "project", scheme: input.scheme as ProjectContextFsScheme, path: input.path };
+}
+
+export function parseContextMove(input: {
+  sourceScheme: unknown;
+  body: unknown;
+}): ParsedContextMove {
+  if (!input.body || typeof input.body !== "object") {
+    throw createError({ statusCode: 400, message: "Request body must be an object" });
+  }
+  const body = input.body as Record<string, unknown>;
+  const sourcePath = parsePath(body.path, "path");
+  const destinationFolderPath = parsePath(
+    body.destinationFolderPath,
+    "destinationFolderPath",
+    true,
+  );
+  let name: string | undefined;
+  if (body.newName !== undefined) {
+    if (typeof body.newName !== "string") {
+      throw createError({ statusCode: 400, message: "`newName` must be a string" });
+    }
+    const result = validateContextEntryName(body.newName);
+    if (!result.ok) validationError("newName", result);
+    name = result.value;
+  }
+  return {
+    source: parseLocator({
+      scheme: input.sourceScheme,
+      path: sourcePath,
+      workId: parseWorkId(body.sourceWorkId, "sourceWorkId"),
+      workIdField: "sourceWorkId",
+    }),
+    destination: parseLocator({
+      scheme: body.destinationScheme,
+      path: destinationFolderPath,
+      workId: parseWorkId(body.destinationWorkId, "destinationWorkId"),
+      workIdField: "destinationWorkId",
+    }),
+    ...(name ? { name } : {}),
+  };
+}
+
+function basename(path: string): string {
+  return path.split("/").filter(Boolean).at(-1) ?? "";
+}
+
+function joinPath(parent: string, name: string): string {
+  return parent ? `${parent}/${name}` : name;
+}
+
+function locatorUri(locator: ContextMoveLocator, path = locator.path): string {
+  return projectBrowseContextUri(
+    locator.scheme,
+    path,
+    locator.scope === "work" ? locator.workId : undefined,
+  );
+}
+
+function contextErrorToHttp(error: ContextError): never {
+  switch (error.code) {
+    case "invalid_uri":
+      throw createError({ statusCode: 400, message: error.reason });
+    case "permission_denied":
+      throw createError({ statusCode: 403, message: "Context access denied" });
+    case "conflict":
+      throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "invalid_operation":
+      throw createError({ statusCode: 400, message: error.message ?? "Invalid context operation" });
+    case "not_found":
+      throw createError({ statusCode: 404, message: "Context path not found" });
+    case "context_unavailable":
+      throw createError({ statusCode: 503, message: "Context is unavailable" });
+    case "io_error":
+      throw createError({ statusCode: 502, message: error.message });
+  }
+}
+
+export async function commitContextMove(input: {
+  port: ContextPort;
+  userId: string;
+  move: ParsedContextMove;
+}): Promise<MoveContextEntryResult> {
+  const name = input.move.name ?? basename(input.move.source.path);
+  const destinationPath = joinPath(input.move.destination.path, name);
+  const result = await input.port.commitWriterLocation(
+    locatorUri(input.move.source),
+    locatorUri(input.move.destination, destinationPath),
+    { origin: { type: "human", userId: input.userId } },
+  );
+  if (!result.ok) {
+    if (result.error.code === "conflict") {
+      const collision = parseUnifiedContextUri(result.error.uri);
+      if (!collision.ok) contextErrorToHttp(collision.error);
+      return {
+        status: "conflict",
+        collision: {
+          scheme: collision.value.scheme,
+          path: collision.value.path,
+          ...(collision.value.authority ? { workId: collision.value.authority } : {}),
+        },
+      };
+    }
+    contextErrorToHttp(result.error);
+  }
+  return {
+    status: "moved",
+    scheme: input.move.destination.scheme,
+    path: result.value.destinationPath,
+    name: basename(result.value.destinationPath),
+  };
+}
+
+export async function handleContextMoveRequest(
+  deps: ContextMoveRouteDeps,
+  input: { projectId: string; userId: string; sourceScheme: unknown; body: unknown },
+): Promise<MoveContextEntryResult> {
+  await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
+  const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
+  const workIds = new Set(
+    [move.source, move.destination]
+      .filter((locator): locator is WorkLocator => locator.scope === "work")
+      .map((locator) => locator.workId),
+  );
+  const primaryWorkId = move.source.scope === "work" ? move.source.workId : [...workIds][0];
+  const port = await contextPortForProjectAuthorities({
+    deps: { contextPorts: deps.contextPorts, works: deps.workRepo },
+    projectId: input.projectId,
+    userId: input.userId,
+    workIds,
+    primaryWorkId,
+  });
+  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  return commitContextMove({ port, userId: input.userId, move });
+}

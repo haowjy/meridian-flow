@@ -62,6 +62,32 @@ export interface ProjectBrowseContextPortDeps {
   works: Pick<WorkRepository, "findById">;
 }
 
+/** Resolve one project-browse port whose Work authorities have all been proven. */
+export async function contextPortForProjectAuthorities(input: {
+  deps: ProjectBrowseContextPortDeps;
+  projectId: string;
+  userId: string;
+  workIds: ReadonlySet<string>;
+  primaryWorkId?: string | null;
+}): Promise<ContextPort | null> {
+  if (input.workIds.size === 0) {
+    return input.deps.contextPorts.forProject(input.projectId, input.userId);
+  }
+  if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
+  const works = await Promise.all(
+    [...input.workIds].map((workId) => input.deps.works.findById(workId)),
+  );
+  if (works.some((work) => !work || work.deletedAt || work.projectId !== input.projectId)) {
+    return null;
+  }
+  return input.deps.contextPorts.forWork(
+    input.primaryWorkId,
+    input.projectId,
+    input.userId,
+    input.workIds,
+  );
+}
+
 /**
  * Resolve a route-level context port after the caller has already proven
  * project ownership. The singleton authority set rejects authority-addressed
@@ -73,14 +99,10 @@ export async function contextPortForProjectBrowse(input: {
   userId: string;
   workId?: string | null;
 }): Promise<ContextPort | null> {
-  if (!input.workId) return input.deps.contextPorts.forProject(input.projectId, input.userId);
-
-  const work = await input.deps.works.findById(input.workId);
-  if (!work || work.deletedAt || work.projectId !== input.projectId) return null;
-  return input.deps.contextPorts.forWork(
-    input.workId,
-    input.projectId,
-    input.userId,
-    new Set([input.workId]),
-  );
+  const workIds = new Set(input.workId ? [input.workId] : []);
+  return contextPortForProjectAuthorities({
+    ...input,
+    workIds,
+    primaryWorkId: input.workId,
+  });
 }
