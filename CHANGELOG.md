@@ -10,8 +10,8 @@
   class or event name.
 - `tools/dev`: local DB integration suites now create, migrate, and remove a
   unique per-run database without touching the worktree database; `dev:gc-dbs`
-  preserves active and manually named test databases while reclaiming stopped
-  managed runs.
+  preserves active runs and the reserved manual-test namespace while reclaiming
+  stopped managed runs.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

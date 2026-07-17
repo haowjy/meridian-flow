@@ -1,6 +1,7 @@
-import { resolveWorktreeDatabaseName } from "./dev-env";
+import { validateDbName } from "./dev-db";
 
 const MANAGED_TEST_SLUG_PREFIX = "test-run-";
+const MANUAL_TEST_SLUG_PREFIX = "test-manual-";
 
 export function managedTestDatabaseUrl(
   sourceDatabaseUrl: string,
@@ -8,10 +9,8 @@ export function managedTestDatabaseUrl(
   ownerPid = process.pid,
   startedAt = Date.now(),
 ): string {
-  const databaseName = resolveWorktreeDatabaseName(
-    baseDatabaseName,
-    `${MANAGED_TEST_SLUG_PREFIX}${ownerPid}-${startedAt}`,
-  );
+  const databaseName = `${baseDatabaseName}_${MANAGED_TEST_SLUG_PREFIX}${ownerPid}-${startedAt}`;
+  validateDbName(databaseName);
   const url = new URL(sourceDatabaseUrl);
   url.pathname = `/${databaseName}`;
   return url.toString();
@@ -22,26 +21,28 @@ export function managedTestDatabaseOwnerPid(
   baseDatabaseNames: readonly string[],
 ): number | undefined {
   for (const baseDatabaseName of baseDatabaseNames) {
-    const prefix = `${baseDatabaseName}_${MANAGED_TEST_SLUG_PREFIX}`;
-    if (!databaseName.startsWith(prefix)) continue;
-    const match = databaseName.slice(prefix.length).match(/^(\d+)-(\d+)$/);
-    if (!match) return undefined;
-    return Number(match[1]);
+    const managedPrefix = `${baseDatabaseName}_${MANAGED_TEST_SLUG_PREFIX}`;
+    if (databaseName.startsWith(managedPrefix)) {
+      const match = databaseName.slice(managedPrefix.length).match(/^(\d+)-(\d+)$/);
+      return match ? Number(match[1]) : undefined;
+    }
+
+    const migrationPrefix = `${baseDatabaseName}_migrations_`;
+    if (databaseName.startsWith(migrationPrefix)) {
+      const match = databaseName.slice(migrationPrefix.length).match(/^(\d+)_(\d+)$/);
+      return match ? Number(match[1]) : undefined;
+    }
   }
   return undefined;
 }
 
-export function isUnmanagedTestDatabase(
+export function isManualTestDatabase(
   databaseName: string,
   baseDatabaseNames: readonly string[],
 ): boolean {
-  return baseDatabaseNames.some((baseDatabaseName) => {
-    const prefix = `${baseDatabaseName}_`;
-    return (
-      databaseName.startsWith(prefix) &&
-      databaseName.slice(prefix.length).toLowerCase().includes("test")
-    );
-  });
+  return baseDatabaseNames.some((baseDatabaseName) =>
+    databaseName.startsWith(`${baseDatabaseName}_${MANUAL_TEST_SLUG_PREFIX}`),
+  );
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -55,7 +56,7 @@ export function isProcessAlive(pid: number): boolean {
 
 export interface TestDatabaseCleanupClassification {
   activeManaged: string[];
-  unmanaged: string[];
+  manual: string[];
   orphaned: string[];
 }
 
@@ -69,15 +70,15 @@ export function classifyTestDatabaseCleanup(
     const ownerPid = managedTestDatabaseOwnerPid(databaseName, baseDatabaseNames);
     return ownerPid !== undefined && ownerIsAlive(ownerPid);
   });
-  const unmanaged = found.filter(
+  const manual = found.filter(
     (databaseName) =>
       managedTestDatabaseOwnerPid(databaseName, baseDatabaseNames) === undefined &&
-      isUnmanagedTestDatabase(databaseName, baseDatabaseNames),
+      isManualTestDatabase(databaseName, baseDatabaseNames),
   );
-  const protectedDatabases = new Set([...liveWorktreeDatabases, ...activeManaged, ...unmanaged]);
+  const protectedDatabases = new Set([...liveWorktreeDatabases, ...activeManaged, ...manual]);
   return {
     activeManaged,
-    unmanaged,
+    manual,
     orphaned: found.filter((databaseName) => !protectedDatabases.has(databaseName)),
   };
 }
