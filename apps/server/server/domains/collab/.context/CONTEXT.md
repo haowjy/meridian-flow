@@ -75,11 +75,11 @@ attribution authority.
   full-Yjs-identity evidence sealed to successful model responses. Agent-authored
   live journal, mutation, and reversal rows have an authoring-response FK seam.
 
-Human-origin edits (connection-origin Hocuspocus `onChange`) produce one journal
-row per keystroke. A 50-character sentence becomes ~50 rows / ~935 bytes. This
-is expected: checkpoint compaction recovers storage, and journal row counts are
-not equivalent to semantic edits. Reopening a document without editing may also
-append human-origin rows (a full-state sync-step-2 update plus a no-op).
+Human-origin edits produce one journal row per keystroke. A 50-character
+sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
+recovers storage, and journal row counts are not equivalent to semantic edits.
+Reconnect frames already contained by the live authority are acknowledged but
+do not enter the journal or trigger post-persistence hooks.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
 `document_yjs_draft_updates`) are not part of the model.
