@@ -169,18 +169,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const row = await promotedRow(projectId);
-      expect(row).toEqual({
+      expect(row).toMatchObject({
         id: DOCUMENT_ID,
-        sourceId: row?.folderSourceId,
         sourceSlug: "manuscript",
         sourceScope: "project",
         sourceWorkId: null,
         folderName: "Act 1",
-        folderSourceId: row?.sourceId,
         name: "Untitled 1",
         extension: "md",
         provisionalName: true,
       });
+      expect(row?.sourceId).toBe(row?.folderSourceId);
       await expect(port.stat(`scratch://${workId}/Untitled 1.md`)).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },

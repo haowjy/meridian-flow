@@ -142,9 +142,9 @@ export async function moveContextEntry(input: {
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
+  await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const sourceScheme = parseScheme(getRouterParam(event, "scheme") ?? "");
   const body = parseMoveContextEntryBody(await readBody(event));
-  await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const port = await resolveMovePort({
     app,
     projectId,
