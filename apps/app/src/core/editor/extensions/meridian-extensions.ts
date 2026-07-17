@@ -28,6 +28,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
+import { createMermaidPreviewPlugin, MermaidCodeBlockNodeView } from "../MermaidCodeBlock";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -132,6 +133,14 @@ export const MeridianListItem = ListItem.extend({
 
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
+
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), createMermaidPreviewPlugin()];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(MermaidCodeBlockNodeView);
+  },
 });
 
 export const MeridianTable = Table.extend({
