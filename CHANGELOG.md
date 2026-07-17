@@ -3,17 +3,19 @@
 ## [Unreleased]
 
 - `apps/app`: universal document identity bar — every open document shows a
-  quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas with a
-  permanent “Choose a home” chip (jade while untitled, quiet outline once
-  homed) and the device-only warning in the same slot (2s grace, tracked per
-  document). Untitled drafts place themselves through an empty field with the
-  content-derived name as ghost text and a destination browser that opens on
-  the scheme roots; homed documents rename AND move by editing the path
-  directly (typed segments create folders, tagged “new folder”) or through
-  the chip's Move-to popup. Collisions surface the canonical locator with
-  Open-existing recovery; intents queued on still-materializing drafts report
-  failures instead of dropping them. Replaces the provisional-only untitled
-  rename line.
+  quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
+  match the suggestion dropdown, with a permanent chip whose label graduates
+  with the document (“Choose a home” in jade while untitled, quiet outline
+  “Rename” once homed) and the device-only warning in the same slot (2s
+  grace, tracked per document). The chip is the only edit entry — the
+  breadcrumb is inert, reserved for per-segment navigation. Untitled drafts
+  place themselves through an empty field with the content-derived name as
+  ghost text and a destination browser that opens on the scheme roots; homed
+  documents rename and move through the chip's Move-to popup. The open field
+  carries explicit ✓/× buttons mirroring Enter/Esc. Collisions surface the
+  canonical locator with Open-existing recovery; intents queued on
+  still-materializing drafts report failures instead of dropping them.
+  Replaces the provisional-only untitled rename line.
 - `apps/server`: context moves gain `clearProvisionalName` — the writer-facing
   move route ends provisional naming on every explicit placement (even when
   the name stays Untitled-N), while port-level system moves preserve it.

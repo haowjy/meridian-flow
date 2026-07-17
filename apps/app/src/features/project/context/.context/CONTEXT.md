@@ -67,12 +67,20 @@ channel.
 
 ## Document identity bar
 
-`DocumentIdentityBar.tsx` is the one identity surface: a ~22px mono breadcrumb
-band (`Scratch › Untitled 4`) at the top of the active tab's canvas, on every
-document — tracked, provisional, viewer. Provisional docs are a *state* of the
-bar (italic leaf + jade “Choose a home” chip), never separate chrome; the
-editor banner slot below the toolbar belongs to draft chrome alone, and
-identity chrome must never occupy it again (structural separation, 2026-07-17).
+`DocumentIdentityBar.tsx` is the one identity surface: a fixed-height mono
+breadcrumb band (`Scratch › Untitled 4`) at the top of the active tab's canvas,
+on every document — tracked, provisional, viewer. Crumb/field text is `text-sm`
+to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
+constants (26px band, 22px child boxes) and the zero-layout-shift contract
+between rest and edit states. Provisional docs are a *state* of the bar (italic
+leaf + jade “Choose a home” chip), never separate chrome; the editor banner
+slot below the toolbar belongs to draft chrome alone, and identity chrome must
+never occupy it again (structural separation, 2026-07-17).
+
+The breadcrumb itself is **inert** — the chip is the only edit entry point.
+Each crumb stays its own `data-seg` element because the next slice attaches a
+VS Code-style per-segment navigator dropdown there; don't flatten the path
+into one string.
 
 Contracts:
 
@@ -80,7 +88,7 @@ Contracts:
   content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
   only while the edit field is open on a provisional doc.
 - **Placement grammar** (untitled docs never explicitly renamed or homed:
-  provisional AND still at the default Scratch root): path or chip click opens
+  provisional AND still at the default Scratch root): the jade chip opens
   an EMPTY field — the content-derived suggestion is ghost placeholder text
   (Tab/→ accepts it; Enter on an empty field accepts it implicitly). The
   popover opens on the scheme roots (Manuscript / Knowledge Base / Scratch —
@@ -90,11 +98,13 @@ Contracts:
   Placement happens once: any explicit save graduates the document.
 - **Path grammar** (everything homed): the full human path is one editable
   input (`Manuscript/Act 2/chapter-12` — `/` typing grammar; rest renders
-  `›`). Segment clicks land the selection on that segment; the popover tracks
-  the caret's segment (root labels, then folders, case-insensitive with
-  canonical casing); typed segments matching nothing are tagged "new folder"
-  and created by the move (`identity-path.ts` owns the grammar). Enter is the
-  single rename/move/both commit; Esc AND blur revert. Validation flows
+  `›`). The popover tracks the caret's segment (root labels, then folders,
+  case-insensitive with canonical casing); typed segments matching nothing are
+  tagged "new folder" and created by the move (`identity-path.ts` owns the
+  grammar). No rest-state entry currently reaches this grammar (the crumbs
+  went inert; the per-segment navigator slice reclaims it as its typed
+  fallback — homed rename/move goes through the chip's Move-to popup). Enter
+  is the single rename/move/both commit; Esc AND blur revert. Validation flows
   through the contracts module via `context-entry-name.ts`.
 - **Commit seam**: `use-identity-commit.ts` is the only writer through the
   rename/move endpoints for the bar's three surfaces (placement field, path
@@ -111,9 +121,14 @@ Contracts:
   writer's name restored and the conflict/error recovery note; the receipt
   clears when the writer edits or leaves the field. Failures must never drop
   silently.
-- **Chip slot**: single occupancy, right edge. "Choose a home" is permanent
-  (D4): jade while provisional (opens placement), quiet outline once homed
-  (opens the Move-to popup, anchored at the current folder). Viewer docs get
+- **Field buttons**: the open field renders ✓/× icon buttons after it —
+  additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
+  contract can't fire before the click lands). Keyboard behavior unchanged.
+- **Chip slot**: single occupancy, right edge. The chip is permanent (D4) and
+  its label graduates with the document: jade "Choose a home" while
+  provisional (opens placement), quiet outline "Rename" once homed (opens the
+  Move-to popup, anchored at the current folder — rename is the common case,
+  move is discoverable inside). Viewer docs get
   the popup too; uploads viewers carry no chip (no dead buttons). The
   device-only warning (warning tokens, `TriangleAlert`) outranks the chip
   after unsynced words persist for a 2s sustained grace — the clock is the
