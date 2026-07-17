@@ -53,6 +53,14 @@ function authFrame(body: Uint8Array): Uint8Array {
   return new Uint8Array([...frame("doc", 2), ...body]);
 }
 
+function controlFrame(
+  documentName: string,
+  outerType: number,
+  body = new Uint8Array(),
+): Uint8Array {
+  return new Uint8Array([...frame(documentName, outerType), ...body]);
+}
+
 function summarizeValidUpdate(update: Uint8Array): UpdateSummary {
   const summary = summarizeUpdate(update);
   if ("invalid" in summary) throw new Error("Expected a valid Yjs update fixture");
@@ -141,6 +149,34 @@ describe("classifyFrame", () => {
     expect(classifyFrame(authFrame(new Uint8Array([0]))).messageClass).toBe("auth");
   });
 
+  it("classifies the synthesized Hocuspocus 4.3 control frames", () => {
+    const closeReason = textEncoder.encode("must-not-egress");
+    const encodedReason = createEncoder();
+    writeVarUint8Array(encodedReason, closeReason);
+
+    expect(classifyFrame(controlFrame("doc", 7, toUint8Array(encodedReason)))).toEqual({
+      documentName: "doc",
+      messageClass: "close",
+      payloadBytes: closeReason.byteLength,
+    });
+    expect(classifyFrame(controlFrame("doc", 8, new Uint8Array([0])))).toEqual({
+      documentName: "doc",
+      messageClass: "sync.status",
+      applied: false,
+      payloadBytes: 1,
+    });
+    expect(classifyFrame(new Uint8Array([9]))).toEqual({
+      documentName: null,
+      messageClass: "ping",
+      payloadBytes: 0,
+    });
+    expect(classifyFrame(new Uint8Array([10]))).toEqual({
+      documentName: null,
+      messageClass: "pong",
+      payloadBytes: 0,
+    });
+  });
+
   it("rejects auth frames with a truncated or invalid varuint body", () => {
     expect(classifyFrame(authFrame(new Uint8Array())).messageClass).toBe("unknown");
     expect(classifyFrame(authFrame(new Uint8Array([0x80]))).messageClass).toBe("unknown");
@@ -157,7 +193,7 @@ describe("classifyFrame", () => {
       messageClass: "unknown",
       payloadBytes: 1,
     });
-    expect(classifyFrame(frame("doc", 8, new Uint8Array([1])))).toEqual({
+    expect(classifyFrame(frame("doc", 11, new Uint8Array([1])))).toEqual({
       documentName: "doc",
       messageClass: "unknown",
       payloadBytes: 7,
@@ -482,6 +518,10 @@ it("never throws for seeded arbitrary byte blobs", () => {
     "awareness",
     "stateless",
     "auth",
+    "sync.status",
+    "close",
+    "ping",
+    "pong",
     "unknown",
   ];
 
@@ -537,7 +577,18 @@ it("never returns content from any exported function across every frame path", a
     { name: "query-awareness", bytes: frame("safe-room", 3) },
     { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)) },
     { name: "auth", bytes: authFrame(toUint8Array(auth)) },
-    { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)) },
+    {
+      name: "close",
+      bytes: frame("safe-room", 7, textEncoder.encode(canary)),
+    },
+    { name: "sync.status.applied", bytes: controlFrame("safe-room", 8, new Uint8Array([1])) },
+    {
+      name: "sync.status.not-applied",
+      bytes: controlFrame("safe-room", 8, new Uint8Array([0])),
+    },
+    { name: "ping", bytes: new Uint8Array([9]) },
+    { name: "pong", bytes: new Uint8Array([10]) },
+    { name: "unknown", bytes: frame("safe-room", 11, textEncoder.encode(canary)) },
     { name: "truncated", bytes: canaryBearingTruncatedFrame },
   ];
 

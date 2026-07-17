@@ -5,10 +5,14 @@
  * - Captured 2026-07-16 with Chrome DevTools Protocol Network.webSocketFrame events.
  * - Producers: @hocuspocus/provider@4.3.0, yjs@13.6.31, lib0@0.2.117.
  * - Source: $MERIDIAN_ACTIVE_WORK_DIR/reports/cdp-ws-frames.jsonl.
+ * - The SyncStatus frame was captured 2026-07-17 by the S3 tap-seam probe with
+ *   @hocuspocus/provider@4.3.0. Source:
+ *   $MERIDIAN_ACTIVE_WORK_DIR/reports/s3-phase5-unknown-outer-type.json.
  *
  * That capture contains sync-update and awareness frames, but no sync-step-1,
- * sync-step-2, stateless, auth, or query-awareness frames. Those five paths
- * remain explicitly synthesized in inspect.test.ts; none are labeled captured.
+ * sync-step-2, stateless, auth, query-awareness, close, ping, or pong frames.
+ * Those paths remain explicitly synthesized in inspect.test.ts; none are
+ * labeled captured.
  */
 
 import type { FrameSummary } from "../types.js";
@@ -56,7 +60,7 @@ export const capturedFrames: CapturedFrameFixture[] = [
     direction: "received",
     encoding: "base64",
     payloadData: "JDJlODI1YWU0LTZkMDUtNDYyMC05NjBhLTUxYjYwMjBlMDViYwgB",
-    expected: { documentName, messageClass: "unknown", payloadBytes: 39 },
+    expected: { documentName, messageClass: "sync.status", applied: true, payloadBytes: 1 },
   },
   {
     direction: "received",
