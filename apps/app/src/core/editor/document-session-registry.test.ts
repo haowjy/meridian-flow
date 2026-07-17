@@ -33,6 +33,41 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 const { DocumentSessionRegistry } = await import("./document-session-registry");
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
+  it("keeps a detached room and its Y.Doc intact until normal acquisition attaches it", async () => {
+    providers.length = 0;
+    const registry = new DocumentSessionRegistry();
+    const detached = registry.getDetached("document-detached");
+    const document = detached.document;
+
+    expect(detached.getSnapshot().status).toBe("detached");
+    expect(providers).toHaveLength(0);
+    registry.retain("untitled-tab", ["document-detached"]);
+    expect(detached.getSnapshot().status).toBe("detached");
+    expect(providers).toHaveLength(0);
+    await expect(registry.restartUnavailableRoom("document-detached")).resolves.toBe(false);
+    expect(registry.getDetached("document-detached")).toBe(detached);
+
+    expect(registry.get("document-detached")).toBe(detached);
+    expect(detached.document).toBe(document);
+    expect(providers).toHaveLength(1);
+    expect(detached.getSnapshot().status).toBe("syncing");
+    registry.destroyAll();
+  });
+
+  it("keeps one session per room while branch rooms remain separate and attached", () => {
+    providers.length = 0;
+    const registry = new DocumentSessionRegistry();
+
+    const live = registry.get("document-shared");
+    expect(registry.get("document-shared")).toBe(live);
+    const branch = registry.getRoom("branch:branch-1:gen:1");
+    expect(registry.getRoom("branch:branch-1:gen:1")).toBe(branch);
+    expect(branch).not.toBe(live);
+    expect(branch.document).not.toBe(live.document);
+    expect(providers).toHaveLength(2);
+    registry.destroyAll();
+  });
+
   it("notifies an observer when a session created after detail load loses access", async () => {
     providers.length = 0;
     const registry = new DocumentSessionRegistry();

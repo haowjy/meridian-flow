@@ -96,6 +96,35 @@ function track(session: DocumentSession): {
 }
 
 describe("DocumentSession status derivation", () => {
+  it("starts detached and attaches transport once without replacing its Y.Doc", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({ roomKey: "doc-detached", enableIndexedDb: false });
+    const document = session.document;
+
+    expect(session.getSnapshot()).toMatchObject({
+      status: "detached",
+      connectionState: null,
+    });
+    let flushed = false;
+    void session.whenSynced().then(() => {
+      flushed = true;
+    });
+    await flushMicrotasks();
+    expect(flushed).toBe(false);
+
+    session.attachTransport(factory);
+    expect(session.document).toBe(document);
+    expect(session.getSnapshot().status).toBe("syncing");
+    expect(() => session.attachTransport(factory)).toThrow("Transport already attached");
+
+    current().emit({ kind: "connected" });
+    current().resolveFirstSync();
+    await session.whenSynced();
+    expect(flushed).toBe(true);
+    expect(session.getSnapshot().status).toBe("synced");
+    await session.destroy();
+  });
+
   it("builds a versioned IndexedDB persistence key from COLLAB_SCHEMA_VERSION", () => {
     expect(documentSessionPersistenceKey("doc-abc")).toBe(
       `meridian:document:v${COLLAB_SCHEMA_VERSION}:doc-abc`,
@@ -306,7 +335,7 @@ describe("DocumentSession status derivation", () => {
     expect(session.getSnapshot().status).toBe("destroyed");
   });
 
-  it("without a transport at all, status is synced once local persistence loads", () => {
+  it("without a transport, remains detached after local persistence loads", () => {
     const session = new DocumentSession({
       roomKey: "doc-local",
       enableIndexedDb: false,
@@ -315,7 +344,10 @@ describe("DocumentSession status derivation", () => {
     // With no persistence and no transport, watchSync resolves immediately.
     // Run a microtask flush so the recompute lands.
     return Promise.resolve().then(() => {
-      expect(session.getSnapshot().status).toBe("synced");
+      expect(session.getSnapshot()).toMatchObject({
+        status: "detached",
+        localPersistenceSynced: true,
+      });
       return session.destroy();
     });
   });

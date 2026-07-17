@@ -69,6 +69,28 @@ export class DocumentSessionRegistry {
    * source of truth is server branch state.
    */
   getRoom(roomKey: string): DocumentSession {
+    const session = this.getOrCreateRoom(roomKey);
+    if (session.getSnapshot().status === "detached") {
+      session.attachTransport(({ roomKey: key, document, awareness }) =>
+        createHocuspocusDocumentTransport({ roomName: key, document, awareness }),
+      );
+    }
+    return session;
+  }
+
+  /**
+   * Acquire a live session without materializing its server room. A later
+   * {@link get} or {@link getRoom} attaches transport to this same session.
+   */
+  getDetached(documentId: string): DocumentSession {
+    const room = parseYjsRoomName(documentId);
+    if (room?.kind !== "live") {
+      throw new Error(`Detached sessions require a live document id: ${documentId}`);
+    }
+    return this.getOrCreateRoom(documentId);
+  }
+
+  private getOrCreateRoom(roomKey: string): DocumentSession {
     const room = parseYjsRoomName(roomKey);
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
 
@@ -78,8 +100,6 @@ export class DocumentSessionRegistry {
     const session = new DocumentSession({
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
-      transportFactory: ({ roomKey: key, document, awareness }) =>
-        createHocuspocusDocumentTransport({ roomName: key, document, awareness }),
     });
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
@@ -130,6 +150,7 @@ export class DocumentSessionRegistry {
     const session = this.sessions.get(roomKey);
     if (!session) return false;
     const snapshot = session.getSnapshot();
+    if (snapshot.status === "detached") return false;
     if (snapshot.status !== "access-lost" && snapshot.connectionState?.kind !== "unauthorized") {
       return false;
     }
@@ -189,7 +210,7 @@ export class DocumentSessionRegistry {
     }
 
     for (const id of keep) {
-      this.get(id);
+      if (!this.sessions.has(id)) this.get(id);
     }
 
     for (const id of this.sessions.keys()) {

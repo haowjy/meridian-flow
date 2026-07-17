@@ -3,12 +3,14 @@
  *
  * Wraps a Yjs `Y.Doc`, IndexedDB local persistence, awareness, and a pluggable
  * transport provider into a subscribable session with a status snapshot
- * (syncing / synced / offline / access-lost / destroyed). The single place document
+ * (detached / syncing / synced / offline / access-lost / destroyed). The single place document
  * collaboration state is created and torn down; `EditorView` binds to it.
  *
  * Status semantics — derived from BOTH local persistence and the live
  * transport connection state, so the indicator stays honest after the initial
  * load:
+ *   - `detached`  — local persistence is available, but no server transport
+ *                   has been attached yet.
  *   - `syncing`   — initial local load and/or first server sync hasn't
  *                   completed yet, or the transport is actively reconnecting
  *                   after a drop.
@@ -66,7 +68,13 @@ function deleteStaleVersionedIndexedDb(roomKey: string): void {
     });
 }
 
-export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "access-lost" | "destroyed";
+export type DocumentSessionStatus =
+  | "detached"
+  | "syncing"
+  | "synced"
+  | "offline"
+  | "access-lost"
+  | "destroyed";
 
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
@@ -137,15 +145,15 @@ export class DocumentSession {
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
 
   private readonly persistence: IndexeddbPersistence | null;
-  private readonly transportProvider: DocumentSessionTransportProvider | null;
+  private transportProvider: DocumentSessionTransportProvider | null = null;
   private readonly listeners = new Set<Listener>();
-  private readonly unsubscribeTransportStatus: (() => void) | null;
-  private readonly unsubscribeSafetyNotices: (() => void) | null;
+  private unsubscribeTransportStatus: (() => void) | null = null;
+  private unsubscribeSafetyNotices: (() => void) | null = null;
   private destroyed = false;
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
-  private status: DocumentSessionStatus = "syncing";
+  private status: DocumentSessionStatus = "detached";
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -155,7 +163,9 @@ export class DocumentSession {
   private safetyNotice: SafetyNoticeWsMessage | null = null;
   private presenceSuspendDepth = 0;
   private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
-  private readonly syncedPromise: Promise<void>;
+  private readonly localPersistenceSyncedPromise: Promise<void>;
+  private readonly transportAttachedPromise: Promise<void>;
+  private resolveTransportAttached!: () => void;
 
   constructor({
     roomKey,
@@ -176,28 +186,44 @@ export class DocumentSession {
     } else {
       this.persistence = null;
     }
-    this.transportProvider =
-      transportFactory?.({
-        roomKey,
-        room,
-        document: this.document,
-        awareness: this.awareness,
-        fragmentName: this.fragmentName,
-      }) ?? null;
+    this.transportAttachedPromise = new Promise((resolve) => {
+      this.resolveTransportAttached = resolve;
+    });
+    this.localPersistenceSyncedPromise = this.watchLocalPersistence();
+    if (transportFactory) this.attachTransport(transportFactory);
+    this.emit();
+  }
 
+  /** Attach the session's only server transport without replacing its Y.Doc. */
+  attachTransport(transportFactory: DocumentSessionTransportFactory): void {
+    if (this.destroyed)
+      throw new Error(`Cannot attach transport to destroyed room: ${this.roomKey}`);
+    if (this.transportProvider) {
+      throw new Error(`Transport already attached to room: ${this.roomKey}`);
+    }
+
+    this.transportProvider = transportFactory({
+      roomKey: this.roomKey,
+      room: this.room,
+      document: this.document,
+      awareness: this.awareness,
+      fragmentName: this.fragmentName,
+    });
+    this.resolveTransportAttached();
+    this.status = "syncing";
     this.unsubscribeTransportStatus =
-      this.transportProvider?.subscribeStatus?.((state) => {
+      this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
         this.recomputeStatus();
       }) ?? null;
     this.unsubscribeSafetyNotices =
-      this.transportProvider?.subscribeSafetyNotices?.((notice) => {
+      this.transportProvider.subscribeSafetyNotices?.((notice) => {
         if (notice.documentId !== this.documentId) return;
         this.safetyNotice = notice;
         this.emit();
       }) ?? null;
-
-    this.syncedPromise = this.watchSync();
+    void this.watchTransportSync(this.transportProvider);
+    this.recomputeStatus();
     this.emit();
   }
 
@@ -232,7 +258,9 @@ export class DocumentSession {
   }
 
   async whenSynced(): Promise<void> {
-    await this.syncedPromise;
+    await this.localPersistenceSyncedPromise;
+    await this.transportAttachedPromise;
+    await this.transportProvider?.whenSynced;
   }
 
   waitForCurrentSync(timeoutMs: number): Promise<void> {
@@ -286,9 +314,10 @@ export class DocumentSession {
    * TipTap editor first, then calls this method so providers can detach before
    * the Y.Doc is destroyed.
    */
-  async destroy(): Promise<void> {
+  async destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.resolveTransportAttached();
     this.status = "destroyed";
     this.emit();
 
@@ -299,20 +328,26 @@ export class DocumentSession {
     this.unsubscribeTransportStatus?.();
     this.unsubscribeSafetyNotices?.();
     await this.transportProvider?.destroy();
-    await this.persistence?.destroy();
+    if (options.clearPersistence || !this.transportProvider) {
+      await this.persistence?.clearData();
+    } else {
+      await this.persistence?.destroy();
+    }
     this.awareness.destroy();
     this.document.destroy();
     this.listeners.clear();
   }
 
-  private async watchSync(): Promise<void> {
+  private async watchLocalPersistence(): Promise<void> {
     await this.persistence?.whenSynced;
     if (this.destroyed) return;
     this.localPersistenceSynced = true;
     this.recomputeStatus();
+  }
 
-    await this.transportProvider?.whenSynced;
-    if (this.destroyed) return;
+  private async watchTransportSync(provider: DocumentSessionTransportProvider): Promise<void> {
+    await provider.whenSynced;
+    if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
     this.recomputeStatus();
   }
@@ -324,8 +359,8 @@ export class DocumentSession {
    *
    * Honesty matters here: only emit `synced` when edits are actually on the
    * server (transport connected AND first sync complete). When the transport
-   * has no server channel (no factory at all), local-only IS the steady state,
-   * so `synced` still applies once persistence has loaded.
+   * has no server channel, it remains explicitly detached rather than
+   * presenting local persistence as a successful server sync.
    */
   private recomputeStatus(): void {
     if (this.destroyed) return;
@@ -336,10 +371,8 @@ export class DocumentSession {
   }
 
   private deriveStatus(): DocumentSessionStatus {
+    if (!this.transportProvider) return "detached";
     if (!this.localPersistenceSynced) return "syncing";
-
-    // No transport at all → local-only session; persistence load IS being synced.
-    if (!this.transportProvider) return "synced";
 
     const state = this.transportState;
 
