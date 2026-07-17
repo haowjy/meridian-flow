@@ -14,6 +14,7 @@ import {
   type onStatelessParameters,
   type onStatusParameters,
   type onSyncedParameters,
+  type onUnsyncedChangesParameters,
   WebSocketStatus,
 } from "@hocuspocus/provider";
 import { type SafetyNoticeWsMessage, yjsWsPath } from "@meridian/contracts/protocol";
@@ -75,6 +76,15 @@ export function createHocuspocusDocumentTransport({
   const whenSynced = new Promise<void>((resolve) => {
     resolveSynced = resolve;
   });
+  let initialSyncComplete = false;
+  let resolveDurablySynced!: () => void;
+  const whenDurablySynced = new Promise<void>((resolve) => {
+    resolveDurablySynced = resolve;
+  });
+
+  function resolveDurableBarrierIfReady(unsyncedChanges: number): void {
+    if (initialSyncComplete && unsyncedChanges === 0) resolveDurablySynced();
+  }
 
   function publish(state: ConnectionState): void {
     currentState = state;
@@ -95,8 +105,15 @@ export function createHocuspocusDocumentTransport({
 
   function handleSynced(_event: onSyncedParameters): void {
     if (terminal || destroyed) return;
+    initialSyncComplete = true;
     resolveSynced();
+    resolveDurableBarrierIfReady(provider.unsyncedChanges);
     publish({ kind: "connected" });
+  }
+
+  function handleUnsyncedChanges({ number }: onUnsyncedChangesParameters): void {
+    if (terminal || destroyed) return;
+    resolveDurableBarrierIfReady(number);
   }
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
@@ -128,6 +145,7 @@ export function createHocuspocusDocumentTransport({
     websocketProvider: getSharedWebsocket(),
     onStatus: handleStatus,
     onSynced: handleSynced,
+    onUnsyncedChanges: handleUnsyncedChanges,
     onAuthenticationFailed: handleAuthenticationFailed,
     onClose: handleClose,
     onStateless: handleStateless,
@@ -136,7 +154,11 @@ export function createHocuspocusDocumentTransport({
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
 
-  if (provider.synced) resolveSynced();
+  if (provider.synced) {
+    initialSyncComplete = true;
+    resolveSynced();
+    resolveDurableBarrierIfReady(provider.unsyncedChanges);
+  }
 
   return {
     awareness,
@@ -144,6 +166,7 @@ export function createHocuspocusDocumentTransport({
       return provider.synced;
     },
     whenSynced,
+    whenDurablySynced,
     subscribeStatus(listener) {
       listeners.add(listener);
       listener(currentState);

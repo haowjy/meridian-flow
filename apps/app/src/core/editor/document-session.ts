@@ -102,6 +102,15 @@ export type DocumentSessionTransportProvider = {
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
+   * Resolves after initial reconciliation and after the server's SyncStatus
+   * acknowledgement has reduced the provider's unsynced update count to zero.
+   *
+   * Meridian's collaboration server journals an inbound Yjs update before it
+   * sends that acknowledgement, so this is the transport's durable-upload
+   * barrier. Hocuspocus' initial `whenSynced` is not such a barrier.
+   */
+  whenDurablySynced?: Promise<void>;
+  /**
    * Subscribe to live connection-state updates from the underlying socket.
    * Implementations MUST emit the current state synchronously on subscribe
    * and on every subsequent change. Returns an unsubscribe function.
@@ -153,6 +162,7 @@ export class DocumentSession {
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
+  private transportDurableSyncComplete = false;
   private status: DocumentSessionStatus = "detached";
   /**
    * Latest live connection-state from the transport. When the transport is
@@ -228,6 +238,7 @@ export class DocumentSession {
         this.emit();
       }) ?? null;
     void this.watchTransportSync(this.transportProvider);
+    void this.watchTransportDurableSync(this.transportProvider);
     this.recomputeStatus();
     this.emit();
   }
@@ -304,6 +315,52 @@ export class DocumentSession {
     });
   }
 
+  /**
+   * Settle once every update present at attachment is server-acknowledged, or
+   * once terminal denial/destruction makes that impossible. Callers must
+   * inspect the snapshot afterwards before treating the upload as durable.
+   */
+  waitForDurableSync(): Promise<void> {
+    if (
+      this.transportDurableSyncComplete ||
+      this.status === "access-lost" ||
+      this.status === "destroyed"
+    ) {
+      return Promise.resolve();
+    }
+    const durableSequence = async () => {
+      await this.localPersistenceSyncedPromise;
+      await this.transportAttachedPromise;
+      await this.transportProvider?.whenDurablySynced;
+    };
+    const terminal = new Promise<void>((resolve) => {
+      let unsubscribe: (() => void) | null = null;
+      unsubscribe = this.subscribe((snapshot) => {
+        if (snapshot.status !== "access-lost" && snapshot.status !== "destroyed") return;
+        unsubscribe?.();
+        resolve();
+      });
+    });
+    return Promise.race([durableSequence(), terminal, this.lifecycleCompletedPromise]);
+  }
+
+  /**
+   * Wait for all IndexedDB transactions queued before this call. Applying a
+   * Yjs update starts y-indexeddb's write transaction synchronously; a later
+   * readonly transaction cannot complete until that write commits.
+   */
+  async flushLocalPersistence(): Promise<void> {
+    await this.whenLocalPersistenceSynced();
+    const db = this.persistence?.db;
+    if (!db || this.destroyed) return;
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("updates", "readonly");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB flush aborted"));
+    });
+  }
+
   suspendPresence(): void {
     if (this.destroyed) return;
     if (this.presenceSuspendDepth++ > 0) return;
@@ -365,6 +422,14 @@ export class DocumentSession {
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
     this.recomputeStatus();
+  }
+
+  private async watchTransportDurableSync(
+    provider: DocumentSessionTransportProvider,
+  ): Promise<void> {
+    await provider.whenDurablySynced;
+    if (this.destroyed || provider !== this.transportProvider) return;
+    this.transportDurableSyncComplete = true;
   }
 
   /**
