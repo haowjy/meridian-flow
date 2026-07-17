@@ -95,6 +95,7 @@ export type DraftReviewController = {
     documentId: string,
     draftId: string,
     operationIds: readonly string[],
+    revision: { draftRevisionToken: number; branchId?: string },
   ) => void;
   /**
    * Claim/release the single review-runtime slot. Registration is claim-based:
@@ -138,6 +139,14 @@ export function useDraftReviewController(
   const [applyRefusal, setApplyRefusal] = useState<DraftApplyRefusal | null>(null);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
+  const displayedPreviewRef = useRef<{
+    identity: string;
+    documentId: string;
+    draftId: string;
+    operationIds: readonly string[];
+    draftRevisionToken: number;
+    branchId?: string;
+  } | null>(null);
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
     null,
@@ -254,7 +263,21 @@ export function useDraftReviewController(
   }, []);
 
   const inlineReviewModelAvailable = useCallback(
-    (identity: string, documentId: string, draftId: string, operationIds: readonly string[]) => {
+    (
+      identity: string,
+      documentId: string,
+      draftId: string,
+      operationIds: readonly string[],
+      revision: { draftRevisionToken: number; branchId?: string },
+    ) => {
+      displayedPreviewRef.current = {
+        identity,
+        documentId,
+        draftId,
+        operationIds: [...operationIds],
+        draftRevisionToken: revision.draftRevisionToken,
+        ...(revision.branchId ? { branchId: revision.branchId } : {}),
+      };
       dispatch({ type: "inlineModelAvailable", identity, documentId, draftId });
       // A refreshed preview that no longer carries a pending-discard operation is
       // the settle signal: the reject synced and the change is gone. Clear its
@@ -515,13 +538,15 @@ export function useDraftReviewController(
       ) {
         return;
       }
-      const { draftRevisionToken, branchId, operationIds } = await latestPreviewRevisionTokens(
-        queryClient,
-        projectId,
-        workId,
-        documentId,
-        draftId,
-      );
+      const displayedPreview = displayedPreviewRef.current;
+      if (
+        !displayedPreview ||
+        displayedPreview.documentId !== documentId ||
+        displayedPreview.draftId !== draftId ||
+        displayedPreview.operationIds.length === 0
+      ) {
+        return;
+      }
       setApplyRefusal(null);
       acceptMutation.mutate(
         {
@@ -530,9 +555,9 @@ export function useDraftReviewController(
           threadId,
           documentId,
           draftId,
-          branchId,
-          draftRevisionToken,
-          operationIds,
+          branchId: displayedPreview.branchId,
+          draftRevisionToken: displayedPreview.draftRevisionToken,
+          operationIds: [...displayedPreview.operationIds],
         },
         {
           onSuccess(response) {
