@@ -64,6 +64,20 @@ describe("agent trace API", () => {
     ).toEqual([2]);
   });
 
+  it("returns clones that cannot mutate retained events", () => {
+    appendTraceEvent(event(1, { payload: { nested: { value: "original" } } }));
+
+    const [returned] = meridianTraceAPI.getEvents();
+    if (!returned) throw new Error("expected a returned event");
+    returned.name = "mutated";
+    (returned.payload.nested as { value: string }).value = "mutated";
+
+    expect(meridianTraceAPI.getEvents()[0]).toMatchObject({
+      name: "frame",
+      payload: { nested: { value: "original" } },
+    });
+  });
+
   it("reports total captured events, ring drops, and tap errors", () => {
     for (let index = 0; index <= TRACE_STORE_CAPACITY; index += 1) {
       appendTraceEvent(event(index));
@@ -96,6 +110,21 @@ describe("agent trace API", () => {
     );
 
     await expect(waiting).resolves.toMatchObject({ stream: { observerSeq: 3 } });
+  });
+
+  it("returns a clone from waits that cannot mutate retained events", async () => {
+    const waiting = meridianTraceAPI.waitForEvent({ messageClass: "sync.update" });
+    appendTraceEvent(event(1, { payload: { nested: { value: "original" } } }));
+
+    const returned = await waiting;
+    if (!returned) throw new Error("expected a returned event");
+    returned.name = "mutated";
+    (returned.payload.nested as { value: string }).value = "mutated";
+
+    expect(meridianTraceAPI.getEvents()[0]).toMatchObject({
+      name: "frame",
+      payload: { nested: { value: "original" } },
+    });
   });
 
   it("returns null when no matching event arrives before the timeout", async () => {

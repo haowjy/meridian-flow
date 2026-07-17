@@ -40,7 +40,9 @@ function capturedCount(snapshot: ReturnType<typeof getTraceSnapshot>): number {
 }
 
 function getEvents(filter: AgentTraceFilter = {}): EventRecord[] {
-  return getTraceSnapshot().entries.filter((record) => matchesFilter(record, filter));
+  return structuredClone(
+    getTraceSnapshot().entries.filter((record) => matchesFilter(record, filter)),
+  );
 }
 
 function getStats(): { captured: number; ringDropped: number; tapErrors: number } {
@@ -66,7 +68,7 @@ function waitForEvent(
       settled = true;
       if (timeout !== undefined) clearTimeout(timeout);
       unsubscribe();
-      resolve(record);
+      resolve(structuredClone(record));
     });
 
     timeout = setTimeout(() => {
