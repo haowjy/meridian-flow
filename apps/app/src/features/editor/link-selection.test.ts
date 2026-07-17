@@ -63,4 +63,19 @@ describe("linkAttributesAtSelection", () => {
 
     expect(editor.getHTML()).toBe("<p>linked plain</p>");
   });
+
+  it("keeps logical mark identity when an earlier edit remaps its positions", () => {
+    editor = new Editor({
+      extensions: createStandaloneEditorExtensions(),
+      content: '<p>before <a href="https://example.com">linked</a></p>',
+    });
+    editor.commands.setTextSelection(10);
+    const before = linkAtSelection(editor);
+
+    editor.view.dispatch(editor.state.tr.insertText("new ", 1));
+    const after = linkAtSelection(editor);
+
+    expect(after?.from).toBe((before?.from ?? 0) + 4);
+    expect(after?.identity).toBe(before?.identity);
+  });
 });

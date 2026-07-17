@@ -1,6 +1,7 @@
 /** Link bubble registration, content, and fixed-toolbar entry point. */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 import { ExternalLink, Link, Unlink } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 
@@ -12,18 +13,50 @@ import { normalizeLinkHref } from "./link-url";
 
 type LinkBubbleData = { attributes: Record<string, unknown> | null };
 
+export function canUseLinkBubble(editor: Editor): boolean {
+  return editor.isEditable && Boolean(editor.schema.marks.link && editor.commands.setLink);
+}
+
+export function matchExistingLink(editor: Editor): BubbleMatch | null {
+  if (!canUseLinkBubble(editor)) return null;
+  const link = linkAtSelection(editor);
+  return link
+    ? {
+        from: link.from,
+        to: link.to,
+        identity: link.identity,
+        data: { attributes: link.attributes } satisfies LinkBubbleData,
+      }
+    : null;
+}
+
+export function matchLinkEntry(editor: Editor): BubbleMatch | null {
+  if (!canUseLinkBubble(editor) || !(editor.state.selection instanceof TextSelection)) return null;
+  const link = linkAtSelection(editor);
+  if (!link && editor.state.selection.empty) return null;
+  return link
+    ? {
+        from: link.from,
+        to: link.to,
+        identity: link.identity,
+        data: { attributes: link.attributes } satisfies LinkBubbleData,
+      }
+    : {
+        from: editor.state.selection.from,
+        to: editor.state.selection.to,
+        identity: editor.state.selection.$from.parent,
+        data: { attributes: null } satisfies LinkBubbleData,
+      };
+}
+
 export const linkBubbleContext: BubbleContext = {
   id: "link",
   anchor: "selection",
-  match(editor) {
-    const { from, to, empty } = editor.state.selection;
-    const link = linkAtSelection(editor);
-    if (empty && !link) return null;
-    return {
-      from: link?.from ?? from,
-      to: link?.to ?? to,
-      data: { attributes: link?.attributes ?? null } satisfies LinkBubbleData,
-    };
+  accessibleName: () => t`Edit link`,
+  match: matchExistingLink,
+  entry: {
+    match: matchLinkEntry,
+    shortcut: { key: "k", primaryModifier: true },
   },
   Component: LinkBubble,
 };
@@ -40,7 +73,7 @@ export function LinkToolbarButton({
   onOpen: () => void;
 }) {
   const active = Boolean(editor && linkAttributesAtSelection(editor));
-  const canOpen = Boolean(editor && (!editor.state.selection.empty || active));
+  const canOpen = Boolean(editor && matchLinkEntry(editor));
 
   return (
     <Button
@@ -73,6 +106,7 @@ function LinkBubble({ editor, match }: { editor: Editor; match: BubbleMatch }) {
   const { close } = useEditorBubble();
 
   const removeLink = () => {
+    if (!editor.isEditable) return;
     editor.commands.setTextSelection({ from: match.from, to: match.to });
     editor.commands.unsetLink();
     editor.commands.focus();
@@ -81,6 +115,7 @@ function LinkBubble({ editor, match }: { editor: Editor; match: BubbleMatch }) {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!editor.isEditable) return;
     const normalizedHref = normalizeLinkHref(href);
 
     if (!href.trim() && existingAttributes) {

@@ -1,5 +1,4 @@
 /** Shared positioning, precedence, visibility, and focus host for editor bubbles. */
-import { t } from "@lingui/core/macro";
 import { type Editor, posToDOMRect } from "@tiptap/core";
 import {
   createContext,
@@ -20,9 +19,22 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 export type BubbleMatch = {
   from: number;
   to: number;
+  /** Logical feature-owned identity; unlike positions, this survives document mapping. */
+  identity: unknown;
   /** Position before the matched node. Required by node-top anchors. */
   nodePos?: number;
   data?: unknown;
+};
+
+export type BubbleShortcut = {
+  key: string;
+  primaryModifier?: boolean;
+  altKey?: boolean;
+};
+
+export type BubbleEntry = {
+  match(editor: Editor): BubbleMatch | null;
+  shortcut?: BubbleShortcut;
 };
 
 export interface BubbleContext {
@@ -31,6 +43,10 @@ export interface BubbleContext {
   match(editor: Editor): BubbleMatch | null;
   /** Where the bubble anchors: the selection rect (marks) or a node's edge (blocks). */
   anchor: "selection" | "node-top";
+  /** Context-specific dialog name, resolved at render time for the active locale. */
+  accessibleName(): string;
+  /** Optional explicit-entry policy, separate from passive arbitration. */
+  entry?: BubbleEntry;
   Component: FC<{ editor: Editor; match: BubbleMatch }>;
 }
 
@@ -41,23 +57,11 @@ export type EditorBubbleHostHandle = {
 
 type ActiveBubble = { context: BubbleContext; match: BubbleMatch };
 
-const CONTEXT_PRIORITY = ["link", "code", "image", "table"] as const;
-const priorityById = new Map<string, number>(CONTEXT_PRIORITY.map((id, index) => [id, index]));
-
 export function selectBubbleContext(
   editor: Editor,
   contexts: readonly BubbleContext[],
 ): ActiveBubble | null {
-  const ordered = contexts
-    .map((context, registrationIndex) => ({ context, registrationIndex }))
-    .sort(
-      (a, b) =>
-        (priorityById.get(a.context.id) ?? CONTEXT_PRIORITY.length) -
-          (priorityById.get(b.context.id) ?? CONTEXT_PRIORITY.length) ||
-        a.registrationIndex - b.registrationIndex,
-    );
-
-  for (const { context } of ordered) {
+  for (const context of contexts) {
     const match = context.match(editor);
     if (match) return { context, match };
   }
@@ -86,39 +90,53 @@ export const EditorBubbleHost = forwardRef<
   const [editorFocused, setEditorFocused] = useState(() => editor?.isFocused ?? false);
   const [bubbleFocused, setBubbleFocused] = useState(false);
   const [composing, setComposing] = useState(false);
-  const [dismissedSignature, setDismissedSignature] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<Pick<ActiveBubble, "context" | "match"> | null>(null);
+  const [entered, setEntered] = useState<{ contextId: string; identity: object } | null>(null);
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
 
-  const active = useMemo(
-    () => (editor && !editor.isDestroyed ? selectBubbleContext(editor, contexts) : null),
-    [contexts, editor, version],
+  const active = useMemo(() => {
+    if (!editor || editor.isDestroyed) return null;
+    if (entered) {
+      const context = contexts.find((candidate) => candidate.id === entered.contextId);
+      const match = context?.entry?.match(editor);
+      if (context && match) {
+        return { context, match: { ...match, identity: entered.identity } };
+      }
+    }
+    return selectBubbleContext(editor, contexts);
+  }, [contexts, editor, entered, version]);
+  const componentKey = useBubbleComponentKey(active);
+  const isDismissed = Boolean(
+    active &&
+      dismissed?.context.id === active.context.id &&
+      Object.is(dismissed.match.identity, active.match.identity),
   );
-  const signature = active ? bubbleSignature(active) : null;
-  const dismissalKey = active && editor ? bubbleDismissalKey(active, editor) : null;
   const visible = Boolean(
     active &&
       !composing &&
-      dismissalKey !== dismissedSignature &&
+      !isDismissed &&
       (editorFocused || bubbleFocused || focusRequest === active.context.id),
   );
 
   const close = useCallback(
     (options?: { focusEditor?: boolean }) => {
-      if (dismissalKey) setDismissedSignature(dismissalKey);
+      if (active) setDismissed(active);
+      setEntered(null);
       setFocusRequest(null);
       if (options?.focusEditor && editor && !editor.isDestroyed) editor.commands.focus();
     },
-    [dismissalKey, editor],
+    [active, editor],
   );
 
   const open = useCallback(
     (id: string, options?: { focus?: boolean }) => {
       if (!editor || editor.isDestroyed) return false;
       const context = contexts.find((candidate) => candidate.id === id);
-      const match = context?.match(editor);
+      const match = context?.entry?.match(editor) ?? context?.match(editor);
       if (!context || !match) return false;
-      setDismissedSignature(null);
+      setDismissed(null);
+      setEntered({ contextId: id, identity: {} });
       setFocusRequest(options?.focus ? id : null);
       return true;
     },
@@ -130,6 +148,10 @@ export const EditorBubbleHost = forwardRef<
   useEffect(() => {
     if (!editor) return;
     const bump = () => setVersion((value) => value + 1);
+    const selection = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (!transaction.docChanged) setEntered(null);
+      bump();
+    };
     const focus = () => setEditorFocused(true);
     const blur = () => {
       // A pointer press in portalled bubble content blurs ProseMirror before
@@ -138,12 +160,12 @@ export const EditorBubbleHost = forwardRef<
         setEditorFocused(editor.isFocused);
       });
     };
-    editor.on("selectionUpdate", bump);
+    editor.on("selectionUpdate", selection);
     editor.on("transaction", bump);
     editor.on("focus", focus);
     editor.on("blur", blur);
     return () => {
-      editor.off("selectionUpdate", bump);
+      editor.off("selectionUpdate", selection);
       editor.off("transaction", bump);
       editor.off("focus", focus);
       editor.off("blur", blur);
@@ -159,10 +181,11 @@ export const EditorBubbleHost = forwardRef<
       setVersion((value) => value + 1);
     };
     const shortcut = (event: globalThis.KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey) {
-        return;
-      }
-      if (!open("link", { focus: true })) return;
+      const context = contexts.find(
+        (candidate) =>
+          candidate.entry?.shortcut && shortcutMatches(event, candidate.entry.shortcut),
+      );
+      if (!context || !open(context.id, { focus: true })) return;
       event.preventDefault();
     };
     dom.addEventListener("compositionstart", startComposition);
@@ -173,7 +196,18 @@ export const EditorBubbleHost = forwardRef<
       dom.removeEventListener("compositionend", endComposition);
       dom.removeEventListener("keydown", shortcut);
     };
-  }, [editor, open]);
+  }, [contexts, editor, open]);
+
+  useEffect(() => {
+    if (
+      !active ||
+      (dismissed &&
+        (dismissed.context.id !== active.context.id ||
+          !Object.is(dismissed.match.identity, active.match.identity)))
+    ) {
+      setDismissed(null);
+    }
+  }, [active, dismissed]);
 
   useEffect(() => {
     const trackBubbleFocus = () =>
@@ -232,7 +266,7 @@ export const EditorBubbleHost = forwardRef<
         collisionPadding={8}
         updatePositionStrategy="always"
         className="w-auto p-0"
-        aria-label={t`Editor contextual controls`}
+        aria-label={active?.context.accessibleName()}
         onPointerDownCapture={(event) => {
           setBubbleFocused(true);
           // Keep ProseMirror's selection live while a command button runs.
@@ -249,7 +283,7 @@ export const EditorBubbleHost = forwardRef<
         <BubbleActions.Provider value={actions}>
           <div>
             {editor && active && Component ? (
-              <Component key={signature} editor={editor} match={active.match} />
+              <Component key={componentKey} editor={editor} match={active.match} />
             ) : null}
           </div>
         </BubbleActions.Provider>
@@ -258,13 +292,33 @@ export const EditorBubbleHost = forwardRef<
   );
 });
 
-function bubbleSignature({ context, match }: ActiveBubble): string {
-  return `${context.id}:${match.from}:${match.to}:${match.nodePos ?? ""}:${JSON.stringify(match.data)}`;
+function useBubbleComponentKey(active: ActiveBubble | null): number {
+  const sequence = useRef(0);
+  const previous = useRef<{ contextId: string; identity: unknown; key: number } | null>(null);
+  if (!active) {
+    previous.current = null;
+    return sequence.current;
+  }
+  if (
+    !previous.current ||
+    previous.current.contextId !== active.context.id ||
+    !Object.is(previous.current.identity, active.match.identity)
+  ) {
+    previous.current = {
+      contextId: active.context.id,
+      identity: active.match.identity,
+      key: ++sequence.current,
+    };
+  }
+  return previous.current.key;
 }
 
-function bubbleDismissalKey({ context, match }: ActiveBubble, editor: Editor): string {
-  const { from, to } = editor.state.selection;
-  return `${context.id}:${from}:${to}:${match.nodePos ?? ""}`;
+function shortcutMatches(event: KeyboardEvent, shortcut: BubbleShortcut): boolean {
+  return (
+    event.key.toLowerCase() === shortcut.key.toLowerCase() &&
+    (!shortcut.primaryModifier || event.metaKey || event.ctrlKey) &&
+    event.altKey === (shortcut.altKey ?? false)
+  );
 }
 
 function useVirtualAnchor(

@@ -9,20 +9,21 @@ function context(id: string, matches: boolean): BubbleContext {
   return {
     id,
     anchor: "selection",
-    match: vi.fn(() => (matches ? { from: 1, to: 2 } : null)),
+    accessibleName: () => id,
+    match: vi.fn(() => (matches ? { from: 1, to: 2, identity: id } : null)),
     Component: EmptyBubble,
   };
 }
 
 describe("selectBubbleContext", () => {
-  it("uses editor context priority rather than registration order", () => {
+  it("uses registration order as context priority", () => {
     const editor = {} as Editor;
     const table = context("table", true);
     const image = context("image", true);
     const code = context("code", true);
     const link = context("link", true);
 
-    expect(selectBubbleContext(editor, [table, image, code, link])?.context.id).toBe("link");
+    expect(selectBubbleContext(editor, [table, image, code, link])?.context.id).toBe("table");
   });
 
   it("falls through inactive inner contexts", () => {

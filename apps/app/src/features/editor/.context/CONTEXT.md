@@ -55,18 +55,21 @@ I / code / list / link / figure). It subscribes to the editor's selection and
 transaction events to keep active-mark highlighting in sync.
 
 `EditorBubbleHost`, mounted beside `EditorContent`, is the one positioning and
-focus owner for contextual editor controls. Registrations contribute a matcher,
-an anchor mode (`selection` or `node-top`), and content; the host chooses one in
-the fixed precedence order link → code → image → table, rematches on editor
-events, and hides across blur and IME composition. Radix owns collision handling
-around the host's virtual anchor. Add later contextual controls by registering a
-`BubbleContext`, never by mounting another popover shell.
+focus owner for contextual editor controls. Registrations contribute a passive
+matcher, an anchor mode (`selection` or `node-top`), an accessible name, content,
+and optional explicit-entry metadata. Registration order at the composition root
+is precedence (link → code → image → table). The host rematches on editor events,
+keeps feature-owned logical identity separate from mapped document positions,
+and hides across blur and IME composition. Radix owns collision handling around
+the host's virtual anchor. Add later contextual controls by registering a
+`BubbleContext`, never by mounting another popover shell. Read-only editors do
+not mount mutating contexts.
 
-The link registration is the first context. It matches selected text or a link
-mark touching the caret and uses TipTap's link commands to add, edit, or remove
-the mark without introducing a second document representation. Cmd/Ctrl+K and
-the docked toolbar request focused entry through the host; automatic appearance
-does not move focus.
+The link registration is the first context. Passive arbitration matches only a
+link mark touching the selection; a selected plain-text range is accepted only
+by explicit entry from Cmd/Ctrl+K or the docked toolbar. It uses TipTap's link
+commands to add, edit, or remove the mark without introducing a second document
+representation. Automatic appearance does not move focus.
 
 ### Detecting a mark at a caret
 

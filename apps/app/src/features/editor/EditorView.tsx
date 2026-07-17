@@ -461,13 +461,15 @@ function SessionEditorView({
         }
         uploadStatus={<FigureUploadStatus state={figureUploadState} />}
         bubbleHost={
-          <EditorBubbleHost
-            ref={bubbleHostRef}
-            editor={editor}
-            contexts={editorBubbleContexts}
-            contentId={bubbleId}
-            onActiveContextChange={setActiveBubbleId}
-          />
+          editable ? (
+            <EditorBubbleHost
+              ref={bubbleHostRef}
+              editor={editor}
+              contexts={editorBubbleContexts}
+              contentId={bubbleId}
+              onActiveContextChange={setActiveBubbleId}
+            />
+          ) : undefined
         }
       />
     </section>
