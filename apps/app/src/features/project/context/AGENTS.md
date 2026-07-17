@@ -53,7 +53,8 @@ Shared across both shells:
   + `IdentityMovePopup.tsx` (the universal breadcrumb band — inline rename AND
   move live there, committed through `use-identity-commit.ts`). New untitled
   tabs use the same Yjs-first editor as tracked documents; the detached
-  session is materialized by `untitled-reconciler.ts`.
+  session is materialized by the `untitled-reconciler.ts` engine;
+  `untitled-reconciler-browser.ts` owns browser/API/React bindings.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,

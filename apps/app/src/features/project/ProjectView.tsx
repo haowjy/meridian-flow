@@ -20,7 +20,7 @@ import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
-import { getUntitledReconciler } from "./context/untitled-reconciler";
+import { getUntitledReconciler } from "./context/untitled-reconciler-browser";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,

@@ -28,7 +28,7 @@ vi.mock("./file-suggestions", async (importOriginal) => {
     useFileSuggestions: () => ({ suggestions: [], isFetching: false, isError: false }),
   };
 });
-vi.mock("./untitled-reconciler", () => ({
+vi.mock("./untitled-reconciler-browser", () => ({
   clearQueuedIdentityFailure: vi.fn(),
   useQueuedIdentityFailure: () => null,
   useUntitledPendingSince: () => null,

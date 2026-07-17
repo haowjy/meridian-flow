@@ -7,7 +7,7 @@ import { moveContextEntry, renameContextEntry } from "@/client/api/projects-api"
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
-import { queueUntitledIdentity } from "./untitled-reconciler";
+import { queueUntitledIdentity } from "./untitled-reconciler-browser";
 
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";

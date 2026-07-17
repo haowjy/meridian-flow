@@ -36,7 +36,7 @@ vi.mock("./file-suggestions", async (importOriginal) => {
     useFileSuggestions: () => ({ suggestions: [], isFetching: false, isError: false }),
   };
 });
-vi.mock("./untitled-reconciler", () => ({ clearQueuedIdentityFailure: vi.fn() }));
+vi.mock("./untitled-reconciler-browser", () => ({ clearQueuedIdentityFailure: vi.fn() }));
 
 const { IdentityPlacementField } = await import("./IdentityPlacementField");
 

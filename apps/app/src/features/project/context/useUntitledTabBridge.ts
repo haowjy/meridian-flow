@@ -2,7 +2,7 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
-import { isUntitledPending, registerUntitledCandidate } from "./untitled-reconciler";
+import { isUntitledPending, registerUntitledCandidate } from "./untitled-reconciler-browser";
 
 export function useUntitledTabBridge({
   projectId,

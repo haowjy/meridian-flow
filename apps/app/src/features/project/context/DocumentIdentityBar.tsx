@@ -31,7 +31,7 @@ import {
   clearQueuedIdentityFailure,
   useQueuedIdentityFailure,
   useUntitledPendingSince,
-} from "./untitled-reconciler";
+} from "./untitled-reconciler-browser";
 import { type IdentityCommitted, useIdentityCommit } from "./use-identity-commit";
 
 export type DocumentIdentityBarProps = {

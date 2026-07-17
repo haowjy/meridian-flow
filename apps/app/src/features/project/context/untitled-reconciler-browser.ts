@@ -1,0 +1,141 @@
+/** Browser adapters and React bindings for the durable untitled reconciler engine. */
+
+import type { ProjectContextTreeNode } from "@meridian/contracts/protocol";
+import { useSyncExternalStore } from "react";
+import {
+  createUntitledContextDocument,
+  getProjectContextTree,
+  listProjectWorks,
+  moveContextEntry,
+} from "@/client/api/projects-api";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type { DesiredIdentity } from "./identity-location";
+import {
+  type PendingUntitled,
+  type QueuedIdentityFailure,
+  UntitledReconciler,
+  type UntitledReconcilerDeps,
+  untitledHomeUri,
+} from "./untitled-reconciler";
+
+function treeContainsDocument(
+  nodes: readonly ProjectContextTreeNode[],
+  documentId: string,
+): boolean {
+  return nodes.some((node) =>
+    node.kind === "dir"
+      ? treeContainsDocument(node.children, documentId)
+      : node.documentId === documentId,
+  );
+}
+
+function browserDeps(): UntitledReconcilerDeps {
+  const registry = getDocumentSessionRegistry();
+  return {
+    storage: localStorage,
+    scheduler: {
+      queue: (task) => queueMicrotask(task),
+      setTimer: (task, delayMs) => setTimeout(task, delayMs),
+      clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+      onOnline: (task) => {
+        window.addEventListener("online", task);
+        return () => window.removeEventListener("online", task);
+      },
+    },
+    sessions: registry,
+    newDocumentId: () => crypto.randomUUID(),
+    api: {
+      async resolveHome(projectId) {
+        const works = await listProjectWorks(projectId);
+        return untitledHomeUri(projectId, works.defaultWorkId);
+      },
+      create(entry) {
+        return createUntitledContextDocument(
+          entry.projectId,
+          entry.home.scheme,
+          {
+            documentId: entry.documentId,
+            ...(entry.home.folderPath ? { folderPath: entry.home.folderPath } : {}),
+          },
+          { workId: entry.home.workId },
+        );
+      },
+      async serverDocumentExists(entry) {
+        const response = await getProjectContextTree(entry.projectId, entry.home.scheme, {
+          workId: entry.home.workId,
+        });
+        return treeContainsDocument(response.tree.children, entry.documentId);
+      },
+      move(entry, path, desired: DesiredIdentity) {
+        const { destination, name } = desired;
+        const currentName = path.slice(path.lastIndexOf("/") + 1);
+        return moveContextEntry(entry.projectId, entry.home.scheme, {
+          path: path.replace(/^\/+/, ""),
+          sourceWorkId: entry.home.workId,
+          destinationScheme: destination.scheme,
+          destinationFolderPath: destination.folderPath.replace(/^\/+/, ""),
+          ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
+          ...(name !== currentName ? { newName: name } : {}),
+        });
+      },
+    },
+  };
+}
+
+let shared: UntitledReconciler | null = null;
+
+export function getUntitledReconciler(): UntitledReconciler {
+  if (!shared && typeof window !== "undefined") shared = new UntitledReconciler(browserDeps());
+  if (!shared) throw new Error("Untitled reconciler is browser-only");
+  return shared;
+}
+
+export function registerUntitledCandidate(
+  documentId: string,
+  candidate: Parameters<UntitledReconciler["registerCandidate"]>[1],
+): () => void {
+  return getUntitledReconciler().registerCandidate(documentId, candidate);
+}
+
+export function appendPendingUntitled(entry: PendingUntitled): void {
+  getUntitledReconciler().append(entry);
+}
+
+export function isUntitledPending(documentId: string): boolean {
+  return getUntitledReconciler().has(documentId);
+}
+
+export function useUntitledPending(documentId: string): boolean {
+  const reconciler = getUntitledReconciler();
+  return useSyncExternalStore(
+    reconciler.subscribe,
+    () => reconciler.has(documentId),
+    () => false,
+  );
+}
+
+export function useUntitledPendingSince(documentId: string): number | null {
+  const reconciler = getUntitledReconciler();
+  return useSyncExternalStore(
+    reconciler.subscribe,
+    () => reconciler.pendingSince(documentId),
+    () => null,
+  );
+}
+
+export function useQueuedIdentityFailure(documentId: string): QueuedIdentityFailure | null {
+  const reconciler = getUntitledReconciler();
+  return useSyncExternalStore(
+    reconciler.subscribe,
+    () => reconciler.queuedIdentityFailure(documentId),
+    () => null,
+  );
+}
+
+export function clearQueuedIdentityFailure(documentId: string): void {
+  getUntitledReconciler().clearQueuedIdentityFailure(documentId);
+}
+
+export function queueUntitledIdentity(documentId: string, desired: DesiredIdentity): void {
+  getUntitledReconciler().queueIdentity(documentId, desired);
+}

@@ -6,6 +6,7 @@ import * as Y from "yjs";
 import type { DocumentSessionSnapshot } from "@/core/editor/document-session";
 import {
   type PendingUntitled,
+  type ReconciliationRecord,
   UntitledReconciler,
   type UntitledReconcilerDeps,
   untitledDocumentIsEmpty,
@@ -151,8 +152,8 @@ function fakeSession(document: Y.Doc) {
   };
 }
 
-function storedEntries(values: Map<string, string>): PendingUntitled[] {
-  return JSON.parse(values.get("meridian:pending-untitled") ?? "[]") as PendingUntitled[];
+function storedEntries(values: Map<string, string>): ReconciliationRecord[] {
+  return JSON.parse(values.get("meridian:pending-untitled") ?? "[]") as ReconciliationRecord[];
 }
 
 describe("untitled reconciler lifecycle", () => {
@@ -160,7 +161,16 @@ describe("untitled reconciler lifecycle", () => {
     const h = harness();
     h.values.set(
       "meridian:pending-untitled",
-      JSON.stringify([{ documentId: "doc-1", projectId: "project-1" }]),
+      JSON.stringify([
+        {
+          documentId: "doc-1",
+          materialization: {
+            phase: "pending",
+            entry: { documentId: "doc-1", projectId: "project-1" },
+          },
+          pendingSinceMs: 0,
+        },
+      ]),
     );
     h.resolveHome.mockResolvedValue(null);
     const reconciler = new UntitledReconciler(h.deps);
@@ -186,13 +196,51 @@ describe("untitled reconciler lifecycle", () => {
 
     await h.runQueue();
 
-    expect(storedEntries(h.values)).toEqual([{ documentId: "doc-1", projectId: "project-1" }]);
+    expect(storedEntries(h.values)).toEqual([
+      expect.objectContaining({
+        documentId: "doc-1",
+        materialization: {
+          phase: "pending",
+          entry: { documentId: "doc-1", projectId: "project-1" },
+        },
+      }),
+    ]);
     expect(h.create).not.toHaveBeenCalled();
     expect(h.timers).toHaveLength(1);
   });
 });
 
 describe("untitled reconciliation durability", () => {
+  it("restores an explicit desired identity after a reload", async () => {
+    const h = harness();
+    const first = new UntitledReconciler(h.deps);
+    first.start();
+    first.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+    first.queueIdentity("doc-1", {
+      name: "Opening.md",
+      destination: { scheme: "manuscript", folderPath: "/Act 1" },
+    });
+    first.dispose();
+
+    expect(storedEntries(h.values)[0]?.desiredIdentity).toEqual({
+      name: "Opening.md",
+      destination: { scheme: "manuscript", folderPath: "/Act 1" },
+    });
+
+    const restored = new UntitledReconciler(h.deps);
+    restored.start();
+    await h.runQueue(); // stale callback from the disposed instance
+    await h.runQueue();
+    expect(h.deps.api.move).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "doc-1" }),
+      "/Untitled",
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
+  });
+
   it("clears an empty local room only after the server confirms no row", async () => {
     const h = harness();
     h.sessions.set("doc-1", fakeSession(contentDocument("")));
@@ -250,6 +298,31 @@ describe("untitled reconciliation durability", () => {
     expect(h.timers).toHaveLength(1);
   });
 
+  it("restores a failure receipt without restoring the device-only warning", async () => {
+    const h = harness();
+    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "conflict" as const,
+      collision: { scheme: "scratch" as const, path: "taken.md", workId: "work-1" },
+    });
+    const first = new UntitledReconciler(h.deps);
+    first.start();
+    first.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+    first.queueIdentity("doc-1", {
+      name: "taken.md",
+      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+    });
+    await h.runQueue();
+    first.dispose();
+
+    const restored = new UntitledReconciler(h.deps);
+    restored.start();
+    expect(restored.queuedIdentityFailure("doc-1")).toMatchObject({
+      kind: "conflict",
+      name: "taken.md",
+    });
+    expect(restored.pendingSince("doc-1")).toBeNull();
+  });
+
   it("persists a reminted room only after its IndexedDB transaction completes", async () => {
     const h = harness();
     h.create.mockResolvedValueOnce({ status: "conflict" });
@@ -297,8 +370,15 @@ describe("queued identity receipts", () => {
 
     // Materialization itself succeeded: the entry drains and the document is
     // no longer device-only — only the identity receipt reports the failure.
-    expect(storedEntries(h.values)).toEqual([]);
+    expect(storedEntries(h.values)).toEqual([
+      expect.objectContaining({
+        documentId: "doc-1",
+        materialization: { phase: "synced" },
+        pendingSinceMs: null,
+      }),
+    ]);
     expect(reconciler.has("doc-1")).toBe(false);
+    expect(reconciler.pendingSince("doc-1")).toBeNull();
     expect(reconciler.queuedIdentityFailure("doc-1")).toEqual({
       kind: "conflict",
       name: "taken.md",

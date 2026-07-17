@@ -29,7 +29,8 @@ import { IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
 import { identityDestination, type TabLocation } from "./identity-location";
 import { suggestedNameFromFragment } from "./untitled-document-name";
-import { clearQueuedIdentityFailure, type QueuedIdentityFailure } from "./untitled-reconciler";
+import type { QueuedIdentityFailure } from "./untitled-reconciler";
+import { clearQueuedIdentityFailure } from "./untitled-reconciler-browser";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
 import { ValidationNote } from "./validation-note";
 

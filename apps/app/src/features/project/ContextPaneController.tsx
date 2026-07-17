@@ -27,11 +27,8 @@ import {
   findContextFileByDocumentId,
   firstContextFile,
 } from "./context/context-tree";
-import {
-  appendPendingUntitled,
-  isUntitledPending,
-  untitledDocumentIsEmpty,
-} from "./context/untitled-reconciler";
+import { untitledDocumentIsEmpty } from "./context/untitled-reconciler";
+import { appendPendingUntitled, isUntitledPending } from "./context/untitled-reconciler-browser";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 

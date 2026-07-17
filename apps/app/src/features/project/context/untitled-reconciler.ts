@@ -11,19 +11,11 @@ import type {
   CreateUntitledContextDocumentResult,
   MoveContextEntryResult,
   MoveContextEntrySuccess,
-  ProjectContextTreeNode,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { useSyncExternalStore } from "react";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
-import {
-  createUntitledContextDocument,
-  getProjectContextTree,
-  listProjectWorks,
-  moveContextEntry,
-} from "@/client/api/projects-api";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { DesiredIdentity } from "./identity-location";
 
 const STORAGE_KEY = "meridian:pending-untitled";
@@ -125,13 +117,21 @@ export function untitledHomeUri(
   return activeWorkId ? { scheme: "scratch", workId: activeWorkId } : null;
 }
 
+export type ReconciliationRecord = {
+  documentId: string;
+  materialization:
+    | { phase: "idle" }
+    | { phase: "pending"; entry: PendingUntitled }
+    | { phase: "synced" };
+  desiredIdentity?: DesiredIdentity;
+  failure?: QueuedIdentityFailure;
+  /** Epoch ms for device-only grace; meaningful only while pending. */
+  pendingSinceMs: number | null;
+};
+
 export class UntitledReconciler {
-  private readonly entries = new Map<string, PendingUntitled>();
+  private readonly records = new Map<string, ReconciliationRecord>();
   private readonly candidates = new Map<string, Candidate>();
-  private readonly identityIntents = new Map<string, DesiredIdentity>();
-  private readonly identityFailures = new Map<string, QueuedIdentityFailure>();
-  /** documentId → epoch ms when the entry first became pending (in-memory). */
-  private readonly pendingSinceMs = new Map<string, number>();
   private running = false;
   private scheduled = false;
   private started = false;
@@ -145,12 +145,9 @@ export class UntitledReconciler {
   start(): void {
     if (this.started) return;
     this.started = true;
-    for (const entry of readRegistry(this.deps.storage)) {
-      if (this.entries.has(entry.documentId)) continue;
-      this.entries.set(entry.documentId, entry);
-      // An entry that survived a reload has been device-only across sessions —
-      // no fresh grace window; the warning may claim its slot immediately.
-      this.pendingSinceMs.set(entry.documentId, 0);
+    for (const record of readRegistry(this.deps.storage)) {
+      if (this.records.has(record.documentId)) continue;
+      this.records.set(record.documentId, record);
     }
     this.removeOnlineListener = this.deps.scheduler.onOnline(this.schedule);
     this.emit();
@@ -175,35 +172,42 @@ export class UntitledReconciler {
   }
 
   append(entry: PendingUntitled): void {
-    if (this.entries.has(entry.documentId)) return;
-    this.entries.set(entry.documentId, entry);
-    if (!this.pendingSinceMs.has(entry.documentId)) {
-      this.pendingSinceMs.set(entry.documentId, Date.now());
-    }
-    this.persist();
-    this.emit();
+    const current = this.records.get(entry.documentId);
+    if (current?.materialization.phase === "pending") return;
+    this.records.set(entry.documentId, {
+      documentId: entry.documentId,
+      materialization: { phase: "pending", entry },
+      desiredIdentity: current?.desiredIdentity,
+      failure: current?.failure,
+      pendingSinceMs: current?.pendingSinceMs ?? Date.now(),
+    });
+    this.persistAndEmit();
     this.schedule();
   }
 
   has(documentId: string): boolean {
-    return this.entries.has(documentId);
+    return this.records.get(documentId)?.materialization.phase === "pending";
   }
 
-  /**
-   * Epoch ms since the document became device-only, or null when synced.
-   * Owned here (not in a view) so remounting chrome cannot restart the
-   * device-only grace window.
-   */
   pendingSince(documentId: string): number | null {
-    return this.entries.has(documentId) ? (this.pendingSinceMs.get(documentId) ?? null) : null;
+    const record = this.records.get(documentId);
+    return record?.materialization.phase === "pending" ? record.pendingSinceMs : null;
   }
 
   queuedIdentityFailure(documentId: string): QueuedIdentityFailure | null {
-    return this.identityFailures.get(documentId) ?? null;
+    return this.records.get(documentId)?.failure ?? null;
   }
 
   clearQueuedIdentityFailure(documentId: string): void {
-    if (this.identityFailures.delete(documentId)) this.emit();
+    const record = this.records.get(documentId);
+    if (!record?.failure) return;
+    const next = { ...record, failure: undefined };
+    if (next.materialization.phase === "synced" && !next.desiredIdentity) {
+      this.records.delete(documentId);
+    } else {
+      this.records.set(documentId, next);
+    }
+    this.persistAndEmit();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -211,18 +215,24 @@ export class UntitledReconciler {
     return () => this.listeners.delete(listener);
   };
 
-  /** Queue a desired identity to apply when the document
-   *  materializes. Replaces any earlier intent; the outcome lands as a
-   *  receipt (`queuedIdentityFailure`), never a promise — the writer's edit
-   *  session is over when this is called. */
-  queueIdentity(documentId: string, desired: DesiredIdentity): void {
-    this.identityIntents.set(documentId, desired);
-    this.clearQueuedIdentityFailure(documentId);
+  /** Last explicit writer identity wins and is durable before this returns. */
+  queueIdentity(documentId: string, desiredIdentity: DesiredIdentity): void {
+    const current = this.records.get(documentId) ?? {
+      documentId,
+      materialization: { phase: "idle" as const },
+      pendingSinceMs: null,
+    };
+    this.records.set(documentId, {
+      ...current,
+      desiredIdentity,
+      failure: undefined,
+    });
+    this.persistAndEmit();
     this.schedule();
   }
 
   readonly schedule = (): void => {
-    if (!this.started || this.entries.size === 0 || this.scheduled) return;
+    if (!this.started || !this.hasPendingWork() || this.scheduled) return;
     this.scheduled = true;
     this.deps.scheduler.queue(() => {
       this.scheduled = false;
@@ -230,15 +240,26 @@ export class UntitledReconciler {
     });
   };
 
+  private hasPendingWork(): boolean {
+    return [...this.records.values()].some((record) => record.materialization.phase === "pending");
+  }
+
   private async sweep(): Promise<void> {
-    if (!this.started || this.running || this.entries.size === 0) return;
+    if (!this.started || this.running || !this.hasPendingWork()) return;
     this.running = true;
     let failed = false;
     try {
-      for (const entry of [...this.entries.values()]) {
+      const pending = [...this.records.values()].filter(
+        (
+          record,
+        ): record is ReconciliationRecord & {
+          materialization: { phase: "pending"; entry: PendingUntitled };
+        } => record.materialization.phase === "pending",
+      );
+      for (const record of pending) {
         if (!this.started) break;
         try {
-          await this.reconcile(entry);
+          await this.reconcile(record);
         } catch {
           failed = true;
         }
@@ -247,21 +268,27 @@ export class UntitledReconciler {
       this.running = false;
     }
     if (!this.started) return;
-    if (failed && this.entries.size > 0) this.armRetry();
+    if (failed && this.hasPendingWork()) this.armRetry();
     else {
       this.retryMs = RETRY_BASE_MS;
-      if (this.entries.size > 0) this.schedule();
+      if (this.hasPendingWork()) this.schedule();
     }
   }
 
-  private async reconcile(entry: PendingUntitled): Promise<void> {
+  private async reconcile(
+    record: ReconciliationRecord & {
+      materialization: { phase: "pending"; entry: PendingUntitled };
+    },
+  ): Promise<void> {
+    const entry = record.materialization.entry;
     const home = entry.home ?? (await this.deps.api.resolveHome(entry.projectId));
     if (!home) throw new Error("Untitled home is not available yet");
     const resolvedEntry = entry.home
       ? (entry as PendingUntitled & { home: UntitledHome })
       : { ...entry, home };
     if (!entry.home) {
-      this.entries.set(entry.documentId, resolvedEntry);
+      record = { ...record, materialization: { phase: "pending", entry: resolvedEntry } };
+      this.records.set(entry.documentId, record);
       this.persist();
     }
 
@@ -272,8 +299,6 @@ export class UntitledReconciler {
       await session.whenLocalPersistenceSynced();
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
       if (empty && !(await this.deps.api.serverDocumentExists(resolvedEntry))) {
-        // The document ceased to exist before materializing; queued identity
-        // stays desired-state only and re-applies if the writer types again.
         await this.drain(entry.documentId, true);
         return;
       }
@@ -284,7 +309,7 @@ export class UntitledReconciler {
         return;
       }
       this.candidates.get(entry.documentId)?.onMaterialized(result);
-      await this.applyQueuedIdentity(resolvedEntry, result);
+      await this.applyDesiredIdentity(resolvedEntry, result);
 
       const attached = this.deps.sessions.attachDetached(entry.documentId);
       await attached.waitForDurableSync();
@@ -296,34 +321,39 @@ export class UntitledReconciler {
     }
   }
 
-  private async applyQueuedIdentity(
+  private async applyDesiredIdentity(
     entry: PendingUntitled & { home: UntitledHome },
     result: CreateUntitledContextDocumentResponse,
   ): Promise<void> {
-    const desired = this.identityIntents.get(entry.documentId);
+    const desired = this.records.get(entry.documentId)?.desiredIdentity;
     if (!desired) return;
-    this.identityIntents.delete(entry.documentId);
     try {
       const moved = await this.deps.api.move(entry, result.path, desired);
       if (moved.status === "conflict") {
-        this.identityFailures.set(entry.documentId, {
+        this.finishIdentityAttempt(entry.documentId, {
           kind: "conflict",
           name: desired.name,
           scheme: moved.collision.scheme,
           path: `/${moved.collision.path}`,
           ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
         });
-        this.emit();
         return;
       }
+      this.finishIdentityAttempt(entry.documentId);
       this.candidates.get(entry.documentId)?.onIdentityCommitted?.({
         ...moved,
         path: `/${moved.path}`,
       });
     } catch {
-      this.identityFailures.set(entry.documentId, { kind: "error", name: desired.name });
-      this.emit();
+      this.finishIdentityAttempt(entry.documentId, { kind: "error", name: desired.name });
     }
+  }
+
+  private finishIdentityAttempt(documentId: string, failure?: QueuedIdentityFailure): void {
+    const record = this.records.get(documentId);
+    if (!record) return;
+    this.records.set(documentId, { ...record, desiredIdentity: undefined, failure });
+    this.persistAndEmit();
   }
 
   private async remint(
@@ -336,37 +366,48 @@ export class UntitledReconciler {
     Y.applyUpdate(replacement.document, Y.encodeStateAsUpdate(session.document));
     await replacement.flushLocalPersistence();
 
+    const record = this.records.get(entry.documentId);
+    if (!record) return;
     const candidate = this.candidates.get(entry.documentId);
-    const desired = this.identityIntents.get(entry.documentId);
-    const failure = this.identityFailures.get(entry.documentId);
-    const since = this.pendingSinceMs.get(entry.documentId);
-    this.entries.delete(entry.documentId);
-    this.entries.set(replacementId, { ...entry, documentId: replacementId });
+    this.records.delete(entry.documentId);
+    this.records.set(replacementId, {
+      ...record,
+      documentId: replacementId,
+      materialization: {
+        phase: "pending",
+        entry: { ...entry, documentId: replacementId },
+      },
+    });
     this.candidates.delete(entry.documentId);
     if (candidate) this.candidates.set(replacementId, candidate);
-    this.identityIntents.delete(entry.documentId);
-    if (desired) this.identityIntents.set(replacementId, desired);
-    this.identityFailures.delete(entry.documentId);
-    if (failure) this.identityFailures.set(replacementId, failure);
-    this.pendingSinceMs.delete(entry.documentId);
-    if (since !== undefined) this.pendingSinceMs.set(replacementId, since);
-    this.persist();
-    this.emit();
+    this.persistAndEmit();
     candidate?.onReminted(replacementId);
   }
 
   private async drain(documentId: string, clearPersistence: boolean): Promise<void> {
-    this.entries.delete(documentId);
-    this.pendingSinceMs.delete(documentId);
-    this.persist();
-    this.emit();
+    const record = this.records.get(documentId);
+    if (record?.desiredIdentity || record?.failure) {
+      this.records.set(documentId, {
+        ...record,
+        materialization: clearPersistence ? { phase: "idle" } : { phase: "synced" },
+        pendingSinceMs: null,
+      });
+    } else {
+      this.records.delete(documentId);
+    }
+    this.persistAndEmit();
     if (clearPersistence) {
       await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
     }
   }
 
   private persist(): void {
-    this.deps.storage.setItem(STORAGE_KEY, JSON.stringify([...this.entries.values()]));
+    this.deps.storage.setItem(STORAGE_KEY, JSON.stringify([...this.records.values()]));
+  }
+
+  private persistAndEmit(): void {
+    this.persist();
+    this.emit();
   }
 
   private armRetry(): void {
@@ -390,26 +431,64 @@ function syncFailure(snapshot: DocumentSessionSnapshot): Error {
   return new Error("Untitled document not durably synced");
 }
 
-function readRegistry(storage: StoragePort): PendingUntitled[] {
+function readRegistry(storage: StoragePort): ReconciliationRecord[] {
   try {
     const parsed: unknown = JSON.parse(storage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isPendingUntitled);
+    return parsed.filter(isReconciliationRecord);
   } catch {
     return [];
   }
 }
 
-function isPendingUntitled(value: unknown): value is PendingUntitled {
+function isReconciliationRecord(value: unknown): value is ReconciliationRecord {
   if (!value || typeof value !== "object") return false;
-  const entry = value as Partial<PendingUntitled>;
+  const record = value as Partial<ReconciliationRecord>;
+  if (typeof record.documentId !== "string" || !record.materialization) return false;
+  if (record.desiredIdentity !== undefined && !isDesiredIdentity(record.desiredIdentity)) {
+    return false;
+  }
+  if (record.failure !== undefined && !isIdentityFailure(record.failure)) return false;
+  if (record.materialization.phase === "idle" || record.materialization.phase === "synced") {
+    return record.pendingSinceMs === null;
+  }
+  if (record.materialization.phase !== "pending") return false;
+  const entry = record.materialization.entry;
   return (
-    typeof entry.documentId === "string" &&
+    typeof entry?.documentId === "string" &&
+    entry.documentId === record.documentId &&
     typeof entry.projectId === "string" &&
+    typeof record.pendingSinceMs === "number" &&
     (entry.home === undefined ||
       (entry.home.scheme === "scratch" &&
         typeof entry.home.workId === "string" &&
         (entry.home.folderPath === undefined || typeof entry.home.folderPath === "string")))
+  );
+}
+
+function isDesiredIdentity(value: unknown): value is DesiredIdentity {
+  if (!value || typeof value !== "object") return false;
+  const desired = value as Partial<DesiredIdentity>;
+  const destination = desired.destination;
+  return (
+    typeof desired.name === "string" &&
+    Boolean(destination) &&
+    isProjectContextTreeScheme(destination?.scheme) &&
+    typeof destination?.folderPath === "string" &&
+    (destination.workId === undefined || typeof destination.workId === "string")
+  );
+}
+
+function isIdentityFailure(value: unknown): value is QueuedIdentityFailure {
+  if (!value || typeof value !== "object") return false;
+  const failure = value as Partial<QueuedIdentityFailure>;
+  if (failure.kind === "error") return typeof failure.name === "string";
+  return (
+    failure.kind === "conflict" &&
+    typeof failure.name === "string" &&
+    isProjectContextTreeScheme(failure.scheme) &&
+    typeof failure.path === "string" &&
+    (failure.workId === undefined || typeof failure.workId === "string")
   );
 }
 
@@ -428,124 +507,4 @@ function nodeHasContent(value: unknown): boolean {
   if (node.text?.length) return true;
   if (node.type && !["doc", "paragraph", "heading"].includes(node.type)) return true;
   return (node.content ?? []).some(nodeHasContent);
-}
-
-function treeContainsDocument(
-  nodes: readonly ProjectContextTreeNode[],
-  documentId: string,
-): boolean {
-  return nodes.some((node) =>
-    node.kind === "dir"
-      ? treeContainsDocument(node.children, documentId)
-      : node.documentId === documentId,
-  );
-}
-
-function browserDeps(): UntitledReconcilerDeps {
-  const registry = getDocumentSessionRegistry();
-  return {
-    storage: localStorage,
-    scheduler: {
-      queue: (task) => queueMicrotask(task),
-      setTimer: (task, delayMs) => setTimeout(task, delayMs),
-      clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-      onOnline: (task) => {
-        window.addEventListener("online", task);
-        return () => window.removeEventListener("online", task);
-      },
-    },
-    sessions: registry,
-    newDocumentId: () => crypto.randomUUID(),
-    api: {
-      async resolveHome(projectId) {
-        const works = await listProjectWorks(projectId);
-        return untitledHomeUri(projectId, works.defaultWorkId);
-      },
-      create(entry) {
-        return createUntitledContextDocument(
-          entry.projectId,
-          entry.home.scheme,
-          {
-            documentId: entry.documentId,
-            ...(entry.home.folderPath ? { folderPath: entry.home.folderPath } : {}),
-          },
-          { workId: entry.home.workId },
-        );
-      },
-      async serverDocumentExists(entry) {
-        const response = await getProjectContextTree(entry.projectId, entry.home.scheme, {
-          workId: entry.home.workId,
-        });
-        return treeContainsDocument(response.tree.children, entry.documentId);
-      },
-      move(entry, path, desired) {
-        const { destination, name } = desired;
-        const currentName = path.slice(path.lastIndexOf("/") + 1);
-        return moveContextEntry(entry.projectId, entry.home.scheme, {
-          path: path.replace(/^\/+/, ""),
-          sourceWorkId: entry.home.workId,
-          destinationScheme: destination.scheme,
-          destinationFolderPath: destination.folderPath.replace(/^\/+/, ""),
-          ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
-          ...(name !== currentName ? { newName: name } : {}),
-        });
-      },
-    },
-  };
-}
-
-let shared: UntitledReconciler | null = null;
-
-export function getUntitledReconciler(): UntitledReconciler {
-  if (!shared && typeof window !== "undefined") shared = new UntitledReconciler(browserDeps());
-  if (!shared) throw new Error("Untitled reconciler is browser-only");
-  return shared;
-}
-
-export function registerUntitledCandidate(documentId: string, candidate: Candidate): () => void {
-  return getUntitledReconciler().registerCandidate(documentId, candidate);
-}
-
-export function appendPendingUntitled(entry: PendingUntitled): void {
-  getUntitledReconciler().append(entry);
-}
-
-export function isUntitledPending(documentId: string): boolean {
-  return getUntitledReconciler().has(documentId);
-}
-
-export function useUntitledPending(documentId: string): boolean {
-  const reconciler = getUntitledReconciler();
-  return useSyncExternalStore(
-    reconciler.subscribe,
-    () => reconciler.has(documentId),
-    () => false,
-  );
-}
-
-/** Epoch ms since the document became device-only, or null when synced. */
-export function useUntitledPendingSince(documentId: string): number | null {
-  const reconciler = getUntitledReconciler();
-  return useSyncExternalStore(
-    reconciler.subscribe,
-    () => reconciler.pendingSince(documentId),
-    () => null,
-  );
-}
-
-export function useQueuedIdentityFailure(documentId: string): QueuedIdentityFailure | null {
-  const reconciler = getUntitledReconciler();
-  return useSyncExternalStore(
-    reconciler.subscribe,
-    () => reconciler.queuedIdentityFailure(documentId),
-    () => null,
-  );
-}
-
-export function clearQueuedIdentityFailure(documentId: string): void {
-  getUntitledReconciler().clearQueuedIdentityFailure(documentId);
-}
-
-export function queueUntitledIdentity(documentId: string, desired: DesiredIdentity): void {
-  getUntitledReconciler().queueIdentity(documentId, desired);
 }

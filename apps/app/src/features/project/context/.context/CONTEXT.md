@@ -48,10 +48,12 @@ pruning, and scroll restoration. `ContextTab` has three variants: `tracked`,
 uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.
 
-`untitled-reconciler.ts` is the only materialization engine. Its localStorage
-registry (`meridian:pending-untitled`) contains only `{documentId, projectId,
-home}` entries appended when a candidate first becomes non-empty. Events only
-schedule the same deferred, idempotent sweep. The sweep creates through
+`untitled-reconciler.ts` is the browser-independent materialization engine;
+`untitled-reconciler-browser.ts` binds localStorage, APIs, editor sessions, and
+React hooks. The localStorage registry (`meridian:pending-untitled`) stores one
+record per document: materialization phase, desired identity, failure receipt,
+and the pending timestamp. Explicit writer actions and recovery receipts are
+therefore crash-safe. Events only schedule the same deferred, idempotent sweep. The sweep creates through
 `create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
 sync, then drains the entry. A closed tab is not special: the same entry drives
 a headless attach/flush. A never-materialized empty is the only path that clears
