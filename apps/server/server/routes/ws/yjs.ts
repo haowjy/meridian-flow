@@ -12,13 +12,18 @@ import {
   YJS_WS_CLOSE,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
 import { isClientSchemaSuperseded } from "../../domains/collab/domain/schema-version-gate.js";
-import { isStaleDocumentSchemaError, type UpdateOrigin } from "../../domains/collab/index.js";
+import {
+  isStaleDocumentSchemaError,
+  isStaleSchema,
+  type UpdateOrigin,
+} from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
@@ -66,6 +71,14 @@ type WriterNoticeDocument = {
 };
 
 type CloseTransport = (code: number, reason: string) => void;
+
+function refuseConnection(
+  context: Record<string, unknown>,
+  close: { code: number; reason: string },
+): never {
+  (context.closeTransport as CloseTransport | undefined)?.(close.code, close.reason);
+  throw permissionDenied(close.reason, close.code);
+}
 
 export function subscribeWriterNoticeTransport(input: {
   notices: AppServices["notices"];
@@ -366,15 +379,11 @@ export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
         room.kind === "live"
           ? await services.documentSync.headSchemaVersion(room.documentId)
           : target.schemaVersion;
+      if (isStaleSchema(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
+        refuseConnection(context, YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE);
+      }
       if (isClientSchemaSuperseded(context.clientSchemaVersion ?? 0, headSchemaVersion)) {
-        (context.closeTransport as CloseTransport | undefined)?.(
-          YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code,
-          YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason,
-        );
-        throw permissionDenied(
-          YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason,
-          YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code,
-        );
+        refuseConnection(context, YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED);
       }
       setTimeout(() => {
         void deliverPendingWriterNotices(documentId).catch((cause) => {
@@ -422,14 +431,7 @@ export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
               )?.state;
       } catch (cause) {
         if (!isStaleDocumentSchemaError(cause)) throw cause;
-        (context.closeTransport as CloseTransport | undefined)?.(
-          YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
-          YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
-        );
-        throw permissionDenied(
-          YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
-          YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
-        );
+        refuseConnection(context, YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE);
       }
       if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
       if (state) Y.applyUpdate(document, state);

@@ -1,4 +1,5 @@
 import { MessageType } from "@hocuspocus/server";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import {
   createEncoder,
   toUint8Array,
@@ -115,9 +116,9 @@ describe("Yjs connect-time schema version gate", () => {
   });
 
   it("refuses only live-room clients strictly older than a stored head", async () => {
-    const services = versionGateServices({ liveHead: 3 });
+    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
     const hocuspocus = createYjsHocuspocus(services as never);
-    const staleClientContext = connectContext(2);
+    const staleClientContext = connectContext(COLLAB_SCHEMA_VERSION - 1);
 
     await expect(
       required(hocuspocus.configuration.onConnect)({
@@ -132,7 +133,7 @@ describe("Yjs connect-time schema version gate", () => {
     await expect(
       required(hocuspocus.configuration.onConnect)({
         documentName: liveDocumentName,
-        context: connectContext(3),
+        context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
     ).resolves.toBeUndefined();
     expect(services.documentSync.headSchemaVersion).toHaveBeenCalledWith(liveDocumentName);
@@ -150,20 +151,41 @@ describe("Yjs connect-time schema version gate", () => {
   });
 
   it("uses the branch row schema and preserves the same strict monotonic edge", async () => {
-    const hocuspocus = createYjsHocuspocus(versionGateServices({ branchHead: 5 }) as never);
+    const hocuspocus = createYjsHocuspocus(
+      versionGateServices({ branchHead: COLLAB_SCHEMA_VERSION }) as never,
+    );
 
     await expect(
       required(hocuspocus.configuration.onConnect)({
         documentName,
-        context: connectContext(4),
+        context: connectContext(COLLAB_SCHEMA_VERSION - 1),
       } as never),
     ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
     await expect(
       required(hocuspocus.configuration.onConnect)({
         documentName,
-        context: connectContext(5),
+        context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
     ).resolves.toBeUndefined();
+  });
+
+  it("refuses stale live and branch heads per connection before document loading", async () => {
+    const services = versionGateServices({
+      liveHead: COLLAB_SCHEMA_VERSION - 1,
+      branchHead: COLLAB_SCHEMA_VERSION - 1,
+    });
+    const hocuspocus = createYjsHocuspocus(services as never);
+
+    for (const room of [liveDocumentName, documentName]) {
+      const context = connectContext(COLLAB_SCHEMA_VERSION);
+      await expect(
+        required(hocuspocus.configuration.onConnect)({
+          documentName: room,
+          context,
+        } as never),
+      ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+      expect(context.closeTransport).toHaveBeenCalledWith(4407, "document-schema-stale");
+    }
   });
 
   it("maps stale stored heads to the typed document-schema-stale close", async () => {
