@@ -144,9 +144,15 @@ Its plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
 `noteTapError`; producers append the shared contracts envelope, never a
 viewer-specific record. In debug-enabled builds, `window.__meridianTrace`
 provides agents with metadata-only queries, stats, clearing, and next-event waits
-without coupling automation to the viewer DOM. The store drops the oldest record at capacity, counts
-ring drops and tap errors, and coalesces subscriber notification per JavaScript
-turn without coalescing captured records. The viewer provides composable
+without coupling automation to the viewer DOM. The ring drops the oldest
+record at capacity and counts ring drops and tap errors. Two subscriber
+channels serve it: `subscribeToTraceStore` coalesces notifications per
+JavaScript turn so a burst renders once, while `subscribeToTraceEvents` fires
+synchronously per append and backs `waitForEvent`. Reentrant appends during
+event dispatch are queued and drained in order, and throwing event listeners
+are swallowed, so debug consumers cannot disrupt the observed transport.
+Captured records are never coalesced — only store notifications are. The
+viewer provides composable
 stream, message-class, direction, and correlation filters; frozen live-tail
 inspection; record detail; and filtered JSONL copy, download, and
 accessibility-tree output. Freeze snapshots the current projection while
