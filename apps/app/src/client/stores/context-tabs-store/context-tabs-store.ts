@@ -131,6 +131,37 @@ function patchSlice(
   return { ...state, byProject: { ...state.byProject, [projectId]: next } };
 }
 
+function removeTabs(
+  slice: ProjectTabsSlice,
+  shouldRemove: (tab: ContextTab) => boolean,
+): { slice: ProjectTabsSlice; fallback: ContextTab | null; changed: boolean } {
+  const nextTabs = slice.tabs.filter((tab) => !shouldRemove(tab));
+  if (nextTabs.length === slice.tabs.length) return { slice, fallback: null, changed: false };
+
+  const activeIndex = slice.tabs.findIndex((tab) => tab.documentId === slice.activeTabId);
+  const activeRemoved = activeIndex >= 0 && shouldRemove(slice.tabs[activeIndex]);
+  const activeMissing = slice.activeTabId !== null && activeIndex < 0;
+  const fallback = activeRemoved
+    ? (slice.tabs.slice(activeIndex + 1).find((tab) => !shouldRemove(tab)) ??
+      slice.tabs
+        .slice(0, activeIndex)
+        .reverse()
+        .find((tab) => !shouldRemove(tab)) ??
+      null)
+    : activeMissing
+      ? (nextTabs[0] ?? null)
+      : null;
+  return {
+    changed: true,
+    fallback,
+    slice: {
+      tabs: nextTabs,
+      activeTabId:
+        activeRemoved || activeMissing ? (fallback?.documentId ?? null) : slice.activeTabId,
+    },
+  };
+}
+
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
     (set, get) => ({
@@ -200,20 +231,10 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
 
       closeTab: (projectId, documentId) => {
         const slice = sliceFor(get(), projectId);
-        const idx = slice.tabs.findIndex((t) => t.documentId === documentId);
-        if (idx === -1) return null;
-        const nextTabs = [...slice.tabs.slice(0, idx), ...slice.tabs.slice(idx + 1)];
-        // Prefer the tab that took this one's slot (right neighbour after splice);
-        // fall back to the new last tab if we closed the rightmost.
-        const fallback = nextTabs[idx] ?? nextTabs[nextTabs.length - 1] ?? null;
-        set((state) =>
-          patchSlice(state, projectId, {
-            tabs: nextTabs,
-            activeTabId:
-              slice.activeTabId === documentId ? (fallback?.documentId ?? null) : slice.activeTabId,
-          }),
-        );
-        return fallback;
+        const removed = removeTabs(slice, (tab) => tab.documentId === documentId);
+        if (!removed.changed) return null;
+        set((state) => patchSlice(state, projectId, removed.slice));
+        return removed.fallback;
       },
 
       resolveDraftOnlyTab: (projectId, documentId, outcome) => {
@@ -221,12 +242,16 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           const slice = sliceFor(state, projectId);
           const tab = slice.tabs.find((t) => t.documentId === documentId);
           if (tab?.kind !== "tracked" || !tab.draftOnly) return state;
-          const nextTabs =
-            outcome === "committed"
-              ? slice.tabs.map((t) =>
-                  t.documentId === documentId ? { ...t, draftOnly: false } : t,
-                )
-              : slice.tabs.filter((t) => t.documentId !== documentId);
+          if (outcome === "discarded") {
+            return patchSlice(
+              state,
+              projectId,
+              removeTabs(slice, (candidate) => candidate.documentId === documentId).slice,
+            );
+          }
+          const nextTabs = slice.tabs.map((candidate) =>
+            candidate.documentId === documentId ? { ...candidate, draftOnly: false } : candidate,
+          );
           return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
         });
       },
@@ -260,13 +285,13 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
       pruneWorkScopedTabs: (projectId, activeWorkId) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
-          const nextTabs = slice.tabs.filter((tab) => {
-            if (tab.kind === "new") return true;
-            if (!isWorkScopedProjectContextScheme(tab.scheme)) return true;
-            return tab.workId === activeWorkId;
+          const removed = removeTabs(slice, (tab) => {
+            if (tab.kind === "new") return false;
+            if (!isWorkScopedProjectContextScheme(tab.scheme)) return false;
+            return tab.workId !== activeWorkId;
           });
-          if (nextTabs.length === slice.tabs.length) return state;
-          return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
+          if (!removed.changed) return state;
+          return patchSlice(state, projectId, removed.slice);
         });
       },
 

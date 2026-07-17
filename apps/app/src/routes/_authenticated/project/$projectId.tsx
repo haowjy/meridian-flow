@@ -37,7 +37,8 @@ function isScreenKey(value: unknown): value is ScreenKey {
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {
   return Object.fromEntries(
     Object.entries(search).filter(
-      ([key, value]) => value !== undefined && (key === "results" || value !== ""),
+      ([key, value]) =>
+        value !== undefined && (key === "results" || key === "path" || value !== ""),
     ),
   ) as ProjectSearch;
 }
@@ -49,7 +50,7 @@ export const Route = createFileRoute("/_authenticated/project/$projectId")({
     const scheme = isProjectContextTreeScheme(search.scheme) ? search.scheme : undefined;
     const folder =
       scheme && typeof search.folder === "string" && search.folder ? search.folder : undefined;
-    const path = scheme && typeof search.path === "string" && search.path ? search.path : undefined;
+    const path = scheme && typeof search.path === "string" ? search.path : undefined;
     return {
       screen: isScreenKey(search.screen) ? search.screen : undefined,
       thread: typeof search.thread === "string" && search.thread ? search.thread : undefined,
@@ -154,7 +155,7 @@ function RouteComponent() {
   ) {
     const patch: Partial<ProjectSearch> = {
       screen: "context",
-      path: nextPath || undefined,
+      path: nextPath,
       results: undefined,
     };
     if (nextScheme) patch.scheme = nextScheme;
