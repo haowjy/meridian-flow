@@ -1,7 +1,15 @@
-/** Classifies Hocuspocus frames without decoding their content. */
+/** Inspects Hocuspocus frames without exposing their content. */
 
 import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
-import type { FrameSummary, InnerSyncType, YjsMessageClass } from "./types.js";
+import { summarizeAwareness } from "./awareness.js";
+import type {
+  AwarenessSummary,
+  FrameInspection,
+  FrameSummary,
+  InnerSyncType,
+  YjsMessageClass,
+} from "./types.js";
+import { summarizeUpdate } from "./update.js";
 
 const OUTER_SYNC = 0;
 const OUTER_AWARENESS = 1;
@@ -30,7 +38,13 @@ function unknown(bytes: Uint8Array, documentName: string | null = null): FrameSu
   };
 }
 
-export function classifyFrame(bytes: Uint8Array): FrameSummary {
+interface DecodedFrame {
+  summary: FrameSummary;
+  payload?: Uint8Array;
+  queryAwareness?: boolean;
+}
+
+function decodeFrame(bytes: Uint8Array): DecodedFrame {
   let documentName: string | null = null;
 
   try {
@@ -40,49 +54,96 @@ export function classifyFrame(bytes: Uint8Array): FrameSummary {
 
     if (outerType === OUTER_SYNC || outerType === OUTER_SYNC_REPLY) {
       const innerSyncType = INNER_SYNC_TYPES[readVarUint(decoder)];
-      if (!innerSyncType) return unknown(bytes, documentName);
+      if (!innerSyncType) return { summary: unknown(bytes, documentName) };
 
       const payload = readVarUint8Array(decoder);
-      if (decoder.pos !== bytes.byteLength) return unknown(bytes, documentName);
+      if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
 
       return {
-        documentName,
-        messageClass: SYNC_MESSAGE_CLASSES[innerSyncType],
-        innerSyncType,
-        payloadBytes: payload.byteLength,
+        summary: {
+          documentName,
+          messageClass: SYNC_MESSAGE_CLASSES[innerSyncType],
+          innerSyncType,
+          payloadBytes: payload.byteLength,
+        },
+        payload,
       };
     }
 
     if (outerType === OUTER_AWARENESS) {
       const payload = readVarUint8Array(decoder);
-      if (decoder.pos !== bytes.byteLength) return unknown(bytes, documentName);
-      return { documentName, messageClass: "awareness", payloadBytes: payload.byteLength };
+      if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
+      return {
+        summary: { documentName, messageClass: "awareness", payloadBytes: payload.byteLength },
+        payload,
+      };
     }
 
     if (outerType === OUTER_QUERY_AWARENESS) {
-      if (decoder.pos !== bytes.byteLength) return unknown(bytes, documentName);
-      return { documentName, messageClass: "awareness", payloadBytes: 0 };
+      if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
+      return {
+        summary: { documentName, messageClass: "awareness", payloadBytes: 0 },
+        queryAwareness: true,
+      };
     }
 
     if (outerType === OUTER_STATELESS) {
       // A lib0 string and byte array share the same length-prefixed envelope.
       // Read bytes so observer code never materializes the stateless content.
       const payload = readVarUint8Array(decoder);
-      if (decoder.pos !== bytes.byteLength) return unknown(bytes, documentName);
-      return { documentName, messageClass: "stateless", payloadBytes: payload.byteLength };
-    }
-
-    if (outerType === OUTER_AUTH) {
-      if (decoder.pos >= bytes.byteLength) return unknown(bytes, documentName);
+      if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
       return {
-        documentName,
-        messageClass: "auth",
-        payloadBytes: bytes.byteLength - decoder.pos,
+        summary: { documentName, messageClass: "stateless", payloadBytes: payload.byteLength },
       };
     }
 
-    return unknown(bytes, documentName);
+    if (outerType === OUTER_AUTH) {
+      const payloadStart = decoder.pos;
+      readVarUint(decoder);
+      return {
+        summary: {
+          documentName,
+          messageClass: "auth",
+          payloadBytes: bytes.byteLength - payloadStart,
+        },
+      };
+    }
+
+    return { summary: unknown(bytes, documentName) };
   } catch {
-    return unknown(bytes, documentName);
+    return { summary: unknown(bytes, documentName) };
   }
+}
+
+export function classifyFrame(bytes: Uint8Array): FrameSummary {
+  return decodeFrame(bytes).summary;
+}
+
+export function inspectFrame(bytes: Uint8Array): FrameInspection {
+  const decoded = decodeFrame(bytes);
+  const inspection: FrameInspection = { frame: decoded.summary };
+
+  try {
+    if (
+      decoded.payload &&
+      (decoded.summary.messageClass === "sync.step2" ||
+        decoded.summary.messageClass === "sync.update")
+    ) {
+      inspection.update = summarizeUpdate(decoded.payload);
+    } else if (decoded.queryAwareness) {
+      inspection.awareness = emptyAwarenessSummary();
+    } else if (decoded.payload && decoded.summary.messageClass === "awareness") {
+      inspection.awareness = summarizeAwareness(decoded.payload);
+    }
+  } catch {
+    // A valid outer envelope can still contain a malformed Yjs payload. Frame
+    // inspection is observational, so preserve its classification and omit
+    // only the undecodable nested summary.
+  }
+
+  return inspection;
+}
+
+function emptyAwarenessSummary(): AwarenessSummary {
+  return { clients: [], count: 0, removedCount: 0, bytes: 0 };
 }

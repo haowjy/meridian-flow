@@ -1,7 +1,6 @@
 /** Public metadata-only Yjs protocol inspection API. */
 
-export { summarizeAwareness } from "./awareness.js";
-export { classifyFrame } from "./frame.js";
+export { classifyFrame, inspectFrame } from "./frame.js";
 export type {
   AwarenessClientDelta,
   AwarenessSummary,

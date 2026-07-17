@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { capturedFrames, capturedJournalUpdateHex } from "./__fixtures__/captured.js";
-import { classifyFrame, summarizeAwareness, summarizeUpdate } from "./index.js";
+import { classifyFrame, inspectFrame, summarizeUpdate } from "./index.js";
 
 function fromHex(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/../g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
@@ -38,6 +38,10 @@ function syncFrame(documentName: string, innerType: number, payload: Uint8Array)
   return toUint8Array(encoder);
 }
 
+function authFrame(body: Uint8Array): Uint8Array {
+  return new Uint8Array([...frame("doc", 2), ...body]);
+}
+
 describe("classifyFrame", () => {
   it("pins the captured Hocuspocus envelope in both directions", () => {
     for (const fixture of capturedFrames) {
@@ -59,11 +63,13 @@ describe("classifyFrame", () => {
       "stateless",
     );
 
-    const auth = createEncoder();
-    writeVarString(auth, "doc");
-    writeVarUint(auth, 2);
-    writeVarUint(auth, 0);
-    expect(classifyFrame(toUint8Array(auth)).messageClass).toBe("auth");
+    expect(classifyFrame(authFrame(new Uint8Array([0]))).messageClass).toBe("auth");
+  });
+
+  it("rejects auth frames with a truncated or invalid varuint body", () => {
+    expect(classifyFrame(authFrame(new Uint8Array())).messageClass).toBe("unknown");
+    expect(classifyFrame(authFrame(new Uint8Array([0x80]))).messageClass).toBe("unknown");
+    expect(classifyFrame(authFrame(new Uint8Array(9).fill(0xff))).messageClass).toBe("unknown");
   });
 
   it("returns explicit unknown metadata for unsupported and malformed frames", () => {
@@ -76,6 +82,47 @@ describe("classifyFrame", () => {
       documentName: "doc",
       messageClass: "unknown",
       payloadBytes: 7,
+    });
+  });
+});
+
+describe("inspectFrame", () => {
+  it("composes nested update and awareness metadata from complete frames", () => {
+    const document = new Y.Doc();
+    document.getText("content").insert(0, "hidden");
+    const update = Y.encodeStateAsUpdate(document);
+    const stateVector = Y.encodeStateVector(document);
+
+    expect(inspectFrame(syncFrame("doc", 0, stateVector))).not.toHaveProperty("update");
+    expect(inspectFrame(syncFrame("doc", 1, update)).update?.structCount).toBe(1);
+    expect(inspectFrame(syncFrame("doc", 2, update)).update?.structCount).toBe(1);
+
+    const awareness = new Awareness(document);
+    awareness.setLocalState({ hidden: true });
+    const payload = encodeAwarenessUpdate(awareness, [document.clientID]);
+    expect(inspectFrame(frame("doc", 1, payload)).awareness).toMatchObject({
+      count: 1,
+      removedCount: 0,
+    });
+    expect(inspectFrame(frame("doc", 3)).awareness).toEqual({
+      clients: [],
+      count: 0,
+      removedCount: 0,
+      bytes: 0,
+    });
+  });
+
+  it("never throws when a classified frame contains a malformed nested payload", () => {
+    expect(inspectFrame(syncFrame("doc", 2, new Uint8Array([0xff])))).toEqual({
+      frame: {
+        documentName: "doc",
+        messageClass: "sync.update",
+        innerSyncType: "update",
+        payloadBytes: 1,
+      },
+    });
+    expect(inspectFrame(frame("doc", 1, new Uint8Array([0xff])))).toEqual({
+      frame: { documentName: "doc", messageClass: "awareness", payloadBytes: 1 },
     });
   });
 });
@@ -219,7 +266,7 @@ function overlaps(
   );
 }
 
-describe("summarizeAwareness", () => {
+describe("awareness summaries", () => {
   it("returns client clocks and self-evident removals without state", () => {
     const encoder = createEncoder();
     writeVarUint(encoder, 2);
@@ -231,7 +278,7 @@ describe("summarizeAwareness", () => {
     writeVarString(encoder, "null");
     const payload = toUint8Array(encoder);
 
-    expect(summarizeAwareness(payload)).toEqual({
+    expect(inspectFrame(frame("doc", 1, payload)).awareness).toEqual({
       clients: [
         { client: 41, clock: 7, removed: false },
         { client: 42, clock: 8, removed: true },
@@ -261,7 +308,7 @@ it("never returns document, attribute, or awareness state content from any expor
   const inspector = await import("./index.js");
   const invocations: Record<string, () => unknown> = {
     classifyFrame: () => classifyFrame(syncFrame("safe-room", 2, update)),
-    summarizeAwareness: () => summarizeAwareness(awarenessPayload),
+    inspectFrame: () => inspectFrame(frame("safe-room", 1, awarenessPayload)),
     summarizeUpdate: () => summarizeUpdate(update),
   };
   const exportedFunctions = Object.entries(inspector).filter(
