@@ -2,20 +2,20 @@
 
 ## Dev-only wire observation
 
-`tapped-websocket.ts` is the optional observer seam for both client sockets:
-the shared Hocuspocus socket and the thread/agent socket. `TappedWebSocket` is
-injected only behind the build-time debug gate; production retains native
-WebSockets. The adapter observes final binary or string frames synchronously,
-then leaves delivery unchanged. It never parses frames, retains data, queues
-work, or lets observer failures escape into either transport. A new adapter
-instance is constructed on reconnect; `socketEpoch` distinguishes instances
-while each registered tap owns page-lifetime sequencing.
+The two client sockets use their canonical transport seams. `TappedWebSocket`
+observes the shared Hocuspocus socket's final binary frames.
+`SocketLifecycleController` observes the thread/agent socket's lifecycle and
+final string frames. Both are active only behind the build-time debug gate;
+production retains native WebSockets without capture. Neither seam parses or
+retains frames, and observer failures never escape into product transport.
+`socketEpoch` distinguishes reconnects while each registered tap owns
+page-lifetime sequencing.
 
 Core owns only the late-bound, transport-specific `YjsWireTap` and
-`ThreadWireTap` contracts. The debug feature registers both implementations at
-authenticated-route module evaluation, before either socket can be created;
-runtime overlay enablement controls visibility, not capture. Separate tap
-interfaces prevent thread strings from broadening the Yjs byte contract.
+`ThreadWireTap` contracts. The debug feature registers both implementations in
+one authenticated-route composition action, before either socket can be
+created; runtime overlay enablement controls visibility, not capture. Separate
+tap interfaces prevent thread strings from broadening the Yjs byte contract.
 `notifyYjsRoomAttached` supplies the local `Y.Doc.clientID` needed to attribute
 outgoing deletion-only updates, whose bytes contain the deleted items' creators
 but not the deleter.

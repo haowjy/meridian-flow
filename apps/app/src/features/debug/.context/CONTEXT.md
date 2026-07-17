@@ -159,8 +159,9 @@ accessibility-tree output. Freeze snapshots the current projection while
 capture and eviction continue. Future lenses project over this same store
 rather than adding data paths.
 
-Both dev-only client sockets carry the `TappedWebSocket` observer seam
-(`core/transport/tapped-websocket.ts`). `trace/yjs-wire-tap.ts` maps binary
+The dev-only client taps use each socket's canonical core seam:
+`TappedWebSocket` for final Yjs binary frames and `SocketLifecycleController`
+for thread lifecycle and final strings. `trace/yjs-wire-tap.ts` maps binary
 collab frames; `trace/thread-wire-tap.ts` maps thread JSON strings into
 allowlisted message class, thread id, sequence, AG-UI event type, and size only.
 It never copies agent/user/tool content, nested catchup events, or error text.
