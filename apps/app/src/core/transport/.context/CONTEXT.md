@@ -28,3 +28,9 @@ belong in the debug feature, preserving the dependency direction
 `features/debug -> core/transport`. Thread inspection follows the same boundary
 and must only emit allowlisted classifications and identifiers; no agent, user,
 tool, catchup, or error content may enter an `EventRecord`.
+
+The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
+`resume`, `pong`, and `interrupt.respond`; its server vocabulary is `connected`,
+`subscribed`, `event`, `gap`, `error`, and `ping`. Turn cancellation is an HTTP
+operation through `cancelTurn`, not a WebSocket message. Keep these names aligned
+with `@meridian/contracts/protocol` rather than inferring them from UI actions.

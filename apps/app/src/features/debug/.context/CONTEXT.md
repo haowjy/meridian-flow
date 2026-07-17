@@ -130,7 +130,7 @@ dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
   `useState` initializer makes the first client render diverge from server
   HTML → *"Hydration failed"*.
 
-## Realtime stream inspector — client half live
+## Realtime stream inspector — both client sockets live
 
 The pill's **Streams** action opens `TraceViewer` in a separate browser window
 and portals the React tree into it. The popup shares the opener's JavaScript
@@ -158,6 +158,8 @@ Both dev-only client sockets carry the `TappedWebSocket` observer seam
 collab frames; `trace/thread-wire-tap.ts` maps thread JSON strings into
 allowlisted message class, thread id, sequence, AG-UI event type, and size only.
 It never copies agent/user/tool content, nested catchup events, or error text.
+The [client transport seams](../../../core/transport/.context/CONTEXT.md)
+define the thread wire vocabulary and cancellation boundary.
 The authenticated composition root synchronously installs both taps before
 rendering any subtree that can create either socket; the visual overlay remains
 lazy. Capture is always on for the page lifetime and the runtime toggle gates
