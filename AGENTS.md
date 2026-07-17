@@ -65,9 +65,11 @@ No raw hex/color outside `design-tokens`.
 comments: explain the *weird* — hidden constraints, non-obvious invariants,
 workarounds. Don't explain what the code does; explain why it's surprising.
 
-**Debugging.** Temporary console probes are allowed while diagnosing, but must
-use the marked convention in [docs/debugging.md](docs/debugging.md) and be
-deleted or converted to durable observability before push.
+**Debugging.** Temporary console probes must use the marked convention in
+[docs/debugging.md](docs/debugging.md) and be deleted before push. Server
+diagnostics go through `EventSink`; structured JSONL lands in
+`logs/events/*.jsonl` in dev. Browser probe sessions have additional tooling
+documented in the same file.
 
 
 ## Documentation
