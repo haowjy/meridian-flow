@@ -115,6 +115,7 @@ type ProjectContextTreeFileBase = {
   sizeBytes?: number;
   updatedAt?: string;
   readonly?: boolean;
+  provisionalName: boolean;
 };
 
 export type ProjectContextTreeEditableFile = ProjectContextTreeFileBase & {

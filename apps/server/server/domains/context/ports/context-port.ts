@@ -44,6 +44,18 @@ export interface ContextCreateTrackedDocumentResult {
   documentId: string;
 }
 
+export interface ContextCreateUntitledDocumentResult {
+  status: "created" | "already-exists";
+  documentId: string;
+  path: string;
+  name: string;
+}
+
+export interface ContextCreateUntitledDocumentOptions {
+  documentId: string;
+  origin: WriteProvenance;
+}
+
 interface BaseListEntry {
   uri: string;
   documentId?: string;
@@ -51,6 +63,7 @@ interface BaseListEntry {
   updatedAt?: string;
   /** True when the entry's scheme is read-only. */
   readonly?: boolean;
+  provisionalName?: boolean;
 }
 
 export type EditableFileEntry = BaseListEntry & {
@@ -188,6 +201,12 @@ export interface ContextPort {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
+
+  /** Allocate and persist an empty client-seeded document under a home directory URI. */
+  createUntitledDocument(
+    homeUri: string,
+    options: ContextCreateUntitledDocumentOptions,
+  ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>>;
 
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(

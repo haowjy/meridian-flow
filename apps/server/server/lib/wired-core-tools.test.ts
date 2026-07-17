@@ -468,6 +468,10 @@ function contextPortFor(documentId: string, filePath: string): ContextPort {
       value: { documentId, created: uri === filePath },
     }),
     createTrackedDocument: async () => ({ ok: true, value: { documentId } }),
+    createUntitledDocument: async () => ({
+      ok: true,
+      value: { status: "created", documentId, path: filePath, name: filePath },
+    }),
     delete: async () => ({ ok: true, value: undefined }),
     list: async () => ({ ok: true, value: [] }),
     search: async () => ({ ok: true, value: [] }),

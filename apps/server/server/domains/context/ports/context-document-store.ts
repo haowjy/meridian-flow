@@ -28,6 +28,14 @@ export interface ContextDocument {
   mimeType: string | null;
   sizeBytes: number | null;
   updatedAt: string;
+  provisionalName: boolean;
+}
+
+export interface LocatedContextDocument {
+  contextSourceId: string;
+  document: ContextDocument;
+  path: string;
+  active: boolean;
 }
 
 export interface UpsertDocumentInput {
@@ -38,6 +46,7 @@ export interface UpsertDocumentInput {
   extension: string;
   markdown: string;
   filetype: Filetype;
+  provisionalName?: boolean;
 }
 
 /** Input for creating a binary (storage-backed) document in the context tree. */
@@ -67,6 +76,10 @@ export interface ContextDocumentStore {
     name: string,
     extension: string,
   ): Promise<ContextDocument | null>;
+  /** Find a document globally by stable id so caller-chosen id conflicts can be classified. */
+  findDocumentById(documentId: string): Promise<LocatedContextDocument | null>;
+  /** Idempotently ensure shadow membership after a recoverable document create. */
+  ensureDocumentMembership(documentId: string): Promise<void>;
   /** Update the search/list projection by stable identity, even if a concurrent move changed path. */
   updateDocumentProjection(documentId: string, markdown: string): Promise<boolean>;
   upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;

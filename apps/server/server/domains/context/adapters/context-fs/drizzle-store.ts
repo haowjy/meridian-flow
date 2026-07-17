@@ -16,7 +16,7 @@ import {
   runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
+import { parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
   ContextDocument,
   ContextDocumentStore,
@@ -60,6 +60,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
     updatedAt: row.updatedAt.toISOString(),
+    provisionalName: row.provisionalName,
   };
 }
 
@@ -262,12 +263,46 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         fileType: input.filetype,
         markdownProjection: input.markdown,
         sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
+        provisionalName: input.provisionalName ?? false,
       })
       .onConflictDoNothing()
       .returning();
     if (!row) return null;
     await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
+  }
+
+  async findDocumentById(documentId: string) {
+    const [row] = await this.db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId as never))
+      .limit(1);
+    if (!row) return null;
+
+    const segments: string[] = [];
+    let folderId = row.folderId as string | null;
+    while (folderId) {
+      const [folder] = await this.db
+        .select({ id: folders.id, parentId: folders.parentId, name: folders.name })
+        .from(folders)
+        .where(and(eq(folders.id, folderId as never), isNull(folders.deletedAt)))
+        .limit(1);
+      if (!folder) break;
+      segments.unshift(folder.name);
+      folderId = folder.parentId;
+    }
+    segments.push(renderFilename(row.name, row.extension));
+    return {
+      contextSourceId: row.contextSourceId,
+      document: mapDocument(row),
+      path: segments.join("/"),
+      active: row.deletedAt === null && row.kind === "content",
+    };
+  }
+
+  async ensureDocumentMembership(documentId: string): Promise<void> {
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", documentId);
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
@@ -678,6 +713,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         }
 
         const { name, extension } = parseFilename(targetBasename);
+        const basenameChanged = targetBasename !== treeBasename(input.source.path);
         await this.runBeforeDestructiveWrite();
         const moved = await currentDrizzleDb(this.db)
           .update(documents)
@@ -686,6 +722,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             folderId: destParentId,
             name,
             extension,
+            ...(basenameChanged ? { provisionalName: false } : {}),
             ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
             updatedAt: new Date(),
           })

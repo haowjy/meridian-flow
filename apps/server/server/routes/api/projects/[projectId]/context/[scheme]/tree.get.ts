@@ -83,6 +83,7 @@ async function buildDirectory(
       sizeBytes: entry.sizeBytes,
       updatedAt: entry.updatedAt,
       readonly: entry.readonly,
+      provisionalName: entry.provisionalName ?? false,
       ...(entry.editable
         ? { editable: true as const, filetype: entry.filetype, schemaType: entry.schemaType }
         : { editable: false as const, fileType: entry.fileType, mimeType: entry.mimeType }),

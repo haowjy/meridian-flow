@@ -29,6 +29,7 @@ const manuscript: ProjectContextTreeDirectory = {
           editable: true,
           filetype: "markdown",
           schemaType: "document",
+          provisionalName: false,
         },
       ],
     },
