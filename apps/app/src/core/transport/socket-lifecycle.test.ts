@@ -46,7 +46,7 @@ class FakeWebSocket extends EventTarget {
   }
 
   close(): void {
-    this.readyState = FakeWebSocket.CLOSED;
+    this.finishClose();
   }
 }
 
@@ -132,5 +132,32 @@ describe("SocketLifecycleController thread observation", () => {
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onMessage).toHaveBeenCalledWith("incoming");
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("observes the native close caused by controlled teardown", async () => {
+    const { setThreadWireTap } = await import("./wire-tap");
+    const { SocketLifecycleController } = await import("./socket-lifecycle");
+    const onSocketClose = vi.fn();
+    setThreadWireTap({
+      onSocketOpen: vi.fn(),
+      onStringFrame: vi.fn(),
+      onSocketClose,
+    });
+    const onClose = vi.fn();
+    const controller = new SocketLifecycleController({
+      buildUrl: () => "wss://app.localhost/api/threads/ws",
+      wantsConnection: () => false,
+      onOpen: vi.fn(),
+      onMessage: vi.fn(),
+      onClose,
+      publishConnectionState: vi.fn(),
+    });
+
+    controller.ensureConnected();
+    (controller.currentSocket as unknown as FakeWebSocket).open();
+    controller.teardown();
+
+    expect(onSocketClose).toHaveBeenCalledWith(1, 1000, true);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

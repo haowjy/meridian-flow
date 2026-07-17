@@ -226,11 +226,11 @@ export class SocketLifecycleController {
     });
 
     socket.addEventListener("close", (event) => {
-      if (!this.isCurrentSocket(generation, socket)) return;
       if (DEBUG_FEATURE_ALLOWED) {
         const closeEvent = event as CloseEvent;
         notifyThreadSocketClose(generation, closeEvent.code, closeEvent.wasClean);
       }
+      if (!this.isCurrentSocket(generation, socket)) return;
       this.socket = null;
       this.clearPingTimer();
       this.consumer.onClose?.(event as CloseEvent);
