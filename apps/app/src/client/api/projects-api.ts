@@ -28,12 +28,17 @@ import {
   type CreateProjectResponse,
   type CreateThreadRequest,
   type CreateThreadResponse,
+  type CreateUntitledContextDocumentRequest,
+  type CreateUntitledContextDocumentResponse,
+  type CreateUntitledContextDocumentResult,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
   type ProjectContextRequestOptions,
   type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
+  type RenameContextEntryRequest,
+  type RenameContextEntryResult,
   type ThreadListItem,
   type UpdateWorkWriteModeRequest,
   type UpdateWorkWriteModeResponse,
@@ -148,21 +153,10 @@ export async function createContextEntry(
   });
 }
 
-export type CreateUntitledContextDocumentResponse = {
-  status: "created" | "already-exists";
-  documentId: string;
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-};
-export type CreateUntitledContextDocumentResult =
-  | CreateUntitledContextDocumentResponse
-  | { status: "conflict" };
-
 export async function createUntitledContextDocument(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  body: { documentId: string; folderPath?: string },
+  body: CreateUntitledContextDocumentRequest,
   opts?: ProjectContextRequestOptions,
 ): Promise<CreateUntitledContextDocumentResult> {
   const response = await postJson<CreateUntitledContextDocumentResponse | { error: true }>(
@@ -179,28 +173,21 @@ export async function createUntitledContextDocument(
 export async function renameContextEntry(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  body: { path: string; newName: string },
+  body: RenameContextEntryRequest,
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<{ ok: true }> {
-  return postJson(urlFor(apiProjectContextRenamePath(projectId, scheme, opts), init), body, {
-    headers: init?.headers,
-  });
-}
-
-/** Rename variant for UI that needs to recover from a race-lost 409 in place. */
-export async function renameContextEntryWithConflict(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: { path: string; newName: string },
-  opts?: ProjectContextRequestOptions,
-): Promise<{ status: "renamed" | "conflict" }> {
-  const response = await postJson<{ ok?: true; statusCode?: number }>(
-    apiProjectContextRenamePath(projectId, scheme, opts),
+): Promise<RenameContextEntryResult> {
+  const response = await postJson<{ status?: number; statusCode?: number } | { status: "renamed" }>(
+    urlFor(apiProjectContextRenamePath(projectId, scheme, opts), init),
     body,
-    { acceptStatuses: [409] },
+    { headers: init?.headers, acceptStatuses: [409] },
   );
-  return { status: response.statusCode === 409 ? "conflict" : "renamed" };
+  return {
+    status:
+      response.status === 409 || ("statusCode" in response && response.statusCode === 409)
+        ? "conflict"
+        : "renamed",
+  };
 }
 
 export async function deleteContextEntry(

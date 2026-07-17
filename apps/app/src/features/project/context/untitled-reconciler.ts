@@ -4,13 +4,11 @@
  * The registry is the only work source. Events merely schedule the same
  * idempotent sweep; document input never performs network or IndexedDB work.
  */
+
+import type { CreateUntitledContextDocumentResponse } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
-import {
-  type CreateUntitledContextDocumentResponse,
-  createUntitledContextDocument,
-  renameContextEntry,
-} from "@/client/api/projects-api";
+import { createUntitledContextDocument, renameContextEntry } from "@/client/api/projects-api";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
@@ -162,12 +160,15 @@ class UntitledReconciler {
       const rename = this.renameIntents.get(entry.documentId);
       if (rename) {
         try {
-          await renameContextEntry(
+          const renameResult = await renameContextEntry(
             entry.projectId,
             entry.home.scheme,
             { path: result.path, newName: rename.name },
             { workId: entry.home.workId },
           );
+          if (renameResult.status === "conflict") {
+            throw new Error("A document with that name already exists");
+          }
           const path = replaceBasename(result.path, rename.name);
           this.candidates.get(entry.documentId)?.onRenamed(rename.name, path);
           this.renameIntents.delete(entry.documentId);

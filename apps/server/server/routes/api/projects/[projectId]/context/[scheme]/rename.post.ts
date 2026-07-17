@@ -4,20 +4,18 @@
  * Renames a file or folder within a scheme by moving it to a new path under
  * the same parent directory. Uses the ContextPort.move primitive.
  */
+
+import type {
+  RenameContextEntryRequest,
+  RenameContextEntrySuccess,
+} from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
 
-interface RenameBody {
-  /** Current path of the entry (e.g. "chapter-1.md" or "notes/ideas"). */
-  path: string;
-  /** New name (basename only, no slashes). */
-  newName: string;
-}
-
-function parseBody(raw: unknown): RenameBody {
+function parseBody(raw: unknown): RenameContextEntryRequest {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
-  const body = raw as Partial<RenameBody>;
+  const body = raw as Partial<RenameContextEntryRequest>;
   if (typeof body.path !== "string" || body.path.trim() === "")
     throw createError({ statusCode: 400, message: "`path` is required" });
   if (typeof body.newName !== "string" || body.newName.trim() === "")
@@ -45,5 +43,5 @@ export default defineEventHandler(async (event) => {
     origin: { type: "human", userId },
   });
   if (!result.ok) contextErrorToHttp(result.error);
-  return { ok: true as const };
+  return { status: "renamed" } satisfies RenameContextEntrySuccess;
 });

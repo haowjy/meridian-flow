@@ -12,7 +12,7 @@ import { TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 
-import { renameContextEntryWithConflict } from "@/client/api/projects-api";
+import { renameContextEntry } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
 import { Input } from "@/components/ui/input";
@@ -117,7 +117,7 @@ export function TempDocumentSaveBar({
         await queueUntitledRename(tab.documentId, name);
         return;
       }
-      const result = await renameContextEntryWithConflict(
+      const result = await renameContextEntry(
         projectId,
         tab.scheme,
         { path: tab.path, newName: name },
