@@ -65,6 +65,8 @@ type WriterNoticeDocument = {
   broadcastStateless(payload: string): void;
 };
 
+type CloseTransport = (code: number, reason: string) => void;
+
 export function subscribeWriterNoticeTransport(input: {
   notices: AppServices["notices"];
   documentsForId(documentId: string): Promise<readonly WriterNoticeDocument[]>;
@@ -365,6 +367,10 @@ export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
           ? await services.documentSync.headSchemaVersion(room.documentId)
           : target.schemaVersion;
       if (isClientSchemaSuperseded(context.clientSchemaVersion ?? 0, headSchemaVersion)) {
+        (context.closeTransport as CloseTransport | undefined)?.(
+          YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code,
+          YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason,
+        );
         throw permissionDenied(
           YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason,
           YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code,
@@ -401,7 +407,7 @@ export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
       });
       rememberOfflineLiveSync({ documentName, update, context });
     },
-    async onLoadDocument({ documentName, document }) {
+    async onLoadDocument({ documentName, document, context }) {
       const room = parseRoomOrDeny(documentName);
       let state: Uint8Array | undefined;
       try {
@@ -416,6 +422,10 @@ export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
               )?.state;
       } catch (cause) {
         if (!isStaleDocumentSchemaError(cause)) throw cause;
+        (context.closeTransport as CloseTransport | undefined)?.(
+          YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
+          YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
+        );
         throw permissionDenied(
           YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
           YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
@@ -546,6 +556,7 @@ export function createYjsWebSocketHooks() {
         liveGenerations: context?.kind === "authenticated" ? context.liveGenerations : undefined,
         clientSchemaVersion:
           context?.kind === "authenticated" ? context.clientSchemaVersion : undefined,
+        closeTransport: (code: number, reason: string) => wsPeer.close(code, reason),
         closeWriterTransport: () => wsPeer.close(1013, "writer-journal-admission-failed"),
       });
     },

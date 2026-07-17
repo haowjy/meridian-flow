@@ -89,6 +89,7 @@ function connectContext(clientSchemaVersion: number) {
     userId,
     clientSchemaVersion,
     liveGenerations: new Map<string, bigint>(),
+    closeTransport: vi.fn(),
   };
 }
 
@@ -116,13 +117,18 @@ describe("Yjs connect-time schema version gate", () => {
   it("refuses only live-room clients strictly older than a stored head", async () => {
     const services = versionGateServices({ liveHead: 3 });
     const hocuspocus = createYjsHocuspocus(services as never);
+    const staleClientContext = connectContext(2);
 
     await expect(
       required(hocuspocus.configuration.onConnect)({
         documentName: liveDocumentName,
-        context: connectContext(2),
+        context: staleClientContext,
       } as never),
     ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
+    expect(staleClientContext.closeTransport).toHaveBeenCalledWith(
+      4406,
+      "client-schema-superseded",
+    );
     await expect(
       required(hocuspocus.configuration.onConnect)({
         documentName: liveDocumentName,
@@ -168,13 +174,16 @@ describe("Yjs connect-time schema version gate", () => {
       }),
     });
     const hocuspocus = createYjsHocuspocus(services as never);
+    const context = connectContext(2);
 
     await expect(
       required(hocuspocus.configuration.onLoadDocument)({
         documentName: liveDocumentName,
         document: new Y.Doc({ gc: false }),
+        context,
       } as never),
     ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+    expect(context.closeTransport).toHaveBeenCalledWith(4407, "document-schema-stale");
   });
 
   it("maps a stale branch head to the same typed close", async () => {
@@ -185,13 +194,16 @@ describe("Yjs connect-time schema version gate", () => {
       }),
     });
     const hocuspocus = createYjsHocuspocus(services as never);
+    const context = connectContext(2);
 
     await expect(
       required(hocuspocus.configuration.onLoadDocument)({
         documentName,
         document: new Y.Doc({ gc: false }),
+        context,
       } as never),
     ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+    expect(context.closeTransport).toHaveBeenCalledWith(4407, "document-schema-stale");
   });
 });
 
