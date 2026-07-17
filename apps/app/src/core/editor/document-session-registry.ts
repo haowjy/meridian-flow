@@ -11,16 +11,23 @@
  * consumers (`get`); the session survives view unmount and is destroyed only
  * when every opener has released that document from its open set, after a
  * short grace window so rapid release→retain (e.g. React strict mode) does
- * not detach the Hocuspocus provider on the shared socket.
+ * not tear down and recreate its Hocuspocus provider/socket.
  *
- * The Hocuspocus adapter owns the shared socket; this registry owns the
- * per-room sessions on the same process-wide plane.
+ * The Hocuspocus adapter owns each room's socket; this registry owns the
+ * corresponding per-room sessions on the same process-wide plane. Room-scoped
+ * sockets keep terminal server closes from poisoning unrelated sessions.
  */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
 import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
+import type { SchemaFence } from "./schema-fence";
+import {
+  clearSchemaFenceQuarantine,
+  readSchemaFenceQuarantine,
+  writeSchemaFenceQuarantine,
+} from "./schema-fence";
 
 /** Soft cap — log once when exceeded; no hard eviction (R14). */
 const LIVE_DOC_SOFT_CAP = 50;
@@ -28,7 +35,7 @@ const LIVE_DOC_SOFT_CAP = 50;
 /**
  * Grace window before tearing down an unretained session. Rapid
  * release→retain (React strict mode, fast navigation) cancels the timer so
- * the live provider stays attached on the shared socket — avoiding a stale
+ * the live provider stays attached to its socket — avoiding a stale
  * CloseMessage racing a new SyncStep1.
  */
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
@@ -99,9 +106,24 @@ export class DocumentSessionRegistry {
   }
 
   private attachSessionTransport(session: DocumentSession): void {
+    if (session.getSnapshot().schemaFence) return;
     session.attachTransport(({ roomKey, document, awareness }) =>
       createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     );
+  }
+
+  /** Apply a fence immediately, then report whether it was made durable. */
+  quarantineRoom(roomKey: string, fence: SchemaFence): boolean {
+    this.sessions.get(roomKey)?.raiseSchemaFence(fence);
+    return writeSchemaFenceQuarantine(roomKey, fence);
+  }
+
+  readRoomQuarantine(roomKey: string): SchemaFence | null {
+    return readSchemaFenceQuarantine(roomKey);
+  }
+
+  clearRoomQuarantine(roomKey: string): void {
+    clearSchemaFenceQuarantine(roomKey);
   }
 
   private getOrCreateRoom(roomKey: string): DocumentSession {
@@ -115,6 +137,8 @@ export class DocumentSessionRegistry {
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
     });
+    const quarantine = readSchemaFenceQuarantine(roomKey);
+    if (quarantine) session.raiseSchemaFence(quarantine);
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
         if (snapshot.connectionState?.kind !== "reset") return;

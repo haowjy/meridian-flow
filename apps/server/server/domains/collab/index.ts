@@ -86,6 +86,7 @@ export type CollabPersistenceMetrics = {
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
+  headSchemaVersion(documentId: DocumentId): Promise<number | null>;
   resolveBranchHocuspocusRoom(
     branchId: string,
     generation: number,
@@ -93,6 +94,7 @@ export type CollabTransport = {
     branchId: string;
     documentId: DocumentId;
     generation: number;
+    schemaVersion: number;
     status: "active";
   } | null>;
   loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;

@@ -26,6 +26,25 @@ Yjs document session. It must stay structurally aligned with
   default because it may contain the only copy of unsynced words; only confirmed
   cleanup paths may request persistence deletion. Retention and unavailable-room
   recovery must not materialize or replace a detached session implicitly.
+- A schema fence is an orthogonal `DocumentSessionSnapshot.schemaFence`, never
+  a sync status. Raising one is first-write-wins, suspends presence, and makes
+  every editor surface read-only. Quarantine records live in localStorage under
+  the schema-versioned room key; the registry leaves quarantined sessions
+  detached so a poisoned local cache cannot reconnect before revalidation.
+  `quarantineRoom()` raises any open session before writing storage and returns
+  whether persistence succeeded; witness callers must handle `false` rather
+  than assuming the fence will survive refresh.
+- A `4406 client-schema-superseded` transport reset reloads silently once before
+  raising the `client-superseded` fence. Its sessionStorage guard is keyed by
+  schema version plus room and clears only after that room completes server
+  sync. A repeated refusal therefore shows the fence without reloading again.
+  `4407 document-schema-stale` is not a fence and never reloads; the editor is
+  replaced with the locked temporarily-unavailable chapter surface.
+- Collaboration sockets are room-scoped rather than multiplexed. The server's
+  typed refusal is a WebSocket close, so sharing that connection would deliver
+  one room's terminal 4406/4407 to every open document and could reload or mark
+  healthy chapters unavailable. Session reuse still prevents duplicate sockets
+  for the same room.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.

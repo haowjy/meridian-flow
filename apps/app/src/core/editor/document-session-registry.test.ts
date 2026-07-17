@@ -1,6 +1,6 @@
 /** Regression coverage for replacing pre-materialization authorization failures. */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
 const providers: Array<{
@@ -31,6 +31,24 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 }));
 
 const { DocumentSessionRegistry } = await import("./document-session-registry");
+
+function memoryStorage(): Storage {
+  const values = new Map<string, string>();
+  return {
+    get length() {
+      return values.size;
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, value),
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
   it("keeps a detached room and its Y.Doc intact until explicit attachment", async () => {
@@ -138,5 +156,89 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     expect(providers).toHaveLength(1);
     expect(registry.get("document-2")).toBe(session);
     registry.destroyAll();
+  });
+
+  it("keeps quarantined rooms detached and starts them fenced", async () => {
+    providers.length = 0;
+    vi.stubGlobal("localStorage", memoryStorage());
+    const registry = new DocumentSessionRegistry();
+    const fence = { reason: "repair-detected", detail: "delete-only repair" } as const;
+
+    registry.quarantineRoom("document-quarantined", fence);
+    const quarantined = registry.get("document-quarantined");
+
+    expect(registry.readRoomQuarantine("document-quarantined")).toEqual(fence);
+    expect(quarantined.getSnapshot()).toMatchObject({
+      status: "detached",
+      schemaFence: fence,
+    });
+    expect(providers).toHaveLength(0);
+
+    registry.clearRoomQuarantine("document-quarantined");
+    await registry.destroyRoom("document-quarantined");
+    expect(registry.get("document-quarantined").getSnapshot().schemaFence).toBeNull();
+    expect(providers).toHaveLength(1);
+    registry.destroyAll();
+  });
+
+  it("applies persisted quarantine before detached-first acquisition", () => {
+    providers.length = 0;
+    vi.stubGlobal("localStorage", memoryStorage());
+    const registry = new DocumentSessionRegistry();
+    const fence = { reason: "repair-detected", detail: "poisoned local replay" } as const;
+    expect(registry.quarantineRoom("document-detached-quarantine", fence)).toBe(true);
+
+    const detached = registry.getDetached("document-detached-quarantine");
+
+    expect(detached.getSnapshot()).toMatchObject({ status: "detached", schemaFence: fence });
+    expect(registry.get("document-detached-quarantine")).toBe(detached);
+    expect(providers).toHaveLength(0);
+    registry.destroyAll();
+  });
+
+  it("raises the in-memory fence when durable quarantine storage fails", () => {
+    providers.length = 0;
+    vi.stubGlobal("localStorage", {
+      ...memoryStorage(),
+      setItem: () => {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      },
+    });
+    const registry = new DocumentSessionRegistry();
+    const session = registry.getDetached("document-storage-failure");
+    session.awareness.setLocalState({ user: { name: "Writer" } });
+
+    expect(registry.quarantineRoom("document-storage-failure", { reason: "repair-detected" })).toBe(
+      false,
+    );
+    expect(session.getSnapshot().schemaFence).toEqual({ reason: "repair-detected" });
+    expect(session.awareness.getLocalState()).toBeNull();
+    registry.destroyAll();
+  });
+
+  it("keeps registry fencing exception-safe when browser storage access is blocked", () => {
+    providers.length = 0;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("storage blocked", "SecurityError");
+      },
+    });
+
+    try {
+      const registry = new DocumentSessionRegistry();
+      const session = registry.getDetached("document-blocked-storage");
+
+      expect(
+        registry.quarantineRoom("document-blocked-storage", { reason: "repair-detected" }),
+      ).toBe(false);
+      expect(session.getSnapshot().schemaFence).toEqual({ reason: "repair-detected" });
+      registry.clearRoomQuarantine("document-blocked-storage");
+      registry.destroyAll();
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
   });
 });

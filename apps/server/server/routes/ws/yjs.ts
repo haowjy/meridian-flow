@@ -6,14 +6,23 @@ import {
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
-import { encodeSafetyNoticeWsMessage, parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { UserId } from "@meridian/contracts/runtime";
+import {
+  encodeSafetyNoticeWsMessage,
+  parseYjsRoomName,
+  YJS_WS_CLOSE,
+} from "@meridian/contracts/protocol";
+import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
-import type { UpdateOrigin } from "../../domains/collab/index.js";
+import {
+  isStaleDocumentSchemaError,
+  isStaleSchema,
+  type UpdateOrigin,
+} from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
@@ -31,6 +40,7 @@ type YjsRouteContext =
       branchSyncState: Map<string, BranchHandshakeState>;
       offlineSyncUpdates: Set<string>;
       liveGenerations: Map<string, bigint>;
+      clientSchemaVersion: number;
     }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
@@ -58,6 +68,16 @@ type WriterNoticeDocument = {
   getConnectionsCount(): number;
   broadcastStateless(payload: string): void;
 };
+
+type CloseTransport = (code: number, reason: string) => void;
+
+function refuseConnection(
+  context: { closeTransport?: CloseTransport },
+  close: { code: number; reason: string },
+): never {
+  context.closeTransport?.(close.code, close.reason);
+  throw permissionDenied(close.reason, close.code);
+}
 
 export function subscribeWriterNoticeTransport(input: {
   notices: AppServices["notices"];
@@ -152,17 +172,24 @@ function parseRoomOrDeny(documentName: string) {
   return room;
 }
 
-async function resolveRoomDocumentId(
+async function resolveRoomTarget(
   services: YjsRouteServices,
   room: ReturnType<typeof parseRoomOrDeny>,
-) {
-  if (room.kind === "live") return room.documentId;
+): Promise<{ documentId: DocumentId; schemaVersion: number | null }> {
+  if (room.kind === "live") return { documentId: room.documentId, schemaVersion: null };
   const branch = await services.documentSync.resolveBranchHocuspocusRoom(
     room.branchId,
     room.generation,
   );
   if (!branch) throw permissionDenied("branch-generation-stale");
-  return branch.documentId;
+  return { documentId: branch.documentId, schemaVersion: branch.schemaVersion };
+}
+
+export function clientSchemaVersionFromRequest(request: Request): number {
+  const rawVersion = new URL(request.url).searchParams.get("schema");
+  if (!rawVersion || !/^[0-9]+$/.test(rawVersion)) return 0;
+  const version = Number(rawVersion);
+  return Number.isSafeInteger(version) ? version : 0;
 }
 
 function syncMessage(
@@ -288,7 +315,7 @@ function updateIdentity(update: Uint8Array): string {
   return Buffer.from(update).toString("base64");
 }
 
-function createHocuspocus(services: YjsRouteServices): Hocuspocus {
+export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
   const documentsForId = async (documentId: string): Promise<WriterNoticeDocument[]> => {
     const matches: WriterNoticeDocument[] = [];
     for (const [roomName, document] of hocuspocus.documents) {
@@ -332,7 +359,8 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (!userId) throw permissionDenied("permission-denied");
 
       const room = parseRoomOrDeny(documentName);
-      const documentId = await resolveRoomDocumentId(services, room);
+      const target = await resolveRoomTarget(services, room);
+      const documentId = target.documentId;
       if (!documentId || !(await services.documentAccess.canAccessDocument(userId, documentId))) {
         throw permissionDenied("permission-denied");
       }
@@ -345,6 +373,16 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           documentId,
           await services.documentSync.currentLiveGeneration(documentId),
         );
+      }
+      const headSchemaVersion =
+        room.kind === "live"
+          ? await services.documentSync.headSchemaVersion(room.documentId)
+          : target.schemaVersion;
+      if (isStaleSchema(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
+        refuseConnection(context, YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE);
+      }
+      if (headSchemaVersion != null && (context.clientSchemaVersion ?? 0) < headSchemaVersion) {
+        refuseConnection(context, YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED);
       }
       setTimeout(() => {
         void deliverPendingWriterNotices(documentId).catch((cause) => {
@@ -377,13 +415,23 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       });
       rememberOfflineLiveSync({ documentName, update, context });
     },
-    async onLoadDocument({ documentName, document }) {
+    async onLoadDocument({ documentName, document, context }) {
       const room = parseRoomOrDeny(documentName);
-      const state =
-        room.kind === "live"
-          ? await services.documentSync.loadHocuspocusDocument(room.documentId)
-          : (await services.documentSync.loadHocuspocusBranchState(room.branchId, room.generation))
-              ?.state;
+      let state: Uint8Array | undefined;
+      try {
+        state =
+          room.kind === "live"
+            ? await services.documentSync.loadHocuspocusDocument(room.documentId)
+            : (
+                await services.documentSync.loadHocuspocusBranchState(
+                  room.branchId,
+                  room.generation,
+                )
+              )?.state;
+      } catch (cause) {
+        if (!isStaleDocumentSchemaError(cause)) throw cause;
+        refuseConnection(context, YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE);
+      }
       if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
       if (state) Y.applyUpdate(document, state);
       if (room.kind === "live") primeReservedNamespaceIndex(document);
@@ -445,7 +493,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
 }
 
 export function getYjsHocuspocus(): Promise<Hocuspocus> {
-  hocuspocusPromise ??= getApp().then((app) => createHocuspocus(selectYjsRouteServices(app)));
+  hocuspocusPromise ??= getApp().then((app) => createYjsHocuspocus(selectYjsRouteServices(app)));
   return hocuspocusPromise;
 }
 
@@ -467,6 +515,7 @@ export async function drainYjsCollabPersistence(): Promise<void> {
 export function createYjsWebSocketHooks() {
   return {
     async upgrade(request: Request) {
+      const clientSchemaVersion = clientSchemaVersionFromRequest(request);
       const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
       if (auth.kind === "deferred-close") {
         return {
@@ -481,6 +530,7 @@ export function createYjsWebSocketHooks() {
           branchSyncState: new Map<string, BranchHandshakeState>(),
           offlineSyncUpdates: new Set<string>(),
           liveGenerations: new Map<string, bigint>(),
+          clientSchemaVersion,
         } satisfies YjsRouteContext,
       };
     },
@@ -505,6 +555,9 @@ export function createYjsWebSocketHooks() {
         offlineSyncUpdates:
           context?.kind === "authenticated" ? context.offlineSyncUpdates : undefined,
         liveGenerations: context?.kind === "authenticated" ? context.liveGenerations : undefined,
+        clientSchemaVersion:
+          context?.kind === "authenticated" ? context.clientSchemaVersion : undefined,
+        closeTransport: (code: number, reason: string) => wsPeer.close(code, reason),
         closeWriterTransport: () => wsPeer.close(1013, "writer-journal-admission-failed"),
       });
     },

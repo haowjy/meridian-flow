@@ -2,6 +2,7 @@ import { act, type ReactNode, useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { ContextTab } from "@/client/stores";
+import type { SchemaFence } from "@/core/editor/document-session";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const setActiveEditorDocumentIdMock = vi.fn();
@@ -20,10 +21,12 @@ const harness: {
   };
   reviewRoomName: string | null;
   group: ThreadDraftGroup | null;
+  schemaFence: SchemaFence | null;
 } = {
   controller: { inlineReview: null, isDisposing: false },
   reviewRoomName: null,
   group: null,
+  schemaFence: null,
 };
 
 const NOW = Date.parse("2026-07-07T12:00:00.000Z");
@@ -45,11 +48,23 @@ vi.mock("@/features/chat/DraftReviewProvider", async (importOriginal) => {
   };
 });
 vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({
-    retain: vi.fn(),
-    release: vi.fn(),
-    get: vi.fn(() => ({ suspendPresence: vi.fn(), resumePresence: vi.fn() })),
-  }),
+  getDocumentSessionRegistry: () => {
+    const session = {
+      getSnapshot: () => ({ schemaFence: harness.schemaFence }),
+      subscribe: (listener: (snapshot: { schemaFence: SchemaFence | null }) => void) => {
+        listener({ schemaFence: harness.schemaFence });
+        return vi.fn();
+      },
+      suspendPresence: vi.fn(),
+      resumePresence: vi.fn(),
+    };
+    return {
+      retain: vi.fn(),
+      release: vi.fn(),
+      get: vi.fn(() => session),
+      getRoom: vi.fn(() => session),
+    };
+  },
 }));
 // EditorView paints the belowToolbar slot only — that slot is what the
 // mutual-exclusion test asserts on.
@@ -110,6 +125,7 @@ beforeEach(() => {
   harness.controller = { inlineReview: null, isDisposing: false };
   harness.reviewRoomName = null;
   harness.group = null;
+  harness.schemaFence = null;
 });
 
 function HostHarness({ active = true }: { active?: boolean }) {
@@ -147,6 +163,19 @@ describe("ContextEditorMountHost active editor wiring", () => {
 });
 
 describe("ContextEditorMountHost draft chrome exclusion", () => {
+  it("gives the schema fence banner priority over pending AI changes", async () => {
+    harness.group = pendingGroup();
+    harness.schemaFence = { reason: "invalid-content" };
+
+    await withReactRoot(<HostHarness />, () => {
+      const banner = document.querySelector("[data-schema-fence-banner]");
+      expect(banner?.textContent).toContain(
+        "Part of this chapter can't be opened safely in this version of Meridian.",
+      );
+      expect(document.querySelector("[data-draft-entry-banner]")).toBeNull();
+    });
+  });
+
   it("keeps banner and review chrome exclusive across a live-review-live transition", async () => {
     harness.group = pendingGroup();
     await withReactRoot(<HostHarness />, async () => {

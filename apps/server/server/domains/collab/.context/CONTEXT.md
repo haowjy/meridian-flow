@@ -50,6 +50,12 @@ schema-aware; all new seed and write paths must go through it rather than
 hand-building fragment content. The context caller contract is documented in
 [the context domain](../../context/.context/CONTEXT.md).
 
+WebSocket admission compares the bundle's declared schema version with the
+specific live or branch head before sync. A strictly older client closes with
+`4406 client-schema-superseded`; an unstamped live head passes. Persisted heads
+older than the running server remain unreadable and map to
+`4407 document-schema-stale` rather than a generic reconnect loop.
+
 ## Branch model
 
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
