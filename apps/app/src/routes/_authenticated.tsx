@@ -18,13 +18,17 @@ import {
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
+import { installThreadTap } from "@/features/debug/trace/install-thread-tap";
 import { installYjsTap } from "@/features/debug/trace/install-yjs-tap";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 
-// Composition-root prerequisite: product descendants can create the shared
-// Yjs socket as soon as they render, so capture must be installed first.
-if (DEBUG_FEATURE_ALLOWED) installYjsTap();
+// Composition-root prerequisite: product descendants create both client
+// sockets as soon as they render, so capture must be installed first.
+if (DEBUG_FEATURE_ALLOWED) {
+  installYjsTap();
+  installThreadTap();
+}
 
 // Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
 // so the entire feature (and its lazy chunk) is dead-code-eliminated from

@@ -48,14 +48,14 @@ export interface TraceStreamRef {
    * `thread:<threadId>`, or `gateway:<attemptId>`.
    */
   streamId: string;
-  transport: "thread-ws" | "yjs" | "gateway";
+  transport: "thread" | "yjs" | "gateway";
   /** Absolute, not observer-relative. Omitted for lifecycle events. */
   direction?: "client_to_server" | "server_to_client";
   /** Which process recorded this event. The viewer joins client and server views. */
   observedAt: "client" | "server";
   /**
    * Wire-level message class from the transport's own vocabulary:
-   * thread-ws: `event` | `subscribed` | `gap` | `ping` | ...
+   * thread: `event` | `subscribed` | `gap` | `ping` | ...
    * yjs: `sync.step1` | `sync.step2` | `sync.update` | `sync.status` | `awareness` |
    *   `stateless` | `auth` | `close` | `ping` | `pong` | `unknown`
    * gateway: `start` | `text.delta` | `usage` | `end` | `error`

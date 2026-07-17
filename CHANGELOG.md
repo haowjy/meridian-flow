@@ -6,7 +6,8 @@
   database on exit; `dev:gc-dbs` documentation clarifies that its existing
   prefix sweep also removes orphaned ad-hoc test databases.
 - `apps/app`: the dev debug overlay gains a pop-out Streams trace viewer showing
-  live client Yjs wire traffic as metadata-only records without blocking the editor;
+  live client Yjs and agent-stream wire traffic as metadata-only records without
+  blocking the editor;
   browser agents can query, filter, clear, and await those records through
   `window.__meridianTrace`.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve

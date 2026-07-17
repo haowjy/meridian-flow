@@ -153,21 +153,22 @@ accessibility-tree output. Freeze snapshots the current projection while
 capture and eviction continue. Future lenses project over this same store
 rather than adding data paths.
 
-The dev-only shared Hocuspocus socket carries a `TappedWebSocket` observer
-seam (`core/transport/tapped-websocket.ts`); `trace/yjs-wire-tap.ts` maps its
-frames to metadata-only `EventRecord`s. The authenticated composition root
-synchronously calls `installYjsTap()` before rendering any subtree that can
-create the shared socket; the visual overlay remains lazy. Capture is always on
-for the page lifetime and the runtime toggle gates only the viewer. Vite hot
-data preserves the observer sequence and room attribution when Fast Refresh
-replaces the tap.
+Both dev-only client sockets carry the `TappedWebSocket` observer seam
+(`core/transport/tapped-websocket.ts`). `trace/yjs-wire-tap.ts` maps binary
+collab frames; `trace/thread-wire-tap.ts` maps thread JSON strings into
+allowlisted message class, thread id, sequence, AG-UI event type, and size only.
+It never copies agent/user/tool content, nested catchup events, or error text.
+The authenticated composition root synchronously installs both taps before
+rendering any subtree that can create either socket; the visual overlay remains
+lazy. Capture is always on for the page lifetime and the runtime toggle gates
+only the viewer. Vite hot data preserves observer sequences (and Yjs room
+attribution) when Fast Refresh replaces a tap.
 Server-side
 collab operations still emit zero success-path structured events — the server
-half (S4: correlation receipts, SSE feed, durability columns, and thread-WS
-coverage) is
+half (S4: correlation receipts, SSE feed, and durability columns) is
 [#239](https://github.com/haowjy/meridian-flow/issues/239) in cluster
 [#235](https://github.com/haowjy/meridian-flow/issues/235). The current viewer
-is the client-Yjs core, not the final multi-source surface: S6 adds the LLM
+is the client wire core, not the final multi-source surface: S6 adds the LLM
 calls lens only after S4's feed and S5's gateway events exist. Burst grouping
 is intentionally deferred beside the S4 viewer merge; see `.context/FUTURE`.
 
