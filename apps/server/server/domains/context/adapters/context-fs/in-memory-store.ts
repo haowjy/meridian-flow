@@ -222,6 +222,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       mimeType: null,
       sizeBytes,
       updatedAt: this.nextTimestamp(),
+      provisionalName: input.provisionalName ?? false,
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
@@ -229,8 +230,59 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
-    if (await this.findDocument(input.folderId, input.name, input.extension)) return null;
-    return this.upsertDocument(input);
+    if (this.backing.documents.has(input.id ?? "")) return null;
+    for (const row of this.backing.documents.values()) {
+      if (
+        row.contextSourceId === this.sourceId &&
+        isContentDocumentKind(row.kind) &&
+        row.deletedAt === null &&
+        row.folderId === input.folderId &&
+        row.name === input.name &&
+        row.extension === input.extension
+      ) {
+        return null;
+      }
+    }
+    const sizeBytes = Buffer.byteLength(input.markdown, "utf8");
+    const doc: DocumentRow = {
+      id: input.id ?? crypto.randomUUID(),
+      contextSourceId: this.sourceId,
+      kind: DOCUMENT_KINDS.content,
+      folderId: input.folderId,
+      name: input.name,
+      extension: input.extension,
+      markdown: input.markdown,
+      fileType: null,
+      filetype: input.filetype,
+      storageUrl: null,
+      mimeType: null,
+      sizeBytes,
+      updatedAt: this.nextTimestamp(),
+      provisionalName: input.provisionalName ?? false,
+      deletedAt: null,
+    };
+    this.backing.documents.set(doc.id, doc);
+    return this.publicDocument(doc);
+  }
+
+  async findDocumentById(documentId: string) {
+    const row = this.backing.documents.get(documentId);
+    if (!row) return null;
+    const segments: string[] = [];
+    let folderId = row.folderId;
+    while (folderId) {
+      const folder = this.backing.folders.get(folderId);
+      if (!folder || folder.deletedAt !== null) break;
+      segments.unshift(folder.name);
+      folderId = folder.parentId;
+    }
+    segments.push(row.extension ? `${row.name}.${row.extension}` : row.name);
+    return {
+      contextSourceId: row.contextSourceId,
+      document: this.publicDocument(row),
+      path: segments.join("/"),
+      active: row.deletedAt === null && isContentDocumentKind(row.kind),
+    };
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
@@ -254,6 +306,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
       updatedAt: this.nextTimestamp(),
+      provisionalName: false,
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
@@ -689,10 +742,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           this.markMutatorWrite();
         }
         const { name, extension } = parseFilename(targetBasename);
+        const basenameChanged = targetBasename !== treeBasename(input.source.path);
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
+        if (basenameChanged && sourceRow.provisionalName) sourceRow.provisionalName = false;
         if (input.destinationFiletype != null) {
           sourceRow.filetype = input.destinationFiletype;
         }

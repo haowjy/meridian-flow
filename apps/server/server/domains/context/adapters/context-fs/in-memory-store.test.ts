@@ -63,6 +63,7 @@ describe("InMemoryContextDocumentStore", () => {
       mimeType: null,
       sizeBytes: 20,
       updatedAt: new Date(0).toISOString(),
+      provisionalName: false,
       deletedAt: null,
     });
 

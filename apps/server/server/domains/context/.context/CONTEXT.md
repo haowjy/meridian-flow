@@ -97,6 +97,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   `json`, `shell`, `yaml`, `csv`). One exhaustive contracts disposition registry
   classifies every registered filetype; unknown persisted prose defaults to the
   document schema, while registered non-tracked metadata is a typed I/O fault.
+- Client-minted untitled documents use the distinct `createUntitledDocument`
+  boundary: it atomically allocates `Untitled N`, persists `provisionalName`,
+  and only ensures an empty Yjs authority. The client owns initial CRDT content;
+  this path must never seed markdown. A successful basename change clears the
+  flag in the shared tree-mutation store, while path-only moves preserve it.
 - Every **project-scoped** document creation (`manuscript`, `kb`, `user`)
   registers in the project manifest via the required manifest-membership port
   wired in `unified-context-port-factory.ts`. The ws live-room gate denies connections

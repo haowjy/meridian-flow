@@ -33,6 +33,7 @@ import type {
 } from "../../ports/context-adapter.js";
 import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
+  ContextCreateUntitledDocumentOptions,
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
@@ -62,6 +63,8 @@ export interface ContextFSDeps {
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
 
 function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
   const filetype = filetypeForPath(path);
@@ -346,6 +349,79 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({ documentId: doc.id });
   }
 
+  async createUntitledDocument(
+    path: string,
+    options: ContextCreateUntitledDocumentOptions,
+  ): Promise<
+    Result<
+      { status: "created" | "already-exists"; documentId: string; path: string; name: string },
+      AdapterFault
+    >
+  > {
+    if (!UUID_PATTERN.test(options.documentId)) {
+      return Err({ code: "invalid_operation", message: "documentId must be a UUID" });
+    }
+
+    const sourceId = await this.store.contextSourceId();
+    const existing = await this.store.findDocumentById(options.documentId);
+    if (existing) {
+      if (existing.contextSourceId !== sourceId || !existing.active) {
+        return Err({
+          code: "conflict",
+        });
+      }
+      return Ok({
+        status: "already-exists",
+        documentId: existing.document.id,
+        path: existing.path,
+        name: existing.document.name,
+      });
+    }
+
+    const folderSegments = path.split("/").filter(Boolean);
+    const folderId = await this.ensureFolderId(folderSegments);
+    for (;;) {
+      const documents = await this.store.listDocuments(folderId);
+      const maxNumber = documents.reduce((max, document) => {
+        const match = UNTITLED_NAME_PATTERN.exec(document.name);
+        return match ? Math.max(max, Number(match[1])) : max;
+      }, 0);
+      const name = `Untitled ${maxNumber + 1}`;
+      const document = await this.store.createDocumentIfAbsent({
+        id: options.documentId,
+        folderId,
+        name,
+        extension: "md",
+        markdown: "",
+        filetype: "markdown",
+        provisionalName: true,
+      });
+      if (document) {
+        await this.documentSync.ensureDocument(document.id);
+        return Ok({
+          status: "created",
+          documentId: document.id,
+          path: joinPath(path, renderFilename(document.name, document.extension)),
+          name: document.name,
+        });
+      }
+
+      const collision = await this.store.findDocumentById(options.documentId);
+      if (!collision) continue;
+      if (collision.contextSourceId !== sourceId || !collision.active) {
+        return Err({
+          code: "conflict",
+        });
+      }
+      return Ok({
+        status: "already-exists",
+        documentId: collision.document.id,
+        path: collision.path,
+        name: collision.document.name,
+      });
+    }
+  }
+
   async ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,
@@ -471,6 +547,7 @@ export class ContextFS implements ContextSchemeAdapter {
         documentId: doc.id,
         sizeBytes: doc.sizeBytes ?? undefined,
         updatedAt: doc.updatedAt,
+        provisionalName: doc.provisionalName,
         ...(doc.fileType === null
           ? {
               editable: true as const,
