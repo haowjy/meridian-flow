@@ -35,9 +35,20 @@ with a renderable element owns the slot and every lower tenant yields. Tenant
 content is restricted to `ReactElement | null`; the runtime selection is also
 defensive against React-empty `false` and `undefined` values. The tenant name is
 its stable React identity, preventing local state from crossing between
-occupants. Draft chrome is the first tenant, with `DraftEntryBanner` and
-`DraftReviewHeader` as two modes of one surface. Register another tenant by
-adding one ordered entry rather than mounting another strip beside the slot.
+occupants. The schema-fence banner is highest priority because destructive
+content safety outranks review chrome. Draft chrome follows, with
+`DraftEntryBanner` and `DraftReviewHeader` as two modes of one surface.
+Register another tenant by adding one ordered entry rather than mounting
+another strip beside the slot.
+
+## Schema-fence surface
+
+`EditorView` derives effective editability from both its `editable` prop and
+the session fence. A fence raised after binding first applies
+`editor.setEditable(false)`, then retires that live binding. Fenced sessions
+render a standalone TipTap editor over a throwaway clone: y-prosemirror may
+repair that clone to the schema-valid subset, but can never mutate the shared
+Y.Doc. The fenced preview has no transport, persistence, awareness, or editing.
 
 ### Rejected placements
 

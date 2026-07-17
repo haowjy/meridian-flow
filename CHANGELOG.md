@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: collaboration schema fences now pause editing, hide presence,
+  explain the refusal above the chapter, and keep a read-only preview of every
+  part of the manuscript this client can safely render; quarantined local
+  sessions cannot reconnect until later validation clears them.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

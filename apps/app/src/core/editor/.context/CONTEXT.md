@@ -26,6 +26,11 @@ Yjs document session. It must stay structurally aligned with
   default because it may contain the only copy of unsynced words; only confirmed
   cleanup paths may request persistence deletion. Retention and unavailable-room
   recovery must not materialize or replace a detached session implicitly.
+- A schema fence is an orthogonal `DocumentSessionSnapshot.schemaFence`, never
+  a sync status. Raising one is first-write-wins, suspends presence, and makes
+  every editor surface read-only. Quarantine records live in localStorage under
+  the schema-versioned room key; the registry leaves quarantined sessions
+  detached so a poisoned local cache cannot reconnect before revalidation.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.

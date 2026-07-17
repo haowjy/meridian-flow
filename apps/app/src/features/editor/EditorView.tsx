@@ -26,7 +26,11 @@ import {
 
 import { uploadFigure } from "@/client/api/figures-api";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
-import type { DocumentSession } from "@/core/editor/document-session";
+import type {
+  DocumentSession,
+  DocumentSessionSnapshot,
+  SchemaFence,
+} from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   type FigureNodeAttrs,
@@ -41,6 +45,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
+import { SchemaFencePreview } from "./SchemaFenceSurface";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -138,7 +143,33 @@ type SessionEditorViewProps = EditorViewProps & {
   session: DocumentSession;
 };
 
-function SessionEditorView({
+function SessionEditorView({ session, ...props }: SessionEditorViewProps) {
+  const [snapshot, setSnapshot] = useState<DocumentSessionSnapshot>(() => session.getSnapshot());
+  const [liveEditorRetired, setLiveEditorRetired] = useState(false);
+  const initiallyFenced = useRef(snapshot.schemaFence !== null);
+
+  useEffect(() => session.subscribe(setSnapshot), [session]);
+
+  if (initiallyFenced.current || (snapshot.schemaFence && liveEditorRetired)) {
+    return <FencedSessionEditorView {...props} session={session} />;
+  }
+
+  return (
+    <LiveSessionEditorView
+      {...props}
+      session={session}
+      schemaFence={snapshot.schemaFence}
+      onSchemaFenceApplied={() => setLiveEditorRetired(true)}
+    />
+  );
+}
+
+type LiveSessionEditorViewProps = SessionEditorViewProps & {
+  schemaFence: SchemaFence | null;
+  onSchemaFenceApplied: () => void;
+};
+
+function LiveSessionEditorView({
   documentId,
   projectId,
   schemaType = "document",
@@ -153,7 +184,9 @@ function SessionEditorView({
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
-}: SessionEditorViewProps) {
+  schemaFence,
+  onSchemaFenceApplied,
+}: LiveSessionEditorViewProps) {
   const { controller } = useDraftReview();
   const inReview = Boolean(reviewDraftId);
   const registry = getDocumentSessionRegistry();
@@ -164,6 +197,7 @@ function SessionEditorView({
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
+  const effectiveEditable = editable && !schemaFence;
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
@@ -234,7 +268,7 @@ function SessionEditorView({
         schemaType,
         cursorProvider: session.cursorProvider,
         user,
-        editable,
+        editable: effectiveEditable,
         placeholder: t`Start writing…`,
         autofocus: false,
         figureRenderContext: { projectId, documentId },
@@ -246,7 +280,7 @@ function SessionEditorView({
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
           handleTextInput(view, from, _to, text) {
-            if (!editable || text !== " ") return false;
+            if (!effectiveEditable || text !== " ") return false;
             const commandText = "/figure";
             const textBefore = view.state.selection.$from.parent.textBetween(
               0,
@@ -260,7 +294,7 @@ function SessionEditorView({
             return true;
           },
           handleDrop(view, event) {
-            if (!editable) return false;
+            if (!effectiveEditable) return false;
             const file = droppedImageFile(event);
             if (!file) return false;
             event.preventDefault();
@@ -271,11 +305,11 @@ function SessionEditorView({
           },
           handleDOMEvents: {
             dragenter(_view, event) {
-              if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
+              if (effectiveEditable && droppedImageFile(event as DragEvent)) setDragActive(true);
               return false;
             },
             dragover(_view, event) {
-              if (!editable || !droppedImageFile(event as DragEvent)) return false;
+              if (!effectiveEditable || !droppedImageFile(event as DragEvent)) return false;
               event.preventDefault();
               setDragActive(true);
               return true;
@@ -320,7 +354,7 @@ function SessionEditorView({
   // a transient "no runtime" window where card focus/scroll/discard no-ops.
   const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
-    if (!inReview || !reviewDraftId || !editor) return;
+    if (!inReview || !reviewDraftId || !editor || schemaFence) return;
     // In review mode `session` is the draft session, so `session.document` is the
     // draft Y.Doc the per-card Discard reconstructs its inverse against.
     registerInlineReviewRuntime({
@@ -342,6 +376,7 @@ function SessionEditorView({
     reviewDraftId,
     reviewWorkId,
     session.document,
+    schemaFence,
   ]);
 
   useInlineReviewSync({
@@ -351,7 +386,7 @@ function SessionEditorView({
     workId: reviewWorkId,
     documentId,
     draftId: reviewDraftId,
-    enabled: inReview,
+    enabled: inReview && !schemaFence,
     conflictedBlocks: controller.conflictedBlocks,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
     onReviewSessionUnavailable,
@@ -362,9 +397,15 @@ function SessionEditorView({
   }, [editor]);
 
   useEffect(() => {
-    if (!editor || inReview) return;
+    if (!editor || editor.isDestroyed) return;
+    editor.setEditable(effectiveEditable);
+    if (schemaFence) onSchemaFenceApplied();
+  }, [editor, effectiveEditable, onSchemaFenceApplied, schemaFence]);
+
+  useEffect(() => {
+    if (!editor || inReview || schemaFence) return;
     return registerLiveRangeEditor(documentId, editor);
-  }, [documentId, editor, inReview]);
+  }, [documentId, editor, inReview, schemaFence]);
 
   useEffect(() => {
     return () => {
@@ -440,7 +481,7 @@ function SessionEditorView({
           );
         }}
         dropOverlay={
-          editable && dragActive ? (
+          effectiveEditable && dragActive ? (
             <div className="meridian-editor-drop-overlay" aria-hidden>
               <UploadCloud className="size-8" />
               <span>
@@ -450,6 +491,37 @@ function SessionEditorView({
           ) : undefined
         }
         uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+      />
+    </section>
+  );
+}
+
+function FencedSessionEditorView({
+  documentId,
+  projectId,
+  schemaType = "document",
+  className,
+  belowToolbar,
+  ariaLabel,
+  session,
+}: SessionEditorViewProps) {
+  return (
+    <section
+      className={cn(
+        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
+        className,
+      )}
+    >
+      {belowToolbar}
+      <div className="pointer-events-none absolute right-3 bottom-3 z-10">
+        <SyncStatus session={session} />
+      </div>
+      <SchemaFencePreview
+        session={session}
+        schemaType={schemaType}
+        projectId={projectId}
+        documentId={documentId}
+        ariaLabel={ariaLabel}
       />
     </section>
   );

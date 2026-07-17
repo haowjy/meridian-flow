@@ -29,7 +29,7 @@
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
 import { Trans } from "@lingui/react/macro";
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, type ReactElement, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import { pendingReviewDraft } from "@/features/chat/docked-drafts";
 import { DraftEntryBanner } from "@/features/editor/DraftEntryBanner";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { EditorBannerSlot } from "@/features/editor/EditorBannerSlot";
+import { SchemaFenceBanner, useSchemaFence } from "@/features/editor/SchemaFenceSurface";
 import { cn } from "@/lib/utils";
 import { UntitledRenameLine } from "./UntitledRenameLine";
 import { untitledDocumentIsEmpty, useUntitledPending } from "./untitled-reconciler";
@@ -246,37 +247,30 @@ export function ContextEditorMountHost({
                   documentId={tab.documentId}
                   schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                   belowToolbar={
-                    <EditorBannerSlot
-                      tenants={[
-                        {
-                          name: "draft-chrome",
-                          content:
-                            isActive && reviewDraftId ? (
-                              <DraftReviewHeader
-                                documentId={tab.documentId}
-                                draftId={reviewDraftId}
-                              />
-                            ) : pendingGroup && pendingDraft ? (
-                              <DraftEntryBanner group={pendingGroup} draft={pendingDraft} />
-                            ) : null,
-                        },
-                        {
-                          name: "rename-line",
-                          content:
-                            isActive &&
-                            (tab.kind === "new" ||
-                              (tab.kind === "tracked" && tab.provisionalName)) &&
-                            onUntitledRenamed &&
-                            onOpenExisting ? (
-                              <UntitledRenameChrome
-                                projectId={projectId}
-                                tab={tab}
-                                onRenamed={onUntitledRenamed}
-                                onOpenExisting={onOpenExisting}
-                              />
-                            ) : null,
-                        },
-                      ]}
+                    <ContextEditorBannerSlot
+                      session={getDocumentSessionRegistry().getRoom(
+                        reviewRoomName ?? tab.documentId,
+                      )}
+                      draftChrome={
+                        isActive && reviewDraftId ? (
+                          <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
+                        ) : pendingGroup && pendingDraft ? (
+                          <DraftEntryBanner group={pendingGroup} draft={pendingDraft} />
+                        ) : null
+                      }
+                      renameLine={
+                        isActive &&
+                        (tab.kind === "new" || (tab.kind === "tracked" && tab.provisionalName)) &&
+                        onUntitledRenamed &&
+                        onOpenExisting ? (
+                          <UntitledRenameChrome
+                            projectId={projectId}
+                            tab={tab}
+                            onRenamed={onUntitledRenamed}
+                            onOpenExisting={onOpenExisting}
+                          />
+                        ) : null
+                      }
                     />
                   }
                   reviewDraftId={reviewDraftId}
@@ -290,6 +284,30 @@ export function ContextEditorMountHost({
         })}
       </Suspense>
     </div>
+  );
+}
+
+function ContextEditorBannerSlot({
+  session,
+  draftChrome,
+  renameLine,
+}: {
+  session: import("@/core/editor/document-session").DocumentSession;
+  draftChrome: ReactElement | null;
+  renameLine: ReactElement | null;
+}) {
+  const schemaFence = useSchemaFence(session);
+  return (
+    <EditorBannerSlot
+      tenants={[
+        {
+          name: "schema-fence",
+          content: schemaFence ? <SchemaFenceBanner fence={schemaFence} /> : null,
+        },
+        { name: "draft-chrome", content: draftChrome },
+        { name: "rename-line", content: renameLine },
+      ]}
+    />
   );
 }
 

@@ -34,7 +34,7 @@ export function readSchemaFenceQuarantine(roomKey: string): SchemaFence | null {
     if (fence.detail !== undefined && typeof fence.detail !== "string") return null;
     return {
       reason: fence.reason as SchemaFence["reason"],
-      ...(fence.detail ? { detail: fence.detail } : {}),
+      ...(fence.detail !== undefined ? { detail: fence.detail } : {}),
     };
   } catch {
     return null;
