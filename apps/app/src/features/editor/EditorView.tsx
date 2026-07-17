@@ -9,6 +9,7 @@
  * renders no title header of its own.
  */
 import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeNode, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
@@ -31,6 +32,7 @@ import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type { SlashCommandItem } from "@/core/editor/extensions/SlashCommandExtension";
 import {
   createEditorAssetPathResolver,
   imageAltFromFilename,
@@ -166,6 +168,7 @@ function SessionEditorView({
   onReviewSessionUnavailable,
   session,
 }: SessionEditorViewProps) {
+  const { i18n } = useLingui();
   const { controller } = useDraftReview();
   const inReview = Boolean(reviewDraftId);
   const registry = getDocumentSessionRegistry();
@@ -184,6 +187,44 @@ function SessionEditorView({
   const [imageUploadState, setImageUploadState] = useState<ImageUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
   const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
+  const slashCommands = useMemo(
+    () => ({
+      menuLabel: t`Insert block`,
+      requestImageUpload: () => imageInputRef.current?.click(),
+      items: [
+        {
+          id: "scene-break",
+          label: t`Scene break`,
+          aliases: [t`divider`, t`hr`, t`rule`, t`break`],
+        },
+        {
+          id: "heading",
+          label: t`Heading`,
+          aliases: [t`title`, t`h1`, t`h2`, t`section`],
+        },
+        { id: "quote", label: t`Quote`, aliases: [t`blockquote`] },
+        { id: "bullet-list", label: t`Bullet list`, aliases: [t`list`] },
+        { id: "numbered-list", label: t`Numbered list`, aliases: [t`ordered`] },
+        {
+          id: "table",
+          label: t`Table`,
+          aliases: [t`grid`, t`stat block`, t`status`, t`litrpg`],
+        },
+        {
+          id: "image",
+          label: t`Image`,
+          aliases: [t`picture`, t`photo`, t`upload`],
+        },
+        { id: "code", label: t`Code`, aliases: [t`fence`, t`codeblock`] },
+        {
+          id: "diagram",
+          label: t`Diagram`,
+          aliases: [t`mermaid`, t`flowchart`, t`chart`],
+        },
+      ] satisfies SlashCommandItem[],
+    }),
+    [i18n.locale],
+  );
 
   useEffect(() => {
     if (!manuscriptTree) return;
@@ -297,7 +338,8 @@ function SessionEditorView({
         cursorProvider: session.cursorProvider,
         user,
         editable,
-        placeholder: t`Start writing…`,
+        placeholder: schemaType === "document" ? t`Type / to insert…` : t`Start writing…`,
+        slashCommands: schemaType === "document" && editable ? slashCommands : undefined,
         autofocus: false,
         assetRenderContext: { projectId },
         showCollaborationDecorations,
@@ -367,6 +409,7 @@ function SessionEditorView({
       ariaLabel,
       showCollaborationDecorations,
       inReview,
+      slashCommands,
     ],
   );
 

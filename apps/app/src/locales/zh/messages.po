@@ -266,6 +266,10 @@ msgstr ""
 msgid "Block alignment"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "blockquote"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr ""
@@ -274,11 +278,16 @@ msgstr ""
 msgid "Breadcrumb"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "break"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "Built-in"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Bullet list"
 msgstr ""
 
@@ -317,6 +326,10 @@ msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "chart"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
@@ -371,6 +384,7 @@ msgid "Closed"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Code"
 msgstr ""
 
@@ -380,6 +394,10 @@ msgstr ""
 
 #: src/features/editor/EditorCodeBubble.tsx
 msgid "Code language"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "codeblock"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -621,6 +639,10 @@ msgstr ""
 msgid "Dev-login failed"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "Diagram"
+msgstr ""
+
 #: src/core/editor/MermaidCodeBlock.tsx
 msgid "Diagram could not be rendered"
 msgstr ""
@@ -646,6 +668,10 @@ msgstr ""
 #: src/features/project/ContextPaneController.tsx
 #~ msgid "Discard this document?"
 #~ msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "divider"
+msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -811,6 +837,10 @@ msgstr ""
 msgid "Failed to load image"
 msgstr "图片加载失败"
 
+#: src/features/editor/EditorView.tsx
+msgid "fence"
+msgstr ""
+
 #: src/core/editor/FigureNodeView.tsx
 msgid "fig:result"
 msgstr ""
@@ -839,6 +869,10 @@ msgstr ""
 msgid "First name"
 msgstr "名"
 
+#: src/features/editor/EditorView.tsx
+msgid "flowchart"
+msgstr ""
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
 msgstr ""
@@ -855,11 +889,24 @@ msgstr ""
 #~ msgid "From the saved apply receipt"
 #~ msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "grid"
+msgstr ""
+
 #: src/features/project/lifecycle.ts
 msgid "Grilling"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "h1"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "h2"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Heading"
 msgstr ""
 
@@ -879,6 +926,10 @@ msgstr ""
 msgid "How much of your plan you have used this month."
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "hr"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Id"
 msgstr "ID"
@@ -890,6 +941,10 @@ msgstr ""
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
 msgid "Idle"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Image"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -910,6 +965,10 @@ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Insert block"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
@@ -986,6 +1045,10 @@ msgstr ""
 msgid "Link URL"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "list"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Listed"
 msgstr ""
@@ -996,6 +1059,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "litrpg"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -1080,6 +1147,10 @@ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Merged"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "mermaid"
 msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
@@ -1272,6 +1343,10 @@ msgstr ""
 msgid "now"
 msgstr "刚刚"
 
+#: src/features/editor/EditorView.tsx
+msgid "Numbered list"
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Object"
 msgstr ""
@@ -1349,6 +1424,10 @@ msgstr ""
 msgid "Or pick a file from the tree."
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "ordered"
+msgstr ""
+
 #: src/features/billing/UsageCard.tsx
 msgid "Over your monthly usage"
 msgstr ""
@@ -1363,6 +1442,14 @@ msgstr ""
 
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Paste or type a link"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "photo"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "picture"
 msgstr ""
 
 #: src/features/editor/EditorCodeBubble.tsx
@@ -1408,6 +1495,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Protocol Designer"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Quote"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1610,6 +1701,10 @@ msgstr ""
 msgid "Rows"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "rule"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 #: src/features/project/home/HomeScreen.tsx
 msgid "Running"
@@ -1651,6 +1746,10 @@ msgstr ""
 #~ msgid "Saving…"
 #~ msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "Scene break"
+msgstr ""
+
 #: src/features/project/context/context-schemes.ts
 msgid "Scratch"
 msgstr ""
@@ -1670,6 +1769,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "section"
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
@@ -1746,6 +1849,14 @@ msgstr ""
 msgid "Start writing…"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "stat block"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "status"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 msgid "Status"
 msgstr ""
@@ -1797,6 +1908,10 @@ msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Switch work"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Table"
 msgstr ""
 
 #: src/features/project/chat/SubagentTaskCard.tsx
@@ -1922,6 +2037,10 @@ msgstr ""
 msgid "This week"
 msgstr "本周"
 
+#: src/features/editor/EditorView.tsx
+msgid "title"
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "Today"
 msgstr "今天"
@@ -1950,6 +2069,10 @@ msgstr "已取消"
 #: src/features/chat/AssistantTurn.tsx
 msgid "Turn cancelled."
 msgstr "已取消。"
+
+#: src/features/editor/EditorView.tsx
+msgid "Type / to insert…"
+msgstr ""
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
@@ -1994,6 +2117,10 @@ msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "upload"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
