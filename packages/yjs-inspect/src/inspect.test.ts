@@ -53,6 +53,60 @@ function summarizeValidUpdate(update: Uint8Array): UpdateSummary {
   return summary;
 }
 
+function assertSafeEgress(
+  value: unknown,
+  canary: string,
+  path = "$",
+  seen = new Set<object>(),
+): void {
+  if (typeof value === "string") {
+    if (value.includes(canary)) throw new Error(`${path} contains the content canary`);
+    return;
+  }
+  if (value === null || typeof value === "number" || typeof value === "boolean") return;
+  if (typeof value !== "object") {
+    throw new Error(`${path} contains non-JSON-natural ${typeof value}`);
+  }
+  if (seen.has(value)) throw new Error(`${path} contains a non-JSON-natural cycle`);
+  seen.add(value);
+
+  if (ArrayBuffer.isView(value)) {
+    throw new Error(`${path} contains a non-JSON-natural ArrayBuffer view`);
+  }
+  if (value instanceof ArrayBuffer) {
+    throw new Error(`${path} contains a non-JSON-natural ArrayBuffer`);
+  }
+  if (value instanceof Map) {
+    for (const [key, entry] of value) {
+      assertSafeEgress(key, canary, `${path}.<map-key>`, seen);
+      assertSafeEgress(entry, canary, `${path}.<map-value>`, seen);
+    }
+    throw new Error(`${path} contains a non-JSON-natural Map`);
+  }
+  if (value instanceof Set) {
+    for (const entry of value) assertSafeEgress(entry, canary, `${path}.<set-value>`, seen);
+    throw new Error(`${path} contains a non-JSON-natural Set`);
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      assertSafeEgress(entry, canary, `${path}[${index}]`, seen);
+    });
+    seen.delete(value);
+    return;
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    throw new Error(`${path} contains a non-JSON-natural object prototype`);
+  }
+
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key === "symbol") {
+      throw new Error(`${path} contains a non-JSON-natural symbol key`);
+    }
+    assertSafeEgress(Reflect.get(value, key), canary, `${path}.${key}`, seen);
+  }
+  seen.delete(value);
+}
+
 describe("classifyFrame", () => {
   it("pins the captured Hocuspocus envelope in both directions", () => {
     expect(capturedFrames).toHaveLength(8);
@@ -371,7 +425,6 @@ it("never returns content from any exported function across every frame path", a
   const awareness = new Awareness(document);
   awareness.setLocalState({ secret: canary });
   const awarenessPayload = encodeAwarenessUpdate(awareness, [document.clientID]);
-  const noOp = new Uint8Array([0, 0]);
 
   const auth = createEncoder();
   writeVarUint(auth, 0);
@@ -390,15 +443,15 @@ it("never returns content from any exported function across every frame path", a
     {
       name: "sync.step1",
       bytes: syncFrame("safe-room", 0, Y.encodeStateVector(document)),
-      update: noOp,
+      update,
     },
     { name: "sync.step2", bytes: syncFrame("safe-room", 1, update), update },
     { name: "sync.update", bytes: syncFrame("safe-room", 2, update), update },
-    { name: "awareness", bytes: frame("safe-room", 1, awarenessPayload), update: noOp },
-    { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)), update: noOp },
-    { name: "auth", bytes: authFrame(toUint8Array(auth)), update: noOp },
-    { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)), update: noOp },
-    { name: "truncated", bytes: canaryBearingTruncatedFrame, update: noOp },
+    { name: "awareness", bytes: frame("safe-room", 1, awarenessPayload), update },
+    { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)), update },
+    { name: "auth", bytes: authFrame(toUint8Array(auth)), update },
+    { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)), update },
+    { name: "truncated", bytes: canaryBearingTruncatedFrame, update },
   ];
 
   const inspector = await import("./index.js");
@@ -416,9 +469,31 @@ it("never returns content from any exported function across every frame path", a
     for (const path of framePaths) {
       const result = invocations[name]?.(path);
       expect(result, `${name} was not exercised for ${path.name}`).toBeDefined();
-      expect(JSON.stringify(result), `${name} leaked content for ${path.name}`).not.toContain(
-        canary,
-      );
+      assertSafeEgress(result, canary, `${name}/${path.name}`);
     }
+  }
+
+  const invalidUpdate = summarizeUpdate(new Uint8Array([0xff]));
+  expect(invalidUpdate).toMatchObject({ invalid: true });
+  assertSafeEgress(invalidUpdate, canary, "summarizeUpdate/invalid");
+});
+
+it("rejects content and non-JSON-natural shapes from the egress gate", () => {
+  const canary = "XCONTENT_LEAK_CANARYX";
+  expect(() => assertSafeEgress({ nested: [{ value: canary }] }, canary)).toThrow(
+    "contains the content canary",
+  );
+
+  const violations: unknown[] = [
+    new Uint8Array(),
+    new ArrayBuffer(0),
+    new DataView(new ArrayBuffer(0)),
+    new Map(),
+    new Set(),
+    () => undefined,
+    Symbol("egress"),
+  ];
+  for (const violation of violations) {
+    expect(() => assertSafeEgress({ violation }, canary)).toThrow("non-JSON-natural");
   }
 });
