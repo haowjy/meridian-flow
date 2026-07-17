@@ -47,8 +47,9 @@ export function EditorContextPopover({
         collisionPadding={8}
         updatePositionStrategy="always"
         onCloseAutoFocus={(event) => {
+          // A virtual anchor has no trigger to restore. Feature actions choose
+          // when to return focus so outside clicks can keep their native target.
           event.preventDefault();
-          if (!editor.isDestroyed) editor.commands.focus();
         }}
         {...contentProps}
       >

@@ -196,6 +196,7 @@ function LinkControl({ editor }: { editor: Editor | null }) {
     if (event.key !== "Escape") return;
     event.preventDefault();
     setOpen(false);
+    editor.commands.focus();
   };
 
   return (
