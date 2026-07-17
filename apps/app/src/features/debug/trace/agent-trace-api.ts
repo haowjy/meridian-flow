@@ -1,17 +1,12 @@
 /** Programmatic, metadata-only access to the dev trace store for browser agents. */
-import type { EventRecord } from "@meridian/contracts/observability";
+import type { EventRecord, TraceStreamRef } from "@meridian/contracts/observability";
 
-import {
-  clearTraceEvents,
-  getTraceSnapshot,
-  subscribeToTraceStore,
-  type TraceSnapshot,
-} from "./trace-store";
+import { clearTraceEvents, getTraceSnapshot, subscribeToTraceEvents } from "./trace-store";
 
 export interface AgentTraceFilter {
-  transport?: string;
+  transport?: TraceStreamRef["transport"];
   messageClass?: string;
-  direction?: string;
+  direction?: NonNullable<TraceStreamRef["direction"]>;
   /** Matches the beginning of a stream id. */
   stream?: string;
 }
@@ -40,7 +35,7 @@ function matchesFilter(record: EventRecord, filter: AgentTraceFilter): boolean {
   return true;
 }
 
-function capturedCount(snapshot: TraceSnapshot): number {
+function capturedCount(snapshot: ReturnType<typeof getTraceSnapshot>): number {
   return snapshot.entries.length + snapshot.ringDropped;
 }
 
@@ -62,33 +57,16 @@ function waitForEvent(
   timeoutMs = 10_000,
 ): Promise<EventRecord | null> {
   return new Promise((resolve) => {
-    const initialSnapshot = getTraceSnapshot();
-    let observedCaptured = capturedCount(initialSnapshot);
-    let observedTail = initialSnapshot.entries.at(-1);
     let settled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
-    const unsubscribe = subscribeToTraceStore(() => {
-      const snapshot = getTraceSnapshot();
-      const currentCaptured = capturedCount(snapshot);
-      const priorTailWasDiscarded =
-        observedTail !== undefined && !snapshot.entries.includes(observedTail);
-      const appendedCount =
-        currentCaptured < observedCaptured || priorTailWasDiscarded
-          ? snapshot.entries.length
-          : currentCaptured - observedCaptured;
-      observedCaptured = currentCaptured;
-      observedTail = snapshot.entries.at(-1);
-      if (appendedCount === 0) return;
-
-      const newEntries = snapshot.entries.slice(-Math.min(appendedCount, snapshot.entries.length));
-      const match = newEntries.find((record) => matchesFilter(record, filter));
-      if (!match || settled) return;
+    const unsubscribe = subscribeToTraceEvents((record) => {
+      if (settled || !matchesFilter(record, filter)) return;
 
       settled = true;
       if (timeout !== undefined) clearTimeout(timeout);
       unsubscribe();
-      resolve(match);
+      resolve(record);
     });
 
     timeout = setTimeout(() => {

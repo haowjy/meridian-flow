@@ -23,6 +23,7 @@ export interface TraceFilters {
 
 let ring: Array<EventRecord | undefined> | undefined;
 const listeners = new Set<() => void>();
+const eventListeners = new Set<(record: EventRecord) => void>();
 let start = 0;
 let size = 0;
 let ringDropped = 0;
@@ -52,6 +53,16 @@ function publish(): void {
   for (const listener of listeners) listener();
 }
 
+function publishEvent(record: EventRecord): void {
+  for (const listener of eventListeners) {
+    try {
+      listener(record);
+    } catch {
+      // Debug consumers cannot be allowed to disrupt the observed transport.
+    }
+  }
+}
+
 /** Coalesce typing bursts so subscribers render once per JavaScript turn. */
 function schedulePublish(): void {
   if (publishPending) return;
@@ -74,6 +85,7 @@ export function appendTraceEvent(record: EventRecord): void {
     ringDropped += 1;
   }
   snapshotDirty = true;
+  publishEvent(record);
   schedulePublish();
 }
 
@@ -87,6 +99,12 @@ export function noteTapError(): void {
 export function subscribeToTraceStore(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Observe each append synchronously, including records evicted before the UI publish. */
+export function subscribeToTraceEvents(listener: (record: EventRecord) => void): () => void {
+  eventListeners.add(listener);
+  return () => eventListeners.delete(listener);
 }
 
 export function getTraceSnapshot(): TraceSnapshot {

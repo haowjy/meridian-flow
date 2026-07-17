@@ -100,7 +100,7 @@ describe("agent trace API", () => {
 
   it("returns null when no matching event arrives before the timeout", async () => {
     vi.useFakeTimers();
-    const waiting = meridianTraceAPI.waitForEvent({ transport: "thread-ws" }, 25);
+    const waiting = meridianTraceAPI.waitForEvent({ transport: "thread" }, 25);
 
     await vi.advanceTimersByTimeAsync(25);
 
@@ -140,6 +140,52 @@ describe("agent trace API", () => {
     await Promise.resolve();
 
     await expect(waiting).resolves.toMatchObject({ stream: { observerSeq: 2 } });
+  });
+
+  it("observes a matching event cleared before the coalesced store notification", async () => {
+    vi.useFakeTimers();
+    const waiting = meridianTraceAPI.waitForEvent({ messageClass: "sync.status" }, 25);
+
+    appendTraceEvent(
+      event(1, {
+        stream: {
+          streamId: "yjs:live:document-a",
+          transport: "yjs",
+          observedAt: "client",
+          direction: "server_to_client",
+          messageClass: "sync.status",
+          observerSeq: 1,
+        },
+      }),
+    );
+    meridianTraceAPI.clear();
+    await vi.advanceTimersByTimeAsync(25);
+
+    await expect(waiting).resolves.toMatchObject({ stream: { observerSeq: 1 } });
+  });
+
+  it("observes a matching event evicted before the coalesced store notification", async () => {
+    vi.useFakeTimers();
+    const waiting = meridianTraceAPI.waitForEvent({ messageClass: "sync.status" }, 25);
+
+    appendTraceEvent(
+      event(1, {
+        stream: {
+          streamId: "yjs:live:document-a",
+          transport: "yjs",
+          observedAt: "client",
+          direction: "server_to_client",
+          messageClass: "sync.status",
+          observerSeq: 1,
+        },
+      }),
+    );
+    for (let index = 0; index < TRACE_STORE_CAPACITY; index += 1) {
+      appendTraceEvent(event(index + 2));
+    }
+    await vi.advanceTimersByTimeAsync(25);
+
+    await expect(waiting).resolves.toMatchObject({ stream: { observerSeq: 1 } });
   });
 
   it("clears events and counters", () => {

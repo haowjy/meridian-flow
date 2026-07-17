@@ -7,6 +7,7 @@ import {
   filterTraceEntries,
   getTraceSnapshot,
   noteTapError,
+  subscribeToTraceEvents,
   subscribeToTraceStore,
   TRACE_STORE_CAPACITY,
   type TraceFilters,
@@ -72,6 +73,20 @@ describe("trace store", () => {
     appendTraceEvent(event(4));
     await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies per-event subscribers without letting them disrupt capture", () => {
+    const listener = vi.fn();
+    const unsubscribeThrowing = subscribeToTraceEvents(() => {
+      throw new Error("consumer failed");
+    });
+    const unsubscribe = subscribeToTraceEvents(listener);
+
+    expect(() => appendTraceEvent(event(1))).not.toThrow();
+    expect(listener).toHaveBeenCalledWith(event(1));
+
+    unsubscribe();
+    unsubscribeThrowing();
   });
 
   it("clear resets entries and both counters", async () => {
