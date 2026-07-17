@@ -36,15 +36,6 @@ vi.mock("./untitled-reconciler-browser", () => ({
 vi.mock("./use-identity-commit", () => ({
   useIdentityCommit: () => vi.fn(),
 }));
-vi.mock("./IdentityMovePopup", () => ({
-  IdentityMovePopup: ({ trigger, open }: { trigger: ReactNode; open: boolean }) => (
-    <>
-      {trigger}
-      {open ? <div role="dialog">Move document</div> : null}
-    </>
-  ),
-}));
-
 const { DocumentIdentityBar } = await import("./DocumentIdentityBar");
 const graduatedTab: ContextTab = {
   kind: "tracked",
@@ -58,7 +49,7 @@ const graduatedTab: ContextTab = {
 };
 
 describe("DocumentIdentityBar affordances", () => {
-  it("opens the move and rename surface from a graduated Rename chip", async () => {
+  it("opens the inline identity field from a graduated Rename chip", async () => {
     await withReactRoot(
       <DocumentIdentityBar
         projectId="project-1"
@@ -69,10 +60,15 @@ describe("DocumentIdentityBar affordances", () => {
         onOpenExisting={() => {}}
       />,
       async () => {
-        expect(document.querySelector('[role="dialog"]')).toBeNull();
+        expect(document.querySelector('input[aria-label="Document name and location"]')).toBeNull();
         const chip = findButton("Rename");
         await act(async () => chip.click());
-        expect(document.querySelector('[role="dialog"]')?.textContent).toBe("Move document");
+        const input = document.querySelector<HTMLInputElement>(
+          'input[aria-label="Document name and location"]',
+        );
+        expect(input?.value).toBe("chapter-1.md");
+        expect(input?.selectionStart).toBe(0);
+        expect(input?.selectionEnd).toBe("chapter-1.md".length);
       },
     );
   });

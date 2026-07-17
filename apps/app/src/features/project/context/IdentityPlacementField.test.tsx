@@ -33,7 +33,26 @@ vi.mock("./file-suggestions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./file-suggestions")>();
   return {
     ...actual,
-    useFileSuggestions: () => ({ suggestions: [], isFetching: false, isError: false }),
+    useFileSuggestions: () => ({
+      suggestions: [
+        {
+          scheme: "manuscript",
+          path: "/Act 1/Scenes",
+          name: "Scenes",
+          kind: "dir",
+          parents: ["Act 1"],
+        },
+        {
+          scheme: "manuscript",
+          path: "/Act 1/Scenes/Deep",
+          name: "Deep",
+          kind: "dir",
+          parents: ["Act 1", "Scenes"],
+        },
+      ],
+      isFetching: false,
+      isError: false,
+    }),
   };
 });
 vi.mock("./untitled-reconciler-browser", () => ({ clearQueuedIdentityFailure: vi.fn() }));
@@ -44,6 +63,16 @@ const provisionalTab: ContextTab = {
   kind: "new",
   documentId: "doc-new",
   name: "Untitled",
+};
+const graduatedTab: ContextTab = {
+  kind: "tracked",
+  documentId: "doc-tracked",
+  scheme: "manuscript",
+  path: "/Act 1/chapter.md",
+  name: "chapter.md",
+  editable: true,
+  filetype: "markdown",
+  schemaType: "document",
 };
 
 describe("IdentityPlacementField placement ghost", () => {
@@ -110,3 +139,113 @@ describe("IdentityPlacementField placement ghost", () => {
     );
   });
 });
+
+describe("IdentityPlacementField graduated editing", () => {
+  it("opens selected with the current name and offers siblings plus roots", async () => {
+    await withReactRoot(
+      <IdentityPlacementField
+        projectId="project-1"
+        activeThreadId={null}
+        defaultWorkId={null}
+        tab={graduatedTab}
+        location={tabLocation(graduatedTab)}
+        failure={null}
+        commit={vi.fn()}
+        onExit={() => {}}
+        onOpenExisting={() => {}}
+      />,
+      async () => {
+        const input = document.querySelector<HTMLInputElement>(
+          'input[aria-label="Document name and location"]',
+        );
+        expect(input?.value).toBe("chapter.md");
+        expect(input?.selectionStart).toBe(0);
+        expect(input?.selectionEnd).toBe("chapter.md".length);
+        expect(document.body.textContent).toContain("Scenes");
+        expect(document.body.textContent).toContain("Manuscript");
+        expect(document.body.textContent).toContain("Knowledge Base");
+      },
+    );
+  });
+
+  it("browses into nested sibling folders before committing", async () => {
+    const commit = vi.fn().mockResolvedValue({ status: "committed" });
+    await withReactRoot(
+      <IdentityPlacementField
+        projectId="project-1"
+        activeThreadId={null}
+        defaultWorkId={null}
+        tab={graduatedTab}
+        location={tabLocation(graduatedTab)}
+        failure={null}
+        commit={commit}
+        onExit={() => {}}
+        onOpenExisting={() => {}}
+      />,
+      async () => {
+        await act(async () => findButton("Scenes").click());
+        expect(document.body.textContent).toContain("Deep");
+        await act(async () => findButton("Deep").click());
+        expect(document.body.textContent).toContain("Manuscript/Act 1/Scenes/Deep/");
+        await act(async () => {
+          document
+            .querySelector<HTMLInputElement>('input[aria-label="Document name and location"]')
+            ?.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
+        expect(commit).toHaveBeenCalledWith({
+          destination: {
+            scheme: "manuscript",
+            folderPath: "/Act 1/Scenes/Deep",
+          },
+          name: "chapter.md",
+        });
+      },
+    );
+  });
+
+  it("keeps a server conflict open with keyboard-reachable Open existing recovery", async () => {
+    const openExisting = vi.fn();
+    const commit = vi.fn().mockResolvedValue({
+      status: "conflict",
+      locator: { scheme: "manuscript", path: "/Act 1/existing.md" },
+    });
+    await withReactRoot(
+      <IdentityPlacementField
+        projectId="project-1"
+        activeThreadId={null}
+        defaultWorkId={null}
+        tab={graduatedTab}
+        location={tabLocation(graduatedTab)}
+        failure={null}
+        commit={commit}
+        onExit={() => {}}
+        onOpenExisting={openExisting}
+      />,
+      async () => {
+        const input = document.querySelector<HTMLInputElement>(
+          'input[aria-label="Document name and location"]',
+        );
+        await act(async () => {
+          input?.dispatchEvent(
+            new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+          );
+        });
+        const recovery = findButton("Open existing");
+        input?.dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+        );
+        expect(document.activeElement).toBe(recovery);
+        await act(async () => recovery.click());
+        expect(openExisting).toHaveBeenCalledWith("manuscript", "/Act 1/existing.md");
+      },
+    );
+  });
+});
+
+function findButton(label: string): HTMLButtonElement {
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!button) throw new Error(`missing ${label} button`);
+  return button;
+}

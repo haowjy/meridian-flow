@@ -4,10 +4,9 @@
  * document; provisional docs are a *state* of the bar (italic leaf + jade
  * chip), not separate chrome.
  *
- * One affordance: **the chip**. Jade "Choose a home" on provisional docs
- * (opens the empty placement field); quiet outline "Rename" once homed (opens
- * the Move-to popup — rename + move live inside). Device-only words outrank
- * it in the same slot. The breadcrumb itself is inert, reserved for a future
+ * One affordance: **the chip**. Jade "Choose a home" on provisional docs and
+ * quiet outline "Rename" once homed both open the same inline identity field.
+ * Device-only words outrank it in the same slot. The breadcrumb itself is inert, reserved for a future
  * per-segment navigator (see IdentityPath).
  *
  * Keystroke-path contract: at rest the bar renders from tab metadata only.
@@ -23,7 +22,6 @@ import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
-import { IdentityMovePopup } from "./IdentityMovePopup";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
@@ -43,8 +41,6 @@ export type DocumentIdentityBarProps = {
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 
-type Surface = "placement" | "popup" | null;
-
 export function DocumentIdentityBar({
   projectId,
   activeThreadId,
@@ -54,15 +50,8 @@ export function DocumentIdentityBar({
   onOpenExisting,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
-  const [surface, setSurface] = useState<Surface>(null);
+  const [fieldOpen, setFieldOpen] = useState(false);
   const commit = useIdentityCommit({ projectId, tab, defaultWorkId, onCommitted });
-
-  // Placement happens once: only an untitled doc that was never explicitly
-  // renamed or homed (provisional, still at its default Scratch root) opens
-  // the empty placement field. Any explicit save graduates it to the path
-  // grammar permanently.
-  const placementGrammar =
-    location.provisional && location.scheme === "scratch" && location.parentPath === "/";
 
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
@@ -70,14 +59,12 @@ export function DocumentIdentityBar({
   const identityFailure = useQueuedIdentityFailure(tab.documentId);
   useEffect(() => {
     if (!identityFailure) return;
-    setSurface("placement");
+    setFieldOpen(true);
   }, [identityFailure]);
 
-  // The chip is the pointing surface: placement while never-placed, the
-  // Move-to popup once placed. Viewer docs get the popup too when moving them
-  // is legal; uploads aren't writing material, so those show no chip.
-  const chipOpensPopup = !placementGrammar && location.scheme !== "uploads";
-  const showChip = location.editable || chipOpensPopup;
+  // The chip always opens the one inline field when moving the document is
+  // legal. Uploads aren't writing material, so those show no chip.
+  const showChip = location.editable || location.scheme !== "uploads";
 
   return (
     <div className="@container shrink-0">
@@ -93,7 +80,7 @@ export function DocumentIdentityBar({
           IDENTITY_BAR_BAND_CLASS,
         )}
       >
-        {surface === "placement" ? (
+        {fieldOpen ? (
           <IdentityPlacementField
             projectId={projectId}
             activeThreadId={activeThreadId}
@@ -106,7 +93,7 @@ export function DocumentIdentityBar({
               // Leaving the field acknowledges any failure receipt — it must
               // not reopen the editor it just closed.
               clearQueuedIdentityFailure(tab.documentId);
-              setSurface(null);
+              setFieldOpen(false);
               if (reason === "escape") focusEditorProse(tab.documentId);
             }}
             onOpenExisting={onOpenExisting}
@@ -118,23 +105,9 @@ export function DocumentIdentityBar({
         <IdentityChipSlot
           documentId={tab.documentId}
           location={location}
-          show={showChip && surface !== "placement"}
-          popup={
-            chipOpensPopup
-              ? {
-                  open: surface === "popup",
-                  onOpenChange: (open) => setSurface(open ? "popup" : null),
-                  projectId,
-                  activeThreadId,
-                  defaultWorkId,
-                  commit,
-                  onOpenExisting,
-                }
-              : null
-          }
+          show={showChip && !fieldOpen}
           onChooseHome={() => {
-            if (chipOpensPopup) setSurface("popup");
-            else if (location.editable) setSurface("placement");
+            setFieldOpen(true);
           }}
         />
       </div>
@@ -207,41 +180,17 @@ function IdentityChipSlot({
   documentId,
   location,
   show,
-  popup,
   onChooseHome,
 }: {
   documentId: string;
   location: TabLocation;
   show: boolean;
-  popup: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    projectId: string;
-    activeThreadId: string | null;
-    defaultWorkId: string | null;
-    commit: Parameters<typeof IdentityMovePopup>[0]["commit"];
-    onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
-  } | null;
   onChooseHome: () => void;
 }) {
   const deviceOnly = useDeviceOnly(documentId);
   if (deviceOnly) return <DeviceOnlyChip />;
   if (!show) return null;
-  const chip = <HomeChip provisional={location.provisional} onClick={onChooseHome} />;
-  if (!popup) return chip;
-  return (
-    <IdentityMovePopup
-      projectId={popup.projectId}
-      activeThreadId={popup.activeThreadId}
-      defaultWorkId={popup.defaultWorkId}
-      location={location}
-      open={popup.open}
-      onOpenChange={popup.onOpenChange}
-      commit={popup.commit}
-      onOpenExisting={popup.onOpenExisting}
-      trigger={chip}
-    />
-  );
+  return <HomeChip provisional={location.provisional} onClick={onChooseHome} />;
 }
 
 const chipClass = cn(
@@ -251,8 +200,8 @@ const chipClass = cn(
 
 /** The permanent re-home affordance (D4), whose label graduates with the
  *  document: jade "Choose a home" while provisional (an invitation), quiet
- *  outline "Rename" once homed (a tool — rename is the common case; move is
- *  discoverable inside the popup it opens). Same geometry in both states. */
+ *  outline "Rename" once homed (a tool — rename is the common case; folder
+ *  browsing in the same field keeps move discoverable). Same geometry in both states. */
 function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
   return (
     <Tooltip>

@@ -1,9 +1,10 @@
 /**
- * One-time identity placement for provisional Scratch documents.
+ * Inline document identity editor for placement, rename, and move.
  *
- * The field opens empty with a content-derived ghost name. Picking folders
- * builds a read-only destination prefix; Enter or Save commits the explicit
- * writer choice. Esc, blur, or Cancel revert it.
+ * Provisional documents open empty with a content-derived ghost name; settled
+ * documents open with their current name selected. Picking folders builds a
+ * read-only destination prefix. Enter or Save commits through one identity
+ * seam; Esc, blur, or Cancel revert it.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -59,6 +60,8 @@ export function IdentityPlacementField({
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 }) {
+  const provisionalPlacement =
+    location.provisional && location.scheme === "scratch" && location.parentPath === "/";
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<FileSuggestionListHandle>(null);
   const suggestionTimer = useRef<number | null>(null);
@@ -66,8 +69,10 @@ export function IdentityPlacementField({
     scheme: ProjectContextTreeScheme;
     folderPath: string;
   } | null>(null);
-  const [value, setValue] = useState(() => failure?.name ?? "");
-  const [ghost, setGhost] = useState(() => suggestionForTab(tab));
+  const [value, setValue] = useState(
+    () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
+  );
+  const [ghost, setGhost] = useState(() => (provisionalPlacement ? suggestionForTab(tab) : ""));
   const [noteValue, setNoteValue] = useState(value);
   const [conflict, setConflict] = useState<ConflictLocator | null>(() =>
     failure?.kind === "conflict"
@@ -92,6 +97,7 @@ export function IdentityPlacementField({
   }, []);
 
   useEffect(() => {
+    if (!provisionalPlacement) return;
     const session = getDocumentSessionRegistry().getDetached(tab.documentId);
     const fragment = session.document.getXmlFragment(session.fragmentName);
     const refresh = () => {
@@ -106,7 +112,7 @@ export function IdentityPlacementField({
       fragment.unobserveDeep(refresh);
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
-  }, [tab]);
+  }, [provisionalPlacement, tab]);
 
   const suggestionOptions = useMemo(
     () => ({
@@ -131,7 +137,14 @@ export function IdentityPlacementField({
   );
   const rows = destination
     ? folderChildren(allEntries, destination.scheme, destination.folderPath)
-    : rootRows;
+    : provisionalPlacement
+      ? rootRows
+      : [
+          ...folderChildren(allEntries, location.scheme, location.parentPath).filter(
+            (entry) => entry.path !== location.path,
+          ),
+          ...rootRows,
+        ];
   const prefix = destination
     ? `${[schemeLabel(destination.scheme), ...treeSegments(destination.folderPath)].join("/")}/`
     : "";
