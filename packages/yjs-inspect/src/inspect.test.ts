@@ -159,6 +159,11 @@ describe("classifyFrame", () => {
       messageClass: "close",
       payloadBytes: closeReason.byteLength,
     });
+    expect(classifyFrame(controlFrame("doc", 7))).toEqual({
+      documentName: "doc",
+      messageClass: "close",
+      payloadBytes: 0,
+    });
     expect(classifyFrame(controlFrame("doc", 8, new Uint8Array([0])))).toEqual({
       documentName: "doc",
       messageClass: "sync.status",
@@ -175,6 +180,20 @@ describe("classifyFrame", () => {
       messageClass: "pong",
       payloadBytes: 0,
     });
+  });
+
+  it.each([
+    ["truncated close reason", controlFrame("doc", 7, new Uint8Array([2, 0x61]))],
+    ["close trailing bytes", controlFrame("doc", 7, new Uint8Array([1, 0x61, 0]))],
+    ["missing sync status", controlFrame("doc", 8)],
+    ["truncated sync status", controlFrame("doc", 8, new Uint8Array([0x80]))],
+    ["sync status trailing bytes", controlFrame("doc", 8, new Uint8Array([1, 0]))],
+    ["ping trailing bytes", new Uint8Array([9, 0])],
+    ["pong trailing bytes", new Uint8Array([10, 0])],
+  ])("classifies malformed %s controls as unknown without throwing", (_name, bytes) => {
+    const summary = classifyFrame(bytes);
+    expect(summary.messageClass).toBe("unknown");
+    expect(inspectFrame(bytes).frame).toEqual(summary);
   });
 
   it("rejects auth frames with a truncated or invalid varuint body", () => {

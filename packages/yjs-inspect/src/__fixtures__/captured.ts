@@ -5,8 +5,9 @@
  * - Captured 2026-07-16 with Chrome DevTools Protocol Network.webSocketFrame events.
  * - Producers: @hocuspocus/provider@4.3.0, yjs@13.6.31, lib0@0.2.117.
  * - Source: $MERIDIAN_ACTIVE_WORK_DIR/reports/cdp-ws-frames.jsonl.
- * - The SyncStatus frame was captured 2026-07-17 by the S3 tap-seam probe with
- *   @hocuspocus/provider@4.3.0. Source:
+ * - The SyncStatus bytes were first captured 2026-07-16 in the CDP source above
+ *   and re-observed byte-identically with @hocuspocus/provider@4.3.0 by the
+ *   2026-07-17 S3 tap-seam probe. Drift confirmation source:
  *   $MERIDIAN_ACTIVE_WORK_DIR/reports/s3-phase5-unknown-outer-type.json.
  *
  * That capture contains sync-update and awareness frames, but no sync-step-1,
