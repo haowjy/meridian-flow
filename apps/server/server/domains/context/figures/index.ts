@@ -8,9 +8,9 @@ export {
   type InMemoryFigureDocumentRepositoryOptions,
 } from "../adapters/figures/in-memory-figure-document-repository.js";
 export type {
-  AttachDocumentFileInput,
   DocumentFileRecord,
   FigureDocumentRepository,
+  ProjectDocumentFileRecord,
 } from "../ports/figure-document-repository.js";
 export {
   createFigureAssetService,

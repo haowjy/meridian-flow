@@ -52,8 +52,10 @@ export function uploadResponseToFigureNodeAttrs(
   return figureNodeAttrsFromReference(response.figure);
 }
 
-export function isObjectStoreFigureSrc(src: string): boolean {
-  return src.startsWith("object://");
+export function assetDocumentIdFromFigureSrc(src: string): string | null {
+  return src.startsWith("asset:") && src.length > "asset:".length
+    ? src.slice("asset:".length)
+    : null;
 }
 
 export function signedUrlRefreshDelayMs(signedUrlExpiresAt: string, nowMs = Date.now()): number {
