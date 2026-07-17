@@ -25,9 +25,21 @@ export function notifyYjsRoomAttached(roomName: string, yjsClient: number): void
   }
 }
 
-function notifyFrame(direction: YjsWireDirection, bytes: Uint8Array, socketEpoch: number): void {
+function notifyFrame(
+  direction: YjsWireDirection,
+  data: ArrayBuffer | ArrayBufferView<ArrayBuffer>,
+  socketEpoch: number,
+): void {
+  const tap = currentTap;
+  if (!tap) return;
+  const bytes =
+    data instanceof Uint8Array
+      ? data
+      : data instanceof ArrayBuffer
+        ? new Uint8Array(data)
+        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   try {
-    currentTap?.onFrame(direction, bytes, socketEpoch);
+    tap.onFrame(direction, bytes, socketEpoch);
   } catch {
     // Observability must never affect document transport behavior.
   }
@@ -57,20 +69,16 @@ export class TappedWebSocket extends WebSocket {
     });
     this.addEventListener("message", (event) => {
       if (event.data instanceof ArrayBuffer) {
-        notifyFrame("server_to_client", new Uint8Array(event.data), this.#socketEpoch);
+        notifyFrame("server_to_client", event.data, this.#socketEpoch);
       }
     });
   }
 
   override send(data: string | ArrayBuffer | Blob | ArrayBufferView<ArrayBuffer>): void {
     if (data instanceof ArrayBuffer) {
-      notifyFrame("client_to_server", new Uint8Array(data), this.#socketEpoch);
+      notifyFrame("client_to_server", data, this.#socketEpoch);
     } else if (ArrayBuffer.isView(data)) {
-      notifyFrame(
-        "client_to_server",
-        new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-        this.#socketEpoch,
-      );
+      notifyFrame("client_to_server", data, this.#socketEpoch);
     }
     // Hocuspocus sends binary frames. Unexpected strings or Blobs still pass
     // through unchanged rather than broadening the observer's byte contract.
