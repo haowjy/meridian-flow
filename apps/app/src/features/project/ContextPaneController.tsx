@@ -395,9 +395,9 @@ export function ContextViewerSurfaceController({
         onSelectContextPath("", activeContextScheme ?? undefined);
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
-      onUntitledRenamed={(documentId, name, path) => {
+      onRenamed={(documentId, scheme, name, path) => {
         updateTrackedTab(projectId, documentId, { name, path, provisionalName: false });
-        onSelectContextPath(path, "scratch");
+        onSelectContextPath(path, scheme);
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
     />

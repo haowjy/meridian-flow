@@ -75,7 +75,7 @@ msgstr "<0>{0}</0> will be permanently deleted."
 msgid "✓ All changes reviewed"
 msgstr "✓ All changes reviewed"
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "A file named {name} already exists in this location."
 msgstr "A file named {name} already exists in this location."
 
@@ -291,6 +291,10 @@ msgstr "Chat context"
 msgid "Checkout unavailable."
 msgstr "Checkout unavailable."
 
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Choose a home"
+msgstr "Choose a home"
+
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
@@ -463,7 +467,7 @@ msgstr "Couldn't open this document."
 msgid "Couldn't open this location"
 msgstr "Couldn't open this location"
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
 
@@ -566,7 +570,7 @@ msgstr "Dock view"
 msgid "Document"
 msgstr "Document"
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Document name and location"
 msgstr "Document name and location"
 
@@ -964,6 +968,10 @@ msgstr "Modified text"
 msgid "Monthly usage"
 msgstr "Monthly usage"
 
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Move this document somewhere else in your project."
+msgstr "Move this document somewhere else in your project."
+
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr "Must be a number"
@@ -980,7 +988,7 @@ msgstr "Must be at least {value}"
 msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Name is required"
 msgstr "Name is required"
 
@@ -1104,7 +1112,7 @@ msgstr "No results yet."
 msgid "Not Found"
 msgstr "Not Found"
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
@@ -1129,7 +1137,7 @@ msgstr "Older"
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
 msgstr "One surface for every chat in this project. Jump into any chat, or start a new one."
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Only on this device"
 msgstr "Only on this device"
 
@@ -1149,7 +1157,7 @@ msgstr "Open a project to see its results."
 msgid "Open context files"
 msgstr "Open context files"
 
-#: src/features/project/context/UntitledRenameLine.tsx
+#: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Open existing"
 msgstr "Open existing"
 
@@ -1333,16 +1341,16 @@ msgid "Rename chat"
 msgstr "Rename chat"
 
 #: src/features/project/context/UntitledRenameLine.tsx
-msgid "Rename document"
-msgstr "Rename document"
+#~ msgid "Rename document"
+#~ msgstr "Rename document"
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
 msgstr "Renamed to {trimmed}"
 
 #: src/features/project/context/UntitledRenameLine.tsx
-msgid "Renaming…"
-msgstr "Renaming…"
+#~ msgid "Renaming…"
+#~ msgstr "Renaming…"
 
 #: src/features/chat/ChatView.tsx
 msgid "Reply to the agent, or steer the analysis…"
@@ -1673,6 +1681,10 @@ msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-ch
 #: src/features/chat/DraftDock.tsx
 msgid "This draft changed. Review the latest version before applying."
 msgstr "This draft changed. Review the latest version before applying."
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."

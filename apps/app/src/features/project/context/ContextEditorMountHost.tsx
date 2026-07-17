@@ -40,8 +40,7 @@ import { DraftEntryBanner } from "@/features/editor/DraftEntryBanner";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { EditorBannerSlot } from "@/features/editor/EditorBannerSlot";
 import { cn } from "@/lib/utils";
-import { UntitledRenameLine } from "./UntitledRenameLine";
-import { untitledDocumentIsEmpty, useUntitledPending } from "./untitled-reconciler";
+import { untitledDocumentIsEmpty } from "./untitled-reconciler";
 
 const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
@@ -64,11 +63,6 @@ export type ContextEditorMountHostProps = {
   /** Whether the context destination is currently visible. */
   active: boolean;
   onUntitledBecameNonEmpty?: (documentId: string) => void;
-  onUntitledRenamed?: (documentId: string, name: string, path: string) => void;
-  onOpenExisting?: (
-    scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
-    path: string,
-  ) => void;
 };
 
 /**
@@ -99,8 +93,6 @@ export function ContextEditorMountHost({
   activeTabId,
   active,
   onUntitledBecameNonEmpty,
-  onUntitledRenamed,
-  onOpenExisting,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId, groupForDocument, nowMs } =
     useDraftReview();
@@ -260,22 +252,6 @@ export function ContextEditorMountHost({
                               <DraftEntryBanner group={pendingGroup} draft={pendingDraft} />
                             ) : null,
                         },
-                        {
-                          name: "rename-line",
-                          content:
-                            isActive &&
-                            (tab.kind === "new" ||
-                              (tab.kind === "tracked" && tab.provisionalName)) &&
-                            onUntitledRenamed &&
-                            onOpenExisting ? (
-                              <UntitledRenameChrome
-                                projectId={projectId}
-                                tab={tab}
-                                onRenamed={onUntitledRenamed}
-                                onOpenExisting={onOpenExisting}
-                              />
-                            ) : null,
-                        },
                       ]}
                     />
                   }
@@ -290,31 +266,6 @@ export function ContextEditorMountHost({
         })}
       </Suspense>
     </div>
-  );
-}
-
-function UntitledRenameChrome({
-  projectId,
-  tab,
-  onRenamed,
-  onOpenExisting,
-}: {
-  projectId: string;
-  tab: EditableContextTab;
-  onRenamed: (documentId: string, name: string, path: string) => void;
-  onOpenExisting: NonNullable<ContextEditorMountHostProps["onOpenExisting"]>;
-}) {
-  const pending = useUntitledPending(tab.documentId);
-  return (
-    <UntitledRenameLine
-      key={tab.kind}
-      projectId={projectId}
-      activeThreadId={null}
-      tab={tab}
-      deviceOnly={pending}
-      onRenamed={(name, path) => onRenamed(tab.documentId, name, path)}
-      onOpenExisting={onOpenExisting}
-    />
   );
 }
 
