@@ -51,7 +51,7 @@ export type EditorViewProps = {
   schemaType?: YjsTrackedSchemaType;
   className?: string;
   user?: EditorUser;
-  /** Optional in-flow status or review surface rendered above the writing area. */
+  /** In-flow status or review surface docked between toolbar and prose. */
   belowToolbar?: ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
@@ -397,7 +397,6 @@ function SessionEditorView({
         className,
       )}
     >
-      {belowToolbar}
       {!inReview ? <SafetyNoticeReceipt session={session} /> : null}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
@@ -431,6 +430,7 @@ function SessionEditorView({
             />
           ) : undefined
         }
+        belowToolbar={belowToolbar}
         scrollRef={scrollContainerRef}
         dragActive={dragActive}
         onScroll={(event) => {
@@ -463,10 +463,10 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
         className,
       )}
     >
-      {belowToolbar}
       <TrackedEditorCanvas
         editor={null}
         toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
+        belowToolbar={belowToolbar}
       />
     </section>
   );
@@ -475,6 +475,7 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
 function TrackedEditorCanvas({
   editor,
   toolbar,
+  belowToolbar,
   scrollRef,
   dragActive = false,
   onScroll,
@@ -483,6 +484,7 @@ function TrackedEditorCanvas({
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
+  belowToolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
@@ -492,6 +494,7 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
+      belowToolbar={belowToolbar}
       editor={editor}
       scrollRef={scrollRef}
       scrollClassName={cn(

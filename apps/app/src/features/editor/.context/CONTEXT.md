@@ -29,7 +29,9 @@ the control-style ring always fires on autofocused surfaces.
 
 ## Banner slot
 
-`EditorBannerSlot` is the single-occupancy strip below the toolbar. Its
+`EditorBannerSlot` is the single-occupancy strip docked between the toolbar
+row and the scroll area (`EditorSurfaceFrame`'s `belowToolbar` slot — order:
+identity bar → toolbar → banner → prose). Its
 `tenants` array is ordered from highest to lowest priority; the first tenant
 with a renderable element owns the slot and every lower tenant yields. Tenant
 content is restricted to `ReactElement | null`; the runtime selection is also

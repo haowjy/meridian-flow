@@ -292,8 +292,8 @@ msgid "Checkout unavailable."
 msgstr "Checkout unavailable."
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Choose a home"
-msgstr "Choose a home"
+#~ msgid "Choose a home"
+#~ msgstr "Choose a home"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
@@ -969,8 +969,8 @@ msgid "Monthly usage"
 msgstr "Monthly usage"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Move this document somewhere else in your project."
-msgstr "Move this document somewhere else in your project."
+#~ msgid "Move this document somewhere else in your project."
+#~ msgstr "Move this document somewhere else in your project."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -991,6 +991,10 @@ msgstr "Must be at most {value}"
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Name is required"
 msgstr "Name is required"
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Name this draft"
+msgstr "Name this draft"
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '/'"
@@ -1683,8 +1687,12 @@ msgid "This draft changed. Review the latest version before applying."
 msgstr "This draft changed. Review the latest version before applying."
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
-msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+msgid "This draft is untitled and lives in your Scratch. Click to give it a name."
+msgstr "This draft is untitled and lives in your Scratch. Click to give it a name."
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+#~ msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+#~ msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."

@@ -292,8 +292,8 @@ msgid "Checkout unavailable."
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Choose a home"
-msgstr ""
+#~ msgid "Choose a home"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
@@ -969,8 +969,8 @@ msgid "Monthly usage"
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Move this document somewhere else in your project."
-msgstr ""
+#~ msgid "Move this document somewhere else in your project."
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -990,6 +990,10 @@ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Name is required"
+msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Name this draft"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -1683,8 +1687,12 @@ msgid "This draft changed. Review the latest version before applying."
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+msgid "This draft is untitled and lives in your Scratch. Click to give it a name."
 msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+#~ msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+#~ msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."

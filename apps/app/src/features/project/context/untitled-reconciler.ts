@@ -46,7 +46,17 @@ type Candidate = {
   onRenamed: (name: string, path: string) => void;
 };
 
-type RenameIntent = { name: string; resolve: () => void; reject: (error: unknown) => void };
+type RenameIntent = { name: string };
+
+/**
+ * Receipt for a queued rename that could not be applied when its document
+ * materialized. Held in reconciler state (not a promise) so the identity bar
+ * can surface recovery even though the writer's edit session ended when the
+ * name was queued. `conflict` carries the colliding path for Open-existing.
+ */
+export type QueuedRenameFailure =
+  | { kind: "conflict"; name: string; scheme: "scratch"; path: string }
+  | { kind: "error"; name: string };
 
 type ReconcilerSession = Pick<
   DocumentSession,
@@ -110,6 +120,9 @@ export class UntitledReconciler {
   private readonly entries = new Map<string, PendingUntitled>();
   private readonly candidates = new Map<string, Candidate>();
   private readonly renameIntents = new Map<string, RenameIntent>();
+  private readonly renameFailures = new Map<string, QueuedRenameFailure>();
+  /** documentId → epoch ms when the entry first became pending (in-memory). */
+  private readonly pendingSinceMs = new Map<string, number>();
   private running = false;
   private scheduled = false;
   private started = false;
@@ -124,7 +137,11 @@ export class UntitledReconciler {
     if (this.started) return;
     this.started = true;
     for (const entry of readRegistry(this.deps.storage)) {
-      if (!this.entries.has(entry.documentId)) this.entries.set(entry.documentId, entry);
+      if (this.entries.has(entry.documentId)) continue;
+      this.entries.set(entry.documentId, entry);
+      // An entry that survived a reload has been device-only across sessions —
+      // no fresh grace window; the warning may claim its slot immediately.
+      this.pendingSinceMs.set(entry.documentId, 0);
     }
     this.removeOnlineListener = this.deps.scheduler.onOnline(this.schedule);
     this.emit();
@@ -151,6 +168,9 @@ export class UntitledReconciler {
   append(entry: PendingUntitled): void {
     if (this.entries.has(entry.documentId)) return;
     this.entries.set(entry.documentId, entry);
+    if (!this.pendingSinceMs.has(entry.documentId)) {
+      this.pendingSinceMs.set(entry.documentId, Date.now());
+    }
     this.persist();
     this.emit();
     this.schedule();
@@ -160,17 +180,35 @@ export class UntitledReconciler {
     return this.entries.has(documentId);
   }
 
+  /**
+   * Epoch ms since the document became device-only, or null when synced.
+   * Owned here (not in a view) so remounting chrome cannot restart the
+   * device-only grace window.
+   */
+  pendingSince(documentId: string): number | null {
+    return this.entries.has(documentId) ? (this.pendingSinceMs.get(documentId) ?? null) : null;
+  }
+
+  queuedRenameFailure(documentId: string): QueuedRenameFailure | null {
+    return this.renameFailures.get(documentId) ?? null;
+  }
+
+  clearQueuedRenameFailure(documentId: string): void {
+    if (this.renameFailures.delete(documentId)) this.emit();
+  }
+
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
 
-  queueRename(documentId: string, name: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.renameIntents.get(documentId)?.reject(new Error("Rename replaced by a newer name"));
-      this.renameIntents.set(documentId, { name, resolve, reject });
-      this.schedule();
-    });
+  /** Queue a rename to apply when the document materializes. Replaces any
+   *  earlier intent; the outcome lands as a receipt (`queuedRenameFailure`),
+   *  never a promise — the writer's edit session is over when this is called. */
+  queueRename(documentId: string, name: string): void {
+    this.renameIntents.set(documentId, { name });
+    this.clearQueuedRenameFailure(documentId);
+    this.schedule();
   }
 
   readonly schedule = (): void => {
@@ -224,7 +262,8 @@ export class UntitledReconciler {
       await session.whenLocalPersistenceSynced();
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
       if (empty && !(await this.deps.api.serverDocumentExists(resolvedEntry))) {
-        this.rejectRename(entry.documentId, "An empty untitled document is not materialized");
+        // The document ceased to exist before materializing; a queued rename
+        // stays intent-only and re-applies if the writer types again.
         await this.drain(entry.documentId, true);
         return;
       }
@@ -253,18 +292,25 @@ export class UntitledReconciler {
   ): Promise<void> {
     const rename = this.renameIntents.get(entry.documentId);
     if (!rename) return;
+    this.renameIntents.delete(entry.documentId);
     try {
       const renameResult = await this.deps.api.rename(entry, result.path, rename.name);
       if (renameResult.status === "conflict") {
-        throw new Error("A document with that name already exists");
+        this.renameFailures.set(entry.documentId, {
+          kind: "conflict",
+          name: rename.name,
+          scheme: entry.home.scheme,
+          path: replaceBasename(result.path, rename.name),
+        });
+        this.emit();
+        return;
       }
-      const path = replaceBasename(result.path, rename.name);
-      this.candidates.get(entry.documentId)?.onRenamed(rename.name, path);
-      this.renameIntents.delete(entry.documentId);
-      rename.resolve();
-    } catch (error) {
-      this.renameIntents.delete(entry.documentId);
-      rename.reject(error);
+      this.candidates
+        .get(entry.documentId)
+        ?.onRenamed(rename.name, replaceBasename(result.path, rename.name));
+    } catch {
+      this.renameFailures.set(entry.documentId, { kind: "error", name: rename.name });
+      this.emit();
     }
   }
 
@@ -280,12 +326,18 @@ export class UntitledReconciler {
 
     const candidate = this.candidates.get(entry.documentId);
     const rename = this.renameIntents.get(entry.documentId);
+    const failure = this.renameFailures.get(entry.documentId);
+    const since = this.pendingSinceMs.get(entry.documentId);
     this.entries.delete(entry.documentId);
     this.entries.set(replacementId, { ...entry, documentId: replacementId });
     this.candidates.delete(entry.documentId);
     if (candidate) this.candidates.set(replacementId, candidate);
     this.renameIntents.delete(entry.documentId);
     if (rename) this.renameIntents.set(replacementId, rename);
+    this.renameFailures.delete(entry.documentId);
+    if (failure) this.renameFailures.set(replacementId, failure);
+    this.pendingSinceMs.delete(entry.documentId);
+    if (since !== undefined) this.pendingSinceMs.set(replacementId, since);
     this.persist();
     this.emit();
     candidate?.onReminted(replacementId);
@@ -293,17 +345,12 @@ export class UntitledReconciler {
 
   private async drain(documentId: string, clearPersistence: boolean): Promise<void> {
     this.entries.delete(documentId);
+    this.pendingSinceMs.delete(documentId);
     this.persist();
     this.emit();
     if (clearPersistence) {
       await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
     }
-  }
-
-  private rejectRename(documentId: string, message: string): void {
-    const rename = this.renameIntents.get(documentId);
-    this.renameIntents.delete(documentId);
-    rename?.reject(new Error(message));
   }
 
   private persist(): void {
@@ -464,6 +511,29 @@ export function useUntitledPending(documentId: string): boolean {
   );
 }
 
-export function queueUntitledRename(documentId: string, name: string): Promise<void> {
-  return getUntitledReconciler().queueRename(documentId, name);
+/** Epoch ms since the document became device-only, or null when synced. */
+export function useUntitledPendingSince(documentId: string): number | null {
+  const reconciler = getUntitledReconciler();
+  return useSyncExternalStore(
+    reconciler.subscribe,
+    () => reconciler.pendingSince(documentId),
+    () => null,
+  );
+}
+
+export function useQueuedRenameFailure(documentId: string): QueuedRenameFailure | null {
+  const reconciler = getUntitledReconciler();
+  return useSyncExternalStore(
+    reconciler.subscribe,
+    () => reconciler.queuedRenameFailure(documentId),
+    () => null,
+  );
+}
+
+export function clearQueuedRenameFailure(documentId: string): void {
+  getUntitledReconciler().clearQueuedRenameFailure(documentId);
+}
+
+export function queueUntitledRename(documentId: string, name: string): void {
+  getUntitledReconciler().queueRename(documentId, name);
 }

@@ -88,13 +88,24 @@ Contracts:
   and collisions render live (300ms debounce) as a `ValidationNote` under the
   bar; collision adds Open-existing recovery. Full-path editing and the
   move-first popup land with the cross-folder move seam (phase 2); until then
-  the chip opens the same naming field and viewer tabs keep tree-action rename.
-- **Chip slot**: single occupancy, right edge. “Choose a home” is permanent on
-  every document — jade while provisional, quiet outline once named. The
-  device-only warning (warning tokens, `TriangleAlert`) outranks it after
-  unsynced words persist for a 2s sustained grace, and yields when the
-  reconciler confirms server sync. Server 409 remains a race guard with
-  Open-existing recovery.
+  viewer tabs keep tree-action rename.
+- **Queued-rename receipts**: a `new`-tab rename applies when the document
+  materializes; its outcome is reconciler *state*
+  (`queuedRenameFailure(documentId)`), never a promise — the edit session is
+  over when the intent is queued. A failed receipt reopens the field with the
+  writer's name restored and the conflict/error recovery note; the receipt
+  clears when the writer edits or leaves the field. Failures must never drop
+  silently.
+- **Chip slot**: single occupancy, right edge. Provisional documents carry the
+  jade "Name this draft" invitation — clicking opens the naming field, and the
+  copy says so. Named documents carry no chip in phase 1: the standing
+  "Choose a home" move chip arrives with the move-first popup, and no enabled
+  control may promise a move it cannot perform. The device-only warning
+  (warning tokens, `TriangleAlert`) outranks the invitation after unsynced
+  words persist for a 2s sustained grace — the clock is the reconciler's
+  per-document `pendingSince`, so remounting chrome (tab switches) cannot
+  restart the window. Server 409 remains a race guard with Open-existing
+  recovery.
 
 The tab strip still follows the settled tonal treatment: it paints nothing,
 active tabs continue the canvas upward, inactive neighbors alone receive short

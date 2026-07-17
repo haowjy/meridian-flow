@@ -273,6 +273,51 @@ describe("untitled reconciliation durability", () => {
   });
 });
 
+describe("queued rename receipts", () => {
+  it("records a conflict receipt when the queued rename 409s after materialization", async () => {
+    const h = harness();
+    (h.deps.api.rename as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "conflict" as const,
+    });
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+    reconciler.queueRename("doc-1", "taken.md");
+
+    await h.runQueue();
+
+    // Materialization itself succeeded: the entry drains and the document is
+    // no longer device-only — only the rename receipt reports the failure.
+    expect(storedEntries(h.values)).toEqual([]);
+    expect(reconciler.has("doc-1")).toBe(false);
+    expect(reconciler.queuedRenameFailure("doc-1")).toEqual({
+      kind: "conflict",
+      name: "taken.md",
+      scheme: "scratch",
+      path: "/taken.md",
+    });
+
+    reconciler.clearQueuedRenameFailure("doc-1");
+    expect(reconciler.queuedRenameFailure("doc-1")).toBeNull();
+  });
+
+  it("replaces a stale failure when a newer name is queued", async () => {
+    const h = harness();
+    (h.deps.api.rename as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "conflict" as const,
+    });
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+    reconciler.queueRename("doc-1", "taken.md");
+    await h.runQueue();
+    expect(reconciler.queuedRenameFailure("doc-1")?.kind).toBe("conflict");
+
+    reconciler.queueRename("doc-1", "free-name.md");
+    expect(reconciler.queuedRenameFailure("doc-1")).toBeNull();
+  });
+});
+
 describe("untitled document decisions", () => {
   it("resolves the default work scratch root through one seam", () => {
     expect(untitledHomeUri("project-1", "work-1")).toEqual(HOME);

@@ -18,7 +18,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { FolderDown, TriangleAlert } from "lucide-react";
+import { PenLine, TriangleAlert } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
 import { renameContextEntry } from "@/client/api/projects-api";
@@ -38,7 +38,13 @@ import {
   useFileSuggestions,
 } from "./file-suggestions";
 import { suggestedNameFromFragment } from "./untitled-document-name";
-import { queueUntitledRename, useUntitledPending } from "./untitled-reconciler";
+import {
+  clearQueuedRenameFailure,
+  type QueuedRenameFailure,
+  queueUntitledRename,
+  useQueuedRenameFailure,
+  useUntitledPendingSince,
+} from "./untitled-reconciler";
 import { ValidationNote } from "./validation-note";
 
 export type DocumentIdentityBarProps = {
@@ -110,6 +116,16 @@ export function DocumentIdentityBar({
   // content suggestion stops prefilling for this document (shipped rule).
   const writerOwnsName = useRef(false);
 
+  // A queued rename that failed after this document materialized reopens the
+  // field with the writer's name restored and the failure's recovery note —
+  // the receipt must never be dropped silently.
+  const renameFailure = useQueuedRenameFailure(tab.documentId);
+  useEffect(() => {
+    if (!renameFailure) return;
+    writerOwnsName.current = true;
+    setEditing(true);
+  }, [renameFailure]);
+
   const openEditor = () => {
     if (location.editable) setEditing(true);
   };
@@ -129,7 +145,11 @@ export function DocumentIdentityBar({
             tab={tab}
             location={location}
             writerOwnsName={writerOwnsName}
+            failure={renameFailure}
             onExit={(reason) => {
+              // Leaving the field acknowledges any failure receipt — it must
+              // not reopen the editor it just closed.
+              clearQueuedRenameFailure(tab.documentId);
               setEditing(false);
               if (reason === "escape") focusEditorProse(tab.documentId);
             }}
@@ -147,7 +167,7 @@ export function DocumentIdentityBar({
         <IdentityChipSlot
           documentId={tab.documentId}
           provisional={location.provisional}
-          onChooseHome={openEditor}
+          onNameDraft={openEditor}
         />
       </div>
     </div>
@@ -230,17 +250,20 @@ function IdentityPathEditor({
   tab,
   location,
   writerOwnsName,
+  failure,
   onExit,
   onRenamed,
   onOpenExisting,
 }: DocumentIdentityBarProps & {
   location: TabLocation;
   writerOwnsName: RefObject<boolean>;
+  failure: QueuedRenameFailure | null;
   onExit: (reason: ExitReason) => void;
 }) {
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(() => {
+    if (failure) return failure.name;
     if (!location.provisional || writerOwnsName.current) return location.leaf;
     const suggestion = suggestionForTab(tab);
     return suggestion || location.leaf;
@@ -249,9 +272,12 @@ function IdentityPathEditor({
   // the reason doesn't flash mid-word. Enter flushes it immediately.
   const [noteDraft, setNoteDraft] = useState(draft);
   const [browsePath, setBrowsePath] = useState(location.parentPath);
-  const [serverConflict, setServerConflict] = useState(false);
-  const [requestError, setRequestError] = useState<string | null>(null);
+  const [serverConflict, setServerConflict] = useState(failure?.kind === "conflict");
+  const [requestError, setRequestError] = useState<string | null>(() =>
+    failure?.kind === "error" ? t`Couldn't rename this document. Try another name.` : null,
+  );
   const [saving, setSaving] = useState(false);
+  const suggestionTimer = useRef<number | null>(null);
 
   // Select the basename (minus extension) for overtype on entry, and again
   // whenever the suggestion refreshes underneath an untouched field.
@@ -275,12 +301,15 @@ function IdentityPathEditor({
     if (!location.provisional) return;
     const session = getDocumentSessionRegistry().getDetached(tab.documentId);
     const fragment = session.document.getXmlFragment(session.fragmentName);
-    let timer: number | null = null;
     const refresh = () => {
       if (writerOwnsName.current) return;
-      if (timer !== null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        timer = null;
+      if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
+      suggestionTimer.current = window.setTimeout(() => {
+        suggestionTimer.current = null;
+        // Re-check the latch at fire time — the writer may have taken the
+        // name during the debounce window, and a stale timer must not
+        // overwrite what they typed.
+        if (writerOwnsName.current) return;
         const suggestion = suggestionForTab(tab);
         if (suggestion) setDraft(suggestion);
       }, 300);
@@ -288,7 +317,10 @@ function IdentityPathEditor({
     fragment.observeDeep(refresh);
     return () => {
       fragment.unobserveDeep(refresh);
-      if (timer !== null) window.clearTimeout(timer);
+      if (suggestionTimer.current !== null) {
+        window.clearTimeout(suggestionTimer.current);
+        suggestionTimer.current = null;
+      }
     };
   }, [location.provisional, tab, writerOwnsName]);
 
@@ -317,7 +349,11 @@ function IdentityPathEditor({
   const noteValidation = noteName === name ? validation : null;
   const collisionPath =
     noteCollision?.path ??
-    (serverConflict && location.path ? replaceBasename(location.path, name) : null);
+    (failure?.kind === "conflict"
+      ? failure.path
+      : serverConflict && location.path
+        ? replaceBasename(location.path, name)
+        : null);
   const note =
     noteCollision || serverConflict ? (
       <ValidationNote
@@ -332,7 +368,12 @@ function IdentityPathEditor({
               type="button"
               tabIndex={-1}
               className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
-              onClick={() => onOpenExisting(location.scheme, collisionPath)}
+              onClick={() =>
+                onOpenExisting(
+                  failure?.kind === "conflict" ? failure.scheme : location.scheme,
+                  collisionPath,
+                )
+              }
             >
               <Trans>Open existing</Trans>
             </button>
@@ -359,9 +400,9 @@ function IdentityPathEditor({
       return;
     }
     if (tab.kind === "new") {
-      // The reconciler applies the rename when the document materializes; a
-      // replaced intent (writer typed a newer name) is the only rejection.
-      queueUntitledRename(tab.documentId, name).catch(() => {});
+      // The reconciler applies the rename when the document materializes; the
+      // outcome lands as a receipt that reopens this field on failure.
+      queueUntitledRename(tab.documentId, name);
       onExit("commit");
       return;
     }
@@ -411,6 +452,11 @@ function IdentityPathEditor({
             aria-invalid={Boolean(validation || collision || serverConflict || requestError)}
             onChange={(event) => {
               writerOwnsName.current = true;
+              if (suggestionTimer.current !== null) {
+                window.clearTimeout(suggestionTimer.current);
+                suggestionTimer.current = null;
+              }
+              clearQueuedRenameFailure(tab.documentId);
               setDraft(event.target.value);
               setServerConflict(false);
               setRequestError(null);
@@ -463,66 +509,53 @@ function IdentityPathEditor({
 
 /**
  * Single-occupancy chip slot at the bar's right edge. Severity ladder:
- * device-only words (warning tokens, 2s sustained grace) outrank the
- * standing "Choose a home" chip.
+ * device-only words (warning tokens, 2s sustained grace) outrank the naming
+ * invitation. Named documents carry no chip in phase 1 — the standing
+ * "Choose a home" move chip arrives with the move-first popup, and no
+ * enabled control may promise a move it cannot perform.
  */
 function IdentityChipSlot({
   documentId,
   provisional,
-  onChooseHome,
+  onNameDraft,
 }: {
   documentId: string;
   provisional: boolean;
-  onChooseHome: () => void;
+  onNameDraft: () => void;
 }) {
   const deviceOnly = useDeviceOnly(documentId);
-  return deviceOnly ? (
-    <DeviceOnlyChip />
-  ) : (
-    <HomeChip provisional={provisional} onClick={onChooseHome} />
-  );
+  if (deviceOnly) return <DeviceOnlyChip />;
+  if (!provisional) return null;
+  return <NameDraftChip onClick={onNameDraft} />;
 }
 
 const chipClass =
   "inline-flex h-4.5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-meta motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150";
 
 /**
- * "Choose a home" — the permanent re-home affordance. Jade while the name is
- * provisional (an invitation), quiet outline once named (a tool). Phase 1
- * routes the click to the naming field; the move-first popup lands with the
- * cross-folder move seam.
+ * The naming invitation on provisional documents: jade ("do/go"), and
+ * honest — clicking opens the naming field, and the copy says exactly that.
  */
-function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
+function NameDraftChip({ onClick }: { onClick: () => void }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          key={provisional ? "invite" : "quiet"}
           type="button"
           onClick={onClick}
           className={cn(
-            "focus-ring cursor-pointer",
+            "focus-ring cursor-pointer border-primary/30 bg-primary/10 text-jade-text",
             chipClass,
-            provisional
-              ? "border-primary/30 bg-primary/10 text-jade-text"
-              : "border-border bg-transparent text-ink-subtle",
           )}
         >
-          <FolderDown aria-hidden className="size-2.5" />
+          <PenLine aria-hidden className="size-2.5" />
           <span className="@max-md:hidden">
-            <Trans>Choose a home</Trans>
+            <Trans>Name this draft</Trans>
           </span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={4} className="max-w-60">
-        {provisional ? (
-          <Trans>
-            This draft is untitled and lives in your Scratch. Click to name it or move it where it
-            belongs.
-          </Trans>
-        ) : (
-          <Trans>Move this document somewhere else in your project.</Trans>
-        )}
+        <Trans>This draft is untitled and lives in your Scratch. Click to give it a name.</Trans>
       </TooltipContent>
     </Tooltip>
   );
@@ -548,23 +581,28 @@ function DeviceOnlyChip() {
   );
 }
 
+const DEVICE_ONLY_GRACE_MS = 2_000;
+
 /**
  * Device-only with a 2s sustained grace: the warning only claims the slot
  * once unsynced words have persisted for 2 seconds, so a normal quick
- * materialization never flashes warning chrome.
+ * materialization never flashes warning chrome. The clock is the
+ * reconciler's per-document `pendingSince` — remounting the bar (tab
+ * switches) cannot restart the window.
  */
 function useDeviceOnly(documentId: string): boolean {
-  const pending = useUntitledPending(documentId);
-  const [sustained, setSustained] = useState(false);
+  const since = useUntitledPendingSince(documentId);
+  const [, bump] = useState(0);
+  const sustained = since !== null && Date.now() - since >= DEVICE_ONLY_GRACE_MS;
   useEffect(() => {
-    if (!pending) {
-      setSustained(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setSustained(true), 2_000);
+    if (since === null || sustained) return;
+    const timer = window.setTimeout(
+      () => bump((tick) => tick + 1),
+      DEVICE_ONLY_GRACE_MS - (Date.now() - since),
+    );
     return () => window.clearTimeout(timer);
-  }, [pending]);
-  return pending && sustained;
+  }, [since, sustained]);
+  return sustained;
 }
 
 function suggestionForTab(tab: ContextTab): string {
