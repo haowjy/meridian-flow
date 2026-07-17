@@ -42,6 +42,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { fileKindIcon } from "./context-file-icon";
 
 export type OptimisticContextTab = { id: string; name: string };
 
@@ -134,6 +135,9 @@ export function ContextTabBar({
 }
 
 function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
+  // Same name + kind glyph the settled tab will render — the chip should be
+  // indistinguishable from the tab it becomes, minus interactivity.
+  const Icon = fileKindIcon(tab.name);
   return (
     <div
       role="tab"
@@ -142,6 +146,7 @@ function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
       aria-label={t`Loading ${tab.name}`}
       className="tab-chip-active relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3 text-foreground"
     >
+      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
         {tab.name}
       </span>

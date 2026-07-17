@@ -198,7 +198,9 @@ export function ContextViewerSurfaceController({
   })
     ? {
         id: `optimistic:${openTabKey}`,
-        name: contextRouteName(activeContextPath ?? ""),
+        // Full basename, not the extension-stripped resume label — the chip
+        // must match the settled tab's name (`file.name`) it will become.
+        name: contextRouteFileName(activeContextPath ?? ""),
       }
     : null;
 
@@ -420,7 +422,7 @@ export function ContextViewerSurfaceController({
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
       active={active}
-      resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
+      resumeDocumentName={lastContextRoute ? contextRouteFileName(lastContextRoute.path) : null}
       onResumeDocument={handleResumeDocument}
       onNewDocument={() => {
         const documentId = crypto.randomUUID();
@@ -450,10 +452,9 @@ function workingSetRoute(
   return { scheme, path };
 }
 
-function contextRouteName(path: string): string {
-  const basename = path.slice(path.lastIndexOf("/") + 1);
-  const extensionIndex = basename.lastIndexOf(".");
-  return extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename;
+/** Full basename ("chapter-1.md") — matches the name a settled tab displays. */
+function contextRouteFileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }
 
 function findEditorScroller(documentId: string): HTMLElement | null {
