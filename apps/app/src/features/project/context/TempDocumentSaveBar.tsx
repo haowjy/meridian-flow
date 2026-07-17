@@ -223,7 +223,7 @@ export function TempDocumentSaveBar({
           <PopoverAnchor asChild>
             <Input
               ref={inputRef}
-              className="h-8 min-w-0 max-w-96 flex-1 bg-card"
+              className="h-8 min-w-0 max-w-96 flex-1"
               aria-label={t`Save location`}
               autoComplete="off"
               spellCheck={false}

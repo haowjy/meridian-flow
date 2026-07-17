@@ -202,18 +202,18 @@ function TabChip({
   );
 }
 
+// One muted ink for every file-kind icon: the shape carries the kind, and the
+// semantic colors stay reserved (jade = action, streaming = live, destructive
+// = error) — a file's type is metadata, never a state.
+function fileKindGlyph(tab: ContextTab) {
+  if (tab.kind === "temp") return FilePlus;
+  if (tab.kind === "tracked") return tab.schemaType === "code" ? Code2 : FileText;
+  if (tab.fileType === "image") return ImageIcon;
+  if (tab.fileType === "pdf") return FileType2;
+  return File;
+}
+
 function FileKindIcon({ tab }: { tab: ContextTab }) {
-  if (tab.kind === "temp")
-    return <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
-  if (tab.kind === "tracked") {
-    const Icon = tab.schemaType === "code" ? Code2 : FileText;
-    return <Icon aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
-  }
-  if (tab.fileType === "image") {
-    return <ImageIcon aria-hidden className="size-3.5 shrink-0 text-status-streaming" />;
-  }
-  if (tab.fileType === "pdf") {
-    return <FileType2 aria-hidden className="size-3.5 shrink-0 text-destructive" />;
-  }
-  return <File aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
+  const Icon = fileKindGlyph(tab);
+  return <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
 }

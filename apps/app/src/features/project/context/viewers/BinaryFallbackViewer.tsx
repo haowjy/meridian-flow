@@ -9,7 +9,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 
-import { DownloadCard } from "./DownloadCard";
+import { DownloadFallback } from "./DownloadFallback";
 
 export type BinaryFallbackViewerProps = {
   url: string;
@@ -19,7 +19,7 @@ export type BinaryFallbackViewerProps = {
 
 export function BinaryFallbackViewer({ url, mimeType, name }: BinaryFallbackViewerProps) {
   return (
-    <DownloadCard
+    <DownloadFallback
       url={url}
       name={name}
       body={
