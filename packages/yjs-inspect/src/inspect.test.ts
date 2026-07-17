@@ -21,6 +21,8 @@ function fromBase64(base64: string): Uint8Array {
   return Uint8Array.from(Buffer.from(base64, "base64"));
 }
 
+const textEncoder = new TextEncoder();
+
 function frame(documentName: string, outerType: number, payload?: Uint8Array): Uint8Array {
   const encoder = createEncoder();
   writeVarString(encoder, documentName);
@@ -44,10 +46,13 @@ function authFrame(body: Uint8Array): Uint8Array {
 
 describe("classifyFrame", () => {
   it("pins the captured Hocuspocus envelope in both directions", () => {
+    expect(capturedFrames).toHaveLength(8);
     for (const fixture of capturedFrames) {
-      expect(classifyFrame(fromBase64(fixture.base64)), fixture.direction).toEqual(
-        fixture.expected,
-      );
+      const bytes =
+        fixture.encoding === "base64"
+          ? fromBase64(fixture.payloadData)
+          : textEncoder.encode(fixture.payloadData);
+      expect(classifyFrame(bytes), fixture.direction).toEqual(fixture.expected);
     }
   });
 
@@ -290,7 +295,7 @@ describe("awareness summaries", () => {
   });
 });
 
-it("never returns document, attribute, or awareness state content from any exported function", async () => {
+it("never returns content from any exported function across every frame path", async () => {
   const canary = "XCONTENT_LEAK_CANARYX";
   const document = new Y.Doc();
   const paragraph = new Y.XmlElement("paragraph");
@@ -304,12 +309,32 @@ it("never returns document, attribute, or awareness state content from any expor
   const awareness = new Awareness(document);
   awareness.setLocalState({ secret: canary });
   const awarenessPayload = encodeAwarenessUpdate(awareness, [document.clientID]);
+  const noOp = new Uint8Array([0, 0]);
+
+  const auth = createEncoder();
+  writeVarUint(auth, 0);
+  writeVarString(auth, canary);
+
+  const framePaths: Array<{ name: string; bytes: Uint8Array; update: Uint8Array }> = [
+    {
+      name: "sync.step1",
+      bytes: syncFrame("safe-room", 0, Y.encodeStateVector(document)),
+      update: noOp,
+    },
+    { name: "sync.step2", bytes: syncFrame("safe-room", 1, update), update },
+    { name: "sync.update", bytes: syncFrame("safe-room", 2, update), update },
+    { name: "awareness", bytes: frame("safe-room", 1, awarenessPayload), update: noOp },
+    { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)), update: noOp },
+    { name: "auth", bytes: authFrame(toUint8Array(auth)), update: noOp },
+    { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)), update: noOp },
+    { name: "truncated", bytes: new Uint8Array([0xff]), update: noOp },
+  ];
 
   const inspector = await import("./index.js");
-  const invocations: Record<string, () => unknown> = {
-    classifyFrame: () => classifyFrame(syncFrame("safe-room", 2, update)),
-    inspectFrame: () => inspectFrame(frame("safe-room", 1, awarenessPayload)),
-    summarizeUpdate: () => summarizeUpdate(update),
+  const invocations: Record<string, (path: (typeof framePaths)[number]) => unknown> = {
+    classifyFrame: (path) => classifyFrame(path.bytes),
+    inspectFrame: (path) => inspectFrame(path.bytes),
+    summarizeUpdate: (path) => summarizeUpdate(path.update),
   };
   const exportedFunctions = Object.entries(inspector).filter(
     ([, value]) => typeof value === "function",
@@ -317,8 +342,12 @@ it("never returns document, attribute, or awareness state content from any expor
 
   expect(exportedFunctions.map(([name]) => name).sort()).toEqual(Object.keys(invocations).sort());
   for (const [name] of exportedFunctions) {
-    const result = invocations[name]?.();
-    expect(result, `${name} was not exercised`).toBeDefined();
-    expect(JSON.stringify(result), name).not.toContain(canary);
+    for (const path of framePaths) {
+      const result = invocations[name]?.(path);
+      expect(result, `${name} was not exercised for ${path.name}`).toBeDefined();
+      expect(JSON.stringify(result), `${name} leaked content for ${path.name}`).not.toContain(
+        canary,
+      );
+    }
   }
 });
