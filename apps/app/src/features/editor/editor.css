@@ -148,6 +148,11 @@
   border-radius: var(--radius-md);
 }
 
+.meridian-editor .ProseMirror table[data-align] {
+  width: fit-content;
+  max-width: 100%;
+}
+
 .meridian-editor .ProseMirror th,
 .meridian-editor .ProseMirror td {
   border: 1px solid var(--color-border-subtle);

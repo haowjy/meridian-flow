@@ -16,7 +16,12 @@ import type {
   MdxJsxAttribute,
   MdxJsxAttributeValueExpression,
 } from "./ast.js";
-import type { ComponentRegistry, ComponentSpec, PropSpec } from "./components.js";
+import {
+  builtInComponents,
+  type ComponentRegistry,
+  type ComponentSpec,
+  type PropSpec,
+} from "./components.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
 
@@ -50,11 +55,7 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
   const runtime = getRuntime(ctx);
   const out: MdastBlock[] = [];
   node.forEach((child) => {
-    const codec = runtime.blockMap.get(child.type.name);
-    if (!codec) {
-      throw new Error(`pm->mdast: unsupported block node "${child.type.name}"`);
-    }
-    const serialized = codec.serialize(child, ctx);
+    const serialized = runtime.serializeBlock(child, ctx);
     out.push(...demoteAutolinks(runtime.parseMarkdown(serialized)).children);
   });
   return out;
@@ -74,6 +75,21 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
     if (parsed) return parsed;
   }
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
+}
+
+/** Parse only through an explicitly registered codec, without raw-text recovery. */
+export function parseRecognizedBlockAst(
+  ast: unknown,
+  ctx: ParseContext,
+  excludedCodecNames: ReadonlySet<string> = new Set(),
+): PMNode | null {
+  const runtime = getRuntime(ctx);
+  for (const codec of runtime.blocks) {
+    if (excludedCodecNames.has(codec.name)) continue;
+    const parsed = codec.parse(ast, ctx);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): MdastInline[] {
@@ -276,7 +292,7 @@ export function registeredComponent(
   components: ComponentRegistry | undefined,
   name: string | null,
 ): ComponentSpec | null {
-  if (!name || name === "Figure") return null;
+  if (!name || Object.hasOwn(builtInComponents, name)) return null;
   return components?.[name] ?? null;
 }
 

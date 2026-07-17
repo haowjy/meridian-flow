@@ -66,6 +66,12 @@ function blocksOf(doc: PMNode): PMNode[] {
   return [...doc.content.content];
 }
 
+function firstParsedBlock(codec: ReturnType<typeof mdxCodec>, input: string): PMNode {
+  const block = codec.parse(input).blocks[0];
+  if (!block) throw new Error("expected one parsed block");
+  return block;
+}
+
 function sorted(names: readonly string[]): string[] {
   return [...names].sort();
 }
@@ -97,7 +103,7 @@ describe("codec presets", () => {
     const schemaRequiredBlocks = sorted(requiredBlockNamesForSchema(schema));
     expect(sorted(mdxRequiredBlockNames)).toEqual(schemaRequiredBlocks);
     expect(sorted(mdxBlockCodecs(components).map((block) => block.name))).toEqual(
-      schemaRequiredBlocks,
+      [...schemaRequiredBlocks, "layout"].sort(),
     );
     expect(markdownMarkCodecs.map((mark) => mark.name).sort()).toEqual([
       "code",
@@ -342,6 +348,144 @@ describe("mdx codec round-trip corpus", () => {
       codec,
       '<Figure src="uploads://w1/map.png" alt="Realm map" label="fig-map" caption="The northern provinces &amp; beyond" />',
     );
+  });
+
+  it("keeps unstyled alignable blocks in byte-identical plain markdown", () => {
+    const plain = "Plain prose.\n\n## Heading\n\n| A | B |\n| - | - |\n| 1 | 2 |\n";
+    expect(codec.serialize(codec.parse(plain).blocks)).toBe(plain);
+    expect(codec.serialize(codec.parse(plain).blocks)).not.toContain("<Layout");
+  });
+
+  it("emits canonical Layout wrappers for styled paragraphs, headings, and tables", () => {
+    const table = firstParsedBlock(
+      codec,
+      "| Stat | Description | Value |\n| - | - | -: |\n| STR | Raw power | 15 |",
+    );
+    const rows: PMNode[] = [];
+    table.forEach((row) => {
+      const cells: PMNode[] = [];
+      row.forEach((cell, _offset, index) => {
+        const width = [120, null, 80][index];
+        cells.push(
+          cell.type.create({ ...cell.attrs, colwidth: width ? [width] : null }, cell.content),
+        );
+      });
+      rows.push(row.type.create(row.attrs, cells));
+    });
+    const styledTable = table.type.create({ align: "center" }, rows);
+
+    expect(
+      codec.serializeBlock(
+        schema.node("paragraph", { align: "center" }, [t("The sword remembers.")]),
+      ),
+    ).toBe('<Layout align="center">\n  The sword remembers.\n</Layout>');
+    expect(
+      codec.serializeBlock(schema.node("heading", { level: 2, align: "right" }, [t("Dateline")])),
+    ).toBe('<Layout align="right">\n  ## Dateline\n</Layout>');
+    expect(codec.serializeBlock(styledTable)).toBe(
+      '<Layout align="center" widths="120,,80">\n  | Stat | Description | Value |\n  | ---- | ----------- | ----: |\n  | STR  | Raw power   |    15 |\n</Layout>',
+    );
+  });
+
+  it("reaches a parse-serialize-parse fixpoint for every Layout form", () => {
+    for (const input of [
+      '<Layout align="center">\n  The sword remembers.\n</Layout>',
+      '<Layout align="right">\n  ## Dateline\n</Layout>',
+      '<Layout align="center" widths="120,,80">\n  | Stat | Description | Value |\n  | ---- | ----------- | ----: |\n  | STR  | Raw power   |    15 |\n</Layout>',
+    ]) {
+      expectStable(codec, input);
+    }
+  });
+
+  it("round-trips styled blocks through nested block serializers", () => {
+    const originals = [
+      schema.node("blockquote", null, [
+        schema.node("paragraph", { align: "right" }, [t("inside quote")]),
+      ]),
+      schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [
+          schema.node("paragraph", { align: "center" }, [t("inside list")]),
+        ]),
+      ]),
+    ];
+
+    for (const original of originals) {
+      const serialized = codec.serializeBlock(original);
+      expect(serialized).toContain("Layout align=");
+      expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
+    }
+  });
+
+  it("rejects nested Layout and unknown JSX children as one invalid wrapper", () => {
+    for (const input of [
+      '<Layout align="center">\n  <Layout align="right">\n    prose\n  </Layout>\n</Layout>',
+      '<Layout align="center">\n  <Unknown />\n</Layout>',
+    ]) {
+      const invalid = firstParsedBlock(codec, input);
+      expect(invalid.type.name === "paragraph" || invalid.type.name === "code_block").toBe(true);
+      expect(invalid.textContent).toContain('<Layout align="center">');
+      expect(invalid.attrs.align ?? null).toBeNull();
+    }
+  });
+
+  it("validates widths and normalizes them onto every cell in each column", () => {
+    const input =
+      '<Layout widths="120,,80">\n  | A | B | C |\n  | - | - | - |\n  | 1 | 2 | 3 |\n</Layout>';
+    const table = firstParsedBlock(codec, input);
+    expect(table.type.name).toBe("table");
+    table.forEach((row) => {
+      expect([...Array(row.childCount)].map((_, index) => row.child(index).attrs.colwidth)).toEqual(
+        [[120], null, [80]],
+      );
+    });
+    expect(codec.serializeBlock(table)).toContain('widths="120,,80"');
+
+    for (const widths of ["120,nope,80", "120,80", "0,,80", ",,"]) {
+      expect(
+        codec.parse(`<Layout widths="${widths}">\n  | A | B | C |\n  | - | - | - |\n</Layout>`)
+          .blocks[0]?.type.name,
+      ).not.toBe("table");
+    }
+    const nonTable = codec.parse('<Layout widths="120">\n  prose\n</Layout>').blocks[0];
+    expect(nonTable?.textContent).toContain("<Layout");
+    expect(nonTable?.attrs.align).toBeNull();
+  });
+
+  it("throws rather than silently serializing table spans", () => {
+    const table = firstParsedBlock(codec, "| A | B |\n| - | - |\n| 1 | 2 |");
+    const firstRow = table.child(0);
+    const firstCell = firstRow.child(0);
+    const spanned = firstCell.type.create({ ...firstCell.attrs, colspan: 2 }, firstCell.content);
+    const changedRow = firstRow.type.create(firstRow.attrs, [spanned, firstRow.child(1)]);
+    const changedTable = table.type.create(table.attrs, [changedRow, table.child(1)]);
+    expect(() => codec.serializeBlock(changedTable)).toThrow(
+      "table cell spans are not representable",
+    );
+
+    const zeroSpan = firstCell.type.create({ ...firstCell.attrs, colspan: 0 }, firstCell.content);
+    const zeroRow = firstRow.type.create(firstRow.attrs, [zeroSpan, firstRow.child(1)]);
+    const zeroTable = table.type.create(table.attrs, [zeroRow, table.child(1)]);
+    expect(() => codec.serializeBlock(zeroTable)).toThrow("table cell spans are not representable");
+  });
+
+  it("throws rather than silently dropping malformed column widths", () => {
+    const table = firstParsedBlock(codec, "| A |\n| - |\n| 1 |");
+    const firstRow = table.child(0);
+    const firstCell = firstRow.child(0);
+    const malformedCell = firstCell.type.create(
+      { ...firstCell.attrs, colwidth: [0] },
+      firstCell.content,
+    );
+    const malformedRow = firstRow.type.create(firstRow.attrs, [malformedCell]);
+    const malformedTable = table.type.create(table.attrs, [malformedRow, table.child(1)]);
+    expect(() => codec.serializeBlock(malformedTable)).toThrow(
+      "table cell colwidth must be null or one positive integer",
+    );
+  });
+
+  it("rejects the align-left ghost state", () => {
+    const ghost = schema.nodes.paragraph.create({ align: "left" }, t("prose"));
+    expect(() => codec.serializeBlock(ghost)).toThrow('invalid Layout align value "left"');
   });
 
   it("stabilizes JSX leaf components with nested JSON props", () => {

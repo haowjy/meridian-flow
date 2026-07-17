@@ -1,3 +1,4 @@
+import { builtInComponents } from "../../components.js";
 import {
   invalidJsxFallback,
   isMdxJsxFlowElement,
@@ -32,7 +33,7 @@ export function createFigureCodec(): BlockCodec<MdastJsxFlow> {
     parse(ast, ctx) {
       if (!isMdxJsxFlowElement(ast) || ast.name !== "Figure") return null;
       if (ast.children.length > 0) return invalidJsxFallback(ast, ctx);
-      const parsed = parseComponentProps("Figure", ast.attributes);
+      const parsed = parseComponentProps("Figure", ast.attributes, builtInComponents.Figure);
       if (!parsed.ok) return invalidJsxFallback(ast, ctx);
       for (const key of Object.keys(parsed.props)) {
         if (!FIGURE_ATTRS.has(key)) return invalidJsxFallback(ast, ctx);

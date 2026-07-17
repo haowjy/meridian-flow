@@ -3,6 +3,7 @@
 export type * from "./ast.js";
 export { createMarkupCodec, requiredBlockNamesForSchema } from "./codec.js";
 export type { ComponentRegistry, ComponentSpec, EditorSpec, PropSpec } from "./components.js";
+export { builtInComponents } from "./components.js";
 export { CodecParseError } from "./error.js";
 export {
   inlineContentToMdast,

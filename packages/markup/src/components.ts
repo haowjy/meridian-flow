@@ -26,5 +26,29 @@ export interface ComponentSpec {
   editor?: EditorSpec;
 }
 
-/** Product configuration map: component name → spec. Figure is built in. */
+/** Product configuration map: component name → spec. */
 export type ComponentRegistry = Readonly<Record<string, ComponentSpec>>;
+
+/** Reserved wire components handled by dedicated codecs rather than generic JSX nodes. */
+export const builtInComponents = {
+  Figure: {
+    name: "Figure",
+    kind: "leaf",
+    children: "none",
+    props: {
+      src: { type: "string" },
+      alt: { type: "string" },
+      label: { type: "string" },
+      caption: { type: "string" },
+    },
+  },
+  Layout: {
+    name: "Layout",
+    kind: "container",
+    children: "block",
+    props: {
+      align: { type: "string" },
+      widths: { type: "string" },
+    },
+  },
+} as const satisfies ComponentRegistry;

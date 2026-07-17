@@ -57,6 +57,8 @@ export interface MarkupPlugin {
   remarkPlugins?: PluggableList;
   preprocess?: (text: string) => string;
   postParse?: (root: MdastRoot) => MdastRoot;
+  /** Format-specific wrapping applied after a block's ordinary codec. */
+  postSerializeBlock?: (node: PMNode, serialized: string, ctx: SerializeContext) => string;
 }
 
 export interface BuildOptions {

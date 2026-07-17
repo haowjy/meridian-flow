@@ -25,6 +25,7 @@ import {
   MeridianEm,
   MeridianFigure,
   MeridianHardBreak,
+  MeridianHeading,
   MeridianHorizontalRule,
   MeridianImage,
   MeridianJsxContainer,
@@ -32,6 +33,7 @@ import {
   MeridianLink,
   MeridianListItem,
   MeridianOrderedList,
+  MeridianParagraph,
   MeridianStrong,
   MeridianTable,
   MeridianTableCell,
@@ -138,17 +140,17 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
   codeBlock: false,
   hardBreak: false,
   horizontalRule: false,
+  heading: false,
   italic: false,
   listItem: false,
   orderedList: false,
+  paragraph: false,
 } as const;
 
 const CODE_STARTER_KIT_OPTIONS = {
   ...DOCUMENT_STARTER_KIT_OPTIONS,
   blockquote: false,
   document: false,
-  heading: false,
-  paragraph: false,
 } as const;
 
 const CodeDocument = Node.create({
@@ -264,6 +266,8 @@ export function createStandaloneEditorExtensions({
     MeridianListItem,
     MeridianHardBreak,
     MeridianHorizontalRule,
+    MeridianParagraph,
+    MeridianHeading,
     MeridianTable,
     MeridianTableRow,
     MeridianTableHeader,
