@@ -84,6 +84,49 @@ describe("working-set identity sessions", () => {
     vi.useRealTimers();
   });
 
+  it("requires fresh hydration after sync is re-enabled before pending state can push", async () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const put = vi.fn().mockResolvedValue({ revision: 7 });
+    const driver = new WorkingSetSyncDriver(store, put);
+    const serverRow = {
+      userId: "user-a",
+      projectId: "project-1",
+      recentRoutes: [{ scheme: "kb" as const, path: "/server.md" }],
+      lastThreadId: "thread-server",
+      updatedAt: "2026-07-17T00:00:00.000Z",
+    };
+
+    driver.configure("user-a", true);
+    driver.hydrate("project-1", { status: "row", row: { ...serverRow, revision: 5 } });
+    driver.configure("user-a", false);
+    driver.setThread("project-1", "thread-local");
+    expect(store.read("project-1")?.pending?.baseRevision).toBe(5);
+
+    driver.configure("user-a", true);
+    driver.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(put).not.toHaveBeenCalled();
+
+    expect(
+      driver.hydrate("project-1", { status: "row", row: { ...serverRow, revision: 6 } }),
+    ).toMatchObject({ status: "server", row: { revision: 6 } });
+    expect(store.read("project-1")).toEqual({
+      snapshot: {
+        recentRoutes: [{ scheme: "kb", path: "/server.md" }],
+        lastThreadId: "thread-server",
+      },
+    });
+    driver.flush();
+    await vi.runAllTimersAsync();
+    expect(put).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("ignores an old user's acknowledgement before sweeping the new user's pending record", async () => {
     vi.useFakeTimers();
     const store = new DeviceWorkingSetStore({

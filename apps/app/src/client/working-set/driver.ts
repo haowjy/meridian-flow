@@ -58,6 +58,7 @@ export class WorkingSetSyncDriver {
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
     }
+    if (!this.enabled && enabled) this.baselines.clear();
     this.enabled = enabled;
   }
 
