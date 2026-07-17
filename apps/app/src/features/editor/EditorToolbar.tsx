@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EditorContextPopover } from "./EditorContextPopover";
+import { linkAttributesAtSelection } from "./link-selection";
 import { normalizeLinkHref } from "./link-url";
 
 export type EditorToolbarProps = {
@@ -122,23 +123,19 @@ function LinkControl({ editor }: { editor: Editor | null }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const errorId = `${inputId}-error`;
+  const popoverId = `${inputId}-popover`;
 
-  const active = editor?.isActive("link") ?? false;
+  const activeLink = editor ? linkAttributesAtSelection(editor) : null;
+  const active = Boolean(activeLink);
   const canOpen = Boolean(editor && (!editor.state.selection.empty || active));
 
   const openPopover = useCallback(() => {
-    if (
-      !editor ||
-      editor.isDestroyed ||
-      (editor.state.selection.empty && !editor.isActive("link"))
-    ) {
-      return;
-    }
+    if (!editor || editor.isDestroyed) return;
+    const currentLink = linkAttributesAtSelection(editor);
+    if (editor.state.selection.empty && !currentLink) return;
 
-    const existing = editor.isActive("link");
-    const currentHref = existing ? String(editor.getAttributes("link").href ?? "") : "";
-    setHref(currentHref);
-    setEditingExistingLink(existing);
+    setHref(String(currentLink?.href ?? ""));
+    setEditingExistingLink(Boolean(currentLink));
     setInvalid(false);
     setOpen(true);
   }, [editor]);
@@ -149,7 +146,7 @@ function LinkControl({ editor }: { editor: Editor | null }) {
       if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey) {
         return;
       }
-      if (editor.state.selection.empty && !editor.isActive("link")) return;
+      if (editor.state.selection.empty && !linkAttributesAtSelection(editor)) return;
       event.preventDefault();
       openPopover();
     };
@@ -192,7 +189,7 @@ function LinkControl({ editor }: { editor: Editor | null }) {
     setOpen(false);
   };
 
-  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const handlePopoverKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     setOpen(false);
@@ -201,7 +198,14 @@ function LinkControl({ editor }: { editor: Editor | null }) {
 
   return (
     <>
-      <ToolbarButton label={t`Link`} active={active} disabled={!canOpen} onClick={openPopover}>
+      <ToolbarButton
+        label={t`Link`}
+        active={active}
+        disabled={!canOpen}
+        popupOpen={open}
+        popupControls={popoverId}
+        onClick={openPopover}
+      >
         <Link className="size-3.5" aria-hidden />
       </ToolbarButton>
       <EditorContextPopover
@@ -210,13 +214,19 @@ function LinkControl({ editor }: { editor: Editor | null }) {
         onOpenChange={setOpen}
         align="center"
         className="w-80 p-2"
+        id={popoverId}
+        aria-label={t`Edit link`}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
           inputRef.current?.select();
         }}
       >
-        <form className="flex items-start gap-1.5" onSubmit={submit}>
+        <form
+          className="flex items-start gap-1.5"
+          onSubmit={submit}
+          onKeyDown={handlePopoverKeyDown}
+        >
           <div className="min-w-0 flex-1">
             <label className="visually-hidden" htmlFor={inputId}>
               {t`Link URL`}
@@ -235,7 +245,6 @@ function LinkControl({ editor }: { editor: Editor | null }) {
                 setHref(event.target.value);
                 setInvalid(false);
               }}
-              onKeyDown={handleInputKeyDown}
             />
             {invalid ? (
               <p id={errorId} className="px-1 pt-1 text-destructive text-xs" role="alert">
@@ -268,12 +277,16 @@ function ToolbarButton({
   label,
   active,
   disabled,
+  popupOpen,
+  popupControls,
   onClick,
   children,
 }: {
   label: string;
   active?: boolean;
   disabled?: boolean;
+  popupOpen?: boolean;
+  popupControls?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -284,6 +297,10 @@ function ToolbarButton({
       size="icon-xs"
       aria-label={label}
       aria-pressed={active || undefined}
+      aria-haspopup={popupControls ? "dialog" : undefined}
+      aria-expanded={popupControls ? popupOpen : undefined}
+      aria-controls={popupControls}
+      data-state={popupControls ? (popupOpen ? "open" : "closed") : undefined}
       disabled={disabled}
       onClick={onClick}
       className={cn(active && "bg-primary/10 text-primary hover:text-primary")}

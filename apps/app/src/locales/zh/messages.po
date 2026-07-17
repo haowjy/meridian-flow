@@ -618,6 +618,10 @@ msgstr ""
 msgid "Earlier content could not be recovered"
 msgstr ""
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Edit link"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
 msgstr ""

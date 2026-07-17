@@ -618,6 +618,10 @@ msgstr "Drop image to upload a figure"
 msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Edit link"
+msgstr "Edit link"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
 msgstr "Edited"
