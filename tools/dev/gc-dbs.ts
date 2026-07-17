@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-/** Drop local worktree databases whose git worktree no longer exists. */
+/** Drop local project-prefixed databases that no live git worktree owns. */
 import { realpathSync } from "node:fs";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
   const reserved = orphaned.filter((dbName) => isReservedDatabase(dbName, mainDbNames));
   const droppable = orphaned.filter((dbName) => !isReservedDatabase(dbName, mainDbNames));
 
-  printList("Found worktree databases", found);
+  printList("Found project databases", found);
   printList("Live worktree databases", [...live].sort());
   printList("Orphaned databases", orphaned);
   if (reserved.length > 0) printList("Reserved orphaned databases (not dropped)", reserved);
