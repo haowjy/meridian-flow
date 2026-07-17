@@ -12,12 +12,14 @@ import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
+import Heading from "@tiptap/extension-heading";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Image from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
 import OrderedList from "@tiptap/extension-ordered-list";
+import Paragraph from "@tiptap/extension-paragraph";
 import { Table } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
@@ -59,6 +61,22 @@ function tableCellAttributes(parentAttrs: (() => Record<string, unknown>) | unde
   };
 }
 
+function textLayoutAttributes() {
+  return {
+    align: {
+      default: null,
+      parseHTML: (element: HTMLElement) => {
+        const value = element.style.textAlign;
+        return value === "center" || value === "right" ? value : null;
+      },
+      renderHTML: (attrs: RenderAttrs) =>
+        attrs.align === "center" || attrs.align === "right"
+          ? { style: `text-align: ${attrs.align}` }
+          : {},
+    },
+  };
+}
+
 // ─── Name-parity renames ────────────────────────────────────────────
 // TipTap uses camelCase names; our shared ProseMirror schema uses snake_case.
 // These renames are required for Yjs CRDT compatibility — node type names
@@ -82,6 +100,16 @@ export const MeridianHardBreak = HardBreak.extend({
 
 export const MeridianHorizontalRule = HorizontalRule.extend({
   name: "horizontal_rule",
+});
+
+export const MeridianParagraph = Paragraph.extend({
+  addAttributes: textLayoutAttributes,
+});
+
+export const MeridianHeading = Heading.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...textLayoutAttributes() };
+  },
 });
 
 export const MeridianListItem = ListItem.extend({
@@ -109,6 +137,27 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
 export const MeridianTable = Table.extend({
   name: "table",
   content: "table_row+",
+
+  addAttributes() {
+    return {
+      align: {
+        default: null,
+        parseHTML: (element) => {
+          const value = element.dataset.align;
+          return value === "center" || value === "right" ? value : null;
+        },
+        renderHTML: (attrs) => {
+          if (attrs.align === "center") {
+            return { "data-align": "center", style: "margin-left: auto; margin-right: auto" };
+          }
+          if (attrs.align === "right") {
+            return { "data-align": "right", style: "margin-left: auto; margin-right: 0" };
+          }
+          return {};
+        },
+      },
+    };
+  },
 });
 
 export const MeridianTableRow = TableRow.extend({

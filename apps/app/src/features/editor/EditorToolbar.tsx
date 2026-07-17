@@ -10,7 +10,19 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { Bold, Code, Heading1, ImageUp, Italic, Link, List, Unlink } from "lucide-react";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  Code,
+  Heading1,
+  ImageUp,
+  Italic,
+  Link,
+  List,
+  Unlink,
+} from "lucide-react";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -23,6 +35,13 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EditorContextPopover } from "./EditorContextPopover";
@@ -103,6 +122,7 @@ export function EditorToolbar({
           <List className="size-3.5" aria-hidden />
         </ToolbarButton>
         <LinkControl editor={editor} />
+        <AlignmentControl editor={editor} />
         <ToolbarButton
           label={t`Upload figure`}
           disabled={!editor || figureUploadBusy || figureUploadDisabled}
@@ -112,6 +132,60 @@ export function EditorToolbar({
         </ToolbarButton>
       </div>
     </div>
+  );
+}
+
+type BlockAlignment = "default" | "center" | "right";
+
+function AlignmentControl({ editor }: { editor: Editor | null }) {
+  const blockType = editor
+    ? (["table", "heading", "paragraph"] as const).find((name) => editor.isActive(name))
+    : undefined;
+  const value: BlockAlignment = blockType
+    ? editor?.getAttributes(blockType).align === "center" ||
+      editor?.getAttributes(blockType).align === "right"
+      ? editor.getAttributes(blockType).align
+      : "default"
+    : "default";
+  const Icon = value === "center" ? AlignCenter : value === "right" ? AlignRight : AlignLeft;
+
+  const setAlignment = (next: string) => {
+    if (!editor || !blockType) return;
+    const align = next === "center" || next === "right" ? next : null;
+    editor.chain().focus().updateAttributes(blockType, { align }).run();
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Block alignment`}
+          disabled={!blockType}
+          className={cn(value !== "default" && "bg-primary/10 text-primary hover:text-primary")}
+        >
+          <Icon className="size-3.5" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuRadioGroup value={value} onValueChange={setAlignment}>
+          <DropdownMenuRadioItem value="default">
+            <AlignLeft aria-hidden />
+            {t`Default alignment`}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="center">
+            <AlignCenter aria-hidden />
+            {t`Center`}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="right">
+            <AlignRight aria-hidden />
+            {t`Right`}
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
