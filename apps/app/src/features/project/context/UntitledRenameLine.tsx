@@ -1,5 +1,5 @@
 /**
- * TempDocumentSaveBar — ambient rename invitation for provisional documents.
+ * UntitledRenameLine — ambient rename invitation for provisional documents.
  *
  * The URI-shaped field preserves location context, but v1 commits only the
  * basename. Enter renames; moving remains a tree action.
@@ -28,13 +28,13 @@ import {
   parentPath as parentFolderPath,
   useFileSuggestions,
 } from "./file-suggestions";
-import { suggestedTempDocumentName } from "./temp-document-name";
+import { suggestedUntitledDocumentName } from "./untitled-document-name";
 import { queueUntitledRename } from "./untitled-reconciler";
 import { ValidationNote } from "./validation-note";
 
 type RenameTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
-export function TempDocumentSaveBar({
+export function UntitledRenameLine({
   projectId,
   activeThreadId,
   tab,
@@ -269,7 +269,7 @@ function replaceBasename(path: string, name: string): string {
 function suggestedUntitledName(tab: RenameTab, fragment: Y.XmlFragment): string {
   const text = firstXmlBlockText(fragment);
   if (!text) return "";
-  const suggestion = suggestedTempDocumentName({
+  const suggestion = suggestedUntitledDocumentName({
     type: "doc",
     content: [{ type: "paragraph", content: [{ type: "text", text }] }],
   });

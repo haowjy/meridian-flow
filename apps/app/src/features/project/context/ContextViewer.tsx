@@ -92,7 +92,7 @@ export function ContextViewer({
         activeTabId={activeTabId}
         onSelect={onSelectTab}
         onClose={onCloseTab}
-        onNewTemp={onNewDocument}
+        onNewDocument={onNewDocument}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />

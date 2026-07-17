@@ -51,7 +51,7 @@ Shared across both shells:
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`. New untitled
   tabs use the same Yjs-first editor as tracked documents; the detached session
-  is materialized by `untitled-reconciler.ts`. `TempDocumentSaveBar.tsx` is now
+  is materialized by `untitled-reconciler.ts`. `UntitledRenameLine.tsx` is now
   the provisional-document rename line (Enter commits; moves stay in tree actions).
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request

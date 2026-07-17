@@ -19,12 +19,12 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation
-       ├─ persisted TempDocument[] → ContextTab { kind: "temp" }
+       ├─ in-memory ContextTab[] (tracked, viewer, and new)
        └─ ContextViewer
-              ├─ ContextTabBar (tracked, viewer, and temp tabs)
-              ├─ ContextEditorMountHost (warm tracked editors)
+              ├─ ContextTabBar
+              ├─ ContextEditorMountHost (warm tracked + untitled Yjs editors)
               ├─ ContextViewerHost (active binary viewer)
-              └─ TempDocumentEditor (active device-local draft)
+              └─ EditorBannerSlot (draft chrome or untitled rename line)
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
@@ -63,7 +63,7 @@ tab in place. `provisionalName` comes from the tree DTO and controls the rename
 line; a cached tree refetch refreshes open-tab metadata so a cross-device rename
 eventually dissolves the line without another invalidation channel.
 
-`TempDocumentSaveBar.tsx` survives only as the ambient provisional rename line.
+`UntitledRenameLine.tsx` survives only as the ambient provisional rename line.
 It is the lower-priority tenant of `EditorBannerSlot` (draft chrome wins), uses
 the URI-shaped field and local collision browser, and commits basename-only on
 Enter. There is no Save button and no content handover. While the pending entry

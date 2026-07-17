@@ -29,6 +29,14 @@
   margin-top: 0.9em;
 }
 
+.meridian-editor .ProseMirror p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: var(--color-muted-foreground);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
 .meridian-editor .ProseMirror blockquote {
   border-left: 0.1875rem solid var(--color-border-focus);
   color: var(--color-muted-foreground);

@@ -40,7 +40,7 @@ import { DraftEntryBanner } from "@/features/editor/DraftEntryBanner";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { EditorBannerSlot } from "@/features/editor/EditorBannerSlot";
 import { cn } from "@/lib/utils";
-import { TempDocumentSaveBar } from "./TempDocumentSaveBar";
+import { UntitledRenameLine } from "./UntitledRenameLine";
 import { untitledDocumentIsEmpty, useUntitledPending } from "./untitled-reconciler";
 
 const EditorView = lazy(() =>
@@ -270,7 +270,7 @@ export function ContextEditorMountHost({
                               (tab.kind === "tracked" && tab.provisionalName)) &&
                             onUntitledRenamed &&
                             onOpenExisting ? (
-                              <UntitledRenameLine
+                              <UntitledRenameChrome
                                 projectId={projectId}
                                 tab={tab}
                                 onRenamed={onUntitledRenamed}
@@ -295,7 +295,7 @@ export function ContextEditorMountHost({
   );
 }
 
-function UntitledRenameLine({
+function UntitledRenameChrome({
   projectId,
   tab,
   onRenamed,
@@ -308,7 +308,7 @@ function UntitledRenameLine({
 }) {
   const pending = useUntitledPending(tab.documentId);
   return (
-    <TempDocumentSaveBar
+    <UntitledRenameLine
       key={tab.kind}
       projectId={projectId}
       activeThreadId={null}
