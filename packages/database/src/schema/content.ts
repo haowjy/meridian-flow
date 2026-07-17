@@ -208,6 +208,7 @@ export const documents = pgTable(
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     markdownProjection: text("markdown_projection").notNull().default(""),
+    provisionalName: boolean("provisional_name").notNull().default(false),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

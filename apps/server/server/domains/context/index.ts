@@ -43,6 +43,8 @@ export type {
 export type {
   BinaryFileEntry,
   BinaryFileRef,
+  ContextCreateUntitledDocumentOptions,
+  ContextCreateUntitledDocumentResult,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextFileEntry,

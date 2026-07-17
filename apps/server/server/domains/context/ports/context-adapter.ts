@@ -7,6 +7,8 @@
 import type { Result } from "../../../shared/result.js";
 import type {
   ContextCreateTrackedDocumentResult,
+  ContextCreateUntitledDocumentOptions,
+  ContextCreateUntitledDocumentResult,
   ContextEditCommand,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
@@ -97,6 +99,10 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  createUntitledDocument(
+    path: string,
+    options: ContextCreateUntitledDocumentOptions,
+  ): Promise<Result<ContextCreateUntitledDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,

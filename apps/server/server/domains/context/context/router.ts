@@ -223,6 +223,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
+    async createUntitledDocument(homeUri, options) {
+      const r = await resolve(homeUri);
+      if (!r.ok) return r;
+      const { adapter, path, canonical } = r.value;
+      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+      return callAdapter(canonical, () => adapter.createUntitledDocument(path, options));
+    },
+
     async edit(
       uri: string,
       command: import("../ports/context-port.js").ContextEditCommand,

@@ -1,0 +1,1 @@
+ALTER TABLE "documents" ADD COLUMN "provisional_name" boolean DEFAULT false NOT NULL;
