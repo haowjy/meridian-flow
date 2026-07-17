@@ -21,10 +21,12 @@ describe("context mutation validation", () => {
 
   it("normalizes every segment with the contracts policy", () => {
     expect(parseContextMutationPath(" Act 1 / Opening.md ", "path")).toBe("Act 1/Opening.md");
+    expect(parseContextMutationPath("/Act 1/Opening.md", "path")).toBe("Act 1/Opening.md");
   });
 
   it("allows a root only when the mutation field explicitly does", () => {
     expect(parseContextMutationPath("", "folderPath", { allowRoot: true })).toBe("");
+    expect(parseContextMutationPath("/", "folderPath", { allowRoot: true })).toBe("");
     expect(() => parseContextMutationPath("", "path")).toThrowError(
       expect.objectContaining({ data: expect.objectContaining({ reason: "path/empty-segment" }) }),
     );

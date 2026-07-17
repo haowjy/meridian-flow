@@ -23,7 +23,10 @@ export function parseContextMutationPath(
   if (typeof raw !== "string") {
     throw createError({ statusCode: 400, message: `\`${field}\` is required` });
   }
-  const result = validateContextEntryPath(raw, { allowRoot: options.allowRoot });
+  // Context locations are rooted in client state, while the shared validator
+  // returns the scheme-relative form consumed by ContextPort URIs.
+  const relativePath = raw.startsWith("/") ? raw.slice(1) : raw;
+  const result = validateContextEntryPath(relativePath, { allowRoot: options.allowRoot });
   if (!result.ok) validationError(field, result);
   return result.value;
 }
