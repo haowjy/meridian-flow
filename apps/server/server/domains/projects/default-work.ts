@@ -15,7 +15,7 @@ export async function resolveDefaultWork(
   const projectWorks = await deps.works.listByProject(project.id);
   if (projectWorks.length === 1) return projectWorks[0].id;
   if (projectWorks.length === 0) {
-    return (await deps.works.ensureDefaultForProject(project.id)).id;
+    return (await deps.works.ensureDefaultForProject(project.id, project.title)).id;
   }
 
   // Default selection policy deliberately does not exist yet. Keeping the

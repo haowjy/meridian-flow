@@ -458,7 +458,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         {
           workRepo: ports.workRepo,
           threadWorks: ports.threadRepos.threadWorks,
-          threads: ports.threadRepos.threads,
         },
         input,
       );

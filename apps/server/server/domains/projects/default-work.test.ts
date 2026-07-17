@@ -30,18 +30,20 @@ describe("resolveDefaultWork", () => {
   });
 
   it("provisions the invariant when a project has no active Work", async () => {
+    const ensureDefaultForProject = vi.fn(async () => work);
     await expect(
       resolveDefaultWork(
         {
           works: {
             listByProject: async () => [],
-            ensureDefaultForProject: async () => work,
+            ensureDefaultForProject,
           } as never,
         },
         { userId: USER_ID },
         project,
       ),
     ).resolves.toBe(WORK_ID);
+    expect(ensureDefaultForProject).toHaveBeenCalledWith(PROJECT_ID, project.title);
   });
 
   it("refuses to invent selection policy when multiple Works exist", async () => {

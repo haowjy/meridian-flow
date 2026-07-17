@@ -11,7 +11,6 @@ import { DEFAULT_WORK_TITLE } from "./shared.js";
 /** In-memory {@link WorkRepository} for tests. */
 export function createInMemoryWorkRepository(): WorkRepository {
   const rows = new Map<string, Work>();
-  const defaultIdsByProject = new Map<string, string>();
 
   function now(): string {
     return new Date().toISOString();
@@ -53,12 +52,15 @@ export function createInMemoryWorkRepository(): WorkRepository {
     },
 
     async ensureDefaultForProject(projectId: ProjectId, title?: string): Promise<Work> {
-      const defaultId = defaultIdsByProject.get(projectId);
-      const existing = defaultId ? rows.get(defaultId) : undefined;
-      if (existing) return { ...existing };
+      const existing = [...rows.values()].filter(
+        (work) => work.projectId === projectId && work.deletedAt === null,
+      );
+      if (existing.length > 1) {
+        throw new Error(`Project ${projectId} has multiple active Works; cannot provision default`);
+      }
+      if (existing[0]) return { ...existing[0] };
       const work = build({ projectId, title });
       rows.set(work.id, work);
-      defaultIdsByProject.set(projectId, work.id);
       return { ...work };
     },
 
