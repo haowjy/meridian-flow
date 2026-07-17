@@ -6,6 +6,7 @@
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   AdapterFault,
+  AdapterFileEntry,
   AdapterFileRef,
   AdapterSearchHit,
   ContextSchemeAdapter,
@@ -95,6 +96,20 @@ function toFileRef(
     kind: "tracked",
     filetype: ref.filetype,
     schemaType: ref.schemaType,
+  };
+}
+
+function toFileEntry(
+  scheme: ContextScheme,
+  authority: string | null,
+  entry: AdapterFileEntry,
+  readonly: boolean,
+): FileEntry {
+  const { path, ...metadata } = entry;
+  return {
+    ...metadata,
+    uri: uriFor(scheme, path, authority),
+    readonly,
   };
 }
 
@@ -323,34 +338,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!result.ok) return result;
 
       const readonly = !adapter.capabilities.writable;
-      return Ok(
-        result.value.map((e) => {
-          const base = {
-            uri: uriFor(scheme, e.path, authority),
-            documentId: e.documentId,
-            sizeBytes: e.sizeBytes,
-            updatedAt: e.updatedAt,
-            readonly,
-          };
-          if (e.kind === "directory") return { ...base, kind: "directory" as const };
-          if (e.editable) {
-            return {
-              ...base,
-              kind: "file" as const,
-              editable: true as const,
-              filetype: e.filetype,
-              schemaType: e.schemaType,
-            };
-          }
-          return {
-            ...base,
-            kind: "file" as const,
-            editable: false as const,
-            fileType: e.fileType,
-            mimeType: e.mimeType,
-          };
-        }),
-      );
+      return Ok(result.value.map((entry) => toFileEntry(scheme, authority, entry, readonly)));
     },
 
     async search(query: string, uri?: string): Promise<Result<SearchResult[], ContextError>> {
