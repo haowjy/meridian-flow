@@ -7,7 +7,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -89,9 +89,12 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
   async function projectIdForDocument(documentId: string): Promise<ProjectId | null> {
     if (!UUID_PATTERN.test(documentId)) return null;
     const [row] = await db
-      .select({ projectId: contextSources.projectId })
+      .select({
+        projectId: sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
+      })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(works, eq(contextSources.workId, works.id))
       .where(
         and(
           eq(documents.id, documentId),

@@ -36,6 +36,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { handleContextReadRequest } = await import(
       "../../../../../../lib/context-read-route.js"
     );
+    const { createDrizzleDocumentAccess } = await import(
+      "../../../../../../lib/document-access.js"
+    );
     const { truncateDrizzleTables } = await import(
       "../../../../../../test-support/drizzle-reset.js"
     );
@@ -43,6 +46,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const USER_ID = "00000000-0000-4000-8000-000000000921";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000922";
+    const WORK_ID = "00000000-0000-4000-8000-000000000923";
     const db = createDb(DATABASE_URL, { max: 4 });
 
     beforeEach(async () => {
@@ -285,6 +289,62 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: personalProject.id as never,
       });
       expect(deletedMembership.members).not.toContain(userDocumentId);
+    });
+
+    it("registers scratch documents in the live project manifest and resolves their project", async () => {
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Scratch Work",
+      });
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        onStoreDocument: ({ documentName, document }) =>
+          collab.storeHocuspocusDocument(documentName, document),
+      });
+      collab.bindHocuspocus(hocuspocus);
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+      const port = contextPorts.forWork(WORK_ID, PROJECT_ID, USER_ID, new Set([WORK_ID]));
+
+      const created = await createContextEntry({
+        port,
+        userId: USER_ID,
+        scheme: "scratch",
+        workId: WORK_ID,
+        body: parseCreateContextEntryBody({
+          type: "file",
+          path: "/notes.md",
+          content: "scratch content",
+        }),
+      });
+      if (created.status !== "created" || !created.documentId) {
+        throw new Error("scratch creation did not return a document id");
+      }
+
+      await collab.drainHocuspocusPersistence();
+      const liveMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(liveMembership.members).toContain(created.documentId);
+      await expect(
+        createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
+      ).resolves.toBe(PROJECT_ID);
+
+      await expect(port.delete(`scratch://${WORK_ID}/notes.md`)).resolves.toEqual({
+        ok: true,
+        value: undefined,
+      });
+      await collab.drainHocuspocusPersistence();
+      const membershipAfterDelete = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(membershipAfterDelete.members).not.toContain(created.documentId);
     });
   });
 }
