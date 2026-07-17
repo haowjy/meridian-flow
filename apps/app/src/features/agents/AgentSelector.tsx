@@ -1,7 +1,7 @@
 /**
  * AgentSelector — the composer's agent control. One component, two states:
  *  - **enabled**: a picker trigger (agent name + chevron) — opens AgentPicker.
- *  - **disabled**: locked (agent name + lock glyph, greyed) — the thread has
+ *  - **disabled**: settled (muted name, no chevron, flat) — the thread has
  *    started, so swapping is cost-gated for now (coming later). The tooltip
  *    says why.
  *
@@ -10,7 +10,7 @@
  * shows on hover.
  */
 import { t } from "@lingui/core/macro";
-import { ChevronDown, Lock } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -43,16 +43,14 @@ export function AgentSelector({
         buttonVariants({ variant: "outline", size: "sm" }),
         "focus-ring max-w-[11rem] min-w-0 font-medium",
         disabled &&
-          "cursor-default text-muted-foreground opacity-60 hover:border-input hover:bg-background",
+          "cursor-default border-transparent bg-transparent text-muted-foreground opacity-60 shadow-none hover:border-transparent hover:bg-transparent",
         className,
       )}
     >
       <span className="min-w-0 truncate">{agent.name}</span>
-      {disabled ? (
-        <Lock className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      ) : (
+      {!disabled ? (
         <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      )}
+      ) : null}
     </button>
   );
 }
