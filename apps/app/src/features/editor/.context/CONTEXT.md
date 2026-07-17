@@ -54,6 +54,31 @@ adding one ordered entry rather than mounting another strip beside the slot.
 I / code / list / link / figure). It subscribes to the editor's selection and
 transaction events to keep active-mark highlighting in sync.
 
+`EditorBubbleHost`, mounted beside `EditorContent`, is the one positioning and
+focus owner for contextual editor controls. Registrations contribute a passive
+matcher, an anchor mode (`selection` or `node-top`), an accessible name, content,
+and optional explicit-entry metadata. Registration order at the composition root
+is precedence (link → code → image → table). The host rematches on editor events,
+keeps feature-owned logical identity separate from mapped document positions,
+and hides across blur and IME composition. Radix owns collision handling around
+the host's virtual anchor. Add later contextual controls by registering a
+`BubbleContext`, never by mounting another popover shell. Read-only editors do
+not mount mutating contexts.
+
+The link registration is the first context. Passive arbitration matches only a
+link mark touching the selection; a selected plain-text range is accepted only
+by explicit entry from Cmd/Ctrl+K or the docked toolbar. It uses TipTap's link
+commands to add, edit, or remove the mark without introducing a second document
+representation. Automatic appearance does not move focus.
+
+### Detecting a mark at a caret
+
+`editor.isActive("link")` can miss an empty selection at a mark boundary,
+notably the link's start. `linkAttributesAtSelection` uses `getMarkRange` for
+carets so the link control remains available at either edge. Future contextual
+controls that open on a mark-touching caret should use the same resolution
+pattern rather than gating on `isActive` alone.
+
 Props:
 
 - `editor: Editor | null` — the TipTap instance. `null` is valid (pre-mount shell).

@@ -1,8 +1,8 @@
 /**
  * FigureAssetService business logic: uploads binary figures to object storage,
- * attaches persisted document-file metadata, and mints signed read URLs.
+ * creates context-tree asset documents, and mints signed read URLs.
  *
- * Why independent: Figure upload is two-phase (object write → repository attach)
+ * Why independent: Figure upload is two-phase (object write → context document create)
  * and needs partial-failure cleanup without depending on repository adapters.
  */
 import { randomUUID } from "node:crypto";
@@ -17,6 +17,7 @@ import type {
   DocumentFileRecord,
   FigureDocumentRepository,
 } from "../ports/figure-document-repository.js";
+import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { mapFigureFileType } from "./figure-file-types.js";
 
 export type FigureAssetErrorCode =
@@ -35,7 +36,8 @@ export type FigureAssetResult<T> = { ok: true; value: T } | { ok: false; error: 
 
 export interface UploadFigureAssetInput {
   projectId: string;
-  documentId: string;
+  userId: string;
+  hostDocumentId: string;
   bytes: Uint8Array;
   mimeType: string;
   filename?: string | null;
@@ -46,15 +48,17 @@ export interface UploadFigureAssetInput {
 
 export interface GetFigureSignedUrlInput {
   projectId: string;
-  documentId: string;
+  assetDocumentId: string;
 }
 
 export interface FigureAssetServiceOptions {
   objectStore: ObjectStorePort;
   documents: FigureDocumentRepository;
+  contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
   signedUrlExpiresAt: () => string;
   generateId?: () => string;
   eventSink: EventSink;
+  assetPaths?: { remember(assetDocumentId: string, path: string): void };
 }
 
 export interface FigureAssetService {
@@ -167,8 +171,8 @@ function createObjectKey(input: {
   return `figures/${project}/${document}/${id}-${base}.${ext}`;
 }
 
-function labelFromDocumentId(documentId: string): string {
-  return `fig-${sanitizeKeyPart(documentId).slice(0, 24)}`;
+function labelFromAssetDocumentId(assetDocumentId: string): string {
+  return `fig-${sanitizeKeyPart(assetDocumentId).slice(0, 24)}`;
 }
 
 function toReference(input: {
@@ -178,15 +182,17 @@ function toReference(input: {
   alt: string;
   label: string | null;
   caption: string | null;
+  assetPath: string;
 }): FigureAssetReference {
   const figure = {
-    src: input.record.storageUrl,
+    src: `asset:${input.record.assetDocumentId}`,
     alt: input.alt,
     label: input.label,
     caption: input.caption,
   };
   return {
-    documentId: input.record.documentId,
+    assetDocumentId: input.record.assetDocumentId,
+    assetPath: input.assetPath,
     storageUrl: input.record.storageUrl,
     mimeType: input.record.mimeType,
     fileType: input.record.fileType,
@@ -209,24 +215,24 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       if (!fileType)
         return err("unsupported_mime_type", `Unsupported figure MIME type: ${input.mimeType}`);
 
-      let existing: DocumentFileRecord | null;
       try {
-        existing = await options.documents.findDocumentFileForProject(
-          input.projectId,
-          input.documentId,
-        );
+        if (
+          !(await options.documents.documentExistsForProject(input.projectId, input.hostDocumentId))
+        )
+          return err("document_not_found", "Host document not found");
       } catch (error) {
-        return err(
-          "repository_error",
-          errorMessage(error, "Failed to read existing document file"),
-        );
+        return err("repository_error", errorMessage(error, "Failed to authorize host document"));
       }
+      const uniqueId = generateId();
+      const extension = extensionFor(input.mimeType, input.filename);
+      const basename = sanitizeKeyPart(input.filename?.replace(/\.[^.]+$/, "") ?? "figure");
+      const assetUri = `manuscript://assets/${sanitizeKeyPart(uniqueId)}-${basename}.${extension}`;
       const key = createObjectKey({
         projectId: input.projectId,
-        documentId: input.documentId,
+        documentId: input.hostDocumentId,
         filename: input.filename,
         mimeType: input.mimeType,
-        uniqueId: generateId(),
+        uniqueId,
       });
 
       let put: ObjectStoreResult<{ storageUrl: string }>;
@@ -237,65 +243,69 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       }
       if (!put.ok) return err("object_store_error", put.error.message);
 
-      let attached: DocumentFileRecord | null;
+      let assetDocumentId: string | undefined;
       try {
-        attached = await options.documents.attachDocumentFile({
-          projectId: input.projectId,
-          documentId: input.documentId,
-          storageUrl: put.value.storageUrl,
-          mimeType: input.mimeType,
-          fileType,
-          sizeBytes: input.bytes.byteLength,
-        });
+        const created = await options.contextPorts
+          .forProject(input.projectId, input.userId)
+          .writeBinary(assetUri, {
+            storageUrl: put.value.storageUrl,
+            mimeType: input.mimeType,
+            fileType,
+            sizeBytes: input.bytes.byteLength,
+            origin: { type: "human", userId: input.userId },
+          });
+        if (created.ok) assetDocumentId = created.value.documentId;
       } catch (error) {
         await deleteObjectBestEffort(eventSink, options.objectStore, key, {
           projectId: input.projectId,
-          documentId: input.documentId,
-          phase: "attach_throw",
+          hostDocumentId: input.hostDocumentId,
+          phase: "asset_create_throw",
         });
-        return err("repository_error", errorMessage(error, "Failed to attach document file"));
+        return err("repository_error", errorMessage(error, "Failed to create figure asset"));
       }
-      if (!attached) {
+      if (!assetDocumentId) {
         await deleteObjectBestEffort(eventSink, options.objectStore, key, {
           projectId: input.projectId,
-          documentId: input.documentId,
-          phase: "document_missing",
+          hostDocumentId: input.hostDocumentId,
+          phase: "asset_create_failed",
         });
-        return err("document_not_found", "Document not found");
+        return err("repository_error", "Failed to create figure asset document");
       }
+      options.assetPaths?.remember(assetDocumentId, assetUri.slice("manuscript://".length));
 
-      if (existing?.storageUrl) {
-        const oldKey = objectStoreKeyFromStorageUrl(existing.storageUrl);
-        if (oldKey) {
-          await deleteObjectBestEffort(eventSink, options.objectStore, oldKey, {
-            projectId: input.projectId,
-            documentId: input.documentId,
-            phase: "old_object_replacement",
-          });
-        }
+      let asset: DocumentFileRecord | null;
+      try {
+        asset = await options.documents.findDocumentFileForProject(
+          input.projectId,
+          assetDocumentId,
+        );
+      } catch (error) {
+        return err("repository_error", errorMessage(error, "Failed to read figure asset"));
       }
+      if (!asset) return err("repository_error", "Created figure asset could not be read");
 
       const signedUrl =
         (await signObjectUrlBestEffort(eventSink, options.objectStore, key, {
           projectId: input.projectId,
-          documentId: input.documentId,
+          assetDocumentId,
           phase: "upload_response",
         })) ?? "";
 
       const alt = input.alt?.trim() || input.filename || "Figure";
-      const label = input.label?.trim() || labelFromDocumentId(input.documentId);
+      const label = input.label?.trim() || labelFromAssetDocumentId(assetDocumentId);
       const caption = input.caption?.trim() || null;
       const signedUrlExpiresAt = signedUrl
         ? options.signedUrlExpiresAt()
         : new Date(0).toISOString();
       return ok(
         toReference({
-          record: attached,
+          record: asset,
           signedUrl,
           signedUrlExpiresAt,
           alt,
           label,
           caption,
+          assetPath: assetUri.slice("manuscript://".length),
         }),
       );
     },
@@ -307,7 +317,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       try {
         record = await options.documents.findDocumentFileForProject(
           input.projectId,
-          input.documentId,
+          input.assetDocumentId,
         );
       } catch (error) {
         return err("repository_error", errorMessage(error, "Failed to read document file"));
@@ -326,7 +336,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       if (!signedUrl.ok) return err("object_store_error", signedUrl.error.message);
 
       return ok({
-        documentId: record.documentId,
+        assetDocumentId: record.assetDocumentId,
         storageUrl: record.storageUrl,
         mimeType: record.mimeType,
         fileType: record.fileType,

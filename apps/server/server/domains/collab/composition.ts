@@ -31,7 +31,7 @@ import type {
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documents, turns, works } from "@meridian/database/schema";
-import { mdxCodec } from "@meridian/markup";
+import { type AssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -137,6 +137,7 @@ type CollabDomainDeps = {
   };
   eventSink?: EventSink;
   notices?: NoticePort;
+  assetPathResolver?: AssetPathResolver;
 };
 
 const BRANCH_AGENT_BROADCAST_ORIGIN = {
@@ -338,6 +339,7 @@ export type CollabFacadeDeps = {
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   onWriterIngressBarrier?(barrier: WriterIngressBarrier): void;
+  assetPathResolver?: AssetPathResolver;
 };
 
 export function createReversalNoticePort(deps: {
@@ -397,6 +399,7 @@ export function createReversalNoticePort(deps: {
 }
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
+  const assetPathResolver = deps.assetPathResolver ?? unresolvedAssetPathResolver;
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
@@ -457,7 +460,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     observations: observationSnapshots,
     changeTrails,
     model: yProsemirrorModel(offlineSchema),
-    codec: createAgentEditCodec(mdxCodec({ schema: offlineSchema })),
+    codec: createAgentEditCodec(mdxCodec({ assetPathResolver, schema: offlineSchema })),
     digestRenderedContent: (content) => createHash("sha256").update(content).digest("hex"),
     identifyUpdate: (update) => createHash("sha256").update(update).digest("hex"),
     resolveThreadId: async (turnId) => {
@@ -475,7 +478,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.db,
     {
       model: yProsemirrorModel(buildDocumentSchema()),
-      codec: mdxCodec({ schema: buildDocumentSchema() }),
+      codec: mdxCodec({
+        assetPathResolver,
+        schema: buildDocumentSchema(),
+      }),
     },
     changeTrails,
     deps.notices,
@@ -494,7 +500,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal,
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
-    codec: mdxCodec({ schema: buildDocumentSchema() }),
+    codec: mdxCodec({
+      assetPathResolver,
+      schema: buildDocumentSchema(),
+    }),
     observations: observationSnapshots,
     notices: deps.notices,
     writerIngressBarrier: branchPushIngressBarrier,
@@ -505,7 +514,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     db: deps.db,
     coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
-    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
+    codec: createAgentEditCodec(mdxCodec({ assetPathResolver, schema: buildDocumentSchema() })),
   });
 
   return createFacade({
@@ -553,6 +562,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     concurrentJournalWatermarks,
     offlineReconciliation,
     trailForwardActions,
+    assetPathResolver,
     branchPushStore,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
@@ -628,7 +638,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({ schema });
+  const markupCodec = mdxCodec({
+    schema,
+    assetPathResolver: deps.assetPathResolver ?? unresolvedAssetPathResolver,
+  });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();

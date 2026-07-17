@@ -3,14 +3,15 @@
  *
  * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
  * TipTap/ProseMirror editor and renders the surrounding chrome (toolbar,
- * sync-status indicator, figure-upload drag/drop + inline-command flow).
+ * sync-status indicator and image upload insertion paths).
  * Used by the Context screen to open any document. Filename chrome is the
  * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
  * renders no title header of its own.
  */
 import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeNode, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
@@ -20,24 +21,36 @@ import {
   type UIEventHandler,
   useCallback,
   useEffect,
+  useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
+import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type { SlashCommandItem } from "@/core/editor/extensions/SlashCommandExtension";
 import {
-  type FigureNodeAttrs,
-  figureUploadDefaults,
+  createEditorAssetPathResolver,
+  imageAltFromFilename,
+  imageAttrsFromUpload,
   isImageFile,
-  uploadResponseToFigureNodeAttrs,
-} from "@/core/editor/figure-workflow";
+  resolveAssetPathsFromClipboard,
+  resolveAssetRefsForClipboard,
+} from "@/core/editor/image-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import { markdownTableClipboardParser } from "@/core/editor/markdown-paste";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
+import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
+import { codeBubbleContext } from "./EditorCodeBubble";
+import { createImageBubbleContext } from "./EditorImageBubble";
+import { linkBubbleContext } from "./EditorLinkBubble";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
+import { tableBubbleContext } from "./EditorTableBubble";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
@@ -71,22 +84,23 @@ export type EditorViewProps = {
   onReviewSessionUnavailable?: () => void;
 };
 
-type FigureUploadState =
+type ImageUploadState =
   | { kind: "idle" }
   | { kind: "uploading"; filename: string; percent: number | null }
   | { kind: "success"; filename: string }
   | { kind: "error"; message: string };
 
 let editorSessionOwnerSequence = 0;
-
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
   return files.find(isImageFile) ?? null;
 }
 
-function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: number): boolean {
+type ImageAttrs = { src: string; alt: string | null; title: null };
+
+function insertImageNode(editor: Editor | null, attrs: ImageAttrs, pos?: number): boolean {
   if (!editor || editor.isDestroyed) return false;
-  const content = { type: "figure", attrs } satisfies JSONContent;
+  const content = { type: "paragraph", content: [{ type: "image", attrs }] } satisfies JSONContent;
   const chain = editor.chain().focus();
   return typeof pos === "number"
     ? chain.insertContentAt(pos, content).run()
@@ -154,76 +168,165 @@ function SessionEditorView({
   onReviewSessionUnavailable,
   session,
 }: SessionEditorViewProps) {
+  const { i18n } = useLingui();
   const { controller } = useDraftReview();
   const inReview = Boolean(reviewDraftId);
   const registry = getDocumentSessionRegistry();
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const assetPathResolverRef = useRef(createEditorAssetPathResolver());
+  const assetPathResolver = assetPathResolverRef.current;
+  const { tree: manuscriptTree } = useProjectContextTree(projectId ?? "", "manuscript", {
+    enabled: Boolean(projectId),
+  });
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const figureInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
+  const bubbleHostRef = useRef<EditorBubbleHostHandle>(null);
+  const bubbleId = useId();
+  const [imageUploadState, setImageUploadState] = useState<ImageUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
+  const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
+  const slashCommands = useMemo(
+    () => ({
+      menuLabel: t`Insert block`,
+      requestImageUpload: () => imageInputRef.current?.click(),
+      items: [
+        {
+          id: "scene-break",
+          label: t`Scene break`,
+          aliases: [t`divider`, t`hr`, t`rule`, t`break`],
+        },
+        {
+          id: "heading",
+          label: t`Heading`,
+          aliases: [t`title`, t`h1`, t`h2`, t`section`],
+        },
+        { id: "quote", label: t`Quote`, aliases: [t`blockquote`] },
+        { id: "bullet-list", label: t`Bullet list`, aliases: [t`list`] },
+        { id: "numbered-list", label: t`Numbered list`, aliases: [t`ordered`] },
+        {
+          id: "table",
+          label: t`Table`,
+          aliases: [t`grid`, t`stat block`, t`status`, t`litrpg`],
+        },
+        {
+          id: "image",
+          label: t`Image`,
+          aliases: [t`picture`, t`photo`, t`upload`],
+        },
+        { id: "code", label: t`Code`, aliases: [t`fence`, t`codeblock`] },
+        {
+          id: "diagram",
+          label: t`Diagram`,
+          aliases: [t`mermaid`, t`flowchart`, t`chart`],
+        },
+      ] satisfies SlashCommandItem[],
+    }),
+    [i18n.locale],
+  );
+
+  useEffect(() => {
+    if (!manuscriptTree) return;
+    const remember = (node: ProjectContextTreeNode) => {
+      if (node.kind === "file") {
+        if (!node.editable && node.fileType === "image") {
+          assetPathResolver.remember(node.documentId, node.path.replace(/^\//, ""));
+        }
+        return;
+      }
+      for (const child of node.children) remember(child);
+    };
+    remember(manuscriptTree);
+  }, [assetPathResolver, manuscriptTree]);
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
     clearUploadTimerRef.current = setTimeout(() => {
-      setFigureUploadState({ kind: "idle" });
+      setImageUploadState({ kind: "idle" });
       clearUploadTimerRef.current = null;
     }, 3000);
   }, []);
 
-  const handleFigureFile = useCallback(
-    async (file: File, insertPos?: number) => {
+  const uploadImageFile = useCallback(
+    async (file: File): Promise<ImageAttrs> => {
       if (!projectId) {
-        setFigureUploadState({
-          kind: "error",
-          message: t`A project is required before figures can be uploaded.`,
-        });
-        return;
+        throw new Error(t`A project is required before images can be uploaded.`);
       }
 
       if (!isImageFile(file)) {
-        setFigureUploadState({ kind: "error", message: t`Drop an image file to insert a figure.` });
-        return;
+        throw new Error(t`Choose an image file.`);
       }
 
-      const defaults = figureUploadDefaults(file);
-      setFigureUploadState({ kind: "uploading", filename: file.name, percent: null });
-
+      setImageUploadState({ kind: "uploading", filename: file.name, percent: null });
       try {
         const reference = await uploadFigure({
           projectId,
-          documentId,
+          hostDocumentId: documentId,
           file,
-          alt: defaults.alt,
-          caption: defaults.caption,
-          onProgress: ({ percent }) => {
-            setFigureUploadState({ kind: "uploading", filename: file.name, percent });
-          },
+          alt: imageAltFromFilename(file.name),
+          onProgress: ({ percent }) =>
+            setImageUploadState({ kind: "uploading", filename: file.name, percent }),
         });
-        const inserted = insertFigureNode(
-          editorRef.current,
-          uploadResponseToFigureNodeAttrs(reference),
-          insertPos,
-        );
-        setFigureUploadState(
+        assetPathResolver.remember(reference.assetDocumentId, reference.assetPath);
+        setImageUploadState({ kind: "success", filename: file.name });
+        clearUploadLater();
+        return imageAttrsFromUpload(reference);
+      } catch (error) {
+        setImageUploadState({
+          kind: "error",
+          message: error instanceof Error ? error.message : t`Image upload failed.`,
+        });
+        clearUploadLater();
+        throw error;
+      }
+    },
+    [assetPathResolver, clearUploadLater, documentId, projectId],
+  );
+
+  const handleImageFile = useCallback(
+    async (file: File, insertPos?: number) => {
+      const targetEditor = editorRef.current;
+      let mappedPos = insertPos;
+      const mapPosition = ({
+        transaction,
+      }: {
+        transaction: { mapping: { map(pos: number, assoc?: number): number } };
+      }) => {
+        if (mappedPos !== undefined) mappedPos = transaction.mapping.map(mappedPos, 1);
+      };
+      if (targetEditor && mappedPos !== undefined) targetEditor.on("transaction", mapPosition);
+      try {
+        const attrs = await uploadImageFile(file);
+        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
+        const inserted = insertImageNode(targetEditor, attrs, mappedPos);
+        setImageUploadState(
           inserted
             ? { kind: "success", filename: file.name }
             : {
                 kind: "error",
-                message: t`The figure uploaded, but the editor could not insert it.`,
+                message: t`The image uploaded, but the editor could not insert it.`,
               },
         );
-        clearUploadLater();
-      } catch (error) {
-        setFigureUploadState({
-          kind: "error",
-          message: error instanceof Error ? error.message : t`Figure upload failed.`,
-        });
+      } catch {
+        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
       }
     },
-    [clearUploadLater, documentId, projectId],
+    [uploadImageFile],
+  );
+
+  // Registration order is arbitration precedence: link → code → image → table.
+  const editorBubbleContexts = useMemo(
+    () => [
+      linkBubbleContext,
+      codeBubbleContext,
+      createImageBubbleContext(async (file) => {
+        const attrs = await uploadImageFile(file);
+        return { src: attrs.src, alt: attrs.alt ?? "" };
+      }),
+      tableBubbleContext,
+    ],
+    [uploadImageFile],
   );
 
   const editor = useEditor(
@@ -235,9 +338,10 @@ function SessionEditorView({
         cursorProvider: session.cursorProvider,
         user,
         editable,
-        placeholder: t`Start writing…`,
+        placeholder: schemaType === "document" ? t`Type / to insert…` : t`Start writing…`,
+        slashCommands: schemaType === "document" && editable ? slashCommands : undefined,
         autofocus: false,
-        figureRenderContext: { projectId, documentId },
+        assetRenderContext: { projectId },
         showCollaborationDecorations,
         enableDraftInlineReview: inReview,
         editorProps: {
@@ -245,18 +349,15 @@ function SessionEditorView({
             class: editorProseClass(showToolbar ? "docked" : "none"),
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
-          handleTextInput(view, from, _to, text) {
-            if (!editable || text !== " ") return false;
-            const commandText = "/figure";
-            const textBefore = view.state.selection.$from.parent.textBetween(
-              0,
-              view.state.selection.$from.parentOffset,
-              "\n",
-              "\n",
+          handlePaste(_view, event) {
+            if (!editable) return false;
+            const item = Array.from(event.clipboardData?.items ?? []).find(
+              (candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"),
             );
-            if (!textBefore.endsWith(commandText)) return false;
-            view.dispatch(view.state.tr.delete(from - commandText.length, from));
-            figureInputRef.current?.click();
+            const file = item?.getAsFile();
+            if (!file) return false;
+            event.preventDefault();
+            void handleImageFile(file, _view.state.selection.from);
             return true;
           },
           handleDrop(view, event) {
@@ -266,9 +367,12 @@ function SessionEditorView({
             event.preventDefault();
             setDragActive(false);
             const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            void handleFigureFile(file, pos);
+            void handleImageFile(file, pos);
             return true;
           },
+          clipboardTextParser: markdownTableClipboardParser(undefined, assetPathResolver),
+          transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetPathResolver),
+          transformPasted: (slice) => resolveAssetPathsFromClipboard(slice, assetPathResolver),
           handleDOMEvents: {
             dragenter(_view, event) {
               if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
@@ -296,7 +400,7 @@ function SessionEditorView({
     },
     [
       documentId,
-      handleFigureFile,
+      handleImageFile,
       projectId,
       schemaType,
       session,
@@ -305,6 +409,7 @@ function SessionEditorView({
       ariaLabel,
       showCollaborationDecorations,
       inReview,
+      slashCommands,
     ],
   );
 
@@ -407,7 +512,7 @@ function SessionEditorView({
         </div>
       ) : null}
       <input
-        ref={figureInputRef}
+        ref={imageInputRef}
         type="file"
         accept="image/*"
         className="hidden"
@@ -416,7 +521,8 @@ function SessionEditorView({
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           event.currentTarget.value = "";
-          if (file) void handleFigureFile(file);
+          const pos = editor?.state.selection.from;
+          if (file) void handleImageFile(file, pos);
         }}
       />
       <TrackedEditorCanvas
@@ -425,9 +531,12 @@ function SessionEditorView({
           showToolbar ? (
             <EditorToolbar
               editor={editor}
-              onFigureButtonClick={() => figureInputRef.current?.click()}
-              figureUploadBusy={figureUploadState.kind === "uploading"}
-              figureUploadDisabled={!projectId}
+              onImageButtonClick={() => imageInputRef.current?.click()}
+              imageUploadBusy={imageUploadState.kind === "uploading"}
+              imageUploadDisabled={!projectId}
+              linkBubbleOpen={activeBubbleId === "link"}
+              linkBubbleId={bubbleId}
+              onOpenLinkBubble={() => bubbleHostRef.current?.open("link", { focus: true })}
             />
           ) : undefined
         }
@@ -444,12 +553,23 @@ function SessionEditorView({
             <div className="meridian-editor-drop-overlay" aria-hidden>
               <UploadCloud className="size-8" />
               <span>
-                <Trans>Drop image to upload a figure</Trans>
+                <Trans>Drop image to upload</Trans>
               </span>
             </div>
           ) : undefined
         }
-        uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+        uploadStatus={<ImageUploadStatus state={imageUploadState} />}
+        bubbleHost={
+          editable ? (
+            <EditorBubbleHost
+              ref={bubbleHostRef}
+              editor={editor}
+              contexts={editorBubbleContexts}
+              contentId={bubbleId}
+              onActiveContextChange={setActiveBubbleId}
+            />
+          ) : undefined
+        }
       />
     </section>
   );
@@ -466,7 +586,7 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
       {belowToolbar}
       <TrackedEditorCanvas
         editor={null}
-        toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
+        toolbar={showToolbar ? <EditorToolbar editor={null} imageUploadDisabled /> : undefined}
       />
     </section>
   );
@@ -480,6 +600,7 @@ function TrackedEditorCanvas({
   onScroll,
   dropOverlay,
   uploadStatus,
+  bubbleHost,
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
@@ -488,6 +609,7 @@ function TrackedEditorCanvas({
   onScroll?: UIEventHandler<HTMLDivElement>;
   dropOverlay?: ReactNode;
   uploadStatus?: ReactNode;
+  bubbleHost?: ReactNode;
 }) {
   return (
     <EditorSurfaceFrame
@@ -502,6 +624,7 @@ function TrackedEditorCanvas({
     >
       <div className={cn(editorColumnCanvas, editorColumnFill)}>
         <EditorContent editor={editor} className={editorColumnFill} />
+        {bubbleHost}
       </div>
       {dropOverlay}
       {uploadStatus}
@@ -509,7 +632,7 @@ function TrackedEditorCanvas({
   );
 }
 
-function FigureUploadStatus({ state }: { state: FigureUploadState }) {
+function ImageUploadStatus({ state }: { state: ImageUploadState }) {
   if (state.kind === "idle") return null;
 
   return (
@@ -534,7 +657,7 @@ function FigureUploadStatus({ state }: { state: FigureUploadState }) {
             </Trans>
           )
         ) : null}
-        {state.kind === "success" ? <Trans>Inserted {state.filename} as a figure.</Trans> : null}
+        {state.kind === "success" ? <Trans>Inserted {state.filename} as an image.</Trans> : null}
         {state.kind === "error" ? state.message : null}
       </span>
     </div>

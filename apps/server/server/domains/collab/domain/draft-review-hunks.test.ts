@@ -1,6 +1,6 @@
 /** Unit coverage for draft live-vs-draft hunk extraction and attribution. */
 import { toDocHandle, unwrapBlock, yProsemirrorModel } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
@@ -8,7 +8,7 @@ import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 
 const WRITER_OPERATION_ID = /^writer:\d+-[a-f0-9]+$/;

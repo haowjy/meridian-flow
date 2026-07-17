@@ -1,6 +1,6 @@
 /** Markdown paste helpers for conservative GFM table clipboard handling. */
 
-import { mdxCodec } from "@meridian/markup";
+import { type AssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -29,18 +29,24 @@ export function looksLikeMarkdownTable(text: string): boolean {
 
 export function markdownTableClipboardParser(
   schema?: Schema,
+  assetPathResolver: AssetPathResolver = unresolvedAssetPathResolver,
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
     if (plain) return fallbackToPlainPaste();
-    if (!canHostTable($context)) return fallbackToPlainPaste();
-    if (!looksLikeMarkdownTable(text)) return fallbackToPlainPaste();
+    const table = looksLikeMarkdownTable(text);
+    const image = /!\[[^\]]*\]\([^)]+\)/.test(text);
+    if (!table && !image) return fallbackToPlainPaste();
+    if (table && !canHostTable($context)) return fallbackToPlainPaste();
 
     try {
-      const { blocks } = mdxCodec({ schema: schema ?? view.state.schema }).parse(text);
+      const { blocks } = mdxCodec({
+        assetPathResolver,
+        schema: schema ?? view.state.schema,
+      }).parse(text);
       const meaningfulBlocks = blocks.filter(isMeaningfulBlock);
       if (
         meaningfulBlocks.length === 0 ||
-        !meaningfulBlocks.every((block) => block.type.name === "table")
+        !meaningfulBlocks.every((block) => block.type.name === "table" || containsImage(block))
       ) {
         return fallbackToPlainPaste();
       }
@@ -50,6 +56,14 @@ export function markdownTableClipboardParser(
       return fallbackToPlainPaste();
     }
   };
+}
+
+function containsImage(block: PMNode): boolean {
+  let found = false;
+  block.descendants((node) => {
+    if (node.type.name === "image") found = true;
+  });
+  return found;
 }
 
 function isMeaningfulBlock(block: PMNode): boolean {

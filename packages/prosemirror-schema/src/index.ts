@@ -18,18 +18,35 @@ function specOnly<T extends NodeSpec | MarkSpec>(spec: T): Omit<T, "parseDOM" | 
   return structural as Omit<T, "parseDOM" | "toDOM">;
 }
 
+const layoutAlignAttr = {
+  default: null,
+  validate(value: unknown) {
+    if (value !== null && value !== "center" && value !== "right") {
+      throw new RangeError('align must be null, "center", or "right"');
+    }
+  },
+};
+
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
   doc: specOnly(basicNodes.doc),
-  paragraph: specOnly(basicNodes.paragraph),
   blockquote: specOnly(basicNodes.blockquote),
-  heading: specOnly(basicNodes.heading),
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
 
 // ─── Nodes from basic, customized ───────────────────────────────────
 const basicNodeOverrides = {
+  paragraph: {
+    ...specOnly(basicNodes.paragraph),
+    attrs: { align: layoutAlignAttr },
+  },
+
+  heading: {
+    ...specOnly(basicNodes.heading),
+    attrs: { ...(basicNodes.heading.attrs ?? {}), align: layoutAlignAttr },
+  },
+
   // basic's code_block lacks language attr — spread and add it
   code_block: {
     ...specOnly(basicNodes.code_block),
@@ -78,6 +95,7 @@ const customNodes = {
   // structural representation TipTap table commands expect. colspan/rowspan/
   // colwidth stay because prosemirror-tables editing commands use them internally.
   table: {
+    attrs: { align: layoutAlignAttr },
     content: "table_row+",
     group: "block",
     tableRole: "table",

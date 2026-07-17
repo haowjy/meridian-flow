@@ -1,6 +1,6 @@
 // Behavioral coverage for tier routing, update replay fidelity, and echo.
 
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
@@ -14,7 +14,9 @@ import { applyEdits } from "./tiers.js";
 import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 

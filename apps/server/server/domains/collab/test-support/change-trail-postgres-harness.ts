@@ -9,7 +9,7 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq } from "drizzle-orm";
 import { expect } from "vitest";
@@ -54,7 +54,10 @@ if (!DATABASE_URL) throw new Error("DATABASE_URL is required for DB tests");
 assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
 export const db = createDb(DATABASE_URL, { max: 4 });
 const documentSchema = buildDocumentSchema();
-const markupCodec = mdxCodec({ schema: documentSchema });
+const markupCodec = mdxCodec({
+  assetPathResolver: unresolvedAssetPathResolver,
+  schema: documentSchema,
+});
 const agentEditCodec = createAgentEditCodec(markupCodec);
 const model = yProsemirrorModel(documentSchema);
 

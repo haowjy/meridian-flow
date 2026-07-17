@@ -8,7 +8,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -1022,7 +1022,9 @@ function fakeHocuspocus() {
 function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore {
   const schema = buildDocumentSchema();
   const model = yProsemirrorModel(schema);
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
 
   return {

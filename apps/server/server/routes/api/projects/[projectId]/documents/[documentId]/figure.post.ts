@@ -35,7 +35,8 @@ export default defineEventHandler(async (event) => {
   if (!file) throw createError({ statusCode: 400, message: "multipart field 'file' is required" });
   const result = await app.figureAssets.uploadFigure({
     projectId,
-    documentId,
+    userId: user.userId,
+    hostDocumentId: documentId,
     bytes: file.data,
     mimeType: file.type || "application/octet-stream",
     filename: file.filename,

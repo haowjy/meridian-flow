@@ -11,16 +11,18 @@ import {
   type UploadFigureAssetResponse,
 } from "@meridian/contracts/protocol";
 
-import { signedUrlRefreshDelayMs } from "@/core/editor/figure-workflow";
+import { signedUrlRefreshDelayMs } from "@/core/editor/image-workflow";
 
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 
-type FigureRouteInput = {
+type AssetRouteInput = {
   projectId: string;
-  documentId: string;
+  assetDocumentId: string;
 };
 
-export type UploadFigureInput = FigureRouteInput & {
+export type UploadFigureInput = {
+  projectId: string;
+  hostDocumentId: string;
   file: File;
   alt?: string | null;
   label?: string | null;
@@ -28,15 +30,14 @@ export type UploadFigureInput = FigureRouteInput & {
   onProgress?: (progress: { loaded: number; total: number | null; percent: number | null }) => void;
 };
 
-export type GetFigureSignedUrlInput = FigureRouteInput & {
+export type GetFigureSignedUrlInput = AssetRouteInput & {
   src?: string;
   skipCache?: boolean;
 };
 
 type CachedSignedUrl = {
   projectId: string;
-  routeDocumentId: string;
-  responseDocumentId: string;
+  assetDocumentId: string;
   storageUrl: string;
   signedUrl: string;
   signedUrlExpiresAt: string;
@@ -44,31 +45,29 @@ type CachedSignedUrl = {
 
 const signedUrlCache = new Map<string, CachedSignedUrl>();
 
-function figurePath({ projectId, documentId }: FigureRouteInput): string {
+function figurePath(projectId: string, documentId: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(
     documentId,
   )}/figure`;
 }
 
-function signedUrlPath(input: FigureRouteInput): string {
-  return `${figurePath(input)}/signed-url`;
+function signedUrlPath(input: AssetRouteInput): string {
+  return `${figurePath(input.projectId, input.assetDocumentId)}/signed-url`;
 }
 
-function cacheKey(input: FigureRouteInput & { storageUrl: string }): string {
-  return `${input.projectId}\u0000${input.documentId}\u0000${input.storageUrl}`;
+function cacheKey(input: AssetRouteInput): string {
+  return `${input.projectId}\u0000${input.assetDocumentId}`;
 }
 
-function cacheSignedUrl(input: FigureRouteInput & GetFigureSignedUrlResponse): void {
+function cacheSignedUrl(input: AssetRouteInput & GetFigureSignedUrlResponse): void {
   signedUrlCache.set(
     cacheKey({
       projectId: input.projectId,
-      documentId: input.documentId,
-      storageUrl: input.storageUrl,
+      assetDocumentId: input.assetDocumentId,
     }),
     {
       projectId: input.projectId,
-      routeDocumentId: input.documentId,
-      responseDocumentId: input.documentId,
+      assetDocumentId: input.assetDocumentId,
       storageUrl: input.storageUrl,
       signedUrl: input.signedUrl,
       signedUrlExpiresAt: input.signedUrlExpiresAt,
@@ -77,24 +76,23 @@ function cacheSignedUrl(input: FigureRouteInput & GetFigureSignedUrlResponse): v
 }
 
 function getCachedSignedUrl(input: GetFigureSignedUrlInput): CachedSignedUrl | null {
-  if (!input.src) return null;
   const cached = signedUrlCache.get(
     cacheKey({
       projectId: input.projectId,
-      documentId: input.documentId,
-      storageUrl: input.src,
+      assetDocumentId: input.assetDocumentId,
     }),
   );
   if (!cached) return null;
   return signedUrlRefreshDelayMs(cached.signedUrlExpiresAt) > 0 ? cached : null;
 }
 
-export function seedFigureSignedUrlCache(
-  input: FigureRouteInput & { reference: UploadFigureAssetResponse },
-): void {
+export function seedFigureSignedUrlCache(input: {
+  projectId: string;
+  reference: UploadFigureAssetResponse;
+}): void {
   cacheSignedUrl({
     projectId: input.projectId,
-    documentId: input.documentId,
+    assetDocumentId: input.reference.assetDocumentId,
     storageUrl: input.reference.storageUrl,
     mimeType: input.reference.mimeType,
     fileType: input.reference.fileType,
@@ -109,7 +107,7 @@ export async function getFigureSignedUrl(
   const cached = input.skipCache ? null : getCachedSignedUrl(input);
   if (cached) {
     return {
-      documentId: cached.responseDocumentId,
+      assetDocumentId: cached.assetDocumentId,
       storageUrl: cached.storageUrl,
       mimeType: "image/*",
       fileType: "image",
@@ -125,9 +123,6 @@ export async function getFigureSignedUrl(
   const value = deserializeTransport<GetFigureSignedUrlResponse>(
     payload as GetFigureSignedUrlResponse,
   );
-  if (input.src && value.storageUrl !== input.src) {
-    throw new Error("The signed figure URL no longer matches this figure reference.");
-  }
   cacheSignedUrl({ ...input, ...value });
   return value;
 }
@@ -158,7 +153,7 @@ export function uploadFigure(input: UploadFigureInput): Promise<UploadFigureAsse
   // falling back to XHR. This is a known web-platform limitation.
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", figurePath(input));
+    xhr.open("POST", figurePath(input.projectId, input.hostDocumentId));
 
     xhr.upload.onprogress = (event) => {
       const total = event.lengthComputable ? event.total : null;
@@ -184,7 +179,6 @@ export function uploadFigure(input: UploadFigureInput): Promise<UploadFigureAsse
       );
       seedFigureSignedUrlCache({
         projectId: input.projectId,
-        documentId: input.documentId,
         reference,
       });
       resolve(reference);

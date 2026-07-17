@@ -5,8 +5,10 @@
 `@meridian/markup` exports:
 
 - `createMarkupCodec({ schema })` builder.
-- Preset wrappers: `markdownCodec({ schema })` and
-  `mdxCodec({ schema, components })`.
+- Preset wrappers: `markdownCodec({ schema, assetPathResolver })` and
+  `mdxCodec({ schema, components, assetPathResolver })`. The resolver is required:
+  it translates stable `asset:<documentId>` image sources to project-relative
+  paths on serialization and known paths back to stable refs on parse.
 - Plugin factories: `markdown()` and `mdx({ components })`.
 - Codec author helpers for converting between ProseMirror nodes and mdast/MDX
   AST nodes.
@@ -43,7 +45,8 @@ missing schema mark codecs. Required block validation is opt-in through
 
 ## MDX components
 
-`ParseContext` and `SerializeContext` contain only `schema`. The MDX plugin
+`ParseContext` and `SerializeContext` contain the schema and required asset-path
+resolver. The MDX plugin
 creates fresh `createJsxLeafCodec(components)` and
 `createJsxContainerCodec(components)` instances so component lookup is captured
 in closures. `registeredComponent(components, name)` remains a helper with an

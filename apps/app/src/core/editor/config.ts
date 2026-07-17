@@ -12,6 +12,7 @@ import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
+import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
@@ -25,6 +26,7 @@ import {
   MeridianEm,
   MeridianFigure,
   MeridianHardBreak,
+  MeridianHeading,
   MeridianHorizontalRule,
   MeridianImage,
   MeridianJsxContainer,
@@ -32,14 +34,20 @@ import {
   MeridianLink,
   MeridianListItem,
   MeridianOrderedList,
+  MeridianParagraph,
   MeridianStrong,
   MeridianTable,
   MeridianTableCell,
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import {
+  SlashCommandExtension,
+  type SlashCommandExtensionOptions,
+} from "./extensions/SlashCommandExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
+import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type EditorUser = {
@@ -51,9 +59,8 @@ export type AwarenessProvider = {
   awareness: Awareness;
 };
 
-export type FigureRenderContext = {
+export type AssetRenderContext = {
   projectId?: string;
-  documentId?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
@@ -62,7 +69,7 @@ export type CreateEditorExtensionsOptions = {
   schemaType?: YjsTrackedSchemaType;
   cursorProvider?: AwarenessProvider;
   user?: EditorUser;
-  figureRenderContext?: FigureRenderContext;
+  assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
   /**
@@ -70,6 +77,7 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
+  slashCommands?: SlashCommandExtensionOptions;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -138,17 +146,17 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
   codeBlock: false,
   hardBreak: false,
   horizontalRule: false,
+  heading: false,
   italic: false,
   listItem: false,
   orderedList: false,
+  paragraph: false,
 } as const;
 
 const CODE_STARTER_KIT_OPTIONS = {
   ...DOCUMENT_STARTER_KIT_OPTIONS,
   blockquote: false,
   document: false,
-  heading: false,
-  paragraph: false,
 } as const;
 
 const CodeDocument = Node.create({
@@ -222,9 +230,10 @@ export function createEditorExtensions({
   schemaType = "document",
   cursorProvider,
   user = DEFAULT_USER,
-  figureRenderContext,
+  assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
+  slashCommands,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -235,7 +244,7 @@ export function createEditorExtensions({
   });
 
   return [
-    ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
+    ...createStandaloneEditorExtensions({ schemaType, assetRenderContext, slashCommands }),
     ...collaboration,
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
@@ -244,8 +253,12 @@ export function createEditorExtensions({
 /** Meridian's canonical editor schema without transport or shared state. */
 export function createStandaloneEditorExtensions({
   schemaType = "document",
-  figureRenderContext,
-}: Pick<CreateEditorExtensionsOptions, "schemaType" | "figureRenderContext"> = {}): Extensions {
+  assetRenderContext,
+  slashCommands,
+}: Pick<
+  CreateEditorExtensionsOptions,
+  "schemaType" | "assetRenderContext" | "slashCommands"
+> = {}): Extensions {
   if (schemaType === "code") {
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
@@ -264,18 +277,20 @@ export function createStandaloneEditorExtensions({
     MeridianListItem,
     MeridianHardBreak,
     MeridianHorizontalRule,
+    MeridianParagraph,
+    MeridianHeading,
     MeridianTable,
     MeridianTableRow,
     MeridianTableHeader,
     MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianImage,
+    MeridianImage.configure({ projectId: assetRenderContext?.projectId }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
-      projectId: figureRenderContext?.projectId,
-      documentId: figureRenderContext?.documentId,
+      projectId: assetRenderContext?.projectId,
     }),
+    ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
     LiveRangeNavigationExtension,
   ];
 }
@@ -286,19 +301,26 @@ export function createEditorConfig({
   schemaType,
   cursorProvider,
   user,
-  figureRenderContext,
+  assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
+  slashCommands,
   editable = true,
   autofocus = false,
   placeholder,
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
+  const transformPastedHTML = editorProps?.transformPastedHTML;
+  const sanitizedEditorProps = {
+    ...editorProps,
+    transformPastedHTML: (html: string, view: EditorView) =>
+      sanitizePastedHTML(transformPastedHTML ? transformPastedHTML(html, view) : html),
+  };
   const resolvedEditorProps =
     resolvedSchemaType === "document"
-      ? { clipboardTextParser: markdownTableClipboardParser(), ...editorProps }
-      : editorProps;
+      ? { clipboardTextParser: markdownTableClipboardParser(), ...sanitizedEditorProps }
+      : sanitizedEditorProps;
 
   return {
     extensions: [
@@ -308,9 +330,10 @@ export function createEditorConfig({
         schemaType: resolvedSchemaType,
         cursorProvider,
         user,
-        figureRenderContext,
+        assetRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
+        slashCommands,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

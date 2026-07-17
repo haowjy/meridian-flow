@@ -9,7 +9,7 @@ import {
   type YProsemirrorDocumentModel,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import type { Schema } from "prosemirror-model";
 
 import { InMemoryCoordinator, InMemoryJournal } from "../../fakes.js";
@@ -30,7 +30,9 @@ export function createPlaygroundEnv(): PlaygroundEnv {
   // so prosemirror-view can serialize. y-prosemirror only cares about the
   // structure, so this is safe.
   const schema = buildRenderSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const journal = new InMemoryJournal();
   const coordinator = new InMemoryCoordinator(journal);

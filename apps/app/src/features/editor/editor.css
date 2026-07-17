@@ -29,12 +29,40 @@
   margin-top: 0.9em;
 }
 
-.meridian-editor .ProseMirror p.is-editor-empty:first-child::before {
+.meridian-editor .ProseMirror p.is-empty::before {
   float: left;
   height: 0;
   color: var(--color-muted-foreground);
   content: attr(data-placeholder);
   pointer-events: none;
+}
+
+.meridian-slash-menu {
+  z-index: 50;
+  display: grid;
+  min-width: 12rem;
+  max-height: min(22rem, var(--available-height, 22rem));
+  overflow-y: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  padding: 0.25rem;
+  box-shadow: var(--shadow-card);
+}
+
+.meridian-slash-menu__item {
+  width: 100%;
+  border-radius: calc(var(--radius-md) - 0.125rem);
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.meridian-slash-menu__item[aria-selected="true"] {
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
 }
 
 .meridian-editor .ProseMirror blockquote {
@@ -148,11 +176,36 @@
   border-radius: var(--radius-md);
 }
 
+.meridian-editor .ProseMirror table[data-align] {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.meridian-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
 .meridian-editor .ProseMirror th,
 .meridian-editor .ProseMirror td {
+  position: relative;
   border: 1px solid var(--color-border-subtle);
   padding: 0.5rem 0.625rem;
   vertical-align: top;
+}
+
+.meridian-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  z-index: 2;
+  width: 4px;
+  background: var(--color-border-focus);
+  pointer-events: none;
+}
+
+.meridian-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
 }
 
 .meridian-editor .ProseMirror th {
