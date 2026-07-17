@@ -75,7 +75,11 @@ interface ContextStoreResolvers {
     scheme: ProjectContextFsScheme,
     manifestView?: ManifestView,
   ): ContextDocumentStore;
-  resolveWorkStore(workId: string, scheme: WorkScopedContextFsScheme): ContextDocumentStore;
+  resolveWorkStore(
+    workId: string,
+    scheme: WorkScopedContextFsScheme,
+    projectId?: string,
+  ): ContextDocumentStore;
   resolveMutationStore(
     manifestView?: ManifestView,
   ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
@@ -166,16 +170,21 @@ function buildProjectContextFsAdapters(
 
 function buildWorkScopedContextFsAdapters(
   workId: string,
+  projectId: string,
   storeResolvers: ContextStoreResolvers,
   documentSync: MarkdownDocumentStore,
 ): Map<ContextScheme, ContextSchemeAdapter> {
-  const mutationStore = storeResolvers.resolveMutationStore();
+  // Scratch/uploads are canonical live documents even though their storage is
+  // Work-scoped. The live-room gate reads the project manifest, so membership
+  // must be registered in that view rather than a work-draft view.
+  const manifestView = { projectId };
+  const mutationStore = storeResolvers.resolveMutationStore(manifestView);
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {
     adapters.set(
       scheme,
       contextFsAdapter({
-        store: storeResolvers.resolveWorkStore(workId, scheme),
+        store: storeResolvers.resolveWorkStore(workId, scheme, projectId),
         mutationStore,
         documentSync,
         scheme,
@@ -227,6 +236,7 @@ function buildUnifiedContextPort(input: {
   if (scope.kind === "work") {
     for (const [scheme, adapter] of buildWorkScopedContextFsAdapters(
       scope.workId,
+      scope.projectId,
       storeResolvers,
       documentSync,
     )) {
@@ -243,7 +253,12 @@ function buildUnifiedContextPort(input: {
     resolveWorkAdapters:
       scope.kind === "work"
         ? (targetWorkId) =>
-            buildWorkScopedContextFsAdapters(targetWorkId, storeResolvers, documentSync)
+            buildWorkScopedContextFsAdapters(
+              targetWorkId,
+              scope.projectId,
+              storeResolvers,
+              documentSync,
+            )
         : undefined,
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
   });
@@ -256,7 +271,7 @@ function createInMemoryStoreResolvers(
     resolveProjectStore(projectId, userId, scheme, _manifestView) {
       return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
-    resolveWorkStore(workId, scheme) {
+    resolveWorkStore(workId, scheme, _projectId) {
       return getInMemoryWorkContextStore(registry, workId, scheme);
     },
     resolveMutationStore(_manifestView) {
@@ -293,11 +308,15 @@ function createProductionStoreResolvers(
         membershipObserverFor(manifestView ?? { projectId }),
       );
     },
-    resolveWorkStore(workId, scheme) {
-      return createWorkContextDocumentStore(db, workId, scheme);
+    resolveWorkStore(workId, scheme, projectId) {
+      return createWorkContextDocumentStore(
+        db,
+        workId,
+        scheme,
+        projectId ? membershipObserverFor({ projectId }) : undefined,
+      );
     },
     resolveMutationStore(manifestView) {
-      // Work-scoped sources intentionally remain observer-less pending #206.
       return new DrizzleContextTreeMutationStore(
         db,
         manifestView ? membershipObserverFor(manifestView) : undefined,

@@ -18,5 +18,6 @@ export type {
   EventRecord,
   EventSensitivity,
   EventSink,
+  TraceStreamRef,
 } from "./ports/event-sink.js";
 export { safeSnippet, sanitizeEventRecord } from "./safe-event.js";

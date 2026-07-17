@@ -69,6 +69,42 @@ export class DocumentSessionRegistry {
    * source of truth is server branch state.
    */
   getRoom(roomKey: string): DocumentSession {
+    this.cancelPendingTeardown(roomKey);
+    const existing = this.sessions.get(roomKey);
+    if (existing) return existing;
+
+    const session = this.getOrCreateRoom(roomKey);
+    this.attachSessionTransport(session);
+    return session;
+  }
+
+  /**
+   * Acquire a live session without materializing its server room. Ordinary
+   * acquisition leaves an existing detached session untouched; callers attach
+   * it explicitly with {@link attachDetached} after server creation succeeds.
+   */
+  getDetached(documentId: string): DocumentSession {
+    const room = parseYjsRoomName(documentId);
+    if (room?.kind !== "live") {
+      throw new Error(`Detached sessions require a live document id: ${documentId}`);
+    }
+    return this.getOrCreateRoom(documentId);
+  }
+
+  /** Attach transport to a detached live session without replacing its Y.Doc. */
+  attachDetached(documentId: string): DocumentSession {
+    const session = this.getDetached(documentId);
+    if (session.getSnapshot().status === "detached") this.attachSessionTransport(session);
+    return session;
+  }
+
+  private attachSessionTransport(session: DocumentSession): void {
+    session.attachTransport(({ roomKey, document, awareness }) =>
+      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    );
+  }
+
+  private getOrCreateRoom(roomKey: string): DocumentSession {
     const room = parseYjsRoomName(roomKey);
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
 
@@ -78,8 +114,6 @@ export class DocumentSessionRegistry {
     const session = new DocumentSession({
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
-      transportFactory: ({ roomKey: key, document, awareness }) =>
-        createHocuspocusDocumentTransport({ roomName: key, document, awareness }),
     });
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
@@ -130,6 +164,7 @@ export class DocumentSessionRegistry {
     const session = this.sessions.get(roomKey);
     if (!session) return false;
     const snapshot = session.getSnapshot();
+    if (snapshot.status === "detached") return false;
     if (snapshot.status !== "access-lost" && snapshot.connectionState?.kind !== "unauthorized") {
       return false;
     }
@@ -189,7 +224,8 @@ export class DocumentSessionRegistry {
     }
 
     for (const id of keep) {
-      this.get(id);
+      this.cancelPendingTeardown(id);
+      if (!this.sessions.has(id)) this.get(id);
     }
 
     for (const id of this.sessions.keys()) {

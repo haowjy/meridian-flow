@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
+  project ownership and register in the live project manifest, so their Yjs
+  editors can connect; the works bootstrap response also exposes the project's
+  single default Work for chat-independent Scratch surfaces.
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane
@@ -15,6 +19,8 @@
   empty state instead of a boxed card; rail↔chrome corner joins the shared
   radius.
 
+- `@meridian/contracts/observability`: shared JSON-natural observability records
+  now include stream references and document, branch, and Yjs correlation fields.
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);
