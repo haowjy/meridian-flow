@@ -31,7 +31,7 @@ import type {
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documents, turns, works } from "@meridian/database/schema";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -457,7 +457,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     observations: observationSnapshots,
     changeTrails,
     model: yProsemirrorModel(offlineSchema),
-    codec: createAgentEditCodec(mdxCodec({ schema: offlineSchema })),
+    codec: createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: offlineSchema }),
+    ),
     digestRenderedContent: (content) => createHash("sha256").update(content).digest("hex"),
     identifyUpdate: (update) => createHash("sha256").update(update).digest("hex"),
     resolveThreadId: async (turnId) => {
@@ -475,7 +477,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.db,
     {
       model: yProsemirrorModel(buildDocumentSchema()),
-      codec: mdxCodec({ schema: buildDocumentSchema() }),
+      codec: mdxCodec({
+        assetPathResolver: unresolvedAssetPathResolver,
+        schema: buildDocumentSchema(),
+      }),
     },
     changeTrails,
     deps.notices,
@@ -494,7 +499,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal,
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
-    codec: mdxCodec({ schema: buildDocumentSchema() }),
+    codec: mdxCodec({
+      assetPathResolver: unresolvedAssetPathResolver,
+      schema: buildDocumentSchema(),
+    }),
     observations: observationSnapshots,
     notices: deps.notices,
     writerIngressBarrier: branchPushIngressBarrier,
@@ -505,7 +513,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     db: deps.db,
     coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
-    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
+    codec: createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: buildDocumentSchema() }),
+    ),
   });
 
   return createFacade({
@@ -628,7 +638,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({ schema });
+  const markupCodec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();

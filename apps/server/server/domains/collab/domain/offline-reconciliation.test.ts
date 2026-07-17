@@ -7,7 +7,7 @@ import {
   unwrapBlock,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -22,7 +22,7 @@ const THREAD_ID = "thread-offline";
 const TURN_ID = "turn-agent";
 const RESPONSE_ID = "response-agent";
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
 const digest = (content: string) => `digest:${content}`;

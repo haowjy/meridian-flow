@@ -8,7 +8,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -44,7 +44,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const documentSchema = buildDocumentSchema();
     const model = yProsemirrorModel(documentSchema);
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const codec = createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: documentSchema }),
+    );
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
         schema.turnTrailWork,

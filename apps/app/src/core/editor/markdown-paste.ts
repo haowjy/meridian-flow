@@ -1,6 +1,6 @@
 /** Markdown paste helpers for conservative GFM table clipboard handling. */
 
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -36,7 +36,10 @@ export function markdownTableClipboardParser(
     if (!looksLikeMarkdownTable(text)) return fallbackToPlainPaste();
 
     try {
-      const { blocks } = mdxCodec({ schema: schema ?? view.state.schema }).parse(text);
+      const { blocks } = mdxCodec({
+        assetPathResolver: unresolvedAssetPathResolver,
+        schema: schema ?? view.state.schema,
+      }).parse(text);
       const meaningfulBlocks = blocks.filter(isMeaningfulBlock);
       if (
         meaningfulBlocks.length === 0 ||

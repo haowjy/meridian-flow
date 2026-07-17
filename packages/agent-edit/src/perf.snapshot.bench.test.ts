@@ -2,7 +2,7 @@
 // Run: pnpm vitest run --root packages/agent-edit --testNamePattern "bench" 2>&1 | tail
 // Not a regression gate — captures before/after numbers for Q1–Q4.
 
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
@@ -15,7 +15,9 @@ import { serializeScopeBlocks } from "./resolver/find.js";
 import { createDocumentRenderer } from "./tool/document-renderer.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 const renderer = createDocumentRenderer({ model, codec });
 

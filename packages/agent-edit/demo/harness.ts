@@ -7,14 +7,16 @@ import {
   type WriteContext,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 
 import { InMemoryCoordinator, InMemoryJournal } from "./fakes.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 const defaultContext: WriteContext = { sessionId: "demo-session", threadId: "demo-thread" };
 

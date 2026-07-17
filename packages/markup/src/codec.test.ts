@@ -1,6 +1,7 @@
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
+import { createAssetPathResolver, unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 
 import {
   CodecParseError,
@@ -99,7 +100,7 @@ describe("codec presets", () => {
   });
 
   it("registers every fiction-schema node handled by the MDX codec", () => {
-    mdxCodec({ schema, components });
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
     const schemaRequiredBlocks = sorted(requiredBlockNamesForSchema(schema));
     expect(sorted(mdxRequiredBlockNames)).toEqual(schemaRequiredBlocks);
     expect(sorted(mdxBlockCodecs(components).map((block) => block.name))).toEqual(
@@ -116,7 +117,7 @@ describe("codec presets", () => {
 
   it("fails creation when schema-derived block coverage is incomplete", () => {
     expect(() =>
-      createMarkupCodec({ schema })
+      createMarkupCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })
         .use({
           blocks: mdxBlockCodecs(components).filter((block) => block.name !== "figure"),
           marks: markdownMarkCodecs,
@@ -126,7 +127,10 @@ describe("codec presets", () => {
   });
 
   it("dispatches inline parse and serialize through registered mark codecs", () => {
-    const customSerializeCodec = createMarkupCodec({ schema })
+    const customSerializeCodec = createMarkupCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    })
       .use({
         blocks: markdownBlockCodecs,
         marks: markdownMarkCodecs.map((mark) =>
@@ -145,7 +149,10 @@ describe("codec presets", () => {
       "[x](https://custom.example)\n",
     );
 
-    const customParseCodec = createMarkupCodec({ schema })
+    const customParseCodec = createMarkupCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    })
       .use({
         blocks: markdownBlockCodecs,
         marks: markdownMarkCodecs.map((mark) =>
@@ -159,7 +166,7 @@ describe("codec presets", () => {
 });
 
 describe("markdown codec round-trip corpus", () => {
-  const codec = markdownCodec({ schema });
+  const codec = markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 
   it("stabilizes paragraphs, headings, nested marks, hard breaks, links, and images", () => {
     expectStable(
@@ -301,8 +308,26 @@ describe("markdown codec round-trip corpus", () => {
   });
 });
 
+describe("asset path resolution", () => {
+  const assetPathResolver = createAssetPathResolver([["asset-1", "assets/map.png"]]);
+  const codec = markdownCodec({ schema, assetPathResolver });
+
+  it("stores stable refs internally and emits project-relative paths", () => {
+    const parsed = codec.parse("![World map](assets/map.png)").blocks[0];
+    if (!parsed) throw new Error("expected parsed image paragraph");
+    expect(parsed?.firstChild?.attrs.src).toBe("asset:asset-1");
+    expect(codec.serialize([parsed])).toBe("![World map](assets/map.png)\n");
+  });
+
+  it("leaves external and unknown paths literal", () => {
+    for (const src of ["https://example.com/map.png", "assets/missing.png"]) {
+      expect(codec.parse(`![](${src})`).blocks[0]?.firstChild?.attrs.src).toBe(src);
+    }
+  });
+});
+
 describe("mdx codec round-trip corpus", () => {
-  const codec = mdxCodec({ schema, components });
+  const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
 
   it("parses prose < and { as literal text without backslash corruption", () => {
     for (const sample of [

@@ -1,7 +1,7 @@
 /** Schema-aware read and restore contracts for the collab document engine. */
 import { yProsemirrorModel } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -22,7 +22,7 @@ function setup(filetype = "typescript") {
   const coordinator = createInMemoryCoordinator(journal);
   const engine = createMarkdownDocumentEngine({
     schema,
-    codec: mdxCodec({ schema }),
+    codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
     model: yProsemirrorModel(schema),
     journal,
     coordinator,

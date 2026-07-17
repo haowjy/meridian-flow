@@ -1,4 +1,4 @@
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Fragment, Node as PMNode, ResolvedPos, Schema, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
@@ -107,7 +107,10 @@ describe("markdownTableClipboardParser", () => {
     const slice = parser(tableMarkdown, paragraphContext, false, editorViewFor(schema));
     if (!slice) throw new Error("expected markdown table slice");
 
-    const originalBlocks = mdxCodec({ schema }).parse(tableMarkdown).blocks;
+    const originalBlocks = mdxCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    }).parse(tableMarkdown).blocks;
     expect(blocksFromSlice(slice).map((node) => node.toJSON())).toEqual(
       originalBlocks.map((node) => node.toJSON()),
     );

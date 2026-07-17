@@ -1,4 +1,6 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
+
+import { unresolvedAssetPathResolver } from "@meridian/markup";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -594,13 +596,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchStore: store,
         pushStore: createDrizzleBranchPushStore(db, {
           model: yProsemirrorModel(schema),
-          codec: mdxCodec({ schema }),
+          codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
         }),
         branchCoordinator: createBranchCoordinator({ store }),
         journal: livePersistence.journal,
         liveCoordinator,
         model: yProsemirrorModel(schema),
-        codec: mdxCodec({ schema }),
+        codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
       });
 
       const pushed = await branchPush.pushToLive({ branchId: work.branchId });
@@ -637,7 +639,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await livePersistence.lifecycle.ensureDocument(CREATED_B as never);
       const schema = buildDocumentSchema();
       const model = yProsemirrorModel(schema);
-      const codec = mdxCodec({ schema });
+      const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
       const docFromMarkdown = (markdown: string) => {
         const doc = createCollabYDoc({ gc: false });
         model.insertBlocks(toDocHandle(doc), null, codec.parse(markdown));
@@ -840,7 +842,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const schema = buildDocumentSchema();
       const pushStore = createDrizzleBranchPushStore(db, {
         model: yProsemirrorModel(schema),
-        codec: mdxCodec({ schema }),
+        codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
       });
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,

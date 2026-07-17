@@ -1,5 +1,5 @@
 import { createAgentEditCodec, toDocHandle, toRef, yProsemirrorModel } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -107,7 +107,9 @@ describe("change trail (postgres)", () => {
 
   it("restores captured prose journal-first against a live document and deduplicates retries", async () => {
     const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const codec = createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: documentSchema }),
+    );
     const model = yProsemirrorModel(documentSchema);
     const coordinator = createInMemoryCoordinator(createInMemoryJournal());
     const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
@@ -179,7 +181,9 @@ describe("change trail (postgres)", () => {
 
   it("recovers a committed forward action after a crash before live apply", async () => {
     const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const codec = createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: documentSchema }),
+    );
     const model = yProsemirrorModel(documentSchema);
     const coordinator = createInMemoryCoordinator(createInMemoryJournal());
     const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
@@ -253,7 +257,9 @@ describe("change trail (postgres)", () => {
 
   it("durably settles retry exhaustion after three live-state collisions", async () => {
     const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const codec = createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: documentSchema }),
+    );
     const model = yProsemirrorModel(documentSchema);
     const coordinator = createInMemoryCoordinator(createInMemoryJournal());
     const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
@@ -353,7 +359,9 @@ describe("change trail (postgres)", () => {
 
   it("keeps concurrent writer prose when a committed Delete-again guard rejects", async () => {
     const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const codec = createAgentEditCodec(
+      mdxCodec({ assetPathResolver: unresolvedAssetPathResolver, schema: documentSchema }),
+    );
     const model = yProsemirrorModel(documentSchema);
     const coordinator = createInMemoryCoordinator(createInMemoryJournal());
     const liveDoc = coordinator.ensureEmpty(ALPHA_ID);

@@ -6,7 +6,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -24,7 +24,9 @@ import {
 
 it("plans Restore at a validated live-root boundary", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(doc), null, codec.parse("Survivor."));
@@ -73,7 +75,9 @@ it("plans Restore at a validated live-root boundary", () => {
 
 it("restores before a fresh-replaced block when projection retained only its identity", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(
@@ -115,7 +119,9 @@ it("restores before a fresh-replaced block when projection retained only its ide
 
 it("does not apply a stale Restore when a WebSocket mutation lands during persistence", async () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(doc), null, codec.parse("Survivor."));
@@ -217,7 +223,9 @@ it("rejects an unknown durable forward-action status", () => {
 
 function restoreFixture() {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const doc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(doc), null, codec.parse("Survivor."));

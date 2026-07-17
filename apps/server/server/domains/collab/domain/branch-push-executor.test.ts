@@ -13,7 +13,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -55,7 +55,7 @@ const TURN_ID = "00000000-0000-4000-8000-000000000004" as TurnId;
 const USER_ID = "00000000-0000-4000-8000-000000000005" as UserId;
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
 

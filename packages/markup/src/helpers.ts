@@ -102,16 +102,20 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
       case "hard_break":
         tokens.push({ type: "break", marks: child.marks });
         break;
-      case "image":
+      case "image": {
         ensureBlockCodecRegistered("image", ctx);
+        const src = String(child.attrs.src ?? "");
         tokens.push({
           type: "image",
-          url: String(child.attrs.src ?? ""),
+          url: src.startsWith("asset:")
+            ? ctx.assetPathResolver.pathForAsset(src.slice("asset:".length))
+            : src,
           alt: attrStringOrNull(child.attrs.alt),
           title: attrStringOrNull(child.attrs.title),
           marks: child.marks,
         });
         break;
+      }
       default:
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }

@@ -9,7 +9,7 @@ import {
   type WriteContext,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -49,7 +49,9 @@ const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {

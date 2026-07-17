@@ -11,6 +11,7 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
+  AssetPathResolver,
   BuildOptions,
   CodecParseErrorLocation,
   MarkupCodec,
@@ -33,7 +34,11 @@ export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
 }
 
-export function createMarkupCodec(options: { schema: Schema }): MarkupCodecBuilder {
+export function createMarkupCodec(options: {
+  schema: Schema;
+  assetPathResolver: AssetPathResolver;
+}): MarkupCodecBuilder {
+  if (!options.assetPathResolver) throw new Error("assetPathResolver is required");
   const plugins: MarkupPlugin[] = [];
   return {
     use(plugin: MarkupPlugin) {
@@ -41,13 +46,19 @@ export function createMarkupCodec(options: { schema: Schema }): MarkupCodecBuild
       return this;
     },
     build(buildOptions?: BuildOptions) {
-      return buildMarkupCodec(options.schema, plugins, buildOptions ?? {});
+      return buildMarkupCodec(
+        options.schema,
+        options.assetPathResolver,
+        plugins,
+        buildOptions ?? {},
+      );
     },
   };
 }
 
 function buildMarkupCodec(
   schema: Schema,
+  assetPathResolver: AssetPathResolver,
   plugins: readonly MarkupPlugin[],
   options: BuildOptions,
 ): MarkupCodec {
@@ -133,14 +144,14 @@ function buildMarkupCodec(
 
   const serializeBlocks = (blockList: readonly PMNode[]): string[] => {
     const runtime = makeRuntime("");
-    const ctx = withRuntime<SerializeContext>({ schema }, runtime);
+    const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
     return blockList.map((block) => serializeBody(block, ctx));
   };
 
   return {
     serialize(blockList: PMNode[]): string {
       const runtime = makeRuntime("");
-      const ctx = withRuntime<SerializeContext>({ schema }, runtime);
+      const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
       const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
       if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
       return result;
@@ -152,7 +163,7 @@ function buildMarkupCodec(
       }
       const source = preprocess(content);
       const runtime = makeRuntime(source);
-      const ctx = withRuntime<ParseContext>({ schema }, runtime);
+      const ctx = withRuntime<ParseContext>({ schema, assetPathResolver }, runtime);
       const tree = postParsers.reduce(
         (current, hook) => hook(current),
         parsePreparedMarkdown(source),
