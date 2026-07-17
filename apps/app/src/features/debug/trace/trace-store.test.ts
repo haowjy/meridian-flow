@@ -31,13 +31,17 @@ function event(observerSeq: number, overrides: Partial<EventRecord> = {}): Event
   };
 }
 
-afterEach(() => clearTraceEvents());
+afterEach(async () => {
+  clearTraceEvents();
+  await Promise.resolve();
+});
 
 describe("trace store", () => {
-  it("keeps the newest bounded entries and counts every eviction", () => {
+  it("keeps the newest bounded entries and counts every eviction", async () => {
     for (let index = 0; index < TRACE_STORE_CAPACITY + 3; index += 1) {
       appendTraceEvent(event(index));
     }
+    await Promise.resolve();
 
     const current = getTraceSnapshot();
     expect(current.entries).toHaveLength(TRACE_STORE_CAPACITY);
@@ -46,22 +50,25 @@ describe("trace store", () => {
     expect(current.ringDropped).toBe(3);
   });
 
-  it("keeps snapshots stable between changes and notifies subscribers", () => {
+  it("keeps snapshots stable between changes and coalesces subscriber notifications", async () => {
     const listener = vi.fn();
     const unsubscribe = subscribeToTraceStore(listener);
     const initial = getTraceSnapshot();
 
     expect(getTraceSnapshot()).toBe(initial);
     appendTraceEvent(event(1));
+    await Promise.resolve();
     const appended = getTraceSnapshot();
     expect(appended).not.toBe(initial);
     expect(getTraceSnapshot()).toBe(appended);
     noteTapError();
+    await Promise.resolve();
     expect(getTraceSnapshot().tapErrors).toBe(1);
     expect(listener).toHaveBeenCalledTimes(2);
 
     unsubscribe();
     appendTraceEvent(event(2));
+    await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(2);
   });
 });

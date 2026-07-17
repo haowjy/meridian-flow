@@ -28,6 +28,7 @@ let size = 0;
 let ringDropped = 0;
 let tapErrors = 0;
 let snapshot: TraceSnapshot = { entries: [], ringDropped, tapErrors };
+let publishPending = false;
 
 function rebuildSnapshot(): void {
   const entries = new Array<EventRecord>(size);
@@ -42,6 +43,16 @@ function publish(): void {
   for (const listener of listeners) listener();
 }
 
+/** Coalesce typing bursts so subscribers render once per JavaScript turn. */
+function schedulePublish(): void {
+  if (publishPending) return;
+  publishPending = true;
+  queueMicrotask(() => {
+    publishPending = false;
+    publish();
+  });
+}
+
 /** Append an event, evicting the oldest event once the ring is full. */
 export function appendTraceEvent(record: EventRecord): void {
   if (size < TRACE_STORE_CAPACITY) {
@@ -52,13 +63,13 @@ export function appendTraceEvent(record: EventRecord): void {
     start = (start + 1) % TRACE_STORE_CAPACITY;
     ringDropped += 1;
   }
-  publish();
+  schedulePublish();
 }
 
 /** Record a producer/tap failure without requiring a synthetic EventRecord. */
 export function noteTapError(): void {
   tapErrors += 1;
-  publish();
+  schedulePublish();
 }
 
 export function subscribeToTraceStore(listener: () => void): () => void {
@@ -77,7 +88,7 @@ export function clearTraceEvents(): void {
   size = 0;
   ringDropped = 0;
   tapErrors = 0;
-  publish();
+  schedulePublish();
 }
 
 /** Shared projection used by the table and all three export paths. */
