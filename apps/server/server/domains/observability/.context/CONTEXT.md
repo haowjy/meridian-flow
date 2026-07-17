@@ -51,3 +51,6 @@ headers.
 ## Related
 
 - `domains/storage/` — same port + adapter layout
+- Provider swap / OTel posture: [KB decision (OTel deferred)][otel-deferred]
+
+[otel-deferred]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/observability-event-records.md
