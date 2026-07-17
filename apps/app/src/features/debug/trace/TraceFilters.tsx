@@ -1,6 +1,16 @@
 /** Trace filter controls and stream projection; dev-only inline English is intentional. */
 import type { EventRecord } from "@meridian/contracts/observability";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 import type { TraceFilters as TraceFilterState } from "./trace-store";
 
 interface TraceFiltersProps {
@@ -9,8 +19,10 @@ interface TraceFiltersProps {
   onChange: (filters: TraceFilterState) => void;
 }
 
-const inputClass =
-  "focus-ring h-7 min-w-0 rounded border border-border bg-background px-2 text-meta text-foreground placeholder:text-muted-foreground";
+const ALL_MESSAGE_CLASSES = "__all_message_classes__";
+const BOTH_DIRECTIONS = "__both_directions__";
+const fieldClass = "h-7 min-w-0 px-2 text-meta md:text-meta";
+const selectClass = `${fieldClass} w-full data-[size=sm]:h-7`;
 
 export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) {
   const messageClasses = Array.from(
@@ -23,40 +35,58 @@ export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) 
 
   return (
     <div className="grid grid-cols-2 gap-2 border-b border-border p-2 lg:grid-cols-4">
-      <input
-        className={inputClass}
+      <Input
+        className={fieldClass}
         aria-label="Filter by stream ID"
         placeholder="streamId"
         value={filters.streamId}
         onChange={(event) => patch({ streamId: event.target.value })}
       />
-      <select
-        className={inputClass}
-        aria-label="Filter by message class"
-        value={filters.messageClass}
-        onChange={(event) => patch({ messageClass: event.target.value })}
-      >
-        <option value="">all message classes</option>
-        {messageClasses.map((messageClass) => (
-          <option key={messageClass} value={messageClass}>
-            {messageClass}
-          </option>
-        ))}
-      </select>
-      <select
-        className={inputClass}
-        aria-label="Filter by direction"
-        value={filters.direction}
-        onChange={(event) =>
-          patch({ direction: event.target.value as TraceFilterState["direction"] })
+      <Select
+        value={filters.messageClass || ALL_MESSAGE_CLASSES}
+        onValueChange={(value) =>
+          patch({ messageClass: value === ALL_MESSAGE_CLASSES ? "" : value })
         }
       >
-        <option value="">both directions</option>
-        <option value="client_to_server">client → server</option>
-        <option value="server_to_client">server → client</option>
-      </select>
-      <input
-        className={inputClass}
+        <SelectTrigger size="sm" className={selectClass} aria-label="Filter by message class">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper" align="start">
+          <SelectItem value={ALL_MESSAGE_CLASSES} className="text-meta">
+            all message classes
+          </SelectItem>
+          {messageClasses.map((messageClass) => (
+            <SelectItem key={messageClass} value={messageClass} className="text-meta">
+              {messageClass}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={filters.direction || BOTH_DIRECTIONS}
+        onValueChange={(value) =>
+          patch({
+            direction: value === BOTH_DIRECTIONS ? "" : (value as TraceFilterState["direction"]),
+          })
+        }
+      >
+        <SelectTrigger size="sm" className={selectClass} aria-label="Filter by direction">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper" align="start">
+          <SelectItem value={BOTH_DIRECTIONS} className="text-meta">
+            both directions
+          </SelectItem>
+          <SelectItem value="client_to_server" className="text-meta">
+            client → server
+          </SelectItem>
+          <SelectItem value="server_to_client" className="text-meta">
+            server → client
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <Input
+        className={fieldClass}
         aria-label="Filter by document, branch, or stream correlation"
         placeholder="document / branch / stream"
         value={filters.correlation}
@@ -118,14 +148,16 @@ function StreamButton({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
-      className={`focus-ring flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-meta ${selected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted"}`}
+      variant="quiet"
+      size="meta"
+      className={`w-full justify-between font-normal ${selected ? "bg-muted text-foreground" : ""}`}
       onClick={onClick}
       aria-pressed={selected}
     >
       <span className="truncate font-mono">{label}</span>
       <span className="shrink-0 tabular-nums">{count}</span>
-    </button>
+    </Button>
   );
 }

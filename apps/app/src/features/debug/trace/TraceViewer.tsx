@@ -5,6 +5,7 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { memo, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 import { JsonTree } from "../JsonTree";
@@ -64,20 +65,18 @@ function TraceViewerContent() {
           <SheetDescription>Live client observability events</SheetDescription>
         </div>
         <TraceCounters paused={paused} />
-        <button
+        <Button
           type="button"
-          className="focus-ring rounded border border-border px-2 py-1 text-meta hover:bg-muted"
+          variant="outline"
+          size="xs"
+          className="text-meta"
           onClick={togglePaused}
         >
           {paused ? "Resume live tail" : "Pause / freeze"}
-        </button>
-        <button
-          type="button"
-          className="focus-ring rounded border border-border px-2 py-1 text-meta hover:bg-muted"
-          onClick={clear}
-        >
+        </Button>
+        <Button type="button" variant="outline" size="xs" className="text-meta" onClick={clear}>
           Clear
-        </button>
+        </Button>
       </header>
 
       {frozenEntries === null ? (
@@ -140,6 +139,7 @@ function TraceBody({
   setSelected,
 }: TraceBodyProps & { entries: readonly EventRecord[]; following: boolean }) {
   const filteredEntries = useMemo(() => filterTraceEntries(entries, filters), [entries, filters]);
+  const selectedInView = selected !== null && filteredEntries.includes(selected);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -154,13 +154,17 @@ function TraceBody({
           <TraceTable
             entries={filteredEntries}
             following={following}
-            selected={selected}
+            selected={selectedInView ? selected : null}
             onSelect={setSelected}
           />
           <aside className="max-h-64 overflow-auto border-t border-border p-2 xl:max-h-none xl:w-96 xl:border-t-0 xl:border-l">
             <div className="mb-2 text-xs font-medium">Event detail</div>
-            {selected ? (
+            {selectedInView ? (
               <JsonTree value={selected} className="max-h-none border-0 bg-transparent p-0" />
+            ) : selected ? (
+              <p className="text-meta text-muted-foreground">
+                The selected event is outside the active filters or is no longer retained.
+              </p>
             ) : (
               <p className="text-meta text-muted-foreground">
                 Select a row to inspect its full record.

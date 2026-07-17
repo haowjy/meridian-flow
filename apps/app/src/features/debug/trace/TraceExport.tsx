@@ -2,6 +2,8 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 function toJsonl(entries: readonly EventRecord[]): string {
   return entries.map((record) => JSON.stringify(record)).join("\n");
 }
@@ -27,27 +29,26 @@ export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
     URL.revokeObjectURL(url);
   }
 
-  const buttonClass =
-    "focus-ring rounded border border-border px-2 py-1 text-meta text-foreground hover:bg-muted disabled:text-muted-foreground";
-
   return (
     <div className="border-t border-border bg-background">
       <div className="flex flex-wrap items-center gap-2 p-2">
         <span className="text-meta text-muted-foreground">Filtered JSONL · {entries.length}</span>
-        <button type="button" className={buttonClass} onClick={copy}>
+        <Button type="button" variant="outline" size="xs" className="text-meta" onClick={copy}>
           {copied ? "Copied" : "Copy"}
-        </button>
-        <button type="button" className={buttonClass} onClick={download}>
+        </Button>
+        <Button type="button" variant="outline" size="xs" className="text-meta" onClick={download}>
           Download
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={buttonClass}
+          variant="outline"
+          size="xs"
+          className="text-meta"
           onClick={() => setShow((current) => !current)}
           aria-expanded={show}
         >
           {show ? "Hide readable export" : "Show readable export"}
-        </button>
+        </Button>
       </div>
       {show ? (
         <section aria-label="Filtered trace JSONL export">
