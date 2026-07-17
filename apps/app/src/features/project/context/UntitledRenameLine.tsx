@@ -240,7 +240,7 @@ function DeviceOnlyWarning() {
   const label = t`Only on this device`;
   return (
     <div className="min-w-0 shrink-0">
-      <p className="inline-flex min-w-0 items-center gap-1 rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 font-medium text-warning-foreground text-xs @max-md:hidden">
+      <p className="inline-flex h-8 min-w-0 items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-2.5 font-medium text-warning-foreground text-xs @max-md:hidden">
         <TriangleAlert aria-hidden className="size-3 shrink-0" />
         <span className="truncate">{label}</span>
       </p>
@@ -249,7 +249,7 @@ function DeviceOnlyWarning() {
           <span
             role="img"
             aria-label={label}
-            className="hidden items-center rounded-full border border-warning-border bg-warning-bg p-1 text-warning-foreground @max-md:inline-flex"
+            className="hidden size-8 items-center justify-center rounded-md border border-warning-border bg-warning-bg text-warning-foreground @max-md:inline-flex"
           >
             <TriangleAlert aria-hidden className="size-3" />
           </span>
