@@ -20,8 +20,7 @@
  * navigation, not a chrome preference. Restoring tabs across
  * reloads would resurrect stale read-route 404s for files that may have since
  * been deleted. (The last-opened FILE is remembered across reloads — as a
- * route, not a tab, so restore rides the tree-validated open; see
- * `features/project/context/context-last-route.ts`.)
+ * route, not a tab, so restore rides the tree-validated open; see the canonical `client/working-set` store.)
  */
 
 import type {
