@@ -15,6 +15,8 @@
   empty state instead of a boxed card; rail↔chrome corner joins the shared
   radius.
 
+- `@meridian/contracts/observability`: shared JSON-natural observability records
+  now include stream references and document, branch, and Yjs correlation fields.
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);
