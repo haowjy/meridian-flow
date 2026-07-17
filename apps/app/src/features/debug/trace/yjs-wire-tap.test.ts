@@ -38,8 +38,10 @@ describe("createYjsWireTap", () => {
     const inspection = inspectFrame(bytes);
 
     tap.onRoomAttached("document-1", 777);
-    tap.onSocketOpen(4, "wss://app.localhost/ws/yjs");
+    tap.onSocketOpen(4);
     tap.onFrame("client_to_server", bytes, 4);
+
+    expect(records[0]?.payload).toEqual({ socketEpoch: 4 });
 
     expect(records[1]).toMatchObject({
       level: "trace",
@@ -106,7 +108,7 @@ describe("createYjsWireTap", () => {
     const firstTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
 
     firstTap.onRoomAttached("document-1", 777);
-    firstTap.onSocketOpen(1, "wss://one");
+    firstTap.onSocketOpen(1);
 
     const replacementTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
     replacementTap.onFrame("client_to_server", syncUpdateFrame("document-1", insertUpdate()), 1);
@@ -121,16 +123,16 @@ describe("createYjsWireTap", () => {
     const records: EventRecord[] = [];
     const tap = createYjsWireTap((record) => records.push(record), vi.fn());
 
-    tap.onSocketOpen(1, "wss://one");
-    tap.onSocketClose(1, 4000, "probe", true);
-    tap.onSocketOpen(2, "wss://two");
+    tap.onSocketOpen(1);
+    tap.onSocketClose(1, 4000, true);
+    tap.onSocketOpen(2);
     tap.onFrame("server_to_client", unknownFrame("branch:invalid:gen:0"), 2);
 
     expect(records.map((record) => record.stream?.observerSeq)).toEqual([1, 2, 3, 4]);
     expect(records[1]).toMatchObject({
       level: "debug",
       name: "socket.close",
-      payload: { socketEpoch: 1, code: 4000, reason: "probe", wasClean: true },
+      payload: { socketEpoch: 1, code: 4000, wasClean: true },
     });
     expect(records[3]).toMatchObject({
       name: "frame",
@@ -146,6 +148,21 @@ describe("createYjsWireTap", () => {
     expect(records[3]?.correlation).toBeUndefined();
   });
 
+  it("normalizes standard close codes and leaves unknown codes numeric-only", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+
+    tap.onSocketClose(1, 1000, true);
+    tap.onSocketClose(2, 1006, false);
+    tap.onSocketClose(3, 4403, false);
+
+    expect(records.map((record) => record.payload)).toEqual([
+      { socketEpoch: 1, code: 1000, reason: "normal_closure", wasClean: true },
+      { socketEpoch: 2, code: 1006, reason: "abnormal_closure", wasClean: false },
+      { socketEpoch: 3, code: 4403, wasClean: false },
+    ]);
+  });
+
   it("routes sink failures to onError and never propagates either callback", () => {
     const onError = vi.fn(() => {
       throw new Error("error counter unavailable");
@@ -155,7 +172,7 @@ describe("createYjsWireTap", () => {
     }, onError);
 
     expect(() => tap.onFrame("client_to_server", unknownFrame("document-1"), 1)).not.toThrow();
-    expect(() => tap.onSocketOpen(1, "wss://one")).not.toThrow();
+    expect(() => tap.onSocketOpen(1)).not.toThrow();
     expect(onError).toHaveBeenCalledTimes(2);
   });
 });

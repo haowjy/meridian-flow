@@ -4,8 +4,8 @@ import type { WireDirection } from "./wire-tap";
 
 export interface YjsWireTap {
   onFrame(direction: WireDirection, bytes: Uint8Array, socketEpoch: number): void;
-  onSocketOpen(socketEpoch: number, url: string): void;
-  onSocketClose(socketEpoch: number, code: number, reason: string, wasClean: boolean): void;
+  onSocketOpen(socketEpoch: number): void;
+  onSocketClose(socketEpoch: number, code: number, wasClean: boolean): void;
   /** Correlation aid: a document transport attached a room on the shared socket. */
   onRoomAttached(roomName: string, yjsClient: number): void;
 }
@@ -54,14 +54,14 @@ export class TappedWebSocket extends WebSocket {
 
     this.addEventListener("open", () => {
       try {
-        currentYjsTap?.onSocketOpen(this.#socketEpoch, this.url);
+        currentYjsTap?.onSocketOpen(this.#socketEpoch);
       } catch {
         // Observability must never affect transport behavior.
       }
     });
     this.addEventListener("close", (event) => {
       try {
-        currentYjsTap?.onSocketClose(this.#socketEpoch, event.code, event.reason, event.wasClean);
+        currentYjsTap?.onSocketClose(this.#socketEpoch, event.code, event.wasClean);
       } catch {
         // Observability must never affect transport behavior.
       }

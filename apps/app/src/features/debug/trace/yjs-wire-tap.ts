@@ -7,6 +7,23 @@ import { inspectFrame, type UpdateSummary } from "@meridian/yjs-inspect";
 import type { YjsWireTap } from "@/core/transport/tapped-websocket";
 
 const SOURCE = "wire.yjs";
+const STANDARD_CLOSE_REASONS: Readonly<Record<number, string>> = {
+  1000: "normal_closure",
+  1001: "going_away",
+  1002: "protocol_error",
+  1003: "unsupported_data",
+  1005: "no_status_received",
+  1006: "abnormal_closure",
+  1007: "invalid_frame_payload_data",
+  1008: "policy_violation",
+  1009: "message_too_big",
+  1010: "mandatory_extension",
+  1011: "internal_error",
+  1012: "service_restart",
+  1013: "try_again_later",
+  1014: "bad_gateway",
+  1015: "tls_handshake_failure",
+};
 
 function streamIdentity(documentName: string | null): {
   streamId: string;
@@ -100,7 +117,7 @@ export function createYjsWireTap(
       }
     },
 
-    onSocketOpen(socketEpoch, url) {
+    onSocketOpen(socketEpoch) {
       try {
         emit({
           timestamp: new Date().toISOString(),
@@ -114,15 +131,16 @@ export function createYjsWireTap(
             observedAt: "client",
             observerSeq: ++state.observerSeq,
           },
-          payload: { socketEpoch, url },
+          payload: { socketEpoch },
         });
       } catch {
         reportError();
       }
     },
 
-    onSocketClose(socketEpoch, code, reason, wasClean) {
+    onSocketClose(socketEpoch, code, wasClean) {
       try {
+        const reason = STANDARD_CLOSE_REASONS[code];
         emit({
           timestamp: new Date().toISOString(),
           level: "debug",
@@ -135,7 +153,7 @@ export function createYjsWireTap(
             observedAt: "client",
             observerSeq: ++state.observerSeq,
           },
-          payload: { socketEpoch, code, reason, wasClean },
+          payload: { socketEpoch, code, ...(reason ? { reason } : {}), wasClean },
         });
       } catch {
         reportError();
