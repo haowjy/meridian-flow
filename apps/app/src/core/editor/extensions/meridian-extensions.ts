@@ -25,6 +25,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
@@ -236,13 +237,34 @@ export const MeridianTableCell = TableCell.extend({
 export const MeridianLink = Link.extend({
   inclusive: false,
 
+  addProseMirrorPlugins() {
+    return [
+      ...(this.parent?.() ?? []),
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            click: (view, event) => {
+              if (!view.editable) return false;
+              const target = event.target;
+              if (!(target instanceof Element)) return false;
+              const link = target.closest("a");
+              if (!link || !view.dom.contains(link)) return false;
+              event.preventDefault();
+              return false;
+            },
+          },
+        },
+      }),
+    ];
+  },
+
   addAttributes() {
     return {
       href: { default: "" },
       title: { default: null },
     };
   },
-});
+}).configure({ openOnClick: false });
 
 // We renamed list_item from TipTap's default `listItem`, so the list commands
 // (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
