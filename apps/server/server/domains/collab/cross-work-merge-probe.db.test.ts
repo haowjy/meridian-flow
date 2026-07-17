@@ -30,12 +30,8 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
       status: "pushed",
       liveOriginTypes: expect.arrayContaining(["system"]),
     });
-    if (expectEnhancements) {
-      expect(observation.bApply.status).toBe("push_concurrent_conflict");
-      expect(observation.approvedTextSurvived).toBe(true);
-    } else {
-      expect(observation.bApply.status).toBe("pushed");
-    }
+    expect(observation.bApply.status).toBe("push_concurrent_conflict");
+    expect(observation.approvedTextSurvived).toBe(true);
     harness.destroyWarmState();
   });
 
@@ -50,23 +46,15 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     });
     expect(observation.bApply.status).toBe("pushed");
     expect(observation.approvedTextSurvived).toBe(false);
+    expect(observation.protection.classification).toBe("protected");
+    expect(observation.protection.capturedBodies.join("\n")).toContain(
+      "Writer-approved Work A text.",
+    );
+    expect(observation.protection.restoreAvailable).toBe(true);
+    expect(observation.protection.restoreOutcome).toBe("applied");
+    expect(observation.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
     if (expectEnhancements) {
-      expect(observation.protection.classification).toBe("protected");
-      expect(observation.protection.capturedBodies.join("\n")).toContain(
-        "Writer-approved Work A text.",
-      );
-      expect(observation.protection.restoreAvailable).toBe(true);
-      expect(observation.protection.restoreOutcome).toBe("applied");
-      expect(observation.protection.manuscriptAfterRestore).toContain(
-        "Writer-approved Work A text.",
-      );
       expect(JSON.stringify(observation.echo)).toContain("Writer-approved Work A text.");
-    } else {
-      expect(observation.protection.classification).toBe("ordinary");
-      expect(observation.protection.capturedBodies).toEqual([]);
-      expect(observation.protection.notices).toEqual([]);
-      expect(observation.protection.restoreAvailable).toBe(false);
-      expect(observation.protection.restoreOutcome).toBeNull();
     }
     harness.destroyWarmState();
   });

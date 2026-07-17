@@ -889,7 +889,11 @@ async function completeStagedPush(
       admissionSequence: authority.admissionSequence,
       batchOrdinal: 0,
       updateData: staged.outbox.pushUpdate,
-      originType: "system",
+      // A writer-confirmed Apply is writer authorship at the live-journal seam.
+      // Downstream conflict and sweep classifiers deliberately derive protection
+      // from this durable attribution rather than from push-specific metadata.
+      originType: staged.push.pushedByUserId ? "human" : "system",
+      actorUserId: staged.push.pushedByUserId,
     })
     .returning({ id: documentYjsUpdates.id });
   if (!updateRow) throw new Error(`Failed to complete staged push ${pushId}`);
