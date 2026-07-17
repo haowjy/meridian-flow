@@ -36,11 +36,29 @@ interface JournalRow {
   update: Uint8Array;
 }
 
+interface ExpandedRecord {
+  recordId: string;
+  rowId?: string;
+  updates: Uint8Array[];
+  hasInvalidShape: boolean;
+}
+
 function decodeRows(input: string): JournalRow[] {
   const rows: JournalRow[] = [];
   const unrecognized: string[] = [];
-  let expandedRecord: string | undefined;
-  let expandedId: string | undefined;
+  let expandedRecord: ExpandedRecord | undefined;
+
+  const finalizeExpandedRecord = () => {
+    if (!expandedRecord) return;
+
+    const id = expandedRecord.rowId ?? expandedRecord.recordId;
+    if (expandedRecord.updates.length === 1 && !expandedRecord.hasInvalidShape) {
+      rows.push({ id, update: expandedRecord.updates[0] });
+    } else {
+      unrecognized.push(id);
+    }
+    expandedRecord = undefined;
+  };
 
   input.split(/\r?\n/).forEach((line, index) => {
     const trimmed = line.trim();
@@ -48,28 +66,32 @@ function decodeRows(input: string): JournalRow[] {
 
     const record = trimmed.match(/^-\[ RECORD (\d+) \]-+/)?.[1];
     if (record) {
-      expandedRecord = record;
-      expandedId = undefined;
+      finalizeExpandedRecord();
+      expandedRecord = {
+        recordId: record,
+        updates: [],
+        hasInvalidShape: false,
+      };
       return;
     }
 
-    const id = trimmed.match(/^id\s*\|\s*(\S+)$/i)?.[1];
-    if (id) {
-      expandedId = id;
+    if (expandedRecord) {
+      const id = trimmed.match(/^id\s*\|\s*(\S+)$/i)?.[1];
+      if (id) {
+        expandedRecord.rowId = id;
+        return;
+      }
+
+      if (/^update_hex\s*\|/i.test(trimmed)) {
+        const update = decodeRow(trimmed);
+        if (update) expandedRecord.updates.push(update);
+        else expandedRecord.hasInvalidShape = true;
+        return;
+      }
+
+      if (!/^[a-z_]+\s*\|/i.test(trimmed)) expandedRecord.hasInvalidShape = true;
       return;
     }
-
-    if (/^update_hex\s*\|/i.test(trimmed)) {
-      const update = decodeRow(trimmed);
-      const rowId = expandedId ?? expandedRecord ?? `line ${index + 1}`;
-      if (update) rows.push({ id: rowId, update });
-      else unrecognized.push(`${rowId} (line ${index + 1})`);
-      return;
-    }
-
-    // Other expanded-output fields are context for an update_hex row, but a
-    // field-shaped line outside a psql record is unrecognized input.
-    if (expandedRecord && /^[a-z_]+\s*\|/i.test(trimmed)) return;
 
     const update = decodeRow(trimmed);
     if (update) {
@@ -81,6 +103,8 @@ function decodeRows(input: string): JournalRow[] {
     const explicitId = trimmed.match(/^(\d+)\s+/)?.[1];
     unrecognized.push(explicitId ? `${explicitId} (line ${index + 1})` : `line ${index + 1}`);
   });
+
+  finalizeExpandedRecord();
 
   if (unrecognized.length > 0) {
     throw new Error(`Unrecognized input row ids: ${unrecognized.join(", ")}`);
@@ -104,14 +128,24 @@ const input = file
 const rows = decodeRows(input);
 if (rows.length === 0) throw new Error("No hex or base64 update rows found");
 
-const summaries = rows.map((row) => {
-  try {
-    return { row, summary: summarizeUpdate(row.update) };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid Yjs update in row ${row.id}: ${message}`, { cause: error });
-  }
-});
+const inspectedRows = rows.map((row) => ({ row, summary: summarizeUpdate(row.update) }));
+const invalidRows = inspectedRows.filter(({ summary }) => "invalid" in summary);
+if (invalidRows.length > 0) {
+  const details = invalidRows.map(({ row, summary }) => `${row.id} (${summary.reason})`).join(", ");
+  throw new Error(
+    invalidRows.length === 1
+      ? `Invalid Yjs update in row ${details}`
+      : `Invalid Yjs updates in rows ${details}`,
+  );
+}
+const summaries = inspectedRows.filter(
+  (
+    inspected,
+  ): inspected is {
+    row: JournalRow;
+    summary: Exclude<typeof inspected.summary, { invalid: true }>;
+  } => !("invalid" in inspected.summary),
+);
 
 let totalBytes = 0;
 let totalStructs = 0;

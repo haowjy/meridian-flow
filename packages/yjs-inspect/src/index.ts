@@ -7,6 +7,7 @@ export type {
   FrameInspection,
   FrameSummary,
   InnerSyncType,
+  InvalidUpdate,
   KnownFrameSummary,
   Span,
   UnknownFrameSummary,

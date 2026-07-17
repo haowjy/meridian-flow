@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- `@meridian/yjs-inspect`: inspect complete Hocuspocus frames and summarize Yjs updates with merge-valid struct/delete spans and canonical correlation keys.
+- `@meridian/yjs-inspect`: inspect complete Hocuspocus frames and summarize Yjs updates with merge-valid struct/delete spans and canonical correlation keys; invalid updates return safe identifying metadata, and the journal decoder rejects incomplete expanded records.
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);

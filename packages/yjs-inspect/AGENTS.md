@@ -9,11 +9,12 @@ dependency; its outer-frame decoder directly reads the stable lib0 envelope.
 - `inspectFrame` is the tap-facing entry point. It classifies a complete wire
   frame and nests update or awareness metadata when the payload is decodable.
 - `classifyFrame` performs envelope-only classification.
-- `summarizeUpdate` handles bare updates held outside a wire frame.
+- `summarizeUpdate` is a total observer boundary for bare updates held outside
+  a wire frame. Invalid input returns identifiable `InvalidUpdate` metadata;
+  it never throws and cannot be mistaken for a valid no-op update.
 
 Awareness summarization is internal to `inspectFrame`; only its metadata type
-is public. Unknown, truncated, or malformed input must not crash frame
-observers.
+is public. Unknown, truncated, or malformed input must not crash any observer.
 
 ## Content egress invariant
 

@@ -14,6 +14,7 @@ import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { capturedFrames, capturedJournalUpdateHex } from "./__fixtures__/captured.js";
 import { classifyFrame, inspectFrame, summarizeUpdate } from "./index.js";
+import type { UpdateSummary } from "./types.js";
 
 function fromHex(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/../g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
@@ -44,6 +45,12 @@ function syncFrame(documentName: string, innerType: number, payload: Uint8Array)
 
 function authFrame(body: Uint8Array): Uint8Array {
   return new Uint8Array([...frame("doc", 2), ...body]);
+}
+
+function summarizeValidUpdate(update: Uint8Array): UpdateSummary {
+  const summary = summarizeUpdate(update);
+  if ("invalid" in summary) throw new Error("Expected a valid Yjs update fixture");
+  return summary;
 }
 
 describe("classifyFrame", () => {
@@ -139,6 +146,17 @@ describe("inspectFrame", () => {
 });
 
 describe("summarizeUpdate", () => {
+  it("returns identifiable invalid metadata for malformed updates without throwing", () => {
+    for (const update of [new Uint8Array(), new Uint8Array([0xff]), new Uint8Array([1])]) {
+      expect(summarizeUpdate(update)).toMatchObject({
+        invalid: true,
+        reason: expect.any(String),
+        bytes: update.byteLength,
+        updateHash: expect.stringMatching(/^[0-9a-f]{16}$/),
+      });
+    }
+  });
+
   it("pins metadata and hash for a captured journal row", () => {
     expect(summarizeUpdate(fromHex(capturedJournalUpdateHex))).toEqual({
       structSpans: [{ client: 2738586583, clockFrom: 0, clockTo: 3 }],
@@ -212,17 +230,17 @@ describe("summarizeUpdate", () => {
     text.insert(0, "a");
     text.insert(1, "b");
 
-    const insertA = summarizeUpdate(updates[0]);
-    const insertB = summarizeUpdate(updates[1]);
-    const mergedInserts = summarizeUpdate(Y.mergeUpdates(updates.slice(0, 2)));
+    const insertA = summarizeValidUpdate(updates[0]);
+    const insertB = summarizeValidUpdate(updates[1]);
+    const mergedInserts = summarizeValidUpdate(Y.mergeUpdates(updates.slice(0, 2)));
     expect(overlaps(mergedInserts.structSpans, insertA.structSpans)).toBe(true);
     expect(overlaps(mergedInserts.structSpans, insertB.structSpans)).toBe(true);
 
     text.delete(0, 1);
     text.delete(0, 1);
-    const deleteA = summarizeUpdate(updates[2]);
-    const deleteB = summarizeUpdate(updates[3]);
-    const mergedDeletes = summarizeUpdate(Y.mergeUpdates(updates.slice(2)));
+    const deleteA = summarizeValidUpdate(updates[2]);
+    const deleteB = summarizeValidUpdate(updates[3]);
+    const mergedDeletes = summarizeValidUpdate(Y.mergeUpdates(updates.slice(2)));
     expect(deleteA.deleteSpans[0]).toMatchObject({ clockFrom: 0, clockTo: 1 });
     expect(deleteB.deleteSpans[0]).toMatchObject({ clockFrom: 1, clockTo: 2 });
     expect(mergedDeletes.deleteSpans).toEqual([
@@ -252,8 +270,8 @@ describe("summarizeUpdate", () => {
   it("covers full trailing-byte input in bytes and hash but not spans", () => {
     const valid = fromHex(capturedJournalUpdateHex);
     const withJunk = new Uint8Array([...valid, 0xde, 0xad]);
-    const validSummary = summarizeUpdate(valid);
-    const junkSummary = summarizeUpdate(withJunk);
+    const validSummary = summarizeValidUpdate(valid);
+    const junkSummary = summarizeValidUpdate(withJunk);
 
     expect(junkSummary.structSpans).toEqual(validSummary.structSpans);
     expect(junkSummary.deleteSpans).toEqual(validSummary.deleteSpans);
@@ -278,6 +296,18 @@ function overlaps(
 }
 
 describe("decode-journal CLI", () => {
+  it("rejects expanded records that contain no recognized update payload", () => {
+    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      encoding: "utf8",
+      input: "-[ RECORD 1 ]---\nid | 1\nupdate_hex | 0000\n-[ RECORD 42 ]---\nbogus | arbitrary\n",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("42");
+    expect(result.stdout).toBe("");
+  });
+
   it("exits nonzero and names every unrecognized row id", () => {
     const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),

@@ -124,22 +124,22 @@ export function inspectFrame(bytes: Uint8Array): FrameInspection {
   const decoded = decodeFrame(bytes);
   const inspection: FrameInspection = { frame: decoded.summary };
 
-  try {
-    if (
-      decoded.payload &&
-      (decoded.summary.messageClass === "sync.step2" ||
-        decoded.summary.messageClass === "sync.update")
-    ) {
-      inspection.update = summarizeUpdate(decoded.payload);
-    } else if (decoded.queryAwareness) {
-      inspection.awareness = emptyAwarenessSummary();
-    } else if (decoded.payload && decoded.summary.messageClass === "awareness") {
+  if (
+    decoded.payload &&
+    (decoded.summary.messageClass === "sync.step2" ||
+      decoded.summary.messageClass === "sync.update")
+  ) {
+    const update = summarizeUpdate(decoded.payload);
+    if (!("invalid" in update)) inspection.update = update;
+  } else if (decoded.queryAwareness) {
+    inspection.awareness = emptyAwarenessSummary();
+  } else if (decoded.payload && decoded.summary.messageClass === "awareness") {
+    try {
       inspection.awareness = summarizeAwareness(decoded.payload);
+    } catch {
+      // A valid outer envelope can still contain a malformed awareness
+      // payload. Preserve its classification and omit only its summary.
     }
-  } catch {
-    // A valid outer envelope can still contain a malformed Yjs payload. Frame
-    // inspection is observational, so preserve its classification and omit
-    // only the undecodable nested summary.
   }
 
   return inspection;

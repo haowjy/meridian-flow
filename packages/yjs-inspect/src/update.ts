@@ -2,7 +2,7 @@
 
 import { digest } from "lib0/hash/sha256";
 import * as Y from "yjs";
-import type { Span, UpdateSummary } from "./types.js";
+import type { InvalidUpdate, Span, UpdateSummary } from "./types.js";
 
 function toHex(bytes: Uint8Array): string {
   let hex = "";
@@ -11,14 +11,30 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
- * Summarizes a bare Yjs update without returning its content.
+ * Summarizes a bare Yjs update without returning its content or throwing.
  *
  * Yjs ignores trailing bytes after a valid update. Spans describe only the
  * decoded update, while `bytes` and `updateHash` cover the complete input,
- * including any trailing bytes.
+ * including any trailing bytes. Invalid bytes return identifiable metadata
+ * distinct from a valid no-op update.
  */
-export function summarizeUpdate(update: Uint8Array): UpdateSummary {
-  const decoded = Y.decodeUpdate(update);
+export function summarizeUpdate(update: Uint8Array): UpdateSummary | InvalidUpdate {
+  const input = {
+    bytes: update.byteLength,
+    updateHash: toHex(digest(update)).slice(0, 16),
+  };
+
+  let decoded: ReturnType<typeof Y.decodeUpdate>;
+  try {
+    decoded = Y.decodeUpdate(update);
+  } catch {
+    return {
+      invalid: true,
+      reason: "Yjs update decode failed",
+      ...input,
+    };
+  }
+
   const structs = decoded.structs
     .filter((struct) => !(struct instanceof Y.Skip))
     .sort((left, right) => left.id.client - right.id.client || left.id.clock - right.id.clock);
@@ -60,8 +76,7 @@ export function summarizeUpdate(update: Uint8Array): UpdateSummary {
     deleteRangeCount: deleteSpans.length,
     deletedLength,
     isNoop: structs.length === 0 && deleteSpans.length === 0,
-    bytes: update.byteLength,
-    updateHash: toHex(digest(update)).slice(0, 16),
+    ...input,
   };
 }
 

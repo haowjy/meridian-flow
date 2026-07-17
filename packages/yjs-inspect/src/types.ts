@@ -48,6 +48,13 @@ export interface UpdateSummary {
   updateHash: string;
 }
 
+export interface InvalidUpdate {
+  invalid: true;
+  reason: string;
+  bytes: number;
+  updateHash: string;
+}
+
 export interface FrameInspection {
   frame: FrameSummary;
   update?: UpdateSummary;
