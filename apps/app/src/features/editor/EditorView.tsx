@@ -235,6 +235,7 @@ function SessionEditorView({
         cursorProvider: session.cursorProvider,
         user,
         editable,
+        placeholder: t`Start writing…`,
         autofocus: false,
         figureRenderContext: { projectId, documentId },
         showCollaborationDecorations,

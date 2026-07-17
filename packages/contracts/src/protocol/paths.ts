@@ -116,6 +116,14 @@ export function apiProjectContextCreatePath(
   return `${apiProjectPath(projectId)}/context/${scheme}/create${projectContextQuery(scheme, opts)}`;
 }
 
+export function apiProjectContextCreateUntitledPath(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
+): string {
+  return `${apiProjectPath(projectId)}/context/${scheme}/create-untitled${projectContextQuery(scheme, opts)}`;
+}
+
 export function apiProjectContextReadPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,

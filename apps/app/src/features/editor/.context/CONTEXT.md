@@ -17,12 +17,12 @@ controls sitting on canvas, separated from the prose by whitespace only.
 while text scrolls beneath), aligned to the prose column.
 
 **One column, one owner**: `editor-column.ts` is the single home of prose
-geometry — the chrome alignment (toolbar row, temp save bar), the canvas
+geometry — the chrome alignment (toolbar row, untitled rename line), the canvas
 wrapper, and `editorProseClass(toolbar)` for the ProseMirror node (the top
 inset depends on whether a docked toolbar already supplies the breathing
-room; hosts choose at editor creation). `EditorView` and `TempDocumentEditor`
-share this column exactly, so nothing moves when switching between temp and
-tracked tabs. Never re-encode these classes at a call site.
+room; hosts choose at editor creation). Tracked and untitled documents share
+this column exactly, so nothing moves when an untitled tab materializes. Never
+re-encode these classes at a call site.
 
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.

@@ -23,6 +23,7 @@ export function contextTabFromFile(
     scheme,
     path: file.path,
     name: file.name,
+    provisionalName: file.provisionalName,
     ...(isWorkScopedProjectContextScheme(scheme) && workId ? { workId } : {}),
   };
   return {

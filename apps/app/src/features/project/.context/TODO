@@ -1,5 +1,12 @@
 # TODO — must-do follow-ups (project shell)
 
+- Repair an open context tab and route immediately when its backing entry is
+  deleted. This predates the untitled client-flow branch: `origin/main` already
+  invalidates the tree after deletion but `ContextPaneController` only reacts
+  when a tab is explicitly removed from the tab store; a missing node in the
+  refreshed tree does not remove it. Applies to viewer, tracked, and provisional
+  documents and needs one deletion-to-tab lifecycle contract across tree/store/route.
+
 - Move the AI write mode control (Draft | Auto-apply,
   shell/AiWriteModeControl.tsx) OUT of the left sidebar and into the
   chat/thread surface (user call, 2026-07-15: "shouldn't even be there").

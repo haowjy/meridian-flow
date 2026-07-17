@@ -75,9 +75,13 @@ msgstr ""
 msgid "✓ All changes reviewed"
 msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "A file named {noteName} already exists in this location."
+#: src/features/project/context/UntitledRenameLine.tsx
+msgid "A file named {name} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "A file named {noteName} already exists in this location."
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {trimmed} already exists in this location."
@@ -242,7 +246,6 @@ msgid "Buy extra usage"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/ContextPaneController.tsx
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr ""
@@ -460,9 +463,13 @@ msgstr ""
 msgid "Couldn't open this location"
 msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Couldn't save to your project. Nothing was lost — your words are still here."
+#: src/features/project/context/UntitledRenameLine.tsx
+msgid "Couldn't rename this document. Try another name."
 msgstr ""
+
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Couldn't save to your project. Nothing was lost — your words are still here."
+#~ msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
@@ -534,7 +541,6 @@ msgid "Dev-login failed"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/ContextPaneController.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard"
 msgstr ""
@@ -549,8 +555,8 @@ msgid "Discard all changes?"
 msgstr ""
 
 #: src/features/project/ContextPaneController.tsx
-msgid "Discard this document?"
-msgstr ""
+#~ msgid "Discard this document?"
+#~ msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -558,6 +564,10 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Document"
+msgstr ""
+
+#: src/features/project/context/UntitledRenameLine.tsx
+msgid "Document name and location"
 msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx
@@ -568,7 +578,7 @@ msgstr ""
 msgid "Documents the AI reads in this chat appear here."
 msgstr ""
 
-#: src/features/project/context/viewers/DownloadCard.tsx
+#: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr ""
 
@@ -795,8 +805,8 @@ msgid "Interface language"
 msgstr "界面语言"
 
 #: src/features/project/ContextPaneController.tsx
-msgid "It was never saved to your project. Its words will be gone."
-msgstr ""
+#~ msgid "It was never saved to your project. Its words will be gone."
+#~ msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
@@ -970,7 +980,7 @@ msgstr ""
 msgid "Must be at most {value}"
 msgstr ""
 
-#: src/features/project/context/use-temp-document-save.ts
+#: src/features/project/context/UntitledRenameLine.tsx
 msgid "Name is required"
 msgstr ""
 
@@ -1094,7 +1104,7 @@ msgstr ""
 msgid "Not Found"
 msgstr "未找到"
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
+#: src/features/project/context/UntitledRenameLine.tsx
 msgid "Nothing here yet"
 msgstr ""
 
@@ -1119,7 +1129,7 @@ msgstr "更早"
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
 msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
+#: src/features/project/context/UntitledRenameLine.tsx
 msgid "Only on this device"
 msgstr ""
 
@@ -1139,7 +1149,7 @@ msgstr ""
 msgid "Open context files"
 msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
+#: src/features/project/context/UntitledRenameLine.tsx
 msgid "Open existing"
 msgstr ""
 
@@ -1208,7 +1218,7 @@ msgstr ""
 msgid "Preferences"
 msgstr ""
 
-#: src/features/project/context/viewers/DownloadCard.tsx
+#: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
 msgstr ""
 
@@ -1322,8 +1332,16 @@ msgstr ""
 msgid "Rename chat"
 msgstr ""
 
+#: src/features/project/context/UntitledRenameLine.tsx
+msgid "Rename document"
+msgstr ""
+
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
+msgstr ""
+
+#: src/features/project/context/UntitledRenameLine.tsx
+msgid "Renaming…"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
@@ -1402,33 +1420,33 @@ msgstr ""
 msgid "Running skill…"
 msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Save"
-msgstr ""
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Save"
+#~ msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Save location"
-msgstr ""
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Save location"
+#~ msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Save temporary document"
-msgstr ""
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Save temporary document"
+#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally · offline"
 msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Saved the snapshot and kept your newer words here."
-msgstr ""
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Saved the snapshot and kept your newer words here."
+#~ msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Saved to the earlier location — your new save location stays with this copy."
-msgstr ""
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Saved to the earlier location — your new save location stays with this copy."
+#~ msgstr ""
 
-#: src/features/project/context/TempDocumentSaveBar.tsx
-msgid "Saving…"
-msgstr ""
+#: src/features/project/context/UntitledRenameLine.tsx
+#~ msgid "Saving…"
+#~ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "Scratch"
@@ -1521,6 +1539,10 @@ msgstr ""
 msgid "Start a quick chat without a project"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "Start writing…"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 msgid "Status"
 msgstr ""
@@ -1579,8 +1601,8 @@ msgid "Task Assignment"
 msgstr ""
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "Temporary document editor"
-msgstr ""
+#~ msgid "Temporary document editor"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Text size"
