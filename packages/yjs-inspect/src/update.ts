@@ -10,6 +10,13 @@ function toHex(bytes: Uint8Array): string {
   return hex;
 }
 
+/**
+ * Summarizes a bare Yjs update without returning its content.
+ *
+ * Yjs ignores trailing bytes after a valid update. Spans describe only the
+ * decoded update, while `bytes` and `updateHash` cover the complete input,
+ * including any trailing bytes.
+ */
 export function summarizeUpdate(update: Uint8Array): UpdateSummary {
   const decoded = Y.decodeUpdate(update);
   const structs = decoded.structs
