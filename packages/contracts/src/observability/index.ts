@@ -56,7 +56,8 @@ export interface TraceStreamRef {
   /**
    * Wire-level message class from the transport's own vocabulary:
    * thread-ws: `event` | `subscribed` | `gap` | `ping` | ...
-   * yjs: `sync.step1` | `sync.step2` | `sync.update` | `awareness` | `stateless` | `auth`
+   * yjs: `sync.step1` | `sync.step2` | `sync.update` | `sync.status` | `awareness` |
+   *   `stateless` | `auth` | `close` | `ping` | `pong` | `unknown`
    * gateway: `start` | `text.delta` | `usage` | `end` | `error`
    */
   messageClass?: string;
