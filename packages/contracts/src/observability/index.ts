@@ -34,8 +34,12 @@ export interface EventCorrelation {
   branchId?: string;
   branchGeneration?: number;
   yjsClient?: number;
-  yjsClockFrom?: number;
-  yjsClockTo?: number;
+  /**
+   * Canonical Yjs update spans key from `@meridian/yjs-inspect`'s `summarizeUpdate().spansKey`:
+   * `s:<client>:<from>-<to>` and `d:<client>:<from>-<to>` tokens joined by `,`.
+   * Same-kind span overlap is the client/server join rule (design D2).
+   */
+  yjsSpans?: string;
 }
 
 export interface TraceStreamRef {
