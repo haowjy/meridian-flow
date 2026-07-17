@@ -1,5 +1,5 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -351,6 +351,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         access.canAccessProjectDocument(USER_ID as never, manifest.documentId, PROJECT_ID as never),
       ).resolves.toBe(false);
+    });
+
+    it("adopts one manifest identity across concurrent cold resolutions", async () => {
+      const resolutions = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+        ),
+      );
+      const [documentId] = [...new Set(resolutions.map((resolution) => resolution.documentId))];
+
+      expect(documentId).toBeDefined();
+      expect(resolutions.map((resolution) => resolution.documentId)).toEqual(
+        Array.from({ length: 8 }, () => documentId),
+      );
+
+      const activeManifests = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.contextSourceId, SOURCE_ID),
+            eq(documents.kind, "manifest"),
+            isNull(documents.deletedAt),
+          ),
+        );
+      expect(activeManifests).toEqual([{ id: documentId }]);
     });
 
     it("persists manifest membership as a live Yjs peer across store reload", async () => {
