@@ -25,6 +25,8 @@
   synced recent list; deleted documents drop out of it on next entry;
   clearing the desk then reloading default-opens instead of landing on
   an empty New-document canvas.
+- `apps/server`: concurrent cold project loads now adopt one active manifest
+  identity instead of failing the losing request with a uniqueness error.
 - `apps/app`: the dev debug overlay gains a pop-out Streams trace viewer showing
   live client Yjs and agent-stream wire traffic as metadata-only records without
   blocking the editor;
