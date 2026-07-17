@@ -130,6 +130,20 @@ dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
   `useState` initializer makes the first client render diverge from server
   HTML → *"Hydration failed"*.
 
+## Realtime stream inspector — planned
+
+The debug overlay does not currently expose WebSocket frame traffic or Yjs
+protocol summaries. Browser network tooling (`agent-browser`, HAR) is blind to
+WebSocket traffic, and server-side collab operations emit zero success-path
+structured events. A realtime stream inspector covering thread WS and Yjs
+transports is tracked in issue cluster
+[#235](https://github.com/haowjy/meridian-flow/issues/235), with the planned
+dependency order: Yjs decoder
+([#238](https://github.com/haowjy/meridian-flow/issues/238)) then frontend
+viewer ([#237](https://github.com/haowjy/meridian-flow/issues/237)) then
+server correlation
+([#239](https://github.com/haowjy/meridian-flow/issues/239)).
+
 ## Document session — not available
 
 There is no global document session registry today (owned by the

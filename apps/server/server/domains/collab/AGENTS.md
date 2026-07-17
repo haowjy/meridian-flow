@@ -96,6 +96,22 @@ propagation between them.
   filetype and constructs content for the document's actual schema. The
   markdown-only seeding that caused #196 is historical, not the current engine.
 
+## Diagnostic anti-patterns
+
+- **`documents.markdown_projection` is not the persistence authority.** The
+  projection column and `documents.updated_at` update asynchronously (on
+  store/checkpoint, not per keystroke). Verifying edit persistence requires
+  querying `document_yjs_updates` (the live journal). A stale projection with a
+  healthy journal is normal operation, not a persistence failure. See
+  [#241](https://github.com/haowjy/meridian-flow/issues/241) for the
+  investigation into making this less misleading.
+- **Server logs are silent on the collab success path.** A fully successful
+  edit-and-persist flow emits zero server log lines and zero HAR-visible
+  requests. Browser network tooling (HAR, `agent-browser`) does not expose
+  WebSocket traffic. Proving persistence currently requires direct journal
+  queries. Success-path wire events are tracked in
+  [#239](https://github.com/haowjy/meridian-flow/issues/239).
+
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`domains/notices/AGENTS.md`](../notices/AGENTS.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)
