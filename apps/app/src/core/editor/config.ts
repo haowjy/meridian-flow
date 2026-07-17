@@ -40,6 +40,10 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import {
+  SlashCommandExtension,
+  type SlashCommandExtensionOptions,
+} from "./extensions/SlashCommandExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -71,6 +75,7 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
+  slashCommands?: SlashCommandExtensionOptions;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -226,6 +231,7 @@ export function createEditorExtensions({
   assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
+  slashCommands,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -236,7 +242,7 @@ export function createEditorExtensions({
   });
 
   return [
-    ...createStandaloneEditorExtensions({ schemaType, assetRenderContext }),
+    ...createStandaloneEditorExtensions({ schemaType, assetRenderContext, slashCommands }),
     ...collaboration,
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
@@ -246,7 +252,11 @@ export function createEditorExtensions({
 export function createStandaloneEditorExtensions({
   schemaType = "document",
   assetRenderContext,
-}: Pick<CreateEditorExtensionsOptions, "schemaType" | "assetRenderContext"> = {}): Extensions {
+  slashCommands,
+}: Pick<
+  CreateEditorExtensionsOptions,
+  "schemaType" | "assetRenderContext" | "slashCommands"
+> = {}): Extensions {
   if (schemaType === "code") {
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
@@ -278,6 +288,7 @@ export function createStandaloneEditorExtensions({
     MeridianFigure.configure({
       projectId: assetRenderContext?.projectId,
     }),
+    ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
     LiveRangeNavigationExtension,
   ];
 }
@@ -291,6 +302,7 @@ export function createEditorConfig({
   assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
+  slashCommands,
   editable = true,
   autofocus = false,
   placeholder,
@@ -313,6 +325,7 @@ export function createEditorConfig({
         assetRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
+        slashCommands,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
