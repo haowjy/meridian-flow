@@ -20,10 +20,11 @@ import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
 import OrderedList from "@tiptap/extension-ordered-list";
 import Paragraph from "@tiptap/extension-paragraph";
-import { Table } from "@tiptap/extension-table";
+import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView } from "../FigureNodeView";
@@ -56,7 +57,17 @@ function tableCellAttributes(parentAttrs: (() => Record<string, unknown>) | unde
   delete attrs.align;
 
   return {
-    alignment: { default: null },
+    alignment: {
+      default: null,
+      parseHTML: (element: HTMLElement) => {
+        const value = element.style.textAlign;
+        return value === "left" || value === "center" || value === "right" ? value : null;
+      },
+      renderHTML: (attrs: RenderAttrs) =>
+        attrs.alignment === "left" || attrs.alignment === "center" || attrs.alignment === "right"
+          ? { style: `text-align: ${attrs.alignment}` }
+          : {},
+    },
     ...attrs,
   };
 }
@@ -134,6 +145,33 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
 });
 
+/** Keeps block alignment live when the resize plugin takes over table rendering. */
+export class MeridianTableView extends TableView {
+  constructor(...args: ConstructorParameters<typeof TableView>) {
+    super(...args);
+    this.applyAlignment(args[0]);
+  }
+
+  override update(node: ProseMirrorNode): boolean {
+    if (!super.update(node)) return false;
+    this.applyAlignment(node);
+    return true;
+  }
+
+  private applyAlignment(node: ProseMirrorNode) {
+    const alignment = node.attrs.align;
+    if (alignment === "center" || alignment === "right") {
+      this.table.dataset.align = alignment;
+      this.table.style.marginLeft = "auto";
+      this.table.style.marginRight = alignment === "center" ? "auto" : "0px";
+      return;
+    }
+    delete this.table.dataset.align;
+    this.table.style.marginLeft = "";
+    this.table.style.marginRight = "";
+  }
+}
+
 export const MeridianTable = Table.extend({
   name: "table",
   content: "table_row+",
@@ -158,7 +196,7 @@ export const MeridianTable = Table.extend({
       },
     };
   },
-});
+}).configure({ resizable: true, View: MeridianTableView });
 
 export const MeridianTableRow = TableRow.extend({
   name: "table_row",
