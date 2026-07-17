@@ -1,5 +1,6 @@
 /** Shared docked-toolbar and scrolling layout for document editor surfaces. */
-import type { ReactNode, Ref, UIEventHandler } from "react";
+import type { Editor } from "@tiptap/react";
+import type { MouseEvent as ReactMouseEvent, ReactNode, Ref, UIEventHandler } from "react";
 
 import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
@@ -7,14 +8,44 @@ import { editorColumnChrome } from "./editor-column";
 export type EditorSurfaceFrameProps = {
   toolbar?: ReactNode;
   children: ReactNode;
+  /**
+   * When given, the whole scroll area becomes click-to-focus territory: a
+   * press on the gutters or wrapper padding (outside the ProseMirror node)
+   * places the caret at the nearest text position, like clicking the page
+   * margin in a word processor (user call 2026-07-16 — the editor pane must
+   * not have click-dead margins).
+   */
+  editor?: Editor | null;
   scrollClassName?: string;
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 };
 
+function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLDivElement>) {
+  const frame = event.currentTarget;
+  const frameRect = frame.getBoundingClientRect();
+  // clientWidth excludes a native scrollbar — presses in the scrollbar strip
+  // must keep their default behavior.
+  if (event.clientX - frameRect.left >= frame.clientWidth) return;
+
+  const prose = editor.view.dom.getBoundingClientRect();
+  const pos = editor.view.posAtCoords({
+    left: Math.min(Math.max(event.clientX, prose.left + 1), prose.right - 1),
+    top: Math.min(Math.max(event.clientY, prose.top + 1), prose.bottom - 1),
+  });
+  // Focusing on mousedown (not click) matches ProseMirror's own timing;
+  // preventDefault stops the press from re-blurring the editor it just focused.
+  event.preventDefault();
+  editor
+    .chain()
+    .focus(pos ? pos.pos : "end")
+    .run();
+}
+
 export function EditorSurfaceFrame({
   toolbar,
   children,
+  editor,
   scrollClassName,
   scrollRef,
   onScroll,
@@ -30,6 +61,9 @@ export function EditorSurfaceFrame({
           <div className={editorColumnChrome}>{toolbar}</div>
         </div>
       ) : null}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the mousedown is
+          pointer-only caret delegation into the editor (page-margin clicks);
+          keyboard users reach the same editor via Tab focus on the prose node. */}
       <div
         ref={scrollRef}
         // flex-col so canvas children can take the editorColumnFill chain —
@@ -37,6 +71,16 @@ export function EditorSurfaceFrame({
         className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", scrollClassName)}
         data-stable-layout-scroll
         onScroll={onScroll}
+        onMouseDown={
+          editor
+            ? (event) => {
+                if (event.button !== 0 || event.defaultPrevented) return;
+                // Inside the prose node ProseMirror owns the press.
+                if ((event.target as HTMLElement).closest(".ProseMirror")) return;
+                focusEditorFromGutterPress(editor, event);
+              }
+            : undefined
+        }
       >
         {children}
       </div>
