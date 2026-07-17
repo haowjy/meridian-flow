@@ -2,9 +2,18 @@
 
 ## [Unreleased]
 
-- `apps/app`: working-set sync uses suspect-baseline recovery — after PUT
-  failure, offline→online, or sync re-enable, sweeps GET-before-PUT and
-  reconcile server conflicts before pushing (#217).
+- `apps/app`, `apps/server`: cross-device working-set sync — reopening
+  Meridian on another device resumes the same document, recent tabs, and
+  chat thread (#217). One row per user·project (`project_user_working_sets`);
+  debounced whole-snapshot PUTs with revision-checked acks; four-case
+  hydration at project entry (server wins on true conflict); recovery paths
+  (PUT failure, offline→online, sync re-enable) mark the baseline suspect
+  and GET-before-PUT so stale offline state never overwrites newer devices.
+  One toggle in Settings › Preferences: "Resume where I left off on any
+  device" (default ON; fails closed when the preference can't be read).
+  Device-local restore storage (`context-last-route`) is replaced by the
+  canonical working-set store; local restore behavior is unchanged.
+- `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
   single default Work for chat-independent Scratch surfaces.
