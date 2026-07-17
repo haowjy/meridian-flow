@@ -9,7 +9,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 
 import { renameContextEntryWithConflict } from "@/client/api/projects-api";
@@ -58,13 +58,39 @@ export function TempDocumentSaveBar({
         .filter(Boolean)
         .join("/")}${parentPath === "/" ? "" : "/"}`
     : "scratch://";
-  const [draft, setDraft] = useState(() => `${prefix}${suggestedUntitledName(tab) || tab.name}`);
+  const suggestionFragment = useMemo(() => {
+    const session = getDocumentSessionRegistry().getDetached(tab.documentId);
+    return session.document.getXmlFragment(session.fragmentName);
+  }, [tab.documentId]);
+  const [draft, setDraft] = useState(
+    () => `${prefix}${suggestedUntitledName(tab, suggestionFragment) || tab.name}`,
+  );
   const [open, setOpen] = useState(false);
   const [browsePath, setBrowsePath] = useState(parentPath);
   const [error, setError] = useState<string | null>(null);
   const [serverConflict, setServerConflict] = useState(false);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const writerOwnsName = useRef(false);
+
+  useEffect(() => {
+    let timer: number | null = null;
+    const refreshSuggestion = () => {
+      if (writerOwnsName.current) return;
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        const suggestion = suggestedUntitledName(tab, suggestionFragment);
+        if (suggestion) setDraft(`${prefix}${suggestion}`);
+      }, 300);
+    };
+    suggestionFragment.observeDeep(refreshSuggestion);
+    refreshSuggestion();
+    return () => {
+      suggestionFragment.unobserveDeep(refreshSuggestion);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [prefix, suggestionFragment, tab]);
   const options = useMemo(
     () => ({
       schemes: tracked ? [tracked.scheme] : ["scratch" as const],
@@ -155,6 +181,7 @@ export function TempDocumentSaveBar({
               aria-invalid={Boolean(validation || collision || error)}
               onFocus={() => setOpen(true)}
               onChange={(event) => {
+                writerOwnsName.current = true;
                 const nextName = event.target.value.slice(event.target.value.lastIndexOf("/") + 1);
                 setDraft(`${prefix}${nextName}`);
                 setError(null);
@@ -239,9 +266,8 @@ function replaceBasename(path: string, name: string): string {
   return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
 }
 
-function suggestedUntitledName(tab: RenameTab): string {
-  const session = getDocumentSessionRegistry().getDetached(tab.documentId);
-  const text = firstXmlBlockText(session.document.getXmlFragment(session.fragmentName));
+function suggestedUntitledName(tab: RenameTab, fragment: Y.XmlFragment): string {
+  const text = firstXmlBlockText(fragment);
   if (!text) return "";
   const suggestion = suggestedTempDocumentName({
     type: "doc",

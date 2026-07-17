@@ -32,6 +32,7 @@ import {
   getUntitledReconciler,
   isUntitledPending,
   registerUntitledCandidate,
+  untitledDocumentIsEmpty,
   untitledHomeUri,
 } from "./context/untitled-reconciler";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -281,7 +282,11 @@ export function ContextViewerSurfaceController({
     const closedWasActive = documentId === activeTabId;
     const fallback = closeTab(projectId, documentId);
     if (tab?.kind === "new" && !isUntitledPending(documentId)) {
-      void getDocumentSessionRegistry().destroyRoom(documentId, { clearPersistence: true });
+      const registry = getDocumentSessionRegistry();
+      const session = registry.getDetached(documentId);
+      if (untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName))) {
+        void registry.destroyRoom(documentId, { clearPersistence: true });
+      }
     }
     // Closing the last tab is a deliberate "empty desk" — forget the
     // remembered file so it doesn't resurrect on the next visit.
