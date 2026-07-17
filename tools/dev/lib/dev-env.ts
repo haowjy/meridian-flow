@@ -86,6 +86,13 @@ function databaseNameFromUrl(databaseUrl: string): string {
 
 /** Build the per-worktree Postgres database name from the main-checkout base name. */
 export function resolveWorktreeDatabaseName(baseDbName: string, slug: string): string {
+  if (
+    slug.startsWith("test-run-") ||
+    slug.startsWith("test-manual-") ||
+    slug.startsWith("migrations_")
+  ) {
+    throw new Error(`Worktree database slug uses a reserved test namespace: ${slug}`);
+  }
   const name = `${baseDbName}_${slug}`;
   validateDbName(name);
   return name;
