@@ -84,7 +84,6 @@ export function useIdentityCommit({
       return { status: "committed" };
     }
 
-    const sourceFolder = tab.path.slice(0, tab.path.lastIndexOf("/")) || "/";
     const destination = target.destination;
     const destinationWorkId =
       destination && isWorkScopedProjectContextScheme(destination.scheme)
@@ -92,14 +91,8 @@ export function useIdentityCommit({
           defaultWorkId ??
           undefined)
         : undefined;
-    const locationUnchanged =
-      !destination ||
-      (destination.scheme === tab.scheme &&
-        destination.folderPath === sourceFolder &&
-        destinationWorkId === tab.workId);
-
     try {
-      if (locationUnchanged) {
+      if (!destination) {
         if (name === tab.name) return { status: "committed" };
         const result = await renameContextEntry(
           projectId,
