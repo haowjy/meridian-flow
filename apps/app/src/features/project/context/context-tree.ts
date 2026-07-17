@@ -16,6 +16,16 @@ export type ContextDir = ProjectContextTreeDirectory;
 export type ContextFile = ProjectContextTreeFile;
 export type ContextNode = ProjectContextTreeNode;
 
+/** First file in tree order — the default-open target for a fresh project. */
+export function firstContextFile(root: ContextNode): ContextFile | null {
+  if (root.kind === "file") return root;
+  for (const child of root.children) {
+    const hit = firstContextFile(child);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 export function findContextFile(root: ContextNode, path: string): ContextFile | null {
   if (root.kind === "file") return root.path === path ? root : null;
   for (const child of root.children) {

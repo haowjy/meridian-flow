@@ -86,6 +86,7 @@ export function TempDocumentEditor({
       />
       <EditorSurfaceFrame
         toolbar={<EditorToolbar editor={editor} />}
+        editor={editor}
         // meridian-editor gives the temp surface the same prose contract as
         // tracked documents (outline suppression, 68ch measure, block styles).
         scrollClassName="meridian-editor"

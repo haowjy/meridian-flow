@@ -5,9 +5,10 @@
  * Chrome rows (toolbar, temp save bar) must start exactly where the prose
  * starts, so nothing jumps when switching tabs or when chrome appears.
  *
- * The horizontal inset is split across two layers for click behavior — the
- * ProseMirror node's own padding is click-to-focus territory, the wrapper's
- * is not — which creates the sum invariant these recipes encode in one place:
+ * The horizontal inset is split across two layers — a wrapper and the
+ * ProseMirror node's own padding. The whole editor pane is click-to-focus
+ * territory (EditorSurfaceFrame routes gutter presses to the caret), so the
+ * split is pure geometry now; the sum invariant these recipes encode is:
  *
  *   chrome inset  =  canvas wrapper inset  +  prose inset
  *   px-8/10/16    =  px-2/4/6              +  px-6/6/10

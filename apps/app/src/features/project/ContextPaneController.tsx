@@ -35,7 +35,7 @@ import {
 } from "./context/context-last-route";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
-import { findContextFile } from "./context/context-tree";
+import { findContextFile, firstContextFile } from "./context/context-tree";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 const EMPTY_TEMP_DOCUMENTS: import("@/client/stores").TempDocument[] = [];
@@ -147,19 +147,50 @@ export function ContextViewerSurfaceController({
     setRememberedRoute({ projectId, route });
   }, [activeTab, projectId]);
 
-  // One-shot restore: landing on Context with no destination replays the
-  // remembered file. A deep link (file or scheme browser) is an explicit
-  // destination and wins; closing the last tab later must not re-trigger
-  // this, hence the ref.
+  // Restore, once per SCREEN ENTRY (user call 2026-07-16 — "the last opened
+  // thing"): entering Context with no destination replays the remembered
+  // file. A deep link (file or scheme browser) is an explicit destination
+  // and wins. The ref re-arms when the screen deactivates — the controller
+  // is a persistent surface, so a mount-scoped one-shot fired only on the
+  // FIRST visit and left every later return on the orphan empty state.
+  // Closing the last tab can't resurrect it: the deliberate empty desk
+  // already forgets the route, and the ref stays spent while you stay here.
   const restoreAttemptedRef = useRef(false);
+  const [wantsDefaultOpen, setWantsDefaultOpen] = useState(false);
   useEffect(() => {
-    if (restoreAttemptedRef.current || !active) return;
+    if (!active) {
+      restoreAttemptedRef.current = false;
+      setWantsDefaultOpen(false);
+      return;
+    }
+    if (restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     if (activeContextScheme !== null || activeContextPath !== null) return;
     const last = readLastContextRoute(projectId);
-    if (!last) return;
-    onSelectContextPath(last.path, last.scheme, { replace: true });
+    if (last) {
+      onSelectContextPath(last.path, last.scheme, { replace: true });
+      return;
+    }
+    // Nothing to restore and an empty desk that was never deliberately
+    // emptied (no tabs): land on words instead of the empty state — arm the
+    // default open, resolved below once the manuscript tree arrives (user
+    // call 2026-07-16: "there should always be documents loaded").
+    if (tabs.length === 0) setWantsDefaultOpen(true);
   }, [active]);
+
+  const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
+    enabled: wantsDefaultOpen,
+    activeThreadId,
+  });
+  useEffect(() => {
+    if (!wantsDefaultOpen || !defaultOpenTree) return;
+    setWantsDefaultOpen(false);
+    // The writer (or a late restore) may have opened something while the
+    // tree loaded — an explicit destination always wins over the default.
+    if (activeContextScheme !== null || activeContextPath !== null || tabs.length > 0) return;
+    const file = firstContextFile(defaultOpenTree);
+    if (file) onSelectContextPath(file.path, "manuscript", { replace: true });
+  }, [wantsDefaultOpen, defaultOpenTree]);
 
   useEffect(() => {
     const previous = previousRouteStateRef.current;

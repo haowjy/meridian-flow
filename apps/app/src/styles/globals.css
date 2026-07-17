@@ -448,12 +448,13 @@
  * nothing; they sit transparent on this field.
  */
 @utility chrome-field {
-  /* 3px (sharper than the 6px tab voice — architecture, not a control;
-     user-tuned live 2026-07-15). The curve exists only against the shelf:
+  /* Shares --radius-md with the tab chips and the page sheet — ONE corner
+     voice across the shell (user call 2026-07-16, superseding the earlier
+     3px "architecture" tune). The curve exists only against the shelf:
      ProjectShell zeroes --chrome-corner when the left rail is collapsed,
      otherwise the shelf backdrop pokes through the notch at the screen edge. */
   overflow: hidden;
-  border-top-left-radius: var(--chrome-corner, 3px);
+  border-top-left-radius: var(--chrome-corner, var(--radius-md));
   background-color: var(--color-sidebar);
 }
 

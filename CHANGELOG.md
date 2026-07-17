@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+- `apps/app`: whole editor pane is click-to-focus — presses on the margins
+  place the caret at the nearest text position (never a block boundary, so
+  collab cursors can't render phantom rows between paragraphs); the pane
+  shows the text cursor throughout.
+- `apps/app`: returning to the Editor reopens the last-active document
+  (restore now re-arms on every screen entry); fresh projects auto-open the
+  first manuscript file instead of an empty state.
+- `apps/app`: tab file icons use one muted ink (jade/streaming/destructive
+  no longer spent on file-type metadata); read-only viewer header/footer
+  stop painting muted bands; "Preview not available" fallback is a quiet
+  empty state instead of a boxed card; rail↔chrome corner joins the shared
+  radius.
+
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);

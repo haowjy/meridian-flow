@@ -8,7 +8,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 
-import { DownloadCard } from "./DownloadCard";
+import { DownloadFallback } from "./DownloadFallback";
 
 export type PdfViewerProps = {
   url: string;
@@ -18,7 +18,7 @@ export type PdfViewerProps = {
 export function PdfViewer({ url, name }: PdfViewerProps) {
   return (
     <object data={url} type="application/pdf" aria-label={name} className="h-full w-full">
-      <DownloadCard
+      <DownloadFallback
         url={url}
         name={name}
         body={<Trans>This browser cannot display the PDF inline.</Trans>}

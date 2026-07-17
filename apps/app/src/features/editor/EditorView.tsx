@@ -491,6 +491,7 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
+      editor={editor}
       scrollRef={scrollRef}
       scrollClassName={cn(
         "meridian-editor main-pane relative",
