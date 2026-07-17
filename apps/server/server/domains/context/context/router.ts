@@ -282,9 +282,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!source.ok) return source;
       const destination = await resolve(destinationUri);
       if (!destination.ok) return destination;
-      if (source.value.canonical === destination.value.canonical) {
-        return Err({ code: "invalid_operation", uri: destination.value.canonical });
-      }
       if (
         source.value.scheme === destination.value.scheme &&
         source.value.workScopeId === destination.value.workScopeId
