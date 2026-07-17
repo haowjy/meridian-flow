@@ -35,9 +35,13 @@ export function isUnmanagedTestDatabase(
   databaseName: string,
   baseDatabaseNames: readonly string[],
 ): boolean {
-  return baseDatabaseNames.some((baseDatabaseName) =>
-    databaseName.startsWith(`${baseDatabaseName}_test`),
-  );
+  return baseDatabaseNames.some((baseDatabaseName) => {
+    const prefix = `${baseDatabaseName}_`;
+    return (
+      databaseName.startsWith(prefix) &&
+      databaseName.slice(prefix.length).toLowerCase().includes("test")
+    );
+  });
 }
 
 export function isProcessAlive(pid: number): boolean {

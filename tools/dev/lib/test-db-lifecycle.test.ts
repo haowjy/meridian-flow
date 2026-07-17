@@ -23,6 +23,7 @@ describe("managed DB test lifecycle", () => {
     expect(managedTestDatabaseOwnerPid("meridian_test-run-manual", ["meridian"])).toBeUndefined();
     expect(managedTestDatabaseOwnerPid("other_test-run-1234-5678", ["meridian"])).toBeUndefined();
     expect(isUnmanagedTestDatabase("meridian_test_manual", ["meridian"])).toBe(true);
+    expect(isUnmanagedTestDatabase("meridian_feature-test", ["meridian"])).toBe(true);
     expect(isUnmanagedTestDatabase("meridian_feature", ["meridian"])).toBe(false);
   });
 
