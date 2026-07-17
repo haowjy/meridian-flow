@@ -55,10 +55,14 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     expect(observation.protection.capturedBodies.join("\n")).toContain(
       "Writer-approved Work A text.",
     );
-    expect(observation.protection.restoreAvailable).toBe(true);
+    expect(observation.protection.restoreActionable).toBe(true);
     expect(observation.protection.trailChanges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          navigation: expect.objectContaining({
+            kind: "live_block_range",
+          }),
+          afterBlockIdentity: expect.objectContaining({ documentId: expect.any(String) }),
           writerProtection: expect.objectContaining({
             kind: "sweep",
             body: expect.objectContaining({ status: "available" }),

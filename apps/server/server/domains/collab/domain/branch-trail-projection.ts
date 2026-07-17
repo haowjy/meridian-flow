@@ -21,6 +21,13 @@ import {
   type RawTrailChange,
   type ReplacementOperation,
 } from "./trail-read-kernel.js";
+
+type TrailProjectionLocation = {
+  kind: RawTrailChange["kind"];
+  beforeIdentity: CanonicalBlockIdentityV1 | null;
+  afterIdentity: CanonicalBlockIdentityV1 | null;
+  navigation: RawTrailChange["navigation"];
+};
 export function journalAttributionByChangedBlock(input: {
   liveDoc: Y.Doc;
   rows: readonly BranchJournalRow[];
@@ -150,12 +157,22 @@ export function preparedTrailChanges(input: {
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
     const isSwept = swept.has(block.blockId);
     const resurrectionBody = input.resurrectionBodies?.get(block.blockId);
+    const wholeDocumentReplacement =
+      isSwept &&
+      input.before.length === 1 &&
+      input.before[0]?.hash === block.blockId &&
+      !nextId &&
+      !previousId
+        ? input.afterDoc.getXmlFragment("prosemirror").get(0)
+        : null;
+    const safeNextBoundary =
+      wholeDocumentReplacement instanceof Y.XmlElement ? wholeDocumentReplacement : null;
     const ordinaryNavigation =
       block.afterText !== null && input.afterById.get(block.blockId)
         ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
         : deletionBoundaryTarget({
             doc: input.afterDoc,
-            next: nextId ? input.afterById.get(nextId) : null,
+            next: nextId ? input.afterById.get(nextId) : safeNextBoundary,
             previous: previousId ? input.afterById.get(previousId) : null,
           });
     const sweptNavigation =
@@ -164,7 +181,7 @@ export function preparedTrailChanges(input: {
             affectedBlockHash: block.blockId,
             afterDoc: input.afterDoc,
             operations: input.operations,
-            nextSurvivor: nextId ? input.afterById.get(nextId) : null,
+            nextSurvivor: nextId ? input.afterById.get(nextId) : safeNextBoundary,
             previousSurvivor: previousId ? input.afterById.get(previousId) : null,
           })
         : null;
@@ -180,23 +197,29 @@ export function preparedTrailChanges(input: {
       block.afterText === null
         ? null
         : (input.blockIdentities.get(replacementId ?? block.blockId) ?? null);
-    const stableIdentity = beforeIdentity ?? afterIdentity;
+    const location: TrailProjectionLocation = {
+      kind:
+        sweptNavigation?.outcome ??
+        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
+      beforeIdentity,
+      afterIdentity,
+      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
+    };
+    const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
     return owners.map((owner, ownerIndex) => ({
       changeId: `${input.receiptId}:${canonicalBlockKey(stableIdentity)}`,
       documentId: input.receipt.documentId,
       pushId: null,
       receiptId: input.receiptId,
-      kind:
-        sweptNavigation?.outcome ??
-        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
+      kind: location.kind,
       beforeBlockId: block.beforeText === null ? null : block.blockId,
       afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
-      beforeBlockIdentity: beforeIdentity,
-      afterBlockIdentity: afterIdentity,
+      beforeBlockIdentity: location.beforeIdentity,
+      afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,
       afterTextAtReceipt: replacement?.afterText ?? block.afterText,
-      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
+      navigation: location.navigation,
       swept: isSwept
         ? {
             affectedBlockHash: block.blockId,
