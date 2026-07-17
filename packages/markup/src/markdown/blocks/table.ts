@@ -14,6 +14,7 @@ export const tableCodec: BlockCodec<MdastTable> = {
   name: "table",
 
   serialize(node, ctx) {
+    assertNoSpans(node);
     // GFM alignment is per-column (from the header row), and table cells are
     // single-line inline content; hard breaks inside cells are not representable.
     const align = alignmentFromFirstRow(node);
@@ -54,6 +55,16 @@ export const tableCodec: BlockCodec<MdastTable> = {
     );
   },
 };
+
+function assertNoSpans(table: PMNode): void {
+  table.forEach((row) => {
+    row.forEach((cell) => {
+      if (cell.attrs.colspan > 1 || cell.attrs.rowspan > 1) {
+        throw new Error("pm->mdast: table cell spans are not representable in GFM");
+      }
+    });
+  });
+}
 
 function alignmentFromFirstRow(node: PMNode): TableAlignment[] {
   const firstRow = node.firstChild;

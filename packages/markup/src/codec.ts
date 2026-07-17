@@ -61,6 +61,9 @@ function buildMarkupCodec(
   const postParsers = plugins
     .map((plugin) => plugin.postParse)
     .filter((hook): hook is NonNullable<MarkupPlugin["postParse"]> => hook !== undefined);
+  const postSerializers = plugins
+    .map((plugin) => plugin.postSerializeBlock)
+    .filter((hook): hook is NonNullable<MarkupPlugin["postSerializeBlock"]> => hook !== undefined);
 
   const blockMap = uniqueCodecMap(blocks, "block");
   const markMap = uniqueCodecMap(marks, "mark");
@@ -111,7 +114,12 @@ function buildMarkupCodec(
   const serializeOne = (block: PMNode, ctx: SerializeContext): string => {
     const codec = blockMap.get(block.type.name);
     if (!codec) throw new Error(`pm->mdast: unsupported block node "${block.type.name}"`);
-    return ensureTrailingNewline(codec.serialize(block, ctx));
+    const ordinary = codec.serialize(block, ctx);
+    const serialized = postSerializers.reduce(
+      (current, hook) => hook(block, current, ctx),
+      ordinary,
+    );
+    return ensureTrailingNewline(serialized);
   };
 
   const serializeBody = (block: PMNode, ctx: SerializeContext): string => {

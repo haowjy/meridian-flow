@@ -16,7 +16,12 @@ import type {
   MdxJsxAttribute,
   MdxJsxAttributeValueExpression,
 } from "./ast.js";
-import type { ComponentRegistry, ComponentSpec, PropSpec } from "./components.js";
+import {
+  builtInComponents,
+  type ComponentRegistry,
+  type ComponentSpec,
+  type PropSpec,
+} from "./components.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
 
@@ -276,7 +281,7 @@ export function registeredComponent(
   components: ComponentRegistry | undefined,
   name: string | null,
 ): ComponentSpec | null {
-  if (!name || name === "Figure") return null;
+  if (!name || Object.hasOwn(builtInComponents, name)) return null;
   return components?.[name] ?? null;
 }
 
