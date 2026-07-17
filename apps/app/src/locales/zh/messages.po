@@ -650,6 +650,10 @@ msgstr ""
 msgid "Edit"
 msgstr ""
 
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Edit diagram"
+msgstr ""
+
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
 msgstr ""

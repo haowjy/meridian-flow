@@ -1,30 +1,76 @@
 /** Mermaid preview state and the code-block NodeView that consumes it. */
 import { t } from "@lingui/core/macro";
 import type { Editor, NodeViewProps } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { useEffect, useId, useState } from "react";
 
-export const mermaidPreviewKey = new PluginKey<number | null>("mermaidPreview");
+type CodeBlockViewState = {
+  previewPosition: number | null;
+  encounteredLanguages: ReadonlyMap<number, readonly string[]>;
+};
 
-export function createMermaidPreviewPlugin(): Plugin<number | null> {
-  return new Plugin<number | null>({
+type CodeBlockViewMeta = { previewPosition: number | null };
+
+export const mermaidPreviewKey = new PluginKey<CodeBlockViewState>("mermaidPreview");
+
+function collectCodeBlockLanguages(
+  doc: ProseMirrorNode,
+  previous: ReadonlyMap<number, readonly string[]> = new Map(),
+): ReadonlyMap<number, readonly string[]> {
+  const encountered = new Map(previous);
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "code_block") return;
+    const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
+    if (!language) return;
+    const languages = encountered.get(pos) ?? [];
+    if (!languages.includes(language)) encountered.set(pos, [...languages, language]);
+  });
+  return encountered;
+}
+
+export function createMermaidPreviewPlugin(): Plugin<CodeBlockViewState> {
+  return new Plugin<CodeBlockViewState>({
     key: mermaidPreviewKey,
     state: {
-      init: (): number | null => null,
-      apply(transaction, position) {
-        const requested = transaction.getMeta(mermaidPreviewKey) as number | null | undefined;
-        if (requested !== undefined) return requested;
-        if (position === null) return null;
-        const mapped = transaction.mapping.mapResult(position);
-        return mapped.deleted ? null : mapped.pos;
+      init: (_, state) => ({
+        previewPosition: null,
+        encounteredLanguages: collectCodeBlockLanguages(state.doc),
+      }),
+      apply(transaction, state) {
+        const meta = transaction.getMeta(mermaidPreviewKey) as CodeBlockViewMeta | undefined;
+        const mappedPreview =
+          state.previewPosition === null
+            ? null
+            : transaction.mapping.mapResult(state.previewPosition);
+        const mappedLanguages = new Map<number, readonly string[]>();
+        for (const [position, languages] of state.encounteredLanguages) {
+          const mapped = transaction.mapping.mapResult(position);
+          if (transaction.doc.nodeAt(mapped.pos)?.type.name === "code_block") {
+            mappedLanguages.set(mapped.pos, languages);
+          }
+        }
+        return {
+          previewPosition:
+            meta !== undefined
+              ? meta.previewPosition
+              : mappedPreview === null || mappedPreview.deleted
+                ? null
+                : mappedPreview.pos,
+          encounteredLanguages: collectCodeBlockLanguages(transaction.doc, mappedLanguages),
+        };
       },
     },
   });
 }
 
 export function isMermaidPreviewRequested(editor: Editor, nodePos: number): boolean {
-  return mermaidPreviewKey.getState(editor.state) === nodePos;
+  return mermaidPreviewKey.getState(editor.state)?.previewPosition === nodePos;
+}
+
+export function codeBlockLanguagesEncountered(editor: Editor, nodePos: number): readonly string[] {
+  return mermaidPreviewKey.getState(editor.state)?.encounteredLanguages.get(nodePos) ?? [];
 }
 
 export function setMermaidPreviewRequested(
@@ -32,7 +78,21 @@ export function setMermaidPreviewRequested(
   nodePos: number,
   requested: boolean,
 ): void {
-  editor.view.dispatch(editor.state.tr.setMeta(mermaidPreviewKey, requested ? nodePos : null));
+  editor.view.dispatch(
+    editor.state.tr.setMeta(mermaidPreviewKey, {
+      previewPosition: requested ? nodePos : null,
+    } satisfies CodeBlockViewMeta),
+  );
+}
+
+export function enterMermaidEditMode(editor: Editor, nodePos: number): void {
+  const node = editor.state.doc.nodeAt(nodePos);
+  if (node?.type.name !== "code_block") return;
+  const transaction = editor.state.tr
+    .setMeta(mermaidPreviewKey, { previewPosition: null } satisfies CodeBlockViewMeta)
+    .setSelection(TextSelection.create(editor.state.doc, nodePos + 1));
+  editor.view.dispatch(transaction);
+  editor.commands.focus(undefined, { scrollIntoView: false });
 }
 
 function selectionIsInsideNode(props: NodeViewProps): boolean {
@@ -66,6 +126,23 @@ function usePreviewVisibility(props: NodeViewProps): boolean {
   return visible;
 }
 
+let mermaidModule: Promise<typeof import("mermaid")["default"]> | null = null;
+
+export async function renderMermaid(id: string, source: string): Promise<string> {
+  mermaidModule ??= import("mermaid").then(({ default: mermaid }) => {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      suppressErrorRendering: true,
+      // Mermaid may fetch authored external images before SVG sanitization (#7645).
+      // Documents are author-controlled; resource CSP belongs to future app-wide policy.
+    });
+    return mermaid;
+  });
+  const mermaid = await mermaidModule;
+  return (await mermaid.render(id, source)).svg;
+}
+
 function MermaidDiagram({ source, onError }: { source: string; onError(message: string): void }) {
   const reactId = useId();
   const [result, setResult] = useState<
@@ -76,11 +153,9 @@ function MermaidDiagram({ source, onError }: { source: string; onError(message: 
     let active = true;
     setResult({ status: "loading" });
 
-    void import("mermaid")
-      .then(async ({ default: mermaid }) => {
-        mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
-        const id = `meridian-mermaid-${reactId.replaceAll(":", "")}`;
-        const { svg } = await mermaid.render(id, source);
+    const id = `meridian-mermaid-${reactId.replaceAll(":", "")}`;
+    void renderMermaid(id, source)
+      .then((svg) => {
         if (active) setResult({ status: "ready", svg });
       })
       .catch((error: unknown) => {
@@ -128,6 +203,11 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
   useEffect(() => setRenderError(null), [props.node.textContent]);
 
   const showPreview = previewVisible && renderError === null;
+  const enterEditMode = (event: { preventDefault(): void }) => {
+    event.preventDefault();
+    const position = props.getPos();
+    if (position !== undefined) enterMermaidEditMode(props.editor, position);
+  };
 
   return (
     <NodeViewWrapper data-language={String(props.node.attrs.language ?? "")}>
@@ -145,9 +225,17 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
         <NodeViewContent as={"code" as never} />
       </pre>
       {isMermaid && showPreview ? (
-        <div contentEditable={false} data-mermaid-preview="">
+        <button
+          type="button"
+          className="block w-full text-inherit"
+          contentEditable={false}
+          data-mermaid-preview=""
+          aria-label={t`Edit diagram`}
+          onFocus={enterEditMode}
+          onPointerDown={enterEditMode}
+        >
           <MermaidDiagram source={props.node.textContent} onError={setRenderError} />
-        </div>
+        </button>
       ) : null}
     </NodeViewWrapper>
   );

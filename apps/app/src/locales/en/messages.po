@@ -650,6 +650,10 @@ msgstr "Earlier content could not be recovered"
 msgid "Edit"
 msgstr "Edit"
 
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Edit diagram"
+msgstr "Edit diagram"
+
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
 msgstr "Edit link"
