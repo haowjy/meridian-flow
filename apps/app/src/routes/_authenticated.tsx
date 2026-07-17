@@ -12,13 +12,19 @@ import {
   useIndependentProjectsStore,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import {
   isSettingsSection,
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
+import { installYjsTap } from "@/features/debug/trace/install-yjs-tap";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
+
+// Composition-root prerequisite: product descendants can create the shared
+// Yjs socket as soon as they render, so capture must be installed first.
+if (DEBUG_FEATURE_ALLOWED) installYjsTap();
 
 // Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
 // so the entire feature (and its lazy chunk) is dead-code-eliminated from

@@ -23,8 +23,6 @@
  */
 import { useState } from "react";
 
-import "./trace/install-yjs-tap";
-
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 

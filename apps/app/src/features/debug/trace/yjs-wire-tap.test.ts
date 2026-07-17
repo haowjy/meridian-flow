@@ -6,7 +6,7 @@ import * as encoding from "lib0/encoding";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createYjsWireTap } from "./yjs-wire-tap";
+import { createYjsWireTap, createYjsWireTapState } from "./yjs-wire-tap";
 
 function syncUpdateFrame(roomName: string, update: Uint8Array): Uint8Array {
   const encoder = encoding.createEncoder();
@@ -98,6 +98,23 @@ describe("createYjsWireTap", () => {
 
     expect(records[0]?.correlation?.yjsSpans).toBeDefined();
     expect(records[0]?.correlation?.yjsClient).toBeUndefined();
+  });
+
+  it("keeps sequencing and room attribution when HMR replaces the tap", () => {
+    const records: EventRecord[] = [];
+    const state = createYjsWireTapState();
+    const firstTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
+
+    firstTap.onRoomAttached("document-1", 777);
+    firstTap.onSocketOpen(1, "wss://one");
+
+    const replacementTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
+    replacementTap.onFrame("client_to_server", syncUpdateFrame("document-1", insertUpdate()), 1);
+
+    expect(records[1]).toMatchObject({
+      correlation: { yjsClient: 777 },
+      stream: { observerSeq: 2 },
+    });
   });
 
   it("uses the socket fallback for unknown frames and keeps sequence across reconnects", () => {

@@ -13,7 +13,7 @@ export interface YjsWireTap {
 let currentTap: YjsWireTap | null = null;
 let nextSocketEpoch = 0;
 
-export function setYjsWireTap(tap: YjsWireTap | null): void {
+export function setYjsWireTap(tap: YjsWireTap): void {
   currentTap = tap;
 }
 

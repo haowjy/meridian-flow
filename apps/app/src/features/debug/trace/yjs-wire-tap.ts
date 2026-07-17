@@ -33,13 +33,20 @@ function singleStructClient(update: UpdateSummary | undefined): number | undefin
   return clients.size === 1 ? clients.values().next().value : undefined;
 }
 
+export interface YjsWireTapState {
+  observerSeq: number;
+  roomClients: Map<string, number>;
+}
+
+export function createYjsWireTapState(): YjsWireTapState {
+  return { observerSeq: 0, roomClients: new Map() };
+}
+
 export function createYjsWireTap(
   emit: (record: EventRecord) => void,
   onError: () => void,
+  state = createYjsWireTapState(),
 ): YjsWireTap {
-  let observerSeq = 0;
-  const roomClients = new Map<string, number>();
-
   function reportError(): void {
     try {
       onError();
@@ -61,7 +68,7 @@ export function createYjsWireTap(
           direction === "client_to_server"
             ? frame.documentName === null
               ? undefined
-              : roomClients.get(frame.documentName)
+              : state.roomClients.get(frame.documentName)
             : singleStructClient(update);
         if (yjsClient !== undefined) correlation.yjsClient = yjsClient;
 
@@ -84,7 +91,7 @@ export function createYjsWireTap(
             observedAt: "client",
             messageClass: frame.messageClass,
             bytes: bytes.byteLength,
-            observerSeq: ++observerSeq,
+            observerSeq: ++state.observerSeq,
           },
           payload: { socketEpoch, ...inspection },
         });
@@ -105,7 +112,7 @@ export function createYjsWireTap(
             streamId: "yjs:socket",
             transport: "yjs",
             observedAt: "client",
-            observerSeq: ++observerSeq,
+            observerSeq: ++state.observerSeq,
           },
           payload: { socketEpoch, url },
         });
@@ -126,7 +133,7 @@ export function createYjsWireTap(
             streamId: "yjs:socket",
             transport: "yjs",
             observedAt: "client",
-            observerSeq: ++observerSeq,
+            observerSeq: ++state.observerSeq,
           },
           payload: { socketEpoch, code, reason, wasClean },
         });
@@ -137,7 +144,7 @@ export function createYjsWireTap(
 
     onRoomAttached(roomName, yjsClient) {
       try {
-        roomClients.set(roomName, yjsClient);
+        state.roomClients.set(roomName, yjsClient);
       } catch {
         reportError();
       }
