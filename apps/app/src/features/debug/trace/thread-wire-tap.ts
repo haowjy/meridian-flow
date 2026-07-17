@@ -3,7 +3,7 @@
 import type { EventCorrelation, EventRecord } from "@meridian/contracts/observability";
 import { EventType } from "@meridian/contracts/protocol";
 
-import type { ThreadWireTap, YjsWireDirection } from "@/core/transport/tapped-websocket";
+import type { ThreadWireTap, WireDirection } from "@/core/transport/wire-tap";
 
 const SOURCE = "wire.thread";
 const SERVER_MESSAGE_CLASSES = new Set([
@@ -23,6 +23,7 @@ const CLIENT_MESSAGE_CLASSES = new Set([
 ]);
 const AGUI_EVENT_TYPES = new Set<string>(Object.values(EventType));
 const EVENT_SEQ_PATTERN = /^(0|[1-9]\d*)$/;
+const textEncoder = new TextEncoder();
 
 type ThreadFrameMetadata = {
   messageClass: string;
@@ -40,7 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * become searchable records. Nested data is ignored except the event type
  * discriminant on a single sequenced `event` frame.
  */
-function inspectThreadFrame(direction: YjsWireDirection, data: string): ThreadFrameMetadata {
+function inspectThreadFrame(direction: WireDirection, data: string): ThreadFrameMetadata {
   let parsed: unknown;
   try {
     parsed = JSON.parse(data);
@@ -114,7 +115,7 @@ export function createThreadWireTap(
             direction,
             observedAt: "client",
             messageClass: metadata.messageClass,
-            bytes: data.length,
+            bytes: textEncoder.encode(data).byteLength,
             observerSeq: ++state.observerSeq,
           },
           payload: {

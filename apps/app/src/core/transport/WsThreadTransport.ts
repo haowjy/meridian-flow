@@ -28,7 +28,6 @@ import type {
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
 } from "./ThreadTransport";
-import { TappedWebSocket } from "./tapped-websocket";
 import {
   type ActiveThreadSubscription,
   WsThreadSubscriptionRegistry,
@@ -46,14 +45,6 @@ export class WsThreadTransport implements ThreadTransport {
   private connectionToken: string | undefined;
 
   constructor(options: WsThreadTransportOptions = {}) {
-    const socketOptions =
-      options.webSocketFactory ||
-      !(import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1")
-        ? options
-        : {
-            ...options,
-            webSocketFactory: (url: string) => new TappedWebSocket(url, undefined, "thread"),
-          };
     this.socket = new SocketLifecycleController(
       {
         buildUrl: () => buildThreadsWsUrl(),
@@ -77,7 +68,7 @@ export class WsThreadTransport implements ThreadTransport {
         publishConnectionState: (state) => this.publishConnectionState(state),
         publishError: (error) => this.publishError(error),
       },
-      socketOptions,
+      options,
     );
   }
 

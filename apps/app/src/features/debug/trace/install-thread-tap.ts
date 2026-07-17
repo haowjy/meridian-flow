@@ -1,7 +1,7 @@
 /** Installs dev-only thread WebSocket capture before the transport is created. */
 
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { setThreadWireTap } from "@/core/transport/tapped-websocket";
+import { setThreadWireTap } from "@/core/transport/wire-tap";
 
 import {
   createThreadWireTap,

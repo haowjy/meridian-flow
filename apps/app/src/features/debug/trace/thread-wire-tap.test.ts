@@ -83,6 +83,16 @@ describe("createThreadWireTap", () => {
     expect(JSON.stringify(records[0])).not.toContain("content-must-never-egress");
   });
 
+  it("measures UTF-8 bytes rather than UTF-16 code units", () => {
+    const records: EventRecord[] = [];
+    const tap = createThreadWireTap((record) => records.push(record), vi.fn());
+    const data = JSON.stringify({ type: "unknown", content: "𐌍" });
+
+    tap.onStringFrame("server_to_client", data, 1);
+
+    expect(records[0]?.stream?.bytes).toBe(new TextEncoder().encode(data).byteLength);
+  });
+
   it("never traverses catchup events or copies unrecognized classifications", () => {
     const records: EventRecord[] = [];
     const tap = createThreadWireTap((record) => records.push(record), vi.fn());

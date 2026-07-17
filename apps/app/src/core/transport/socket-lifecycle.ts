@@ -14,7 +14,10 @@
  * retrying — the controller will refuse to (re)connect afterward. This is why
  * both transports get auth-close-as-terminal for free.
  */
+
+import { DEBUG_FEATURE_ALLOWED } from "../debug-gate";
 import type { ConnectionState } from "./ThreadTransport";
+import { notifyThreadFrame, notifyThreadSocketClose, notifyThreadSocketOpen } from "./wire-tap";
 import {
   computePersistentReconnectDelayMs,
   computeReconnectDelayMs,
@@ -165,7 +168,12 @@ export class SocketLifecycleController {
 
   send(data: string | ArrayBufferLike | ArrayBufferView): void {
     if (!this.isSocketOpen()) return;
-    this.socket?.send(data as Parameters<WebSocket["send"]>[0]);
+    const socket = this.socket;
+    if (!socket) return;
+    if (DEBUG_FEATURE_ALLOWED && typeof data === "string") {
+      notifyThreadFrame("client_to_server", data, this.socketGeneration);
+    }
+    socket.send(data as Parameters<WebSocket["send"]>[0]);
   }
 
   resetPingTimer(): void {
@@ -197,14 +205,19 @@ export class SocketLifecycleController {
 
     socket.addEventListener("open", () => {
       if (!this.isCurrentSocket(generation, socket)) return;
+      if (DEBUG_FEATURE_ALLOWED) notifyThreadSocketOpen(generation);
       this.resetPingTimer();
       this.consumer.onOpen();
     });
 
     socket.addEventListener("message", (event) => {
       if (!this.isCurrentSocket(generation, socket)) return;
+      const data = (event as MessageEvent).data;
+      if (DEBUG_FEATURE_ALLOWED && typeof data === "string") {
+        notifyThreadFrame("server_to_client", data, generation);
+      }
       this.resetPingTimer();
-      this.consumer.onMessage((event as MessageEvent).data);
+      this.consumer.onMessage(data);
     });
 
     socket.addEventListener("error", () => {
@@ -214,6 +227,10 @@ export class SocketLifecycleController {
 
     socket.addEventListener("close", (event) => {
       if (!this.isCurrentSocket(generation, socket)) return;
+      if (DEBUG_FEATURE_ALLOWED) {
+        const closeEvent = event as CloseEvent;
+        notifyThreadSocketClose(generation, closeEvent.code, closeEvent.wasClean);
+      }
       this.socket = null;
       this.clearPingTimer();
       this.consumer.onClose?.(event as CloseEvent);
