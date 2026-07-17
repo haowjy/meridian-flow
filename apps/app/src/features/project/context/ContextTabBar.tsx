@@ -35,6 +35,7 @@ import {
   FileText,
   FileType2,
   Image as ImageIcon,
+  LoaderCircle,
   Plus,
   X,
 } from "lucide-react";
@@ -43,9 +44,12 @@ import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+export type OptimisticContextTab = { id: string; name: string };
+
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
+  optimisticTab?: OptimisticContextTab | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
   onNewDocument: () => void;
@@ -65,6 +69,7 @@ export type ContextTabBarProps = {
 export function ContextTabBar({
   tabs,
   activeTabId,
+  optimisticTab,
   onSelect,
   onClose,
   onNewDocument,
@@ -96,6 +101,7 @@ export function ContextTabBar({
             />
           );
         })}
+        {optimisticTab ? <OptimisticTabChip key={optimisticTab.id} tab={optimisticTab} /> : null}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -107,7 +113,9 @@ export function ContextTabBar({
               {/* Same divider grammar as between tabs: a line sets the New-tab
                   control apart from the working set, except when the active
                   tab's canvas shape already separates it. */}
-              {tabs.length > 0 && tabs[tabs.length - 1]?.documentId !== activeTabId ? (
+              {!optimisticTab &&
+              tabs.length > 0 &&
+              tabs[tabs.length - 1]?.documentId !== activeTabId ? (
                 <span
                   aria-hidden
                   className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
@@ -122,6 +130,23 @@ export function ContextTabBar({
         </Tooltip>
       </div>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
+    </div>
+  );
+}
+
+function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
+  return (
+    <div
+      role="tab"
+      tabIndex={-1}
+      aria-selected="true"
+      aria-label={t`Loading ${tab.name}`}
+      className="tab-chip-active relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3 text-foreground"
+    >
+      <LoaderCircle aria-hidden className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
+        {tab.name}
+      </span>
     </div>
   );
 }

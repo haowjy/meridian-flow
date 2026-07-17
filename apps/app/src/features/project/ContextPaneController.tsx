@@ -28,6 +28,10 @@ import {
   firstContextFile,
 } from "./context/context-tree";
 import {
+  type ContextRouteResolution,
+  shouldShowOptimisticContextRoute,
+} from "./context/optimistic-context-route";
+import {
   appendPendingUntitled,
   isUntitledPending,
   untitledDocumentIsEmpty,
@@ -91,7 +95,11 @@ export function ContextViewerSurfaceController({
       : null);
 
   const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
-  const { tree: routeTree } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
+  const {
+    tree: routeTree,
+    isError: routeTreeIsError,
+    isFetching: routeTreeIsFetching,
+  } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
     enabled: activeContextScheme !== null && activeContextPath !== null,
     activeThreadId,
     workId: routeWorkId,
@@ -151,7 +159,7 @@ export function ContextViewerSurfaceController({
   // already forgets the route, and the ref stays spent while you stay here.
   const restoreAttemptedRef = useRef(false);
   const [wantsDefaultOpen, setWantsDefaultOpen] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) {
       restoreAttemptedRef.current = false;
       setWantsDefaultOpen(false);
@@ -171,6 +179,28 @@ export function ContextViewerSurfaceController({
     // call 2026-07-16: "there should always be documents loaded").
     if (tabs.length === 0) setWantsDefaultOpen(true);
   }, [active]);
+
+  const routeResolution: ContextRouteResolution = routeTree
+    ? activeContextPath && findContextFile(routeTree, activeContextPath)
+      ? "found"
+      : "missing"
+    : routeTreeIsFetching && !routeTreeIsError
+      ? "loading"
+      : "missing";
+  const optimisticTab = shouldShowOptimisticContextRoute({
+    // An empty path is the deliberate empty-desk route, not a destination.
+    hasDestination: activeContextScheme !== null && Boolean(activeContextPath),
+    hasActiveTab: activeTab !== null,
+    resolution: routeResolution,
+    // Closing stamps this key before removing the tab. Sharing the guard
+    // prevents the loading projection from resurrecting the closed route.
+    autoOpenBlocked: openTabKey !== null && openedKeyRef.current === openTabKey,
+  })
+    ? {
+        id: `optimistic:${openTabKey}`,
+        name: contextRouteName(activeContextPath ?? ""),
+      }
+    : null;
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
     enabled: wantsDefaultOpen,
@@ -383,7 +413,8 @@ export function ContextViewerSurfaceController({
       projectId={projectId}
       activeThreadId={activeThreadId}
       tabs={tabs}
-      activeTabId={retainedActiveTabId}
+      activeTabId={activeTab?.documentId ?? retainedActiveTabId}
+      optimisticTab={optimisticTab}
       onSelectTab={handleSelectTab}
       onCloseTab={handleCloseTab}
       sidebarToggle={sidebarToggle}
