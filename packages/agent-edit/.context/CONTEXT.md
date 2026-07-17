@@ -179,6 +179,11 @@ the baseline. User reversals remain ungated and capture a best-effort pre-sync
 baseline. `InteractionContext.liveJournalSeq` is the live-journal watermark
 paired with that baseline; `afterJournalId` remains a host attribution floor and
 must not be used as a reconstruction reference.
+`InteractionContext.attributionBaseline` is the thread peer's CRDT state
+captured before the host pulls concurrent upstream changes. When present,
+`summarizeMutationEcho` computes a pulled-content echo (baseline vs pre-own
+snapshot) and prepends it to the own-write echo, so the agent sees pulled-in
+sibling content as concurrent edits.
 
 Reversal application snapshots the live Y.Doc synchronously before persistence,
 then diffs it after persistence and combines that result with the mutation
@@ -216,7 +221,8 @@ its concern. Production modules (excluding colocated tests) are:
 | `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
 | `response-lifecycle.ts` | Defines response transition values used by the committer and observability. |
 | `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
-| `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
+| `response-format.ts` | Formats shared write/reversal/rejection statuses and public outcomes. |
+| `safety-rejection.ts` | Shared agent-facing rendering for safety-gate refusals; unifies direct write, undo/redo, and buffered-flush rejection echo through `formatApplyRejection`. |
 | `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
 | `types.ts` | Public command, context, outcome, lifecycle event, and response result types. |
 | `write-commands.ts` | Implements read/create/insert/replace handlers. |
@@ -423,10 +429,13 @@ going blind to a concurrent human edit.
   changed from `v_pre` to `v_post` → full `hash|content`; identical context →
   first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
   structural changes are not separate modes.
-- **Tool results use two content blocks.** Successful writes and undo/redo return
-  metadata in block 1 (`status`, write id or reversal count, concurrent edits)
-  and echo `hash|content` lines in block 2 when there are echo lines. Hosts should
-  prefer structured `content` over the joined `text`.
+- **Tool results use two content blocks.** Successful writes, undo/redo, and
+  safety-gate rejections return metadata in block 1 (`status`, write id or
+  reversal count, concurrent edits) and echo `hash|content` lines in block 2
+  when there are echo lines. Rejections carry the same current-state echo as
+  successes via `safety-rejection.ts`, so the agent sees the live document
+  state it must replan from. Hosts should prefer structured `content` over the
+  joined `text`.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
   Whole-document overwrite preserves this behavior for positional same-type

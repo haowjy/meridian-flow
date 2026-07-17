@@ -149,12 +149,26 @@ history is preserved for attribution, echo, and undo dependency checking.
   selected row against that row's own base, unions the resulting conflicts, and
   never rebases rows after a click or refusal.
 - **Push policy is the only mode difference**: manual Apply refuses protected
-  draft-base divergence. Auto-apply always merges; only blind destructive
-  effects are trailed, using the authoring response's sealed ObservationSnapshot
-  and the shared `observationCoversRendering` predicate. The response commit
-  kernel seals canonical swept-block identities and captured bodies into the
-  branch journal row's update metadata before persistence; push projection
-  consumes that evidence independently of the row's Apply-only draft base.
+  draft-base divergence; Auto-apply always merges. Protection derives from
+  durable journal attribution: `completeStagedPush` persists the live journal
+  row as `originType: "human"` with `actorUserId` when the push carries
+  `pushedByUserId` (writer-confirmed Apply); Auto-apply pushes (no
+  `pushedByUserId`) stay `system`. Both the push-time conflict classifier and
+  the agent-edit immediate-path lateSweep recheck derive protection from this
+  attribution, not from push-specific metadata or a separate protection table.
+  Auto-apply trails only blind destructive effects, using the authoring
+  response's sealed ObservationSnapshot and the shared
+  `observationCoversRendering` predicate. The response commit kernel seals
+  canonical swept-block identities and captured bodies into the branch journal
+  row's update metadata before persistence; push projection consumes that
+  evidence independently of the row's Apply-only draft base.
+- **Writer Apply pins to the displayed preview**: `DraftAcceptRequest.operationIds`
+  is required (non-optional). The client pins Apply-all to the displayed preview
+  via a render-time ref, never a click-time refetch; post-preview rows stay
+  pending. Composition routes all writer Apply through `pushSelectedToLive`;
+  the `whole` push kind remains for Auto-apply/retry but is unreachable from
+  writer Apply. On `push_concurrent_conflict`, composition maps the result to
+  ordinary `concurrent_conflict` and the client re-reviews with a fresh preview.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
