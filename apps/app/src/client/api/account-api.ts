@@ -2,11 +2,15 @@
 import { type AccountSettings, API_ACCOUNT_SETTINGS_PATH } from "@meridian/contracts/protocol";
 import { getJson } from "./http-client";
 
-type RequestInitOptions = { origin?: string; headers?: HeadersInit };
+export type AccountSettingsRequestInit = {
+  origin?: string;
+  headers?: HeadersInit;
+  signal?: AbortSignal;
+};
 
-export function getAccountSettings(init?: RequestInitOptions): Promise<AccountSettings> {
+export function getAccountSettings(init?: AccountSettingsRequestInit): Promise<AccountSettings> {
   const url = init?.origin
     ? new URL(API_ACCOUNT_SETTINGS_PATH, init.origin).toString()
     : API_ACCOUNT_SETTINGS_PATH;
-  return getJson<AccountSettings>(url, { headers: init?.headers });
+  return getJson<AccountSettings>(url, { headers: init?.headers, signal: init?.signal });
 }

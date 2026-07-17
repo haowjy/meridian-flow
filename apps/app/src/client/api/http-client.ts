@@ -52,10 +52,16 @@ export function errorMessageFromPayload(payload: unknown, status: number): strin
   return `Request failed: ${status}`;
 }
 
-export async function getJson<T>(url: string, init?: { headers?: HeadersInit }): Promise<T> {
+export async function getJson<T>(
+  url: string,
+  init?: { headers?: HeadersInit; signal?: AbortSignal },
+): Promise<T> {
   const requestInit: RequestInit = { method: "GET" };
   if (init?.headers) {
     requestInit.headers = init.headers;
+  }
+  if (init?.signal) {
+    requestInit.signal = init.signal;
   }
 
   const response = await fetch(url, requestInit);

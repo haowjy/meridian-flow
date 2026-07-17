@@ -22,6 +22,7 @@ import {
 } from "@/features/account/SettingsDialog";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
+import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
 
 // Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
 // so the entire feature (and its lazy chunk) is dead-code-eliminated from
@@ -70,15 +71,15 @@ export const Route = createFileRoute("/_authenticated")({
     }
 
     const now = Date.now();
-    const settingsPromise = getAccountSettings(ssrApiRequestInit());
+    const requestInit = ssrApiRequestInit();
+    const settingsPromise = loadAccountSettingsWithDeadline((signal) =>
+      getAccountSettings({ ...requestInit, signal }),
+    );
 
     // `/` immediately redirects to the default project, so skip its list fetch;
     // every other authenticated route mounts the same shell and wants the list.
     if (location.pathname === "/") {
-      const settings = await settingsPromise.catch((error: unknown) => {
-        console.error("Failed to load account settings during SSR:", error);
-        return { workingSetSyncEnabled: true };
-      });
+      const settings = await settingsPromise;
       const currentUser = { userId: user.id, email: user.email ?? null, ...settings };
       return { user: currentUser, projects: null, now };
     }
@@ -87,9 +88,6 @@ export const Route = createFileRoute("/_authenticated")({
       settingsPromise,
       loadProjectList(),
     ]);
-    if (settingsResult.status === "rejected") {
-      console.error("Failed to load account settings during SSR:", settingsResult.reason);
-    }
     if (projectsResult.status === "rejected") {
       console.error("Failed to load project list during SSR:", projectsResult.reason);
     }
