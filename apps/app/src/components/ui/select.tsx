@@ -53,13 +53,10 @@ function SelectContent({
   children,
   position = "item-aligned",
   align = "center",
-  portalContainer,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content> & {
-  portalContainer?: React.ComponentProps<typeof SelectPrimitive.Portal>["container"];
-}) {
+}: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
-    <SelectPrimitive.Portal container={portalContainer}>
+    <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(

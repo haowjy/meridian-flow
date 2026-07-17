@@ -91,10 +91,10 @@ export function TraceViewer({
   }, [onClose, target]);
 
   if (!target) return null;
-  return createPortal(<TraceViewerContent portalContainer={target.container} />, target.container);
+  return createPortal(<TraceViewerContent />, target.container);
 }
 
-function TraceViewerContent({ portalContainer }: { portalContainer: HTMLElement }) {
+function TraceViewerContent() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [frozenEntries, setFrozenEntries] = useState<readonly EventRecord[] | null>(null);
   const [selected, setSelected] = useState<EventRecord | null>(null);
@@ -141,7 +141,6 @@ function TraceViewerContent({ portalContainer }: { portalContainer: HTMLElement 
           setFilters={setFilters}
           selected={selected}
           setSelected={setSelected}
-          portalContainer={portalContainer}
         />
       ) : (
         <FrozenTraceBody
@@ -150,7 +149,6 @@ function TraceViewerContent({ portalContainer }: { portalContainer: HTMLElement 
           setFilters={setFilters}
           selected={selected}
           setSelected={setSelected}
-          portalContainer={portalContainer}
         />
       )}
     </section>
@@ -174,7 +172,6 @@ type TraceBodyProps = {
   setFilters: React.Dispatch<React.SetStateAction<TraceFilterState>>;
   selected: EventRecord | null;
   setSelected: React.Dispatch<React.SetStateAction<EventRecord | null>>;
-  portalContainer: HTMLElement;
 };
 
 function LiveTraceBody(props: TraceBodyProps) {
@@ -196,7 +193,6 @@ function TraceBody({
   setFilters,
   selected,
   setSelected,
-  portalContainer,
 }: TraceBodyProps & { entries: readonly EventRecord[]; following: boolean }) {
   const filteredEntries = useMemo(() => filterTraceEntries(entries, filters), [entries, filters]);
   const selectedInView = selected !== null && filteredEntries.includes(selected);
@@ -209,12 +205,7 @@ function TraceBody({
         onSelect={(streamId) => setFilters((current) => ({ ...current, streamId }))}
       />
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <TraceFilters
-          entries={entries}
-          filters={filters}
-          onChange={setFilters}
-          portalContainer={portalContainer}
-        />
+        <TraceFilters entries={entries} filters={filters} onChange={setFilters} />
         <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
           <TraceTable
             entries={filteredEntries}

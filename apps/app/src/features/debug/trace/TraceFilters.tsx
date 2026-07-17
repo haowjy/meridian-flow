@@ -3,29 +3,22 @@ import type { EventRecord } from "@meridian/contracts/observability";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 import type { TraceFilters as TraceFilterState } from "./trace-store";
+
+const ALL_MESSAGE_CLASSES = "__all_message_classes__";
+const BOTH_DIRECTIONS = "__both_directions__";
 
 interface TraceFiltersProps {
   entries: readonly EventRecord[];
   filters: TraceFilterState;
   onChange: (filters: TraceFilterState) => void;
-  portalContainer: HTMLElement;
 }
 
-const ALL_MESSAGE_CLASSES = "__all_message_classes__";
-const BOTH_DIRECTIONS = "__both_directions__";
 const fieldClass = "h-7 min-w-0 px-2 text-meta md:text-meta";
-const selectClass = `${fieldClass} w-full data-[size=sm]:h-7`;
+const selectClass = `${fieldClass} focus-ring w-full rounded-md border border-input bg-background text-foreground`;
 
-export function TraceFilters({ entries, filters, onChange, portalContainer }: TraceFiltersProps) {
+export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) {
   const messageClasses = Array.from(
     new Set(entries.flatMap((record) => record.stream?.messageClass ?? [])),
   ).sort();
@@ -43,49 +36,40 @@ export function TraceFilters({ entries, filters, onChange, portalContainer }: Tr
         value={filters.streamId}
         onChange={(event) => patch({ streamId: event.target.value })}
       />
-      <Select
+      <select
+        className={selectClass}
+        aria-label="Filter by message class"
         value={filters.messageClass || ALL_MESSAGE_CLASSES}
-        onValueChange={(value) =>
-          patch({ messageClass: value === ALL_MESSAGE_CLASSES ? "" : value })
-        }
-      >
-        <SelectTrigger size="sm" className={selectClass} aria-label="Filter by message class">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper" align="start" portalContainer={portalContainer}>
-          <SelectItem value={ALL_MESSAGE_CLASSES} className="text-meta">
-            all message classes
-          </SelectItem>
-          {messageClasses.map((messageClass) => (
-            <SelectItem key={messageClass} value={messageClass} className="text-meta">
-              {messageClass}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select
-        value={filters.direction || BOTH_DIRECTIONS}
-        onValueChange={(value) =>
+        onChange={(event) =>
           patch({
-            direction: value === BOTH_DIRECTIONS ? "" : (value as TraceFilterState["direction"]),
+            messageClass: event.target.value === ALL_MESSAGE_CLASSES ? "" : event.target.value,
           })
         }
       >
-        <SelectTrigger size="sm" className={selectClass} aria-label="Filter by direction">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper" align="start" portalContainer={portalContainer}>
-          <SelectItem value={BOTH_DIRECTIONS} className="text-meta">
-            both directions
-          </SelectItem>
-          <SelectItem value="client_to_server" className="text-meta">
-            client → server
-          </SelectItem>
-          <SelectItem value="server_to_client" className="text-meta">
-            server → client
-          </SelectItem>
-        </SelectContent>
-      </Select>
+        <option value={ALL_MESSAGE_CLASSES}>all message classes</option>
+        {messageClasses.map((messageClass) => (
+          <option key={messageClass} value={messageClass}>
+            {messageClass}
+          </option>
+        ))}
+      </select>
+      <select
+        className={selectClass}
+        aria-label="Filter by direction"
+        value={filters.direction || BOTH_DIRECTIONS}
+        onChange={(event) =>
+          patch({
+            direction:
+              event.target.value === BOTH_DIRECTIONS
+                ? ""
+                : (event.target.value as TraceFilterState["direction"]),
+          })
+        }
+      >
+        <option value={BOTH_DIRECTIONS}>both directions</option>
+        <option value="client_to_server">client → server</option>
+        <option value="server_to_client">server → client</option>
+      </select>
       <Input
         className={fieldClass}
         aria-label="Filter by document, branch, or stream correlation"

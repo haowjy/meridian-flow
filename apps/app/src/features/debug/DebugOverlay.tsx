@@ -58,6 +58,7 @@ const CONNECTION_DOT: Record<string, string> = {
 function DebugPill({ onDisable }: { onDisable: () => void }) {
   const [open, setOpen] = useState(false);
   const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
+  const [popupBlocked, setPopupBlocked] = useState(false);
   const conn = useConnectionState();
   const dot = (conn && CONNECTION_DOT[conn.kind]) ?? "bg-muted-foreground";
   const closeTraceViewer = useCallback((target: TraceViewerTarget) => {
@@ -67,12 +68,17 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
   function openTraceViewer() {
     if (traceViewerTarget && !traceViewerTarget.popup.closed) {
       traceViewerTarget.popup.focus();
+      setPopupBlocked(false);
       setOpen(false);
       return;
     }
 
     const target = openTraceViewerWindow();
-    if (!target) return;
+    if (!target) {
+      setPopupBlocked(true);
+      return;
+    }
+    setPopupBlocked(false);
     setTraceViewerTarget(target);
     setOpen(false);
   }
@@ -116,6 +122,11 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               >
                 Streams
               </button>
+              {popupBlocked ? (
+                <p className="text-meta text-status-warning" role="status">
+                  Popup blocked — allow popups and try again.
+                </p>
+              ) : null}
               <p className="text-meta text-muted-foreground">
                 Alt+click any turn/block to inspect its record. Query cache → TanStack Query
                 Devtools (button, bottom-left). Stores → Redux DevTools.

@@ -1,6 +1,6 @@
 /** JSONL export controls for the dev-only viewer; inline English is intentional. */
 import type { EventRecord } from "@meridian/contracts/observability";
-import { useMemo, useState } from "react";
+import { type MouseEvent, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -10,23 +10,39 @@ function toJsonl(entries: readonly EventRecord[]): string {
 
 export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
   const [show, setShow] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const jsonl = useMemo(() => toJsonl(entries), [entries]);
 
-  async function copy() {
-    if (typeof navigator === "undefined" || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(jsonl);
-    setCopied(true);
+  async function copy(event: MouseEvent<HTMLButtonElement>) {
+    const clipboard = event.currentTarget.ownerDocument.defaultView?.navigator.clipboard;
+    if (!clipboard) {
+      setCopyStatus("failed");
+      return;
+    }
+
+    try {
+      await clipboard.writeText(jsonl);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
   }
 
-  function download() {
-    if (typeof document === "undefined" || typeof URL === "undefined") return;
-    const url = URL.createObjectURL(new Blob([jsonl], { type: "application/x-ndjson" }));
-    const anchor = document.createElement("a");
+  function download(event: MouseEvent<HTMLButtonElement>) {
+    const ownerDocument = event.currentTarget.ownerDocument;
+    const ownerWindow = ownerDocument.defaultView;
+    if (!ownerWindow) return;
+
+    const url = ownerWindow.URL.createObjectURL(
+      new ownerWindow.Blob([jsonl], { type: "application/x-ndjson" }),
+    );
+    const anchor = ownerDocument.createElement("a");
     anchor.href = url;
     anchor.download = "meridian-trace.jsonl";
+    ownerDocument.body.append(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    ownerWindow.URL.revokeObjectURL(url);
   }
 
   return (
@@ -34,7 +50,7 @@ export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
       <div className="flex flex-wrap items-center gap-2 p-2">
         <span className="text-meta text-muted-foreground">Filtered JSONL · {entries.length}</span>
         <Button type="button" variant="outline" size="xs" className="text-meta" onClick={copy}>
-          {copied ? "Copied" : "Copy"}
+          {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy"}
         </Button>
         <Button type="button" variant="outline" size="xs" className="text-meta" onClick={download}>
           Download

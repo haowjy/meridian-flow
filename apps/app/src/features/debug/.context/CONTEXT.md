@@ -136,8 +136,9 @@ The pill's **Streams** action opens `TraceViewer` in a separate browser window
 and portals the React tree into it. The popup shares the opener's JavaScript
 context, so capture state stays in the main page and remains live while the
 editor is used; closing the popup never stops capture. The popup clones the
-opener's active style/link nodes and document attributes, and popup-owned Radix
-portals target its mount container so controls remain styled and interactive.
+opener's active style/link nodes and document attributes. Popup controls use
+owner-document browser primitives so keyboard focus, clipboard activation, and
+downloads stay in the child window rather than leaking back to the opener.
 Its plain-TypeScript store (`trace/trace-store.ts`) owns a 2,000-entry
 `EventRecord` ring and exposes the producer boundary `appendTraceEvent` /
 `noteTapError`; producers append the shared contracts envelope, never a
