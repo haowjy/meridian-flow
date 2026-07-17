@@ -3,7 +3,7 @@
  *
  * Deduplicates scheme parsing, context error → HTTP translation, and the
  * project-browse context port resolution that every route in this directory
- * performs. Route handlers import these instead of inlining their own copies.
+ * performs. Writer-input validation lives in the route-core validation seam.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -47,18 +47,6 @@ export function contextErrorToHttp(error: ContextError): never {
 }
 
 export const toUri = projectBrowseContextUri;
-
-/** Reject `.`/`..` segments and empty paths — defense-in-depth at the route boundary. */
-export function sanitizePath(raw: string): string {
-  const path = raw.trim();
-  const segments = path.split("/").filter(Boolean);
-  if (segments.length === 0)
-    throw createError({ statusCode: 400, message: "`path` must name a non-root entry" });
-  for (const seg of segments)
-    if (seg === "." || seg === "..")
-      throw createError({ statusCode: 400, message: "`path` may not contain '.' or '..'" });
-  return path;
-}
 
 /** Common preamble: auth → project ownership → scheme → workId → context port. */
 export async function resolveContextRoute(event: H3Event): Promise<{

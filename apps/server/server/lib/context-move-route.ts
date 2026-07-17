@@ -1,10 +1,5 @@
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
-import {
-  type ContextEntryValidationError,
-  validateContextEntryName,
-  validateContextEntryPath,
-} from "@meridian/contracts/context-entry-validation";
 import type { MoveContextEntryResult } from "@meridian/contracts/protocol";
 import {
   isProjectContextTreeScheme,
@@ -26,6 +21,10 @@ import {
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
+import {
+  parseContextMutationName,
+  parseContextMutationPath,
+} from "./context-mutation-validation.js";
 
 export interface ContextMoveRouteDeps {
   projectRepo: ProjectRepository;
@@ -52,23 +51,6 @@ export interface ParsedContextMove {
   source: ContextMoveLocator;
   destination: ContextMoveLocator;
   name?: string;
-}
-
-function validationError(field: string, error: ContextEntryValidationError): never {
-  throw createError({
-    statusCode: 400,
-    message: `Invalid \`${field}\`: ${error.reason}`,
-    data: { field, reason: error.reason, segment: error.segment, character: error.character },
-  });
-}
-
-function parsePath(raw: unknown, field: "path" | "destinationFolderPath", allowRoot = false) {
-  if (typeof raw !== "string") {
-    throw createError({ statusCode: 400, message: `\`${field}\` is required` });
-  }
-  const result = validateContextEntryPath(raw, { allowRoot });
-  if (!result.ok) validationError(field, result);
-  return result.value;
 }
 
 function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") {
@@ -119,20 +101,15 @@ export function parseContextMove(input: {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const body = input.body as Record<string, unknown>;
-  const sourcePath = parsePath(body.path, "path");
-  const destinationFolderPath = parsePath(
+  const sourcePath = parseContextMutationPath(body.path, "path");
+  const destinationFolderPath = parseContextMutationPath(
     body.destinationFolderPath,
     "destinationFolderPath",
-    true,
+    { allowRoot: true },
   );
   let name: string | undefined;
   if (body.newName !== undefined) {
-    if (typeof body.newName !== "string") {
-      throw createError({ statusCode: 400, message: "`newName` must be a string" });
-    }
-    const result = validateContextEntryName(body.newName);
-    if (!result.ok) validationError("newName", result);
-    name = result.value;
+    name = parseContextMutationName(body.newName, "newName");
   }
   return {
     source: parseLocator({

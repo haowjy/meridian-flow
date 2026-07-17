@@ -1,7 +1,8 @@
 /** Materializes a client-minted untitled document without seeding its Yjs content. */
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import type { ContextPort, ContextScheme } from "../../../../../../domains/context/index.js";
-import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
+import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateUntitledBody {
   documentId: string;
@@ -19,10 +20,13 @@ export function parseCreateUntitledBody(raw: unknown): CreateUntitledBody {
   if (body.folderPath !== undefined && typeof body.folderPath !== "string") {
     throw createError({ statusCode: 400, message: "`folderPath` must be a string" });
   }
-  const folderPath = body.folderPath?.trim();
+  const folderPath =
+    body.folderPath === undefined
+      ? undefined
+      : parseContextMutationPath(body.folderPath, "folderPath", { allowRoot: true });
   return {
     documentId: body.documentId,
-    ...(folderPath ? { folderPath: sanitizePath(folderPath) } : {}),
+    ...(folderPath ? { folderPath } : {}),
   };
 }
 
