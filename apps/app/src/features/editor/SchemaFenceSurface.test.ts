@@ -53,6 +53,9 @@ describe("schema fence preview", () => {
     expect(editor.isEditable).toBe(false);
     expect(editor.getText()).toContain("Kept chapter prose");
     expect(editor.getText()).not.toContain("Unsupported future prose");
+    expect(previewDocument.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain(
+      "sidebar",
+    );
     expect(fragment.toString()).toBe(sourceBefore);
     expect(fragment.toString()).toContain("sidebar");
 
