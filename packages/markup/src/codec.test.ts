@@ -66,6 +66,12 @@ function blocksOf(doc: PMNode): PMNode[] {
   return [...doc.content.content];
 }
 
+function firstParsedBlock(codec: ReturnType<typeof mdxCodec>, input: string): PMNode {
+  const block = codec.parse(input).blocks[0];
+  if (!block) throw new Error("expected one parsed block");
+  return block;
+}
+
 function sorted(names: readonly string[]): string[] {
   return [...names].sort();
 }
@@ -351,9 +357,10 @@ describe("mdx codec round-trip corpus", () => {
   });
 
   it("emits canonical Layout wrappers for styled paragraphs, headings, and tables", () => {
-    const table = codec.parse(
+    const table = firstParsedBlock(
+      codec,
       "| Stat | Description | Value |\n| - | - | -: |\n| STR | Raw power | 15 |",
-    ).blocks[0]!;
+    );
     const rows: PMNode[] = [];
     table.forEach((row) => {
       const cells: PMNode[] = [];
@@ -393,7 +400,7 @@ describe("mdx codec round-trip corpus", () => {
   it("validates widths and normalizes them onto every cell in each column", () => {
     const input =
       '<Layout widths="120,,80">\n  | A | B | C |\n  | - | - | - |\n  | 1 | 2 | 3 |\n</Layout>';
-    const table = codec.parse(input).blocks[0]!;
+    const table = firstParsedBlock(codec, input);
     expect(table.type.name).toBe("table");
     table.forEach((row) => {
       expect([...Array(row.childCount)].map((_, index) => row.child(index).attrs.colwidth)).toEqual(
@@ -414,12 +421,10 @@ describe("mdx codec round-trip corpus", () => {
   });
 
   it("throws rather than silently serializing table spans", () => {
-    const table = codec.parse("| A | B |\n| - | - |\n| 1 | 2 |").blocks[0]!;
-    const firstRow = table.firstChild!;
-    const spanned = firstRow.firstChild!.type.create(
-      { ...firstRow.firstChild!.attrs, colspan: 2 },
-      firstRow.firstChild!.content,
-    );
+    const table = firstParsedBlock(codec, "| A | B |\n| - | - |\n| 1 | 2 |");
+    const firstRow = table.child(0);
+    const firstCell = firstRow.child(0);
+    const spanned = firstCell.type.create({ ...firstCell.attrs, colspan: 2 }, firstCell.content);
     const changedRow = firstRow.type.create(firstRow.attrs, [spanned, firstRow.child(1)]);
     const changedTable = table.type.create(table.attrs, [changedRow, table.child(1)]);
     expect(() => codec.serializeBlock(changedTable)).toThrow(
