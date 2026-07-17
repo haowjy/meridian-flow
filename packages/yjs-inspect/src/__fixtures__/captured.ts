@@ -1,4 +1,15 @@
-/** Content-safe copies of representative frames captured from the live Yjs socket. */
+/**
+ * Content-safe copies of representative frames captured from the live Yjs socket.
+ *
+ * Provenance:
+ * - Captured 2026-07-16 with Chrome DevTools Protocol Network.webSocketFrame events.
+ * - Producers: @hocuspocus/provider@4.3.0, yjs@13.6.31, lib0@0.2.117.
+ * - Source: $MERIDIAN_ACTIVE_WORK_DIR/reports/cdp-ws-frames.jsonl.
+ *
+ * That capture contains sync-update and awareness frames, but no sync-step-1,
+ * sync-step-2, stateless, auth, or query-awareness frames. Those five paths
+ * remain explicitly synthesized in inspect.test.ts; none are labeled captured.
+ */
 
 import type { FrameSummary } from "../types.js";
 

@@ -496,26 +496,39 @@ it("never returns content from any exported function across every frame path", a
     ...textEncoder.encode(canary),
   ]);
 
-  const framePaths: Array<{ name: string; bytes: Uint8Array; update: Uint8Array }> = [
+  const framePaths: Array<{ name: string; bytes: Uint8Array }> = [
     {
       name: "sync.step1",
       bytes: syncFrame("safe-room", 0, Y.encodeStateVector(document)),
-      update,
     },
-    { name: "sync.step2", bytes: syncFrame("safe-room", 1, update), update },
-    { name: "sync.update", bytes: syncFrame("safe-room", 2, update), update },
-    { name: "awareness", bytes: frame("safe-room", 1, awarenessPayload), update },
-    { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)), update },
-    { name: "auth", bytes: authFrame(toUint8Array(auth)), update },
-    { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)), update },
-    { name: "truncated", bytes: canaryBearingTruncatedFrame, update },
+    { name: "sync.step2", bytes: syncFrame("safe-room", 1, update) },
+    { name: "sync.update", bytes: syncFrame("safe-room", 2, update) },
+    { name: "awareness", bytes: frame("safe-room", 1, awarenessPayload) },
+    { name: "query-awareness", bytes: frame("safe-room", 3) },
+    { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)) },
+    { name: "auth", bytes: authFrame(toUint8Array(auth)) },
+    { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)) },
+    { name: "truncated", bytes: canaryBearingTruncatedFrame },
   ];
 
   const inspector = await import("./index.js");
-  const invocations: Record<string, (path: (typeof framePaths)[number]) => unknown> = {
-    classifyFrame: (path) => classifyFrame(path.bytes),
-    inspectFrame: (path) => inspectFrame(path.bytes),
-    summarizeUpdate: (path) => summarizeUpdate(path.update),
+  const invocations: Record<string, () => void> = {
+    classifyFrame: () => {
+      for (const path of framePaths) {
+        assertSafeEgress(classifyFrame(path.bytes), canary, `classifyFrame/${path.name}`);
+      }
+    },
+    inspectFrame: () => {
+      for (const path of framePaths) {
+        assertSafeEgress(inspectFrame(path.bytes), canary, `inspectFrame/${path.name}`);
+      }
+    },
+    summarizeUpdate: () => {
+      assertSafeEgress(summarizeUpdate(update), canary, "summarizeUpdate/valid");
+      const invalidUpdate = summarizeUpdate(new Uint8Array([0xff]));
+      expect(invalidUpdate).toMatchObject({ invalid: true });
+      assertSafeEgress(invalidUpdate, canary, "summarizeUpdate/invalid");
+    },
   };
   const exportedFunctions = Object.entries(inspector).filter(
     ([, value]) => typeof value === "function",
@@ -523,16 +536,10 @@ it("never returns content from any exported function across every frame path", a
 
   expect(exportedFunctions.map(([name]) => name).sort()).toEqual(Object.keys(invocations).sort());
   for (const [name] of exportedFunctions) {
-    for (const path of framePaths) {
-      const result = invocations[name]?.(path);
-      expect(result, `${name} was not exercised for ${path.name}`).toBeDefined();
-      assertSafeEgress(result, canary, `${name}/${path.name}`);
-    }
+    const invoke = invocations[name];
+    expect(invoke, `${name} is missing from the egress gate`).toBeTypeOf("function");
+    invoke?.();
   }
-
-  const invalidUpdate = summarizeUpdate(new Uint8Array([0xff]));
-  expect(invalidUpdate).toMatchObject({ invalid: true });
-  assertSafeEgress(invalidUpdate, canary, "summarizeUpdate/invalid");
 });
 
 it("rejects content and non-JSON-natural shapes from the egress gate", () => {
