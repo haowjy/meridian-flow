@@ -7,6 +7,7 @@ import { type KeyboardEvent, useId, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  codeBlockLanguagesEncountered,
   isMermaidPreviewRequested,
   setMermaidPreviewRequested,
 } from "@/core/editor/MermaidCodeBlock";
@@ -17,8 +18,29 @@ export const COMMON_CODE_LANGUAGES = Object.keys(common).sort((left, right) =>
   left.localeCompare(right),
 );
 
-type CodeBubbleData = { language: string; preview: boolean };
+type CodeBubbleData = {
+  language: string;
+  preview: boolean;
+  encounteredLanguages: readonly string[];
+};
 type LanguageOption = { value: string; label: string };
+
+export function codeLanguageOptions(
+  currentLanguage: string,
+  encounteredLanguages: readonly string[],
+  plainTextLabel: string,
+): LanguageOption[] {
+  const options = COMMON_CODE_LANGUAGES.map((language) => ({ value: language, label: language }));
+  const customLanguages = new Set(
+    [currentLanguage, ...encounteredLanguages].filter(
+      (language) => language && !COMMON_CODE_LANGUAGES.includes(language),
+    ),
+  );
+  for (const language of [...customLanguages].reverse()) {
+    options.unshift({ value: language, label: language });
+  }
+  return [{ value: "", label: plainTextLabel }, ...options];
+}
 
 export function filterCodeLanguages(
   options: readonly LanguageOption[],
@@ -47,6 +69,7 @@ export function matchCodeBlock(editor: Editor): BubbleMatch | null {
       data: {
         language: typeof node.attrs.language === "string" ? node.attrs.language : "",
         preview: isMermaidPreviewRequested(editor, nodePos),
+        encounteredLanguages: codeBlockLanguagesEncountered(editor, nodePos),
       } satisfies CodeBubbleData,
     };
   }
@@ -68,13 +91,10 @@ function CodeBubble({ editor, match }: { editor: Editor; match: BubbleMatch }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
   const plainText = t`Plain text`;
-  const options = useMemo<LanguageOption[]>(() => {
-    const known = COMMON_CODE_LANGUAGES.map((language) => ({ value: language, label: language }));
-    if (data.language && !COMMON_CODE_LANGUAGES.includes(data.language)) {
-      known.unshift({ value: data.language, label: data.language });
-    }
-    return [{ value: "", label: plainText }, ...known];
-  }, [data.language, plainText]);
+  const options = useMemo(
+    () => codeLanguageOptions(data.language, data.encounteredLanguages, plainText),
+    [data.encounteredLanguages, data.language, plainText],
+  );
   const filtered = filterCodeLanguages(options, query);
 
   const setLanguage = (language: string) => {

@@ -3,7 +3,12 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { COMMON_CODE_LANGUAGES, filterCodeLanguages, matchCodeBlock } from "./EditorCodeBubble";
+import {
+  COMMON_CODE_LANGUAGES,
+  codeLanguageOptions,
+  filterCodeLanguages,
+  matchCodeBlock,
+} from "./EditorCodeBubble";
 
 let editor: Editor | null = null;
 
@@ -62,5 +67,43 @@ describe("code bubble", () => {
         "custom",
       ),
     ).toEqual([{ value: "myCustomLang", label: "myCustomLang" }]);
+  });
+
+  it("keeps an encountered custom language available after choosing a known language", () => {
+    editor = new Editor({
+      extensions: createStandaloneEditorExtensions(),
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "code_block",
+            attrs: { language: "myCustomLang" },
+            content: [{ type: "text", text: "custom code" }],
+          },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(2);
+    const customMatch = matchCodeBlock(editor);
+    expect(customMatch).not.toBeNull();
+
+    const node = editor.state.doc.nodeAt(0);
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, { ...node?.attrs, language: "typescript" }),
+    );
+    const typescriptMatch = matchCodeBlock(editor);
+    const data = typescriptMatch?.data as
+      | { language: string; encounteredLanguages: readonly string[] }
+      | undefined;
+
+    expect(data?.language).toBe("typescript");
+    expect(
+      codeLanguageOptions(data?.language ?? "", data?.encounteredLanguages ?? [], "Plain text"),
+    ).toContainEqual({ value: "myCustomLang", label: "myCustomLang" });
+
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, { ...node?.attrs, language: "myCustomLang" }),
+    );
+    expect(editor.state.doc.firstChild?.attrs.language).toBe("myCustomLang");
   });
 });
