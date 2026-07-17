@@ -27,6 +27,18 @@ tracked tabs. Never re-encode these classes at a call site.
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
 
+## Banner slot
+
+`EditorBannerSlot` is the single-occupancy strip below the toolbar. Its
+`tenants` array is ordered from highest to lowest priority; the first tenant
+with a renderable element owns the slot and every lower tenant yields. Tenant
+content is restricted to `ReactElement | null`; the runtime selection is also
+defensive against React-empty `false` and `undefined` values. The tenant name is
+its stable React identity, preventing local state from crossing between
+occupants. Draft chrome is the first tenant, with `DraftEntryBanner` and
+`DraftReviewHeader` as two modes of one surface. Register another tenant by
+adding one ordered entry rather than mounting another strip beside the slot.
+
 ### Rejected placements
 
 | Placement | Reason rejected |

@@ -2,7 +2,7 @@
 
 Shared TypeScript wire contracts for IDs, DTOs, protocols, thread events,
 agents, interrupts, preferences, projects, works, branch-backed draft review,
-and runtime shapes.
+runtime shapes, and observability records.
 
 - `drafts/` is UI vocabulary for branch review cards and Work draft lists. The
   durable backend primitive is a branch (`document_branches` +
