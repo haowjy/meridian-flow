@@ -14,12 +14,13 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import type { LucideIcon } from "lucide-react";
 import { CircleUserRound, CreditCard, SlidersHorizontal } from "lucide-react";
-import { type ReactNode, useCallback, useEffect } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
+import { updateAccountSettings } from "@/client/api/account-api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useTextSize } from "@/hooks/use-text-size";
@@ -113,23 +115,30 @@ function phoneSections(): PhoneSettingsSectionItem[] {
  * the desktop dialog render the SAME bodies; only the surrounding chrome
  * differs. This is the single place that maps a section to its content.
  */
-const SECTION_CONTENT: Record<SettingsSection, (presentation: SectionPresentation) => ReactNode> = {
+const SECTION_CONTENT: Record<
+  SettingsSection,
+  (presentation: SectionPresentation, workingSetSyncEnabled: boolean) => ReactNode
+> = {
   profile: (presentation) => <ProfileSection presentation={presentation} />,
-  preferences: (presentation) => <PreferencesSection presentation={presentation} />,
+  preferences: (presentation, workingSetSyncEnabled) => (
+    <PreferencesSection presentation={presentation} workingSetSyncEnabled={workingSetSyncEnabled} />
+  ),
   usage: () => <UsageSection />,
 };
 
 function SectionContent({
   section,
   presentation,
+  workingSetSyncEnabled,
 }: {
   section: SettingsSection | undefined;
   presentation: SectionPresentation;
+  workingSetSyncEnabled: boolean;
 }) {
-  return section ? SECTION_CONTENT[section](presentation) : null;
+  return section ? SECTION_CONTENT[section](presentation, workingSetSyncEnabled) : null;
 }
 
-export function SettingsDialog() {
+export function SettingsDialog({ workingSetSyncEnabled }: { workingSetSyncEnabled: boolean }) {
   const search = useSearch({ strict: false }) as { settings?: SettingsSection };
   const { open, switchSection, close } = useSettingsNavigation();
   // `null` until the media query resolves (first client effect) — render no
@@ -163,7 +172,11 @@ export function SettingsDialog() {
           sections={phoneSections()}
           onSwitchSection={switchSection}
         >
-          <SectionContent section={section} presentation="phone" />
+          <SectionContent
+            section={section}
+            presentation="phone"
+            workingSetSyncEnabled={workingSetSyncEnabled}
+          />
         </PhoneSettingsContent>
       ) : (
         <DialogContent className="flex h-[540px] max-w-3xl gap-0 overflow-hidden p-0">
@@ -188,7 +201,11 @@ export function SettingsDialog() {
             </nav>
           </aside>
           <section className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-            <SectionContent section={section} presentation="desktop" />
+            <SectionContent
+              section={section}
+              presentation="desktop"
+              workingSetSyncEnabled={workingSetSyncEnabled}
+            />
           </section>
         </DialogContent>
       )}
@@ -304,7 +321,13 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
   );
 }
 
-function PreferencesSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
+function PreferencesSection({
+  presentation = "desktop",
+  workingSetSyncEnabled,
+}: {
+  presentation?: SectionPresentation;
+  workingSetSyncEnabled: boolean;
+}) {
   const { i18n } = useLingui();
   const currentLocale = i18n.locale as SupportedLocale;
   const currentTextSize = useTextSize();
@@ -312,6 +335,26 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
   const rowClassName = cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6");
   const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
   const triggerClassName = cn("focus-ring", stacked ? "w-full" : "flex-1");
+  const router = useRouter();
+  const [resumeAcrossDevices, setResumeAcrossDevices] = useState(workingSetSyncEnabled);
+  const [savingResumePreference, setSavingResumePreference] = useState(false);
+
+  useEffect(() => setResumeAcrossDevices(workingSetSyncEnabled), [workingSetSyncEnabled]);
+
+  async function changeResumePreference(enabled: boolean) {
+    setResumeAcrossDevices(enabled);
+    setSavingResumePreference(true);
+    try {
+      await updateAccountSettings({ workingSetSyncEnabled: enabled });
+      // Refresh the authenticated route's cached session user so the sync
+      // driver and every mounted settings presentation share the server value.
+      await router.invalidate();
+    } catch {
+      setResumeAcrossDevices(!enabled);
+    } finally {
+      setSavingResumePreference(false);
+    }
+  }
 
   return (
     <div>
@@ -360,6 +403,23 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="flex items-center justify-between gap-6">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">
+              <Trans>Resume where I left off on any device</Trans>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              <Trans>Reopens your last document and chat when you switch devices</Trans>
+            </p>
+          </div>
+          <Switch
+            checked={resumeAcrossDevices}
+            disabled={savingResumePreference}
+            onCheckedChange={(enabled) => void changeResumePreference(enabled)}
+            aria-label={t`Resume where I left off on any device`}
+          />
         </div>
       </div>
     </div>

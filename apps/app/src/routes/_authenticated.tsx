@@ -140,7 +140,7 @@ function AuthenticatedLayout() {
                   <Outlet key={pathname} />
                 </div>
               </div>
-              <SettingsDialog />
+              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
               {DebugOverlay ? (
                 <Suspense fallback={null}>
                   <DebugOverlay />
