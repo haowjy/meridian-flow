@@ -14,6 +14,7 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import type { IdentityCommitted } from "./use-identity-commit";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
   return tab.kind === "tracked" || tab.kind === "new";
@@ -22,6 +23,8 @@ function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tra
 export type ContextViewerProps = {
   projectId: string;
   activeThreadId: string | null;
+  /** Active work for work-scoped destinations (Scratch) in identity commits. */
+  defaultWorkId: string | null;
   tabs: ContextTab[];
   activeTabId: string | null;
   onSelectTab: (documentId: string) => void;
@@ -45,12 +48,7 @@ export type ContextViewerProps = {
   onResumeDocument: () => void;
   onNewDocument: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
-  onRenamed: (
-    documentId: string,
-    scheme: ProjectContextTreeScheme,
-    name: string,
-    path: string,
-  ) => void;
+  onCommitted: (documentId: string, next: IdentityCommitted) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 
@@ -63,6 +61,7 @@ export type ContextViewerProps = {
 export function ContextViewer({
   projectId,
   activeThreadId,
+  defaultWorkId,
   tabs,
   activeTabId,
   onSelectTab,
@@ -74,7 +73,7 @@ export function ContextViewer({
   onResumeDocument,
   onNewDocument,
   onUntitledBecameNonEmpty,
-  onRenamed,
+  onCommitted,
   onOpenExisting,
 }: ContextViewerProps) {
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
@@ -108,8 +107,9 @@ export function ContextViewer({
             key={activeTab.documentId}
             projectId={projectId}
             activeThreadId={activeThreadId}
+            defaultWorkId={defaultWorkId}
             tab={activeTab}
-            onRenamed={onRenamed}
+            onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />
         ) : null}

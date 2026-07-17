@@ -378,6 +378,7 @@ export function ContextViewerSurfaceController({
     <ContextViewer
       projectId={projectId}
       activeThreadId={activeThreadId}
+      defaultWorkId={defaultWorkId}
       tabs={tabs}
       activeTabId={retainedActiveTabId}
       onSelectTab={handleSelectTab}
@@ -395,9 +396,28 @@ export function ContextViewerSurfaceController({
         onSelectContextPath("", activeContextScheme ?? undefined);
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
-      onRenamed={(documentId, scheme, name, path) => {
-        updateTrackedTab(projectId, documentId, { name, path, provisionalName: false });
-        onSelectContextPath(path, scheme);
+      onCommitted={(documentId, next) => {
+        const target = tabs.find((candidate) => candidate.documentId === documentId);
+        if (target?.kind === "viewer") {
+          // openTab merges metadata for an already-open tab; the store has no
+          // viewer-specific patch action.
+          openTab(projectId, {
+            ...target,
+            scheme: next.scheme,
+            path: next.path,
+            name: next.name,
+            workId: next.workId,
+          });
+        } else {
+          updateTrackedTab(projectId, documentId, {
+            scheme: next.scheme,
+            path: next.path,
+            name: next.name,
+            workId: next.workId,
+            ...(next.renamed ? { provisionalName: false } : {}),
+          });
+        }
+        onSelectContextPath(next.path, next.scheme);
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
     />

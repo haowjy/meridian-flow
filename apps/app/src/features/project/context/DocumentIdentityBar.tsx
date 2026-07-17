@@ -2,133 +2,90 @@
  * DocumentIdentityBar — the universal breadcrumb band at the top of the
  * active tab's canvas. One quiet mono path (`Scratch › Untitled 4`) on every
  * document; provisional docs are a *state* of the bar (italic leaf + jade
- * "Choose a home" chip), not separate chrome.
+ * chip), not separate chrome.
  *
- * Two affordances: click the path to type (the crumb row becomes a text
- * field), click the chip to browse. Phase 1 scopes the field to the basename
- * — path segments render as read-only spans and the chip opens the same
- * naming field; the move-first popup arrives with the cross-folder move seam.
+ * Two affordances, two grammars:
+ * - **Click the path to type.** Provisional docs open the placement field
+ *   (name + destination browser from the scheme roots); homed docs open the
+ *   full-path field with the clicked segment selected (typed-path move).
+ * - **Click the chip to browse.** "Choose a home" is permanent: jade on
+ *   provisional docs (opens placement), quiet outline once homed (opens the
+ *   Move-to popup). Device-only words outrank it in the same slot.
  *
  * Keystroke-path contract: at rest the bar renders from tab metadata only.
- * The content-suggestion observer (300ms debounce) mounts only while the
- * field is open on a provisional doc — never while the writer is typing
- * prose.
+ * Content observers mount only while a field is open on a provisional doc.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
-import { PenLine, TriangleAlert } from "lucide-react";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { FolderDown, TriangleAlert } from "lucide-react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 
-import { renameContextEntry } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
-import { invalidContextEntryNameReason } from "./context-entry-name";
 import { schemeIcon, schemeLabel } from "./context-schemes";
-import {
-  FileSuggestionList,
-  folderChildren,
-  parentPath as parentFolderPath,
-  useFileSuggestions,
-} from "./file-suggestions";
-import { suggestedNameFromFragment } from "./untitled-document-name";
+import { IdentityMovePopup } from "./IdentityMovePopup";
+import { type IdentityFieldMode, IdentityPathField } from "./IdentityPathField";
+import { type TabLocation, tabLocation } from "./identity-location";
 import {
   clearQueuedRenameFailure,
-  type QueuedRenameFailure,
-  queueUntitledRename,
   useQueuedRenameFailure,
   useUntitledPendingSince,
 } from "./untitled-reconciler";
-import { ValidationNote } from "./validation-note";
+import { type IdentityCommitted, useIdentityCommit } from "./use-identity-commit";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
   activeThreadId: string | null;
+  defaultWorkId: string | null;
   tab: ContextTab;
-  onRenamed: (
-    documentId: string,
-    scheme: ProjectContextTreeScheme,
-    name: string,
-    path: string,
-  ) => void;
+  onCommitted: (documentId: string, next: IdentityCommitted) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 
-/** Writer-facing location of a tab. A `new` tab has no server path yet — it
- *  lives in Scratch by construction, so the bar can say so before the server
- *  allocates anything. */
-type TabLocation = {
-  scheme: ProjectContextTreeScheme;
-  /** `/` for a scheme root. */
-  parentPath: string;
-  folders: string[];
-  leaf: string;
-  provisional: boolean;
-  editable: boolean;
-  workId?: string;
-  /** Server path, or null for a not-yet-materialized `new` tab. */
-  path: string | null;
-};
-
-function tabLocation(tab: ContextTab): TabLocation {
-  if (tab.kind === "new") {
-    return {
-      scheme: "scratch",
-      parentPath: "/",
-      folders: [],
-      leaf: tab.name,
-      provisional: true,
-      editable: true,
-      path: null,
-    };
-  }
-  const segments = tab.path.split("/").filter(Boolean);
-  return {
-    scheme: tab.scheme,
-    parentPath: parentFolderPath(tab.path),
-    folders: segments.slice(0, -1),
-    leaf: tab.name,
-    provisional: tab.kind === "tracked" && Boolean(tab.provisionalName),
-    // Phase 1 rides the shipped rename seam, which covers Yjs-tracked
-    // documents; viewer files keep tree-action rename until the move seam.
-    editable: tab.kind === "tracked",
-    workId: tab.workId,
-    path: tab.path,
-  };
-}
+type Surface = { kind: "field"; mode: IdentityFieldMode } | { kind: "popup" } | null;
 
 export function DocumentIdentityBar({
   projectId,
   activeThreadId,
+  defaultWorkId,
   tab,
-  onRenamed,
+  onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
-  const [editing, setEditing] = useState(false);
-  // "Writer owns the name" latch — once the writer edits the field, the
-  // content suggestion stops prefilling for this document (shipped rule).
+  const [surface, setSurface] = useState<Surface>(null);
+  // "Writer owns the name" latch — once the writer edits a field, the
+  // content suggestion stops prefilling for this document.
   const writerOwnsName = useRef(false);
+  const commit = useIdentityCommit({ projectId, tab, defaultWorkId, onCommitted });
 
-  // A queued rename that failed after this document materialized reopens the
-  // field with the writer's name restored and the failure's recovery note —
-  // the receipt must never be dropped silently.
+  // A queued placement that failed after this document materialized reopens
+  // the field with the writer's name restored and the failure's recovery
+  // note — the receipt must never be dropped silently.
   const renameFailure = useQueuedRenameFailure(tab.documentId);
   useEffect(() => {
     if (!renameFailure) return;
     writerOwnsName.current = true;
-    setEditing(true);
+    setSurface({ kind: "field", mode: { kind: "placement" } });
   }, [renameFailure]);
 
-  const openEditor = () => {
-    if (location.editable) setEditing(true);
+  const openField = (mode: IdentityFieldMode) => {
+    if (location.editable) setSurface({ kind: "field", mode });
   };
+  const openTyping = (segment: number | "leaf") => {
+    openField(
+      location.provisional ? { kind: "placement" } : { kind: "path", initialSegment: segment },
+    );
+  };
+
+  // The chip is the pointing surface: placement for provisional docs, the
+  // Move-to popup once homed. Viewer docs get the popup too when moving them
+  // is legal; uploads aren't writing material, so those show no chip.
+  const chipOpensPopup = !location.provisional && location.scheme !== "uploads";
+  const showChip = location.editable || chipOpensPopup;
 
   return (
     <div className="@container shrink-0">
@@ -138,36 +95,56 @@ export function DocumentIdentityBar({
           "flex min-h-5.5 items-center gap-1 pt-1 font-mono text-ink-subtle text-meta",
         )}
       >
-        {editing ? (
-          <IdentityPathEditor
+        {surface?.kind === "field" ? (
+          <IdentityPathField
+            key={surface.mode.kind}
             projectId={projectId}
             activeThreadId={activeThreadId}
+            defaultWorkId={defaultWorkId}
             tab={tab}
             location={location}
-            writerOwnsName={writerOwnsName}
+            mode={surface.mode}
             failure={renameFailure}
+            writerOwnsName={writerOwnsName}
+            commit={commit}
             onExit={(reason) => {
               // Leaving the field acknowledges any failure receipt — it must
               // not reopen the editor it just closed.
               clearQueuedRenameFailure(tab.documentId);
-              setEditing(false);
+              setSurface(null);
               if (reason === "escape") focusEditorProse(tab.documentId);
             }}
-            onRenamed={onRenamed}
             onOpenExisting={onOpenExisting}
           />
         ) : (
           <IdentityPath
             location={location}
-            onEdit={openEditor}
+            onEdit={openTyping}
             onEscape={() => focusEditorProse(tab.documentId)}
           />
         )}
         <span className="min-w-1 flex-1" />
         <IdentityChipSlot
           documentId={tab.documentId}
-          provisional={location.provisional}
-          onNameDraft={openEditor}
+          location={location}
+          show={showChip && surface?.kind !== "field"}
+          popup={
+            chipOpensPopup
+              ? {
+                  open: surface?.kind === "popup",
+                  onOpenChange: (open) => setSurface(open ? { kind: "popup" } : null),
+                  projectId,
+                  activeThreadId,
+                  defaultWorkId,
+                  commit,
+                  onOpenExisting,
+                }
+              : null
+          }
+          onChooseHome={() => {
+            if (chipOpensPopup) setSurface({ kind: "popup" });
+            else openField({ kind: "placement" });
+          }}
         />
       </div>
     </div>
@@ -175,14 +152,15 @@ export function DocumentIdentityBar({
 }
 
 /** Rest state: the quiet crumb row. Middle folders collapse to `…`; narrow
- *  containers drop the scheme label (glyph only) and folder names. */
+ *  containers drop the scheme label (glyph only) and folder names. Clicking a
+ *  segment opens the typed field with that segment selected. */
 function IdentityPath({
   location,
   onEdit,
   onEscape,
 }: {
   location: TabLocation;
-  onEdit: () => void;
+  onEdit: (segment: number | "leaf") => void;
   onEscape: () => void;
 }) {
   const SchemeIcon = schemeIcon(location.scheme);
@@ -191,29 +169,39 @@ function IdentityPath({
       ›
     </span>
   );
+  const lastFolderIndex = location.folders.length;
   const segments = (
     <>
-      <SchemeIcon aria-hidden className="size-3 shrink-0" />
-      <span className="shrink-0 @max-md:hidden">{schemeLabel(location.scheme)}</span>
+      <span data-seg="0" className="flex shrink-0 items-center gap-1">
+        <SchemeIcon aria-hidden className="size-3 shrink-0" />
+        <span className="@max-md:hidden">{schemeLabel(location.scheme)}</span>
+      </span>
       {location.folders.length > 0 ? (
         <>
           {separator}
           <span className="flex min-w-0 items-center gap-1 @max-md:hidden">
             {location.folders.length > 1 ? (
               <>
-                <span aria-hidden>…</span>
+                <span aria-hidden data-seg="1">
+                  …
+                </span>
                 {separator}
               </>
             ) : null}
-            <span className="truncate">{location.folders[location.folders.length - 1]}</span>
+            <span data-seg={lastFolderIndex} className="truncate">
+              {location.folders[location.folders.length - 1]}
+            </span>
           </span>
-          <span aria-hidden className="hidden @max-md:inline">
+          <span aria-hidden data-seg="1" className="hidden @max-md:inline">
             …
           </span>
         </>
       ) : null}
       {separator}
-      <span className={cn("truncate text-ink-muted", location.provisional && "italic")}>
+      <span
+        data-seg="leaf"
+        className={cn("truncate text-ink-muted", location.provisional && "italic")}
+      >
         {location.leaf}
       </span>
     </>
@@ -221,10 +209,16 @@ function IdentityPath({
   if (!location.editable) {
     return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
   }
+  const segmentFromClick = (event: MouseEvent<HTMLButtonElement>): number | "leaf" => {
+    const raw = (event.target as HTMLElement).closest("[data-seg]")?.getAttribute("data-seg");
+    if (raw === "leaf" || raw === null || raw === undefined) return "leaf";
+    const index = Number(raw);
+    return Number.isNaN(index) ? "leaf" : index;
+  };
   return (
     <button
       type="button"
-      onClick={onEdit}
+      onClick={(event) => onEdit(segmentFromClick(event))}
       onKeyDown={(event) => {
         if (event.key === "Escape") onEscape();
       }}
@@ -236,326 +230,89 @@ function IdentityPath({
   );
 }
 
-type ExitReason = "escape" | "blur" | "commit";
-
-/**
- * Edit mode: the path as one text field. Phase 1 renders the folder prefix as
- * a read-only span with `/` separators (typing grammar, not `›` display
- * grammar) and scopes the input to the basename. Enter commits a rename
- * through the shipped seam; Esc and blur revert.
- */
-function IdentityPathEditor({
-  projectId,
-  activeThreadId,
-  tab,
-  location,
-  writerOwnsName,
-  failure,
-  onExit,
-  onRenamed,
-  onOpenExisting,
-}: DocumentIdentityBarProps & {
-  location: TabLocation;
-  writerOwnsName: RefObject<boolean>;
-  failure: QueuedRenameFailure | null;
-  onExit: (reason: ExitReason) => void;
-}) {
-  const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(() => {
-    if (failure) return failure.name;
-    if (!location.provisional || writerOwnsName.current) return location.leaf;
-    const suggestion = suggestionForTab(tab);
-    return suggestion || location.leaf;
-  });
-  // Debounced copy of the draft that drives the visible validation note, so
-  // the reason doesn't flash mid-word. Enter flushes it immediately.
-  const [noteDraft, setNoteDraft] = useState(draft);
-  const [browsePath, setBrowsePath] = useState(location.parentPath);
-  const [serverConflict, setServerConflict] = useState(failure?.kind === "conflict");
-  const [requestError, setRequestError] = useState<string | null>(() =>
-    failure?.kind === "error" ? t`Couldn't rename this document. Try another name.` : null,
-  );
-  const [saving, setSaving] = useState(false);
-  const suggestionTimer = useRef<number | null>(null);
-
-  // Select the basename (minus extension) for overtype on entry, and again
-  // whenever the suggestion refreshes underneath an untouched field.
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input || writerOwnsName.current) return;
-    input.focus();
-    const extensionIndex = input.value.lastIndexOf(".");
-    input.setSelectionRange(0, extensionIndex > 0 ? extensionIndex : input.value.length);
-  }, [draft]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setNoteDraft(draft), 300);
-    return () => window.clearTimeout(timer);
-  }, [draft]);
-
-  // Content-suggested name keeps refreshing (300ms debounce, as shipped)
-  // until the writer edits. Only mounted while the field is open on a
-  // provisional doc — the bar at rest observes nothing.
-  useEffect(() => {
-    if (!location.provisional) return;
-    const session = getDocumentSessionRegistry().getDetached(tab.documentId);
-    const fragment = session.document.getXmlFragment(session.fragmentName);
-    const refresh = () => {
-      if (writerOwnsName.current) return;
-      if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
-      suggestionTimer.current = window.setTimeout(() => {
-        suggestionTimer.current = null;
-        // Re-check the latch at fire time — the writer may have taken the
-        // name during the debounce window, and a stale timer must not
-        // overwrite what they typed.
-        if (writerOwnsName.current) return;
-        const suggestion = suggestionForTab(tab);
-        if (suggestion) setDraft(suggestion);
-      }, 300);
-    };
-    fragment.observeDeep(refresh);
-    return () => {
-      fragment.unobserveDeep(refresh);
-      if (suggestionTimer.current !== null) {
-        window.clearTimeout(suggestionTimer.current);
-        suggestionTimer.current = null;
-      }
-    };
-  }, [location.provisional, tab, writerOwnsName]);
-
-  const suggestionOptions = useMemo(
-    () => ({
-      schemes: [location.scheme],
-      kinds: ["dir", "file"] as const,
-      activeThreadId,
-      workId: location.workId,
-    }),
-    [activeThreadId, location.scheme, location.workId],
-  );
-  const { suggestions: allEntries } = useFileSuggestions(projectId, "", suggestionOptions);
-  const browseEntries = folderChildren(allEntries, location.scheme, browsePath);
-  const siblingEntries = folderChildren(allEntries, location.scheme, location.parentPath);
-
-  const name = draft.trim();
-  const collision =
-    siblingEntries.find((entry) => entry.name === name && entry.path !== location.path) ?? null;
-  const validation = name ? invalidContextEntryNameReason(name) : t`Name is required`;
-
-  // The note renders from the debounced draft so it lags typing, but a
-  // blocked Enter flushes the current reason immediately (see submit).
-  const noteName = noteDraft.trim();
-  const noteCollision = collision && noteName === name ? collision : null;
-  const noteValidation = noteName === name ? validation : null;
-  const collisionPath =
-    noteCollision?.path ??
-    (failure?.kind === "conflict"
-      ? failure.path
-      : serverConflict && location.path
-        ? replaceBasename(location.path, name)
-        : null);
-  const note =
-    noteCollision || serverConflict ? (
-      <ValidationNote
-        severity={{
-          level: "error",
-          message: t`A file named ${name} already exists in this location.`,
-        }}
-        action={
-          noteCollision?.kind !== "dir" && collisionPath ? (
-            <button
-              data-file-suggestion
-              type="button"
-              tabIndex={-1}
-              className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
-              onClick={() =>
-                onOpenExisting(
-                  failure?.kind === "conflict" ? failure.scheme : location.scheme,
-                  collisionPath,
-                )
-              }
-            >
-              <Trans>Open existing</Trans>
-            </button>
-          ) : undefined
-        }
-        className="m-1 mb-0"
-      />
-    ) : noteValidation ? (
-      <ValidationNote severity={{ level: "error", message: noteValidation }} className="m-1 mb-0" />
-    ) : requestError ? (
-      <ValidationNote severity={{ level: "error", message: requestError }} className="m-1 mb-0" />
-    ) : null;
-
-  async function submit() {
-    if (saving) return;
-    if (!name || validation || collision) {
-      // Enter on an invalid name commits nothing — it only makes sure the
-      // reason is visible now, not a debounce later.
-      setNoteDraft(draft);
-      return;
-    }
-    if (name === location.leaf) {
-      onExit("commit");
-      return;
-    }
-    if (tab.kind === "new") {
-      // The reconciler applies the rename when the document materializes; the
-      // outcome lands as a receipt that reopens this field on failure.
-      queueUntitledRename(tab.documentId, name);
-      onExit("commit");
-      return;
-    }
-    if (!location.path) return;
-    setSaving(true);
-    setRequestError(null);
-    try {
-      const result = await renameContextEntry(
-        projectId,
-        location.scheme,
-        { path: location.path, newName: name },
-        location.workId ? { workId: location.workId } : undefined,
-      );
-      if (result.status === "conflict") {
-        setServerConflict(true);
-        inputRef.current?.select();
-        return;
-      }
-      await queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.contextTree(projectId, location.scheme, location.workId),
-      });
-      onRenamed(tab.documentId, location.scheme, name, replaceBasename(location.path, name));
-      onExit("commit");
-    } catch {
-      setRequestError(t`Couldn't rename this document. Try another name.`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const prefix = `${schemeLabel(location.scheme)}/${location.folders.map((folder) => `${folder}/`).join("")}`;
-
-  return (
-    <Popover open>
-      <PopoverAnchor asChild>
-        <div className="flex min-w-0 max-w-96 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-xs">
-          <span aria-hidden className="shrink-0 select-none whitespace-pre text-ink-subtle">
-            {prefix}
-          </span>
-          <input
-            ref={inputRef}
-            className="min-w-0 flex-1 bg-transparent py-0.5 outline-none"
-            aria-label={t`Document name and location`}
-            value={draft}
-            spellCheck={false}
-            disabled={saving}
-            aria-invalid={Boolean(validation || collision || serverConflict || requestError)}
-            onChange={(event) => {
-              writerOwnsName.current = true;
-              if (suggestionTimer.current !== null) {
-                window.clearTimeout(suggestionTimer.current);
-                suggestionTimer.current = null;
-              }
-              clearQueuedRenameFailure(tab.documentId);
-              setDraft(event.target.value);
-              setServerConflict(false);
-              setRequestError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onExit("escape");
-              }
-            }}
-            onBlur={(event) => {
-              // Enter is the only commit — clicking away reverts. Clicks
-              // inside the suggestion popover stay within the field.
-              const next = event.relatedTarget as HTMLElement | null;
-              if (next?.closest("[data-file-suggestion]")) return;
-              onExit("blur");
-            }}
-          />
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        data-file-suggestion
-        align="start"
-        className="max-h-64 overflow-y-auto p-0"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        <FileSuggestionList
-          header={note}
-          suggestions={browseEntries}
-          onSelect={(entry) => {
-            if (entry.kind === "dir") {
-              setBrowsePath(entry.path);
-              inputRef.current?.focus();
-              return;
-            }
-            onOpenExisting(location.scheme, entry.path);
-          }}
-          onClose={() => onExit("escape")}
-          onNavigateUp={
-            browsePath === "/" ? undefined : () => setBrowsePath(parentFolderPath(browsePath))
-          }
-          hideParents
-          emptyMessage={t`Nothing here yet`}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 /**
  * Single-occupancy chip slot at the bar's right edge. Severity ladder:
- * device-only words (warning tokens, 2s sustained grace) outrank the naming
- * invitation. Named documents carry no chip in phase 1 — the standing
- * "Choose a home" move chip arrives with the move-first popup, and no
- * enabled control may promise a move it cannot perform.
+ * device-only words (warning tokens, 2s sustained grace) outrank the
+ * permanent "Choose a home" chip — jade while provisional (an invitation),
+ * quiet outline once homed (a tool).
  */
 function IdentityChipSlot({
   documentId,
-  provisional,
-  onNameDraft,
+  location,
+  show,
+  popup,
+  onChooseHome,
 }: {
   documentId: string;
-  provisional: boolean;
-  onNameDraft: () => void;
+  location: TabLocation;
+  show: boolean;
+  popup: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    projectId: string;
+    activeThreadId: string | null;
+    defaultWorkId: string | null;
+    commit: Parameters<typeof IdentityMovePopup>[0]["commit"];
+    onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  } | null;
+  onChooseHome: () => void;
 }) {
   const deviceOnly = useDeviceOnly(documentId);
   if (deviceOnly) return <DeviceOnlyChip />;
-  if (!provisional) return null;
-  return <NameDraftChip onClick={onNameDraft} />;
+  if (!show) return null;
+  const chip = <HomeChip provisional={location.provisional} onClick={onChooseHome} />;
+  if (!popup) return chip;
+  return (
+    <IdentityMovePopup
+      projectId={popup.projectId}
+      activeThreadId={popup.activeThreadId}
+      defaultWorkId={popup.defaultWorkId}
+      location={location}
+      open={popup.open}
+      onOpenChange={popup.onOpenChange}
+      commit={popup.commit}
+      onOpenExisting={popup.onOpenExisting}
+      trigger={chip}
+    />
+  );
 }
 
 const chipClass =
   "inline-flex h-4.5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-meta motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150";
 
-/**
- * The naming invitation on provisional documents: jade ("do/go"), and
- * honest — clicking opens the naming field, and the copy says exactly that.
- */
-function NameDraftChip({ onClick }: { onClick: () => void }) {
+/** "Choose a home" — the permanent re-home affordance (D4). Same label, same
+ *  geometry in both states; one token swap between invitation and tool. */
+function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
+          key={provisional ? "invite" : "quiet"}
           type="button"
           onClick={onClick}
           className={cn(
-            "focus-ring cursor-pointer border-primary/30 bg-primary/10 text-jade-text",
+            "focus-ring cursor-pointer",
             chipClass,
+            provisional
+              ? "border-primary/30 bg-primary/10 text-jade-text"
+              : "border-border bg-transparent text-ink-subtle",
           )}
         >
-          <PenLine aria-hidden className="size-2.5" />
+          <FolderDown aria-hidden className="size-2.5" />
           <span className="@max-md:hidden">
-            <Trans>Name this draft</Trans>
+            <Trans>Choose a home</Trans>
           </span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={4} className="max-w-60">
-        <Trans>This draft is untitled and lives in your Scratch. Click to give it a name.</Trans>
+        {provisional ? (
+          <Trans>
+            This draft is untitled and lives in your Scratch. Click to name it or move it where it
+            belongs.
+          </Trans>
+        ) : (
+          <Trans>Move this document somewhere else in your project.</Trans>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -605,22 +362,7 @@ function useDeviceOnly(documentId: string): boolean {
   return sustained;
 }
 
-function suggestionForTab(tab: ContextTab): string {
-  const session = getDocumentSessionRegistry().getDetached(tab.documentId);
-  const suggestion = suggestedNameFromFragment(
-    session.document.getXmlFragment(session.fragmentName),
-  );
-  if (!suggestion || tab.kind === "new") return suggestion;
-  const extensionIndex = tab.name.lastIndexOf(".");
-  const extension = extensionIndex > 0 ? tab.name.slice(extensionIndex) : "";
-  return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
-}
-
-function replaceBasename(path: string, name: string): string {
-  return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
-}
-
-/** Esc hands focus back to the prose (spec: the bar is one tab stop). */
+/** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
   document
     .querySelector<HTMLElement>(

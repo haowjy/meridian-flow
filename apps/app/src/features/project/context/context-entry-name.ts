@@ -16,6 +16,7 @@ import { t } from "@lingui/core/macro";
 import {
   type ContextEntryValidationError,
   validateContextEntryName as validateSharedContextEntryName,
+  validateContextEntryPath as validateSharedContextEntryPath,
 } from "@meridian/contracts/context-entry-validation";
 
 function validationReason(error: ContextEntryValidationError): string {
@@ -54,6 +55,24 @@ export function joinContextEntryPath(parent: string, leaf: string): string {
 export function invalidContextEntryNameReason(name: string): string | null {
   const result = validateSharedContextEntryName(name);
   return result.ok ? null : validationReason(result);
+}
+
+/**
+ * Localized validation error for a writer-typed human path
+ * (`Manuscript/Act 2/chapter-12`), or null when acceptable. `knownRoots` are
+ * writer-visible root labels; an unmatched first segment localizes with the
+ * typed label so the note can say which place doesn't exist.
+ */
+export function invalidContextEntryPathReason(
+  raw: string,
+  knownRoots: readonly string[],
+): string | null {
+  const result = validateSharedContextEntryPath(raw, { knownRoots });
+  if (result.ok) return null;
+  if (result.reason === "path/unknown-root") {
+    return t`No place called '${result.segment ?? ""}'`;
+  }
+  return validationReason(result);
 }
 
 /**

@@ -9,7 +9,10 @@
 import type {
   CreateUntitledContextDocumentResponse,
   CreateUntitledContextDocumentResult,
+  MoveContextEntryResult,
+  MoveContextEntrySuccess,
   ProjectContextTreeNode,
+  ProjectContextTreeScheme,
   RenameContextEntryResult,
 } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
@@ -18,6 +21,7 @@ import {
   createUntitledContextDocument,
   getProjectContextTree,
   listProjectWorks,
+  moveContextEntry,
   renameContextEntry,
 } from "@/client/api/projects-api";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
@@ -44,18 +48,35 @@ type Candidate = {
   onReminted: (documentId: string) => void;
   onMaterialized: (result: CreateUntitledContextDocumentResponse) => void;
   onRenamed: (name: string, path: string) => void;
+  /** Queued placement landed: the document moved (path has a leading slash). */
+  onMoved?: (result: MoveContextEntrySuccess & { renamed: boolean }) => void;
 };
 
-type RenameIntent = { name: string };
+export type PlacementDestination = {
+  scheme: ProjectContextTreeScheme;
+  /** Scheme-relative parent folder WITHOUT a leading slash; "" = root. */
+  folderPath: string;
+  workId?: string;
+};
+
+/** Queued name (+ optional home) to apply when the document materializes. */
+type PlacementIntent = { name: string; destination?: PlacementDestination };
 
 /**
- * Receipt for a queued rename that could not be applied when its document
- * materialized. Held in reconciler state (not a promise) so the identity bar
- * can surface recovery even though the writer's edit session ended when the
- * name was queued. `conflict` carries the colliding path for Open-existing.
+ * Receipt for a queued rename/placement that could not be applied when its
+ * document materialized. Held in reconciler state (not a promise) so the
+ * identity bar can surface recovery even though the writer's edit session
+ * ended when the intent was queued. `conflict` carries the canonical
+ * colliding locator (leading-slash path) for Open-existing.
  */
 export type QueuedRenameFailure =
-  | { kind: "conflict"; name: string; scheme: "scratch"; path: string }
+  | {
+      kind: "conflict";
+      name: string;
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      workId?: string;
+    }
   | { kind: "error"; name: string };
 
 type ReconcilerSession = Pick<
@@ -99,6 +120,12 @@ type ApiPort = {
     path: string,
     name: string,
   ): Promise<RenameContextEntryResult>;
+  move(
+    entry: PendingUntitled & { home: UntitledHome },
+    path: string,
+    name: string,
+    destination: PlacementDestination,
+  ): Promise<MoveContextEntryResult>;
 };
 
 export type UntitledReconcilerDeps = {
@@ -119,7 +146,7 @@ export function untitledHomeUri(
 export class UntitledReconciler {
   private readonly entries = new Map<string, PendingUntitled>();
   private readonly candidates = new Map<string, Candidate>();
-  private readonly renameIntents = new Map<string, RenameIntent>();
+  private readonly renameIntents = new Map<string, PlacementIntent>();
   private readonly renameFailures = new Map<string, QueuedRenameFailure>();
   /** documentId → epoch ms when the entry first became pending (in-memory). */
   private readonly pendingSinceMs = new Map<string, number>();
@@ -202,11 +229,12 @@ export class UntitledReconciler {
     return () => this.listeners.delete(listener);
   };
 
-  /** Queue a rename to apply when the document materializes. Replaces any
-   *  earlier intent; the outcome lands as a receipt (`queuedRenameFailure`),
-   *  never a promise — the writer's edit session is over when this is called. */
-  queueRename(documentId: string, name: string): void {
-    this.renameIntents.set(documentId, { name });
+  /** Queue a rename (and optional home) to apply when the document
+   *  materializes. Replaces any earlier intent; the outcome lands as a
+   *  receipt (`queuedRenameFailure`), never a promise — the writer's edit
+   *  session is over when this is called. */
+  queuePlacement(documentId: string, intent: PlacementIntent): void {
+    this.renameIntents.set(documentId, intent);
     this.clearQueuedRenameFailure(documentId);
     this.schedule();
   }
@@ -274,7 +302,7 @@ export class UntitledReconciler {
         return;
       }
       this.candidates.get(entry.documentId)?.onMaterialized(result);
-      await this.applyQueuedRename(resolvedEntry, result);
+      await this.applyQueuedPlacement(resolvedEntry, result);
 
       const attached = this.deps.sessions.attachDetached(entry.documentId);
       await attached.waitForDurableSync();
@@ -286,30 +314,51 @@ export class UntitledReconciler {
     }
   }
 
-  private async applyQueuedRename(
+  private async applyQueuedPlacement(
     entry: PendingUntitled & { home: UntitledHome },
     result: CreateUntitledContextDocumentResponse,
   ): Promise<void> {
-    const rename = this.renameIntents.get(entry.documentId);
-    if (!rename) return;
+    const intent = this.renameIntents.get(entry.documentId);
+    if (!intent) return;
     this.renameIntents.delete(entry.documentId);
     try {
-      const renameResult = await this.deps.api.rename(entry, result.path, rename.name);
+      if (intent.destination) {
+        const moved = await this.deps.api.move(entry, result.path, intent.name, intent.destination);
+        if (moved.status === "conflict") {
+          this.renameFailures.set(entry.documentId, {
+            kind: "conflict",
+            name: intent.name,
+            scheme: moved.collision.scheme,
+            path: `/${moved.collision.path}`,
+            ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
+          });
+          this.emit();
+          return;
+        }
+        this.candidates.get(entry.documentId)?.onMoved?.({
+          ...moved,
+          path: `/${moved.path}`,
+          renamed: moved.name !== result.name,
+        });
+        return;
+      }
+      const renameResult = await this.deps.api.rename(entry, result.path, intent.name);
       if (renameResult.status === "conflict") {
         this.renameFailures.set(entry.documentId, {
           kind: "conflict",
-          name: rename.name,
+          name: intent.name,
           scheme: entry.home.scheme,
-          path: replaceBasename(result.path, rename.name),
+          path: replaceBasename(result.path, intent.name),
+          workId: entry.home.workId,
         });
         this.emit();
         return;
       }
       this.candidates
         .get(entry.documentId)
-        ?.onRenamed(rename.name, replaceBasename(result.path, rename.name));
+        ?.onRenamed(intent.name, replaceBasename(result.path, intent.name));
     } catch {
-      this.renameFailures.set(entry.documentId, { kind: "error", name: rename.name });
+      this.renameFailures.set(entry.documentId, { kind: "error", name: intent.name });
       this.emit();
     }
   }
@@ -478,6 +527,17 @@ function browserDeps(): UntitledReconcilerDeps {
           { workId: entry.home.workId },
         );
       },
+      move(entry, path, name, destination) {
+        const currentName = path.slice(path.lastIndexOf("/") + 1);
+        return moveContextEntry(entry.projectId, entry.home.scheme, {
+          path: path.replace(/^\/+/, ""),
+          sourceWorkId: entry.home.workId,
+          destinationScheme: destination.scheme,
+          destinationFolderPath: destination.folderPath,
+          ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
+          ...(name !== currentName ? { newName: name } : {}),
+        });
+      },
     },
   };
 }
@@ -535,5 +595,14 @@ export function clearQueuedRenameFailure(documentId: string): void {
 }
 
 export function queueUntitledRename(documentId: string, name: string): void {
-  getUntitledReconciler().queueRename(documentId, name);
+  getUntitledReconciler().queuePlacement(documentId, { name });
+}
+
+/** Queue a rename + move to apply when the document materializes. */
+export function queueUntitledPlacement(
+  documentId: string,
+  name: string,
+  destination: PlacementDestination,
+): void {
+  getUntitledReconciler().queuePlacement(documentId, { name, destination });
 }

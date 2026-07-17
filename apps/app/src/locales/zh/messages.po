@@ -19,6 +19,10 @@ msgstr ""
 msgid "· {0} of {1} reviewed"
 msgstr ""
 
+#: src/features/project/context/context-entry-name.ts
+msgid "'.' and '..' cannot be used as names"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "(fetched)"
 msgstr "（已抓取）"
@@ -75,9 +79,17 @@ msgstr ""
 msgid "✓ All changes reviewed"
 msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
-msgid "A file named {name} already exists in this location."
+#. placeholder {0}: conflict.path.slice(conflict.path.lastIndexOf("/") + 1)
+#. placeholder {0}: conflictName ?? ""
+#. placeholder {0}: noteValue.trim().split("/").pop() ?? ""
+#: src/features/project/context/IdentityMovePopup.tsx
+#: src/features/project/context/IdentityPathField.tsx
+msgid "A file named {0} already exists in this location."
 msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+#~ msgid "A file named {name} already exists in this location."
+#~ msgstr ""
 
 #: src/features/project/context/UntitledRenameLine.tsx
 #~ msgid "A file named {noteName} already exists in this location."
@@ -292,8 +304,8 @@ msgid "Checkout unavailable."
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "Choose a home"
-#~ msgstr ""
+msgid "Choose a home"
+msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
@@ -467,8 +479,12 @@ msgstr ""
 msgid "Couldn't open this location"
 msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityPathField.tsx
 msgid "Couldn't rename this document. Try another name."
+msgstr ""
+
+#: src/features/project/context/use-identity-commit.ts
+msgid "Couldn't save this document's home. Try again."
 msgstr ""
 
 #: src/features/project/context/UntitledRenameLine.tsx
@@ -489,6 +505,10 @@ msgstr ""
 
 #: src/features/chat/IndependentChatView.tsx
 msgid "Create project"
+msgstr ""
+
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "current home"
 msgstr ""
 
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -571,6 +591,7 @@ msgid "Document"
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityPathField.tsx
 msgid "Document name and location"
 msgstr ""
 
@@ -787,6 +808,10 @@ msgstr ""
 msgid "Image artifact"
 msgstr ""
 
+#: src/features/project/context/IdentityPathField.tsx
+msgid "Include a location and a name, like Manuscript/chapter-1"
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
 msgstr ""
@@ -818,6 +843,10 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
+msgstr ""
+
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "Keep in Scratch"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -969,8 +998,12 @@ msgid "Monthly usage"
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "Move this document somewhere else in your project."
-#~ msgstr ""
+msgid "Move this document somewhere else in your project."
+msgstr ""
+
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "Move to {destinationName}"
+msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -988,16 +1021,35 @@ msgstr ""
 msgid "Must be at most {value}"
 msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "Name"
+msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+#: src/features/project/context/IdentityMovePopup.tsx
+#: src/features/project/context/IdentityPathField.tsx
 msgid "Name is required"
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Name this draft"
+#~ msgid "Name this draft"
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot be empty"
+msgstr ""
+
+#. placeholder {0}: error.character ?? ""
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot contain '{0}'"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "Names cannot contain '/'"
+#~ msgid "Names cannot contain '/'"
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot end with '/'"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -1029,6 +1081,10 @@ msgstr ""
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New file"
+msgstr ""
+
+#: src/features/project/context/IdentityPathField.tsx
+msgid "new folder"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
@@ -1088,6 +1144,10 @@ msgstr ""
 msgid "No files uploaded yet."
 msgstr ""
 
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "No folders here"
+msgstr ""
+
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"
 msgstr ""
@@ -1096,8 +1156,17 @@ msgstr ""
 msgid "No matching files"
 msgstr ""
 
+#: src/features/project/context/IdentityPathField.tsx
+msgid "No matching folders"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
+msgstr ""
+
+#. placeholder {0}: result.segment ?? ""
+#: src/features/project/context/context-entry-name.ts
+msgid "No place called '{0}'"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -1116,7 +1185,7 @@ msgstr ""
 msgid "Not Found"
 msgstr "未找到"
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityPathField.tsx
 msgid "Nothing here yet"
 msgstr ""
 
@@ -1161,7 +1230,8 @@ msgstr ""
 msgid "Open context files"
 msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityMovePopup.tsx
+#: src/features/project/context/IdentityPathField.tsx
 msgid "Open existing"
 msgstr ""
 
@@ -1440,6 +1510,10 @@ msgstr ""
 #~ msgid "Save location"
 #~ msgstr ""
 
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "Save name"
+msgstr ""
+
 #: src/features/project/context/UntitledRenameLine.tsx
 #~ msgid "Save temporary document"
 #~ msgstr ""
@@ -1628,6 +1702,10 @@ msgstr ""
 msgid "That change moved. Refreshed to the latest changes."
 msgstr ""
 
+#: src/features/project/context/context-entry-name.ts
+msgid "That location does not exist"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That skill isn't available in this chat."
 msgstr ""
@@ -1687,12 +1765,12 @@ msgid "This draft changed. Review the latest version before applying."
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "This draft is untitled and lives in your Scratch. Click to give it a name."
-msgstr ""
+#~ msgid "This draft is untitled and lives in your Scratch. Click to give it a name."
+#~ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
-#~ msgstr ""
+msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."
@@ -1837,6 +1915,10 @@ msgstr ""
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
 msgstr "你正在研究什么？"
+
+#: src/features/project/context/IdentityMovePopup.tsx
+msgid "Where should this live?"
+msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"

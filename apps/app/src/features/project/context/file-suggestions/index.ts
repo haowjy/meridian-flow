@@ -1,4 +1,4 @@
-export { FileSuggestionList } from "./FileSuggestionList";
+export { type AnnotatedFileSuggestion, FileSuggestionList } from "./FileSuggestionList";
 export type { FileSuggestion, FileSuggestionKind } from "./file-suggestions";
 export {
   flattenFileSuggestionTrees,

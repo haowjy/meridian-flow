@@ -54,6 +54,20 @@ export function useUntitledTabBridge({
               onSelectContextPath(path, "scratch");
             }
           },
+          onMoved: (result) => {
+            updateTrackedTab(projectId, tab.documentId, {
+              scheme: result.scheme,
+              path: result.path,
+              name: result.name,
+              workId: result.scheme === "scratch" ? (defaultWorkId ?? undefined) : undefined,
+              ...(result.renamed ? { provisionalName: false } : {}),
+            });
+            if (
+              useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
+            ) {
+              onSelectContextPath(result.path, result.scheme);
+            }
+          },
         }),
       );
     return () => {

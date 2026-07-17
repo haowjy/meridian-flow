@@ -14,6 +14,9 @@ import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
 
+/** A row with an optional right-edge annotation (e.g. "new folder"). */
+export type AnnotatedFileSuggestion = FileSuggestion & { hint?: string };
+
 export function FileSuggestionList({
   suggestions,
   onSelect,
@@ -23,7 +26,7 @@ export function FileSuggestionList({
   emptyMessage,
   header,
 }: {
-  suggestions: readonly FileSuggestion[];
+  suggestions: readonly AnnotatedFileSuggestion[];
   onSelect: (suggestion: FileSuggestion) => void;
   onClose: () => void;
   /** When set, a leading `..` row navigates to the enclosing level. */
@@ -111,13 +114,15 @@ export function FileSuggestionList({
                     : fileKindIcon(suggestion.name);
               const displayName =
                 suggestion.path === "/" ? schemeLabel(suggestion.scheme) : suggestion.name;
-              const parent = hideParents
-                ? ""
-                : suggestion.parents.length
-                  ? `${schemeLabel(suggestion.scheme)} / ${suggestion.parents.join(" / ")}`
-                  : suggestion.path === "/"
-                    ? ""
-                    : schemeLabel(suggestion.scheme);
+              const parent = suggestion.hint
+                ? suggestion.hint
+                : hideParents
+                  ? ""
+                  : suggestion.parents.length
+                    ? `${schemeLabel(suggestion.scheme)} / ${suggestion.parents.join(" / ")}`
+                    : suggestion.path === "/"
+                      ? ""
+                      : schemeLabel(suggestion.scheme);
               return (
                 <li key={`${suggestion.scheme}:${suggestion.path}`}>
                   <button
