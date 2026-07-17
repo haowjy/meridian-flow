@@ -4,6 +4,8 @@
 
 - `@meridian/contracts`: Yjs collaboration closes now register schema-version
   refusals (`4406 client-schema-superseded`, `4407 document-schema-stale`).
+- `apps/server`: Yjs connect admission now refuses clients older than each live
+  or branch document head and reports stale stored heads with typed closes.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

@@ -1041,7 +1041,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(branchRoomName(branch.branchId, branch.generation)).toBe(
         `branch:${branch.branchId}:gen:${branch.generation}`,
       );
-      expect(room).toMatchObject({ branchId: branch.branchId, documentId: DOC_ID });
+      expect(room).toMatchObject({
+        branchId: branch.branchId,
+        documentId: DOC_ID,
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+      });
       expect(loadedDoc.getText("content").toString()).toBe("live review seed");
     });
 
