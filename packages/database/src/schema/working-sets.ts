@@ -27,7 +27,10 @@ export const projectUserWorkingSets = pgTable(
     lastThreadId: uuid("last_thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "set null" }),
-    // The sync generation is incremented atomically by the repository on every upsert.
+    // The sync generation: incremented atomically on every upsert
+    // (insert 1; conflict → revision + 1 in the SET clause). The client
+    // stores the returned value and compares it at hydration. Nothing but
+    // this domain ever writes the row — that exclusivity is load-bearing.
     revision: integer("revision").notNull().default(1),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
