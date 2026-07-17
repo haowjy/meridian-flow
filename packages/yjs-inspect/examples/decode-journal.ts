@@ -83,9 +83,13 @@ function decodeRows(input: string): JournalRow[] {
       }
 
       if (/^update_hex\s*\|/i.test(trimmed)) {
-        const update = decodeRow(trimmed);
-        if (update) expandedRecord.updates.push(update);
-        else expandedRecord.hasInvalidShape = true;
+        try {
+          const update = decodeRow(trimmed);
+          if (update) expandedRecord.updates.push(update);
+          else expandedRecord.hasInvalidShape = true;
+        } catch {
+          expandedRecord.hasInvalidShape = true;
+        }
         return;
       }
 

@@ -388,6 +388,19 @@ describe("decode-journal CLI", () => {
     expect(result.stdout).toBe("");
   });
 
+  it("names every expanded record whose update hex has invalid shape", () => {
+    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      encoding: "utf8",
+      input:
+        "-[ RECORD 1 ]---\nid | journal-99\nupdate_hex | f\n-[ RECORD 42 ]---\nupdate_hex | abc\n",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Unrecognized input row ids: journal-99, 42");
+    expect(result.stdout).toBe("");
+  });
+
   it("exits nonzero and names every unrecognized row id", () => {
     const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
