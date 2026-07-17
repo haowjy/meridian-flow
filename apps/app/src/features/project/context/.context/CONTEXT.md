@@ -22,9 +22,10 @@ ContextPaneController
        ├─ in-memory ContextTab[] (tracked, viewer, and new)
        └─ ContextViewer
               ├─ ContextTabBar
+              ├─ DocumentIdentityBar (active tab's breadcrumb + chip slot)
               ├─ ContextEditorMountHost (warm tracked + untitled Yjs editors)
               ├─ ContextViewerHost (active binary viewer)
-              └─ EditorBannerSlot (draft chrome or untitled rename line)
+              └─ EditorBannerSlot (draft chrome only)
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
@@ -59,17 +60,41 @@ detached session and replaces the new tab's identity in place before retrying.
 Named/viewed documents never enter this engine.
 
 After create returns, the placeholder becomes a normal route-owned `tracked`
-tab in place. `provisionalName` comes from the tree DTO and controls the rename
-line; a cached tree refetch refreshes open-tab metadata so a cross-device rename
-eventually dissolves the line without another invalidation channel.
+tab in place. `provisionalName` comes from the tree DTO and drives the identity
+bar's provisional state; a cached tree refetch refreshes open-tab metadata so a
+cross-device rename eventually dissolves the state without another invalidation
+channel.
 
-`UntitledRenameLine.tsx` survives only as the ambient provisional rename line.
-It is the lower-priority tenant of `EditorBannerSlot` (draft chrome wins), uses
-the URI-shaped field and local collision browser, and commits basename-only on
-Enter. There is no Save button and no content handover. While the pending entry
-exists it shows the amber “Only on this device” badge; the badge disappears only
-when the reconciler confirms server sync. Server 409 remains a race guard with
-Open-existing recovery. Moving remains a tree action.
+## Document identity bar
+
+`DocumentIdentityBar.tsx` is the one identity surface: a ~22px mono breadcrumb
+band (`Scratch › Untitled 4`) at the top of the active tab's canvas, on every
+document — tracked, provisional, viewer. Provisional docs are a *state* of the
+bar (italic leaf + jade “Choose a home” chip), never separate chrome; the
+editor banner slot below the toolbar belongs to draft chrome alone, and
+identity chrome must never occupy it again (structural separation, 2026-07-17).
+
+Contracts:
+
+- **Keystroke path**: at rest the bar renders from tab metadata only. The
+  content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
+  only while the edit field is open on a provisional doc.
+- **Edit mode** (phase 1): click the path → basename field with the folder
+  prefix as read-only spans (`/` separators — typing grammar; rest renders
+  `›`). Enter commits through the shipped rename seam (`renameContextEntry`
+  for tracked, `queueUntitledRename` for `new`); Esc AND blur revert — Enter
+  is the only commit. Basenames are whitespace-trimmed before validation and
+  commit; whitespace-only input is name-required invalid. Validation reasons
+  and collisions render live (300ms debounce) as a `ValidationNote` under the
+  bar; collision adds Open-existing recovery. Full-path editing and the
+  move-first popup land with the cross-folder move seam (phase 2); until then
+  the chip opens the same naming field and viewer tabs keep tree-action rename.
+- **Chip slot**: single occupancy, right edge. “Choose a home” is permanent on
+  every document — jade while provisional, quiet outline once named. The
+  device-only warning (warning tokens, `TriangleAlert`) outranks it after
+  unsynced words persist for a 2s sustained grace, and yields when the
+  reconciler confirms server sync. Server 409 remains a race guard with
+  Open-existing recovery.
 
 The tab strip still follows the settled tonal treatment: it paints nothing,
 active tabs continue the canvas upward, inactive neighbors alone receive short

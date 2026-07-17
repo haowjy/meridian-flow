@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- `apps/app`: universal document identity bar — every open document shows a
+  quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas with a
+  permanent “Choose a home” chip (jade while untitled, quiet outline once
+  named) and the device-only warning in the same slot (2s grace). Click the
+  path to rename in place with live validation reasons and Open-existing
+  collision recovery; replaces the provisional-only untitled rename line.
+
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's

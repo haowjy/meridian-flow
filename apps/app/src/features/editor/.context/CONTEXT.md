@@ -17,9 +17,9 @@ controls sitting on canvas, separated from the prose by whitespace only.
 while text scrolls beneath), aligned to the prose column.
 
 **One column, one owner**: `editor-column.ts` is the single home of prose
-geometry — the chrome alignment (toolbar row, untitled rename line), the canvas
-wrapper, and `editorProseClass(toolbar)` for the ProseMirror node (the top
-inset depends on whether a docked toolbar already supplies the breathing
+geometry — the chrome alignment (toolbar row, document identity bar), the
+canvas wrapper, and `editorProseClass(toolbar)` for the ProseMirror node (the
+top inset depends on whether a docked toolbar already supplies the breathing
 room; hosts choose at editor creation). Tracked and untitled documents share
 this column exactly, so nothing moves when an untitled tab materializes. Never
 re-encode these classes at a call site.
@@ -35,9 +35,15 @@ with a renderable element owns the slot and every lower tenant yields. Tenant
 content is restricted to `ReactElement | null`; the runtime selection is also
 defensive against React-empty `false` and `undefined` values. The tenant name is
 its stable React identity, preventing local state from crossing between
-occupants. Draft chrome is the first tenant, with `DraftEntryBanner` and
+occupants. Draft chrome is the sole tenant, with `DraftEntryBanner` and
 `DraftReviewHeader` as two modes of one surface. Register another tenant by
 adding one ordered entry rather than mounting another strip beside the slot.
+
+**Tenancy is content-state only.** Document identity chrome (naming,
+location, the provisional-rename invitation) lives in the context feature's
+`DocumentIdentityBar` above the toolbar and must never occupy this slot again
+— the former `UntitledRenameLine` tenant was deleted with that separation
+(2026-07-17).
 
 ### Rejected placements
 
