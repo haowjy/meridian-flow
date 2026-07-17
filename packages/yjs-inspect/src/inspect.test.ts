@@ -280,6 +280,28 @@ describe("summarizeUpdate", () => {
     });
   });
 
+  it("keys cross-client deletions by the deleted content creator", () => {
+    const creator = new Y.Doc();
+    creator.clientID = 739274145;
+    creator.getText("content").insert(0, "hello");
+
+    const deleter = new Y.Doc();
+    deleter.clientID = 42;
+    Y.applyUpdate(deleter, Y.encodeStateAsUpdate(creator));
+    const deletionUpdates: Uint8Array[] = [];
+    deleter.on("update", (update) => {
+      deletionUpdates.push(update);
+    });
+    deleter.getText("content").delete(1, 2);
+
+    expect(summarizeValidUpdate(deletionUpdates[0])).toMatchObject({
+      structSpans: [],
+      deleteSpans: [{ client: creator.clientID, clockFrom: 1, clockTo: 3 }],
+      spansKey: `d:${creator.clientID}:1-3`,
+      structCount: 0,
+    });
+  });
+
   it("keeps merged spans overlap-valid and coalesces adjacent delete ranges", () => {
     const document = new Y.Doc();
     const text = document.getText("content");
