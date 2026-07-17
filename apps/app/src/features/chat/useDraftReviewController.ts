@@ -515,7 +515,7 @@ export function useDraftReviewController(
       ) {
         return;
       }
-      const { draftRevisionToken, branchId } = await latestPreviewRevisionTokens(
+      const { draftRevisionToken, branchId, operationIds } = await latestPreviewRevisionTokens(
         queryClient,
         projectId,
         workId,
@@ -532,6 +532,7 @@ export function useDraftReviewController(
           draftId,
           branchId,
           draftRevisionToken,
+          operationIds,
         },
         {
           onSuccess(response) {
@@ -676,6 +677,7 @@ export function useDraftReviewController(
 type DraftPreviewRevisionTokens = {
   draftRevisionToken: number;
   liveRevisionToken: number | null;
+  operationIds: string[];
   branchId?: string;
 };
 
@@ -693,9 +695,10 @@ async function latestPreviewRevisionTokens(
     ? {
         draftRevisionToken: preview.draftRevisionToken,
         liveRevisionToken: preview.liveRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
         ...(preview.branchId ? { branchId: preview.branchId } : {}),
       }
-    : { draftRevisionToken: -1, liveRevisionToken: null };
+    : { draftRevisionToken: -1, liveRevisionToken: null, operationIds: [] };
 }
 
 function clearPendingDiscardTimer(

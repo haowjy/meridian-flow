@@ -66,6 +66,7 @@ describe("handleWorkDraftAcceptRequest", () => {
         branchId: "branch-1",
         userId: USER_ID as never,
         draftRevisionToken: 1,
+        operationIds: ["operation-1"],
       },
     );
 

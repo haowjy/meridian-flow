@@ -1275,7 +1275,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             branch.workId === input.workId &&
             branch.documentId === input.documentId
           ) {
-            const selectedOperationIds = input.operationIds ?? [];
+            const selectedOperationIds = input.operationIds;
             if (
               input.draftRevisionToken !== undefined &&
               input.draftRevisionToken !== branch.generation
@@ -1286,74 +1286,32 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 draftRevisionToken: branch.generation,
               };
             }
-            if (selectedOperationIds.length > 0) {
-              const preview = await previewWorkDraftBranch({
-                projectId: input.projectId,
-                documentId: input.documentId,
-                workId: input.workId,
-              });
-              if (preview?.status !== "active") throw new Error("draft_not_found");
-              const requested = new Set(selectedOperationIds);
-              const operationIds = new Set<string>();
-              for (const operation of preview.operations) {
-                if (!requested.has(operation.operationId)) continue;
-                for (const id of operation.acceptClosureOperationIds ?? [operation.operationId]) {
-                  operationIds.add(id);
-                }
+            const preview = await previewWorkDraftBranch({
+              projectId: input.projectId,
+              documentId: input.documentId,
+              workId: input.workId,
+            });
+            if (preview?.status !== "active") throw new Error("draft_not_found");
+            const requested = new Set(selectedOperationIds);
+            const operationIds = new Set<string>();
+            for (const operation of preview.operations) {
+              if (!requested.has(operation.operationId)) continue;
+              for (const id of operation.acceptClosureOperationIds ?? [operation.operationId]) {
+                operationIds.add(id);
               }
-              const updateIds = new Set<number>();
-              for (const operation of preview.operations) {
-                if (!operationIds.has(operation.operationId)) continue;
-                for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
-              }
-              if (preview.isNewDocument && input.projectId) {
-                const pushed = await pushNewDocumentToLiveWithManifest({
-                  projectId: input.projectId,
-                  workId: input.workId,
-                  documentId: input.documentId,
-                  branchId: branch.branchId,
-                  journalIds: [...updateIds],
-                  userId: input.userId,
-                  signal: input.signal,
-                });
-                if (pushed.status === "push_concurrent_conflict") {
-                  return {
-                    status: "concurrent_conflict" as const,
-                    reason: pushed.reason,
-                    conflictedBlocks: pushed.conflictedBlocks,
-                    conflicts: pushed.conflicts,
-                  };
-                }
-              } else {
-                const pushed = await deps.branchPush.pushSelectedToLive({
-                  branchId: branch.branchId,
-                  journalIds: [...updateIds],
-                  pushedByUserId: input.userId,
-                  signal: input.signal,
-                });
-                if (pushed.status === "push_concurrent_conflict") {
-                  return {
-                    status: "concurrent_conflict" as const,
-                    reason: pushed.reason,
-                    conflictedBlocks: pushed.conflictedBlocks,
-                    conflicts: pushed.conflicts,
-                  };
-                }
-              }
-              return {
-                status: "partial_applied" as const,
-                draftId: branch.branchId,
-                appliedUpdateSeq: 0,
-                acceptedOperationIds: [...operationIds].sort(),
-                writeId: [...updateIds].sort((a, b) => a - b).join(","),
-              };
             }
-            if (input.projectId) {
+            const updateIds = new Set<number>();
+            for (const operation of preview.operations) {
+              if (!operationIds.has(operation.operationId)) continue;
+              for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
+            }
+            if (preview.isNewDocument && input.projectId) {
               const pushed = await pushNewDocumentToLiveWithManifest({
                 projectId: input.projectId,
                 workId: input.workId,
                 documentId: input.documentId,
                 branchId: branch.branchId,
+                journalIds: [...updateIds],
                 userId: input.userId,
                 signal: input.signal,
               });
@@ -1366,8 +1324,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 };
               }
             } else {
-              const pushed = await deps.branchPush.pushToLive({
+              const pushed = await deps.branchPush.pushSelectedToLive({
                 branchId: branch.branchId,
+                journalIds: [...updateIds],
                 pushedByUserId: input.userId,
                 signal: input.signal,
               });
@@ -1380,11 +1339,23 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 };
               }
             }
+            const appliedEveryPreviewedOperation = preview.operations.every((operation) =>
+              requested.has(operation.operationId),
+            );
+            if (appliedEveryPreviewedOperation) {
+              return {
+                status: "applied" as const,
+                draftId: branch.branchId,
+                branchId: branch.branchId,
+                appliedUpdateSeq: 0,
+              };
+            }
             return {
-              status: "applied" as const,
+              status: "partial_applied" as const,
               draftId: branch.branchId,
-              branchId: branch.branchId,
               appliedUpdateSeq: 0,
+              acceptedOperationIds: [...operationIds].sort(),
+              writeId: [...updateIds].sort((a, b) => a - b).join(","),
             };
           }
         }
