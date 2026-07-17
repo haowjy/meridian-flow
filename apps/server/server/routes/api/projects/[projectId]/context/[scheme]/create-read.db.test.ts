@@ -353,5 +353,48 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(membershipAfterDelete.members).not.toContain(created.documentId);
     });
+
+    it("backfills observer-less scratch documents into an existing live manifest", async () => {
+      const projectSourceId = "00000000-0000-4000-8000-000000000925";
+      const workSourceId = "00000000-0000-4000-8000-000000000926";
+      const scratchDocumentId = "00000000-0000-4000-8000-000000000924";
+      await db.insert(schema.contextSources).values({
+        id: projectSourceId,
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Scratch Work",
+      });
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      collab.bindHocuspocus(new Hocuspocus({ yDocOptions: { gc: false, gcFilter: () => true } }));
+
+      await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });
+
+      await db.insert(schema.contextSources).values({
+        id: workSourceId,
+        workId: WORK_ID,
+        name: "Scratch",
+        slug: "scratch",
+        scope: "work",
+      });
+      await db.insert(schema.documents).values({
+        id: scratchDocumentId,
+        contextSourceId: workSourceId,
+        name: "legacy-notes",
+        extension: "md",
+        fileType: "markdown",
+      });
+
+      await expect(
+        collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+      ).resolves.toMatchObject({ members: [scratchDocumentId] });
+    });
   });
 }

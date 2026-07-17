@@ -293,7 +293,7 @@ export function createDrizzleBranchStore(
     return doc;
   }
 
-  async function seedLiveManifestIfEmpty(
+  async function reconcileLiveManifest(
     documentId: DocumentId,
     projectId: ProjectId,
     excludeDocumentIds: ReadonlySet<DocumentId> = new Set(),
@@ -432,13 +432,13 @@ export function createDrizzleBranchStore(
     if (existing?.id) {
       return {
         documentId: existing.id as DocumentId,
-        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
+        doc: await reconcileLiveManifest(existing.id as DocumentId, input.projectId),
       };
     }
     const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
     return {
       documentId,
-      doc: await seedLiveManifestIfEmpty(documentId, input.projectId),
+      doc: await reconcileLiveManifest(documentId, input.projectId),
     };
   }
 
@@ -468,7 +468,7 @@ export function createDrizzleBranchStore(
     const documentId = await createManifestIdentity(input.projectId);
     return {
       documentId,
-      doc: await seedLiveManifestIfEmpty(
+      doc: await reconcileLiveManifest(
         documentId,
         input.projectId,
         await draftSeedExclusions(input.projectId, input.excludeDocumentId),
