@@ -374,6 +374,11 @@ export function IdentityPathField({
     const folderPath = parsed.folders.length ? `/${parsed.folders.join("/")}` : "/";
     const unchangedLocation =
       parsed.scheme === location.scheme && folderPath === location.parentPath;
+    if (unchangedLocation && parsed.leaf === location.leaf) {
+      // The committed value IS the current truth: leave quietly, same as Esc.
+      onExit("commit");
+      return;
+    }
     await runCommit({
       destination: unchangedLocation ? null : { scheme: parsed.scheme, folderPath },
       name: parsed.leaf,
@@ -432,7 +437,10 @@ export function IdentityPathField({
       <PopoverAnchor asChild>
         <div
           className={cn(
-            "flex min-w-0 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-xs",
+            // h-4.5 (borders included) inside the bar's 18px content area:
+            // the field occupies exactly the box the crumbs sat in, so
+            // entering edit mode never shifts the chrome below.
+            "flex h-4.5 min-w-0 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-meta",
             placement ? "max-w-96" : "max-w-xl",
           )}
         >
@@ -443,7 +451,7 @@ export function IdentityPathField({
           ) : null}
           <input
             ref={inputRef}
-            className="min-w-0 flex-1 bg-transparent py-0.5 outline-none placeholder:text-ink-subtle/70"
+            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-ink-subtle/70"
             aria-label={t`Document name and location`}
             value={value}
             placeholder={placement ? ghost || location.leaf : undefined}

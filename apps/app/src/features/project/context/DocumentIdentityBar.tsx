@@ -23,7 +23,6 @@ import { type MouseEvent, useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { editorColumnChrome } from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityMovePopup } from "./IdentityMovePopup";
@@ -90,12 +89,12 @@ export function DocumentIdentityBar({
 
   return (
     <div className="@container shrink-0">
-      <div
-        className={cn(
-          editorColumnChrome,
-          "flex min-h-5.5 items-center gap-1 pt-1 font-mono text-ink-subtle text-meta",
-        )}
-      >
+      {/* Fixed 22px band, full pane width. The bar is navigation chrome like
+          the tab strip above it — it spans edge to edge, NOT the prose
+          column. The height is identical at rest and in edit mode (children
+          are h-4.5 boxes in an 18px content area), so the toolbar and prose
+          below never shift when the bar transforms. */}
+      <div className="flex h-5.5 items-center gap-1 px-4 pt-1 font-mono text-ink-subtle text-meta">
         {surface?.kind === "field" ? (
           <IdentityPathField
             key={surface.mode.kind}

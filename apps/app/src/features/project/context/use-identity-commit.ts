@@ -91,6 +91,18 @@ export function useIdentityCommit({
           defaultWorkId ??
           undefined)
         : undefined;
+    const sameDestination =
+      destination !== null &&
+      destination.scheme === tab.scheme &&
+      destination.folderPath === (tab.path.slice(0, tab.path.lastIndexOf("/")) || "/") &&
+      destinationWorkId === tab.workId;
+    const provisional = tab.kind === "tracked" && Boolean(tab.provisionalName);
+    // Identical values on a graduated document commit nothing — no request,
+    // no churn. (A provisional doc's same-place commit is the deliberate
+    // stay-put and DOES go to the server: it graduates in place.)
+    if (sameDestination && name === tab.name && !provisional) {
+      return { status: "committed" };
+    }
     try {
       if (!destination) {
         if (name === tab.name) return { status: "committed" };

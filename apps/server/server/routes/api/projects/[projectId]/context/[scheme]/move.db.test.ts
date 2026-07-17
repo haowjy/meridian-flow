@@ -237,6 +237,46 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
     });
 
+    it("graduates provisional naming in place on a deliberate stay-put", async () => {
+      const { projectId, workId, collab, port } = await arrangeUntitled();
+      const rowBefore = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.id, DOCUMENT_ID));
+      const yjsBefore = await yjsState(DOCUMENT_ID);
+
+      // Same scheme, same folder, same name: the writer's explicit
+      // "keep it here" ends provisional naming with no tree mutation.
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            path: "Untitled 1.md",
+            sourceWorkId: workId,
+            destinationScheme: "scratch",
+            destinationWorkId: workId,
+            destinationFolderPath: "",
+          },
+        }),
+      ).resolves.toEqual({
+        status: "moved",
+        scheme: "scratch",
+        path: "Untitled 1.md",
+        name: "Untitled 1.md",
+      });
+
+      const rowAfter = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.id, DOCUMENT_ID));
+      expect(rowAfter[0]).toEqual({ ...rowBefore[0], provisionalName: false });
+      expect(await yjsState(DOCUMENT_ID)).toEqual(yjsBefore);
+      const manifest = await collab.resolveManifestMembership({ projectId });
+      expect(manifest.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
+    });
+
     it("keeps provisional naming across a system move without the writer-placement option", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
 

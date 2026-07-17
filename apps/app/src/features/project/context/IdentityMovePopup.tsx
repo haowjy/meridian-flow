@@ -257,9 +257,14 @@ function MovePopupContent({
             variant="ghost"
             disabled={saving}
             onClick={() => {
-              // Closes without moving; a pending name edit still commits.
-              if (nameChanged && !nameReason) {
-                void run({ destination: null, name: trimmed });
+              // The deliberate stay-put: a provisional doc graduates in place,
+              // and a pending name edit still commits. A graduated doc with
+              // nothing changed just closes.
+              if ((location.provisional || nameChanged) && !nameReason) {
+                void run({
+                  destination: { scheme: location.scheme, folderPath: location.parentPath },
+                  name: trimmed || location.leaf,
+                });
                 return;
               }
               onClose();
