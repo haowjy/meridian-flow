@@ -1,8 +1,8 @@
 /**
  * UntitledRenameLine — ambient rename invitation for provisional documents.
  *
- * The URI-shaped field preserves location context, but v1 commits only the
- * basename. Enter renames; moving remains a tree action.
+ * The field shows and commits only the basename. Enter renames; moving remains
+ * a tree action.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -52,18 +52,12 @@ export function UntitledRenameLine({
   const tracked = tab.kind === "tracked" ? tab : null;
   const queryClient = useQueryClient();
   const parentPath = tracked ? tracked.path.slice(0, tracked.path.lastIndexOf("/")) || "/" : "/";
-  const prefix = tracked
-    ? `${tracked.scheme}://${tracked.workId ? `${tracked.workId}/` : ""}${parentPath
-        .split("/")
-        .filter(Boolean)
-        .join("/")}${parentPath === "/" ? "" : "/"}`
-    : "scratch://";
   const suggestionFragment = useMemo(() => {
     const session = getDocumentSessionRegistry().getDetached(tab.documentId);
     return session.document.getXmlFragment(session.fragmentName);
   }, [tab.documentId]);
   const [draft, setDraft] = useState(
-    () => `${prefix}${suggestedUntitledName(tab, suggestionFragment) || tab.name}`,
+    () => suggestedUntitledName(tab, suggestionFragment) || tab.name,
   );
   const [open, setOpen] = useState(false);
   const [browsePath, setBrowsePath] = useState(parentPath);
@@ -81,7 +75,7 @@ export function UntitledRenameLine({
       timer = window.setTimeout(() => {
         timer = null;
         const suggestion = suggestedUntitledName(tab, suggestionFragment);
-        if (suggestion) setDraft(`${prefix}${suggestion}`);
+        if (suggestion) setDraft(suggestion);
       }, 300);
     };
     suggestionFragment.observeDeep(refreshSuggestion);
@@ -90,7 +84,7 @@ export function UntitledRenameLine({
       suggestionFragment.unobserveDeep(refreshSuggestion);
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [prefix, suggestionFragment, tab]);
+  }, [suggestionFragment, tab]);
   const options = useMemo(
     () => ({
       schemes: tracked ? [tracked.scheme] : ["scratch" as const],
@@ -103,7 +97,7 @@ export function UntitledRenameLine({
   const { suggestions: allEntries } = useFileSuggestions(projectId, "", options);
   const currentEntries = tracked ? folderChildren(allEntries, tracked.scheme, parentPath) : [];
   const entries = tracked ? folderChildren(allEntries, tracked.scheme, browsePath) : [];
-  const name = draft.slice(draft.lastIndexOf("/") + 1).trim();
+  const name = draft.trim();
   const collision =
     currentEntries.find((entry) => entry.name === name && entry.path !== tracked?.path) ?? null;
   const validation = name ? invalidContextEntryNameReason(name) : t`Name is required`;
@@ -179,11 +173,13 @@ export function UntitledRenameLine({
               value={draft}
               spellCheck={false}
               aria-invalid={Boolean(validation || collision || error)}
-              onFocus={() => setOpen(true)}
+              onFocus={(event) => {
+                event.currentTarget.select();
+                setOpen(true);
+              }}
               onChange={(event) => {
                 writerOwnsName.current = true;
-                const nextName = event.target.value.slice(event.target.value.lastIndexOf("/") + 1);
-                setDraft(`${prefix}${nextName}`);
+                setDraft(event.target.value);
                 setError(null);
                 setServerConflict(false);
                 setOpen(true);

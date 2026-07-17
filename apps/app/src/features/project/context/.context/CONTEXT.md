@@ -65,8 +65,8 @@ eventually dissolves the line without another invalidation channel.
 
 `UntitledRenameLine.tsx` survives only as the ambient provisional rename line.
 It is the lower-priority tenant of `EditorBannerSlot` (draft chrome wins), uses
-the URI-shaped field and local collision browser, and commits basename-only on
-Enter. There is no Save button and no content handover. While the pending entry
+a basename-only field and local collision browser, and commits on Enter. There
+is no Save button and no content handover. While the pending entry
 exists it shows the amber “Only on this device” badge; the badge disappears only
 when the reconciler confirms server sync. Server 409 remains a race guard with
 Open-existing recovery. Moving remains a tree action.
