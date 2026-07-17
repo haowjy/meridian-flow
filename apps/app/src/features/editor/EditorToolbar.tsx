@@ -44,6 +44,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  type BlockAlignment,
+  currentAlignableBlock,
+  setCurrentBlockAlignment,
+} from "./block-alignment";
 import { EditorContextPopover } from "./EditorContextPopover";
 import { linkAttributesAtSelection } from "./link-selection";
 import { normalizeLinkHref } from "./link-url";
@@ -135,24 +140,22 @@ export function EditorToolbar({
   );
 }
 
-type BlockAlignment = "default" | "center" | "right";
+type AlignmentControlValue = "default" | Exclude<BlockAlignment, null>;
 
 function AlignmentControl({ editor }: { editor: Editor | null }) {
-  const blockType = editor
-    ? (["table", "heading", "paragraph"] as const).find((name) => editor.isActive(name))
-    : undefined;
-  const value: BlockAlignment = blockType
-    ? editor?.getAttributes(blockType).align === "center" ||
-      editor?.getAttributes(blockType).align === "right"
-      ? editor.getAttributes(blockType).align
-      : "default"
-    : "default";
+  const block = editor ? currentAlignableBlock(editor.state) : null;
+  const value: AlignmentControlValue =
+    block?.node.attrs.align === "center" || block?.node.attrs.align === "right"
+      ? block.node.attrs.align
+      : "default";
   const Icon = value === "center" ? AlignCenter : value === "right" ? AlignRight : AlignLeft;
 
   const setAlignment = (next: string) => {
-    if (!editor || !blockType) return;
+    if (!editor || !block) return;
     const align = next === "center" || next === "right" ? next : null;
-    editor.chain().focus().updateAttributes(blockType, { align }).run();
+    const transaction = setCurrentBlockAlignment(editor.state, align);
+    if (transaction) editor.view.dispatch(transaction);
+    editor.commands.focus();
   };
 
   return (
@@ -163,7 +166,7 @@ function AlignmentControl({ editor }: { editor: Editor | null }) {
           variant="ghost"
           size="icon-xs"
           aria-label={t`Block alignment`}
-          disabled={!blockType}
+          disabled={!block}
           className={cn(value !== "default" && "bg-primary/10 text-primary hover:text-primary")}
         >
           <Icon className="size-3.5" aria-hidden />
