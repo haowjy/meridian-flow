@@ -73,6 +73,8 @@ export type PostJsonOptions = {
   headers?: HeadersInit;
   /** Treat these HTTP statuses as success (e.g. 409 already_active). */
   acceptStatuses?: number[];
+  /** Allow lifecycle flushes to outlive the page that initiated them. */
+  keepalive?: boolean;
 };
 
 export async function postJson<T>(
@@ -105,6 +107,7 @@ export async function putJson<T>(
     method: "PUT",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
+    keepalive: options?.keepalive,
   });
 
   const payload = await readResponsePayload(response);

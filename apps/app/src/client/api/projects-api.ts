@@ -45,13 +45,15 @@ import {
   type UpdateWorkWriteModeRequest,
   type UpdateWorkWriteModeResponse,
   type Work,
+  type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 
-import { deleteRequest, getJson, patchJson, postJson } from "./http-client";
+import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
 type RequestInitOptions = {
   origin?: string;
   headers?: HeadersInit;
+  keepalive?: boolean;
 };
 
 function urlFor(path: string, init?: RequestInitOptions): string {
@@ -98,6 +100,21 @@ export async function getProjectWorkingSet(
   return getJson<ProjectWorkingSet | null>(urlFor(apiProjectWorkingSetPath(projectId), init), {
     headers: init?.headers,
   });
+}
+
+export async function updateProjectWorkingSet(
+  projectId: string,
+  snapshot: { recentRoutes: WorkingSetRoute[]; lastThreadId: string | null },
+  init?: RequestInitOptions,
+): Promise<{ revision: number }> {
+  return putJson<{ revision: number }>(
+    urlFor(apiProjectWorkingSetPath(projectId), init),
+    snapshot,
+    {
+      headers: init?.headers,
+      keepalive: init?.keepalive,
+    },
+  );
 }
 
 export async function updateWorkWriteMode(
