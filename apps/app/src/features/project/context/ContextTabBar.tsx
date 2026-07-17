@@ -35,7 +35,6 @@ import {
   FileText,
   FileType2,
   Image as ImageIcon,
-  LoaderCircle,
   Plus,
   X,
 } from "lucide-react";
@@ -143,7 +142,6 @@ function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
       aria-label={t`Loading ${tab.name}`}
       className="tab-chip-active relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3 text-foreground"
     >
-      <LoaderCircle aria-hidden className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
         {tab.name}
       </span>
