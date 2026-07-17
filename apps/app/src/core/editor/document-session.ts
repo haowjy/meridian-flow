@@ -328,7 +328,7 @@ export class DocumentSession {
     this.unsubscribeTransportStatus?.();
     this.unsubscribeSafetyNotices?.();
     await this.transportProvider?.destroy();
-    if (options.clearPersistence || !this.transportProvider) {
+    if (options.clearPersistence) {
       await this.persistence?.clearData();
     } else {
       await this.persistence?.destroy();

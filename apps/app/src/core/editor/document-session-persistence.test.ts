@@ -23,7 +23,7 @@ describe("DocumentSession persistence cleanup", () => {
     persistence.destroy.mockClear();
   });
 
-  it("clears IndexedDB when a never-attached session is destroyed", async () => {
+  it("preserves IndexedDB when a never-attached session is destroyed", async () => {
     const session = new DocumentSession({
       roomKey: "doc-never-materialized",
       enableIndexedDb: true,
@@ -31,8 +31,8 @@ describe("DocumentSession persistence cleanup", () => {
 
     await session.destroy();
 
-    expect(persistence.clearData).toHaveBeenCalledOnce();
-    expect(persistence.destroy).not.toHaveBeenCalled();
+    expect(persistence.destroy).toHaveBeenCalledOnce();
+    expect(persistence.clearData).not.toHaveBeenCalled();
   });
 
   it("preserves an attached room cache unless cleanup is explicitly requested", async () => {
@@ -48,6 +48,15 @@ describe("DocumentSession persistence cleanup", () => {
   it("can explicitly clear an attached room cache after server deletion", async () => {
     const session = new DocumentSession({ roomKey: "doc-deleted", enableIndexedDb: true });
     session.attachTransport(() => ({ destroy: vi.fn() }));
+
+    await session.destroy({ clearPersistence: true });
+
+    expect(persistence.clearData).toHaveBeenCalledOnce();
+    expect(persistence.destroy).not.toHaveBeenCalled();
+  });
+
+  it("can explicitly clear a detached empty room cache after confirmed cleanup", async () => {
+    const session = new DocumentSession({ roomKey: "doc-empty", enableIndexedDb: true });
 
     await session.destroy({ clearPersistence: true });
 

@@ -20,10 +20,12 @@ Yjs document session. It must stay structurally aligned with
   do not: the draft Hocuspocus room is server-persisted and short-lived, and a
   local draft cache risks stale recovery across review sessions.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
-  exist before server transport. Normal room acquisition attaches transport to
-  that same session once; detached teardown clears the IndexedDB database.
-  Retention and unavailable-room recovery must not materialize or replace a
-  detached session implicitly.
+  exist before server transport. Ordinary acquisition of an existing detached
+  room leaves it detached; post-create reconciliation explicitly attaches
+  transport to that same session once. Teardown always preserves IndexedDB by
+  default because it may contain the only copy of unsynced words; only confirmed
+  cleanup paths may request persistence deletion. Retention and unavailable-room
+  recovery must not materialize or replace a detached session implicitly.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.
