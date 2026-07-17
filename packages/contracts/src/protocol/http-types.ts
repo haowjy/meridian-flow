@@ -150,6 +150,17 @@ export type WorkingSetRouteListParseResult =
   | { ok: true; value: WorkingSetRoute[] }
   | { ok: false; message: string };
 
+export type ProjectWorkingSet = {
+  userId: string;
+  projectId: string;
+  recentRoutes: WorkingSetRoute[];
+  lastThreadId: string | null;
+  revision: number;
+  updatedAt: string;
+};
+
+export type AccountSettings = { workingSetSyncEnabled: boolean };
+
 export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, message: "Working-set route must be an object" };

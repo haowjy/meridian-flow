@@ -21,6 +21,7 @@ import {
   apiProjectPath,
   apiProjectsHomePath,
   apiProjectThreadsPath,
+  apiProjectWorkingSetPath,
   apiProjectWorksPath,
   apiProjectWorkWriteModePath,
   type ContextReadResponse,
@@ -37,6 +38,7 @@ import {
   type ProjectContextRequestOptions,
   type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
+  type ProjectWorkingSet,
   type RenameContextEntryRequest,
   type RenameContextEntryResult,
   type ThreadListItem,
@@ -85,6 +87,15 @@ export async function listProjectWorks(
   init?: RequestInitOptions,
 ): Promise<ListWorksResponse> {
   return getJson<ListWorksResponse>(urlFor(apiProjectWorksPath(projectId), init), {
+    headers: init?.headers,
+  });
+}
+
+export async function getProjectWorkingSet(
+  projectId: string,
+  init?: RequestInitOptions,
+): Promise<ProjectWorkingSet | null> {
+  return getJson<ProjectWorkingSet | null>(urlFor(apiProjectWorkingSetPath(projectId), init), {
     headers: init?.headers,
   });
 }

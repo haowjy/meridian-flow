@@ -1,9 +1,8 @@
 /** Account settings route core: strictly parses and reads or updates authenticated user settings. */
+import type { AccountSettings } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { UserRepository } from "../domains/projects/index.js";
-
-export type AccountSettings = { workingSetSyncEnabled: boolean };
 
 export function parseAccountSettingsPatch(raw: unknown): AccountSettings {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

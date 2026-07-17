@@ -2,6 +2,8 @@ import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/rea
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useEffect } from "react";
+import { getAccountSettings } from "@/client/api/account-api";
+import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
@@ -66,21 +68,41 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect(target);
     }
 
-    const currentUser = { userId: user.id, email: user.email ?? null };
     const now = Date.now();
+    const settingsPromise = getAccountSettings(ssrApiRequestInit());
 
     // `/` immediately redirects to the default project, so skip its list fetch;
     // every other authenticated route mounts the same shell and wants the list.
     if (location.pathname === "/") {
+      const settings = await settingsPromise.catch((error: unknown) => {
+        console.error("Failed to load account settings during SSR:", error);
+        return { workingSetSyncEnabled: true };
+      });
+      const currentUser = { userId: user.id, email: user.email ?? null, ...settings };
       return { user: currentUser, projects: null, now };
     }
 
-    try {
-      return { user: currentUser, projects: await loadProjectList(), now };
-    } catch (error) {
-      console.error("Failed to load project list during SSR:", error);
-      return { user: currentUser, projects: null, now };
+    const [settingsResult, projectsResult] = await Promise.allSettled([
+      settingsPromise,
+      loadProjectList(),
+    ]);
+    if (settingsResult.status === "rejected") {
+      console.error("Failed to load account settings during SSR:", settingsResult.reason);
     }
+    if (projectsResult.status === "rejected") {
+      console.error("Failed to load project list during SSR:", projectsResult.reason);
+    }
+    const currentUser = {
+      userId: user.id,
+      email: user.email ?? null,
+      workingSetSyncEnabled:
+        settingsResult.status === "fulfilled" ? settingsResult.value.workingSetSyncEnabled : true,
+    };
+    return {
+      user: currentUser,
+      projects: projectsResult.status === "fulfilled" ? projectsResult.value : null,
+      now,
+    };
   },
   staleTime: 60_000,
   component: AuthenticatedLayout,
