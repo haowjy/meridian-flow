@@ -49,11 +49,13 @@ describe("resolveDraftOnlyTab", () => {
   });
 
   it("discarded closes the tab", () => {
-    const { openTab, resolveDraftOnlyTab } = useContextTabsStore.getState();
+    const { openTab, resolveDraftOnlyTab, selectTab } = useContextTabsStore.getState();
     openTab(PROJECT, editableTab({ draftOnly: true }));
     openTab(PROJECT, editableTab({ documentId: "doc-2", path: "/other.md", name: "other.md" }));
+    selectTab(PROJECT, "doc-1");
     resolveDraftOnlyTab(PROJECT, "doc-1", "discarded");
     expect(tabs().map((t) => t.documentId)).toEqual(["doc-2"]);
+    expect(useContextTabsStore.getState().byProject[PROJECT]?.activeTabId).toBe("doc-2");
   });
 
   it("never closes a tab without the marker (discard on an existing document)", () => {
@@ -71,5 +73,65 @@ describe("resolveDraftOnlyTab", () => {
     const before = useContextTabsStore.getState().byProject;
     resolveDraftOnlyTab(PROJECT, "missing", "discarded");
     expect(useContextTabsStore.getState().byProject).toBe(before);
+  });
+});
+
+describe("new untitled tabs", () => {
+  it("re-mints a colliding id without moving or deselecting the tab", () => {
+    const { openTab, remintNewTab, selectTab } = useContextTabsStore.getState();
+    openTab(PROJECT, { kind: "new", documentId: "new-1", name: "Untitled" });
+    openTab(PROJECT, editableTab({ documentId: "doc-2" }));
+    selectTab(PROJECT, "new-1");
+
+    remintNewTab(PROJECT, "new-1", "new-2");
+
+    expect(tabs().map((tab) => tab.documentId)).toEqual(["new-2", "doc-2"]);
+    expect(useContextTabsStore.getState().byProject[PROJECT]?.activeTabId).toBe("new-2");
+  });
+
+  it("materializes in place without changing tab order or active identity", () => {
+    const { openTab, materializeNewTab, selectTab } = useContextTabsStore.getState();
+    openTab(PROJECT, { kind: "new", documentId: "new-1", name: "Untitled" });
+    openTab(PROJECT, editableTab({ documentId: "doc-2" }));
+    selectTab(PROJECT, "new-1");
+
+    materializeNewTab(
+      PROJECT,
+      "new-1",
+      editableTab({
+        documentId: "new-1",
+        scheme: "scratch",
+        path: "/Untitled 1",
+        name: "Untitled 1",
+        workId: "work-1",
+        provisionalName: true,
+      }),
+    );
+
+    expect(tabs().map((tab) => tab.documentId)).toEqual(["new-1", "doc-2"]);
+    expect(tabs()[0]).toMatchObject({
+      kind: "tracked",
+      name: "Untitled 1",
+      provisionalName: true,
+    });
+    expect(useContextTabsStore.getState().byProject[PROJECT]?.activeTabId).toBe("new-1");
+  });
+});
+
+describe("work-scoped pruning", () => {
+  it("repairs the active tab with the adjacent fallback policy", () => {
+    const { openTab, pruneWorkScopedTabs, selectTab } = useContextTabsStore.getState();
+    openTab(PROJECT, editableTab({ documentId: "left", path: "/left.md" }));
+    openTab(
+      PROJECT,
+      editableTab({ documentId: "stale", scheme: "scratch", path: "/stale", workId: "old" }),
+    );
+    openTab(PROJECT, editableTab({ documentId: "right", path: "/right.md" }));
+    selectTab(PROJECT, "stale");
+
+    pruneWorkScopedTabs(PROJECT, "current");
+
+    expect(tabs().map((tab) => tab.documentId)).toEqual(["left", "right"]);
+    expect(useContextTabsStore.getState().byProject[PROJECT]?.activeTabId).toBe("right");
   });
 });

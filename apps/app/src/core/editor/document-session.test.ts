@@ -25,6 +25,7 @@ import {
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: ConnectionState) => void;
   resolveFirstSync: () => void;
+  resolveDurableSync: () => void;
   setSynced: (synced: boolean) => void;
   destroyed: boolean;
 };
@@ -40,6 +41,10 @@ function makeFakeTransport(initial: ConnectionState = { kind: "connecting", atte
       const whenSynced = new Promise<void>((resolve) => {
         resolveSynced = resolve;
       });
+      let resolveDurableSynced!: () => void;
+      const whenDurablySynced = new Promise<void>((resolve) => {
+        resolveDurableSynced = resolve;
+      });
       const listeners = new Set<(state: ConnectionState) => void>();
       let latest = initial;
       let synced = false;
@@ -49,6 +54,7 @@ function makeFakeTransport(initial: ConnectionState = { kind: "connecting", atte
           return synced;
         },
         whenSynced,
+        whenDurablySynced,
         subscribeStatus(listener) {
           listeners.add(listener);
           listener(latest);
@@ -64,6 +70,9 @@ function makeFakeTransport(initial: ConnectionState = { kind: "connecting", atte
         resolveFirstSync() {
           synced = true;
           resolveSynced();
+        },
+        resolveDurableSync() {
+          resolveDurableSynced();
         },
         setSynced(next) {
           synced = next;
@@ -137,6 +146,45 @@ describe("DocumentSession status derivation", () => {
     await session.destroy();
 
     await expect(synced).resolves.toBeUndefined();
+  });
+
+  it("waits for the server update acknowledgement after initial sync", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "doc-durable",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+    current().emit({ kind: "connected" });
+    current().resolveFirstSync();
+    await session.whenSynced();
+
+    let durable = false;
+    void session.waitForDurableSync().then(() => {
+      durable = true;
+    });
+    await flushMicrotasks();
+    expect(durable).toBe(false);
+
+    current().resolveDurableSync();
+    await session.waitForDurableSync();
+    expect(durable).toBe(true);
+    await session.destroy();
+  });
+
+  it("settles the durable wait on terminal denial", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "doc-denied",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+    const durable = session.waitForDurableSync();
+
+    current().emit({ kind: "unauthorized", reason: "expired", code: 4401 });
+
+    await expect(durable).resolves.toBeUndefined();
+    await session.destroy();
   });
 
   it("builds a versioned IndexedDB persistence key from COLLAB_SCHEMA_VERSION", () => {

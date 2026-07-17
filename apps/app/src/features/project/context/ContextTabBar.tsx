@@ -48,7 +48,7 @@ export type ContextTabBarProps = {
   activeTabId: string | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
-  onNewTemp: () => void;
+  onNewDocument: () => void;
   /**
    * Pinned control docked at the strip's far-left edge (e.g. the project
    * sidebar expand toggle when the sidebar is collapsed). When present, the
@@ -67,7 +67,7 @@ export function ContextTabBar({
   activeTabId,
   onSelect,
   onClose,
-  onNewTemp,
+  onNewDocument,
   leading,
   trailing,
 }: ContextTabBarProps) {
@@ -100,7 +100,7 @@ export function ContextTabBar({
           <TooltipTrigger asChild>
             <button
               type="button"
-              onClick={onNewTemp}
+              onClick={onNewDocument}
               aria-label={t`New tab`}
               className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
             >
@@ -178,7 +178,7 @@ function TabChip({
         // name; the visible glyph/label siblings are hidden from AT so the
         // strip doesn't announce each filename twice.
         className="focus-ring absolute inset-0"
-        title={tab.kind === "temp" ? tab.name : tab.path}
+        title={tab.kind === "new" ? tab.name : tab.path}
       />
       <FileKindIcon tab={tab} />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
@@ -206,7 +206,7 @@ function TabChip({
 // semantic colors stay reserved (jade = action, streaming = live, destructive
 // = error) — a file's type is metadata, never a state.
 function fileKindGlyph(tab: ContextTab) {
-  if (tab.kind === "temp") return FilePlus;
+  if (tab.kind === "new") return FilePlus;
   if (tab.kind === "tracked") return tab.schemaType === "code" ? Code2 : FileText;
   if (tab.fileType === "image") return ImageIcon;
   if (tab.fileType === "pdf") return FileType2;

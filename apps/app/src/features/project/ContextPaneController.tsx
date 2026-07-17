@@ -6,26 +6,13 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
-import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import {
-  isEmptyTempDocument,
-  useContextTabs,
-  useContextTabsActions,
-  useTempDocsStore,
-} from "@/client/stores";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useDefaultWorkId } from "@/client/query/useWorks";
+import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
 import {
@@ -35,10 +22,18 @@ import {
 } from "./context/context-last-route";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
-import { findContextFile, firstContextFile } from "./context/context-tree";
+import {
+  findContextFile,
+  findContextFileByDocumentId,
+  firstContextFile,
+} from "./context/context-tree";
+import {
+  appendPendingUntitled,
+  isUntitledPending,
+  untitledDocumentIsEmpty,
+} from "./context/untitled-reconciler";
+import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
-
-const EMPTY_TEMP_DOCUMENTS: import("@/client/stores").TempDocument[] = [];
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
@@ -68,22 +63,19 @@ export function ContextViewerSurfaceController({
   onSelectContextPath,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
-  const { tabs: serverTabs, activeTabId } = useContextTabs(projectId);
-  const tempDocuments = useTempDocsStore(
-    (state) => state.byProject[projectId] ?? EMPTY_TEMP_DOCUMENTS,
+  const defaultWorkId = useDefaultWorkId(projectId);
+  const routeWorkId = workId ?? defaultWorkId;
+
+  const { tabs, activeTabId } = useContextTabs(projectId);
+  const { openTab, closeTab, updateTrackedTab, pruneWorkScopedTabs, selectTab } =
+    useContextTabsActions();
+  const serverTabs = tabs.filter((tab) => tab.kind !== "new");
+  const activeTab = findContextTabForRoute(
+    tabs,
+    activeContextScheme,
+    activeContextPath,
+    routeWorkId,
   );
-  const createTemp = useTempDocsStore((state) => state.createTemp);
-  const removeTemp = useTempDocsStore((state) => state.removeTemp);
-  const [pendingDiscardId, setPendingDiscardId] = useState<string | null>(null);
-  const tempTabs = tempDocuments.map((document) => ({
-    kind: "temp" as const,
-    documentId: document.id,
-    name: document.name,
-    document,
-  }));
-  const tabs = [...serverTabs, ...tempTabs];
-  const { openTab, closeTab, pruneWorkScopedTabs, selectTab } = useContextTabsActions();
-  const activeTab = findContextTabForRoute(tabs, activeContextScheme, activeContextPath, workId);
   const [rememberedRoute, setRememberedRoute] = useState<{
     projectId: string;
     route: LastContextRoute;
@@ -100,8 +92,9 @@ export function ContextViewerSurfaceController({
 
   const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
   const { tree: routeTree } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
-    enabled: needsRouteTab,
+    enabled: activeContextScheme !== null && activeContextPath !== null,
     activeThreadId,
+    workId: routeWorkId,
   });
 
   // Guard: openTab fires at most once per (projectId, scheme, path)
@@ -110,7 +103,7 @@ export function ContextViewerSurfaceController({
   // file later re-opens it instead of being permanently blocked.
   const openTabKey =
     activeContextScheme !== null && activeContextPath !== null
-      ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, workId)
+      ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, routeWorkId)
       : null;
   const openedKeyRef = useRef<string | null>(null);
   const previousRouteStateRef = useRef({ tabs: serverTabs, activeTab });
@@ -120,8 +113,8 @@ export function ContextViewerSurfaceController({
   }, [projectId, workId]);
 
   useEffect(() => {
-    pruneWorkScopedTabs(projectId, workId);
-  }, [projectId, pruneWorkScopedTabs, workId]);
+    pruneWorkScopedTabs(projectId, routeWorkId);
+  }, [projectId, pruneWorkScopedTabs, routeWorkId]);
 
   useEffect(() => {
     if (activeTab) selectTab(projectId, activeTab.documentId);
@@ -181,6 +174,7 @@ export function ContextViewerSurfaceController({
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
     enabled: wantsDefaultOpen,
     activeThreadId,
+    workId: routeWorkId,
   });
   useEffect(() => {
     if (!wantsDefaultOpen || !defaultOpenTree) return;
@@ -222,6 +216,26 @@ export function ContextViewerSurfaceController({
     serverTabs,
   ]);
 
+  // A cached tree refetch refreshes metadata on an already-open route too.
+  // This is how cross-device renames clear provisional chrome without a new
+  // metadata channel.
+  useEffect(() => {
+    if (!activeTab || !routeTree || activeContextScheme === null) return;
+    const file = findContextFileByDocumentId(routeTree, activeTab.documentId);
+    if (!file) return;
+    openTab(projectId, contextTabFromFile(activeContextScheme, file, routeWorkId));
+    if (file.path !== activeTab.path)
+      onSelectContextPath(file.path, activeContextScheme, { replace: true });
+  }, [
+    activeContextScheme,
+    activeTab?.documentId,
+    onSelectContextPath,
+    openTab,
+    projectId,
+    routeTree,
+    routeWorkId,
+  ]);
+
   useEffect(() => {
     // Re-arm once the route stops needing an auto-open (the tab now exists,
     // or the route has no context file). Without this, closing a tab and
@@ -234,7 +248,7 @@ export function ContextViewerSurfaceController({
     if (openedKeyRef.current === openTabKey) return;
     const file = findContextFile(routeTree, activeContextPath);
     if (!file) return;
-    openTab(projectId, contextTabFromFile(activeContextScheme, file, workId));
+    openTab(projectId, contextTabFromFile(activeContextScheme, file, routeWorkId));
     openedKeyRef.current = openTabKey;
   }, [
     activeContextPath,
@@ -244,34 +258,31 @@ export function ContextViewerSurfaceController({
     openTabKey,
     projectId,
     routeTree,
-    workId,
+    routeWorkId,
   ]);
 
   function handleSelectTab(documentId: string) {
-    if (tempDocuments.some((document) => document.id === documentId)) {
-      selectTab(projectId, documentId);
+    const tab = tabs.find((candidate) => candidate.documentId === documentId);
+    if (!tab) return;
+    selectTab(projectId, documentId);
+    if (tab.kind === "new") {
       onSelectContextPath("", activeContextScheme ?? undefined);
       return;
     }
-    const tab = tabs.find((candidate) => candidate.documentId === documentId);
-    if (!tab || tab.kind === "temp") return;
-    selectTab(projectId, documentId);
     onSelectContextPath(tab.path, tab.scheme);
   }
 
   function handleCloseTab(documentId: string) {
-    const temp = tempDocuments.find((document) => document.id === documentId);
-    if (temp) {
-      if (!isEmptyTempDocument(temp)) {
-        setPendingDiscardId(documentId);
-        return;
-      }
-      removeTemp(projectId, documentId);
-      if (activeTabId === documentId) selectTab(projectId, null);
-      return;
-    }
+    const tab = tabs.find((candidate) => candidate.documentId === documentId);
     const closedWasActive = documentId === activeTabId;
     const fallback = closeTab(projectId, documentId);
+    if (tab?.kind === "new" && !isUntitledPending(documentId)) {
+      const registry = getDocumentSessionRegistry();
+      const session = registry.getDetached(documentId);
+      if (untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName))) {
+        void registry.destroyRoom(documentId, { clearPersistence: true });
+      }
+    }
     // Closing the last tab is a deliberate "empty desk" — forget the
     // remembered file so it doesn't resurrect on the next visit.
     if (!fallback) {
@@ -284,6 +295,10 @@ export function ContextViewerSurfaceController({
     // transient (path set, tab missing) window can't re-open — and
     // re-persist — the tab we just closed.
     openedKeyRef.current = openTabKey;
+    if (fallback?.kind === "new") {
+      onSelectContextPath("", activeContextScheme ?? undefined);
+      return;
+    }
     if (fallback) {
       onSelectContextPath(fallback.path, fallback.scheme);
       return;
@@ -350,61 +365,42 @@ export function ContextViewerSurfaceController({
     };
   }, [active, retainedActiveTabId]);
 
-  const discardPendingTemp = () => {
-    if (!pendingDiscardId) return;
-    removeTemp(projectId, pendingDiscardId);
-    if (activeTabId === pendingDiscardId) selectTab(projectId, null);
-    setPendingDiscardId(null);
-  };
+  const handleUntitledBecameNonEmpty = useCallback(
+    (documentId: string) => {
+      appendPendingUntitled({ documentId, projectId });
+    },
+    [projectId],
+  );
+
+  useUntitledTabBridge({ projectId, tabs, defaultWorkId, onSelectContextPath });
 
   return (
-    <>
-      <ContextViewer
-        projectId={projectId}
-        activeThreadId={activeThreadId}
-        tabs={tabs}
-        activeTabId={retainedActiveTabId}
-        onSelectTab={handleSelectTab}
-        onCloseTab={handleCloseTab}
-        sidebarToggle={sidebarToggle}
-        dockToggle={dockToggle}
-        active={active}
-        resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
-        onResumeDocument={handleResumeDocument}
-        onNewTemp={() => {
-          const document = createTemp(projectId);
-          selectTab(projectId, document.id);
-          onSelectContextPath("", activeContextScheme ?? undefined);
-        }}
-        onTempOpenSaved={(scheme, path) => {
-          onSelectContextPath(path, scheme);
-        }}
-        onTempVerificationFailed={(documentId) => selectTab(projectId, documentId)}
-      />
-      <Dialog
-        open={pendingDiscardId !== null}
-        onOpenChange={(open) => !open && setPendingDiscardId(null)}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              <Trans>Discard this document?</Trans>
-            </DialogTitle>
-            <DialogDescription>
-              <Trans>It was never saved to your project. Its words will be gone.</Trans>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setPendingDiscardId(null)}>
-              <Trans>Cancel</Trans>
-            </Button>
-            <Button variant="destructive" size="sm" onClick={discardPendingTemp}>
-              <Trans>Discard</Trans>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <ContextViewer
+      projectId={projectId}
+      activeThreadId={activeThreadId}
+      tabs={tabs}
+      activeTabId={retainedActiveTabId}
+      onSelectTab={handleSelectTab}
+      onCloseTab={handleCloseTab}
+      sidebarToggle={sidebarToggle}
+      dockToggle={dockToggle}
+      active={active}
+      resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
+      onResumeDocument={handleResumeDocument}
+      onNewDocument={() => {
+        const documentId = crypto.randomUUID();
+        getDocumentSessionRegistry().getDetached(documentId);
+        openTab(projectId, { kind: "new", documentId, name: "Untitled" });
+        selectTab(projectId, documentId);
+        onSelectContextPath("", activeContextScheme ?? undefined);
+      }}
+      onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
+      onUntitledRenamed={(documentId, name, path) => {
+        updateTrackedTab(projectId, documentId, { name, path, provisionalName: false });
+        onSelectContextPath(path, "scratch");
+      }}
+      onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
+    />
   );
 }
 

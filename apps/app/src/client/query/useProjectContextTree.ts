@@ -21,14 +21,15 @@ import { contextRequestOptionsForScheme, useContextWorkId } from "./useContextWo
 export function useProjectContextTree(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  options?: { enabled?: boolean; activeThreadId?: string | null },
+  options?: { enabled?: boolean; activeThreadId?: string | null; workId?: string | null },
 ): {
   tree: ProjectContextTreeDirectory | null;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
 } {
-  const workId = useContextWorkId(projectId, options?.activeThreadId ?? null);
+  const threadWorkId = useContextWorkId(projectId, options?.activeThreadId ?? null);
+  const workId = options?.workId !== undefined ? options.workId : threadWorkId;
   const workScoped = isWorkScopedProjectContextScheme(scheme);
   const enabled = (options?.enabled ?? true) && (!workScoped || workId !== null);
   const contextOpts = contextRequestOptionsForScheme(scheme, workId);

@@ -35,6 +35,18 @@ export function findContextFile(root: ContextNode, path: string): ContextFile | 
   return null;
 }
 
+export function findContextFileByDocumentId(
+  root: ContextNode,
+  documentId: string,
+): ContextFile | null {
+  if (root.kind === "file") return root.documentId === documentId ? root : null;
+  for (const child of root.children) {
+    const hit = findContextFileByDocumentId(child, documentId);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 /**
  * Look up a directory by its absolute path (e.g. `/project/learnings`). The
  * root itself is matched on the empty string or `/`. Returns null if the path

@@ -13,6 +13,7 @@ type Options = {
   schemes: readonly ProjectContextTreeScheme[];
   kinds: readonly FileSuggestionKind[];
   activeThreadId: string | null;
+  workId?: string | null;
 };
 
 export function useFileSuggestions(
@@ -36,10 +37,12 @@ export function useFileSuggestions(
   const scratch = useProjectContextTree(projectId, "scratch", {
     enabled: enabled("scratch"),
     activeThreadId: options.activeThreadId,
+    workId: options.workId,
   });
   const uploads = useProjectContextTree(projectId, "uploads", {
     enabled: enabled("uploads"),
     activeThreadId: options.activeThreadId,
+    workId: options.workId,
   });
   // Memoize from the stable `.tree` references (query wrapper objects get a
   // fresh identity every render) plus the options object, which callers must

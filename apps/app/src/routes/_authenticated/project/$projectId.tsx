@@ -37,7 +37,8 @@ function isScreenKey(value: unknown): value is ScreenKey {
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {
   return Object.fromEntries(
     Object.entries(search).filter(
-      ([key, value]) => value !== undefined && (key === "results" || value !== ""),
+      ([key, value]) =>
+        value !== undefined && (key === "results" || key === "path" || value !== ""),
     ),
   ) as ProjectSearch;
 }
@@ -49,7 +50,7 @@ export const Route = createFileRoute("/_authenticated/project/$projectId")({
     const scheme = isProjectContextTreeScheme(search.scheme) ? search.scheme : undefined;
     const folder =
       scheme && typeof search.folder === "string" && search.folder ? search.folder : undefined;
-    const path = scheme && typeof search.path === "string" && search.path ? search.path : undefined;
+    const path = scheme && typeof search.path === "string" ? search.path : undefined;
     return {
       screen: isScreenKey(search.screen) ? search.screen : undefined,
       thread: typeof search.thread === "string" && search.thread ? search.thread : undefined,
@@ -102,7 +103,10 @@ function RouteComponent() {
 
   function handleSelectScreen(next: ScreenKey) {
     const reset: Partial<ProjectSearch> = { screen: next, results: undefined };
-    if (next !== "context") {
+    // An explicit empty path pins a fresh untitled tab. Keep that pin while
+    // another screen is in front so returning to Editor cannot replay the
+    // previously remembered server document over it.
+    if (next !== "context" && path !== "") {
       reset.scheme = undefined;
       reset.folder = undefined;
       reset.path = undefined;
@@ -154,7 +158,7 @@ function RouteComponent() {
   ) {
     const patch: Partial<ProjectSearch> = {
       screen: "context",
-      path: nextPath || undefined,
+      path: nextPath,
       results: undefined,
     };
     if (nextScheme) patch.scheme = nextScheme;

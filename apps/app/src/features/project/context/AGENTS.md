@@ -49,11 +49,10 @@ Shared across both shells:
   `context-tab-from-file.ts`, `context-tab-from-draft.ts`, `context-last-route.ts`;
   the parent `../ContextPaneController.tsx` owns reconciliation and selection
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
-  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`,
-  `TempDocumentEditor.tsx`, `temp-document-name.ts`; device-local content lives
-  in `../../../client/stores/temp-docs-store.ts`. The save bar is one VS Code
-  style URI field (`temp-save-uri.ts` parse/format; `TempDocumentSaveBar.tsx`
-  draft/commit choreography)
+  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`. New untitled
+  tabs use the same Yjs-first editor as tracked documents; the detached session
+  is materialized by `untitled-reconciler.ts`. `UntitledRenameLine.tsx` is now
+  the provisional-document rename line (Enter commits; moves stay in tree actions).
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,

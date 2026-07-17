@@ -87,6 +87,32 @@ export const PROJECT_CONTEXT_TREE_SCHEMES = [
 
 export type ProjectContextTreeScheme = (typeof PROJECT_CONTEXT_TREE_SCHEMES)[number];
 
+export type CreateUntitledContextDocumentRequest = {
+  documentId: string;
+  folderPath?: string;
+};
+
+export type CreateUntitledContextDocumentResponse = {
+  status: "created" | "already-exists";
+  documentId: string;
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+};
+
+export type CreateUntitledContextDocumentResult =
+  | CreateUntitledContextDocumentResponse
+  | { status: "conflict" };
+
+export type RenameContextEntryRequest = {
+  path: string;
+  newName: string;
+};
+
+export type RenameContextEntrySuccess = { status: "renamed" };
+export type RenameContextEntryConflict = { status: "conflict" };
+export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContextEntryConflict;
+
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (
     typeof value === "string" && (PROJECT_CONTEXT_TREE_SCHEMES as readonly string[]).includes(value)

@@ -11,6 +11,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
+import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
@@ -74,6 +75,7 @@ export type CreateEditorExtensionsOptions = {
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
   editable?: boolean;
   autofocus?: EditorOptions["autofocus"];
+  placeholder?: string;
   editorProps?: EditorOptions["editorProps"];
 };
 
@@ -289,6 +291,7 @@ export function createEditorConfig({
   enableDraftInlineReview,
   editable = true,
   autofocus = false,
+  placeholder,
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
@@ -298,16 +301,19 @@ export function createEditorConfig({
       : editorProps;
 
   return {
-    extensions: createEditorExtensions({
-      document,
-      awareness,
-      schemaType: resolvedSchemaType,
-      cursorProvider,
-      user,
-      figureRenderContext,
-      showCollaborationDecorations,
-      enableDraftInlineReview,
-    }),
+    extensions: [
+      ...createEditorExtensions({
+        document,
+        awareness,
+        schemaType: resolvedSchemaType,
+        cursorProvider,
+        user,
+        figureRenderContext,
+        showCollaborationDecorations,
+        enableDraftInlineReview,
+      }),
+      ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
+    ],
     editable,
     autofocus,
     ...(resolvedEditorProps ? { editorProps: resolvedEditorProps } : {}),

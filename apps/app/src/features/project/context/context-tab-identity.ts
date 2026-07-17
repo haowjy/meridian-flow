@@ -18,7 +18,7 @@ export function contextTabMatchesRoute(
   path: string,
   workId: string | null,
 ): boolean {
-  if (tab.kind === "temp") return false;
+  if (tab.kind === "new") return false;
   if (tab.scheme !== scheme || tab.path !== path) return false;
   if (isWorkScopedProjectContextScheme(scheme)) return tab.workId === workId;
   return true;
@@ -46,7 +46,7 @@ export function findContextTabForRoute(
   return (
     tabs.find(
       (tab): tab is ServerContextTab =>
-        tab.kind !== "temp" && contextTabMatchesRoute(tab, scheme, path, workId),
+        tab.kind !== "new" && contextTabMatchesRoute(tab, scheme, path, workId),
     ) ?? null
   );
 }

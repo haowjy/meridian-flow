@@ -209,6 +209,15 @@ export class DocumentSessionRegistry {
     }
   }
 
+  /** Remove one session from registry ownership, optionally clearing IndexedDB. */
+  async destroyRoom(roomKey: string, options: { clearPersistence?: boolean } = {}): Promise<void> {
+    this.cancelPendingTeardown(roomKey);
+    const session = this.sessions.get(roomKey);
+    if (!session) return;
+    this.sessions.delete(roomKey);
+    await session.destroy(options);
+  }
+
   private maybeWarnLiveDocCap(): void {
     if (this.liveDocCapWarningEmitted || this.sessions.size <= LIVE_DOC_SOFT_CAP) return;
     this.liveDocCapWarningEmitted = true;
