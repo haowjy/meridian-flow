@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `@meridian/yjs-inspect`: safe metadata summaries for Hocuspocus frames, Yjs updates, awareness deltas, and journal hex rows.
 - `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
   writes that would structurally delete blocks a human concurrently edited are
   rejected before anything becomes durable (`rejected_response_requires_reread`);
