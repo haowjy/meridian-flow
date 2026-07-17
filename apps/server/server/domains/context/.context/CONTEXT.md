@@ -100,7 +100,9 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Client-minted untitled documents use the distinct `createUntitledDocument`
   boundary: it atomically allocates `Untitled N`, persists `provisionalName`,
   and only ensures an empty Yjs authority. The client owns initial CRDT content;
-  this path must never seed markdown. A successful basename change clears the
+  this path must never seed markdown. Creation finalization is repairable: both
+  new creates and idempotent retries re-ensure manifest membership and the Yjs
+  authority after the document row exists. A successful basename change clears the
   flag in the shared tree-mutation store, while path-only moves preserve it.
 - Every **project-scoped** document creation (`manuscript`, `kb`, `user`)
   registers in the project manifest via the required manifest-membership port

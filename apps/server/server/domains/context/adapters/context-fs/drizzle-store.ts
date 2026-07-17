@@ -301,6 +301,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     };
   }
 
+  async ensureDocumentMembership(documentId: string): Promise<void> {
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", documentId);
+  }
+
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing) {

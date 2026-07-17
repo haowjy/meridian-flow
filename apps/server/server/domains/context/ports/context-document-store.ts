@@ -78,6 +78,8 @@ export interface ContextDocumentStore {
   ): Promise<ContextDocument | null>;
   /** Find a document globally by stable id so caller-chosen id conflicts can be classified. */
   findDocumentById(documentId: string): Promise<LocatedContextDocument | null>;
+  /** Idempotently ensure shadow membership after a recoverable document create. */
+  ensureDocumentMembership(documentId: string): Promise<void>;
   /** Update the search/list projection by stable identity, even if a concurrent move changed path. */
   updateDocumentProjection(documentId: string, markdown: string): Promise<boolean>;
   upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;

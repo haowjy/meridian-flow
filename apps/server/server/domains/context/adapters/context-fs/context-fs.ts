@@ -178,6 +178,11 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
+  private async finalizeUntitledDocument(documentId: string): Promise<void> {
+    await this.store.ensureDocumentMembership(documentId);
+    await this.documentSync.ensureDocument(documentId);
+  }
+
   private async persistProjection(
     documentId: string,
     markdown: string,
@@ -370,6 +375,7 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "conflict",
         });
       }
+      await this.finalizeUntitledDocument(existing.document.id);
       return Ok({
         status: "already-exists",
         documentId: existing.document.id,
@@ -397,7 +403,7 @@ export class ContextFS implements ContextSchemeAdapter {
         provisionalName: true,
       });
       if (document) {
-        await this.documentSync.ensureDocument(document.id);
+        await this.finalizeUntitledDocument(document.id);
         return Ok({
           status: "created",
           documentId: document.id,
@@ -413,6 +419,7 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "conflict",
         });
       }
+      await this.finalizeUntitledDocument(collision.document.id);
       return Ok({
         status: "already-exists",
         documentId: collision.document.id,

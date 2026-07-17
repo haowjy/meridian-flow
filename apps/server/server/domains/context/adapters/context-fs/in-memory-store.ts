@@ -108,6 +108,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.sourceId;
   }
 
+  async ensureDocumentMembership(_documentId: string): Promise<void> {}
+
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
     const foldersSnapshot = new Map(
       [...this.backing.folders].map(([id, row]) => [id, { ...row }] as const),

@@ -192,6 +192,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.sourceStore()).findDocumentById(documentId);
   }
 
+  async ensureDocumentMembership(documentId: string) {
+    return (await this.sourceStore()).ensureDocumentMembership(documentId);
+  }
+
   async updateDocumentProjection(documentId: string, markdown: string) {
     return (await this.sourceStore()).updateDocumentProjection(documentId, markdown);
   }

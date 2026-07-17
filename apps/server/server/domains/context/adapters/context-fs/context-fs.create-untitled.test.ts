@@ -108,6 +108,36 @@ describe("ContextFS createUntitledDocument", () => {
     );
   });
 
+  it("repairs finalization when retrying a row left by a failed create", async () => {
+    const collab = createInMemoryCollabDomain();
+    let failAuthorityOnce = true;
+    const documentSync = {
+      ...collab,
+      async ensureDocument(documentId: string) {
+        if (failAuthorityOnce) {
+          failAuthorityOnce = false;
+          throw new Error("authority unavailable");
+        }
+        await collab.ensureDocument(documentId);
+      },
+    } satisfies MarkdownDocumentStore;
+    const { fs, store } = createFs({ documentSync });
+    const ensureMembership = vi.spyOn(store, "ensureDocumentMembership");
+
+    await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).rejects.toThrow(
+      "authority unavailable",
+    );
+    await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
+      {
+        ok: true,
+        value: { status: "already-exists", documentId: DOCUMENT_A },
+      },
+    );
+
+    expect(ensureMembership).toHaveBeenCalledTimes(2);
+    await expect(collab.readAsMarkdown(DOCUMENT_A)).resolves.toMatchObject({ ok: true });
+  });
+
   it("rejects a caller-chosen id already owned by another context source", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const first = createFs({ sourceId: SOURCE_A, backing });
