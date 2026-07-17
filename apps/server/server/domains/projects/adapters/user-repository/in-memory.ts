@@ -6,6 +6,7 @@ import type { EnsureUserInput, UserRepository } from "../../ports/user-repositor
 type UserRow = EnsureUserInput & {
   id: UserId;
   lastActiveProjectId: ProjectId | null;
+  workingSetSyncEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -26,6 +27,7 @@ export function createInMemoryUserRepository(): UserRepository {
         ...input,
         id: existing?.id ?? (randomUUID() as UserId),
         lastActiveProjectId: existing?.lastActiveProjectId ?? null,
+        workingSetSyncEnabled: existing?.workingSetSyncEnabled ?? true,
         createdAt: existing?.createdAt ?? timestamp,
         updatedAt: timestamp,
       };
@@ -49,6 +51,25 @@ export function createInMemoryUserRepository(): UserRepository {
           return;
         }
       }
+    },
+    async getWorkingSetSyncEnabled(userId: UserId): Promise<boolean> {
+      for (const row of rowsByExternalId.values()) {
+        if (row.id === userId) return row.workingSetSyncEnabled;
+      }
+      return true;
+    },
+    async updateWorkingSetSyncEnabled(userId: UserId, enabled: boolean): Promise<boolean> {
+      for (const [externalId, row] of rowsByExternalId.entries()) {
+        if (row.id === userId) {
+          rowsByExternalId.set(externalId, {
+            ...row,
+            workingSetSyncEnabled: enabled,
+            updatedAt: now(),
+          });
+          return enabled;
+        }
+      }
+      throw new Error("User settings update did not find the authenticated user");
     },
   };
 }

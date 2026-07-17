@@ -729,6 +729,12 @@ export function createInMemoryAppServices(): AppServices {
         return null;
       },
       async setLastActiveProjectId() {},
+      async getWorkingSetSyncEnabled() {
+        return true;
+      },
+      async updateWorkingSetSyncEnabled(_userId, enabled) {
+        return enabled;
+      },
     },
     workRepo: {
       async create() {

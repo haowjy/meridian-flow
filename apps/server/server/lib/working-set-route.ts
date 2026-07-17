@@ -26,6 +26,12 @@ export interface WorkingSetRouteDeps {
   threads: ThreadRepository;
 }
 
+function isWorkScopedRoute(
+  route: WorkingSetRoute,
+): route is Extract<WorkingSetRoute, { scheme: "scratch" | "uploads" }> {
+  return isWorkScopedProjectContextScheme(route.scheme);
+}
+
 export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
@@ -57,8 +63,8 @@ export async function handlePutWorkingSetRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
 
   for (const route of input.body.recentRoutes) {
-    if (!isWorkScopedProjectContextScheme(route.scheme)) continue;
-    const work = await deps.works.findById(route.workId!);
+    if (!isWorkScopedRoute(route)) continue;
+    const work = await deps.works.findById(route.workId);
     if (!work || work.projectId !== input.projectId) {
       throw createError({
         statusCode: 400,
