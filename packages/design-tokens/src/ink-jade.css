@@ -176,14 +176,16 @@
   --color-status-live-bg: var(--ink-jade-recess);
   --color-status-live-foreground: var(--color-muted-foreground);
   --color-status-live-dot: var(--color-muted-foreground);
-  /* Warning / caution — warm amber, held distinct from cinnabar/destructive
-     (error) and gold (writer). Used for collision/overwrite notices. `bg` is a
-     soft field fill, `foreground` clears ~7:1 on it, `status-warning` is the
-     saturated dot/indicator. */
-  --color-warning-bg: oklch(0.965 0.03 85);
-  --color-warning-border: oklch(0.9 0.06 84);
-  --color-warning-foreground: oklch(0.42 0.08 70);
-  --color-status-warning: oklch(0.72 0.15 75);
+  /* Warning / caution — destructive's anatomy at orange: pale field,
+     pigmented hairline, saturated readable ink (>6:1 on the field), and a
+     vivid mark. The 45–84 hue band keeps caution apart from cinnabar/error
+     and writer-gold; the old gold-adjacent family read as decoration.
+     Warning ink never stands naked: `foreground` appears only on `bg`, never
+     as bare warning-colored text on paper. */
+  --color-warning-bg: oklch(0.955 0.022 84);
+  --color-warning-border: oklch(0.885 0.03 80);
+  --color-warning-foreground: oklch(0.45 0.11 55);
+  --color-status-warning: oklch(0.66 0.2 48);
   /* Deep jade — the www CTA hover ground (one step deeper than primary). */
   --color-mark-to: oklch(0.4 0.07 176);
   --color-prose-foreground: oklch(0.3 0.006 100);
