@@ -21,6 +21,7 @@ const EXCLUDED_PARTS = new Set([
   "__tests__",
   "scripts",
   "demo",
+  "examples",
   "e2e",
 ]);
 const EXCLUDED_FILE_PATTERN = /\.(test|spec|bench\.test)\.(js|jsx|mjs|cjs|ts|tsx)$/;
