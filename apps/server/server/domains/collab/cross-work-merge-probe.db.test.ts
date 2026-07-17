@@ -28,8 +28,15 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
       status: "pushed",
       liveOriginTypes: expect.arrayContaining(["system"]),
     });
-    expect(observation.bApply.status).toBe("push_concurrent_conflict");
+    expect(observation.bApply.status).toBe("concurrent_conflict");
     expect(observation.approvedTextSurvived).toBe(true);
+    expect(observation.manuscript.afterBApply).toBe(observation.manuscript.beforeBApply);
+    expect(observation.rereview).toMatchObject({
+      initialStatus: "concurrent_conflict",
+      selectedOperationIds: [expect.any(String)],
+      applyStatus: "partial_applied",
+      manuscriptAfterApply: expect.stringContaining("Work B echo probe."),
+    });
     harness.destroyWarmState();
   });
 
@@ -49,6 +56,21 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
       "Writer-approved Work A text.",
     );
     expect(observation.protection.restoreAvailable).toBe(true);
+    expect(observation.protection.trailChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          writerProtection: expect.objectContaining({
+            kind: "sweep",
+            body: expect.objectContaining({ status: "available" }),
+          }),
+        }),
+      ]),
+    );
+    expect(observation.protection.deliveredEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ counts: expect.objectContaining({ swept: 1 }) }),
+      ]),
+    );
     expect(observation.protection.restoreOutcome).toBe("applied");
     expect(observation.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
     expect(JSON.stringify(observation.echo)).toContain("Writer-approved Work A text.");
