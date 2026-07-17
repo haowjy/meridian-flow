@@ -50,6 +50,8 @@ export interface PreparedContextMove {
   expectedTarget: ContextTargetExpectation;
   /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
   overwrite: boolean;
+  /** Writer placement: end provisional naming even without a basename change. */
+  clearProvisionalName: boolean;
 }
 
 type PreparedFileMove = Omit<PreparedContextMove, "source"> & {

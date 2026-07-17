@@ -171,6 +171,7 @@ describe("ContextFS createUntitledDocument", () => {
       destinationPath: "drafts/Untitled 1.md",
       expectedTarget: { state: "absent" },
       overwrite: false,
+      clearProvisionalName: false,
       destinationFiletype: "markdown",
     });
     expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(true);
@@ -183,6 +184,7 @@ describe("ContextFS createUntitledDocument", () => {
       destinationPath: "drafts/Opening.md",
       expectedTarget: { state: "absent" },
       overwrite: false,
+      clearProvisionalName: false,
       destinationFiletype: "markdown",
     });
     expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(false);

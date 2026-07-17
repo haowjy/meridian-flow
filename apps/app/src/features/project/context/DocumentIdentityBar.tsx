@@ -19,7 +19,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FolderDown, TriangleAlert } from "lucide-react";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -57,10 +57,14 @@ export function DocumentIdentityBar({
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [surface, setSurface] = useState<Surface>(null);
-  // "Writer owns the name" latch — once the writer edits a field, the
-  // content suggestion stops prefilling for this document.
-  const writerOwnsName = useRef(false);
   const commit = useIdentityCommit({ projectId, tab, defaultWorkId, onCommitted });
+
+  // Placement happens once: only an untitled doc that was never explicitly
+  // renamed or homed (provisional, still at its default Scratch root) opens
+  // the empty placement field. Any explicit save graduates it to the path
+  // grammar permanently.
+  const placementGrammar =
+    location.provisional && location.scheme === "scratch" && location.parentPath === "/";
 
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
@@ -68,7 +72,6 @@ export function DocumentIdentityBar({
   const renameFailure = useQueuedRenameFailure(tab.documentId);
   useEffect(() => {
     if (!renameFailure) return;
-    writerOwnsName.current = true;
     setSurface({ kind: "field", mode: { kind: "placement" } });
   }, [renameFailure]);
 
@@ -76,15 +79,13 @@ export function DocumentIdentityBar({
     if (location.editable) setSurface({ kind: "field", mode });
   };
   const openTyping = (segment: number | "leaf") => {
-    openField(
-      location.provisional ? { kind: "placement" } : { kind: "path", initialSegment: segment },
-    );
+    openField(placementGrammar ? { kind: "placement" } : { kind: "path", initialSegment: segment });
   };
 
-  // The chip is the pointing surface: placement for provisional docs, the
-  // Move-to popup once homed. Viewer docs get the popup too when moving them
+  // The chip is the pointing surface: placement while never-placed, the
+  // Move-to popup once placed. Viewer docs get the popup too when moving them
   // is legal; uploads aren't writing material, so those show no chip.
-  const chipOpensPopup = !location.provisional && location.scheme !== "uploads";
+  const chipOpensPopup = !placementGrammar && location.scheme !== "uploads";
   const showChip = location.editable || chipOpensPopup;
 
   return (
@@ -105,7 +106,6 @@ export function DocumentIdentityBar({
             location={location}
             mode={surface.mode}
             failure={renameFailure}
-            writerOwnsName={writerOwnsName}
             commit={commit}
             onExit={(reason) => {
               // Leaving the field acknowledges any failure receipt — it must

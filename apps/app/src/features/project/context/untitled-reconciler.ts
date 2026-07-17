@@ -48,8 +48,9 @@ type Candidate = {
   onReminted: (documentId: string) => void;
   onMaterialized: (result: CreateUntitledContextDocumentResponse) => void;
   onRenamed: (name: string, path: string) => void;
-  /** Queued placement landed: the document moved (path has a leading slash). */
-  onMoved?: (result: MoveContextEntrySuccess & { renamed: boolean }) => void;
+  /** Queued placement landed: the document moved (path has a leading slash)
+   *  and graduated out of provisional naming (explicit writer placement). */
+  onMoved?: (result: MoveContextEntrySuccess) => void;
 };
 
 export type PlacementDestination = {
@@ -335,11 +336,7 @@ export class UntitledReconciler {
           this.emit();
           return;
         }
-        this.candidates.get(entry.documentId)?.onMoved?.({
-          ...moved,
-          path: `/${moved.path}`,
-          renamed: moved.name !== result.name,
-        });
+        this.candidates.get(entry.documentId)?.onMoved?.({ ...moved, path: `/${moved.path}` });
         return;
       }
       const renameResult = await this.deps.api.rename(entry, result.path, intent.name);

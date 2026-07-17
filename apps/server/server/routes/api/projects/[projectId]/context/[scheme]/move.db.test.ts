@@ -143,7 +143,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return row;
     }
 
-    it("promotes scratch into manuscript without naming or touching Yjs authority", async () => {
+    it("promotes scratch into manuscript, graduating provisional naming without touching Yjs authority", async () => {
       const { projectId, workId, collab, port } = await arrangeUntitled();
       const manifestBefore = await collab.resolveManifestMembership({ projectId });
       expect(manifestBefore.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
@@ -177,7 +177,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         folderName: "Act 1",
         name: "Untitled 1",
         extension: "md",
-        provisionalName: true,
+        // An explicit writer placement ends provisional state even when the
+        // name stays Untitled-N (D8 total graduation).
+        provisionalName: false,
       });
       expect(row?.sourceId).toBe(row?.folderSourceId);
       await expect(port.stat(`scratch://${workId}/Untitled 1.md`)).resolves.toMatchObject({
@@ -194,7 +196,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
     });
 
-    it("clears provisional naming only when the move changes the basename", async () => {
+    it("keeps provisional naming across a system move without the writer-placement option", async () => {
+      const { projectId, workId, port } = await arrangeUntitled();
+
+      const moved = await port.move(
+        `scratch://${workId}/Untitled 1.md`,
+        "manuscript://Act 1/Untitled 1.md",
+        { exactTarget: true, origin: { type: "human", userId: USER_ID } },
+      );
+      expect(moved).toMatchObject({ ok: true });
+
+      // ContextPort.move without clearProvisionalName never silently
+      // graduates a document the writer didn't touch.
+      await expect(promotedRow(projectId)).resolves.toMatchObject({
+        folderName: "Act 1",
+        name: "Untitled 1",
+        provisionalName: true,
+      });
+    });
+
+    it("clears provisional naming when the move renames", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
 
       await expect(

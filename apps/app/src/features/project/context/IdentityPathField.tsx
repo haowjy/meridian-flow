@@ -1,11 +1,15 @@
 /**
  * The identity bar's typed surface, in two grammars:
  *
- * - **placement** (provisional docs): the field holds only the name; the
- *   popover opens on the scheme roots (the roots ARE the context choice) and
- *   picking drills into folders, building the path as read-only spans left of
- *   the name. Enter with a home built commits a move (+rename); name-only
- *   Enter renames in place — naming isn't homing.
+ * - **placement** (untitled docs never explicitly renamed or homed): the
+ *   field opens EMPTY — the content-derived suggestion is ghost text
+ *   (placeholder), accepted with Tab/→, never editable content the writer
+ *   must delete. The popover opens on the scheme roots (the roots ARE the
+ *   context choice) and picking drills into folders, building the path as
+ *   read-only spans left of the name. Enter with a home built commits a move
+ *   (+rename); name-only Enter renames in place — naming isn't homing.
+ *   Placement happens once: any explicit save graduates the document to the
+ *   path grammar.
  * - **path** (homed docs): the whole human path is one editable input.
  *   The popover tracks the caret's segment (root labels, then folders);
  *   typed segments that match nothing are tagged "new folder" and are
@@ -16,14 +20,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { cn } from "@/lib/utils";
 import { invalidContextEntryNameReason, invalidContextEntryPathReason } from "./context-entry-name";
-import { schemeIcon, schemeLabel } from "./context-schemes";
+import { schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
   FileSuggestionList,
@@ -61,7 +65,6 @@ export function IdentityPathField({
   location,
   mode,
   failure,
-  writerOwnsName,
   commit,
   onExit,
   onOpenExisting,
@@ -73,7 +76,6 @@ export function IdentityPathField({
   location: TabLocation;
   mode: IdentityFieldMode;
   failure: QueuedRenameFailure | null;
-  writerOwnsName: RefObject<boolean>;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
@@ -88,14 +90,13 @@ export function IdentityPathField({
     folderPath: string;
   } | null>(null);
 
+  // Placement opens EMPTY — the suggestion is ghost text, never content the
+  // writer must delete. A failed queued placement restores the typed name.
   const [value, setValue] = useState(() => {
-    if (placement) {
-      if (failure) return failure.name;
-      if (writerOwnsName.current) return location.leaf;
-      return suggestionForTab(tab) || location.leaf;
-    }
+    if (placement) return failure?.name ?? "";
     return formatHumanPath(location.scheme, location.folders, location.leaf);
   });
+  const [ghost, setGhost] = useState(() => (placement ? suggestionForTab(tab) : ""));
   // Debounced copy driving the visible note so reasons don't flash mid-word;
   // a blocked Enter flushes it immediately.
   const [noteValue, setNoteValue] = useState(value);
@@ -116,14 +117,14 @@ export function IdentityPathField({
     return () => window.clearTimeout(timer);
   }, [value]);
 
-  // Initial focus + selection. Placement selects the basename for overtype;
-  // path mode selects the clicked segment.
+  // Initial focus + selection. Placement starts empty (a restored failure
+  // name is selected for overtype); path mode selects the clicked segment.
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
     input.focus();
     if (placement) {
-      if (!writerOwnsName.current) selectBasename(input);
+      if (input.value) input.select();
       return;
     }
     if (mode.kind !== "path") return;
@@ -150,26 +151,18 @@ export function IdentityPathField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Content-suggested name keeps refreshing (300ms debounce) until the writer
-  // edits; placement only, latch re-checked at fire time.
+  // The ghost suggestion keeps refreshing (300ms debounce) while the field is
+  // open; it can never overwrite typed content because it is only a
+  // placeholder until the writer accepts it.
   useEffect(() => {
-    if (!placement || !location.provisional) return;
+    if (!placement) return;
     const session = getDocumentSessionRegistry().getDetached(tab.documentId);
     const fragment = session.document.getXmlFragment(session.fragmentName);
     const refresh = () => {
-      if (writerOwnsName.current) return;
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
       suggestionTimer.current = window.setTimeout(() => {
         suggestionTimer.current = null;
-        if (writerOwnsName.current) return;
-        const suggestion = suggestionForTab(tab);
-        if (suggestion) {
-          setValue(suggestion);
-          const input = inputRef.current;
-          if (input && document.activeElement === input) {
-            requestAnimationFrame(() => selectBasename(input));
-          }
-        }
+        setGhost(suggestionForTab(tab));
       }, 300);
     };
     fragment.observeDeep(refresh);
@@ -180,7 +173,7 @@ export function IdentityPathField({
         suggestionTimer.current = null;
       }
     };
-  }, [placement, location.provisional, tab, writerOwnsName]);
+  }, [placement, tab]);
 
   const roots = useMemo(() => humanPathRoots(location.scheme), [location.scheme]);
   const suggestionOptions = useMemo(
@@ -258,17 +251,16 @@ export function IdentityPathField({
   const liveReason = placement
     ? trimmedNote
       ? invalidContextEntryNameReason(trimmedNote)
-      : t`Name is required`
+      : null
     : pathModeReason(noteValue, roots, rootLabels, allEntries);
   const localCollision = useMemo(() => {
     const name = noteValue.trim();
     if (placement) {
-      const leaf = name;
-      if (!leaf) return null;
+      if (!name) return null;
       const scheme = dest?.scheme ?? location.scheme;
       const folder = dest?.folderPath ?? location.parentPath;
       const hit = folderChildren(allEntries, scheme, folder).find(
-        (entry) => entry.name === leaf && entry.path !== location.path,
+        (entry) => entry.name === name && entry.path !== location.path,
       );
       return hit ? { scheme, path: hit.path, kind: hit.kind } : null;
     }
@@ -338,10 +330,26 @@ export function IdentityPathField({
     if (saving) return;
     setCommitReason(null);
     if (placement) {
-      const name = value.trim();
-      const reason = name ? invalidContextEntryNameReason(name) : t`Name is required`;
-      if (reason || localCollisionNow()) {
+      // Enter with an empty field accepts the ghost (the human journey is
+      // chip → pick a folder → Enter); with no ghost the server name stands.
+      const name = value.trim() || ghost || location.leaf;
+      if (!name) {
+        setCommitReason(t`Name is required`);
+        return;
+      }
+      const reason = invalidContextEntryNameReason(name);
+      if (reason) {
+        setCommitReason(reason);
         setNoteValue(value);
+        return;
+      }
+      if (placementCollisionNow(name)) {
+        setNoteValue(value || name);
+        return;
+      }
+      if (!dest && name === location.leaf) {
+        // Nothing typed, nothing picked: leaving is the only honest commit.
+        onExit("commit");
         return;
       }
       await runCommit({
@@ -372,17 +380,17 @@ export function IdentityPathField({
     });
   }
 
+  function placementCollisionNow(name: string): boolean {
+    const scheme = dest?.scheme ?? location.scheme;
+    const folder = dest?.folderPath ?? location.parentPath;
+    return folderChildren(allEntries, scheme, folder).some(
+      (entry) => entry.name === name && entry.path !== location.path,
+    );
+  }
+
   function localCollisionNow(): boolean {
     // The note is debounced; Enter validates against the live value.
     setNoteValue(value);
-    if (placement) {
-      const leaf = value.trim();
-      const scheme = dest?.scheme ?? location.scheme;
-      const folder = dest?.folderPath ?? location.parentPath;
-      return folderChildren(allEntries, scheme, folder).some(
-        (entry) => entry.name === leaf && entry.path !== location.path,
-      );
-    }
     const parsed = parseTypedPath(value, roots, allEntries);
     if (!parsed || parsed.newFolders.length > 0) return false;
     const folder = parsed.folders.length ? `/${parsed.folders.join("/")}` : "/";
@@ -435,18 +443,14 @@ export function IdentityPathField({
           ) : null}
           <input
             ref={inputRef}
-            className="min-w-0 flex-1 bg-transparent py-0.5 outline-none"
+            className="min-w-0 flex-1 bg-transparent py-0.5 outline-none placeholder:text-ink-subtle/70"
             aria-label={t`Document name and location`}
             value={value}
+            placeholder={placement ? ghost || location.leaf : undefined}
             spellCheck={false}
             disabled={saving}
             aria-invalid={Boolean(note)}
             onChange={(event) => {
-              writerOwnsName.current = true;
-              if (suggestionTimer.current !== null) {
-                window.clearTimeout(suggestionTimer.current);
-                suggestionTimer.current = null;
-              }
               clearFeedback();
               setValue(event.target.value);
               setCaret(event.target.selectionStart ?? event.target.value.length);
@@ -459,6 +463,16 @@ export function IdentityPathField({
               if (event.key === "Escape") {
                 event.preventDefault();
                 onExit("escape");
+              }
+              // One action accepts the ghost into the field.
+              if (
+                placement &&
+                !value &&
+                (event.key === "Tab" || event.key === "ArrowRight") &&
+                (ghost || location.leaf)
+              ) {
+                event.preventDefault();
+                setValue(ghost || location.leaf);
               }
             }}
             onBlur={(event) => {
@@ -535,11 +549,6 @@ export function IdentityPathField({
 
 function treeSegments(path: string): string[] {
   return path.split("/").filter(Boolean);
-}
-
-function selectBasename(input: HTMLInputElement) {
-  const extensionIndex = input.value.lastIndexOf(".");
-  input.setSelectionRange(0, extensionIndex > 0 ? extensionIndex : input.value.length);
 }
 
 function pathModeReason(

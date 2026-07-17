@@ -161,7 +161,7 @@ describe("move context route gates", () => {
     expect(app.port.move).toHaveBeenCalledWith(
       "manuscript://Source.md",
       `scratch://${OTHER_WORK_ID}/Drafts/Source.md`,
-      expect.objectContaining({ exactTarget: true }),
+      expect.objectContaining({ exactTarget: true, clearProvisionalName: true }),
     );
   });
 

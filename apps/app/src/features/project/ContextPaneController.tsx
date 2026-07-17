@@ -409,12 +409,14 @@ export function ContextViewerSurfaceController({
             workId: next.workId,
           });
         } else {
+          // Any commit through the identity bar is an explicit writer save:
+          // the document graduates out of provisional naming (D8).
           updateTrackedTab(projectId, documentId, {
             scheme: next.scheme,
             path: next.path,
             name: next.name,
             workId: next.workId,
-            ...(next.renamed ? { provisionalName: false } : {}),
+            provisionalName: false,
           });
         }
         onSelectContextPath(next.path, next.scheme);

@@ -146,7 +146,13 @@ export async function moveContextEntry(input: {
   const result = await input.port.move(
     toUri(input.sourceScheme, input.body.path, input.body.sourceWorkId),
     toUri(input.body.destinationScheme, destinationPath, input.body.destinationWorkId),
-    { exactTarget: true, origin: { type: "human", userId: input.userId } },
+    // Every move through this route is an explicit writer placement — it ends
+    // provisional naming even when the name stays Untitled-N (D8 graduation).
+    {
+      exactTarget: true,
+      clearProvisionalName: true,
+      origin: { type: "human", userId: input.userId },
+    },
   );
   if (!result.ok) {
     if (result.error.code === "conflict") {

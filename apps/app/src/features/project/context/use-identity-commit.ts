@@ -33,13 +33,14 @@ export type IdentityCommitOutcome =
     }
   | { status: "error"; message: string };
 
+/** Every commit through this seam is an explicit writer save, so the
+ *  document graduates: provisional naming ends with it (D8). */
 export type IdentityCommitted = {
   scheme: ProjectContextTreeScheme;
   /** Tree-style path with a leading slash. */
   path: string;
   name: string;
   workId?: string;
-  renamed: boolean;
 };
 
 function stripLeadingSlash(path: string): string {
@@ -124,7 +125,6 @@ export function useIdentityCommit({
           path: replaceBasename(tab.path, name),
           name,
           ...(tab.workId ? { workId: tab.workId } : {}),
-          renamed: true,
         });
         return { status: "committed" };
       }
@@ -162,7 +162,6 @@ export function useIdentityCommit({
         path: `/${moved.path}`,
         name: moved.name,
         ...(destinationWorkId ? { workId: destinationWorkId } : {}),
-        renamed: name !== tab.name,
       });
       return { status: "committed" };
     } catch {

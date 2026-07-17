@@ -722,7 +722,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             folderId: destParentId,
             name,
             extension,
-            ...(basenameChanged ? { provisionalName: false } : {}),
+            ...(basenameChanged || input.clearProvisionalName ? { provisionalName: false } : {}),
             ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
             updatedAt: new Date(),
           })

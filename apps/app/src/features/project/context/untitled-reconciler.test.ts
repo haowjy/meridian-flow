@@ -353,7 +353,6 @@ describe("queued rename receipts", () => {
       scheme: "manuscript",
       path: "/Act 1/Opening.md",
       name: "Opening.md",
-      renamed: true,
     });
     expect(reconciler.queuedRenameFailure("doc-1")).toBeNull();
 

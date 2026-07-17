@@ -159,6 +159,12 @@ export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
   /** Treat destinationUri as the final target, never as a Unix-style container. */
   exactTarget?: boolean;
+  /**
+   * End provisional naming even when the basename is unchanged. Reserved for
+   * explicit writer placements (the HTTP move route); system/agent moves must
+   * never silently graduate a document the writer didn't touch.
+   */
+  clearProvisionalName?: boolean;
 }
 
 export interface ContextMoveResult {

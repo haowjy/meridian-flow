@@ -60,7 +60,8 @@ export function useUntitledTabBridge({
               path: result.path,
               name: result.name,
               workId: result.scheme === "scratch" ? (defaultWorkId ?? undefined) : undefined,
-              ...(result.renamed ? { provisionalName: false } : {}),
+              // Explicit writer placement: graduation is total (D8).
+              provisionalName: false,
             });
             if (
               useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
