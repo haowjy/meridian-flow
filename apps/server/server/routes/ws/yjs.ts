@@ -18,7 +18,6 @@ import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
-import { isClientSchemaSuperseded } from "../../domains/collab/domain/schema-version-gate.js";
 import {
   isStaleDocumentSchemaError,
   isStaleSchema,
@@ -73,10 +72,10 @@ type WriterNoticeDocument = {
 type CloseTransport = (code: number, reason: string) => void;
 
 function refuseConnection(
-  context: Record<string, unknown>,
+  context: { closeTransport?: CloseTransport },
   close: { code: number; reason: string },
 ): never {
-  (context.closeTransport as CloseTransport | undefined)?.(close.code, close.reason);
+  context.closeTransport?.(close.code, close.reason);
   throw permissionDenied(close.reason, close.code);
 }
 
@@ -382,7 +381,7 @@ export function createYjsHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (isStaleSchema(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
         refuseConnection(context, YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE);
       }
-      if (isClientSchemaSuperseded(context.clientSchemaVersion ?? 0, headSchemaVersion)) {
+      if (headSchemaVersion != null && (context.clientSchemaVersion ?? 0) < headSchemaVersion) {
         refuseConnection(context, YJS_WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED);
       }
       setTimeout(() => {

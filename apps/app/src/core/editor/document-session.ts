@@ -238,7 +238,11 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
-        if (state.kind === "reset" && state.reason === "client-schema-superseded") {
+        if (
+          !this.destroyed &&
+          state.kind === "reset" &&
+          state.reason === "client-schema-superseded"
+        ) {
           if (!attemptClientSchemaReload(this.roomKey)) {
             this.raiseSchemaFence({ reason: "client-superseded", detail: state.reason });
           }
