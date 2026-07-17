@@ -20,6 +20,7 @@ import {
   type UIEventHandler,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -37,6 +38,8 @@ import {
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
+import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
+import { linkBubbleContext } from "./EditorLinkBubble";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
@@ -78,6 +81,7 @@ type FigureUploadState =
   | { kind: "error"; message: string };
 
 let editorSessionOwnerSequence = 0;
+const editorBubbleContexts = [linkBubbleContext] as const;
 
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
@@ -162,8 +166,11 @@ function SessionEditorView({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const figureInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bubbleHostRef = useRef<EditorBubbleHostHandle>(null);
+  const bubbleId = useId();
   const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
+  const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
@@ -428,6 +435,9 @@ function SessionEditorView({
               onFigureButtonClick={() => figureInputRef.current?.click()}
               figureUploadBusy={figureUploadState.kind === "uploading"}
               figureUploadDisabled={!projectId}
+              linkBubbleOpen={activeBubbleId === "link"}
+              linkBubbleId={bubbleId}
+              onOpenLinkBubble={() => bubbleHostRef.current?.open("link", { focus: true })}
             />
           ) : undefined
         }
@@ -450,6 +460,15 @@ function SessionEditorView({
           ) : undefined
         }
         uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+        bubbleHost={
+          <EditorBubbleHost
+            ref={bubbleHostRef}
+            editor={editor}
+            contexts={editorBubbleContexts}
+            contentId={bubbleId}
+            onActiveContextChange={setActiveBubbleId}
+          />
+        }
       />
     </section>
   );
@@ -480,6 +499,7 @@ function TrackedEditorCanvas({
   onScroll,
   dropOverlay,
   uploadStatus,
+  bubbleHost,
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
@@ -488,6 +508,7 @@ function TrackedEditorCanvas({
   onScroll?: UIEventHandler<HTMLDivElement>;
   dropOverlay?: ReactNode;
   uploadStatus?: ReactNode;
+  bubbleHost?: ReactNode;
 }) {
   return (
     <EditorSurfaceFrame
@@ -502,6 +523,7 @@ function TrackedEditorCanvas({
     >
       <div className={cn(editorColumnCanvas, editorColumnFill)}>
         <EditorContent editor={editor} className={editorColumnFill} />
+        {bubbleHost}
       </div>
       {dropOverlay}
       {uploadStatus}

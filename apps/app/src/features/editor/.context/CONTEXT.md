@@ -54,12 +54,19 @@ adding one ordered entry rather than mounting another strip beside the slot.
 I / code / list / link / figure). It subscribes to the editor's selection and
 transaction events to keep active-mark highlighting in sync.
 
-`EditorContextPopover` is the shared shell for controls that belong at the
-current ProseMirror selection. It supplies the virtual selection anchor,
-collision handling, and virtual-trigger focus lifecycle; each feature owns its
-content and commands. The link control is its first tenant: it opens only for
-selected text or an existing link, and uses TipTap's link commands to add, edit,
-or remove the mark without introducing a second document representation.
+`EditorBubbleHost`, mounted beside `EditorContent`, is the one positioning and
+focus owner for contextual editor controls. Registrations contribute a matcher,
+an anchor mode (`selection` or `node-top`), and content; the host chooses one in
+the fixed precedence order link → code → image → table, rematches on editor
+events, and hides across blur and IME composition. Radix owns collision handling
+around the host's virtual anchor. Add later contextual controls by registering a
+`BubbleContext`, never by mounting another popover shell.
+
+The link registration is the first context. It matches selected text or a link
+mark touching the caret and uses TipTap's link commands to add, edit, or remove
+the mark without introducing a second document representation. Cmd/Ctrl+K and
+the docked toolbar request focused entry through the host; automatic appearance
+does not move focus.
 
 ### Detecting a mark at a caret
 
