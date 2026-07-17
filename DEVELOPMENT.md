@@ -70,12 +70,13 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
 | `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
-| `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and ad-hoc test databases under registered project prefixes; preserve live worktrees and reserved databases |
+| `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, manually named tests, and reserved databases |
 
-The shared `pnpm test:db` Vitest project drops its dedicated throwaway database
-on exit when it targets the local dev Postgres endpoint. If a process is killed
-before teardown runs, `pnpm dev:gc-dbs -- --yes` sweeps the orphan on the next
-cleanup pass.
+Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
+database owned by that invocation, then drops it on exit. If the process is
+killed before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes the managed name
+and drops it only after its owner process has stopped. Manually named test
+databases are never garbage-collected.
 
 ## Worktree cleanup
 

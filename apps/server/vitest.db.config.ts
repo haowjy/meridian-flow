@@ -43,7 +43,6 @@ export default defineProject({
   test: {
     name: "db",
     environment: "node",
-    globalSetup: [fileURLToPath(new URL("./vitest.db.global-setup.ts", import.meta.url))],
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
     fileParallelism: false,

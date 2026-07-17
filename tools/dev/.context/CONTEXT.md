@@ -23,6 +23,7 @@ tools/dev/
 ├── lib/
 │   ├── dev-env.ts             DEV_DATABASES registry + worktree URL rewrite
 │   ├── dev-db.ts              CREATE/DROP/EXTENSION admin
+│   ├── test-db-lifecycle.ts   Per-run DB test identity + owner liveness
 │   ├── dev-infra.ts           DB preflight + migration drift check
 │   ├── dev-share-ports.ts     Deterministic Tailscale/backend port assignment per worktree
 │   ├── tailscale-lifecycle.ts Stale route pruning + external route verification
@@ -39,6 +40,7 @@ tools/dev/
 ├── dev-mode.ts                CLI arg parsing + mode detection (local/tailscale/funnel)
 ├── dev-app-env-passthrough.ts App env key allowlist for tmux command
 ├── ensure-db.ts / prepare-db.ts / drop-db.ts / reset-db.ts
+├── run-db-tests.ts             Owned local DB lifecycle + shared Vitest suite
 ├── gc-dbs.ts                  Stale worktree database cleanup
 ├── print-worktree-env.ts      eval'd by .envrc
 ├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
@@ -55,8 +57,8 @@ tools/dev/
 ## Database contract
 
 - One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
-- **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves databases owned by live worktrees and reserved names, and drops both stale worktree databases and ad-hoc test databases with no live owner.
-- **DB test cleanup:** the shared `apps/server/vitest.db.config.ts` project drops its dedicated throwaway database after the suite when it runs on the local dev Postgres endpoint. CI/external Postgres instances rely on their own ephemeral infrastructure lifecycle.
+- **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves live worktrees, active managed test runs, manually named test databases, and reserved names. It drops stale worktree databases and managed test databases whose owner process has stopped.
+- **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and migrates a unique `<base>_test-run-<pid>-<timestamp>` database, runs the shared Vitest project, and drops only that owned database. CI/external Postgres instances rely on their own pre-provisioned ephemeral database. A killed local run is reclaimed later by `dev:gc-dbs` only when its encoded owner PID is no longer alive.
 - **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
 - **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
 - **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.
