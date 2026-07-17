@@ -35,6 +35,22 @@ const SCHEMA_REFUSAL_CODES: ReadonlySet<number> = new Set([
 ]);
 const HOCUSPOCUS_BRANCH_RESET_REASONS = new Set(["branch-generation-stale", "branch-stale-doc"]);
 
+class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
+  private permanentlyDestroyed = false;
+
+  // Hocuspocus 4.3 schedules an untracked reconnect from its close handler.
+  // Guard connect itself so a terminal room cannot resurrect after destroy().
+  override async connect() {
+    if (this.permanentlyDestroyed) return;
+    return super.connect();
+  }
+
+  override destroy(): void {
+    this.permanentlyDestroyed = true;
+    super.destroy();
+  }
+}
+
 export function schemaVersionedYjsWsPath(): string {
   return `${yjsWsPath()}?schema=${COLLAB_SCHEMA_VERSION}`;
 }
@@ -106,7 +122,7 @@ export function createHocuspocusDocumentTransport({
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: ConnectionState) => void>();
   const safetyNoticeListeners = new Set<(notice: SafetyNoticeWsMessage) => void>();
-  const websocket = new HocuspocusProviderWebsocket({
+  const websocket = new RoomScopedHocuspocusWebsocket({
     url: buildSameOriginWsUrl(schemaVersionedYjsWsPath()),
   });
   let currentState = mapStatus(websocket.status);

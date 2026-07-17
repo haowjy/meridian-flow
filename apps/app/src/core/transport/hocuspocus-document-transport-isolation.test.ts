@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Document transports keep terminal schema refusals scoped to the rejected room. */
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import type { ConnectionState } from "./ThreadTransport";
 
@@ -17,7 +17,9 @@ type FakeWebsocket = {
   status: "disconnected";
   providers: typeof hocuspocus.providers;
   destroyed: boolean;
+  connectCount: number;
   emitClose(event: { code: number; reason: string }): void;
+  connect(): Promise<void>;
   destroy(): void;
 };
 
@@ -26,13 +28,21 @@ vi.mock("@hocuspocus/provider", () => {
     status = "disconnected" as const;
     providers: typeof hocuspocus.providers = [];
     destroyed = false;
+    connectCount = 0;
 
     constructor() {
       hocuspocus.websockets.push(this);
+      void this.connect();
     }
 
     emitClose(event: { code: number; reason: string }) {
+      // Hocuspocus 4.3's internal close handler leaves this timer untracked.
+      setTimeout(() => void this.connect(), 1_000);
       for (const provider of this.providers) provider.onClose({ event });
+    }
+
+    async connect() {
+      this.connectCount += 1;
     }
 
     destroy() {
@@ -74,12 +84,15 @@ vi.mock("@hocuspocus/provider", () => {
 const { createHocuspocusDocumentTransport } = await import("./hocuspocus-document-transport");
 
 beforeEach(() => {
+  vi.useFakeTimers();
   hocuspocus.providers.length = 0;
   hocuspocus.websockets.length = 0;
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("Hocuspocus document transport isolation", () => {
-  it("does not fan one room's schema refusal into sibling document sessions", () => {
+  it("does not fan out or reconnect after one room's terminal schema refusal", async () => {
     const firstDocument = createCollabYDoc();
     const secondDocument = createCollabYDoc();
     const first = createHocuspocusDocumentTransport({
@@ -108,6 +121,9 @@ describe("Hocuspocus document transport isolation", () => {
     expect(secondStates.at(-1)).toEqual({ kind: "disconnected" });
     expect(hocuspocus.websockets[0]?.destroyed).toBe(true);
     expect(hocuspocus.websockets[1]?.destroyed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(hocuspocus.websockets[0]?.connectCount).toBe(1);
+    expect(hocuspocus.websockets[1]?.connectCount).toBe(1);
 
     first.destroy();
     second.destroy();
