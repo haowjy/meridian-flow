@@ -31,6 +31,7 @@ import { InlineInspector } from "./InlineInspector";
 import { ConversationSection } from "./sections/ConversationSection";
 import { TransportSection, useConnectionState } from "./sections/TransportSection";
 import { TraceViewer } from "./trace/TraceViewer";
+import { YjsWireTapInstaller } from "./trace/YjsWireTapInstaller";
 import { DEBUG_FEATURE_ALLOWED, useDebugEnabled } from "./use-debug-enabled";
 
 export function DebugOverlay() {
@@ -40,6 +41,7 @@ export function DebugOverlay() {
 
   return (
     <>
+      <YjsWireTapInstaller />
       <DebugPill onDisable={toggle} />
       <InlineInspector />
     </>
