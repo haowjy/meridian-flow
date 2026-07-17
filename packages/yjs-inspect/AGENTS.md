@@ -35,15 +35,3 @@ numerically sorted delete tokens.
 Yjs accepts trailing bytes after a valid update. Spans ignore those bytes, but
 `bytes` and `updateHash` cover the full input. Preserve this distinction:
 `updateHash` is only a secondary exact-byte correlation key.
-
-## Journal decoder
-
-Summarize hex rows from a file or stdin:
-
-```sh
-pnpm tsx packages/yjs-inspect/examples/decode-journal.ts updates.txt
-cat updates.txt | pnpm tsx packages/yjs-inspect/examples/decode-journal.ts
-```
-
-The example header contains the exact `psql` pipeline for
-`document_yjs_updates.update_data`.

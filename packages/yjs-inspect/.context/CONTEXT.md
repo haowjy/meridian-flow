@@ -50,10 +50,15 @@ depending on the classified message type. Taps call `inspectFrame`; they
 never parse envelopes themselves. `summarizeUpdate` is also available
 standalone for bare updates stored outside wire frames (journal rows).
 
+The public barrel exposes aggregate result types and reusable metadata
+vocabulary. Union-arm interfaces stay internal until a consumer needs to name
+one; consumers normally narrow `FrameSummary` and `FrameInspection` by their
+discriminants.
+
 The outer Hocuspocus frame envelope (document name + message type) is
 decoded directly from the lib0 encoding with no Hocuspocus import. The
-package depends only on `yjs`, `y-protocols`, and `lib0`, keeping it
-liftable out of the monorepo.
+production package depends only on `yjs` and `lib0`, keeping it liftable out
+of the monorepo. `y-protocols` is a development-only fixture dependency.
 
 ### Stateless body handling
 
@@ -81,3 +86,17 @@ per-transaction delete sets: a deletion-only keystroke carries exactly its
 own delete spans. `Y.encodeStateAsUpdate(doc, sv)` (sync-step-2) carries
 the cumulative delete set, fanning in to many client entries by design.
 Consumers downstream (S3/S4) must distinguish these paths when correlating.
+
+## Patterns
+
+### Journal decoder
+
+Summarize hex rows from a file or stdin:
+
+```sh
+pnpm tsx packages/yjs-inspect/examples/decode-journal.ts updates.txt
+cat updates.txt | pnpm tsx packages/yjs-inspect/examples/decode-journal.ts
+```
+
+The example header contains the exact `psql` pipeline for
+`document_yjs_updates.update_data`.
