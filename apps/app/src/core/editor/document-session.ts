@@ -272,6 +272,11 @@ export class DocumentSession {
     return Promise.race([syncSequence(), this.lifecycleCompletedPromise]);
   }
 
+  /** Resolve once IndexedDB has replayed this room into the session-owned Y.Doc. */
+  whenLocalPersistenceSynced(): Promise<void> {
+    return Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+  }
+
   waitForCurrentSync(timeoutMs: number): Promise<void> {
     if (this.status === "synced" || this.status === "access-lost" || this.status === "destroyed") {
       return Promise.resolve();

@@ -13,6 +13,7 @@ import type { HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectContextCreatePath,
+  apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
   apiProjectContextReadPath,
   apiProjectContextRenamePath,
@@ -146,6 +147,23 @@ export async function createContextEntry(
     acceptStatuses: [409],
   });
 }
+
+export type CreateUntitledContextDocumentResponse = {
+  status: "created" | "already-exists";
+  documentId: string;
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+};
+
+export async function createUntitledContextDocument(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  body: { documentId: string; folderPath?: string },
+  opts?: ProjectContextRequestOptions,
+): Promise<CreateUntitledContextDocumentResponse> {
+  return postJson(apiProjectContextCreateUntitledPath(projectId, scheme, opts), body);
+}
 export async function renameContextEntry(
   projectId: string,
   scheme: ProjectContextTreeScheme,
@@ -156,6 +174,21 @@ export async function renameContextEntry(
   return postJson(urlFor(apiProjectContextRenamePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
   });
+}
+
+/** Rename variant for UI that needs to recover from a race-lost 409 in place. */
+export async function renameContextEntryWithConflict(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  body: { path: string; newName: string },
+  opts?: ProjectContextRequestOptions,
+): Promise<{ status: "renamed" | "conflict" }> {
+  const response = await postJson<{ ok?: true; statusCode?: number }>(
+    apiProjectContextRenamePath(projectId, scheme, opts),
+    body,
+    { acceptStatuses: [409] },
+  );
+  return { status: response.statusCode === 409 ? "conflict" : "renamed" };
 }
 
 export async function deleteContextEntry(

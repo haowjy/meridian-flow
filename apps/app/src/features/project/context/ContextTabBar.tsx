@@ -178,7 +178,7 @@ function TabChip({
         // name; the visible glyph/label siblings are hidden from AT so the
         // strip doesn't announce each filename twice.
         className="focus-ring absolute inset-0"
-        title={tab.kind === "temp" ? tab.name : tab.path}
+        title={tab.kind === "new" ? tab.name : tab.path}
       />
       <FileKindIcon tab={tab} />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
@@ -206,7 +206,7 @@ function TabChip({
 // semantic colors stay reserved (jade = action, streaming = live, destructive
 // = error) — a file's type is metadata, never a state.
 function fileKindGlyph(tab: ContextTab) {
-  if (tab.kind === "temp") return FilePlus;
+  if (tab.kind === "new") return FilePlus;
   if (tab.kind === "tracked") return tab.schemaType === "code" ? Code2 : FileText;
   if (tab.fileType === "image") return ImageIcon;
   if (tab.fileType === "pdf") return FileType2;

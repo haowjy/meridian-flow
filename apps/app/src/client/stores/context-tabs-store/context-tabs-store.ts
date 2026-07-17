@@ -34,8 +34,6 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import type { TempDocument } from "../temp-docs-store";
-
 export type ContextTab =
   | {
       kind: "tracked";
@@ -48,6 +46,7 @@ export type ContextTab =
       editable: true;
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
+      provisionalName?: boolean;
     }
   | {
       kind: "viewer";
@@ -61,12 +60,12 @@ export type ContextTab =
       fileType: DocumentFileType;
       mimeType?: string;
     }
-  | { kind: "temp"; documentId: string; name: string; document: TempDocument };
+  | { kind: "new"; documentId: string; name: string; draftOnly?: boolean };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
 
 type ProjectTabsSlice = {
-  tabs: ServerContextTab[];
+  tabs: ContextTab[];
   activeTabId: string | null;
 };
 
@@ -76,12 +75,18 @@ type ContextTabsState = {
 };
 
 type ContextTabsActions = {
-  openTab: (projectId: string, tab: ServerContextTab) => void;
+  openTab: (projectId: string, tab: ContextTab) => void;
+  materializeNewTab: (projectId: string, documentId: string, tab: ServerContextTab) => void;
+  updateTrackedTab: (
+    projectId: string,
+    documentId: string,
+    metadata: Partial<Extract<ContextTab, { kind: "tracked" }>>,
+  ) => void;
   /**
    * Close a tab. Returns the adjacent tab that should become active if the
    * caller closed the currently route-active tab, or `null` if no tabs remain.
    */
-  closeTab: (projectId: string, documentId: string) => ServerContextTab | null;
+  closeTab: (projectId: string, documentId: string) => ContextTab | null;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
   selectTab: (projectId: string, documentId: string | null) => void;
   /**
@@ -145,6 +150,33 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         });
       },
 
+      materializeNewTab: (projectId, documentId, tab) => {
+        set((state) => {
+          const slice = sliceFor(state, projectId);
+          if (!slice.tabs.some((candidate) => candidate.documentId === documentId)) return state;
+          return patchSlice(state, projectId, {
+            ...slice,
+            tabs: slice.tabs.map((candidate) =>
+              candidate.documentId === documentId ? tab : candidate,
+            ),
+          });
+        });
+      },
+
+      updateTrackedTab: (projectId, documentId, metadata) => {
+        set((state) => {
+          const slice = sliceFor(state, projectId);
+          return patchSlice(state, projectId, {
+            ...slice,
+            tabs: slice.tabs.map((candidate) =>
+              candidate.kind === "tracked" && candidate.documentId === documentId
+                ? { ...candidate, ...metadata }
+                : candidate,
+            ),
+          });
+        });
+      },
+
       closeTab: (projectId, documentId) => {
         const slice = sliceFor(get(), projectId);
         const idx = slice.tabs.findIndex((t) => t.documentId === documentId);
@@ -167,7 +199,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const slice = sliceFor(state, projectId);
           const tab = slice.tabs.find((t) => t.documentId === documentId);
-          if (!tab?.draftOnly) return state;
+          if (tab?.kind !== "tracked" || !tab.draftOnly) return state;
           const nextTabs =
             outcome === "committed"
               ? slice.tabs.map((t) =>
@@ -208,6 +240,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const slice = sliceFor(state, projectId);
           const nextTabs = slice.tabs.filter((tab) => {
+            if (tab.kind === "new") return true;
             if (!isWorkScopedProjectContextScheme(tab.scheme)) return true;
             return tab.workId === activeWorkId;
           });
@@ -237,6 +270,8 @@ export function useContextTabsActions(): ContextTabsActions {
   return useContextTabsStore(
     useShallow((s) => ({
       openTab: s.openTab,
+      materializeNewTab: s.materializeNewTab,
+      updateTrackedTab: s.updateTrackedTab,
       closeTab: s.closeTab,
       reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,

@@ -73,3 +73,33 @@ describe("resolveDraftOnlyTab", () => {
     expect(useContextTabsStore.getState().byProject).toBe(before);
   });
 });
+
+describe("new untitled tabs", () => {
+  it("materializes in place without changing tab order or active identity", () => {
+    const { openTab, materializeNewTab, selectTab } = useContextTabsStore.getState();
+    openTab(PROJECT, { kind: "new", documentId: "new-1", name: "Untitled" });
+    openTab(PROJECT, editableTab({ documentId: "doc-2" }));
+    selectTab(PROJECT, "new-1");
+
+    materializeNewTab(
+      PROJECT,
+      "new-1",
+      editableTab({
+        documentId: "new-1",
+        scheme: "scratch",
+        path: "/Untitled 1",
+        name: "Untitled 1",
+        workId: "work-1",
+        provisionalName: true,
+      }),
+    );
+
+    expect(tabs().map((tab) => tab.documentId)).toEqual(["new-1", "doc-2"]);
+    expect(tabs()[0]).toMatchObject({
+      kind: "tracked",
+      name: "Untitled 1",
+      provisionalName: true,
+    });
+    expect(useContextTabsStore.getState().byProject[PROJECT]?.activeTabId).toBe("new-1");
+  });
+});

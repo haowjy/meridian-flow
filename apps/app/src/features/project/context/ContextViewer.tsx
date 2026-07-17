@@ -12,10 +12,9 @@ import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
-import { TempDocumentEditor } from "./TempDocumentEditor";
 
-function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" }> {
-  return tab.kind === "tracked";
+function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
+  return tab.kind === "tracked" || tab.kind === "new";
 }
 
 export type ContextViewerProps = {
@@ -42,12 +41,14 @@ export type ContextViewerProps = {
   resumeDocumentName: string | null;
   /** Replay the remembered route through the normal tree-validated open. */
   onResumeDocument: () => void;
-  onNewTemp: () => void;
-  onTempOpenSaved: (
+  onNewDocument: () => void;
+  onUntitledBecameNonEmpty: (documentId: string) => boolean;
+  untitledHomeReady: boolean;
+  onUntitledRenamed: (documentId: string, name: string, path: string) => void;
+  onOpenExisting: (
     scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
     path: string,
   ) => void;
-  onTempVerificationFailed: (documentId: string) => void;
 };
 
 /**
@@ -68,16 +69,18 @@ export function ContextViewer({
   active,
   resumeDocumentName,
   onResumeDocument,
-  onNewTemp,
-  onTempOpenSaved,
-  onTempVerificationFailed,
+  onNewDocument,
+  onUntitledBecameNonEmpty,
+  untitledHomeReady,
+  onUntitledRenamed,
+  onOpenExisting,
 }: ContextViewerProps) {
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = tabs.find((candidate) => candidate.documentId === activeTabId) ?? null;
-  const activeIsTracked = activeTab?.kind === "tracked";
+  const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
 
   return (
     <div
@@ -89,7 +92,7 @@ export function ContextViewer({
         activeTabId={activeTabId}
         onSelect={onSelectTab}
         onClose={onCloseTab}
-        onNewTemp={onNewTemp}
+        onNewTemp={onNewDocument}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
@@ -103,26 +106,20 @@ export function ContextViewer({
         {trackedTabs.length > 0 ? (
           <div
             className={
-              activeIsTracked ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+              activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
             }
           >
             <ContextEditorMountHost
               projectId={projectId}
               trackedTabs={trackedTabs}
-              activeTabId={activeIsTracked ? activeTabId : null}
+              activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
+              onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+              untitledHomeReady={untitledHomeReady}
+              onUntitledRenamed={onUntitledRenamed}
+              onOpenExisting={onOpenExisting}
             />
           </div>
-        ) : null}
-        {activeTab?.kind === "temp" ? (
-          <TempDocumentEditor
-            key={activeTab.document.id}
-            projectId={projectId}
-            activeThreadId={activeThreadId}
-            document={activeTab.document}
-            onOpenSaved={onTempOpenSaved}
-            onVerificationFailed={() => onTempVerificationFailed(activeTab.document.id)}
-          />
         ) : null}
         {activeTab?.kind === "viewer" ? (
           <div className="flex min-h-0 flex-1 flex-col">
@@ -137,7 +134,7 @@ export function ContextViewer({
           <EditorEmptyState
             resumeDocumentName={resumeDocumentName}
             onResumeDocument={onResumeDocument}
-            onNewDocument={onNewTemp}
+            onNewDocument={onNewDocument}
           />
         ) : null}
       </div>

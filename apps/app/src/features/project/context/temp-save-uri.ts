@@ -12,7 +12,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
 import { splitContextUri } from "@/lib/context-uri";
 
-import type { Destination } from "./use-temp-document-save";
+type Destination = { scheme: ProjectContextTreeScheme; path: string };
 
 /** Schemes a temp document can be durably saved into. */
 export const DURABLE_SAVE_SCHEMES = ["manuscript", "kb", "user"] as const;

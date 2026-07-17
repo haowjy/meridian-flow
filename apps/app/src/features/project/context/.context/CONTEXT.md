@@ -38,90 +38,40 @@ schemes and file/directory kinds, then mount the presentation-only list.
 Desktop renders recursively (`TreeBlock` → `DirRow` / `FileRow`). Mobile renders
 one level at a time via route params.
 
-## Editor tabs and temporary documents
+## Editor tabs and untitled documents
 
-The writer-facing destination is **Editor** (the source directory and context
-URI domain retain `context` as their implementation name). `ContextPaneController`
-owns route reconciliation, tab selection and close behavior, last-route restore,
-work-scoped tab pruning, and per-tab scroll restoration. `ContextViewer` only
-chooses the active rendering host; `ContextTabBar` only renders and delegates
-tab interactions.
+The writer-facing destination is **Editor**. `ContextPaneController` owns route
+reconciliation, tab selection/close behavior, last-route restore, work-scoped
+pruning, and scroll restoration. `ContextTab` has three variants: `tracked`,
+`viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
+uses an ordinary `DocumentSession` from its first render, created detached so
+Y.Doc + IndexedDB exist without opening an unauthorized server room.
 
-`ContextTab` is the presentation union: `tracked`, `viewer`, or `temp`. Server
-tabs remain the ephemeral open-file working set in `context-tabs-store`; device-
-local temporary document content is persisted by `temp-docs-store` and projected
-into the same union by the controller. Do not add a second parallel tab model.
-Temporary documents have no context URI and do not participate in route matching.
+`untitled-reconciler.ts` is the only materialization engine. Its localStorage
+registry (`meridian:pending-untitled`) contains only `{documentId, projectId,
+home}` entries appended when a candidate first becomes non-empty. Events only
+schedule the same deferred, idempotent sweep. The sweep creates through
+`create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
+sync, then drains the entry. A closed tab is not special: the same entry drives
+a headless attach/flush. A never-materialized empty is the only path that clears
+IndexedDB. Named/viewed documents never enter this engine.
 
-`TempDocumentEditor` is a standalone TipTap editor sharing the tracked
-document's writing surface: the same centered `max-w-3xl` prose column,
-`meridian-editor` prose contract, and docked toolbar alignment as `EditorView`
-— nothing may jump when switching between temp and tracked tabs. Its chrome
-follows the no-lines direction (tab-direction E): recessed tab strip above
-(shared via `ContextTabBar`), save row directly on canvas — no fill, no rule.
-The status copy is "Only on this device" in warning amber — the one line
-telling the writer their words aren't in the project yet (honest about
-`localStorage` persistence; cinnabar would read as error). Destination and
-name fields lift on `bg-card`. The row is **always one line and never
-clips**: the shell around the prose column is `overflow-hidden`, so hard field
-floors would push Save out of view at narrow pane widths. Instead the row is a
-`@container` — fields shrink freely (`min-w-0 flex-1` under max caps), and
-below the `@md` container width the connector words drop and the warning
-collapses to a tooltipped amber icon so the honesty signal survives. Only
-failure/conflict notices may add a second line. Save is the only
-primary-weighted button.
-The prose column geometry is owned by `features/editor/editor-column.ts` —
-one set of classes for chrome rows (toolbar, save bar) and one for the canvas
-wrapper, encoding the inset arithmetic (`chrome = canvas-wrapper + prose`) in
-one place. Both tracked and temp editors share it; changing it only here
-keeps all surfaces aligned.
+After create returns, the placeholder becomes a normal route-owned `tracked`
+tab in place. `provisionalName` comes from the tree DTO and controls the rename
+line; a cached tree refetch refreshes open-tab metadata so a cross-device rename
+eventually dissolves the line without another invalidation channel.
 
-Toolbar details:
-[../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
+`TempDocumentSaveBar.tsx` survives only as the ambient provisional rename line.
+It is the lower-priority tenant of `EditorBannerSlot` (draft chrome wins), uses
+the URI-shaped field and local collision browser, and commits basename-only on
+Enter. There is no Save button and no content handover. While the pending entry
+exists it shows the amber “Only on this device” badge; the badge disappears only
+when the reconciler confirms server sync. Server 409 remains a race guard with
+Open-existing recovery. Moving remains a tree action.
 
-**Tab strip treatment (tab-direction E, settled 2026-07-13; band material
-updated by slice 7):** separation is purely tonal — the strip paints nothing
-(it sits transparent on the center cell's `chrome-field`; bands never paint)
-and has no bottom border; the active tab is borderless `bg-background` with a
-rounded top and
-Obsidian-style bottom flares (canvas-colored radial-gradient pseudos following
-the tab's radius token), reading as the canvas continuing upward. Short
-vertical dividers appear only against an inactive neighbor: between two
-adjacent inactive tabs, and before the `+` control when the last tab is
-inactive. No hairlines, no underline, no lift — the tonal step is the entire
-selection signal. The whole chip is the tab's hit target (a transparent
-overlay button; close floats above), and the inactive hover pill covers that
-same full target. The strip is the chrome side of the three-tone invariant
-(see [../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
-
-Saving adopts a **draft-while-editing** model: keystrokes in the URI field
-never touch the hook — the field owns a local draft string — and the parsed
-target is committed only at pick, blur, or submit. `save(target)` accepts
-explicit values so a submit straight from typing never races the hook's async
-state commits.
-
-On save, an immutable content/destination/name/revision/**target-generation**
-snapshot is captured up front. The durable context file is created, then the
-editor navigates to it. The temp document is removed only when its current
-revision AND target generation both still equal the snapshot's — a mid-flight
-rename or re-destination survives (`newer-target` failure). A later local
-revision stays open after the snapshot saves (`newer-words` failure), so newer
-words can never be silently discarded, even when the earlier snapshot landed.
-A path conflict offers the existing file or a rename.
-
-A synchronous `inFlightRef` guards re-entry: a second Enter/click in the same
-tick would pass a state-based check, since React state commits async.
-Collision validation is live (local tree lookup) surfaced through the app's
-one `ValidationNote` standard (`validation-note.tsx`) — the same look as the
-tree's rename overlay. The server 409 is a race guard, not the primary UX. Closing a non-empty
-temp document requires an explicit discard confirmation.
-
-Tree creation state belongs to `TreeCreationProvider`; it is not
-controller-local state. It backs the sidebar tree's scheme-targeted inline
-create only. Every "new document" affordance in the Editor pane (tab-strip `+` — tooltip
-"New tab", not "New draft" or "New temporary document" — and the empty state)
-starts a temporary document instead — location is chosen at save time, never
-hardwired to a scheme.
+The tab strip still follows the settled tonal treatment: it paints nothing,
+active tabs continue the canvas upward, inactive neighbors alone receive short
+dividers, and the whole chip is the tab target.
 
 ## InlineNameForm semantics
 

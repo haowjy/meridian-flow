@@ -40,6 +40,8 @@ import { DraftEntryBanner } from "@/features/editor/DraftEntryBanner";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { EditorBannerSlot } from "@/features/editor/EditorBannerSlot";
 import { cn } from "@/lib/utils";
+import { TempDocumentSaveBar } from "./TempDocumentSaveBar";
+import { untitledDocumentIsEmpty, useUntitledPending } from "./untitled-reconciler";
 
 const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
@@ -47,7 +49,7 @@ const EditorView = lazy(() =>
 
 const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
 
-type EditableContextTab = Extract<ContextTab, { kind: "tracked" }>;
+type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
 /** Concurrent-mount cap. The active tab is always counted; the remaining
  *  slots hold the LRU "warm" editors so a switch back stays instant. */
@@ -61,6 +63,13 @@ export type ContextEditorMountHostProps = {
   activeTabId: string | null;
   /** Whether the context destination is currently visible. */
   active: boolean;
+  onUntitledBecameNonEmpty?: (documentId: string) => boolean;
+  untitledHomeReady?: boolean;
+  onUntitledRenamed?: (documentId: string, name: string, path: string) => void;
+  onOpenExisting?: (
+    scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
+    path: string,
+  ) => void;
 };
 
 /**
@@ -90,6 +99,10 @@ export function ContextEditorMountHost({
   trackedTabs,
   activeTabId,
   active,
+  onUntitledBecameNonEmpty,
+  untitledHomeReady = true,
+  onUntitledRenamed,
+  onOpenExisting,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId, groupForDocument, nowMs } =
     useDraftReview();
@@ -169,7 +182,9 @@ export function ContextEditorMountHost({
           // disagree. Only the active tab resolves it; hidden warm-set editors
           // never register draft chrome.
           const pendingGroup =
-            active && isActive && !reviewDraftId ? groupForDocument(tab.documentId) : null;
+            tab.kind === "tracked" && active && isActive && !reviewDraftId
+              ? groupForDocument(tab.documentId)
+              : null;
           const pendingDraft = pendingReviewDraft(pendingGroup, nowMs);
           return (
             <div
@@ -184,6 +199,12 @@ export function ContextEditorMountHost({
               // Defensive: aria-hidden hides background editors from AT.
               aria-hidden={!isActive}
             >
+              {tab.kind === "new" && untitledHomeReady && onUntitledBecameNonEmpty ? (
+                <UntitledInputObserver
+                  documentId={tab.documentId}
+                  onBecameNonEmpty={onUntitledBecameNonEmpty}
+                />
+              ) : null}
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
               {waitingForReviewRoom && controller.reviewRoomError ? (
@@ -225,7 +246,7 @@ export function ContextEditorMountHost({
                 <EditorView
                   projectId={projectId}
                   documentId={tab.documentId}
-                  schemaType={tab.schemaType}
+                  schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                   belowToolbar={
                     <EditorBannerSlot
                       tenants={[
@@ -239,6 +260,22 @@ export function ContextEditorMountHost({
                               />
                             ) : pendingGroup && pendingDraft ? (
                               <DraftEntryBanner group={pendingGroup} draft={pendingDraft} />
+                            ) : null,
+                        },
+                        {
+                          name: "rename-line",
+                          content:
+                            isActive &&
+                            (tab.kind === "new" ||
+                              (tab.kind === "tracked" && tab.provisionalName)) &&
+                            onUntitledRenamed &&
+                            onOpenExisting ? (
+                              <UntitledRenameLine
+                                projectId={projectId}
+                                tab={tab}
+                                onRenamed={onUntitledRenamed}
+                                onOpenExisting={onOpenExisting}
+                              />
                             ) : null,
                         },
                       ]}
@@ -256,4 +293,56 @@ export function ContextEditorMountHost({
       </Suspense>
     </div>
   );
+}
+
+function UntitledRenameLine({
+  projectId,
+  tab,
+  onRenamed,
+  onOpenExisting,
+}: {
+  projectId: string;
+  tab: EditableContextTab;
+  onRenamed: (documentId: string, name: string, path: string) => void;
+  onOpenExisting: NonNullable<ContextEditorMountHostProps["onOpenExisting"]>;
+}) {
+  const pending = useUntitledPending(tab.documentId);
+  return (
+    <TempDocumentSaveBar
+      projectId={projectId}
+      activeThreadId={null}
+      tab={tab}
+      deviceOnly={pending}
+      onRenamed={(name, path) => onRenamed(tab.documentId, name, path)}
+      onOpenExisting={onOpenExisting}
+    />
+  );
+}
+
+function UntitledInputObserver({
+  documentId,
+  onBecameNonEmpty,
+}: {
+  documentId: string;
+  onBecameNonEmpty: (documentId: string) => boolean;
+}) {
+  useEffect(() => {
+    const session = getDocumentSessionRegistry().getDetached(documentId);
+    const fragment = session.document.getXmlFragment(session.fragmentName);
+    let armed = true;
+    const observe = () => {
+      if (!armed || untitledDocumentIsEmpty(fragment)) return;
+      if (!onBecameNonEmpty(documentId)) return;
+      armed = false;
+      fragment.unobserveDeep(observe);
+    };
+    fragment.observeDeep(observe);
+    // IndexedDB may already contain words if React remounted this tab.
+    void session.whenLocalPersistenceSynced().then(observe);
+    return () => {
+      armed = false;
+      fragment.unobserveDeep(observe);
+    };
+  }, [documentId, onBecameNonEmpty]);
+  return null;
 }
