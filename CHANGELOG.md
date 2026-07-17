@@ -85,8 +85,22 @@
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
   single default Work for chat-independent Scratch surfaces.
-- `apps/server`: add a gated real-Postgres cross-Work merge probe covering
-  stale manual Apply, `apply_and_trail` settlement, agent echo, and cold Restore.
+- `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
+  protected — a conflicting stale cross-Work Apply refuses
+  (`push_concurrent_conflict`) and lands in ordinary re-review; any sweep of
+  approved text is captured with durable body, writer notice, and Restore.
+  Previously approved text was classified as ordinary AI text and could be
+  silently destroyed.
+- `apps/app`, `apps/server`: Apply (including Apply-all) submits exactly the
+  operations the writer previewed; AI changes landing after the preview stay
+  pending instead of riding along unreviewed. Malformed/empty operation-id
+  payloads now 400.
+- `packages/agent-edit`: rejected agent writes, undo, redo, and buffered
+  flushes return the same per-block concurrent-edit echo as successful
+  writes, instead of a blind reread instruction.
+- `apps/server`: add a real-Postgres cross-Work merge probe covering stale
+  manual Apply refusal + re-review retry, `apply_and_trail` protected
+  settlement, agent echo, and cold Restore.
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane
