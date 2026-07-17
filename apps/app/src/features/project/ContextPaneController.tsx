@@ -20,6 +20,7 @@ import { clearRoutes, promoteRoute, readRecentRoutes, removeRoute } from "@/clie
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
+import { deriveContextPaneState } from "./context/context-pane-state";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import {
@@ -27,10 +28,6 @@ import {
   findContextFileByDocumentId,
   firstContextFile,
 } from "./context/context-tree";
-import {
-  type ContextRouteResolution,
-  shouldShowOptimisticContextRoute,
-} from "./context/optimistic-context-route";
 import {
   appendPendingUntitled,
   isUntitledPending,
@@ -180,29 +177,31 @@ export function ContextViewerSurfaceController({
     if (tabs.length === 0) setWantsDefaultOpen(true);
   }, [active]);
 
-  const routeResolution: ContextRouteResolution = routeTree
-    ? activeContextPath && findContextFile(routeTree, activeContextPath)
-      ? "found"
-      : "missing"
-    : routeTreeIsFetching && !routeTreeIsError
-      ? "loading"
-      : "missing";
-  const optimisticTab = shouldShowOptimisticContextRoute({
-    // An empty path is the deliberate empty-desk route, not a destination.
-    hasDestination: activeContextScheme !== null && Boolean(activeContextPath),
-    hasActiveTab: activeTab !== null,
-    resolution: routeResolution,
+  const selectedUntitledTab =
+    activeContextPath === ""
+      ? (tabs.find((tab) => tab.documentId === retainedActiveTabId && tab.kind === "new") ?? null)
+      : null;
+  const paneState = deriveContextPaneState({
+    activeTab: activeTab ?? selectedUntitledTab,
+    destination:
+      activeContextScheme !== null && activeContextPath && openTabKey
+        ? {
+            path: activeContextPath,
+            optimisticTab: {
+              id: `optimistic:${openTabKey}`,
+              // Full basename, not the extension-stripped resume label — the chip
+              // must match the settled tab's name (`file.name`) it will become.
+              name: contextRouteFileName(activeContextPath),
+            },
+          }
+        : null,
+    tree: routeTree,
+    isFetching: routeTreeIsFetching,
+    isError: routeTreeIsError,
     // Closing stamps this key before removing the tab. Sharing the guard
     // prevents the loading projection from resurrecting the closed route.
     autoOpenBlocked: openTabKey !== null && openedKeyRef.current === openTabKey,
-  })
-    ? {
-        id: `optimistic:${openTabKey}`,
-        // Full basename, not the extension-stripped resume label — the chip
-        // must match the settled tab's name (`file.name`) it will become.
-        name: contextRouteFileName(activeContextPath ?? ""),
-      }
-    : null;
+  });
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
     enabled: wantsDefaultOpen,
@@ -415,8 +414,7 @@ export function ContextViewerSurfaceController({
       projectId={projectId}
       activeThreadId={activeThreadId}
       tabs={tabs}
-      activeTabId={activeTab?.documentId ?? retainedActiveTabId}
-      optimisticTab={optimisticTab}
+      paneState={paneState}
       onSelectTab={handleSelectTab}
       onCloseTab={handleCloseTab}
       sidebarToggle={sidebarToggle}
