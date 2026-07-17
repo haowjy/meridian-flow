@@ -51,7 +51,13 @@ export function IdentityMovePopup({
 }) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverAnchor asChild>{trigger}</PopoverAnchor>
+      {/* The trigger owns a Tooltip root, so anchoring it directly hands
+          Radix a component that cannot forward the positioning ref to the
+          button. A real wrapper keeps the popup attached to the visible chip
+          instead of falling back to an off-screen floating-ui position. */}
+      <PopoverAnchor asChild>
+        <span className="inline-flex shrink-0">{trigger}</span>
+      </PopoverAnchor>
       {open ? (
         <MovePopupContent
           key={`${location.scheme}:${location.path ?? ""}`}
