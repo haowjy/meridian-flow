@@ -31,6 +31,9 @@ Yjs document session. It must stay structurally aligned with
   every editor surface read-only. Quarantine records live in localStorage under
   the schema-versioned room key; the registry leaves quarantined sessions
   detached so a poisoned local cache cannot reconnect before revalidation.
+  `quarantineRoom()` raises any open session before writing storage and returns
+  whether persistence succeeded; witness callers must handle `false` rather
+  than assuming the fence will survive refresh.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.

@@ -180,4 +180,39 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     expect(providers).toHaveLength(1);
     registry.destroyAll();
   });
+
+  it("applies persisted quarantine before detached-first acquisition", () => {
+    providers.length = 0;
+    vi.stubGlobal("localStorage", memoryStorage());
+    const registry = new DocumentSessionRegistry();
+    const fence = { reason: "repair-detected", detail: "poisoned local replay" } as const;
+    expect(registry.quarantineRoom("document-detached-quarantine", fence)).toBe(true);
+
+    const detached = registry.getDetached("document-detached-quarantine");
+
+    expect(detached.getSnapshot()).toMatchObject({ status: "detached", schemaFence: fence });
+    expect(registry.get("document-detached-quarantine")).toBe(detached);
+    expect(providers).toHaveLength(0);
+    registry.destroyAll();
+  });
+
+  it("raises the in-memory fence when durable quarantine storage fails", () => {
+    providers.length = 0;
+    vi.stubGlobal("localStorage", {
+      ...memoryStorage(),
+      setItem: () => {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      },
+    });
+    const registry = new DocumentSessionRegistry();
+    const session = registry.getDetached("document-storage-failure");
+    session.awareness.setLocalState({ user: { name: "Writer" } });
+
+    expect(registry.quarantineRoom("document-storage-failure", { reason: "repair-detected" })).toBe(
+      false,
+    );
+    expect(session.getSnapshot().schemaFence).toEqual({ reason: "repair-detected" });
+    expect(session.awareness.getLocalState()).toBeNull();
+    registry.destroyAll();
+  });
 });

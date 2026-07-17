@@ -105,20 +105,16 @@ export class DocumentSessionRegistry {
   }
 
   private attachSessionTransport(session: DocumentSession): void {
-    const quarantine = readSchemaFenceQuarantine(session.roomKey);
-    if (quarantine) {
-      session.raiseSchemaFence(quarantine);
-      return;
-    }
+    if (session.getSnapshot().schemaFence) return;
     session.attachTransport(({ roomKey, document, awareness }) =>
       createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     );
   }
 
-  /** Persist a fence and apply it immediately if the room is already open. */
-  quarantineRoom(roomKey: string, fence: SchemaFence): void {
-    writeSchemaFenceQuarantine(roomKey, fence);
+  /** Apply a fence immediately, then report whether it was made durable. */
+  quarantineRoom(roomKey: string, fence: SchemaFence): boolean {
     this.sessions.get(roomKey)?.raiseSchemaFence(fence);
+    return writeSchemaFenceQuarantine(roomKey, fence);
   }
 
   readRoomQuarantine(roomKey: string): SchemaFence | null {
@@ -140,6 +136,8 @@ export class DocumentSessionRegistry {
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
     });
+    const quarantine = readSchemaFenceQuarantine(roomKey);
+    if (quarantine) session.raiseSchemaFence(quarantine);
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
         if (snapshot.connectionState?.kind !== "reset") return;

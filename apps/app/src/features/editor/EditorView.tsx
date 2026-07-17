@@ -151,7 +151,13 @@ function SessionEditorView({ session, ...props }: SessionEditorViewProps) {
   useEffect(() => session.subscribe(setSnapshot), [session]);
 
   if (initiallyFenced.current || (snapshot.schemaFence && liveEditorRetired)) {
-    return <FencedSessionEditorView {...props} session={session} />;
+    return (
+      <FencedSessionEditorView
+        {...props}
+        session={session}
+        localPersistenceSynced={snapshot.localPersistenceSynced}
+      />
+    );
   }
 
   return (
@@ -496,6 +502,10 @@ function LiveSessionEditorView({
   );
 }
 
+type FencedSessionEditorViewProps = SessionEditorViewProps & {
+  localPersistenceSynced: boolean;
+};
+
 function FencedSessionEditorView({
   documentId,
   projectId,
@@ -504,7 +514,8 @@ function FencedSessionEditorView({
   belowToolbar,
   ariaLabel,
   session,
-}: SessionEditorViewProps) {
+  localPersistenceSynced,
+}: FencedSessionEditorViewProps) {
   return (
     <section
       className={cn(
@@ -516,13 +527,17 @@ function FencedSessionEditorView({
       <div className="pointer-events-none absolute right-3 bottom-3 z-10">
         <SyncStatus session={session} />
       </div>
-      <SchemaFencePreview
-        session={session}
-        schemaType={schemaType}
-        projectId={projectId}
-        documentId={documentId}
-        ariaLabel={ariaLabel}
-      />
+      {localPersistenceSynced ? (
+        <SchemaFencePreview
+          session={session}
+          schemaType={schemaType}
+          projectId={projectId}
+          documentId={documentId}
+          ariaLabel={ariaLabel}
+        />
+      ) : (
+        <TrackedEditorCanvas editor={null} />
+      )}
     </section>
   );
 }

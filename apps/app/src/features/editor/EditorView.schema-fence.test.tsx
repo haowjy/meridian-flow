@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 /** EditorView schema-fence behavior from a live injected session. */
+
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { Editor } from "@tiptap/core";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-
-import type { DocumentSession as DocumentSessionType } from "@/core/editor/document-session";
+import type {
+  DocumentSessionSnapshot,
+  DocumentSession as DocumentSessionType,
+} from "@/core/editor/document-session";
 
 const harness = vi.hoisted(() => ({
   session: null as DocumentSessionType | null,
@@ -69,6 +74,7 @@ afterEach(async () => {
   root = null;
   await harness.session?.destroy();
   harness.session = null;
+  vi.restoreAllMocks();
 });
 
 describe("EditorView schema fence", () => {
@@ -101,6 +107,8 @@ describe("EditorView schema fence", () => {
       await Promise.resolve();
     });
     expect(document.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("true");
+    const setEditable = vi.spyOn(Editor.prototype, "setEditable");
+    const destroy = vi.spyOn(Editor.prototype, "destroy");
 
     await act(async () => {
       session.raiseSchemaFence({ reason: "repair-detected" });
@@ -110,5 +118,65 @@ describe("EditorView schema fence", () => {
     const preview = document.querySelector("[data-schema-fence-preview]");
     expect(preview?.textContent).toContain("Visible fenced prose");
     expect(preview?.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("false");
+    expect(setEditable).toHaveBeenCalledWith(false);
+    const readOnlyOrder = setEditable.mock.invocationCallOrder.at(-1);
+    const destroyOrder = destroy.mock.invocationCallOrder[0];
+    if (readOnlyOrder === undefined || destroyOrder === undefined) {
+      throw new Error("missing editor retirement calls");
+    }
+    expect(readOnlyOrder).toBeLessThan(destroyOrder);
+  });
+
+  it("waits for local persistence replay before cloning a quarantined preview", async () => {
+    const ydoc = createCollabYDoc();
+    let snapshot: DocumentSessionSnapshot = {
+      documentId: "document-quarantined-preview",
+      roomKey: "document-quarantined-preview",
+      room: { kind: "live", documentId: "document-quarantined-preview" },
+      status: "detached",
+      connectionState: null,
+      localPersistenceSynced: false,
+      safetyNotice: null,
+      schemaFence: { reason: "repair-detected" },
+    };
+    const listeners = new Set<(value: DocumentSessionSnapshot) => void>();
+    const session = {
+      document: ydoc,
+      roomKey: snapshot.roomKey,
+      getSnapshot: () => snapshot,
+      subscribe: (listener: (value: DocumentSessionSnapshot) => void) => {
+        listeners.add(listener);
+        listener(snapshot);
+        return () => listeners.delete(listener);
+      },
+      destroy: () => ydoc.destroy(),
+    } as unknown as DocumentSessionType;
+    harness.session = session;
+    const container = document.getElementById("root");
+    if (!container) throw new Error("missing root");
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<EditorView documentId="document-quarantined-preview" showToolbar={false} />);
+      await Promise.resolve();
+    });
+    expect(document.querySelector("[data-schema-fence-preview]")).toBeNull();
+
+    const paragraph = new Y.XmlElement("paragraph");
+    const text = new Y.XmlText();
+    ydoc.transact(() => {
+      ydoc.getXmlFragment("prosemirror").insert(0, [paragraph]);
+      paragraph.insert(0, [text]);
+      text.insert(0, "Replayed manuscript prose");
+    });
+    snapshot = { ...snapshot, localPersistenceSynced: true };
+    await act(async () => {
+      for (const listener of listeners) listener(snapshot);
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector("[data-schema-fence-preview]")?.textContent).toContain(
+      "Replayed manuscript prose",
+    );
   });
 });

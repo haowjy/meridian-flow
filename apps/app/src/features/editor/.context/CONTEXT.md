@@ -48,7 +48,9 @@ the session fence. A fence raised after binding first applies
 `editor.setEditable(false)`, then retires that live binding. Fenced sessions
 render a standalone TipTap editor over a throwaway clone: y-prosemirror may
 repair that clone to the schema-valid subset, but can never mutate the shared
-Y.Doc. The fenced preview has no transport, persistence, awareness, or editing.
+Y.Doc. Quarantined sessions wait for IndexedDB replay before taking that clone,
+so the preview cannot freeze an empty startup document. The fenced preview has
+no transport, persistence, awareness, or editing.
 
 ### Rejected placements
 
