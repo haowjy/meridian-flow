@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { Editor } from "@tiptap/core";
+import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
@@ -37,7 +38,8 @@ describe("table bubble", () => {
     const header = tableSelection(current.state);
     if (!header) throw new Error("selection is outside the table");
     expect(tableOperationAvailability(header)).toMatchObject({
-      addRow: false,
+      addRowAbove: false,
+      addRowBelow: true,
       moveRowUp: false,
       moveRowDown: false,
       deleteRow: false,
@@ -52,10 +54,37 @@ describe("table bubble", () => {
     const firstBodyCell = tableSelection(current.state);
     if (!firstBodyCell) throw new Error("selection is outside the table");
     expect(tableOperationAvailability(firstBodyCell)).toMatchObject({
-      addRow: true,
+      addRowAbove: true,
+      addRowBelow: true,
       moveRowUp: false,
       moveRowDown: true,
       deleteRow: true,
+    });
+  });
+
+  it("disables header-violating operations for a rectangle spanning header and body", () => {
+    const current = createTableEditor();
+    const cells: number[] = [];
+    current.state.doc.descendants((node, pos) => {
+      if (node.type.spec.tableRole === "header_cell" || node.type.spec.tableRole === "cell") {
+        cells.push(pos);
+      }
+    });
+    // Anchor in the body so this covers the endpoint direction that bypassed the old guard.
+    current.view.dispatch(
+      current.state.tr.setSelection(CellSelection.create(current.state.doc, cells[5], cells[0])),
+    );
+    const rectangle = tableSelection(current.state);
+    if (!rectangle) throw new Error("selection is outside the table");
+
+    expect(tableOperationAvailability(rectangle)).toMatchObject({
+      addRowAbove: false,
+      addRowBelow: true,
+      moveRowUp: false,
+      moveRowDown: false,
+      deleteRow: false,
+      moveColumnLeft: false,
+      deleteColumn: false,
     });
   });
 });

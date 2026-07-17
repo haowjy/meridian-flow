@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  addTableRow,
   alignTableColumn,
   moveTableColumn,
   moveTableRow,
@@ -53,15 +54,17 @@ export const tableBubbleContext: BubbleContext = {
 export function tableOperationAvailability(selection: TableSelection) {
   const rowCount = selection.table.childCount;
   const columnCount = selection.table.firstChild?.childCount ?? 0;
-  const onHeader = selection.row === 0;
+  const touchesHeader = selection.rowFrom === 0;
+  const selectedColumnCount = selection.columnTo - selection.columnFrom + 1;
   return {
-    addRow: !onHeader,
-    moveRowUp: selection.row > 1,
-    moveRowDown: !onHeader && selection.row < rowCount - 1,
-    deleteRow: !onHeader,
-    moveColumnLeft: selection.column > 0,
-    moveColumnRight: selection.column < columnCount - 1,
-    deleteColumn: columnCount > 1,
+    addRowAbove: !touchesHeader,
+    addRowBelow: true,
+    moveRowUp: selection.rowFrom > 1,
+    moveRowDown: !touchesHeader && selection.rowTo < rowCount - 1,
+    deleteRow: !touchesHeader,
+    moveColumnLeft: selection.columnFrom > 0,
+    moveColumnRight: selection.columnTo < columnCount - 1,
+    deleteColumn: selectedColumnCount < columnCount,
   };
 }
 
@@ -114,16 +117,22 @@ function TableBubble({ editor }: { editor: Editor; match: BubbleMatch }) {
   if (!selection) return null;
 
   const availability = tableOperationAvailability(selection);
-  const selectedCell = selection.table.child(selection.row).child(selection.column);
-  const alignment = selectedCell.attrs.alignment ?? "left";
+  const header = selection.table.firstChild;
+  const selectedAlignments = new Set(
+    Array.from(
+      { length: selection.columnTo - selection.columnFrom + 1 },
+      (_, offset) => header?.child(selection.columnFrom + offset).attrs.alignment ?? "left",
+    ),
+  );
+  const alignment = selectedAlignments.size === 1 ? selectedAlignments.values().next().value : null;
 
   return (
     <div className="flex items-center gap-1 p-1">
       <Group label={t`Rows`}>
         <ToolButton
           label={t`Add row above`}
-          disabled={!availability.addRow}
-          onClick={() => editor.chain().focus().addRowBefore().run()}
+          disabled={!availability.addRowAbove}
+          onClick={() => run(editor, addTableRow("above"))}
         >
           <span className="relative">
             <Rows3 className="size-3.5" aria-hidden />
@@ -132,8 +141,8 @@ function TableBubble({ editor }: { editor: Editor; match: BubbleMatch }) {
         </ToolButton>
         <ToolButton
           label={t`Add row below`}
-          disabled={!availability.addRow}
-          onClick={() => editor.chain().focus().addRowAfter().run()}
+          disabled={!availability.addRowBelow}
+          onClick={() => run(editor, addTableRow("below"))}
         >
           <span className="relative">
             <Rows3 className="size-3.5" aria-hidden />
