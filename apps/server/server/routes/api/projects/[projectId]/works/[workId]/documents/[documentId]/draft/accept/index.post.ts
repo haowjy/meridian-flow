@@ -22,7 +22,14 @@ export default defineEventHandler(async (event) => {
   if (branchId && draftId) {
     throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
   }
-  if (!Array.isArray(body.operationIds) || body.operationIds.length === 0) {
+  const operationIds = Array.isArray(body.operationIds)
+    ? body.operationIds.flatMap((operationId) => {
+        if (typeof operationId !== "string") return [];
+        const normalized = operationId.trim();
+        return normalized ? [normalized] : [];
+      })
+    : [];
+  if (operationIds.length === 0) {
     throw createError({ statusCode: 400, message: "operationIds are required" });
   }
   return handleWorkDraftAcceptRequest(selectDraftRouteServices(app), {
@@ -33,8 +40,6 @@ export default defineEventHandler(async (event) => {
     userId: user.userId,
     draftRevisionToken: body.draftRevisionToken,
     signal: event.req.signal,
-    operationIds: body.operationIds.filter(
-      (operationId): operationId is string => typeof operationId === "string",
-    ),
+    operationIds,
   });
 });
