@@ -393,52 +393,37 @@ function overlaps(
 }
 
 describe("decode-journal CLI", () => {
-  it("rejects expanded records that contain no recognized update payload", () => {
-    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      encoding: "utf8",
+  it.each([
+    {
+      name: "rejects expanded records with no recognized update payload",
       input: "-[ RECORD 1 ]---\nid | 1\nupdate_hex | 0000\n-[ RECORD 42 ]---\nbogus | arbitrary\n",
-    });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("42");
-    expect(result.stdout).toBe("");
-  });
-
-  it("names every expanded record whose update hex has invalid shape", () => {
-    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      encoding: "utf8",
+      expectedStderr: "42",
+    },
+    {
+      name: "names every expanded record whose update hex has invalid shape",
       input:
         "-[ RECORD 1 ]---\nid | journal-99\nupdate_hex | f\n-[ RECORD 42 ]---\nupdate_hex | abc\n",
-    });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Unrecognized input row ids: journal-99, 42");
-    expect(result.stdout).toBe("");
-  });
-
-  it("exits nonzero and names every unrecognized row id", () => {
-    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      encoding: "utf8",
+      expectedStderr: "Unrecognized input row ids: journal-99, 42",
+    },
+    {
+      name: "names every unrecognized row id",
       input: "1 0000\n42 not-an-update\n2 0000\ngarbage\nnonsense | arbitrary\n",
-    });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Unrecognized input row ids: 42 (line 2), line 4, line 5");
-    expect(result.stdout).toBe("");
-  });
-
-  it("names recognized rows whose update bytes are invalid before emitting output", () => {
+      expectedStderr: "Unrecognized input row ids: 42 (line 2), line 4, line 5",
+    },
+    {
+      name: "names invalid update bytes before emitting output",
+      input: "1 0000\n88 ff\n",
+      expectedStderr: "Invalid Yjs update in row 88",
+    },
+  ])("$name", ({ input, expectedStderr }) => {
     const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       encoding: "utf8",
-      input: "1 0000\n88 ff\n",
+      input,
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Invalid Yjs update in row 88");
+    expect(result.stderr).toContain(expectedStderr);
     expect(result.stdout).toBe("");
   });
 });
@@ -466,6 +451,51 @@ describe("awareness summaries", () => {
       bytes: payload.byteLength,
     });
   });
+
+  it("omits nested metadata when a valid awareness update has trailing bytes", () => {
+    const encoder = createEncoder();
+    writeVarUint(encoder, 1);
+    writeVarUint(encoder, 41);
+    writeVarUint(encoder, 7);
+    writeVarString(encoder, "null");
+    writeVarUint(encoder, 99);
+    const payload = toUint8Array(encoder);
+
+    expect(inspectFrame(frame("doc", 1, payload))).toEqual({
+      frame: { documentName: "doc", messageClass: "awareness", payloadBytes: payload.byteLength },
+    });
+  });
+});
+
+it("never throws for seeded arbitrary byte blobs", () => {
+  let seed = 0x6d657269;
+  const randomUint32 = () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return seed >>> 0;
+  };
+  const messageClasses = [
+    "sync.step1",
+    "sync.step2",
+    "sync.update",
+    "awareness",
+    "stateless",
+    "auth",
+    "unknown",
+  ];
+
+  for (let sample = 0; sample < 300; sample += 1) {
+    const bytes = Uint8Array.from({ length: randomUint32() % 65 }, () => randomUint32() & 0xff);
+    const summary = classifyFrame(bytes);
+    const inspection = inspectFrame(bytes);
+
+    expect(inspection.frame).toEqual(summary);
+    expect(messageClasses).toContain(summary.messageClass);
+    expect(Number.isSafeInteger(summary.payloadBytes)).toBe(true);
+    expect(summary.payloadBytes).toBeGreaterThanOrEqual(0);
+    expect(summary.payloadBytes).toBeLessThanOrEqual(bytes.byteLength);
+  }
 });
 
 it("never returns content from any exported function across every frame path", async () => {
