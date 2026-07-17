@@ -4,6 +4,7 @@
  * Subscribes to a `DocumentSession` snapshot and renders a localized status
  * badge. Labels are derived directly from the session's status semantics
  * (see `core/editor/document-session.ts`):
+ *   - `detached`  → no indicator              (room not materialized yet)
  *   - `synced`    → "Synced"                  (edits are on the server)
  *   - `syncing`   → "Syncing…"                (initial / reconnect in flight)
  *   - `offline`   → "Saved locally · offline" (buffered until reconnect)
@@ -29,7 +30,13 @@ export function SyncStatus({ session }: SyncStatusProps) {
   // say nothing — "no news is good news." We only surface a state the user
   // might actually act on: edits buffered locally while offline, or a
   // torn-down session. Rendered as a quiet floating pill by EditorView.
-  if (snapshot.status === "synced" || snapshot.status === "syncing") return null;
+  if (
+    snapshot.status === "detached" ||
+    snapshot.status === "synced" ||
+    snapshot.status === "syncing"
+  ) {
+    return null;
+  }
 
   return (
     <div
