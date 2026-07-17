@@ -292,6 +292,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("registers scratch documents in the live project manifest and resolves their project", async () => {
+      await db.insert(schema.contextSources).values({
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
       await db.insert(schema.works).values({
         id: WORK_ID,
         projectId: PROJECT_ID,

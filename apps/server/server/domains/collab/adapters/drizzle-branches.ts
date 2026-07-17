@@ -401,9 +401,12 @@ export function createDrizzleBranchStore(
 
   async function projectForDocument(documentId: DocumentId): Promise<ProjectId | null> {
     const [row] = await currentDrizzleDb(db)
-      .select({ projectId: contextSources.projectId })
+      .select({
+        projectId: sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
+      })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(works, eq(contextSources.workId, works.id))
       .where(eq(documents.id, documentId))
       .limit(1);
     return (row?.projectId as ProjectId | null | undefined) ?? null;
@@ -525,9 +528,10 @@ export function createDrizzleBranchStore(
       .select({ id: documents.id })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(works, eq(contextSources.workId, works.id))
       .where(
         and(
-          eq(contextSources.projectId, projectId),
+          sql`coalesce(${contextSources.projectId}, ${works.projectId}) = ${projectId}`,
           contentDocumentPredicate(),
           isNull(documents.deletedAt),
         ),
