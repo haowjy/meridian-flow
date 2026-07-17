@@ -117,6 +117,10 @@ msgstr "Actions"
 msgid "Add a caption for this figure."
 msgstr "Add a caption for this figure."
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Add link"
+msgstr "Add link"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Added"
 msgstr "Added"
@@ -659,6 +663,10 @@ msgstr "Enclosing folder"
 msgid "Enter an amount in USD."
 msgstr "Enter an amount in USD."
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Enter an http, https, or mailto link."
+msgstr "Enter an http, https, or mailto link."
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
@@ -847,6 +855,10 @@ msgstr "Leading or trailing whitespace detected in file or folder name."
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
 msgstr "Link"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Link URL"
+msgstr "Link URL"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Listed"
@@ -1202,6 +1214,10 @@ msgstr "Parent unknown"
 msgid "Parent:"
 msgstr "Parent:"
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Paste or type a link"
+msgstr "Paste or type a link"
+
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
 msgstr "Plans"
@@ -1311,6 +1327,10 @@ msgstr "Refresh"
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
 msgstr "remaining"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Remove link"
+msgstr "Remove link"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
@@ -1768,6 +1788,10 @@ msgstr "Untitled document"
 #: src/lib/project-title.ts
 msgid "Untitled project"
 msgstr "Untitled project"
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Update link"
+msgstr "Update link"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
