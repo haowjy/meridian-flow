@@ -65,7 +65,12 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
       <DebugErrorBoundary title="Streams">
         <TraceViewer open={streamsOpen} onOpenChange={setStreamsOpen} />
       </DebugErrorBoundary>
-      <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
+      <div
+        className={cn(
+          "fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2",
+          streamsOpen && "hidden",
+        )}
+      >
         {open ? (
           <section
             className="flex max-h-[70svh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-rail-left"
@@ -95,7 +100,10 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               <button
                 type="button"
                 className="focus-ring rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
-                onClick={() => setStreamsOpen(true)}
+                onClick={() => {
+                  setOpen(false);
+                  setStreamsOpen(true);
+                }}
               >
                 Streams
               </button>
