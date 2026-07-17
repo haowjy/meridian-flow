@@ -53,7 +53,8 @@ export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
         <section aria-label="Filtered trace JSONL export">
           <pre
             role="document"
-            aria-label="Filtered trace JSONL"
+            aria-label={jsonl || "Empty filtered trace JSONL"}
+            data-trace-jsonl-export
             className="max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-border bg-muted p-2 font-mono text-meta text-foreground"
           >
             {jsonl}
