@@ -117,8 +117,24 @@ msgstr ""
 msgid "Add a caption for this figure."
 msgstr ""
 
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Add column left"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Add column right"
+msgstr ""
+
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Add link"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Add row above"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Add row below"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -144,6 +160,18 @@ msgstr ""
 
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "AI write mode"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Align column center"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Align column left"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Align column right"
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -230,6 +258,10 @@ msgid "Billing"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
+msgid "Block alignment"
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr ""
 
@@ -260,6 +292,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Center"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -339,6 +375,14 @@ msgstr ""
 
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Collapse sidebar  ["
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Column text alignment"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Columns"
 msgstr ""
 
 #. placeholder {0}: proposal.contributingTurnIds.length
@@ -499,6 +543,10 @@ msgstr ""
 msgid "Data Analysis"
 msgstr ""
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Default alignment"
+msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -508,12 +556,24 @@ msgstr ""
 msgid "Delete again"
 msgstr ""
 
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Delete column"
+msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete file?"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete folder?"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Delete row"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Delete table"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
@@ -620,6 +680,10 @@ msgstr ""
 
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Edit table"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -978,6 +1042,22 @@ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "Monthly usage"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Move column left"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Move column right"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Move row down"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Move row up"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -1380,6 +1460,10 @@ msgstr "回复智能体，或引导分析方向…"
 msgid "Required"
 msgstr ""
 
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Reset table layout"
+msgstr ""
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr ""
@@ -1433,6 +1517,14 @@ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Right"
+msgstr ""
+
+#: src/features/editor/EditorTableBubble.tsx
+msgid "Rows"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1732,7 +1824,11 @@ msgid "This skill is no longer available in this chat — start a new chat to us
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgstr ""
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
 
 #: src/lib/date-groups.ts

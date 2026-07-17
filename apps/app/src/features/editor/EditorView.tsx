@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
 import { linkBubbleContext } from "./EditorLinkBubble";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
+import { tableBubbleContext } from "./EditorTableBubble";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
@@ -81,7 +82,8 @@ type FigureUploadState =
   | { kind: "error"; message: string };
 
 let editorSessionOwnerSequence = 0;
-const editorBubbleContexts = [linkBubbleContext] as const;
+// Registration order is arbitration precedence; broad block contexts stay last.
+const editorBubbleContexts = [linkBubbleContext, tableBubbleContext] as const;
 
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
