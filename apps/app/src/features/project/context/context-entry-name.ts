@@ -13,6 +13,27 @@
  * semantics.
  */
 import { t } from "@lingui/core/macro";
+import {
+  type ContextEntryValidationError,
+  validateContextEntryName as validateSharedContextEntryName,
+} from "@meridian/contracts/context-entry-validation";
+
+function validationReason(error: ContextEntryValidationError): string {
+  switch (error.reason) {
+    case "name/empty":
+      return t`Name is required`;
+    case "name/reserved":
+      return t`'.' and '..' cannot be used as names`;
+    case "name/invalid-character":
+      return t`Names cannot contain '${error.character ?? ""}'`;
+    case "path/empty-segment":
+      return t`Names cannot be empty`;
+    case "path/unknown-root":
+      return t`That location does not exist`;
+    case "path/trailing-separator":
+      return t`Names cannot end with '/'`;
+  }
+}
 
 /**
  * Joins a parent folder path (`""` or `/a/b` — scheme root is the empty
@@ -31,8 +52,8 @@ export function joinContextEntryPath(parent: string, leaf: string): string {
  * with a non-empty name ask for a reason.
  */
 export function invalidContextEntryNameReason(name: string): string | null {
-  if (/[/]/.test(name)) return t`Names cannot contain '/'`;
-  return null;
+  const result = validateSharedContextEntryName(name);
+  return result.ok ? null : validationReason(result);
 }
 
 /**
@@ -57,7 +78,8 @@ export function validateContextEntryName(
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  if (/[/]/.test(trimmed)) return { level: "error", message: t`Names cannot contain '/'` };
+  const validation = validateSharedContextEntryName(trimmed);
+  if (!validation.ok) return { level: "error", message: validationReason(validation) };
   const collides = siblingNames.some((name) => name.replace(/\/$/, "") === trimmed);
   if (collides) {
     return {
