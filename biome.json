@@ -23,7 +23,8 @@
       "!.opencode",
       "!.cursor",
       "!**/.context",
-      "!packages/agent-edit/demo/**/*.html"
+      "!packages/agent-edit/demo/**/*.html",
+      "!**/*.spike.test.ts"
     ]
   },
   "formatter": {

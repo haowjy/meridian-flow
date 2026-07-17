@@ -291,6 +291,7 @@ export type CollabFacadeStore = {
 
 export type CollabFacadeDeps = {
   journal: UpdateJournal & ReversalStore;
+  headSchemaVersion(documentId: DocumentId): Promise<number | null>;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   observationSnapshots?: ObservationSnapshotStore;
@@ -510,6 +511,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   return createFacade({
     journal,
+    headSchemaVersion: journal.headSchemaVersion,
     coordinator,
     lifecycle,
     observationSnapshots,
@@ -605,6 +607,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
 
   return createFacade({
     journal,
+    headSchemaVersion: async () => null,
     coordinator,
     lifecycle,
     store: inMemoryStore(journal),
@@ -1797,6 +1800,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     bindHocuspocus(instance) {
       deps.bindHocuspocus(instance);
     },
+
+    headSchemaVersion: deps.headSchemaVersion,
 
     resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
 

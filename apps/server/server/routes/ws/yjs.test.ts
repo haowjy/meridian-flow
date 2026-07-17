@@ -1,4 +1,5 @@
 import { MessageType } from "@hocuspocus/server";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import {
   createEncoder,
   toUint8Array,
@@ -9,17 +10,22 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { StaleDocumentSchemaError } from "../../domains/collab/index.js";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
   admitBranchWriterMessage,
   admitLiveWriterMessage,
   type BranchHandshakeState,
+  clientSchemaVersionFromRequest,
+  createYjsHocuspocus,
   createYjsWebSocketHooks,
   enforceBranchHandshake,
   subscribeWriterNoticeTransport,
 } from "./yjs";
 
 const documentName = "branch:branch_1:gen:3";
+const liveDocumentName = "00000000-0000-4000-8000-000000000101";
+const userId = "00000000-0000-4000-8000-000000000102";
 
 function syncMessage(syncType: number): Uint8Array {
   const encoder = createEncoder();
@@ -47,6 +53,181 @@ function services(stale: boolean) {
     } as never,
   };
 }
+
+function versionGateServices(input: { liveHead?: number | null; branchHead?: number } = {}) {
+  const documentSync = {
+    bindHocuspocus: vi.fn(),
+    headSchemaVersion: vi.fn(async () => input.liveHead ?? null),
+    resolveBranchHocuspocusRoom: vi.fn(async (branchId: string, generation: number) => ({
+      branchId,
+      documentId: liveDocumentName,
+      generation,
+      schemaVersion: input.branchHead ?? 1,
+      status: "active" as const,
+    })),
+    resolveManifestMembership: vi.fn(async () => ({
+      documentId: liveDocumentName,
+      members: [liveDocumentName],
+    })),
+    currentLiveGeneration: vi.fn(async () => 1n),
+  };
+  return {
+    documentAccess: {
+      canAccessDocument: vi.fn(async () => true),
+      projectIdForDocument: vi.fn(async () => "00000000-0000-4000-8000-000000000103"),
+    },
+    documentSync,
+    eventSink: { emit() {} },
+    notices: {
+      subscribeWriterVisible: vi.fn(() => () => {}),
+      drainForWriter: vi.fn(async () => []),
+    },
+  };
+}
+
+function connectContext(clientSchemaVersion: number) {
+  return {
+    userId,
+    clientSchemaVersion,
+    liveGenerations: new Map<string, bigint>(),
+    closeTransport: vi.fn(),
+  };
+}
+
+function required<T>(value: T | null | undefined): T {
+  if (value == null) throw new Error("Expected configured Hocuspocus hook");
+  return value;
+}
+
+describe("Yjs connect-time schema version gate", () => {
+  it("parses the declared schema version and treats absent or invalid values as zero", () => {
+    expect(
+      clientSchemaVersionFromRequest(new Request("https://meridian.local/ws/yjs?schema=4")),
+    ).toBe(4);
+    for (const url of [
+      "https://meridian.local/ws/yjs",
+      "https://meridian.local/ws/yjs?schema=",
+      "https://meridian.local/ws/yjs?schema=-1",
+      "https://meridian.local/ws/yjs?schema=1.5",
+      "https://meridian.local/ws/yjs?schema=9007199254740992",
+    ]) {
+      expect(clientSchemaVersionFromRequest(new Request(url))).toBe(0);
+    }
+  });
+
+  it("refuses only live-room clients strictly older than a stored head", async () => {
+    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
+    const hocuspocus = createYjsHocuspocus(services as never);
+    const staleClientContext = connectContext(COLLAB_SCHEMA_VERSION - 1);
+
+    await expect(
+      required(hocuspocus.configuration.onConnect)({
+        documentName: liveDocumentName,
+        context: staleClientContext,
+      } as never),
+    ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
+    expect(staleClientContext.closeTransport).toHaveBeenCalledWith(
+      4406,
+      "client-schema-superseded",
+    );
+    await expect(
+      required(hocuspocus.configuration.onConnect)({
+        documentName: liveDocumentName,
+        context: connectContext(COLLAB_SCHEMA_VERSION),
+      } as never),
+    ).resolves.toBeUndefined();
+    expect(services.documentSync.headSchemaVersion).toHaveBeenCalledWith(liveDocumentName);
+  });
+
+  it("passes a live room with no stamped head", async () => {
+    const hocuspocus = createYjsHocuspocus(versionGateServices({ liveHead: null }) as never);
+
+    await expect(
+      required(hocuspocus.configuration.onConnect)({
+        documentName: liveDocumentName,
+        context: connectContext(0),
+      } as never),
+    ).resolves.toBeUndefined();
+  });
+
+  it("uses the branch row schema and preserves the same strict monotonic edge", async () => {
+    const hocuspocus = createYjsHocuspocus(
+      versionGateServices({ branchHead: COLLAB_SCHEMA_VERSION }) as never,
+    );
+
+    await expect(
+      required(hocuspocus.configuration.onConnect)({
+        documentName,
+        context: connectContext(COLLAB_SCHEMA_VERSION - 1),
+      } as never),
+    ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
+    await expect(
+      required(hocuspocus.configuration.onConnect)({
+        documentName,
+        context: connectContext(COLLAB_SCHEMA_VERSION),
+      } as never),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses stale live and branch heads per connection before document loading", async () => {
+    const services = versionGateServices({
+      liveHead: COLLAB_SCHEMA_VERSION - 1,
+      branchHead: COLLAB_SCHEMA_VERSION - 1,
+    });
+    const hocuspocus = createYjsHocuspocus(services as never);
+
+    for (const room of [liveDocumentName, documentName]) {
+      const context = connectContext(COLLAB_SCHEMA_VERSION);
+      await expect(
+        required(hocuspocus.configuration.onConnect)({
+          documentName: room,
+          context,
+        } as never),
+      ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+      expect(context.closeTransport).toHaveBeenCalledWith(4407, "document-schema-stale");
+    }
+  });
+
+  it("maps stale stored heads to the typed document-schema-stale close", async () => {
+    const services = versionGateServices();
+    Object.assign(services.documentSync, {
+      loadHocuspocusDocument: vi.fn(async () => {
+        throw new StaleDocumentSchemaError(liveDocumentName, 1, 2);
+      }),
+    });
+    const hocuspocus = createYjsHocuspocus(services as never);
+    const context = connectContext(2);
+
+    await expect(
+      required(hocuspocus.configuration.onLoadDocument)({
+        documentName: liveDocumentName,
+        document: new Y.Doc({ gc: false }),
+        context,
+      } as never),
+    ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+    expect(context.closeTransport).toHaveBeenCalledWith(4407, "document-schema-stale");
+  });
+
+  it("maps a stale branch head to the same typed close", async () => {
+    const services = versionGateServices();
+    Object.assign(services.documentSync, {
+      loadHocuspocusBranchState: vi.fn(async () => {
+        throw new StaleDocumentSchemaError(liveDocumentName, 1, 2);
+      }),
+    });
+    const hocuspocus = createYjsHocuspocus(services as never);
+    const context = connectContext(2);
+
+    await expect(
+      required(hocuspocus.configuration.onLoadDocument)({
+        documentName,
+        document: new Y.Doc({ gc: false }),
+        context,
+      } as never),
+    ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+    expect(context.closeTransport).toHaveBeenCalledWith(4407, "document-schema-stale");
+  });
+});
 
 describe("Yjs branch handshake route guard", () => {
   it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {

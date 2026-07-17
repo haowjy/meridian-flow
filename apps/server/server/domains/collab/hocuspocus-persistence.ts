@@ -278,6 +278,7 @@ export function createHocuspocusPersistenceService(
         branchId: branch.branchId,
         documentId: branch.documentId,
         generation: branch.generation,
+        schemaVersion: branch.schemaVersion,
         status: branch.status,
       };
     },

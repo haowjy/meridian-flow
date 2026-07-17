@@ -74,8 +74,13 @@ export type CollabFacadeStore = {
   latestUpdateSeq(docId: string): Promise<number>;
 };
 
+export type CollabJournal = UpdateJournal &
+  ReversalStore & {
+    headSchemaVersion(documentId: string): Promise<number | null>;
+  };
+
 export type DrizzleCollabPersistence = {
-  journal: UpdateJournal & ReversalStore;
+  journal: CollabJournal;
   lifecycle: DocumentLifecycle;
   store: CollabFacadeStore;
 };
@@ -284,7 +289,10 @@ async function reconstructionCheckpoint(db: JournalDb, documentId: string, until
   return row ?? null;
 }
 
-async function readHeadSchemaVersion(db: JournalDb, documentId: string): Promise<number | null> {
+export async function readHeadSchemaVersion(
+  db: JournalDb,
+  documentId: string,
+): Promise<number | null> {
   const [row] = await db
     .select({ schemaVersion: documentYjsHeads.schemaVersion })
     .from(documentYjsHeads)
@@ -730,8 +738,10 @@ async function persistRedoEntries(
   return { consumed: true, seqs };
 }
 
-export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
+export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
+    headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
+
     async append(docId, update, meta) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
