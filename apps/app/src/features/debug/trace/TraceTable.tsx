@@ -57,11 +57,19 @@ export function TraceTable({
             return (
               <tr
                 key={traceRowKey(record, index)}
-                className={`cursor-pointer border-b border-border-subtle ${active ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => onSelect(record)}
+                className={`border-b border-border-subtle ${active ? "bg-muted" : "hover:bg-muted"}`}
                 aria-selected={active}
               >
-                <td className="whitespace-nowrap px-2 py-1.5">{formatTime(record.timestamp)}</td>
+                <td className="whitespace-nowrap p-0">
+                  <button
+                    type="button"
+                    className="focus-ring block w-full rounded-sm px-2 py-1.5 text-left"
+                    onClick={() => onSelect(record)}
+                    aria-label={`Select event at ${formatTime(record.timestamp)}`}
+                  >
+                    {formatTime(record.timestamp)}
+                  </button>
+                </td>
                 <td className="max-w-48 truncate px-2 py-1.5">{stream?.streamId ?? "—"}</td>
                 <td className="px-2 py-1.5" aria-label={stream?.direction ?? "no direction"}>
                   {stream?.direction === "client_to_server"
