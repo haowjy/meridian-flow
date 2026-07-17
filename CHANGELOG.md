@@ -13,6 +13,11 @@
   device" (default ON; fails closed when the preference can't be read).
   Device-local restore storage (`context-last-route`) is replaced by the
   canonical working-set store; local restore behavior is unchanged.
+  Resume is optimistic: the remembered document's tab and a loading
+  skeleton render immediately on entry instead of flashing the empty
+  "Resume / New document" state while the file tree loads. Settings ›
+  Preferences is split into "This device" (language, text size) and
+  "Account" (sync toggle) tabs.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
