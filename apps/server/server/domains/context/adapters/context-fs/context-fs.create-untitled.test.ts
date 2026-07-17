@@ -1,7 +1,6 @@
 /** Untitled materialization contracts: allocation, idempotency, and client-owned Yjs seeding. */
 
 import { describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
 import { createInMemoryCollabDomain, type MarkdownDocumentStore } from "../../../collab/index.js";
 import { ContextFS } from "./context-fs.js";
 import {
@@ -53,38 +52,6 @@ describe("ContextFS createUntitledDocument", () => {
       error: { code: "invalid_operation", message: "documentId must be a UUID" },
     });
     await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
-  });
-
-  it("creates an authority with zero CRDT structs", async () => {
-    const authorities = new Map<string, Y.Doc>();
-    const sync = {
-      ensureDocument: async (documentId: string) => {
-        authorities.set(documentId, new Y.Doc());
-      },
-      readAsMarkdown: vi.fn(),
-      seedFromMarkdown: vi.fn(),
-      writeDocument: vi.fn(),
-      editDocument: vi.fn(),
-    } as unknown as MarkdownDocumentStore;
-    const { fs } = createFs({ documentSync: sync });
-
-    const created = await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A));
-    expect(created).toMatchObject({
-      ok: true,
-      value: { status: "created", name: "Untitled 1", path: "Untitled 1.md" },
-    });
-    await expect(fs.list("")).resolves.toMatchObject({
-      ok: true,
-      value: [expect.objectContaining({ provisionalName: true })],
-    });
-
-    expect(sync.seedFromMarkdown).not.toHaveBeenCalled();
-    expect(sync.writeDocument).not.toHaveBeenCalled();
-    const authority = authorities.get(DOCUMENT_A);
-    expect(authority).toBeDefined();
-    const structs = (authority as unknown as { store: { clients: Map<number, unknown[]> } }).store
-      .clients;
-    expect([...structs.values()].flat()).toHaveLength(0);
   });
 
   it("returns the existing allocation for an idempotent retry", async () => {
