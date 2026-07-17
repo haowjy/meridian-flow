@@ -22,7 +22,7 @@ import {
 } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
-import { type DraftApplyRefusal, draftApplyRefusalFromResponse } from "./draft-apply-refusal";
+import type { DraftApplyRefusal } from "./draft-apply-refusal";
 import {
   acceptIsBlocked,
   conflictForSelection,
@@ -136,7 +136,6 @@ export function useDraftReviewController(
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const [reviewRoomName, setReviewRoomName] = useState<string | null>(null);
   const [reviewRoomError, setReviewRoomError] = useState(false);
-  const [applyRefusal, setApplyRefusal] = useState<DraftApplyRefusal | null>(null);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
   const displayedPreviewRef = useRef<{
@@ -160,6 +159,7 @@ export function useDraftReviewController(
   const acceptingOperationId = state.acceptingOperationId;
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
+  const applyRefusal = state.applyRefusal;
   const concurrentConflict = conflictForSelection(state, inlineReview);
   const needsRereview = concurrentConflict !== null;
   const conflictedBlocks = useMemo(
@@ -547,7 +547,7 @@ export function useDraftReviewController(
       ) {
         return;
       }
-      setApplyRefusal(null);
+      dispatch({ type: "applyStarted" });
       acceptMutation.mutate(
         {
           projectId,
@@ -561,7 +561,6 @@ export function useDraftReviewController(
         },
         {
           onSuccess(response) {
-            setApplyRefusal(draftApplyRefusalFromResponse(response));
             if (response.status === "stale_draft") {
               void queryClient.invalidateQueries({
                 queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
