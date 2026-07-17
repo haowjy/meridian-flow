@@ -95,15 +95,19 @@ export interface InvalidUpdate {
 export interface UpdateFrameInspection {
   frame: SyncStep2FrameSummary | SyncUpdateFrameSummary;
   update?: UpdateSummary;
+  awareness?: never;
 }
 
 export interface AwarenessFrameInspection {
   frame: AwarenessFrameSummary;
   awareness?: AwarenessSummary;
+  update?: never;
 }
 
 export interface OtherFrameInspection {
   frame: SyncStep1FrameSummary | StatelessFrameSummary | AuthFrameSummary | UnknownFrameSummary;
+  update?: never;
+  awareness?: never;
 }
 
 export type FrameInspection =

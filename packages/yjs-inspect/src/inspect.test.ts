@@ -14,7 +14,13 @@ import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { capturedFrames, capturedJournalUpdateHex } from "./__fixtures__/captured.js";
 import { classifyFrame, inspectFrame, summarizeUpdate } from "./index.js";
-import type { UpdateSummary } from "./types.js";
+import type {
+  AuthFrameSummary,
+  AwarenessSummary,
+  FrameInspection,
+  SyncUpdateFrameSummary,
+  UpdateSummary,
+} from "./types.js";
 
 function fromHex(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/../g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
@@ -160,6 +166,16 @@ describe("classifyFrame", () => {
 });
 
 describe("inspectFrame", () => {
+  it("excludes cross-class nested summaries from the public type", () => {
+    type AuthWithUpdate = { frame: AuthFrameSummary; update: UpdateSummary };
+    type SyncWithAwareness = { frame: SyncUpdateFrameSummary; awareness: AwarenessSummary };
+    const authWithUpdateIsAssignable: AuthWithUpdate extends FrameInspection ? true : false = false;
+    const syncWithAwarenessIsAssignable: SyncWithAwareness extends FrameInspection ? true : false =
+      false;
+
+    expect([authWithUpdateIsAssignable, syncWithAwarenessIsAssignable]).toEqual([false, false]);
+  });
+
   it("composes nested update and awareness metadata from complete frames", () => {
     const document = new Y.Doc();
     document.getText("content").insert(0, "hidden");
