@@ -9,6 +9,9 @@ CREATE TABLE "project_user_working_sets" (
 );
 --> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "working_set_sync_enabled" boolean DEFAULT true NOT NULL;--> statement-breakpoint
-ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_last_thread_id_threads_id_fk" FOREIGN KEY ("last_thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action NOT VALID;--> statement-breakpoint
+ALTER TABLE "project_user_working_sets" VALIDATE CONSTRAINT "project_user_working_sets_user_id_users_id_fk";--> statement-breakpoint
+ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action NOT VALID;--> statement-breakpoint
+ALTER TABLE "project_user_working_sets" VALIDATE CONSTRAINT "project_user_working_sets_project_id_projects_id_fk";--> statement-breakpoint
+ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_last_thread_id_threads_id_fk" FOREIGN KEY ("last_thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action NOT VALID;--> statement-breakpoint
+ALTER TABLE "project_user_working_sets" VALIDATE CONSTRAINT "project_user_working_sets_last_thread_id_threads_id_fk";
