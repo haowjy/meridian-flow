@@ -162,7 +162,14 @@ export async function createUntitledContextDocument(
   body: { documentId: string; folderPath?: string },
   opts?: ProjectContextRequestOptions,
 ): Promise<CreateUntitledContextDocumentResponse> {
-  return postJson(apiProjectContextCreateUntitledPath(projectId, scheme, opts), body);
+  const response = await postJson<CreateUntitledContextDocumentResponse>(
+    apiProjectContextCreateUntitledPath(projectId, scheme, opts),
+    body,
+  );
+  return {
+    ...response,
+    path: response.path.startsWith("/") ? response.path : `/${response.path}`,
+  };
 }
 export async function renameContextEntry(
   projectId: string,
