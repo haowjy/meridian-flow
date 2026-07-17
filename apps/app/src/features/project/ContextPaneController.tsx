@@ -6,10 +6,7 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
-import type {
-  ProjectContextTreeScheme,
-  WorkingSetRoute,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
@@ -51,6 +48,12 @@ export type ContextViewerSurfaceControllerProps = {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
+  /**
+   * Clears the routed destination entirely (no scheme/path in the URL) —
+   * closing the LAST tab must leave a fresh-entry URL so a reload runs
+   * restore/default-open instead of resurrecting an explicit empty path.
+   */
+  onClearContextDestination: () => void;
   active: boolean;
   /** Project left-sidebar expand toggle, surfaced via the tab strip. */
   sidebarToggle: PaneHeaderRailToggle;
@@ -67,6 +70,7 @@ export function ContextViewerSurfaceController({
   sidebarToggle,
   dockToggle,
   onSelectContextPath,
+  onClearContextDestination,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
   const defaultWorkId = useDefaultWorkId(projectId);
@@ -348,7 +352,10 @@ export function ContextViewerSurfaceController({
       onSelectContextPath(fallback.path, fallback.scheme);
       return;
     }
-    onSelectContextPath("", activeContextScheme ?? undefined);
+    // Desk emptied: clear the destination entirely (path="" would survive
+    // a reload as an explicit New-document deep link and block the
+    // cleared-desk contract's default-open on next entry).
+    onClearContextDestination();
   }
 
   function handleResumeDocument() {

@@ -265,6 +265,7 @@ function DesktopProject(props: ProjectViewProps) {
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           dockToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectContextPath={props.onSelectContextPath}
+          onClearContextDestination={props.onExitContextScheme}
         />
       ),
     },

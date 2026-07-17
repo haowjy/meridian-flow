@@ -52,7 +52,15 @@ export async function seedWorkingSetTabs({
         projectContextTreeQueryOptions(projectId, route.scheme, workId),
       );
       const file = findContextFile(result.tree, route.path);
-      if (!file || !isWorkingSetRouteDesired(route, readRecentRoutes(projectId))) return null;
+      if (!file) {
+        // Validated-missing on the server-adoption branch too: a fresh tree
+        // lacks the path, so drop the dead route from the working set instead
+        // of letting it occupy a synced slot forever. (Work-scope skips above
+        // never remove — the route may be valid under its own work.)
+        removeRoute(projectId, route);
+        return null;
+      }
+      if (!isWorkingSetRouteDesired(route, readRecentRoutes(projectId))) return null;
       return contextTabFromFile(route.scheme, file, workId);
     }),
   );
