@@ -101,6 +101,14 @@
 - `apps/server`: add a real-Postgres cross-Work merge probe covering stale
   manual Apply refusal + re-review retry, `apply_and_trail` protected
   settlement, agent echo, and cold Restore.
+- `apps/server`: protected sweeps that replace a document's only block via
+  split delete+insert operations now keep a restore anchor beside the
+  replacing block — the trail offers Restore instead of the Copy-only
+  fallback. The merge probe asserts actionable restore navigation, not just
+  that the swept body was captured.
+- `apps/app`: a lingering Apply-refusal notice now clears when the writer
+  re-reviews and applies — per-card Apply included (refusal state moved into
+  the review reducer alongside the other review transitions).
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane
