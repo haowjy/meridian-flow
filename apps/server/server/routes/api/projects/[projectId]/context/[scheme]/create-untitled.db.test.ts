@@ -29,6 +29,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../../../test-support/drizzle-reset.js"
     );
     const { createUntitledContextDocument } = await import("./create-untitled.post.js");
+    const { buildProjectContextTree } = await import("./tree.get.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000931";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000933";
@@ -95,6 +96,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "scratch",
         path: "Untitled 1.md",
         name: "Untitled 1",
+      });
+
+      const treeResponse = () =>
+        buildProjectContextTree({ projectId, scheme: "scratch", workId, port });
+      await expect(treeResponse()).resolves.toMatchObject({
+        projectId,
+        scheme: "scratch",
+        tree: {
+          children: [
+            expect.objectContaining({
+              kind: "file",
+              documentId: DOCUMENT_ID,
+              name: "Untitled 1.md",
+              provisionalName: true,
+            }),
+          ],
+        },
+      });
+
+      await expect(
+        port.move(`scratch://${workId}/Untitled 1.md`, `scratch://${workId}/Opening scene.md`, {
+          origin: { type: "human", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ ok: true });
+      await expect(treeResponse()).resolves.toMatchObject({
+        tree: {
+          children: [
+            expect.objectContaining({
+              kind: "file",
+              documentId: DOCUMENT_ID,
+              name: "Opening scene.md",
+              provisionalName: false,
+            }),
+          ],
+        },
       });
 
       const membership = await collab.resolveManifestMembership({ projectId });

@@ -102,7 +102,21 @@ async function buildDirectory(
 
 export default defineEventHandler(async (event) => {
   const { projectId, scheme, workId, port } = await resolveContextRoute(event);
+  return serializeTransport(await buildProjectContextTree({ projectId, scheme, workId, port }));
+});
+
+export async function buildProjectContextTree({
+  projectId,
+  scheme,
+  workId,
+  port,
+}: {
+  projectId: string;
+  scheme: ProjectContextTreeScheme;
+  workId: string | null;
+  port: ContextPort;
+}): Promise<ProjectContextTreeResponse> {
   const root = rootUri(scheme, workId);
   const tree = await buildDirectory(port, root, root, ROOT_NAMES[scheme]);
-  return serializeTransport({ projectId, scheme, tree } satisfies ProjectContextTreeResponse);
-});
+  return { projectId, scheme, tree };
+}
