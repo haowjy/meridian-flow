@@ -1,4 +1,5 @@
 /** Route seam coverage for create-with-content followed by the public read projection. */
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -395,6 +396,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
       ).resolves.toMatchObject({ members: [scratchDocumentId] });
+    });
+
+    it("denies the websocket document path for Work content after project deletion", async () => {
+      const workSourceId = "00000000-0000-4000-8000-000000000926";
+      const scratchDocumentId = "00000000-0000-4000-8000-000000000924";
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Deleted Project Work",
+      });
+      await db.insert(schema.contextSources).values({
+        id: workSourceId,
+        workId: WORK_ID,
+        name: "Scratch",
+        slug: "scratch",
+        scope: "work",
+      });
+      await db.insert(schema.documents).values({
+        id: scratchDocumentId,
+        contextSourceId: workSourceId,
+        name: "retained-id",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await db
+        .update(schema.projects)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.projects.id, PROJECT_ID));
+
+      const access = createDrizzleDocumentAccess(db);
+      await expect(access.canAccessDocument(USER_ID as never, scratchDocumentId)).resolves.toBe(
+        false,
+      );
+      await expect(access.projectIdForDocument(scratchDocumentId)).resolves.toBeNull();
     });
   });
 }
