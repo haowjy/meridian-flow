@@ -17,10 +17,11 @@ import {
   seedProjectRouteData,
 } from "@/client/query/project-route-data";
 import { useThreadStore } from "@/client/stores";
-import { establishWorkingSetBaseline, setThread } from "@/client/working-set";
+import { setThread } from "@/client/working-set";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
 import { ProjectView } from "@/features/project/ProjectView";
 import { SCREENS, type ScreenKey } from "@/features/project/shell/screens";
+import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 type ProjectSearch = {
   screen?: ScreenKey;
@@ -72,10 +73,7 @@ function dirname(path: string): string | undefined {
 function RouteComponent() {
   const { projectId } = Route.useParams();
   const routeData = Route.useLoaderData();
-  useState(() => {
-    establishWorkingSetBaseline(projectId, routeData.workingSet);
-    return null;
-  });
+  const { user } = AuthenticatedRoute.useLoaderData();
   useProjectRouteCacheSeed(projectId, routeData);
   const { screen, thread, scheme, folder, path, results } = Route.useSearch();
   const navigate = useNavigate();
@@ -177,7 +175,10 @@ function RouteComponent() {
 
   return (
     <ProjectView
+      key={projectId}
       projectId={projectId}
+      workingSet={routeData.workingSet}
+      workingSetSyncEnabled={user.workingSetSyncEnabled}
       activeScreen={resolvedScreen}
       activeThreadId={activeThreadId}
       activeContextScheme={scheme ?? null}

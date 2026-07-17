@@ -12,8 +12,10 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
+import { hydrateWorkingSet, type WorkingSetHydrationPlan } from "@/client/working-set";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -44,6 +46,8 @@ const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
 
 export type ProjectViewProps = {
   projectId: string;
+  workingSet: ProjectRouteData["workingSet"];
+  workingSetSyncEnabled: boolean;
   /** Resolved screen key from the route (defaults to home). */
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
@@ -75,6 +79,12 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
+  // The route keys ProjectView by projectId. This initializer therefore runs
+  // before any gated child for each project entry; the driver makes a strict-
+  // mode replay of the same loader revision an adoption no-op.
+  const [workingSetHydration] = useState<WorkingSetHydrationPlan>(() =>
+    hydrateWorkingSet(props.projectId, props.workingSet),
+  );
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
   // (localStorage), so this is at most one frame — no visible flash. Gating here
@@ -84,7 +94,7 @@ export function ProjectView(props: ProjectViewProps) {
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
         <ProjectDraftReviewProvider projectId={props.projectId} threadId={props.activeThreadId}>
-          <HydratedProject {...props} />
+          <HydratedProject {...props} workingSetHydration={workingSetHydration} />
         </ProjectDraftReviewProvider>
       ) : null}
     </div>
@@ -109,7 +119,9 @@ function ProjectDraftReviewProvider({
   );
 }
 
-function HydratedProject(props: ProjectViewProps) {
+type HydratedProjectProps = ProjectViewProps & { workingSetHydration: WorkingSetHydrationPlan };
+
+function HydratedProject(props: HydratedProjectProps) {
   const usePhone = usePhoneShell();
   useEffect(() => {
     const reconciler = getUntitledReconciler();
