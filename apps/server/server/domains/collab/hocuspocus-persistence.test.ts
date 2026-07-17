@@ -1,7 +1,13 @@
 /** Tests for Hocuspocus branch-room persistence guards. */
+import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
+import { MessageType, Server } from "@hocuspocus/server";
 import type { UpdateJournal } from "@meridian/agent-edit";
+import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { describe, expect, it, vi } from "vitest";
+import WebSocket from "ws";
+import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { admitLiveWriterMessage } from "../../routes/ws/yjs.js";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { PROVENANCE_ROOTS_TYPE, PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
@@ -237,6 +243,89 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
 });
 
 describe("createHocuspocusPersistenceService writer ingress", () => {
+  it("completes a real reconnect without journaling the provider replay pair", async () => {
+    const authority = tombstoneBearingDoc();
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const onLiveUpdatePersisted = vi.fn();
+    let server: Server;
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => server.hocuspocus,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+      onLiveUpdatePersisted,
+    });
+    const writerFrames: Array<{ syncType: number; update: Uint8Array; admitted: boolean }> = [];
+    server = new Server({
+      address: "127.0.0.1",
+      port: 0,
+      quiet: true,
+      stopOnSignals: false,
+      onLoadDocument: async () => Y.encodeStateAsUpdate(authority),
+      beforeHandleMessage: async ({ documentName, update }) => {
+        const result = await admitLiveWriterMessage({
+          services: { documentSync: persistence } as never,
+          documentName,
+          update,
+          userId: "user-1" as never,
+        });
+        if (result) {
+          writerFrames.push({
+            ...readWriterSyncFrame(update, documentName),
+            admitted: result.admitted,
+          });
+        }
+      },
+    });
+    await server.listen();
+    const client = new Y.Doc({ gc: false });
+    const websocketProvider = new HocuspocusProviderWebsocket({
+      url: server.webSocketURL,
+      WebSocketPolyfill: WebSocket,
+      autoConnect: false,
+    });
+    const provider = new HocuspocusProvider({
+      name: DOCUMENT_ID,
+      document: client,
+      awareness: null,
+      websocketProvider,
+    });
+    provider.attach();
+    websocketProvider.connect();
+
+    try {
+      Y.applyUpdate(client, Y.encodeStateAsUpdate(authority), "indexeddb");
+      await vi.waitFor(
+        () => {
+          expect(provider.isSynced).toBe(true);
+          expect(provider.hasUnsyncedChanges).toBe(false);
+          expect(writerFrames).toHaveLength(2);
+        },
+        { timeout: 3_000 },
+      );
+
+      expect(writerFrames.map(({ syncType }) => syncType)).toEqual([
+        messageYjsUpdate,
+        messageYjsSyncStep2,
+      ]);
+      expect(writerFrames.map(({ admitted }) => admitted)).toEqual([false, false]);
+      expect(
+        Y.decodeUpdate(writerFrames[0]?.update ?? new Uint8Array()).structs.length,
+      ).toBeGreaterThan(0);
+      const handshakeDeleteSet = Y.decodeUpdate(writerFrames[1]?.update ?? new Uint8Array());
+      expect(handshakeDeleteSet.structs).toHaveLength(0);
+      expect(handshakeDeleteSet.ds.clients.size).toBeGreaterThan(0);
+      expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
+      expect(onLiveUpdatePersisted).not.toHaveBeenCalled();
+    } finally {
+      provider.destroy();
+      websocketProvider.destroy();
+      await server.destroy();
+    }
+  });
+
   it("suppresses contained reconnect updates without advancing writer ingress", async () => {
     const authority = tombstoneBearingDoc();
     const journal = fakeJournal();
@@ -679,6 +768,16 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
     stateVector: Y.encodeStateVector(doc),
     schemaVersion: 1,
   };
+}
+
+function readWriterSyncFrame(
+  frame: Uint8Array,
+  documentName: string,
+): { syncType: number; update: Uint8Array } {
+  const decoder = createDecoder(frame);
+  expect(readVarString(decoder)).toBe(documentName);
+  expect([MessageType.Sync, MessageType.SyncReply]).toContain(readVarUint(decoder));
+  return { syncType: readVarUint(decoder), update: readVarUint8Array(decoder) };
 }
 
 function fakeJournal(): UpdateJournal {
