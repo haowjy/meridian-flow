@@ -7,9 +7,9 @@ import { type FormEvent, useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { normalizeLinkHref } from "@/core/editor/link-url";
 import { type BubbleContext, type BubbleMatch, useEditorBubble } from "./EditorBubbleHost";
 import { linkAtSelection, linkAttributesAtSelection } from "./link-selection";
-import { normalizeLinkHref } from "./link-url";
 
 type LinkBubbleData = { attributes: Record<string, unknown> | null };
 
