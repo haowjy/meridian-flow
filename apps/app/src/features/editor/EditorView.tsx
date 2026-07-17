@@ -3,7 +3,7 @@
  *
  * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
  * TipTap/ProseMirror editor and renders the surrounding chrome (toolbar,
- * sync-status indicator, figure-upload drag/drop + inline-command flow).
+ * sync-status indicator and image upload insertion paths).
  * Used by the Context screen to open any document. Filename chrome is the
  * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
  * renders no title header of its own.
@@ -21,6 +21,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -30,15 +31,15 @@ import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
-  type FigureNodeAttrs,
-  figureUploadDefaults,
+  imageAltFromFilename,
+  imageAttrsFromUpload,
   isImageFile,
-  uploadResponseToFigureNodeAttrs,
-} from "@/core/editor/figure-workflow";
+} from "@/core/editor/image-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
+import { createImageBubbleContext } from "./EditorImageBubble";
 import { linkBubbleContext } from "./EditorLinkBubble";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
@@ -74,23 +75,23 @@ export type EditorViewProps = {
   onReviewSessionUnavailable?: () => void;
 };
 
-type FigureUploadState =
+type ImageUploadState =
   | { kind: "idle" }
   | { kind: "uploading"; filename: string; percent: number | null }
   | { kind: "success"; filename: string }
   | { kind: "error"; message: string };
 
 let editorSessionOwnerSequence = 0;
-const editorBubbleContexts = [linkBubbleContext] as const;
-
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
   return files.find(isImageFile) ?? null;
 }
 
-function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: number): boolean {
+type ImageAttrs = { src: string; alt: string | null; title: null };
+
+function insertImageNode(editor: Editor | null, attrs: ImageAttrs, pos?: number): boolean {
   if (!editor || editor.isDestroyed) return false;
-  const content = { type: "figure", attrs } satisfies JSONContent;
+  const content = { type: "paragraph", content: [{ type: "image", attrs }] } satisfies JSONContent;
   const chain = editor.chain().focus();
   return typeof pos === "number"
     ? chain.insertContentAt(pos, content).run()
@@ -164,73 +165,79 @@ function SessionEditorView({
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const figureInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleHostRef = useRef<EditorBubbleHostHandle>(null);
   const bubbleId = useId();
-  const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
+  const [imageUploadState, setImageUploadState] = useState<ImageUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
   const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
     clearUploadTimerRef.current = setTimeout(() => {
-      setFigureUploadState({ kind: "idle" });
+      setImageUploadState({ kind: "idle" });
       clearUploadTimerRef.current = null;
     }, 3000);
   }, []);
 
-  const handleFigureFile = useCallback(
-    async (file: File, insertPos?: number) => {
+  const uploadImageFile = useCallback(
+    async (file: File): Promise<ImageAttrs> => {
       if (!projectId) {
-        setFigureUploadState({
-          kind: "error",
-          message: t`A project is required before figures can be uploaded.`,
-        });
-        return;
+        throw new Error(t`A project is required before images can be uploaded.`);
       }
 
       if (!isImageFile(file)) {
-        setFigureUploadState({ kind: "error", message: t`Drop an image file to insert a figure.` });
-        return;
+        throw new Error(t`Choose an image file.`);
       }
 
-      const defaults = figureUploadDefaults(file);
-      setFigureUploadState({ kind: "uploading", filename: file.name, percent: null });
+      setImageUploadState({ kind: "uploading", filename: file.name, percent: null });
+      const reference = await uploadFigure({
+        projectId,
+        hostDocumentId: documentId,
+        file,
+        alt: imageAltFromFilename(file.name),
+        onProgress: ({ percent }) =>
+          setImageUploadState({ kind: "uploading", filename: file.name, percent }),
+      });
+      return imageAttrsFromUpload(reference);
+    },
+    [documentId, projectId],
+  );
 
+  const handleImageFile = useCallback(
+    async (file: File, insertPos?: number) => {
       try {
-        const reference = await uploadFigure({
-          projectId,
-          hostDocumentId: documentId,
-          file,
-          alt: defaults.alt,
-          caption: defaults.caption,
-          onProgress: ({ percent }) => {
-            setFigureUploadState({ kind: "uploading", filename: file.name, percent });
-          },
-        });
-        const inserted = insertFigureNode(
-          editorRef.current,
-          uploadResponseToFigureNodeAttrs(reference),
-          insertPos,
-        );
-        setFigureUploadState(
+        const attrs = await uploadImageFile(file);
+        const inserted = insertImageNode(editorRef.current, attrs, insertPos);
+        setImageUploadState(
           inserted
             ? { kind: "success", filename: file.name }
             : {
                 kind: "error",
-                message: t`The figure uploaded, but the editor could not insert it.`,
+                message: t`The image uploaded, but the editor could not insert it.`,
               },
         );
         clearUploadLater();
       } catch (error) {
-        setFigureUploadState({
+        setImageUploadState({
           kind: "error",
-          message: error instanceof Error ? error.message : t`Figure upload failed.`,
+          message: error instanceof Error ? error.message : t`Image upload failed.`,
         });
       }
     },
-    [clearUploadLater, documentId, projectId],
+    [clearUploadLater, uploadImageFile],
+  );
+
+  const editorBubbleContexts = useMemo(
+    () => [
+      linkBubbleContext,
+      createImageBubbleContext(async (file) => {
+        const attrs = await uploadImageFile(file);
+        return { src: attrs.src, alt: attrs.alt ?? "" };
+      }),
+    ],
+    [uploadImageFile],
   );
 
   const editor = useEditor(
@@ -244,7 +251,7 @@ function SessionEditorView({
         editable,
         placeholder: t`Start writing…`,
         autofocus: false,
-        figureRenderContext: { projectId, documentId },
+        assetRenderContext: { projectId },
         showCollaborationDecorations,
         enableDraftInlineReview: inReview,
         editorProps: {
@@ -252,18 +259,15 @@ function SessionEditorView({
             class: editorProseClass(showToolbar ? "docked" : "none"),
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
-          handleTextInput(view, from, _to, text) {
-            if (!editable || text !== " ") return false;
-            const commandText = "/figure";
-            const textBefore = view.state.selection.$from.parent.textBetween(
-              0,
-              view.state.selection.$from.parentOffset,
-              "\n",
-              "\n",
+          handlePaste(_view, event) {
+            if (!editable) return false;
+            const item = Array.from(event.clipboardData?.items ?? []).find(
+              (candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"),
             );
-            if (!textBefore.endsWith(commandText)) return false;
-            view.dispatch(view.state.tr.delete(from - commandText.length, from));
-            figureInputRef.current?.click();
+            const file = item?.getAsFile();
+            if (!file) return false;
+            event.preventDefault();
+            void handleImageFile(file);
             return true;
           },
           handleDrop(view, event) {
@@ -273,7 +277,7 @@ function SessionEditorView({
             event.preventDefault();
             setDragActive(false);
             const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            void handleFigureFile(file, pos);
+            void handleImageFile(file, pos);
             return true;
           },
           handleDOMEvents: {
@@ -303,7 +307,7 @@ function SessionEditorView({
     },
     [
       documentId,
-      handleFigureFile,
+      handleImageFile,
       projectId,
       schemaType,
       session,
@@ -414,7 +418,7 @@ function SessionEditorView({
         </div>
       ) : null}
       <input
-        ref={figureInputRef}
+        ref={imageInputRef}
         type="file"
         accept="image/*"
         className="hidden"
@@ -423,7 +427,7 @@ function SessionEditorView({
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           event.currentTarget.value = "";
-          if (file) void handleFigureFile(file);
+          if (file) void handleImageFile(file);
         }}
       />
       <TrackedEditorCanvas
@@ -432,9 +436,9 @@ function SessionEditorView({
           showToolbar ? (
             <EditorToolbar
               editor={editor}
-              onFigureButtonClick={() => figureInputRef.current?.click()}
-              figureUploadBusy={figureUploadState.kind === "uploading"}
-              figureUploadDisabled={!projectId}
+              onImageButtonClick={() => imageInputRef.current?.click()}
+              imageUploadBusy={imageUploadState.kind === "uploading"}
+              imageUploadDisabled={!projectId}
               linkBubbleOpen={activeBubbleId === "link"}
               linkBubbleId={bubbleId}
               onOpenLinkBubble={() => bubbleHostRef.current?.open("link", { focus: true })}
@@ -454,12 +458,12 @@ function SessionEditorView({
             <div className="meridian-editor-drop-overlay" aria-hidden>
               <UploadCloud className="size-8" />
               <span>
-                <Trans>Drop image to upload a figure</Trans>
+                <Trans>Drop image to upload</Trans>
               </span>
             </div>
           ) : undefined
         }
-        uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+        uploadStatus={<ImageUploadStatus state={imageUploadState} />}
         bubbleHost={
           editable ? (
             <EditorBubbleHost
@@ -487,7 +491,7 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
       {belowToolbar}
       <TrackedEditorCanvas
         editor={null}
-        toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
+        toolbar={showToolbar ? <EditorToolbar editor={null} imageUploadDisabled /> : undefined}
       />
     </section>
   );
@@ -533,7 +537,7 @@ function TrackedEditorCanvas({
   );
 }
 
-function FigureUploadStatus({ state }: { state: FigureUploadState }) {
+function ImageUploadStatus({ state }: { state: ImageUploadState }) {
   if (state.kind === "idle") return null;
 
   return (
@@ -558,7 +562,7 @@ function FigureUploadStatus({ state }: { state: FigureUploadState }) {
             </Trans>
           )
         ) : null}
-        {state.kind === "success" ? <Trans>Inserted {state.filename} as a figure.</Trans> : null}
+        {state.kind === "success" ? <Trans>Inserted {state.filename} as an image.</Trans> : null}
         {state.kind === "error" ? state.message : null}
       </span>
     </div>

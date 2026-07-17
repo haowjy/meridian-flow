@@ -29,6 +29,9 @@ Yjs document session. It must stay structurally aligned with
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.
+- Inserted images are inline `image` nodes wrapped in their own paragraph. Their
+  `src` is a stable `asset:<documentId>`; the image node view resolves a signed
+  read URL, while the markup codec materializes project-relative paths.
 
 ## TipTap v3 defaults we intentionally disable
 

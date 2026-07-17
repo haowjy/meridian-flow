@@ -53,9 +53,8 @@ export type AwarenessProvider = {
   awareness: Awareness;
 };
 
-export type FigureRenderContext = {
+export type AssetRenderContext = {
   projectId?: string;
-  documentId?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
@@ -64,7 +63,7 @@ export type CreateEditorExtensionsOptions = {
   schemaType?: YjsTrackedSchemaType;
   cursorProvider?: AwarenessProvider;
   user?: EditorUser;
-  figureRenderContext?: FigureRenderContext;
+  assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
   /**
@@ -224,7 +223,7 @@ export function createEditorExtensions({
   schemaType = "document",
   cursorProvider,
   user = DEFAULT_USER,
-  figureRenderContext,
+  assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
 }: CreateEditorExtensionsOptions): Extensions {
@@ -237,7 +236,7 @@ export function createEditorExtensions({
   });
 
   return [
-    ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
+    ...createStandaloneEditorExtensions({ schemaType, assetRenderContext }),
     ...collaboration,
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
@@ -246,8 +245,8 @@ export function createEditorExtensions({
 /** Meridian's canonical editor schema without transport or shared state. */
 export function createStandaloneEditorExtensions({
   schemaType = "document",
-  figureRenderContext,
-}: Pick<CreateEditorExtensionsOptions, "schemaType" | "figureRenderContext"> = {}): Extensions {
+  assetRenderContext,
+}: Pick<CreateEditorExtensionsOptions, "schemaType" | "assetRenderContext"> = {}): Extensions {
   if (schemaType === "code") {
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
@@ -273,12 +272,11 @@ export function createStandaloneEditorExtensions({
     MeridianTableHeader,
     MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianImage,
+    MeridianImage.configure({ projectId: assetRenderContext?.projectId }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
-      projectId: figureRenderContext?.projectId,
-      documentId: figureRenderContext?.documentId,
+      projectId: assetRenderContext?.projectId,
     }),
     LiveRangeNavigationExtension,
   ];
@@ -290,7 +288,7 @@ export function createEditorConfig({
   schemaType,
   cursorProvider,
   user,
-  figureRenderContext,
+  assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
   editable = true,
@@ -312,7 +310,7 @@ export function createEditorConfig({
         schemaType: resolvedSchemaType,
         cursorProvider,
         user,
-        figureRenderContext,
+        assetRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
       }),

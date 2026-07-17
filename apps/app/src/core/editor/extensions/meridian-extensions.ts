@@ -14,7 +14,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
 import Heading from "@tiptap/extension-heading";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
-import Image from "@tiptap/extension-image";
+import Image, { type ImageOptions } from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
 import Link from "@tiptap/extension-link";
 import ListItem from "@tiptap/extension-list-item";
@@ -26,7 +26,7 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
-import { FigureNodeView } from "../FigureNodeView";
+import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 
 type RenderAttrs = Record<string, unknown>;
@@ -226,8 +226,14 @@ export const MeridianOrderedList = OrderedList.extend({
   },
 }).configure({ itemTypeName: "list_item" });
 
-export const MeridianImage = Image.extend({
+export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>({
   marks: "",
+
+  addOptions() {
+    const parent = this.parent?.();
+    if (!parent) throw new Error("MeridianImage requires the base image options");
+    return { ...parent, projectId: undefined };
+  },
 
   addAttributes() {
     return {
@@ -235,6 +241,10 @@ export const MeridianImage = Image.extend({
       alt: { default: null },
       title: { default: null },
     };
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageNodeView);
   },
 }).configure({ inline: true });
 
@@ -323,7 +333,7 @@ export const MeridianJsxContainer = Node.create({
   },
 });
 
-export const MeridianFigure = Node.create<{ projectId?: string; documentId?: string }>({
+export const MeridianFigure = Node.create<{ projectId?: string }>({
   name: "figure",
   group: "block",
   atom: true,
@@ -335,7 +345,6 @@ export const MeridianFigure = Node.create<{ projectId?: string; documentId?: str
   addOptions() {
     return {
       projectId: undefined,
-      documentId: undefined,
     };
   },
 

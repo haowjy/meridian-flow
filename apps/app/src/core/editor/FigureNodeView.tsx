@@ -3,7 +3,7 @@
  *
  * Renders an uploaded figure inside ProseMirror with loading/error/retry states
  * and refreshes object-store signed URLs before they expire. Owns the figure
- * node's in-editor presentation; upload/url helpers live in `figure-workflow`.
+ * node's in-editor presentation; shared asset URL helpers live in `image-workflow`.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -14,15 +14,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 import { Button } from "@/components/ui/button";
-import {
-  assetDocumentIdFromFigureSrc,
-  signedUrlRefreshDelayMs,
-} from "@/core/editor/figure-workflow";
+import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "@/core/editor/image-workflow";
 import { cn } from "@/lib/utils";
 
 type MeridianFigureExtensionOptions = {
   projectId?: string;
-  documentId?: string;
 };
 
 type FigureAttrs = {
@@ -60,12 +56,12 @@ function getExtensionOptions(props: NodeViewProps): MeridianFigureExtensionOptio
   return (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
 }
 
-function useFigureRenderState(input: {
+export function useAssetImageRenderState(input: {
   projectId?: string;
   src: string;
 }): [RenderState, () => void] {
   const { projectId, src } = input;
-  const assetDocumentId = assetDocumentIdFromFigureSrc(src);
+  const assetDocumentId = assetDocumentIdFromSrc(src);
   const [refreshToken, setRefreshToken] = useState(0);
   const [state, setState] = useState<RenderState>(() => {
     if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
@@ -136,7 +132,7 @@ function useFigureRenderState(input: {
 export function FigureNodeView(props: NodeViewProps) {
   const attrs = getFigureAttrs(props);
   const { projectId } = getExtensionOptions(props);
-  const [renderState, refreshRenderUrl] = useFigureRenderState({
+  const [renderState, refreshRenderUrl] = useAssetImageRenderState({
     projectId,
     src: attrs.src,
   });
@@ -245,6 +241,34 @@ export function FigureNodeView(props: NodeViewProps) {
           </label>
         </div>
       ) : null}
+    </NodeViewWrapper>
+  );
+}
+
+/** Inline image node view that translates stable asset refs to short-lived read URLs. */
+export function ImageNodeView(props: NodeViewProps) {
+  const src = textAttr(props.node.attrs.src);
+  const alt = nullableTextAttr(props.node.attrs.alt) ?? "";
+  const { projectId } = getExtensionOptions(props);
+  const [state, refresh] = useAssetImageRenderState({ projectId, src });
+
+  return (
+    <NodeViewWrapper as="span" className="meridian-image-node" data-type="image">
+      {state.url ? (
+        <img src={state.url} alt={alt} draggable={false} onError={refresh} />
+      ) : (
+        <span
+          className="meridian-image-node__placeholder"
+          role="img"
+          aria-label={"message" in state ? state.message : t`Loading image`}
+        >
+          {state.kind === "loading" ? (
+            <Loader2 className="size-6 animate-spin" />
+          ) : (
+            <ImageIcon className="size-6" />
+          )}
+        </span>
+      )}
     </NodeViewWrapper>
   );
 }

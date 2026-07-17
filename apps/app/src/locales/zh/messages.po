@@ -88,7 +88,11 @@ msgid "A file named {trimmed} already exists in this location."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-msgid "A project is required before figures can be uploaded."
+#~ msgid "A project is required before figures can be uploaded."
+#~ msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "A project is required before images can be uploaded."
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
@@ -147,6 +151,7 @@ msgid "AI write mode"
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
+#: src/features/editor/EditorImageBubble.tsx
 msgid "Alt text"
 msgstr ""
 
@@ -230,6 +235,10 @@ msgid "Billing"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
+msgid "Block alignment"
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr ""
 
@@ -260,6 +269,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Center"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -297,6 +310,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Choose an image file."
 msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
@@ -499,6 +516,10 @@ msgstr ""
 msgid "Data Analysis"
 msgstr ""
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Default alignment"
+msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -607,12 +628,16 @@ msgid "Drafted file"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-msgid "Drop an image file to insert a figure."
+#~ msgid "Drop an image file to insert a figure."
+#~ msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Drop image to upload"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-msgid "Drop image to upload a figure"
-msgstr ""
+#~ msgid "Drop image to upload a figure"
+#~ msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Earlier content could not be recovered"
@@ -719,8 +744,8 @@ msgid "Figure could not be loaded."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-msgid "Figure upload failed."
-msgstr ""
+#~ msgid "Figure upload failed."
+#~ msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
@@ -795,13 +820,34 @@ msgstr ""
 msgid "Image artifact"
 msgstr ""
 
+#: src/features/editor/EditorImageBubble.tsx
+msgid "Image controls"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Image upload failed."
+msgstr ""
+
+#: src/features/editor/EditorImageBubble.tsx
+msgid "Image URL"
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
 msgstr ""
 
+#: src/features/editor/EditorToolbar.tsx
+msgid "Insert image"
+msgstr ""
+
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
-msgid "Inserted {0} as a figure."
+#~ msgid "Inserted {0} as a figure."
+#~ msgstr ""
+
+#. placeholder {0}: state.filename
+#: src/features/editor/EditorView.tsx
+msgid "Inserted {0} as an image."
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
@@ -906,6 +952,7 @@ msgstr ""
 msgid "Loading files…"
 msgstr ""
 
+#: src/core/editor/FigureNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "正在加载图片"
@@ -1336,6 +1383,10 @@ msgstr ""
 msgid "remaining"
 msgstr ""
 
+#: src/features/editor/EditorImageBubble.tsx
+msgid "Remove image"
+msgstr ""
+
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Remove link"
 msgstr ""
@@ -1370,6 +1421,10 @@ msgstr ""
 
 #: src/features/project/context/UntitledRenameLine.tsx
 msgid "Renaming…"
+msgstr ""
+
+#: src/features/editor/EditorImageBubble.tsx
+msgid "Replace image"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
@@ -1433,6 +1488,10 @@ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
+msgstr ""
+
+#: src/features/editor/EditorToolbar.tsx
+msgid "Right"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1669,7 +1728,11 @@ msgid "The endpoint reports its own env-presence checklist in the body above (pr
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-msgid "The figure uploaded, but the editor could not insert it."
+#~ msgid "The figure uploaded, but the editor could not insert it."
+#~ msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "The image uploaded, but the editor could not insert it."
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
@@ -1732,7 +1795,11 @@ msgid "This skill is no longer available in this chat — start a new chat to us
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgid "This stored figure needs a project and document before it can be rendered."
+#~ msgstr ""
+
+#: src/core/editor/FigureNodeView.tsx
+msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
 
 #: src/lib/date-groups.ts
@@ -1797,6 +1864,10 @@ msgstr ""
 msgid "Untitled project"
 msgstr ""
 
+#: src/features/editor/EditorImageBubble.tsx
+msgid "Update image"
+msgstr ""
+
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Update link"
 msgstr ""
@@ -1806,8 +1877,8 @@ msgid "Updated"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
-msgid "Upload figure"
-msgstr ""
+#~ msgid "Upload figure"
+#~ msgstr ""
 
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent
