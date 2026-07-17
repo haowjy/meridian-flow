@@ -12,13 +12,21 @@ import {
   useIndependentProjectsStore,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import {
   isSettingsSection,
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
+import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
+
+// Composition-root prerequisite: product descendants create both client
+// sockets as soon as they render, so capture must be installed first.
+if (DEBUG_FEATURE_ALLOWED) {
+  installTraceCapture();
+}
 
 // Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
 // so the entire feature (and its lazy chunk) is dead-code-eliminated from

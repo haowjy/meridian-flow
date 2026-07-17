@@ -1,0 +1,183 @@
+/** Contract tests for metadata-only Yjs wire EventRecord mapping. */
+
+import type { EventRecord } from "@meridian/contracts/observability";
+import { inspectFrame } from "@meridian/yjs-inspect";
+import * as encoding from "lib0/encoding";
+import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+
+import { createYjsWireTap, createYjsWireTapState } from "./yjs-wire-tap";
+
+function syncUpdateFrame(roomName: string, update: Uint8Array): Uint8Array {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarString(encoder, roomName);
+  encoding.writeVarUint(encoder, 0);
+  encoding.writeVarUint(encoder, 2);
+  encoding.writeVarUint8Array(encoder, update);
+  return encoding.toUint8Array(encoder);
+}
+
+function unknownFrame(roomName: string): Uint8Array {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarString(encoder, roomName);
+  encoding.writeVarUint(encoder, 99);
+  return encoding.toUint8Array(encoder);
+}
+
+function insertUpdate(): Uint8Array {
+  const document = new Y.Doc();
+  document.getText("manuscript").insert(0, "content-never-egresses-through-the-tap");
+  return Y.encodeStateAsUpdate(document);
+}
+
+describe("createYjsWireTap", () => {
+  it("maps an attached live-room update without changing the inspection payload", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+    const bytes = syncUpdateFrame("document-1", insertUpdate());
+    const inspection = inspectFrame(bytes);
+
+    tap.onRoomAttached("document-1", 777);
+    tap.onSocketOpen(4);
+    tap.onFrame("client_to_server", bytes, 4);
+
+    expect(records[0]).toMatchObject({
+      name: "socket.open",
+      stream: { messageClass: "socket.open" },
+    });
+    expect(records[0]?.payload).toEqual({ socketEpoch: 4 });
+
+    expect(records[1]).toMatchObject({
+      level: "trace",
+      source: "wire.yjs",
+      name: "frame",
+      sensitivity: "safe",
+      correlation: {
+        documentId: "document-1",
+        yjsClient: 777,
+        yjsSpans: inspection.update?.spansKey,
+      },
+      stream: {
+        streamId: "yjs:live:document-1",
+        transport: "yjs",
+        direction: "client_to_server",
+        observedAt: "client",
+        messageClass: "sync.update",
+        bytes: bytes.byteLength,
+        observerSeq: 2,
+      },
+      payload: { socketEpoch: 4, ...inspection },
+    });
+    expect(records[1]?.payload).toEqual({ socketEpoch: 4, ...inspection });
+    expect(JSON.stringify(records[1])).not.toContain("content-never-egresses-through-the-tap");
+  });
+
+  it("maps branch identity and infers the sole struct client on incoming updates", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+    const bytes = syncUpdateFrame("branch:draft-2:gen:3", insertUpdate());
+    const inspection = inspectFrame(bytes);
+    const structClient = inspection.update?.structSpans[0]?.client;
+
+    tap.onFrame("server_to_client", bytes, 1);
+
+    expect(records[0]).toMatchObject({
+      correlation: {
+        branchId: "draft-2",
+        branchGeneration: 3,
+        yjsClient: structClient,
+        yjsSpans: inspection.update?.spansKey,
+      },
+      stream: {
+        streamId: "yjs:branch:draft-2:gen:3",
+        observerSeq: 1,
+      },
+    });
+  });
+
+  it("never infers an outgoing client when the room attachment is unknown", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+    const bytes = syncUpdateFrame("document-1", insertUpdate());
+
+    tap.onFrame("client_to_server", bytes, 1);
+
+    expect(records[0]?.correlation?.yjsSpans).toBeDefined();
+    expect(records[0]?.correlation?.yjsClient).toBeUndefined();
+  });
+
+  it("keeps sequencing and room attribution when HMR replaces the tap", () => {
+    const records: EventRecord[] = [];
+    const state = createYjsWireTapState();
+    const firstTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
+
+    firstTap.onRoomAttached("document-1", 777);
+    firstTap.onSocketOpen(1);
+
+    const replacementTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
+    replacementTap.onFrame("client_to_server", syncUpdateFrame("document-1", insertUpdate()), 1);
+
+    expect(records[1]).toMatchObject({
+      correlation: { yjsClient: 777 },
+      stream: { observerSeq: 2 },
+    });
+  });
+
+  it("uses the socket fallback for unknown frames and keeps sequence across reconnects", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+
+    tap.onSocketOpen(1);
+    tap.onSocketClose(1, 4000, true);
+    tap.onSocketOpen(2);
+    tap.onFrame("server_to_client", unknownFrame("branch:invalid:gen:0"), 2);
+
+    expect(records.map((record) => record.stream?.observerSeq)).toEqual([1, 2, 3, 4]);
+    expect(records[1]).toMatchObject({
+      level: "debug",
+      name: "socket.close",
+      stream: { messageClass: "socket.close" },
+      payload: { socketEpoch: 1, code: 4000, wasClean: true },
+    });
+    expect(records[3]).toMatchObject({
+      name: "frame",
+      stream: {
+        streamId: "yjs:socket",
+        messageClass: "unknown",
+      },
+      payload: {
+        socketEpoch: 2,
+        frame: { documentName: "branch:invalid:gen:0", messageClass: "unknown" },
+      },
+    });
+    expect(records[3]?.correlation).toBeUndefined();
+  });
+
+  it("normalizes standard close codes and leaves unknown codes numeric-only", () => {
+    const records: EventRecord[] = [];
+    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
+
+    tap.onSocketClose(1, 1000, true);
+    tap.onSocketClose(2, 1006, false);
+    tap.onSocketClose(3, 4403, false);
+
+    expect(records.map((record) => record.payload)).toEqual([
+      { socketEpoch: 1, code: 1000, reason: "normal_closure", wasClean: true },
+      { socketEpoch: 2, code: 1006, reason: "abnormal_closure", wasClean: false },
+      { socketEpoch: 3, code: 4403, wasClean: false },
+    ]);
+  });
+
+  it("routes sink failures to onError and never propagates either callback", () => {
+    const onError = vi.fn(() => {
+      throw new Error("error counter unavailable");
+    });
+    const tap = createYjsWireTap(() => {
+      throw new Error("sink unavailable");
+    }, onError);
+
+    expect(() => tap.onFrame("client_to_server", unknownFrame("document-1"), 1)).not.toThrow();
+    expect(() => tap.onSocketOpen(1)).not.toThrow();
+    expect(onError).toHaveBeenCalledTimes(2);
+  });
+});

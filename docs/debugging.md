@@ -41,9 +41,12 @@ instead of `console.log`.
   path when that is the right level of detail. Broader prompt and agent-run
   trace capture is not implemented yet; until it exists, use safe metadata in
   `EventSink` events and keep protected content out of ordinary searchable logs.
-- Client-only probes can use temporary console output while diagnosing; durable
-  client diagnostics need an explicit dev/debug transport before they become
-  observable to LLMs.
+- Client Yjs and thread-socket diagnostics are captured as metadata-only
+  `EventRecord`s in debug-enabled builds. Open **Streams** from the debug pill
+  for the live viewer, or use `window.__meridianTrace` for programmatic queries,
+  stats, clearing, and next-event waits. API results are detached clones; caller
+  mutation cannot alter retained evidence. This is client wire visibility only
+  until the server event feed and durability receipts ship.
 
 ## Cleanup
 

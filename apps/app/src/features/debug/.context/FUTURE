@@ -1,0 +1,6 @@
+# Deferred debug-viewer work
+
+- `trace/TraceTable.tsx`: collapse consecutive `sync.update` rows at render time
+  during bursts. Plan this with the S4 durability columns so grouping preserves
+  the row-to-durable-receipt relationship instead of creating a competing data
+  representation.
