@@ -28,14 +28,15 @@ export function resolveChatThreadId({
   rememberedThreadId: string | null;
   projectThreads: Thread[] | null;
 }): string | null {
+  const availableThreads = projectThreads?.filter((thread) => thread.deletedAt === null) ?? null;
   const loadedId = (threadId: string | null) =>
-    threadId && projectThreads?.some((thread) => thread.id === threadId) ? threadId : null;
+    threadId && availableThreads?.some((thread) => thread.id === threadId) ? threadId : null;
   return (
     loadedId(explicitThreadId) ??
     pendingThreadId ??
     loadedId(rememberedThreadId) ??
-    (projectThreads && projectThreads.length > 0
-      ? (projectThreads.find((t) => t.kind !== "subagent")?.id ?? projectThreads[0].id)
+    (availableThreads && availableThreads.length > 0
+      ? (availableThreads.find((t) => t.kind !== "subagent")?.id ?? availableThreads[0].id)
       : null)
   );
 }

@@ -39,7 +39,6 @@ export class WorkingSetSyncDriver {
   private readonly baselines = new Map<string, number | null>();
   private readonly scheduled = new Set<string>();
   private readonly failures = new Map<string, number>();
-  private readonly hydrated = new Map<string, { key: string; plan: WorkingSetHydrationPlan }>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sweeping = false;
 
@@ -56,7 +55,6 @@ export class WorkingSetSyncDriver {
       this.baselines.clear();
       this.scheduled.clear();
       this.failures.clear();
-      this.hydrated.clear();
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
     }
@@ -65,12 +63,7 @@ export class WorkingSetSyncDriver {
 
   hydrate(projectId: string, result: ProjectRouteData["workingSet"]): WorkingSetHydrationPlan {
     if (!this.enabled) return { status: "disabled" };
-    const key = result.status === "row" ? `row:${result.row.revision}` : result.status;
-    const previous = this.hydrated.get(projectId);
-    if (previous?.key === key) return previous.plan;
-
     const plan = planWorkingSetHydration(true, result, this.store.read(projectId));
-    this.hydrated.set(projectId, { key, plan });
     if (plan.status === "read-degraded") {
       this.baselines.delete(projectId);
       return plan;
@@ -101,15 +94,6 @@ export class WorkingSetSyncDriver {
       if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
       return this.hydrate(projectId, { status: "unavailable" });
     }
-  }
-
-  establishBaseline(projectId: string, result: ProjectRouteData["workingSet"]): void {
-    if (result.status === "unavailable") {
-      this.baselines.delete(projectId);
-      return;
-    }
-    this.baselines.set(projectId, result.status === "row" ? result.row.revision : null);
-    if (this.store.read(projectId)?.pending) this.schedule(projectId, 0);
   }
 
   readRecentRoutes(projectId: string): WorkingSetRoute[] {
@@ -228,13 +212,6 @@ function browserDriver(): WorkingSetSyncDriver | null {
 
 export function configureWorkingSetSync(userId: string, enabled: boolean): void {
   browserDriver()?.configure(userId, enabled);
-}
-
-export function establishWorkingSetBaseline(
-  projectId: string,
-  result: ProjectRouteData["workingSet"],
-): void {
-  browserDriver()?.establishBaseline(projectId, result);
 }
 
 export function hydrateWorkingSet(

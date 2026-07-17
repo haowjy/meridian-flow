@@ -46,7 +46,7 @@ describe("working-set identity sessions", () => {
     const first = driver.hydrate("project-1", result);
     const second = driver.hydrate("project-1", result);
 
-    expect(second).toBe(first);
+    expect(second).toEqual(first);
     expect(store.read("project-1")).toEqual({
       snapshot: {
         recentRoutes: [{ scheme: "kb", path: "/server.md" }],
@@ -54,6 +54,34 @@ describe("working-set identity sessions", () => {
       },
     });
     expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-runs precedence when local state changes under the same server revision", () => {
+    vi.useFakeTimers();
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const driver = new WorkingSetSyncDriver(store, vi.fn());
+    const result = {
+      status: "row" as const,
+      row: {
+        userId: "user-a",
+        projectId: "project-1",
+        recentRoutes: [],
+        lastThreadId: null,
+        revision: 3,
+        updatedAt: "2026-07-17T00:00:00.000Z",
+      },
+    };
+    driver.configure("user-a", true);
+    expect(driver.hydrate("project-1", result).status).toBe("server");
+    driver.setThread("project-1", "thread-local");
+
+    expect(driver.hydrate("project-1", result)).toEqual({ status: "local", revision: 3 });
+    expect(store.read("project-1")?.snapshot.lastThreadId).toBe("thread-local");
+    vi.useRealTimers();
   });
 
   it("ignores an old user's acknowledgement before sweeping the new user's pending record", async () => {
@@ -73,13 +101,13 @@ describe("working-set identity sessions", () => {
     const driver = new WorkingSetSyncDriver(store, put);
 
     driver.configure("user-a", true);
-    driver.establishBaseline("project-1", { status: "absent" });
+    driver.hydrate("project-1", { status: "absent" });
     driver.setThread("project-1", "thread-a");
     driver.flush();
     await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
 
     driver.configure("user-b", true);
-    driver.establishBaseline("project-1", { status: "absent" });
+    driver.hydrate("project-1", { status: "absent" });
     driver.setThread("project-1", "thread-b");
     driver.flush();
 

@@ -3,7 +3,6 @@
 export {
   clearRoutes,
   configureWorkingSetSync,
-  establishWorkingSetBaseline,
   hydrateWorkingSet,
   promoteRoute,
   readRecentRoutes,

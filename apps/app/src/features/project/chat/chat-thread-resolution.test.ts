@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { resolveChatThreadId } from "./chat-thread-resolution";
 
 function thread(id: string, kind: Thread["kind"] = "primary"): Thread {
-  return { id, kind } as Thread;
+  return { id, kind, deletedAt: null } as Thread;
 }
 
 const projectThreads = [thread("first"), thread("remembered"), thread("explicit")];
@@ -50,6 +50,20 @@ describe("chat thread resolution", () => {
         pendingThreadId: null,
         rememberedThreadId: "deleted-remembered",
         projectThreads,
+      }),
+    ).toBe("first");
+  });
+
+  it("falls through a remembered soft-deleted thread", () => {
+    expect(
+      resolveChatThreadId({
+        explicitThreadId: null,
+        pendingThreadId: null,
+        rememberedThreadId: "deleted",
+        projectThreads: [
+          { ...thread("deleted"), deletedAt: "2026-07-17T00:00:00.000Z" },
+          thread("first"),
+        ],
       }),
     ).toBe("first");
   });

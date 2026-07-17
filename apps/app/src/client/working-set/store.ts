@@ -197,6 +197,8 @@ export class DeviceWorkingSetStore {
 
   adopt(projectId: string, snapshot: WorkingSetSnapshot): void {
     if (!this.state) return;
+    const current = this.state.projects[projectId];
+    if (current && !current.pending && snapshotEquals(current.snapshot, snapshot)) return;
     this.state.projects[projectId] = { snapshot };
     this.persist();
   }
