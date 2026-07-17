@@ -55,6 +55,8 @@ tools/dev/
 ## Database contract
 
 - One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
+- **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves databases owned by live worktrees and reserved names, and drops both stale worktree databases and ad-hoc test databases with no live owner.
+- **DB test cleanup:** the shared `apps/server/vitest.db.config.ts` project drops its dedicated throwaway database after the suite when it runs on the local dev Postgres endpoint. CI/external Postgres instances rely on their own ephemeral infrastructure lifecycle.
 - **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
 - **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
 - **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.
