@@ -7,7 +7,7 @@ import type {
   FrameInspection,
   FrameSummary,
   InnerSyncType,
-  YjsMessageClass,
+  SyncFrameSummary,
 } from "./types.js";
 import { summarizeUpdate } from "./update.js";
 
@@ -24,11 +24,21 @@ const INNER_SYNC_TYPES: Readonly<Record<number, InnerSyncType>> = {
   2: "update",
 };
 
-const SYNC_MESSAGE_CLASSES: Readonly<Record<InnerSyncType, YjsMessageClass>> = {
-  step1: "sync.step1",
-  step2: "sync.step2",
-  update: "sync.update",
-};
+function syncFrameSummary(
+  documentName: string,
+  innerSyncType: InnerSyncType,
+  payloadBytes: number,
+): SyncFrameSummary {
+  const base = { documentName, payloadBytes };
+  switch (innerSyncType) {
+    case "step1":
+      return { ...base, messageClass: "sync.step1", innerSyncType };
+    case "step2":
+      return { ...base, messageClass: "sync.step2", innerSyncType };
+    case "update":
+      return { ...base, messageClass: "sync.update", innerSyncType };
+  }
+}
 
 function unknown(bytes: Uint8Array, documentName: string | null = null): FrameSummary {
   return {
@@ -60,12 +70,7 @@ function decodeFrame(bytes: Uint8Array): DecodedFrame {
       if (decoder.pos !== bytes.byteLength) return { summary: unknown(bytes, documentName) };
 
       return {
-        summary: {
-          documentName,
-          messageClass: SYNC_MESSAGE_CLASSES[innerSyncType],
-          innerSyncType,
-          payloadBytes: payload.byteLength,
-        },
+        summary: syncFrameSummary(documentName, innerSyncType, payload.byteLength),
         payload,
       };
     }
@@ -122,27 +127,32 @@ export function classifyFrame(bytes: Uint8Array): FrameSummary {
 
 export function inspectFrame(bytes: Uint8Array): FrameInspection {
   const decoded = decodeFrame(bytes);
-  const inspection: FrameInspection = { frame: decoded.summary };
 
   if (
-    decoded.payload &&
-    (decoded.summary.messageClass === "sync.step2" ||
-      decoded.summary.messageClass === "sync.update")
+    decoded.summary.messageClass === "sync.step2" ||
+    decoded.summary.messageClass === "sync.update"
   ) {
+    if (!decoded.payload) return { frame: decoded.summary };
     const update = summarizeUpdate(decoded.payload);
-    if (!("invalid" in update)) inspection.update = update;
-  } else if (decoded.queryAwareness) {
-    inspection.awareness = emptyAwarenessSummary();
-  } else if (decoded.payload && decoded.summary.messageClass === "awareness") {
-    try {
-      inspection.awareness = summarizeAwareness(decoded.payload);
-    } catch {
-      // A valid outer envelope can still contain a malformed awareness
-      // payload. Preserve its classification and omit only its summary.
-    }
+    return "invalid" in update ? { frame: decoded.summary } : { frame: decoded.summary, update };
   }
 
-  return inspection;
+  if (decoded.summary.messageClass === "awareness") {
+    if (decoded.queryAwareness) {
+      return { frame: decoded.summary, awareness: emptyAwarenessSummary() };
+    }
+    if (decoded.payload) {
+      try {
+        return { frame: decoded.summary, awareness: summarizeAwareness(decoded.payload) };
+      } catch {
+        // A valid outer envelope can still contain a malformed awareness
+        // payload. Preserve its classification and omit only its summary.
+      }
+    }
+    return { frame: decoded.summary };
+  }
+
+  return { frame: decoded.summary };
 }
 
 function emptyAwarenessSummary(): AwarenessSummary {

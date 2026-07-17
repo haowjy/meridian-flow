@@ -166,17 +166,21 @@ describe("inspectFrame", () => {
     const stateVector = Y.encodeStateVector(document);
 
     expect(inspectFrame(syncFrame("doc", 0, stateVector))).not.toHaveProperty("update");
-    expect(inspectFrame(syncFrame("doc", 1, update)).update?.structCount).toBe(1);
-    expect(inspectFrame(syncFrame("doc", 2, update)).update?.structCount).toBe(1);
+    const step2 = inspectFrame(syncFrame("doc", 1, update));
+    const syncUpdate = inspectFrame(syncFrame("doc", 2, update));
+    expect("update" in step2 && step2.update?.structCount).toBe(1);
+    expect("update" in syncUpdate && syncUpdate.update?.structCount).toBe(1);
 
     const awareness = new Awareness(document);
     awareness.setLocalState({ hidden: true });
     const payload = encodeAwarenessUpdate(awareness, [document.clientID]);
-    expect(inspectFrame(frame("doc", 1, payload)).awareness).toMatchObject({
+    const awarenessInspection = inspectFrame(frame("doc", 1, payload));
+    expect("awareness" in awarenessInspection && awarenessInspection.awareness).toMatchObject({
       count: 1,
       removedCount: 0,
     });
-    expect(inspectFrame(frame("doc", 3)).awareness).toEqual({
+    const awarenessQuery = inspectFrame(frame("doc", 3));
+    expect("awareness" in awarenessQuery && awarenessQuery.awareness).toEqual({
       clients: [],
       count: 0,
       removedCount: 0,
@@ -399,7 +403,8 @@ describe("awareness summaries", () => {
     writeVarString(encoder, "null");
     const payload = toUint8Array(encoder);
 
-    expect(inspectFrame(frame("doc", 1, payload)).awareness).toEqual({
+    const inspection = inspectFrame(frame("doc", 1, payload));
+    expect("awareness" in inspection && inspection.awareness).toEqual({
       clients: [
         { client: 41, clock: 7, removed: false },
         { client: 42, clock: 8, removed: true },

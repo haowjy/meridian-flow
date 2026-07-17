@@ -10,12 +10,49 @@ export type YjsMessageClass =
 
 export type InnerSyncType = "step1" | "step2" | "update";
 
-export interface KnownFrameSummary {
+interface KnownFrameSummaryBase {
   documentName: string;
-  messageClass: YjsMessageClass;
-  innerSyncType?: InnerSyncType;
   payloadBytes: number;
 }
+
+export interface SyncStep1FrameSummary extends KnownFrameSummaryBase {
+  messageClass: "sync.step1";
+  innerSyncType: "step1";
+}
+
+export interface SyncStep2FrameSummary extends KnownFrameSummaryBase {
+  messageClass: "sync.step2";
+  innerSyncType: "step2";
+}
+
+export interface SyncUpdateFrameSummary extends KnownFrameSummaryBase {
+  messageClass: "sync.update";
+  innerSyncType: "update";
+}
+
+export type SyncFrameSummary =
+  | SyncStep1FrameSummary
+  | SyncStep2FrameSummary
+  | SyncUpdateFrameSummary;
+
+export interface AwarenessFrameSummary extends KnownFrameSummaryBase {
+  messageClass: "awareness";
+  innerSyncType?: never;
+}
+
+export interface StatelessFrameSummary extends KnownFrameSummaryBase {
+  messageClass: "stateless";
+  innerSyncType?: never;
+}
+
+export interface AuthFrameSummary extends KnownFrameSummaryBase {
+  messageClass: "auth";
+  innerSyncType?: never;
+}
+
+export type NonSyncFrameSummary = AwarenessFrameSummary | StatelessFrameSummary | AuthFrameSummary;
+
+export type KnownFrameSummary = SyncFrameSummary | NonSyncFrameSummary;
 
 export interface UnknownFrameSummary {
   documentName: string | null;
@@ -55,11 +92,24 @@ export interface InvalidUpdate {
   updateHash: string;
 }
 
-export interface FrameInspection {
-  frame: FrameSummary;
+export interface UpdateFrameInspection {
+  frame: SyncStep2FrameSummary | SyncUpdateFrameSummary;
   update?: UpdateSummary;
+}
+
+export interface AwarenessFrameInspection {
+  frame: AwarenessFrameSummary;
   awareness?: AwarenessSummary;
 }
+
+export interface OtherFrameInspection {
+  frame: SyncStep1FrameSummary | StatelessFrameSummary | AuthFrameSummary | UnknownFrameSummary;
+}
+
+export type FrameInspection =
+  | UpdateFrameInspection
+  | AwarenessFrameInspection
+  | OtherFrameInspection;
 
 export interface AwarenessClientDelta {
   client: number;
