@@ -95,7 +95,7 @@ export const EditorBubbleHost = forwardRef<
     [contexts, editor, version],
   );
   const signature = active ? bubbleSignature(active) : null;
-  const dismissalKey = active ? bubbleDismissalKey(active) : null;
+  const dismissalKey = active && editor ? bubbleDismissalKey(active, editor) : null;
   const visible = Boolean(
     active &&
       !composing &&
@@ -136,7 +136,6 @@ export const EditorBubbleHost = forwardRef<
       // the browser focuses the pressed control. Let that focus transition land.
       window.setTimeout(() => {
         setEditorFocused(editor.isFocused);
-        setBubbleFocused(bubbleRef.current?.contains(document.activeElement) ?? false);
       });
     };
     editor.on("selectionUpdate", bump);
@@ -191,16 +190,27 @@ export const EditorBubbleHost = forwardRef<
     onActiveContextChange?.(visible && active ? active.context.id : null);
   }, [active, onActiveContextChange, visible]);
 
+  const focusBubble = useCallback(() => {
+    if (!active || focusRequest !== active.context.id) return false;
+    const target = bubbleRef.current?.querySelector<HTMLElement>("[data-bubble-autofocus]");
+    if (!target) return false;
+    target.focus();
+    if (target instanceof HTMLInputElement) target.select();
+    setFocusRequest(null);
+    return true;
+  }, [active, focusRequest]);
+
   useEffect(() => {
-    if (!visible || !active || focusRequest !== active.context.id) return;
-    const frame = window.requestAnimationFrame(() => {
-      const target = bubbleRef.current?.querySelector<HTMLElement>("[data-bubble-autofocus]");
-      target?.focus();
-      if (target instanceof HTMLInputElement) target.select();
-      setFocusRequest(null);
-    });
+    if (!visible) return;
+    let attempts = 0;
+    let frame = 0;
+    const tryFocus = () => {
+      attempts += 1;
+      if (!focusBubble() && attempts < 3) frame = window.requestAnimationFrame(tryFocus);
+    };
+    frame = window.requestAnimationFrame(tryFocus);
     return () => window.cancelAnimationFrame(frame);
-  }, [active, focusRequest, visible]);
+  }, [focusBubble, visible]);
 
   const anchorRef = useVirtualAnchor(editor, active);
   const Component = active?.context.Component;
@@ -223,6 +233,12 @@ export const EditorBubbleHost = forwardRef<
         updatePositionStrategy="always"
         className="w-auto p-0"
         aria-label={t`Editor contextual controls`}
+        onPointerDownCapture={(event) => {
+          setBubbleFocused(true);
+          // Keep ProseMirror's selection live while a command button runs.
+          // Text fields still take focus normally.
+          if ((event.target as Element).closest("button, a")) event.preventDefault();
+        }}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
@@ -246,8 +262,9 @@ function bubbleSignature({ context, match }: ActiveBubble): string {
   return `${context.id}:${match.from}:${match.to}:${match.nodePos ?? ""}:${JSON.stringify(match.data)}`;
 }
 
-function bubbleDismissalKey({ context, match }: ActiveBubble): string {
-  return `${context.id}:${match.from}:${match.to}:${match.nodePos ?? ""}`;
+function bubbleDismissalKey({ context, match }: ActiveBubble, editor: Editor): string {
+  const { from, to } = editor.state.selection;
+  return `${context.id}:${from}:${to}:${match.nodePos ?? ""}`;
 }
 
 function useVirtualAnchor(

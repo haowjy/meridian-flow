@@ -7,7 +7,7 @@ import { type FormEvent, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { type BubbleContext, type BubbleMatch, useEditorBubble } from "./EditorBubbleHost";
-import { linkAttributesAtSelection } from "./link-selection";
+import { linkAtSelection, linkAttributesAtSelection } from "./link-selection";
 import { normalizeLinkHref } from "./link-url";
 
 type LinkBubbleData = { attributes: Record<string, unknown> | null };
@@ -17,9 +17,13 @@ export const linkBubbleContext: BubbleContext = {
   anchor: "selection",
   match(editor) {
     const { from, to, empty } = editor.state.selection;
-    const attributes = linkAttributesAtSelection(editor);
-    if (empty && !attributes) return null;
-    return { from, to, data: { attributes } satisfies LinkBubbleData };
+    const link = linkAtSelection(editor);
+    if (empty && !link) return null;
+    return {
+      from: link?.from ?? from,
+      to: link?.to ?? to,
+      data: { attributes: link?.attributes ?? null } satisfies LinkBubbleData,
+    };
   },
   Component: LinkBubble,
 };
@@ -69,7 +73,9 @@ function LinkBubble({ editor, match }: { editor: Editor; match: BubbleMatch }) {
   const { close } = useEditorBubble();
 
   const removeLink = () => {
-    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    editor.commands.setTextSelection({ from: match.from, to: match.to });
+    editor.commands.unsetLink();
+    editor.commands.focus();
     close();
   };
 
@@ -86,12 +92,9 @@ function LinkBubble({ editor, match }: { editor: Editor; match: BubbleMatch }) {
       return;
     }
 
-    editor
-      .chain()
-      .focus()
-      .extendMarkRange("link")
-      .setLink({ href: normalizedHref, title: null })
-      .run();
+    if (existingAttributes) editor.commands.setTextSelection({ from: match.from, to: match.to });
+    editor.commands.setLink({ href: normalizedHref, title: null });
+    editor.commands.focus();
     close();
   };
 
