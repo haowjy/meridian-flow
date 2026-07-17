@@ -5,11 +5,12 @@ export { classifyFrame } from "./frame.js";
 export type {
   AwarenessClientDelta,
   AwarenessSummary,
+  FrameInspection,
   FrameSummary,
   InnerSyncType,
   KnownFrameSummary,
+  Span,
   UnknownFrameSummary,
-  UpdateClientRange,
   UpdateSummary,
   YjsMessageClass,
 } from "./types.js";

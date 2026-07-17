@@ -25,19 +25,33 @@ export interface UnknownFrameSummary {
 
 export type FrameSummary = KnownFrameSummary | UnknownFrameSummary;
 
-export interface UpdateClientRange {
+/** A Yjs clock range, with an inclusive `clockFrom` and exclusive `clockTo`. */
+export interface Span {
   client: number;
   clockFrom: number;
   clockTo: number;
 }
 
 export interface UpdateSummary {
-  clients: UpdateClientRange[];
+  structSpans: Span[];
+  deleteSpans: Span[];
+  /**
+   * Struct (`s`) tokens followed by delete (`d`) tokens, each sorted by
+   * client then `clockFrom` and joined by commas. A no-op has an empty key.
+   */
+  spansKey: string;
   structCount: number;
-  deleteSetSize: number;
+  deleteRangeCount: number;
+  deletedLength: number;
   isNoop: boolean;
   bytes: number;
   updateHash: string;
+}
+
+export interface FrameInspection {
+  frame: FrameSummary;
+  update?: UpdateSummary;
+  awareness?: AwarenessSummary;
 }
 
 export interface AwarenessClientDelta {
