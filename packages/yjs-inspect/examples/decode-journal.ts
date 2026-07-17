@@ -103,14 +103,22 @@ const input = file
 const rows = decodeRows(input);
 if (rows.length === 0) throw new Error("No hex or base64 update rows found");
 
+const summaries = rows.map((row) => {
+  try {
+    return { row, summary: summarizeUpdate(row.update) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid Yjs update in row ${row.id}: ${message}`, { cause: error });
+  }
+});
+
 let totalBytes = 0;
 let totalStructs = 0;
 let totalDeleteRanges = 0;
 let totalDeletedLength = 0;
 let noopRows = 0;
 
-rows.forEach((row) => {
-  const summary = summarizeUpdate(row.update);
+summaries.forEach(({ row, summary }) => {
   totalBytes += summary.bytes;
   totalStructs += summary.structCount;
   totalDeleteRanges += summary.deleteRangeCount;
@@ -122,5 +130,5 @@ rows.forEach((row) => {
 });
 
 console.log(
-  `totals rows=${rows.length} bytes=${totalBytes} structs=${totalStructs} deleteRanges=${totalDeleteRanges} deleted=${totalDeletedLength} noops=${noopRows}`,
+  `totals rows=${summaries.length} bytes=${totalBytes} structs=${totalStructs} deleteRanges=${totalDeleteRanges} deleted=${totalDeletedLength} noops=${noopRows}`,
 );

@@ -285,6 +285,18 @@ describe("decode-journal CLI", () => {
     expect(result.stderr).toContain("Unrecognized input row ids: 42 (line 2), line 4");
     expect(result.stdout).toBe("");
   });
+
+  it("names recognized rows whose update bytes are invalid before emitting output", () => {
+    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      encoding: "utf8",
+      input: "1 0000\n88 ff\n",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Invalid Yjs update in row 88");
+    expect(result.stdout).toBe("");
+  });
 });
 
 describe("awareness summaries", () => {
