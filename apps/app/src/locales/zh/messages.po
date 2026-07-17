@@ -374,6 +374,14 @@ msgstr ""
 msgid "Code"
 msgstr ""
 
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code block options"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code language"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "Collapse changes"
 msgstr ""
@@ -613,6 +621,14 @@ msgstr ""
 msgid "Dev-login failed"
 msgstr ""
 
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Diagram could not be rendered"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Diagram view"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard"
@@ -689,6 +705,14 @@ msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Earlier content could not be recovered"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Edit"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Edit diagram"
 msgstr ""
 
 #: src/features/editor/EditorLinkBubble.tsx
@@ -1341,6 +1365,10 @@ msgstr ""
 msgid "Paste or type a link"
 msgstr ""
 
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Plain text"
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
 msgstr ""
@@ -1355,6 +1383,14 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Press Enter to use this language"
+msgstr ""
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Preview"
 msgstr ""
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
@@ -1489,6 +1525,10 @@ msgstr ""
 
 #: src/features/project/context/UntitledRenameLine.tsx
 msgid "Renaming…"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Rendering diagram…"
 msgstr ""
 
 #: src/features/editor/EditorImageBubble.tsx
@@ -1913,6 +1953,10 @@ msgstr "已取消。"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Unable to render diagram"
 msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx

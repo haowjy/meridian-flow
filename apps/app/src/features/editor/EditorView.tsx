@@ -44,6 +44,7 @@ import { markdownTableClipboardParser } from "@/core/editor/markdown-paste";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorBubbleHost, type EditorBubbleHostHandle } from "./EditorBubbleHost";
+import { codeBubbleContext } from "./EditorCodeBubble";
 import { createImageBubbleContext } from "./EditorImageBubble";
 import { linkBubbleContext } from "./EditorLinkBubble";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -273,10 +274,11 @@ function SessionEditorView({
     [uploadImageFile],
   );
 
-  // Registration order is arbitration precedence: link → image → table.
+  // Registration order is arbitration precedence: link → code → image → table.
   const editorBubbleContexts = useMemo(
     () => [
       linkBubbleContext,
+      codeBubbleContext,
       createImageBubbleContext(async (file) => {
         const attrs = await uploadImageFile(file);
         return { src: attrs.src, alt: attrs.alt ?? "" };

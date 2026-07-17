@@ -374,6 +374,14 @@ msgstr "Closed"
 msgid "Code"
 msgstr "Code"
 
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code block options"
+msgstr "Code block options"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Code language"
+msgstr "Code language"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Collapse changes"
 msgstr "Collapse changes"
@@ -613,6 +621,14 @@ msgstr "Dev login"
 msgid "Dev-login failed"
 msgstr "Dev-login failed"
 
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Diagram could not be rendered"
+msgstr "Diagram could not be rendered"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Diagram view"
+msgstr "Diagram view"
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard"
@@ -690,6 +706,14 @@ msgstr "Drop image to upload"
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Edit"
+msgstr "Edit"
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Edit diagram"
+msgstr "Edit diagram"
 
 #: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
@@ -1341,6 +1365,10 @@ msgstr "Parent:"
 msgid "Paste or type a link"
 msgstr "Paste or type a link"
 
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Plain text"
+msgstr "Plain text"
+
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
 msgstr "Plans"
@@ -1356,6 +1384,14 @@ msgstr "Popular"
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
 msgstr "Preferences"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Press Enter to use this language"
+msgstr "Press Enter to use this language"
+
+#: src/features/editor/EditorCodeBubble.tsx
+msgid "Preview"
+msgstr "Preview"
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
@@ -1490,6 +1526,10 @@ msgstr "Renamed to {trimmed}"
 #: src/features/project/context/UntitledRenameLine.tsx
 msgid "Renaming…"
 msgstr "Renaming…"
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Rendering diagram…"
+msgstr "Rendering diagram…"
 
 #: src/features/editor/EditorImageBubble.tsx
 msgid "Replace image"
@@ -1914,6 +1954,10 @@ msgstr "Turn cancelled."
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr "Type your answer…"
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "Unable to render diagram"
+msgstr "Unable to render diagram"
 
 #: src/features/chat/TurnEditsCard.tsx
 #: src/features/project/dock/DockChangesView.tsx
