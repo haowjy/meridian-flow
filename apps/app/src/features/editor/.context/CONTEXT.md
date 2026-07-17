@@ -52,6 +52,14 @@ Props:
 scroll class/ref/handler. The frame owns every shared vertical, scroll, and
 prose-trim rule; hosts own their content and horizontal coordinate strategy.
 
+Passing the optional `editor` makes the whole scroll area click-to-focus
+territory: gutter presses place the caret at the nearest text position —
+always through `TextSelection.near`, never a raw `posAtCoords` position,
+which can be a block boundary that parks the selection at doc level and
+makes remote collab cursors render as a phantom row between paragraphs.
+Presses on interactive or live-status children inside the scroller keep
+native behavior; both hosts opt in.
+
 ## Deferred
 
 - **Block-level `+` gutter handle** ("Turn into" / "Insert" menu on the

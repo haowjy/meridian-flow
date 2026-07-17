@@ -173,8 +173,13 @@ the route's handlers; they never set the URL directly. (Full ownership rules:
 
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
-projection, close fallbacks, and scroll restoration. `ContextViewer` and
-`ContextTabBar` are controlled views. The tab strip also owns the collapsed
+projection, close fallbacks, scroll restoration, and screen-entry defaults:
+entering with no destination replays the remembered last file
+(`context-last-route.ts`; re-arms every entry — the controller is persistent,
+so a mount-scoped one-shot only ever fires once), and a desk with nothing to
+restore and no tabs default-opens the first manuscript document. Deliberate
+empty desks stay empty (closing the last tab forgets the route).
+`ContextViewer` and `ContextTabBar` are controlled views. The tab strip also owns the collapsed
 sidebar/dock expand controls; Editor therefore supplies no separate route pane
 or header band.
 
