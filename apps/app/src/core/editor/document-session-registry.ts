@@ -11,10 +11,11 @@
  * consumers (`get`); the session survives view unmount and is destroyed only
  * when every opener has released that document from its open set, after a
  * short grace window so rapid release→retain (e.g. React strict mode) does
- * not detach the Hocuspocus provider on the shared socket.
+ * not tear down and recreate its Hocuspocus provider/socket.
  *
- * The Hocuspocus adapter owns the shared socket; this registry owns the
- * per-room sessions on the same process-wide plane.
+ * The Hocuspocus adapter owns each room's socket; this registry owns the
+ * corresponding per-room sessions on the same process-wide plane. Room-scoped
+ * sockets keep terminal server closes from poisoning unrelated sessions.
  */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 
@@ -34,7 +35,7 @@ const LIVE_DOC_SOFT_CAP = 50;
 /**
  * Grace window before tearing down an unretained session. Rapid
  * release→retain (React strict mode, fast navigation) cancels the timer so
- * the live provider stays attached on the shared socket — avoiding a stale
+ * the live provider stays attached to its socket — avoiding a stale
  * CloseMessage racing a new SyncStep1.
  */
 const SESSION_TEARDOWN_GRACE_MS = 3_000;

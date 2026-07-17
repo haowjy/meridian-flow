@@ -39,7 +39,7 @@ describe("Hocuspocus document close classification", () => {
     ).toEqual({ kind: "reset", reason: "branch-stale-doc", code: 4205 });
   });
 
-  it("declares the bundle schema version on the shared socket URL", () => {
+  it("declares the bundle schema version on each document socket URL", () => {
     expect(schemaVersionedYjsWsPath()).toBe(`/ws/yjs?schema=${COLLAB_SCHEMA_VERSION}`);
   });
 });

@@ -2,9 +2,10 @@
  * hocuspocus-document-transport — binds HocuspocusProvider to DocumentSession.
  *
  * DocumentSession remains the owner of the Y.Doc, Awareness, and IndexedDB
- * cache. This adapter only attaches Hocuspocus' document provider to those
- * existing objects and maps provider/socket events back to the unchanged
- * DocumentSessionTransportProvider seam.
+ * cache. This adapter owns one socket per document because WebSocket closes
+ * are connection-wide, while schema refusals are room-specific. It maps those
+ * provider/socket events back to the unchanged DocumentSessionTransportProvider
+ * seam.
  */
 import {
   HocuspocusProvider,
@@ -33,15 +34,6 @@ const SCHEMA_REFUSAL_CODES: ReadonlySet<number> = new Set([
   YJS_WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
 ]);
 const HOCUSPOCUS_BRANCH_RESET_REASONS = new Set(["branch-generation-stale", "branch-stale-doc"]);
-
-let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
-
-function getSharedWebsocket(): HocuspocusProviderWebsocket {
-  sharedWebsocket ??= new HocuspocusProviderWebsocket({
-    url: buildSameOriginWsUrl(schemaVersionedYjsWsPath()),
-  });
-  return sharedWebsocket;
-}
 
 export function schemaVersionedYjsWsPath(): string {
   return `${yjsWsPath()}?schema=${COLLAB_SCHEMA_VERSION}`;
@@ -114,7 +106,10 @@ export function createHocuspocusDocumentTransport({
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: ConnectionState) => void>();
   const safetyNoticeListeners = new Set<(notice: SafetyNoticeWsMessage) => void>();
-  let currentState = mapStatus(getSharedWebsocket().status);
+  const websocket = new HocuspocusProviderWebsocket({
+    url: buildSameOriginWsUrl(schemaVersionedYjsWsPath()),
+  });
+  let currentState = mapStatus(websocket.status);
   let terminal = false;
   let destroyed = false;
   let resolveSynced!: () => void;
@@ -133,6 +128,7 @@ export function createHocuspocusDocumentTransport({
     terminal = true;
     publish(state);
     provider.destroy();
+    websocket.destroy();
   }
 
   function handleStatus({ status }: onStatusParameters): void {
@@ -173,7 +169,7 @@ export function createHocuspocusDocumentTransport({
     name: roomName,
     document,
     awareness,
-    websocketProvider: getSharedWebsocket(),
+    websocketProvider: websocket,
     onStatus: handleStatus,
     onSynced: handleSynced,
     onUnsyncedChanges: handleUnsyncedChanges,
@@ -212,6 +208,7 @@ export function createHocuspocusDocumentTransport({
       if (destroyed) return;
       destroyed = true;
       provider.destroy();
+      websocket.destroy();
       listeners.clear();
       safetyNoticeListeners.clear();
     },

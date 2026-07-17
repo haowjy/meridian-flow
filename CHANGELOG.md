@@ -8,6 +8,9 @@
   silently reloads once before showing that fence, while stale document heads
   stop on an honest unavailable surface instead of syncing forever; quarantined
   local sessions cannot reconnect until later validation clears them.
+- `apps/app`: document collaboration sockets are room-scoped so one chapter's
+  typed schema refusal cannot terminate, reload, or mark sibling chapters
+  unavailable.
 - `@meridian/contracts`: Yjs collaboration closes now register schema-version
   refusals (`4406 client-schema-superseded`, `4407 document-schema-stale`).
 - `apps/server`: Yjs connect admission now refuses clients older than each live

@@ -40,6 +40,11 @@ Yjs document session. It must stay structurally aligned with
   sync. A repeated refusal therefore shows the fence without reloading again.
   `4407 document-schema-stale` is not a fence and never reloads; the editor is
   replaced with the locked temporarily-unavailable chapter surface.
+- Collaboration sockets are room-scoped rather than multiplexed. The server's
+  typed refusal is a WebSocket close, so sharing that connection would deliver
+  one room's terminal 4406/4407 to every open document and could reload or mark
+  healthy chapters unavailable. Session reuse still prevents duplicate sockets
+  for the same room.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.
