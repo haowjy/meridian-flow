@@ -117,7 +117,7 @@ msgstr ""
 msgid "Add a caption for this figure."
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Add link"
 msgstr ""
 
@@ -618,7 +618,7 @@ msgstr ""
 msgid "Earlier content could not be recovered"
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
 msgstr ""
 
@@ -667,7 +667,7 @@ msgstr ""
 msgid "Enter an amount in USD."
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Enter an http, https, or mailto link."
 msgstr ""
 
@@ -856,11 +856,11 @@ msgstr "姓"
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Link"
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Link URL"
 msgstr ""
 
@@ -1169,6 +1169,10 @@ msgstr ""
 msgid "Open existing"
 msgstr ""
 
+#: src/features/editor/EditorLinkBubble.tsx
+msgid "Open link"
+msgstr ""
+
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"
 msgstr ""
@@ -1218,7 +1222,7 @@ msgstr ""
 msgid "Parent:"
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Paste or type a link"
 msgstr ""
 
@@ -1332,7 +1336,7 @@ msgstr ""
 msgid "remaining"
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Remove link"
 msgstr ""
 
@@ -1793,7 +1797,7 @@ msgstr ""
 msgid "Untitled project"
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Update link"
 msgstr ""
 

@@ -117,7 +117,7 @@ msgstr "Actions"
 msgid "Add a caption for this figure."
 msgstr "Add a caption for this figure."
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Add link"
 msgstr "Add link"
 
@@ -618,7 +618,7 @@ msgstr "Drop image to upload a figure"
 msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Edit link"
 msgstr "Edit link"
 
@@ -667,7 +667,7 @@ msgstr "Enclosing folder"
 msgid "Enter an amount in USD."
 msgstr "Enter an amount in USD."
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Enter an http, https, or mailto link."
 msgstr "Enter an http, https, or mailto link."
 
@@ -856,11 +856,11 @@ msgstr "Last name"
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr "Leading or trailing whitespace detected in file or folder name."
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Link"
 msgstr "Link"
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Link URL"
 msgstr "Link URL"
 
@@ -1169,6 +1169,10 @@ msgstr "Open context files"
 msgid "Open existing"
 msgstr "Open existing"
 
+#: src/features/editor/EditorLinkBubble.tsx
+msgid "Open link"
+msgstr "Open link"
+
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"
 msgstr "Open navigation"
@@ -1218,7 +1222,7 @@ msgstr "Parent unknown"
 msgid "Parent:"
 msgstr "Parent:"
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Paste or type a link"
 msgstr "Paste or type a link"
 
@@ -1332,7 +1336,7 @@ msgstr "Refresh"
 msgid "remaining"
 msgstr "remaining"
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Remove link"
 msgstr "Remove link"
 
@@ -1793,7 +1797,7 @@ msgstr "Untitled document"
 msgid "Untitled project"
 msgstr "Untitled project"
 
-#: src/features/editor/EditorToolbar.tsx
+#: src/features/editor/EditorLinkBubble.tsx
 msgid "Update link"
 msgstr "Update link"
 
