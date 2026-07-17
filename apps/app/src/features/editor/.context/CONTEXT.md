@@ -54,6 +54,13 @@ adding one ordered entry rather than mounting another strip beside the slot.
 I / code / list / link / figure). It subscribes to the editor's selection and
 transaction events to keep active-mark highlighting in sync.
 
+`EditorContextPopover` is the shared shell for controls that belong at the
+current ProseMirror selection. It supplies the virtual selection anchor,
+collision handling, and focus return; each feature owns its content and
+commands. The link control is its first tenant: it opens only for selected text
+or an existing link, and uses TipTap's link commands to add, edit, or remove the
+mark without introducing a second document representation.
+
 Props:
 
 - `editor: Editor | null` — the TipTap instance. `null` is valid (pre-mount shell).

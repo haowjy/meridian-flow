@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: editor links now open a selection-anchored URL popover for
+  adding, editing, and removing safe http(s) or email targets.
 - `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
