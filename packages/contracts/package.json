@@ -12,6 +12,7 @@
     "./interrupt": "./src/interrupt/index.ts",
     "./spawn": "./src/spawn/index.ts",
     "./protocol": "./src/protocol/index.ts",
+    "./observability": "./src/observability/index.ts",
     "./runtime": "./src/runtime/index.ts",
     "./agents": "./src/agents/index.ts",
     "./preferences": "./src/preferences/index.ts",

@@ -6,9 +6,9 @@ records; adapters decide where safe records go.
 
 ## What it owns
 
-- **`EventRecord`** — safe structured record: `eventId`, `timestamp`, `level`,
-  `source`, `name`, `sensitivity`, optional correlation envelope, and sanitized
-  `payload`.
+- **`EventRecord` vocabulary re-export** — the JSON-natural record and stream
+  correlation types are canonical in `@meridian/contracts/observability`; the
+  server port re-exports them so domain imports stay anchored on the port.
 - **`EventSink`** — `emit` / `emitBatch` / `flush`.
 - **`emitEvent`** — timestamping helper for non-critical diagnostics.
 - **Safe-event helpers** — id stamping, key-pattern redaction, secret stripping,
