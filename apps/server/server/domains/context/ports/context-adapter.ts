@@ -69,6 +69,9 @@ export type AdapterDeleteResult = {
 
 export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
+  commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<AdapterMoveResult, AdapterFault>>;
   commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>>;

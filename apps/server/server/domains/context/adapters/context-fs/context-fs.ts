@@ -153,6 +153,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
+    commitProvisionalGraduation: (source) => this.commitProvisionalGraduation(source),
     commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
     commitPreparedDelete: (token) => this.commitPreparedDelete(token),
   };
@@ -731,6 +732,17 @@ export class ContextFS implements ContextSchemeAdapter {
       movedNodeId: committed.value.movedNodeId,
       path: prepared.destinationPath,
     });
+  }
+
+  private async commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<AdapterMoveResult, AdapterFault>> {
+    if (!(await this.isVisibleDocument(source.nodeId))) {
+      return Err({ code: "invalid_operation" });
+    }
+    const committed = await this.mutationStore.commitProvisionalGraduation(source);
+    if (!committed.ok) return Err(this.mutationFault(committed.error));
+    return Ok({ movedNodeId: committed.value.movedNodeId, path: source.path });
   }
 
   private async commitPreparedDelete(

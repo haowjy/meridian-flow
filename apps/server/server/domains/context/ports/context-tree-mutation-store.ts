@@ -87,6 +87,10 @@ export interface ContextTreeDeleteResult {
 
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
+  /** Clear provisional naming under the same location CAS used by tree mutations. */
+  commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;
   commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;

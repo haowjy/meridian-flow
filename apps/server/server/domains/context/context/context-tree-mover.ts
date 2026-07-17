@@ -74,6 +74,11 @@ export class ContextTreeMover {
     options?: ContextMoveOptions,
   ): Promise<Result<ContextMoveResult, ContextError>> {
     if (source.canonical === destination.canonical) {
+      // The deliberate stay-put: a writer placement onto the document's own
+      // location is a graduation with no tree mutation — clear provisional
+      // naming, touch nothing else. Without the writer-placement flag a
+      // same-canonical move stays invalid.
+      if (options?.clearProvisionalName) return this.graduateInPlace(source);
       return Err({ code: "invalid_operation", uri: destination.canonical });
     }
     if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
@@ -97,6 +102,29 @@ export class ContextTreeMover {
       movedNodeId: result.value.movedNodeId,
       destinationPath: prepared.value.destinationPath,
     });
+  }
+
+  private async graduateInPlace(
+    source: ContextTreeDispatch,
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    if (!source.adapter.capabilities.writable || !source.adapter.tree) {
+      return Err({ code: "permission_denied", uri: source.canonical });
+    }
+    const token = await this.inspect(source);
+    if (!token.ok) return token;
+    if (token.value === null) return Err({ code: "not_found", uri: source.canonical });
+    if (token.value.kind !== "file") {
+      return Err({ code: "invalid_operation", uri: source.canonical });
+    }
+    const fileToken = token.value;
+    const result = await callAdapter(
+      source.canonical,
+      () =>
+        source.adapter.tree?.commitProvisionalGraduation(fileToken) ??
+        Promise.resolve(Err({ code: "permission_denied" } as const)),
+    );
+    if (!result.ok) return result;
+    return Ok({ movedNodeId: result.value.movedNodeId, destinationPath: fileToken.path });
   }
 
   async delete(

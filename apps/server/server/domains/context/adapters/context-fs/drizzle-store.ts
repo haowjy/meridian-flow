@@ -821,6 +821,28 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     });
   }
 
+  async commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
+    return this.withMutationTransaction(async () => {
+      await this.lockSources([source.sourceId]);
+      const graduated = await currentDrizzleDb(this.db)
+        .update(documents)
+        .set({ provisionalName: false })
+        .where(
+          and(
+            eq(documents.id, source.nodeId),
+            eq(documents.contextSourceId, source.sourceId),
+            isNull(documents.deletedAt),
+            ...documentRevisionWhere(source.revision),
+          ),
+        )
+        .returning({ id: documents.id });
+      if (graduated.length !== 1) rollback("stale_source");
+      return Ok({ movedNodeId: source.nodeId });
+    });
+  }
+
   async commitDelete(
     token: ContextLocationToken,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>> {
