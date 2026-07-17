@@ -12,6 +12,7 @@ import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
+import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
@@ -42,6 +43,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
+import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type EditorUser = {
@@ -297,10 +299,16 @@ export function createEditorConfig({
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
+  const transformPastedHTML = editorProps?.transformPastedHTML;
+  const sanitizedEditorProps = {
+    ...editorProps,
+    transformPastedHTML: (html: string, view: EditorView) =>
+      sanitizePastedHTML(transformPastedHTML ? transformPastedHTML(html, view) : html),
+  };
   const resolvedEditorProps =
     resolvedSchemaType === "document"
-      ? { clipboardTextParser: markdownTableClipboardParser(), ...editorProps }
-      : editorProps;
+      ? { clipboardTextParser: markdownTableClipboardParser(), ...sanitizedEditorProps }
+      : sanitizedEditorProps;
 
   return {
     extensions: [

@@ -293,7 +293,7 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
   addNodeView() {
     return ReactNodeViewRenderer(ImageNodeView);
   },
-}).configure({ inline: true });
+}).configure({ inline: true, allowBase64: true });
 
 // ─── Meridian-only extensions ─────────────────────────────────────────
 // Node types not in TipTap's standard library.
