@@ -65,6 +65,7 @@ const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
+const UNTITLED_ALLOCATION_ATTEMPTS = 32;
 
 function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
   const filetype = filetypeForPath(path);
@@ -386,11 +387,15 @@ export class ContextFS implements ContextSchemeAdapter {
 
     const folderSegments = path.split("/").filter(Boolean);
     const folderId = await this.ensureFolderId(folderSegments);
-    for (;;) {
+    for (let attempt = 0; attempt < UNTITLED_ALLOCATION_ATTEMPTS; attempt += 1) {
       const documents = await this.store.listDocuments(folderId);
       const maxNumber = documents.reduce((max, document) => {
         const match = UNTITLED_NAME_PATTERN.exec(document.name);
-        return match ? Math.max(max, Number(match[1])) : max;
+        if (!match) return max;
+        const suffix = Number(match[1]);
+        return Number.isSafeInteger(suffix) && suffix < Number.MAX_SAFE_INTEGER
+          ? Math.max(max, suffix)
+          : max;
       }, 0);
       const name = `Untitled ${maxNumber + 1}`;
       const document = await this.store.createDocumentIfAbsent({
@@ -427,6 +432,7 @@ export class ContextFS implements ContextSchemeAdapter {
         name: collision.document.name,
       });
     }
+    return Err({ code: "conflict" });
   }
 
   async ensureTrackedDocument(

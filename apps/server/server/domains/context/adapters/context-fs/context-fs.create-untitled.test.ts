@@ -163,6 +163,35 @@ describe("ContextFS createUntitledDocument", () => {
     ).toEqual(["Untitled 1", "Untitled 2"]);
   });
 
+  it("ignores untitled suffixes that cannot be safely incremented", async () => {
+    const { fs, store } = createFs({});
+    await store.upsertDocument({
+      folderId: null,
+      name: `Untitled ${"9".repeat(400)}`,
+      extension: "md",
+      markdown: "",
+      filetype: "markdown",
+    });
+
+    await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
+      {
+        ok: true,
+        value: { status: "created", name: "Untitled 1" },
+      },
+    );
+  });
+
+  it("returns a conflict after bounded allocation collisions", async () => {
+    const { fs, store } = createFs({});
+    vi.spyOn(store, "createDocumentIfAbsent").mockResolvedValue(null);
+
+    await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    expect(store.createDocumentIfAbsent).toHaveBeenCalledTimes(32);
+  });
+
   it("clears the provisional flag on basename change but keeps it on a path-only move", async () => {
     const { fs, store, mutationStore } = createFs({});
     await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A));
