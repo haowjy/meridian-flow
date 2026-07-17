@@ -346,16 +346,21 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
 /** Placeholder rows echoing the tree's row geometry while files load. */
 function TreeLoadingSkeleton() {
   return (
-    <div aria-hidden>
-      {["w-24", "w-32", "w-20"].map((width) => (
-        <div
-          key={width}
-          className="flex h-7 items-center pr-2"
-          style={{ paddingLeft: rowPaddingLeft(1) }}
-        >
-          <Skeleton className={cn("h-3", width)} />
-        </div>
-      ))}
+    <div role="status">
+      <span className="sr-only">
+        <Trans>Loading files…</Trans>
+      </span>
+      <div aria-hidden>
+        {["w-24", "w-32", "w-20"].map((width) => (
+          <div
+            key={width}
+            className="flex h-7 items-center pr-2"
+            style={{ paddingLeft: rowPaddingLeft(1) }}
+          >
+            <Skeleton className={cn("h-3", width)} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
