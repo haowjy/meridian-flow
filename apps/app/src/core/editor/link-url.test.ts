@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeLinkHref } from "./link-url";
+import { normalizeLinkHref } from "@/core/editor/link-url";
 
 describe("normalizeLinkHref", () => {
   it.each([
