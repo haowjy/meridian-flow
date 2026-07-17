@@ -215,4 +215,30 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     expect(session.awareness.getLocalState()).toBeNull();
     registry.destroyAll();
   });
+
+  it("keeps registry fencing exception-safe when browser storage access is blocked", () => {
+    providers.length = 0;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("storage blocked", "SecurityError");
+      },
+    });
+
+    try {
+      const registry = new DocumentSessionRegistry();
+      const session = registry.getDetached("document-blocked-storage");
+
+      expect(
+        registry.quarantineRoom("document-blocked-storage", { reason: "repair-detected" }),
+      ).toBe(false);
+      expect(session.getSnapshot().schemaFence).toEqual({ reason: "repair-detected" });
+      registry.clearRoomQuarantine("document-blocked-storage");
+      registry.destroyAll();
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
 });

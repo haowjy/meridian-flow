@@ -19,15 +19,24 @@ const SCHEMA_FENCE_REASONS = new Set<SchemaFence["reason"]>([
   "repair-detected",
 ]);
 
+function browserStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function schemaFenceQuarantineKey(roomKey: string): string {
   return `meridian:schema-fence:v${COLLAB_SCHEMA_VERSION}:${roomKey}`;
 }
 
 export function readSchemaFenceQuarantine(roomKey: string): SchemaFence | null {
-  if (typeof localStorage === "undefined") return null;
+  const storage = browserStorage();
+  if (!storage) return null;
 
   try {
-    const value = localStorage.getItem(schemaFenceQuarantineKey(roomKey));
+    const value = storage.getItem(schemaFenceQuarantineKey(roomKey));
     if (!value) return null;
     const fence = JSON.parse(value) as Partial<SchemaFence>;
     if (!SCHEMA_FENCE_REASONS.has(fence.reason as SchemaFence["reason"])) return null;
@@ -43,9 +52,10 @@ export function readSchemaFenceQuarantine(roomKey: string): SchemaFence | null {
 
 /** Returns false when browser storage cannot make the fence durable. */
 export function writeSchemaFenceQuarantine(roomKey: string, fence: SchemaFence): boolean {
-  if (typeof localStorage === "undefined") return false;
+  const storage = browserStorage();
+  if (!storage) return false;
   try {
-    localStorage.setItem(schemaFenceQuarantineKey(roomKey), JSON.stringify(fence));
+    storage.setItem(schemaFenceQuarantineKey(roomKey), JSON.stringify(fence));
     return true;
   } catch {
     return false;
@@ -53,9 +63,10 @@ export function writeSchemaFenceQuarantine(roomKey: string, fence: SchemaFence):
 }
 
 export function clearSchemaFenceQuarantine(roomKey: string): void {
-  if (typeof localStorage === "undefined") return;
+  const storage = browserStorage();
+  if (!storage) return;
   try {
-    localStorage.removeItem(schemaFenceQuarantineKey(roomKey));
+    storage.removeItem(schemaFenceQuarantineKey(roomKey));
   } catch {
     // A blocked storage backend has nothing this session can clear.
   }
