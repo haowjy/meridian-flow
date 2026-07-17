@@ -137,12 +137,21 @@ export class DeviceWorkingSetStore {
 
   setUser(userId: string): void {
     if (this.state?.userId === userId) return;
-    const persisted = parsePersisted(this.storage.getItem(WORKING_SET_STORAGE_KEY));
+    let persisted: PersistedWorkingSets | null = null;
+    try {
+      persisted = parsePersisted(this.storage.getItem(WORKING_SET_STORAGE_KEY));
+    } catch {
+      // Storage can be disabled independently of the rest of the app.
+    }
     if (persisted?.userId === userId) {
       this.state = persisted;
       return;
     }
-    this.storage.removeItem(WORKING_SET_STORAGE_KEY);
+    try {
+      this.storage.removeItem(WORKING_SET_STORAGE_KEY);
+    } catch {
+      // The in-memory identity boundary still prevents a cross-user read.
+    }
     this.state = { userId, projects: {} };
   }
 
