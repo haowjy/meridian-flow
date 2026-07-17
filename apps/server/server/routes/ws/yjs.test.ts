@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
+  createHocuspocus,
   createYjsWebSocketHooks,
   subscribeWriterNoticeTransport,
 } from "./yjs";
@@ -26,6 +28,69 @@ function services(stale: boolean) {
 }
 
 describe("Yjs branch handshake route guard", () => {
+  it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
+    const live = new Y.Doc({ gc: false });
+    live.getText("content").insert(0, "live advanced");
+    const branch = new Y.Doc({ gc: false });
+    let releasePull: (() => void) | undefined;
+    const pullBlocked = new Promise<void>((resolve) => {
+      releasePull = resolve;
+    });
+    const branchPulls = createBranchPullService({
+      liveCoordinator: {
+        withDocument: async (_documentId, fn) => fn(live),
+        recover: async () => {},
+      },
+      branchCoordinator: {
+        pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
+          await pullBlocked;
+          Y.applyUpdate(branch, Y.encodeStateAsUpdate(upstream));
+          return new Uint8Array();
+        },
+      } as never,
+      branches: {
+        listActiveWorkDraftBranchIds: async () => ["branch_1"],
+        ensureWorkDraftBranch: async () => ({ branchId: "branch_1" }),
+        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
+      },
+    });
+    const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
+    const hocuspocus = createHocuspocus({
+      documentAccess: {
+        canAccessDocument: vi.fn(async () => true),
+      } as never,
+      documentSync: {
+        bindHocuspocus: vi.fn(),
+        resolveBranchHocuspocusRoom: vi.fn(async () => ({
+          branchId: "branch_1",
+          documentId: "document-1",
+          generation: 3,
+          status: "active",
+        })),
+        flushBranchLivePull,
+      } as never,
+      eventSink: { emit() {} } as never,
+      notices: {
+        subscribeWriterVisible: () => () => {},
+        drainForWriter: async () => [],
+      } as never,
+    });
+
+    await expect(
+      hocuspocus.configuration.onConnect?.({
+        documentName,
+        context: { userId: "user-1" },
+      } as never),
+    ).resolves.toBeUndefined();
+    expect(flushBranchLivePull).toHaveBeenCalledWith("document-1");
+    expect(branch.getText("content").toString()).toBe("");
+
+    releasePull?.();
+    await vi.waitFor(() => {
+      expect(branch.getText("content").toString()).toBe("live advanced");
+    });
+  });
+
   it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
     const validateBranchWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");

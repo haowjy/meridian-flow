@@ -12,7 +12,7 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
 import type { AdmitLiveWriterUpdateResult, UpdateOrigin } from "../../domains/collab/index.js";
-import { emitEvent } from "../../domains/observability/index.js";
+import { emitEvent, unknownToEventPayload } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
 import {
@@ -288,7 +288,7 @@ function updateIdentity(update: Uint8Array): string {
   return Buffer.from(update).toString("base64");
 }
 
-function createHocuspocus(services: YjsRouteServices): Hocuspocus {
+export function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   const documentsForId = async (documentId: string): Promise<WriterNoticeDocument[]> => {
     const matches: WriterNoticeDocument[] = [];
     for (const [roomName, document] of hocuspocus.documents) {
@@ -346,6 +346,17 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           documentId,
           await services.documentSync.currentLiveGeneration(documentId),
         );
+      } else {
+        // Do not delay room admission: a cold room may briefly render its persisted
+        // state before this pull arrives, then normal CRDT sync catches it up.
+        void services.documentSync.flushBranchLivePull(documentId).catch((cause: unknown) => {
+          emitEvent(services.eventSink, {
+            level: "warn",
+            source: "collab.hocuspocus",
+            name: "branch_review.live_pull_failed",
+            payload: { documentId, branchId: room.branchId, ...unknownToEventPayload(cause) },
+          });
+        });
       }
       setTimeout(() => {
         void deliverPendingWriterNotices(documentId).catch((cause) => {
