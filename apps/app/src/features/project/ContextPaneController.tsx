@@ -147,13 +147,21 @@ export function ContextViewerSurfaceController({
     setRememberedRoute({ projectId, route });
   }, [activeTab, projectId]);
 
-  // One-shot restore: landing on Context with no destination replays the
-  // remembered file. A deep link (file or scheme browser) is an explicit
-  // destination and wins; closing the last tab later must not re-trigger
-  // this, hence the ref.
+  // Restore, once per SCREEN ENTRY (user call 2026-07-16 — "the last opened
+  // thing"): entering Context with no destination replays the remembered
+  // file. A deep link (file or scheme browser) is an explicit destination
+  // and wins. The ref re-arms when the screen deactivates — the controller
+  // is a persistent surface, so a mount-scoped one-shot fired only on the
+  // FIRST visit and left every later return on the orphan empty state.
+  // Closing the last tab can't resurrect it: the deliberate empty desk
+  // already forgets the route, and the ref stays spent while you stay here.
   const restoreAttemptedRef = useRef(false);
   useEffect(() => {
-    if (restoreAttemptedRef.current || !active) return;
+    if (!active) {
+      restoreAttemptedRef.current = false;
+      return;
+    }
+    if (restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     if (activeContextScheme !== null || activeContextPath !== null) return;
     const last = readLastContextRoute(projectId);
