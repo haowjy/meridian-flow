@@ -77,6 +77,10 @@ describe("classifyFrame", () => {
     expect(classifyFrame(authFrame(new Uint8Array())).messageClass).toBe("unknown");
     expect(classifyFrame(authFrame(new Uint8Array([0x80]))).messageClass).toBe("unknown");
     expect(classifyFrame(authFrame(new Uint8Array(9).fill(0xff))).messageClass).toBe("unknown");
+    expect(
+      classifyFrame(authFrame(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f])))
+        .messageClass,
+    ).toBe("unknown");
   });
 
   it("returns explicit unknown metadata for unsupported and malformed frames", () => {
@@ -278,11 +282,11 @@ describe("decode-journal CLI", () => {
     const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       encoding: "utf8",
-      input: "1 0000\n42 not-an-update\n2 0000\ngarbage\n",
+      input: "1 0000\n42 not-an-update\n2 0000\ngarbage\nnonsense | arbitrary\n",
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Unrecognized input row ids: 42 (line 2), line 4");
+    expect(result.stderr).toContain("Unrecognized input row ids: 42 (line 2), line 4, line 5");
     expect(result.stdout).toBe("");
   });
 
@@ -343,6 +347,15 @@ it("never returns content from any exported function across every frame path", a
   writeVarUint(auth, 0);
   writeVarString(auth, canary);
 
+  const truncated = createEncoder();
+  writeVarString(truncated, "safe-room");
+  writeVarUint(truncated, 5);
+  writeVarUint(truncated, textEncoder.encode(canary).byteLength + 1);
+  const canaryBearingTruncatedFrame = new Uint8Array([
+    ...toUint8Array(truncated),
+    ...textEncoder.encode(canary),
+  ]);
+
   const framePaths: Array<{ name: string; bytes: Uint8Array; update: Uint8Array }> = [
     {
       name: "sync.step1",
@@ -355,7 +368,7 @@ it("never returns content from any exported function across every frame path", a
     { name: "stateless", bytes: frame("safe-room", 5, textEncoder.encode(canary)), update: noOp },
     { name: "auth", bytes: authFrame(toUint8Array(auth)), update: noOp },
     { name: "unknown", bytes: frame("safe-room", 8, textEncoder.encode(canary)), update: noOp },
-    { name: "truncated", bytes: new Uint8Array([0xff]), update: noOp },
+    { name: "truncated", bytes: canaryBearingTruncatedFrame, update: noOp },
   ];
 
   const inspector = await import("./index.js");

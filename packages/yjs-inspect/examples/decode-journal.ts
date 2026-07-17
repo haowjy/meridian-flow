@@ -67,8 +67,9 @@ function decodeRows(input: string): JournalRow[] {
       return;
     }
 
-    // Other expanded-output fields are context for an update_hex row.
-    if (/^[a-z_]+\s*\|/i.test(trimmed)) return;
+    // Other expanded-output fields are context for an update_hex row, but a
+    // field-shaped line outside a psql record is unrecognized input.
+    if (expandedRecord && /^[a-z_]+\s*\|/i.test(trimmed)) return;
 
     const update = decodeRow(trimmed);
     if (update) {

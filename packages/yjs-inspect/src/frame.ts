@@ -99,7 +99,8 @@ function decodeFrame(bytes: Uint8Array): DecodedFrame {
 
     if (outerType === OUTER_AUTH) {
       const payloadStart = decoder.pos;
-      readVarUint(decoder);
+      const authType = readVarUint(decoder);
+      if (!Number.isSafeInteger(authType)) return { summary: unknown(bytes, documentName) };
       return {
         summary: {
           documentName,
