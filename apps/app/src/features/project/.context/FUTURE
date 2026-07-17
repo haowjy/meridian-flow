@@ -18,11 +18,6 @@
   "open chats" model (close ≠ delete, overflow, ordering) and resolves how
   chat navigation relates to the sidebar → design-lead/tech-lead. The
   single-title tab chip shipped in slice 7 is the compatible first step.
-- Editor destination with open tabs but NO active document (navigate away
-  and back): tabs float as labels over the empty state, connected to
-  nothing. Candidate fix: restore the last-active tab on return (small
-  route/store behavior — user was asked 2026-07-15, no decision yet). See
-  features/project/context/ContextTabBar.tsx.
 - Clay secondary (palette proposal, not adopted): a cinnabar-family secondary
   surface (~oklch(0.92 0.012 29)) if secondary chips ever need to leave the
   page-neutral ladder.
