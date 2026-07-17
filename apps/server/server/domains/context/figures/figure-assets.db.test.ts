@@ -130,6 +130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(uploaded.value.figure.src).toBe(`asset:${uploaded.value.assetDocumentId}`);
 
       const [after] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
+      expect(after).toEqual(before);
       expect({
         fileType: after?.fileType,
         storageUrl: after?.storageUrl,
