@@ -67,13 +67,17 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${projectId}, 42::bigint))`,
         );
-        const [existing] = await tx
+        const existing = await tx
           .select()
           .from(works)
           .where(and(eq(works.projectId, projectId), isNull(works.deletedAt)))
-          .orderBy(desc(works.updatedAt))
-          .limit(1);
-        if (existing) return mapWork(existing);
+          .limit(2);
+        if (existing.length > 1) {
+          throw new Error(
+            `Project ${projectId} has multiple active Works; cannot provision default`,
+          );
+        }
+        if (existing[0]) return mapWork(existing[0]);
         const [project] = await tx
           .select()
           .from(projects)

@@ -77,11 +77,10 @@ export async function listProjectThreads(
 export async function listProjectWorks(
   projectId: string,
   init?: RequestInitOptions,
-): Promise<Work[]> {
-  const response = await getJson<ListWorksResponse>(urlFor(apiProjectWorksPath(projectId), init), {
+): Promise<ListWorksResponse> {
+  return getJson<ListWorksResponse>(urlFor(apiProjectWorksPath(projectId), init), {
     headers: init?.headers,
   });
-  return response.works;
 }
 
 export async function updateWorkWriteMode(

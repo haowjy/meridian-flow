@@ -7,10 +7,19 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
+
+function activeEffectiveProject(input: { userId?: UserId; projectId?: ProjectId } = {}) {
+  return and(
+    isNull(projects.deletedAt),
+    input.userId ? eq(projects.userId, input.userId) : undefined,
+    input.projectId ? eq(projects.id, input.projectId) : undefined,
+  );
+}
 
 export interface DocumentAccessPort {
   canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
@@ -43,15 +52,15 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
       .select({ id: documents.id })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(projects, eq(contextSources.projectId, projects.id))
       .leftJoin(works, eq(contextSources.workId, works.id))
+      .innerJoin(projects, eq(projects.id, effectiveProjectId))
       .where(
         and(
           eq(documents.id, documentId),
           contentDocumentPredicate(),
           isNull(documents.deletedAt),
           isNull(contextSources.deletedAt),
-          or(eq(projects.userId, userId), eq(works.createdByUserId, userId)),
+          activeEffectiveProject({ userId }),
         ),
       )
       .limit(1);
@@ -68,18 +77,15 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
       .select({ id: documents.id })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(projects, eq(contextSources.projectId, projects.id))
       .leftJoin(works, eq(contextSources.workId, works.id))
+      .innerJoin(projects, eq(projects.id, effectiveProjectId))
       .where(
         and(
           eq(documents.id, documentId),
           contentDocumentPredicate(),
           isNull(documents.deletedAt),
           isNull(contextSources.deletedAt),
-          or(
-            and(eq(projects.id, projectId), eq(projects.userId, userId)),
-            and(eq(works.projectId, projectId), eq(works.createdByUserId, userId)),
-          ),
+          activeEffectiveProject({ userId, projectId }),
         ),
       )
       .limit(1);
@@ -89,15 +95,20 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
   async function projectIdForDocument(documentId: string): Promise<ProjectId | null> {
     if (!UUID_PATTERN.test(documentId)) return null;
     const [row] = await db
-      .select({ projectId: contextSources.projectId })
+      .select({
+        projectId: effectiveProjectId,
+      })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(works, eq(contextSources.workId, works.id))
+      .innerJoin(projects, eq(projects.id, effectiveProjectId))
       .where(
         and(
           eq(documents.id, documentId),
           contentDocumentPredicate(),
           isNull(documents.deletedAt),
           isNull(contextSources.deletedAt),
+          activeEffectiveProject(),
         ),
       )
       .limit(1);

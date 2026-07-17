@@ -38,4 +38,27 @@ describe("createThreadForProject work activity", () => {
     expect(thread.workId).toBeTruthy();
     expect(touchedIds).toEqual([thread.workId]);
   });
+
+  it("refuses implicit attachment when the project has multiple active Works", async () => {
+    const projects = createInMemoryProjectRepository();
+    const workRepo = createInMemoryWorkRepository();
+    const repos = createInMemoryRepositories({ projects });
+    const project = await projects.create({ userId: "user-1", title: "Sample Project" });
+    await workRepo.create({ projectId: project.id, createdByUserId: "user-1", title: "One" });
+    await workRepo.create({ projectId: project.id, createdByUserId: "user-1", title: "Two" });
+
+    await expect(
+      createThreadForProject(
+        {
+          projects,
+          workRepo,
+          threads: repos.threads,
+          threadWorks: repos.threadWorks,
+          transaction: repos.transaction,
+          eventSink: createInMemoryEventSink(),
+        },
+        { projectId: project.id, userId: "user-1", title: "Root thread" },
+      ),
+    ).rejects.toThrow("expected one");
+  });
 });

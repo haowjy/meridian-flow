@@ -52,6 +52,8 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (cache-only today, no PATCH endpoint) rather than on the thread store.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
+  `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`
+  is the chat-independent seam for work-scoped surfaces.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders.

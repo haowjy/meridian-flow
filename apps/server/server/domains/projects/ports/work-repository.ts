@@ -31,9 +31,8 @@ export interface WorkRepository {
   findById(id: WorkId): Promise<Work | null>;
   listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]>;
   /**
-   * Return the project's most-recent active work, creating a default one if
-   * none exists. Used to attach new primary threads to a real work item until
-   * the orchestrator owns work creation during grilling.
+   * Provision the project's sole active Work when none exists. Refuses multiple
+   * active Works; selection policy belongs to resolveDefaultWork.
    */
   ensureDefaultForProject(projectId: ProjectId, title?: string): Promise<Work>;
   touch(id: WorkId): Promise<void>;

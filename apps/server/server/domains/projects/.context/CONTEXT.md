@@ -39,6 +39,8 @@ This domain is not the full project CRUD surface; that lives in
 
 `domains/projects` carries the copied upstream repository and owner-gate
 surface: project CRUD, work list/search/touch, user provisioning, and
-`requireProjectOwner`. Route wrappers under `/api/projects/*` should use
+`requireProjectOwner`. `resolveDefaultWork(user, project)` is the sole default-Work
+policy seam; today it enforces the one-active-Work invariant and the works bootstrap
+response exposes its ID. Route wrappers under `/api/projects/*` should use
 that domain. Keep this `projects` domain narrow unless the bootstrap flow itself
 needs to change.

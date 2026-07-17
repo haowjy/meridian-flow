@@ -97,13 +97,14 @@ export async function createThreadForProject(
       parentThreadId: args.parentThreadId,
     });
     resolvedWorkId = await resolveWorkMembership(
-      { workRepo: deps.workRepo, threadWorks: deps.threadWorks, threads: deps.threads },
+      { workRepo: deps.workRepo, threadWorks: deps.threadWorks },
       {
         threadId: created.id,
         projectId: args.projectId,
+        project,
+        userId: args.userId,
         workId: args.workId,
         parentThreadId: args.parentThreadId,
-        defaultTitle: project.title,
       },
     );
     return { ...created, workId: resolvedWorkId };

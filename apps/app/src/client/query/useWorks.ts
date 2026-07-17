@@ -1,10 +1,13 @@
-import type { UpdateWorkWriteModeRequest, Work } from "@meridian/contracts/protocol";
+import type {
+  ListWorksResponse,
+  UpdateWorkWriteModeRequest,
+  Work,
+} from "@meridian/contracts/protocol";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listProjectWorks, updateWorkWriteMode } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
 
-import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
@@ -21,6 +24,7 @@ export function useWorks(
   options?: { enabled?: boolean },
 ): {
   works: Work[] | null;
+  defaultWorkId: string | null;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
@@ -28,16 +32,26 @@ export function useWorks(
   const callerEnabled = options?.enabled ?? true;
   const isPendingCreation = useIsProjectPendingCreation(projectId);
   const enabled = callerEnabled && !isPendingCreation;
-  const { data, isError, isFetching, refetch } = unwrapListQuery(
-    useQuery({
-      queryKey: projectQueryKeys.works(projectId),
-      queryFn: () => listProjectWorks(projectId),
-      staleTime: 30_000,
-      enabled,
-    }),
-  );
+  const { data, isError, isFetching, isPending, refetch } = useQuery({
+    queryKey: projectQueryKeys.works(projectId),
+    queryFn: () => listProjectWorks(projectId),
+    staleTime: 30_000,
+    enabled,
+  });
+  const works = data?.works ?? (isError ? [] : isPending || isFetching ? null : []);
 
-  return { works: data, isError, isFetching, refetch };
+  return {
+    works,
+    defaultWorkId: data?.defaultWorkId ?? null,
+    isError,
+    isFetching,
+    refetch: () => void refetch(),
+  };
+}
+
+/** Client seam for work-scoped surfaces that exist without a selected chat. */
+export function useDefaultWorkId(projectId: string): string | null {
+  return useWorks(projectId).defaultWorkId;
 }
 
 export type UpdateWorkWriteModeMutationInput = Work["aiWriteMode"] | UpdateWorkWriteModeRequest;
@@ -58,10 +72,15 @@ export function useUpdateWorkWriteMode(projectId: string, workId: string | null)
       if (!workId) return;
       invalidateWorkPushQueries(queryClient, projectId, workId);
       if (result.status !== "updated") return;
-      queryClient.setQueryData<Work[]>(queryKey, (current) =>
-        current?.map((work) =>
-          work.id === workId ? { ...work, aiWriteMode: result.aiWriteMode } : work,
-        ),
+      queryClient.setQueryData<ListWorksResponse>(queryKey, (current) =>
+        current
+          ? {
+              ...current,
+              works: current.works.map((work) =>
+                work.id === workId ? { ...work, aiWriteMode: result.aiWriteMode } : work,
+              ),
+            }
+          : current,
       );
     },
   });

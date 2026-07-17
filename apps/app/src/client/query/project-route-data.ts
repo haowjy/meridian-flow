@@ -5,7 +5,7 @@
  * SSR data priming so project data is ready on a cold refresh.
  */
 
-import type { ThreadListItem, Work } from "@meridian/contracts/protocol";
+import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -14,7 +14,7 @@ import { projectQueryKeys } from "./project-query-keys";
 
 export type ProjectRouteData = {
   threads: ThreadListItem[] | null;
-  works: Work[] | null;
+  works: ListWorksResponse | null;
 };
 
 function errorMessage(error: unknown): string {

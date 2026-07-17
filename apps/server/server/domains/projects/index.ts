@@ -341,6 +341,7 @@ export { createInMemoryUserRepository } from "./adapters/user-repository/in-memo
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
+export { resolveDefaultWork } from "./default-work.js";
 export type {
   CreateProjectInput,
   ListProjectsOptions,

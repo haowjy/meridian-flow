@@ -293,7 +293,7 @@ export function createDrizzleBranchStore(
     return doc;
   }
 
-  async function seedLiveManifestIfEmpty(
+  async function reconcileLiveManifest(
     documentId: DocumentId,
     projectId: ProjectId,
     excludeDocumentIds: ReadonlySet<DocumentId> = new Set(),
@@ -401,9 +401,12 @@ export function createDrizzleBranchStore(
 
   async function projectForDocument(documentId: DocumentId): Promise<ProjectId | null> {
     const [row] = await currentDrizzleDb(db)
-      .select({ projectId: contextSources.projectId })
+      .select({
+        projectId: sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
+      })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(works, eq(contextSources.workId, works.id))
       .where(eq(documents.id, documentId))
       .limit(1);
     return (row?.projectId as ProjectId | null | undefined) ?? null;
@@ -429,13 +432,13 @@ export function createDrizzleBranchStore(
     if (existing?.id) {
       return {
         documentId: existing.id as DocumentId,
-        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
+        doc: await reconcileLiveManifest(existing.id as DocumentId, input.projectId),
       };
     }
     const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
     return {
       documentId,
-      doc: await seedLiveManifestIfEmpty(documentId, input.projectId),
+      doc: await reconcileLiveManifest(documentId, input.projectId),
     };
   }
 
@@ -465,7 +468,7 @@ export function createDrizzleBranchStore(
     const documentId = await createManifestIdentity(input.projectId);
     return {
       documentId,
-      doc: await seedLiveManifestIfEmpty(
+      doc: await reconcileLiveManifest(
         documentId,
         input.projectId,
         await draftSeedExclusions(input.projectId, input.excludeDocumentId),
@@ -525,9 +528,10 @@ export function createDrizzleBranchStore(
       .select({ id: documents.id })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(works, eq(contextSources.workId, works.id))
       .where(
         and(
-          eq(contextSources.projectId, projectId),
+          sql`coalesce(${contextSources.projectId}, ${works.projectId}) = ${projectId}`,
           contentDocumentPredicate(),
           isNull(documents.deletedAt),
         ),

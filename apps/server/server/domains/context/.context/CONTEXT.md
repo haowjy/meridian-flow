@@ -97,13 +97,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   `json`, `shell`, `yaml`, `csv`). One exhaustive contracts disposition registry
   classifies every registered filetype; unknown persisted prose defaults to the
   document schema, while registered non-tracked metadata is a typed I/O fault.
-- Every **project-scoped** document creation (`manuscript`, `kb`, `user`)
-  registers in the project manifest via the required manifest-membership port
-  wired in `unified-context-port-factory.ts`. The ws live-room gate denies connections
-  for non-members, so any unregistered document renders a permanently dead
-  editor. Manifest seeding is scheme-agnostic; incremental registration must be
-  too. (Work-scoped sources have no `projectId` and are still outside this
-  path — see issue #206 before relying on scratch/uploads collab.)
+- Every document creation registers in the live project manifest via the required
+  manifest-membership port wired in `unified-context-port-factory.ts`. Work-scoped
+  `scratch`/`uploads` stores resolve the project through their Work and deliberately
+  register in the live view, not a work-draft view: the ws live-room gate checks the
+  live project manifest. Any unregistered document renders a permanently dead editor.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
