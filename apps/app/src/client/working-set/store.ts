@@ -1,6 +1,11 @@
 /** Canonical device-local working-set state and its pure mutation rules. */
 
-import { parseWorkingSetRouteList, type WorkingSetRoute } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+  parseWorkingSetRouteList,
+  type WorkingSetRoute,
+} from "@meridian/contracts/protocol";
 
 export const WORKING_SET_STORAGE_KEY = "meridian:working-set";
 
@@ -27,6 +32,22 @@ type PersistedWorkingSets = {
 export type WorkingSetStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: null };
+
+/**
+ * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
+ * when a work-scoped scheme lacks its required workId — the one illegal shape
+ * the discriminated union forbids.
+ */
+export function buildWorkingSetRoute(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  workId: string | null | undefined,
+): WorkingSetRoute | null {
+  if (isWorkScopedProjectContextScheme(scheme)) {
+    return workId ? { scheme, path, workId } : null;
+  }
+  return { scheme, path };
+}
 
 export function workingSetRouteEquals(
   left: WorkingSetRoute | undefined,

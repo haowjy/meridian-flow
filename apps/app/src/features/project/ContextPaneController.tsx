@@ -16,7 +16,13 @@ import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useDefaultWorkId } from "@/client/query/useWorks";
 import { useContextTabs, useContextTabsActions } from "@/client/stores";
-import { clearRoutes, promoteRoute, readRecentRoutes, removeRoute } from "@/client/working-set";
+import {
+  buildWorkingSetRoute,
+  clearRoutes,
+  promoteRoute,
+  readRecentRoutes,
+  removeRoute,
+} from "@/client/working-set";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
@@ -140,7 +146,7 @@ export function ContextViewerSurfaceController({
   // next visit.
   useEffect(() => {
     if (!activeTab || activeTab.draftOnly) return;
-    const route = workingSetRoute(activeTab.scheme, activeTab.path, routeWorkId);
+    const route = buildWorkingSetRoute(activeTab.scheme, activeTab.path, routeWorkId);
     if (!route) return;
     promoteRoute(projectId, route);
     setRememberedRoute({ projectId, route });
@@ -315,13 +321,18 @@ export function ContextViewerSurfaceController({
         void registry.destroyRoom(documentId, { clearPersistence: true });
       }
     }
-    // Closing the last tab is a deliberate "empty desk" — forget the
-    // remembered file so it doesn't resurrect on the next visit.
-    if (!fallback) {
+    // Closing the LAST tab is a deliberate "empty desk" — forget the
+    // remembered routes so they don't resurrect on the next visit. The
+    // signal is the desk being empty, NOT a null fallback: closeTab only
+    // returns a fallback when the closed tab was active, so `!fallback`
+    // fired on every non-active close and wiped (then synced!) an empty
+    // route set across devices.
+    const deskNowEmpty = !tabs.some((candidate) => candidate.documentId !== documentId);
+    if (deskNowEmpty) {
       clearRoutes(projectId);
       setRememberedRoute(null);
     } else if (tab && tab.kind !== "new") {
-      const route = workingSetRoute(tab.scheme, tab.path, tab.workId ?? routeWorkId);
+      const route = buildWorkingSetRoute(tab.scheme, tab.path, tab.workId ?? routeWorkId);
       if (route) removeRoute(projectId, route);
     }
     if (!closedWasActive) return;
@@ -437,17 +448,6 @@ export function ContextViewerSurfaceController({
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
     />
   );
-}
-
-function workingSetRoute(
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  workId: string | null,
-): WorkingSetRoute | null {
-  if (isWorkScopedProjectContextScheme(scheme)) {
-    return workId ? { scheme, path, workId } : null;
-  }
-  return { scheme, path };
 }
 
 /** Full basename ("chapter-1.md") — matches the name a settled tab displays. */

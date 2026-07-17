@@ -10,7 +10,12 @@ import { projectContextTreeQueryOptions } from "@/client/query/useProjectContext
 import type { ContextTab } from "@/client/stores";
 import { useContextTabsStore } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
-import { readRecentRoutes, workingSetRouteEquals } from "@/client/working-set";
+import {
+  buildWorkingSetRoute,
+  readRecentRoutes,
+  removeRoute,
+  workingSetRouteEquals,
+} from "@/client/working-set";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { findContextFile } from "./context/context-tree";
 
@@ -78,7 +83,16 @@ export async function validateContextDeskTabs({
         projectContextTreeQueryOptions(projectId, tab.scheme, workId),
       );
       const file = findContextFile(result.tree, tab.path);
-      return file ? contextTabFromFile(tab.scheme, file, workId) : null;
+      if (!file) {
+        // Validated-missing (fresh tree lacks the path): drop the tab AND its
+        // remembered route so a dead route doesn't occupy a synced slot
+        // forever. Work-scope skips above deliberately do NOT remove — the
+        // route may still be valid under its own work.
+        const route = buildWorkingSetRoute(tab.scheme, tab.path, tab.workId);
+        if (route) removeRoute(projectId, route);
+        return null;
+      }
+      return contextTabFromFile(tab.scheme, file, workId);
     }),
   );
   const tabs = results.flatMap((result, index) => {
