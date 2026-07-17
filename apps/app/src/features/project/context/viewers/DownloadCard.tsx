@@ -25,11 +25,11 @@ export type DownloadCardProps = {
 
 export function DownloadCard({ url, name, heading, body }: DownloadCardProps) {
   return (
+    // Quiet centered empty-state on the page material — same grammar as the
+    // editor's zero-tab state, no card box. Jade stays on the one action.
     <div className="grid h-full min-h-0 place-items-center px-6 py-10 text-center">
-      <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-muted/40 px-8 py-10 shadow-sm">
-        <div className="grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
-          <FileText className="size-6" aria-hidden />
-        </div>
+      <div className="flex max-w-md flex-col items-center gap-4">
+        <FileText className="size-6 text-muted-foreground" aria-hidden />
         <div className="flex flex-col gap-1">
           <h2 className="text-headline-section text-foreground">
             {heading ?? <Trans>Preview not available</Trans>}
