@@ -119,6 +119,11 @@ import {
   type ThreadRuntimeService,
 } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import {
+  createDrizzleWorkingSetRepository,
+  createInMemoryWorkingSetRepository,
+  type WorkingSetRepository,
+} from "../domains/working-set/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
@@ -155,6 +160,7 @@ export type AppServices = {
   defaultPackageSeeder: DefaultPackageSeeder;
   seedDefaultPackagesForProject(projectId: string): Promise<void>;
   preferences: ProjectPreferencesRepository;
+  workingSet: WorkingSetRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   toolRegistry: ToolRegistry;
@@ -199,6 +205,7 @@ export type ProductionAppPorts = {
   marsPackageFetcher: MarsPackageFetcher;
   defaultPackageSeeder: DefaultPackageSeeder;
   preferences: ProjectPreferencesRepository;
+  workingSet: WorkingSetRepository;
   modelRequestDebug: ModelRequestDebugStore;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
@@ -273,6 +280,7 @@ export async function createProductionAppPorts(input: {
   const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db, activeDocuments);
   const preferences = createDrizzleProjectPreferencesRepository({ db });
+  const workingSet = createDrizzleWorkingSetRepository({ db });
   const documentSync = createCollabDomain({
     db,
     eventSink,
@@ -357,6 +365,7 @@ export async function createProductionAppPorts(input: {
     marsPackageFetcher,
     defaultPackageSeeder,
     preferences,
+    workingSet,
     modelRequestDebug: createModelRequestDebugStoreFromEnv(),
     objectStore,
     localObjectStore,
@@ -530,6 +539,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       await ports.defaultPackageSeeder.seedProject(projectId);
     },
     preferences: ports.preferences,
+    workingSet: ports.workingSet,
     orchestrator,
     runner,
     toolRegistry,
@@ -552,6 +562,7 @@ export function createInMemoryAppServices(): AppServices {
   const threadRepos = createInMemoryRepositories();
   const packageRepository = createInMemoryPackageStore();
   const preferences = createInMemoryProjectPreferencesRepository();
+  const workingSet = createInMemoryWorkingSetRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const notices = createInMemoryNoticePort();
   const creditLedger = createInMemoryCreditLedger();
@@ -751,6 +762,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     async seedDefaultPackagesForProject() {},
     preferences,
+    workingSet,
     orchestrator: {
       async runTurn() {
         throw new Error("in-memory orchestrator is not implemented");
