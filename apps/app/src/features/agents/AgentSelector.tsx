@@ -1,9 +1,9 @@
 /**
  * AgentSelector — the composer's agent control. One component, two states:
  *  - **enabled**: a picker trigger (agent name + chevron) — opens AgentPicker.
- *  - **disabled**: settled (muted agent name, no trailing glyph) — the thread
- *    has started, so swapping is cost-gated for now (coming later). The absent
- *    chevron removes the picker affordance; the tooltip says why.
+ *  - **disabled**: settled (muted name, no chevron, flat) — the thread has
+ *    started, so swapping is cost-gated for now (coming later). The tooltip
+ *    says why.
  *
  * Rendered as a real <button> so Radix `PopoverTrigger asChild` gets a focusable
  * host. Disabled uses `aria-disabled` (not the native attr) so the tooltip still

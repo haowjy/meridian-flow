@@ -185,11 +185,10 @@
   --color-status-live-foreground: var(--color-muted-foreground);
   --color-status-live-dot: var(--color-muted-foreground);
   /* Warning / caution — destructive's anatomy at orange: pale field,
-     pigmented hairline, saturated readable ink (>6:1 on the field), and a
-     vivid mark. The 45–84 hue band keeps caution apart from cinnabar/error
-     and writer-gold; the old gold-adjacent family read as decoration.
-     Warning ink never stands naked: `foreground` appears only on `bg`, never
-     as bare warning-colored text on paper. */
+     pigmented hairline, readable ink (>6:1 on the field), vivid mark. The
+     45–84 hue band keeps caution apart from cinnabar (error) and writer-gold.
+     Contract: warning ink never stands naked — `foreground` only ever sits
+     on `bg`, never as bare warning-colored text on paper. */
   --color-warning-bg: oklch(0.955 0.022 84);
   --color-warning-border: oklch(0.885 0.03 80);
   --color-warning-foreground: oklch(0.45 0.11 55);

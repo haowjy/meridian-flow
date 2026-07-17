@@ -345,9 +345,10 @@ export function TempDocumentSaveBar({
 /**
  * Warning amber, not gray: this is the one line telling the writer their
  * words aren't in the project yet (cinnabar would read as error; gray buried
- * it). Warning ink never stands naked, so both variants keep it on the warm
- * warning field. One slot owns the left position; the container width picks
- * the presentation — full sentence when roomy, tooltipped icon when tight.
+ * it). Both variants keep the ink on the warning field — see the never-naked
+ * contract in design-tokens. One slot owns the left position; the container
+ * width picks the presentation — full sentence when roomy, tooltipped icon
+ * when tight.
  */
 function DeviceOnlyWarning() {
   const label = t`Only on this device`;
