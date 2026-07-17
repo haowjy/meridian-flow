@@ -1,0 +1,35 @@
+{
+  "name": "@meridian/yjs-inspect",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/yjs-inspect",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/yjs-inspect",
+        "command": "pnpm run build"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/yjs-inspect",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/yjs-inspect",
+        "command": "vitest run"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}
