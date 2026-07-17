@@ -68,7 +68,13 @@ export function EditorSurfaceFrame({
         ref={scrollRef}
         // flex-col so canvas children can take the editorColumnFill chain —
         // the prose node must fill the scroll area for click-below-text focus.
-        className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", scrollClassName)}
+        // cursor-text: the whole scroll area is caret territory when an editor
+        // is attached — the cursor must promise what the press delivers.
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-y-auto",
+          editor && "cursor-text",
+          scrollClassName,
+        )}
         data-stable-layout-scroll
         onScroll={onScroll}
         onMouseDown={
