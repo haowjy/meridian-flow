@@ -3,20 +3,24 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Fragment } from "@tiptap/pm/model";
 import type { Command, EditorState, Transaction } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
+import { addRowAfter, addRowBefore, CellSelection } from "@tiptap/pm/tables";
 
 export type TableSelection = {
   table: ProseMirrorNode;
   tablePos: number;
   row: number;
   column: number;
+  rowFrom: number;
+  rowTo: number;
+  columnFrom: number;
+  columnTo: number;
 };
 
-export function tableSelection(state: EditorState): TableSelection | null {
-  const { $from } = state.selection;
+function tablePoint($pos: EditorState["selection"]["$from"]) {
   let tableDepth = -1;
   let rowDepth = -1;
-  for (let depth = $from.depth; depth > 0; depth -= 1) {
-    const role = $from.node(depth).type.spec.tableRole;
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const role = $pos.node(depth).type.spec.tableRole;
     if (rowDepth < 0 && role === "row") rowDepth = depth;
     if (role === "table") {
       tableDepth = depth;
@@ -24,12 +28,37 @@ export function tableSelection(state: EditorState): TableSelection | null {
     }
   }
   if (tableDepth < 0 || rowDepth < 0) return null;
+  return {
+    table: $pos.node(tableDepth),
+    tablePos: $pos.before(tableDepth),
+    row: $pos.index(tableDepth),
+    column: $pos.index(rowDepth),
+  };
+}
+
+export function tableSelection(state: EditorState): TableSelection | null {
+  const point = tablePoint(state.selection.$from);
+  if (!point) return null;
+
+  if (state.selection instanceof CellSelection) {
+    const anchor = tablePoint(state.selection.$anchorCell);
+    const head = tablePoint(state.selection.$headCell);
+    if (!anchor || !head || anchor.tablePos !== head.tablePos) return null;
+    return {
+      ...point,
+      rowFrom: Math.min(anchor.row, head.row),
+      rowTo: Math.max(anchor.row, head.row),
+      columnFrom: Math.min(anchor.column, head.column),
+      columnTo: Math.max(anchor.column, head.column),
+    };
+  }
 
   return {
-    table: $from.node(tableDepth),
-    tablePos: $from.before(tableDepth),
-    row: $from.index(tableDepth),
-    column: $from.index(rowDepth),
+    ...point,
+    rowFrom: point.row,
+    rowTo: point.row,
+    columnFrom: point.column,
+    columnTo: point.column,
   };
 }
 
@@ -81,17 +110,31 @@ export function moveTableRow(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
     if (!selection || hasSpans(selection.table)) return false;
-    const target = selection.row + direction;
     // Row zero is the structural GFM header and never participates in moves.
-    if (selection.row === 0 || target <= 0 || target >= selection.table.childCount) return false;
+    if (
+      selection.rowFrom === 0 ||
+      (direction === -1 && selection.rowFrom <= 1) ||
+      (direction === 1 && selection.rowTo >= selection.table.childCount - 1)
+    ) {
+      return false;
+    }
 
     const rows: ProseMirrorNode[] = [];
     selection.table.forEach((row) => {
       rows.push(row);
     });
-    [rows[selection.row], rows[target]] = [rows[target], rows[selection.row]];
+    const selectedRows = rows.splice(selection.rowFrom, selection.rowTo - selection.rowFrom + 1);
+    const insertAt = direction === -1 ? selection.rowFrom - 1 : selection.rowFrom + 1;
+    rows.splice(insertAt, 0, ...selectedRows);
     const table = selection.table.copy(Fragment.fromArray(rows));
-    return replaceTable(state, dispatch, selection, table, target, selection.column);
+    return replaceTable(
+      state,
+      dispatch,
+      selection,
+      table,
+      selection.row + direction,
+      selection.column,
+    );
   };
 }
 
@@ -99,9 +142,13 @@ export function moveTableColumn(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
     if (!selection || hasSpans(selection.table)) return false;
-    const target = selection.column + direction;
     const columnCount = selection.table.firstChild?.childCount ?? 0;
-    if (target < 0 || target >= columnCount) return false;
+    if (
+      (direction === -1 && selection.columnFrom === 0) ||
+      (direction === 1 && selection.columnTo >= columnCount - 1)
+    ) {
+      return false;
+    }
 
     const rows: ProseMirrorNode[] = [];
     selection.table.forEach((row) => {
@@ -109,11 +156,23 @@ export function moveTableColumn(direction: -1 | 1): Command {
       row.forEach((cell) => {
         cells.push(cell);
       });
-      [cells[selection.column], cells[target]] = [cells[target], cells[selection.column]];
+      const selectedCells = cells.splice(
+        selection.columnFrom,
+        selection.columnTo - selection.columnFrom + 1,
+      );
+      const insertAt = direction === -1 ? selection.columnFrom - 1 : selection.columnFrom + 1;
+      cells.splice(insertAt, 0, ...selectedCells);
       rows.push(row.copy(Fragment.fromArray(cells)));
     });
     const table = selection.table.copy(Fragment.fromArray(rows));
-    return replaceTable(state, dispatch, selection, table, selection.row, target);
+    return replaceTable(
+      state,
+      dispatch,
+      selection,
+      table,
+      selection.row,
+      selection.column + direction,
+    );
   };
 }
 
@@ -128,7 +187,7 @@ export function alignTableColumn(alignment: "left" | "center" | "right"): Comman
     selection.table.forEach((row) => {
       let cellPos = rowPos + 1;
       row.forEach((cell, _offset, column) => {
-        if (column === selection.column) {
+        if (column >= selection.columnFrom && column <= selection.columnTo) {
           tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, alignment });
         }
         cellPos += cell.nodeSize;
@@ -137,6 +196,37 @@ export function alignTableColumn(alignment: "left" | "center" | "right"): Comman
     });
     dispatch(tr);
     return true;
+  };
+}
+
+/** Inserts a body row while preserving the whole-column alignment invariant. */
+export function addTableRow(direction: "above" | "below"): Command {
+  return (state, dispatch) => {
+    const selection = tableSelection(state);
+    if (!selection || hasSpans(selection.table)) return false;
+    if (direction === "above" && selection.rowFrom === 0) return false;
+
+    const command = direction === "above" ? addRowBefore : addRowAfter;
+    return command(state, (tr) => {
+      const table = tr.doc.nodeAt(selection.tablePos);
+      if (!table) return;
+      const insertedRow = direction === "above" ? selection.rowFrom : selection.rowTo + 1;
+      const row = table.child(insertedRow);
+      const header = table.firstChild;
+      if (!header) return;
+
+      let rowPos = selection.tablePos + 1;
+      for (let index = 0; index < insertedRow; index += 1) rowPos += table.child(index).nodeSize;
+      let cellPos = rowPos + 1;
+      row.forEach((cell, _offset, column) => {
+        const alignment = header.child(column).attrs.alignment;
+        if (alignment !== cell.attrs.alignment) {
+          tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, alignment });
+        }
+        cellPos += cell.nodeSize;
+      });
+      dispatch?.(tr);
+    });
   };
 }
 

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { Editor, type JSONContent } from "@tiptap/core";
+import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "./config";
 import { MeridianTableView } from "./extensions/meridian-extensions";
 import {
+  addTableRow,
   alignTableColumn,
   moveTableColumn,
   moveTableRow,
@@ -61,6 +63,16 @@ function createTableEditor() {
   return editor;
 }
 
+function createThreeColumnEditor() {
+  const content = tableContent();
+  const rows = content.content?.[0].content;
+  rows?.[0].content?.push(cell("table_header", "H3"));
+  rows?.[1].content?.push(cell("table_cell", "A3"));
+  rows?.[2].content?.push(cell("table_cell", "B3"));
+  editor = new Editor({ extensions: createStandaloneEditorExtensions(), content });
+  return editor;
+}
+
 function selectText(current: Editor, text: string) {
   let position = -1;
   current.state.doc.descendants((node, pos) => {
@@ -68,6 +80,32 @@ function selectText(current: Editor, text: string) {
   });
   expect(position).toBeGreaterThan(0);
   current.commands.setTextSelection(position);
+}
+
+function cellPosition(current: Editor, text: string) {
+  let position = -1;
+  current.state.doc.descendants((node, pos) => {
+    if (
+      (node.type.spec.tableRole === "cell" || node.type.spec.tableRole === "header_cell") &&
+      node.textContent === text
+    ) {
+      position = pos;
+    }
+  });
+  expect(position).toBeGreaterThanOrEqual(0);
+  return position;
+}
+
+function selectCells(current: Editor, anchor: string, head: string) {
+  current.view.dispatch(
+    current.state.tr.setSelection(
+      CellSelection.create(
+        current.state.doc,
+        cellPosition(current, anchor),
+        cellPosition(current, head),
+      ),
+    ),
+  );
 }
 
 function rowText(current: Editor): string[][] {
@@ -142,6 +180,71 @@ describe("table move transforms", () => {
     expect(resetTableLayout(current.state, current.view.dispatch)).toBe(true);
     expect(current.state.doc.firstChild?.attrs.align).toBeNull();
     expect(current.state.doc.firstChild?.child(1).child(0).attrs.colwidth).toBeNull();
+  });
+
+  it("models CellSelection rectangles and rejects header-crossing row transforms", () => {
+    const current = createTableEditor();
+    // Reverse direction reproduces the drag shape whose $from endpoint is in the body.
+    selectCells(current, "A2", "H1");
+
+    expect(tableSelection(current.state)).toMatchObject({
+      rowFrom: 0,
+      rowTo: 1,
+      columnFrom: 0,
+      columnTo: 1,
+    });
+    expect(moveTableRow(-1)(current.state, current.view.dispatch)).toBe(false);
+    expect(moveTableRow(1)(current.state, current.view.dispatch)).toBe(false);
+    expect(addTableRow("above")(current.state, current.view.dispatch)).toBe(false);
+    expect(rowText(current)[0]).toEqual(["H1", "H2"]);
+  });
+
+  it("applies column operations to every column in a CellSelection", () => {
+    const current = createTableEditor();
+    selectCells(current, "H1", "A2");
+
+    expect(alignTableColumn("center")(current.state, current.view.dispatch)).toBe(true);
+    const table = current.state.doc.firstChild;
+    for (let row = 0; row < 3; row += 1) {
+      expect(table?.child(row).child(0).attrs.alignment).toBe("center");
+      expect(table?.child(row).child(1).attrs.alignment).toBe("center");
+    }
+    expect(moveTableColumn(-1)(current.state, current.view.dispatch)).toBe(false);
+    expect(moveTableColumn(1)(current.state, current.view.dispatch)).toBe(false);
+  });
+
+  it("moves a multi-column CellSelection as one range", () => {
+    const current = createThreeColumnEditor();
+    selectCells(current, "H1", "A2");
+
+    expect(moveTableColumn(1)(current.state, current.view.dispatch)).toBe(true);
+    expect(rowText(current)).toEqual([
+      ["H3", "H1", "H2"],
+      ["A3", "A1", "A2"],
+      ["B3", "B1", "B2"],
+    ]);
+  });
+
+  it("copies header alignment into a newly inserted row", () => {
+    const current = createTableEditor();
+    selectText(current, "A2");
+    expect(alignTableColumn("center")(current.state, current.view.dispatch)).toBe(true);
+    expect(addTableRow("below")(current.state, current.view.dispatch)).toBe(true);
+
+    const inserted = current.state.doc.firstChild?.child(2);
+    expect(inserted?.child(0).attrs.alignment).toBeNull();
+    expect(inserted?.child(1).attrs.alignment).toBe("center");
+  });
+
+  it("adds a body row below a header selection", () => {
+    const current = createTableEditor();
+    selectText(current, "H1");
+
+    expect(addTableRow("below")(current.state, current.view.dispatch)).toBe(true);
+    const table = current.state.doc.firstChild;
+    expect(table?.childCount).toBe(4);
+    expect(table?.child(0).firstChild?.type.name).toBe("table_header");
+    expect(table?.child(1).firstChild?.type.name).toBe("table_cell");
   });
 });
 
