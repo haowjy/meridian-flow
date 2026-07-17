@@ -64,6 +64,14 @@ describe("response committer", () => {
 
     await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
       status: "rejected",
+      rejections: [
+        expect.objectContaining({
+          agentResponse: expect.objectContaining({
+            status: "rejected_response_requires_reread",
+            text: expect.stringContaining("Unseen passage."),
+          }),
+        }),
+      ],
     });
     expect(ctx.journal.recordedBatches()).toEqual([]);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Unseen passage.", "Keep."]);

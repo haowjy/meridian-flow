@@ -28,6 +28,7 @@ import {
   type MutationLifecycle,
 } from "./response-lifecycle.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
+import { formatSafetyRejection } from "./safety-rejection.js";
 import type {
   InteractionContext,
   MutationActor,
@@ -402,10 +403,35 @@ export function createResponseCommitter(deps: {
         }
         if (!gate) throw new Error(`Preflight returned no result for ${docBuffer.docId}.`);
         if (gate.verdict === "reject") {
+          const hashes = responseHashes(docBuffer);
           rejections.push({
             documentId: docBuffer.docId,
             conflictedBlockHashes: gate.conflictedBlockHashes,
             affectedWriteIds: affectedWriteIds(docBuffer, gate.conflictedBlockHashes),
+            agentResponse: formatSafetyRejection({
+              docId: docBuffer.docId,
+              action: "buffered response",
+              gate,
+              summary: mutationCommit.summarizeMutationEcho(
+                {
+                  runtime: docBuffer.runtime,
+                  before: snapshotsFromUpdate(
+                    docBuffer.updates[0]?.preOwnSnapshot ??
+                      Y.encodeStateAsUpdate(docBuffer.runtime.doc),
+                    deps.model,
+                    deps.codec,
+                  ),
+                  touchedHashes: hashes.touchedHashes,
+                  deletedHashes: hashes.deletedHashes,
+                  afterSnapshot: snapshotsFromUpdate(
+                    gate.concurrent.detectionSnapshot,
+                    deps.model,
+                    deps.codec,
+                  ),
+                },
+                gate.concurrent.detection,
+              ),
+            }),
           });
         } else {
           preflights.set(docBuffer.docId, gate.concurrent);
@@ -1199,6 +1225,16 @@ export function createResponseCommitter(deps: {
     };
     deps.onLifecycleError?.(event);
     return new ResponseLifecycleError(event);
+  }
+}
+
+function snapshotsFromUpdate(update: Uint8Array, model: AgentEditModel, codec: AgentEditCodec) {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, update);
+    return snapshotBlocks(toDocHandle(doc), model, codec);
+  } finally {
+    doc.destroy();
   }
 }
 
