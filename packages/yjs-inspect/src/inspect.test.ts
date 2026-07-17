@@ -1,5 +1,6 @@
 /** Verifies protocol classification, update correlation, and content safety. */
 
+import { spawnSync } from "node:child_process";
 import {
   createEncoder,
   toUint8Array,
@@ -270,6 +271,20 @@ function overlaps(
     ),
   );
 }
+
+describe("decode-journal CLI", () => {
+  it("exits nonzero and names every unrecognized row id", () => {
+    const result = spawnSync("pnpm", ["tsx", "examples/decode-journal.ts"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      input: "1 0000\n42 not-an-update\n2 0000\ngarbage\n",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Unrecognized input row ids: 42 (line 2), line 4");
+    expect(result.stdout).toBe("");
+  });
+});
 
 describe("awareness summaries", () => {
   it("returns client clocks and self-evident removals without state", () => {
