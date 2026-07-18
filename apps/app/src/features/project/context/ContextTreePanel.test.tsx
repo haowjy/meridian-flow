@@ -163,7 +163,7 @@ function Panel({ onSelectFile = () => {} }: { onSelectFile?: () => void }) {
       activePath={null}
       onSelectFile={onSelectFile}
       creating={creating}
-      onRequestCreate={(scheme, kind, parentPath) => setCreating({ scheme, kind, parentPath })}
+      onRequestCreate={setCreating}
       onCreateDone={() => setCreating(null)}
     />
   );

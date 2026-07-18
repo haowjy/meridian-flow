@@ -179,9 +179,9 @@ a freshly mounted inline row, and blur commits/cancels it.
 
 ## Creation targeting
 
-One creation state serves every entry point: `{ scheme, kind, parentPath }`
-(`TreeCreationProvider` request, or the phone drawer's controlled mirror),
-with `""` meaning the scheme root. Scheme headers request the root; a folder
+One required `TreeCreationRequest` serves every entry point:
+`{ scheme, kind, parentPath }` (`TreeCreationProvider` request, or the phone
+drawer's controlled mirror), with `""` meaning the scheme root. Scheme headers request the root; a folder
 row requests itself; a file row requests its parent
 (`parentContextEntryPath`). The single `TreeChildren` renderer inserts the
 inline CreateRow at the target; the root calls it with an empty child list

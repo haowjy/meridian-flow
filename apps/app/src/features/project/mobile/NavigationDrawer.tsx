@@ -9,8 +9,8 @@ import { useState } from "react";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ContextTreePanel } from "../context/ContextTreePanel";
-import type { ContextCreateKind } from "../context/context-create-kind";
 import type { ContextFile } from "../context/context-tree";
+import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import type { ScreenKey } from "../shell/screens";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
@@ -44,11 +44,7 @@ export function NavigationDrawer({
   // The drawer owns its own inline-create state: the desktop shell's shared
   // creation seam (empty state → sidebar) has no phone counterpart — phone
   // creation starts from the tree's own hover actions inside this drawer.
-  const [creating, setCreating] = useState<{
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-    parentPath: string;
-  } | null>(null);
+  const [creating, setCreating] = useState<TreeCreationRequest | null>(null);
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) setCreating(null);
     onOpenChange(nextOpen);
@@ -131,9 +127,7 @@ export function NavigationDrawer({
                 activePath={activeContextPath}
                 onSelectFile={handleSelectFile}
                 creating={creating}
-                onRequestCreate={(scheme, kind, parentPath) =>
-                  setCreating({ kind, scheme, parentPath })
-                }
+                onRequestCreate={setCreating}
                 onCreateDone={() => setCreating(null)}
               />
             </WorkspaceNavBody>

@@ -29,7 +29,7 @@ import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { type ContextFile, findContextFile } from "./context-tree";
-import { useOptionalTreeCreation } from "./TreeCreationProvider";
+import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
 function rowPaddingLeft(depth: number): number {
@@ -46,17 +46,8 @@ export type ContextTreePanelProps = {
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  creating?: {
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-    /** Target folder path (`""` = scheme root). */
-    parentPath: string;
-  } | null;
-  onRequestCreate?: (
-    scheme: ProjectContextTreeScheme,
-    kind: ContextCreateKind,
-    parentPath: string,
-  ) => void;
+  creating?: TreeCreationRequest | null;
+  onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
 };
 
@@ -107,7 +98,7 @@ export function ContextTreePanel({
                 ? { kind: creating.kind, parentPath: creating.parentPath }
                 : null
             }
-            onRequestCreate={(kind, parentPath) => onRequestCreate(scheme, kind, parentPath)}
+            onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
             onCreateDone={onCreateDone}
           />
         </Fragment>

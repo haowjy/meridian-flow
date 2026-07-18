@@ -3,19 +3,15 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import type { ContextCreateKind } from "./context-create-kind";
 
-type CreationRequest = {
+export type TreeCreationRequest = {
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
   /** Target folder path (`""` = scheme root) the inline create row nests under. */
   parentPath: string;
 };
 type TreeCreationController = {
-  request: CreationRequest | null;
-  requestCreate: (
-    scheme: ProjectContextTreeScheme,
-    kind: ContextCreateKind,
-    parentPath?: string,
-  ) => void;
+  request: TreeCreationRequest | null;
+  requestCreate: (request: TreeCreationRequest) => void;
   completeCreate: () => void;
 };
 
@@ -28,13 +24,13 @@ export function TreeCreationProvider({
   children: ReactNode;
   expandSidebar: () => void;
 }) {
-  const [request, setRequest] = useState<CreationRequest | null>(null);
+  const [request, setRequest] = useState<TreeCreationRequest | null>(null);
   const value = useMemo<TreeCreationController>(
     () => ({
       request,
-      requestCreate: (scheme, kind, parentPath = "") => {
+      requestCreate: (nextRequest) => {
         expandSidebar();
-        setRequest({ scheme, kind, parentPath });
+        setRequest(nextRequest);
       },
       completeCreate: () => setRequest(null),
     }),
