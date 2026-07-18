@@ -30,6 +30,10 @@
   Move targets now have exact collision semantics, return a canonical collision
   locator for Open-existing recovery, and share reason-coded path normalization
   with client create/rename validation.
+- `apps/server`: project-manifest reconciliation is now an explicit,
+  cross-replica-serialized command; ordinary membership reads are pure,
+  concurrent cold starts create one seed update and one initial checkpoint,
+  and the WebSocket membership gate heals legacy omissions on demand (#279).
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening

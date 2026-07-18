@@ -71,11 +71,14 @@ attribution authority.
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the
-live-room gate. `reconcileLiveManifest` is additive-only and idempotent: it seeds
-missing database content rows, but never rewrites an existing key or removes an
-entry. Creation and deletion flow through `recordManifestDocument{Created,Deleted}`.
-Preserve every no-op guard: setting an equal Y.Map value still creates Yjs
-history. See
+live-room gate. Ordinary `resolveManifestMembership` calls only reconstruct and
+read it. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
+self-heal command: it seeds missing active database content rows, but never
+rewrites an existing key or removes an entry. The WebSocket gate invokes it once
+after a membership miss; write-intent paths invoke it explicitly. Creation and
+deletion flow through `recordManifestDocument{Created,Deleted}`, with SQL
+soft-delete committed before the deletion notification. Preserve every no-op
+guard: setting an equal Y.Map value still creates Yjs history. See
 [KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
 for the cross-domain port decision and self-healing rationale.
 

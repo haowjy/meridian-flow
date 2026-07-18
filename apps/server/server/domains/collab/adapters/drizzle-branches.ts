@@ -50,6 +50,7 @@ import {
 } from "../domain/branch-resolver.js";
 import { sync } from "../domain/branch-sync.js";
 import { createDocumentAuthority } from "../domain/document-authority.js";
+import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
 
@@ -88,6 +89,7 @@ export type DrizzleBranchStore = BranchStore &
       workId?: WorkId | null;
       threadId?: ThreadId | null;
     }): Promise<{ documentId: DocumentId; members: string[] }>;
+    reconcileProjectManifest(projectId: ProjectId): Promise<void>;
     recordManifestDocumentCreated(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
@@ -313,6 +315,19 @@ export function createDrizzleBranchStore(
     return doc;
   }
 
+  async function reconcileProjectManifest(projectId: ProjectId): Promise<void> {
+    const { documentId } = await ensureProjectManifest({ projectId });
+    await runInDrizzleTransaction(db, async () => {
+      await lockDocumentMutation(currentDrizzleDb(db), documentId);
+      const doc = await reconcileLiveManifest(
+        documentId,
+        projectId,
+        await draftSeedExclusions(projectId),
+      );
+      doc.destroy();
+    });
+  }
+
   async function ensureWorkDraftBranch(input: {
     documentId: DocumentId;
     workId: WorkId;
@@ -433,47 +448,13 @@ export function createDrizzleBranchStore(
     if (existing?.id) {
       return {
         documentId: existing.id as DocumentId,
-        doc: await reconcileLiveManifest(existing.id as DocumentId, input.projectId),
+        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
       };
     }
     const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
     return {
       documentId,
-      doc: await reconcileLiveManifest(documentId, input.projectId),
-    };
-  }
-
-  async function ensureProjectManifestForDraftMutation(input: {
-    projectId: ProjectId;
-    excludeDocumentId?: DocumentId;
-  }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
-    const txDb = currentDrizzleDb(db);
-    const [existing] = await txDb
-      .select({ id: documents.id })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .where(
-        and(
-          eq(contextSources.projectId, input.projectId),
-          eq(documents.kind, "manifest"),
-          isNull(documents.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing?.id) {
-      return {
-        documentId: existing.id as DocumentId,
-        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
-      };
-    }
-    const documentId = await createManifestIdentity(input.projectId);
-    return {
-      documentId,
-      doc: await reconcileLiveManifest(
-        documentId,
-        input.projectId,
-        await draftSeedExclusions(input.projectId, input.excludeDocumentId),
-      ),
+      doc: await ensureLiveManifestDocument(documentId),
     };
   }
 
@@ -644,10 +625,7 @@ export function createDrizzleBranchStore(
     present: boolean,
     view: { projectId: ProjectId; threadId: ThreadId },
   ): Promise<ManifestMutationResult> {
-    const manifest = await ensureProjectManifestForDraftMutation({
-      projectId: view.projectId,
-      excludeDocumentId: present ? documentId : undefined,
-    });
+    const manifest = await ensureProjectManifest({ projectId: view.projectId });
     try {
       const peer = await ensureThreadPeerBranch({
         documentId: manifest.documentId,
@@ -677,10 +655,7 @@ export function createDrizzleBranchStore(
     present: boolean,
     view: { projectId: ProjectId; workId: WorkId },
   ): Promise<ManifestMutationResult> {
-    const manifest = await ensureProjectManifestForDraftMutation({
-      projectId: view.projectId,
-      excludeDocumentId: present ? undefined : documentId,
-    });
+    const manifest = await ensureProjectManifest({ projectId: view.projectId });
     try {
       const work = await ensureWorkDraftBranch({
         documentId: manifest.documentId,
@@ -1030,6 +1005,8 @@ export function createDrizzleBranchStore(
     ensureProjectManifest(input) {
       return ensureProjectManifest(input);
     },
+
+    reconcileProjectManifest,
 
     resolveManifestMembership,
     recordManifestDocumentCreated: (documentId, view) =>

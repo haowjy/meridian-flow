@@ -329,6 +329,7 @@ export type CollabFacadeDeps = {
   offlineReconciliation?: OfflineReconciliation;
   trailForwardActions?: ReturnType<typeof createDrizzleTrailForwardActions>;
   manifestMembership?: {
+    reconcileProjectManifest(projectId: ProjectId): Promise<void>;
     resolveManifestMembership(input: {
       projectId: ProjectId;
       workId?: WorkId | null;
@@ -1802,8 +1803,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       };
     },
 
+    async reconcileProjectManifest(projectId) {
+      await deps.manifestMembership?.reconcileProjectManifest(projectId);
+    },
+
     async recordManifestDocumentCreated(documentId, view) {
       if (!deps.manifestMembership) return;
+      const projectId = view?.projectId;
+      if (projectId) await deps.manifestMembership.reconcileProjectManifest(projectId);
       const mutation = await deps.manifestMembership.recordManifestDocumentCreated(
         documentId,
         view,
@@ -1817,6 +1824,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async recordManifestDocumentDeleted(documentId, view) {
       if (!deps.manifestMembership) return;
+      const projectId = view?.projectId;
+      if (projectId) await deps.manifestMembership.reconcileProjectManifest(projectId);
       const mutation = await deps.manifestMembership.recordManifestDocumentDeleted(
         documentId,
         view,

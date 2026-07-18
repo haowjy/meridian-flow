@@ -54,6 +54,21 @@ type YjsRouteServices = {
   notices: AppServices["notices"];
 };
 
+export async function hasLiveManifestMembership(
+  documentSync: Pick<
+    AppServices["documentSync"],
+    "reconcileProjectManifest" | "resolveManifestMembership"
+  >,
+  projectId: string,
+  documentId: string,
+): Promise<boolean> {
+  let membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
+  if (membership.members.includes(documentId)) return true;
+  await documentSync.reconcileProjectManifest(projectId as never);
+  membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
+  return membership.members.includes(documentId);
+}
+
 type WriterNoticeDocument = {
   getConnectionsCount(): number;
   broadcastStateless(payload: string): void;
@@ -339,8 +354,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (room.kind === "live") {
         const projectId = await services.documentAccess.projectIdForDocument(documentId);
         if (!projectId) throw permissionDenied("permission-denied");
-        const membership = await services.documentSync.resolveManifestMembership({ projectId });
-        if (!membership.members.includes(documentId)) throw permissionDenied("permission-denied");
+        if (!(await hasLiveManifestMembership(services.documentSync, projectId, documentId))) {
+          throw permissionDenied("permission-denied");
+        }
         context.liveGenerations?.set(
           documentId,
           await services.documentSync.currentLiveGeneration(documentId),
