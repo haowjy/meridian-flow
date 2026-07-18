@@ -63,6 +63,17 @@ reactivation fence, or scope routing. Cold attribution uses persisted branch
 journal rows and live journal metadata; memory-only runtime maps are never an
 attribution authority.
 
+## Live manifest membership
+
+The project manifest's `documents` Y.Map is the membership authority used by the
+live-room gate. `reconcileLiveManifest` is additive-only and idempotent: it seeds
+missing database content rows, but never rewrites an existing key or removes an
+entry. Creation and deletion flow through `recordManifestDocument{Created,Deleted}`.
+Preserve every no-op guard: setting an equal Y.Map value still creates Yjs
+history. See
+[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
+for the cross-domain port decision and self-healing rationale.
+
 ## Durable records
 
 - `document_yjs_updates` is the live update journal.

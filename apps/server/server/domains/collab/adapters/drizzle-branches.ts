@@ -304,6 +304,7 @@ export function createDrizzleBranchStore(
     const before = Y.encodeStateVector(doc);
     for (const row of await listProjectContentDocumentIds(projectId)) {
       if (excludeDocumentIds.has(row)) continue;
+      if (map.has(row)) continue;
       map.set(row, { present: true });
     }
     const update = Y.encodeStateAsUpdate(doc, before);
