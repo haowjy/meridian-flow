@@ -5,6 +5,8 @@
 - `apps/server`: local JSONL diagnostics now bound pending writes to 5,000
   events, drop oldest under filesystem backpressure, and report loss through
   `observability.sink.dropped`.
+- `apps/server`: observability events now receive stable IDs at emit time for
+  use as incremental debug-feed cursors.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
