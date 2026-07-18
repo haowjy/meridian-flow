@@ -1,5 +1,10 @@
-/** Pure projection from gateway EventRecords into the LLM Calls dashboard model. */
-import type { EventRecord } from "@meridian/contracts/observability";
+/** Defensive projection from untrusted gateway records into the LLM Calls dashboard model. */
+import type {
+  EventCorrelation,
+  EventLevel,
+  EventRecord,
+  TraceStreamRef,
+} from "@meridian/contracts/observability";
 
 export type LlmCallOutcome = "in-flight" | "ok" | "cancelled" | "error";
 
@@ -33,6 +38,150 @@ const OUTCOME_PRECEDENCE: Record<Exclude<LlmCallOutcome, "in-flight">, number> =
   cancelled: 1,
   error: 2,
 };
+
+const CORRELATION_STRING_KEYS = [
+  "traceId",
+  "runId",
+  "parentRunId",
+  "requestId",
+  "threadId",
+  "turnId",
+  "childRunId",
+  "agentSlug",
+  "attemptId",
+  "gatewayCallId",
+  "provider",
+  "model",
+  "route",
+  "method",
+  "projectId",
+  "workId",
+  "toolName",
+  "toolCallId",
+  "errorCode",
+  "documentId",
+  "branchId",
+  "yjsSpans",
+] as const;
+
+const CORRELATION_NUMBER_KEYS = ["iteration", "branchGeneration", "yjsClient"] as const;
+const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
+
+type GatewayEventRecord = EventRecord & {
+  correlation: EventCorrelation & { gatewayCallId: string };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeTimestamp(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const parts = UTC_TIMESTAMP_PATTERN.exec(value);
+  if (!parts) return undefined;
+
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime())) return undefined;
+  const [, year, month, day, hour, minute, second] = parts;
+  return timestamp.getUTCFullYear() === Number(year) &&
+    timestamp.getUTCMonth() + 1 === Number(month) &&
+    timestamp.getUTCDate() === Number(day) &&
+    timestamp.getUTCHours() === Number(hour) &&
+    timestamp.getUTCMinutes() === Number(minute) &&
+    timestamp.getUTCSeconds() === Number(second)
+    ? timestamp.toISOString()
+    : undefined;
+}
+
+function isEventLevel(value: unknown): value is EventLevel {
+  return (
+    value === "trace" ||
+    value === "debug" ||
+    value === "info" ||
+    value === "warn" ||
+    value === "error" ||
+    value === "fatal"
+  );
+}
+
+function normalizeCorrelation(value: unknown): GatewayEventRecord["correlation"] | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const normalized: Record<string, string | number> = {};
+  for (const key of CORRELATION_STRING_KEYS) {
+    if (typeof value[key] === "string") normalized[key] = value[key];
+  }
+  for (const key of CORRELATION_NUMBER_KEYS) {
+    if (typeof value[key] === "number" && Number.isFinite(value[key])) {
+      normalized[key] = value[key];
+    }
+  }
+
+  const gatewayCallId = normalized.gatewayCallId;
+  return typeof gatewayCallId === "string" && gatewayCallId.length > 0
+    ? { ...normalized, gatewayCallId }
+    : undefined;
+}
+
+function normalizeStream(value: unknown): TraceStreamRef | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.streamId !== "string" ||
+    (value.transport !== "thread" && value.transport !== "yjs" && value.transport !== "gateway") ||
+    (value.observedAt !== "client" && value.observedAt !== "server") ||
+    typeof value.observerSeq !== "number" ||
+    !Number.isFinite(value.observerSeq)
+  ) {
+    return undefined;
+  }
+
+  const direction =
+    value.direction === "client_to_server" || value.direction === "server_to_client"
+      ? value.direction
+      : undefined;
+  return {
+    streamId: value.streamId,
+    transport: value.transport,
+    observedAt: value.observedAt,
+    observerSeq: value.observerSeq,
+    ...(direction ? { direction } : {}),
+    ...(typeof value.messageClass === "string" ? { messageClass: value.messageClass } : {}),
+    ...(typeof value.bytes === "number" && Number.isFinite(value.bytes)
+      ? { bytes: value.bytes }
+      : {}),
+  };
+}
+
+function normalizeGatewayRecord(value: unknown): GatewayEventRecord | undefined {
+  if (
+    !isRecord(value) ||
+    value.source !== "gateway" ||
+    typeof value.name !== "string" ||
+    !isEventLevel(value.level) ||
+    !isRecord(value.payload)
+  ) {
+    return undefined;
+  }
+
+  const timestamp = normalizeTimestamp(value.timestamp);
+  const correlation = normalizeCorrelation(value.correlation);
+  if (!timestamp || !correlation) return undefined;
+
+  const stream = normalizeStream(value.stream);
+  return {
+    ...(typeof value.eventId === "string" ? { eventId: value.eventId } : {}),
+    timestamp,
+    level: value.level,
+    source: value.source,
+    name: value.name,
+    ...(value.sensitivity === "safe" || value.sensitivity === "protected_reference"
+      ? { sensitivity: value.sensitivity }
+      : {}),
+    correlation,
+    ...(stream ? { stream } : {}),
+    payload: value.payload,
+  };
+}
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -115,13 +264,16 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
   };
 }
 
-/** Group gateway records by call id and return newest calls first. */
-export function deriveLlmCalls(records: readonly EventRecord[]): LlmCallSummary[] {
+/** Group valid gateway records by call id and return newest calls first. */
+export function deriveLlmCalls(records: unknown): LlmCallSummary[] {
   const recordsByCall = new Map<string, EventRecord[]>();
 
-  for (const record of records) {
-    const gatewayCallId = record.correlation?.gatewayCallId;
-    if (record.source !== "gateway" || !gatewayCallId) continue;
+  if (!Array.isArray(records)) return [];
+
+  for (const candidate of records) {
+    const record = normalizeGatewayRecord(candidate);
+    if (!record) continue;
+    const gatewayCallId = record.correlation.gatewayCallId;
     const callRecords = recordsByCall.get(gatewayCallId);
     if (callRecords) callRecords.push(record);
     else recordsByCall.set(gatewayCallId, [record]);

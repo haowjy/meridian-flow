@@ -16,13 +16,13 @@ const EVENTS_PATH = "/api/debug/events?source=gateway&limit=500";
 const POLL_INTERVAL_MS = 3_000;
 
 type EventQueryResponse = {
-  events: EventRecord[];
-  dropped: number;
+  events?: unknown;
+  dropped?: unknown;
 };
 
 type CallsState =
   | { status: "loading" }
-  | { status: "loaded"; events: EventRecord[]; dropped: number; updatedAt: Date }
+  | { status: "loaded"; events: unknown[]; dropped: number; updatedAt: Date }
   | { status: "error"; message: string };
 
 const OUTCOME_CLASS: Record<LlmCallOutcome, string> = {
@@ -68,14 +68,18 @@ function LlmCallsContent() {
       const currentRequest = new AbortController();
       request = currentRequest;
       try {
-        const response = await getJson<EventQueryResponse>(EVENTS_PATH, {
+        const response = await getJson<unknown>(EVENTS_PATH, {
           signal: currentRequest.signal,
         });
         if (!active || currentRequest.signal.aborted) return;
+        const responseRecord =
+          typeof response === "object" && response !== null && !Array.isArray(response)
+            ? (response as EventQueryResponse)
+            : {};
         setState({
           status: "loaded",
-          events: Array.isArray(response.events) ? response.events : [],
-          dropped: typeof response.dropped === "number" ? response.dropped : 0,
+          events: Array.isArray(responseRecord.events) ? responseRecord.events : [],
+          dropped: typeof responseRecord.dropped === "number" ? responseRecord.dropped : 0,
           updatedAt: new Date(),
         });
       } catch (error) {

@@ -155,4 +155,64 @@ describe("deriveLlmCalls", () => {
 
     expect(deriveLlmCalls([wrongSource, missingCall])).toEqual([]);
   });
+
+  describe("untrusted records", () => {
+    const validRecord = event("valid", 1, "stream.open");
+
+    it.each([
+      ["a null entry", null],
+      ["a missing timestamp", { ...validRecord, timestamp: undefined }],
+      ["an invalid timestamp", { ...validRecord, timestamp: "not-a-timestamp" }],
+      ["a missing payload", { ...validRecord, payload: undefined }],
+      ["a null payload", { ...validRecord, payload: null }],
+      ["a non-object payload", { ...validRecord, payload: "invalid" }],
+      ["missing correlation", { ...validRecord, correlation: undefined }],
+    ])("skips %s", (_label, malformedRecord) => {
+      const calls = deriveLlmCalls([malformedRecord, validRecord]);
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.gatewayCallId).toBe("valid");
+      expect(calls[0]?.lifecycleEvents).toHaveLength(1);
+    });
+
+    it.each([
+      ["an unknown string", "unexpected"],
+      ["a numeric outcome", 500],
+      ["a null outcome", null],
+    ])("normalizes %s close outcome to error", (_label, outcome) => {
+      const call = deriveLlmCalls([event("call", 1, "stream.close", { payload: { outcome } })])[0];
+
+      expect(call).toMatchObject({ gatewayCallId: "call", outcome: "error" });
+    });
+
+    it.each([
+      [
+        "close-only",
+        [event("close-only", 1, "stream.close", { payload: { outcome: "ok" } })],
+        { gatewayCallId: "close-only", outcome: "ok" },
+      ],
+      [
+        "first-output-only",
+        [event("first-output-only", 1, "stream.first_output", { payload: { latencyMs: 12 } })],
+        { gatewayCallId: "first-output-only", outcome: "in-flight", firstOutputMs: 12 },
+      ],
+    ])("preserves a %s lifecycle", (_label, records, expected) => {
+      expect(deriveLlmCalls(records)[0]).toMatchObject(expected);
+    });
+
+    it("does not throw for two correlated records without timestamps", () => {
+      const { timestamp: _firstTimestamp, ...first } = event("call", 1, "stream.open");
+      const { timestamp: _secondTimestamp, ...second } = event("call", 2, "stream.first_output");
+
+      expect(deriveLlmCalls([first, second])).toEqual([]);
+    });
+
+    it("does not throw for a close record with a null payload", () => {
+      expect(deriveLlmCalls([{ ...event("call", 1, "stream.close"), payload: null }])).toEqual([]);
+    });
+
+    it.each([null, undefined, {}, "records"])("treats a non-array input as empty", (records) => {
+      expect(deriveLlmCalls(records)).toEqual([]);
+    });
+  });
 });
