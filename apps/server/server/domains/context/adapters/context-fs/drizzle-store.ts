@@ -153,6 +153,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return this.sourceId;
   }
 
+  async existingContextSourceId(): Promise<string> {
+    return this.sourceId;
+  }
+
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
     return runInDrizzleTransaction(this.db, operation);
   }

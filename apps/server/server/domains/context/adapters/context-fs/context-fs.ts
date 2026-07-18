@@ -357,7 +357,8 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   async locateDocument(documentId: string) {
-    const sourceId = await this.store.contextSourceId();
+    const sourceId = await this.store.existingContextSourceId();
+    if (!sourceId) return Ok(null);
     const located = await this.store.findDocumentById(documentId);
     if (!located || located.contextSourceId !== sourceId || !located.active) return Ok(null);
     return Ok({

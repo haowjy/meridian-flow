@@ -69,6 +69,8 @@ export interface ContextDocumentStore {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /** The backing context_sources.id for this scoped tree. */
   contextSourceId(): Promise<string>;
+  /** Return the backing source when already materialized, without provisioning it. */
+  existingContextSourceId(): Promise<string | null>;
   findFolder(parentId: string | null, name: string): Promise<ContextFolder | null>;
   createFolder(parentId: string | null, name: string): Promise<ContextFolder>;
   findDocument(
