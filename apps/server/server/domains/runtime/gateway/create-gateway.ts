@@ -146,7 +146,7 @@ async function settleCancelledResultForGateway(
  * reasoning, tool_call, custom, usage, or end event is yielded, the stream
  * cannot be retried because the caller may have already acted on the content.
  */
-function isPartialOutputEvent(event: StreamEvent): boolean {
+export function isPartialOutputEvent(event: StreamEvent): boolean {
   return event.type !== "start" && event.type !== "error";
 }
 
