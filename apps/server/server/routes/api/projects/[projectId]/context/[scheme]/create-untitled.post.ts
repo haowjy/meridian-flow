@@ -43,7 +43,13 @@ export async function createUntitledContextDocument(input: {
     origin: { type: "human", userId: input.userId },
   });
   if (!result.ok) contextErrorToHttp(result.error);
-  return { ...result.value, scheme: input.scheme };
+  return result.value.status === "created"
+    ? {
+        ...result.value,
+        scheme: input.scheme,
+        ...(input.workId ? { workId: input.workId } : {}),
+      }
+    : result.value;
 }
 
 export default defineEventHandler(async (event) => {

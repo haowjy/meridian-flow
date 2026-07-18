@@ -44,12 +44,22 @@ export interface ContextCreateTrackedDocumentResult {
   documentId: string;
 }
 
-export interface ContextCreateUntitledDocumentResult {
-  status: "created" | "already-exists";
-  documentId: string;
-  path: string;
-  name: string;
-}
+export type ContextCreateUntitledDocumentResult =
+  | {
+      status: "created";
+      documentId: string;
+      path: string;
+      name: string;
+    }
+  | {
+      status: "already-materialized";
+      documentId: string;
+      scheme: ContextScheme;
+      path: string;
+      name: string;
+      /** Present only when the canonical location is Work-scoped. */
+      workId?: string;
+    };
 
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;

@@ -8,7 +8,6 @@ import type { Result } from "../../../shared/result.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
-  ContextCreateUntitledDocumentResult,
   ContextEditCommand,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
@@ -60,6 +59,15 @@ export type AdapterFileRef = FileRef extends infer T
 /** A search hit as produced by an adapter: `uri` is a scheme-relative path. */
 export type AdapterSearchHit = Omit<SearchResult, "uri"> & { path: string };
 
+export type AdapterUntitledDocumentResult = {
+  status: "created" | "already-exists";
+  documentId: string;
+  path: string;
+  name: string;
+};
+
+export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status">;
+
 export type AdapterMoveResult = {
   movedNodeId?: string;
   path: string;
@@ -104,10 +112,12 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  /** Find an active document owned by this adapter's source. */
+  locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   createUntitledDocument(
     path: string,
     options: ContextCreateUntitledDocumentOptions,
-  ): Promise<Result<ContextCreateUntitledDocumentResult, AdapterFault>>;
+  ): Promise<Result<AdapterUntitledDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,

@@ -171,7 +171,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(create()).rejects.toThrow("simulated manifest membership failure");
       await expect(create()).resolves.toMatchObject({
-        status: "already-exists",
+        status: "already-materialized",
         documentId: REPAIR_DOCUMENT_ID,
         path: "Untitled 1.md",
         name: "Untitled 1",

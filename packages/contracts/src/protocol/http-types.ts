@@ -94,11 +94,13 @@ export type CreateUntitledContextDocumentRequest = {
 };
 
 export type CreateUntitledContextDocumentResponse = {
-  status: "created" | "already-exists";
+  status: "created" | "already-materialized";
   documentId: string;
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
+  /** Present only when the canonical location is Work-scoped. */
+  workId?: string;
 };
 
 export type CreateUntitledContextDocumentResult =

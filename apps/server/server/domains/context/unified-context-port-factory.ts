@@ -112,6 +112,9 @@ const emptyWorkScopedAdapter: ContextSchemeAdapter = {
   async createTrackedDocument() {
     return Err({ code: "permission_denied" });
   },
+  async locateDocument() {
+    return Ok(null);
+  },
   async createUntitledDocument() {
     return Err({ code: "permission_denied" });
   },

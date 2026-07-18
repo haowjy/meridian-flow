@@ -42,9 +42,11 @@ describe("create untitled route contract", () => {
     const createUntitledDocument = vi.fn(async () => ({
       ok: true as const,
       value: {
-        status: "already-exists" as const,
+        status: "already-materialized" as const,
         documentId: DOCUMENT_ID,
-        path: "Untitled 1.md",
+        scheme: "scratch" as const,
+        workId: "work-2",
+        path: "moved/Untitled 1.md",
         name: "Untitled 1",
       },
     }));

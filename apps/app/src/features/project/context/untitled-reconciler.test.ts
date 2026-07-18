@@ -301,7 +301,7 @@ describe("untitled reconciliation durability", () => {
     const session = fakeSession(contentDocument(""));
     h.sessions.set("doc-1", session);
     h.create.mockResolvedValue({
-      status: "already-exists",
+      status: "already-materialized",
       documentId: "doc-1",
       scheme: "scratch",
       path: "/Untitled",

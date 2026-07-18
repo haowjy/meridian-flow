@@ -13,6 +13,7 @@ import type {
 } from "../ports/context-adapter.js";
 import type {
   ContextCreateTrackedDocumentResult,
+  ContextCreateUntitledDocumentResult,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
@@ -238,12 +239,69 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
-    async createUntitledDocument(homeUri, options) {
+    async createUntitledDocument(
+      homeUri,
+      options,
+    ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>> {
       const r = await resolve(homeUri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      return callAdapter(canonical, () => adapter.createUntitledDocument(path, options));
+
+      const locations: Array<{
+        scheme: ContextScheme;
+        authority: string | null;
+        adapter: ContextSchemeAdapter;
+      }> = [...adapters].map(([scheme, candidate]) => ({
+        scheme,
+        authority: null,
+        adapter: candidate,
+      }));
+      for (const authority of deps.allowedAuthorities ?? []) {
+        for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
+          locations.push({ scheme, authority, adapter: candidate });
+        }
+      }
+      for (const location of locations) {
+        const locationUri = uriFor(location.scheme, "", location.authority);
+        const found = await callAdapter(locationUri, () =>
+          location.adapter.locateDocument(options.documentId),
+        );
+        if (!found.ok) return found;
+        if (!found.value) continue;
+        const finalized = await callAdapter(locationUri, () =>
+          location.adapter.createUntitledDocument(found.value?.path ?? "", options),
+        );
+        if (!finalized.ok) return finalized;
+        return Ok({
+          status: "already-materialized",
+          documentId: finalized.value.documentId,
+          scheme: location.scheme,
+          path: finalized.value.path,
+          name: finalized.value.name,
+          ...(location.authority ? { workId: location.authority } : {}),
+        });
+      }
+
+      const created = await callAdapter(canonical, () =>
+        adapter.createUntitledDocument(path, options),
+      );
+      if (!created.ok) return created;
+      return created.value.status === "created"
+        ? Ok({
+            status: "created",
+            documentId: created.value.documentId,
+            path: created.value.path,
+            name: created.value.name,
+          })
+        : Ok({
+            status: "already-materialized",
+            documentId: created.value.documentId,
+            scheme: r.value.scheme,
+            path: created.value.path,
+            name: created.value.name,
+            ...(r.value.authority ? { workId: r.value.authority } : {}),
+          });
     },
 
     async edit(
