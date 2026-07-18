@@ -10,8 +10,9 @@
   grace, tracked per document). The chip is the only edit entry — the
   breadcrumb is inert, reserved for per-segment navigation. Untitled drafts
   place themselves through an empty field with the content-derived name as
-  ghost text and a destination browser that opens on the scheme roots; homed
-  documents rename and move through the chip's Move-to popup. The open field
+  ghost text and a destination browser that opens on the scheme roots. Homed
+  documents use the same inline field, pre-filled and selected for immediate
+  rename, with current-folder siblings and writable roots for moves. The field
   carries explicit ✓/× buttons mirroring Enter/Esc. Collisions surface the
   canonical locator with Open-existing recovery; intents queued on
   still-materializing drafts report failures instead of dropping them.

@@ -79,21 +79,11 @@ msgstr "<0>{0}</0> will be permanently deleted."
 msgid "✓ All changes reviewed"
 msgstr "✓ All changes reviewed"
 
-#. placeholder {0}: conflict.path.slice(conflict.path.lastIndexOf("/") + 1)
 #. placeholder {0}: conflictName ?? ""
-#. placeholder {0}: noteValue.trim().split("/").pop() ?? ""
-#: src/features/project/context/IdentityMovePopup.tsx
-#: src/features/project/context/IdentityPathField.tsx
+#. placeholder {0}: noteValue.trim()
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "A file named {0} already exists in this location."
 msgstr "A file named {0} already exists in this location."
-
-#: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "A file named {name} already exists in this location."
-#~ msgstr "A file named {name} already exists in this location."
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "A file named {noteName} already exists in this location."
-#~ msgstr "A file named {noteName} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {trimmed} already exists in this location."
@@ -262,7 +252,7 @@ msgstr "Buy extra usage"
 msgid "Cancel"
 msgstr "Cancel"
 
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Cancel editing"
 msgstr "Cancel editing"
 
@@ -281,10 +271,6 @@ msgstr "Change applied."
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Change restored."
 msgstr "Change restored."
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Changed by this turn"
-#~ msgstr "Changed by this turn"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
@@ -399,10 +385,6 @@ msgstr "Copy"
 msgid "Could not load files."
 msgstr "Could not load files."
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Could not load the diff for this turn."
-#~ msgstr "Could not load the diff for this turn."
-
 #: src/features/chat/DraftDock.tsx
 msgid "Couldn't apply because this would bring back text you deleted."
 msgstr "Couldn't apply because this would bring back text you deleted."
@@ -483,17 +465,13 @@ msgstr "Couldn't open this document."
 msgid "Couldn't open this location"
 msgstr "Couldn't open this location"
 
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Couldn't save to your project. Nothing was lost — your words are still here."
-#~ msgstr "Couldn't save to your project. Nothing was lost — your words are still here."
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
@@ -510,10 +488,6 @@ msgstr "Create file or folder"
 #: src/features/chat/IndependentChatView.tsx
 msgid "Create project"
 msgstr "Create project"
-
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "current home"
-msgstr "current home"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -582,10 +556,6 @@ msgstr "Discard all"
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
 
-#: src/features/project/ContextPaneController.tsx
-#~ msgid "Discard this document?"
-#~ msgstr "Discard this document?"
-
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
 msgstr "Dock view"
@@ -594,7 +564,7 @@ msgstr "Dock view"
 msgid "Document"
 msgstr "Document"
 
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Document name and location"
 msgstr "Document name and location"
 
@@ -762,14 +732,6 @@ msgstr "Folder name"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "From the draft journal"
-#~ msgstr "From the draft journal"
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "From the saved apply receipt"
-#~ msgstr "From the saved apply receipt"
-
 #: src/features/project/lifecycle.ts
 msgid "Grilling"
 msgstr "Grilling"
@@ -811,10 +773,6 @@ msgstr "Idle"
 msgid "Image artifact"
 msgstr "Image artifact"
 
-#: src/features/project/context/IdentityPathField.tsx
-msgid "Include a location and a name, like Manuscript/chapter-1"
-msgstr "Include a location and a name, like Manuscript/chapter-1"
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
 msgstr "Includes your edits"
@@ -836,10 +794,6 @@ msgstr "Installed"
 msgid "Interface language"
 msgstr "Interface language"
 
-#: src/features/project/ContextPaneController.tsx
-#~ msgid "It was never saved to your project. Its words will be gone."
-#~ msgstr "It was never saved to your project. Its words will be gone."
-
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
 msgstr "Italic"
@@ -847,10 +801,6 @@ msgstr "Italic"
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
 msgstr "Keep"
-
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "Keep in Scratch"
-msgstr "Keep in Scratch"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
@@ -907,10 +857,6 @@ msgstr "Live view"
 #: src/features/agents/AgentPicker.tsx
 msgid "Loading agents…"
 msgstr "Loading agents…"
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Loading change…"
-#~ msgstr "Loading change…"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1000,14 +946,6 @@ msgstr "Modified text"
 msgid "Monthly usage"
 msgstr "Monthly usage"
 
-#: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "Move this document somewhere else in your project."
-#~ msgstr "Move this document somewhere else in your project."
-
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "Move to {destinationName}"
-msgstr "Move to {destinationName}"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr "Must be a number"
@@ -1024,19 +962,10 @@ msgstr "Must be at least {value}"
 msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "Name"
-msgstr "Name"
-
 #: src/features/project/context/context-entry-name.ts
-#: src/features/project/context/IdentityMovePopup.tsx
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
 msgstr "Name is required"
-
-#: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "Name this draft"
-#~ msgstr "Name this draft"
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot be empty"
@@ -1046,10 +975,6 @@ msgstr "Names cannot be empty"
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '{0}'"
 msgstr "Names cannot contain '{0}'"
-
-#: src/features/project/context/context-entry-name.ts
-#~ msgid "Names cannot contain '/'"
-#~ msgstr "Names cannot contain '/'"
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot end with '/'"
@@ -1085,10 +1010,6 @@ msgstr "New document"
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New file"
 msgstr "New file"
-
-#: src/features/project/context/IdentityPathField.tsx
-msgid "new folder"
-msgstr "new folder"
 
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -1135,10 +1056,6 @@ msgstr "No chats yet — start one to get going."
 msgid "No context files yet."
 msgstr "No context files yet."
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "No diff is available for this turn."
-#~ msgstr "No diff is available for this turn."
-
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
 msgstr "No fields required; confirm to continue."
@@ -1146,10 +1063,6 @@ msgstr "No fields required; confirm to continue."
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "No files uploaded yet."
 msgstr "No files uploaded yet."
-
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "No folders here"
-msgstr "No folders here"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"
@@ -1159,18 +1072,9 @@ msgstr "No matching chats"
 msgid "No matching files"
 msgstr "No matching files"
 
-#: src/features/project/context/IdentityPathField.tsx
-msgid "No matching folders"
-msgstr "No matching folders"
-
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr "No pending changes"
-
-#. placeholder {0}: result.segment ?? ""
-#: src/features/project/context/context-entry-name.ts
-msgid "No place called '{0}'"
-msgstr "No place called '{0}'"
 
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
@@ -1188,7 +1092,7 @@ msgstr "No results yet."
 msgid "Not Found"
 msgstr "Not Found"
 
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
@@ -1233,8 +1137,7 @@ msgstr "Open a project to see its results."
 msgid "Open context files"
 msgstr "Open context files"
 
-#: src/features/project/context/IdentityMovePopup.tsx
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
 msgstr "Open existing"
 
@@ -1418,10 +1321,6 @@ msgstr "Rename"
 msgid "Rename chat"
 msgstr "Rename chat"
 
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Rename document"
-#~ msgstr "Rename document"
-
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Rename this document or move it somewhere else in your project."
 msgstr "Rename this document or move it somewhere else in your project."
@@ -1429,10 +1328,6 @@ msgstr "Rename this document or move it somewhere else in your project."
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
 msgstr "Renamed to {trimmed}"
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Renaming…"
-#~ msgstr "Renaming…"
 
 #: src/features/chat/ChatView.tsx
 msgid "Reply to the agent, or steer the analysis…"
@@ -1510,41 +1405,13 @@ msgstr "Running {toolName}"
 msgid "Running skill…"
 msgstr "Running skill…"
 
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Save"
-#~ msgstr "Save"
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Save location"
-#~ msgstr "Save location"
-
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "Save name"
-msgstr "Save name"
-
-#: src/features/project/context/IdentityPathField.tsx
+#: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Save temporary document"
-#~ msgstr "Save temporary document"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally · offline"
 msgstr "Saved locally · offline"
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Saved the snapshot and kept your newer words here."
-#~ msgstr "Saved the snapshot and kept your newer words here."
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Saved to the earlier location — your new save location stays with this copy."
-#~ msgstr "Saved to the earlier location — your new save location stays with this copy."
-
-#: src/features/project/context/UntitledRenameLine.tsx
-#~ msgid "Saving…"
-#~ msgstr "Saving…"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Scratch"
@@ -1698,10 +1565,6 @@ msgstr "Switch work"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Temporary document editor"
-#~ msgstr "Temporary document editor"
-
 #: src/features/account/SettingsDialog.tsx
 msgid "Text size"
 msgstr "Text size"
@@ -1775,10 +1638,6 @@ msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-ch
 #: src/features/chat/DraftDock.tsx
 msgid "This draft changed. Review the latest version before applying."
 msgstr "This draft changed. Review the latest version before applying."
-
-#: src/features/project/context/DocumentIdentityBar.tsx
-#~ msgid "This draft is untitled and lives in your Scratch. Click to give it a name."
-#~ msgstr "This draft is untitled and lives in your Scratch. Click to give it a name."
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
@@ -1912,10 +1771,6 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
-#: src/features/chat/TurnEditsCard.tsx
-#~ msgid "View change"
-#~ msgstr "View change"
-
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"
 msgstr "Waiting for you"
@@ -1927,10 +1782,6 @@ msgstr "Waiting on you"
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
 msgstr "What are you working on?"
-
-#: src/features/project/context/IdentityMovePopup.tsx
-msgid "Where should this live?"
-msgstr "Where should this live?"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"

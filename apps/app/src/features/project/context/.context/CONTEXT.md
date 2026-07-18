@@ -98,10 +98,12 @@ Contracts:
   home as read-only spans left of the name. Enter with a home built moves
   (+renames); name-only Enter renames in place — naming isn't homing.
   Placement happens once: any explicit save graduates the document.
-- Homed rename/move goes through the chip's Move-to popup. The future
-  per-segment navigator owns its own typed fallback and API if it needs one;
-  the identity bar does not retain an unreachable full-path editor.
-- **Commit seam**: both surfaces submit one final `{ destination, name }` to
+- **Graduated grammar**: the same chip and field handle homed documents. The
+  field opens with the current name selected, while the dropdown offers the
+  current folder's siblings and every writable scheme root. Selecting a folder
+  drills deeper and builds the destination prefix, so rename, move, and
+  rename-plus-move remain one gesture without a second popup or name row.
+- **Commit seam**: the field submits one final `{ destination, name }` to
   `use-identity-commit.ts`. That seam alone derives no-op, rename, move, or
   graduation and chooses transport. A same-name explicit Save on a provisional
   document is therefore always a graduation, regardless of which surface
@@ -118,17 +120,17 @@ Contracts:
   contract can't fire before the click lands). Keyboard behavior unchanged.
 - **Chip slot**: single occupancy, right edge. The chip is permanent (D4) and
   its label graduates with the document: jade "Choose a home" while
-  provisional (opens placement), quiet outline "Rename" once homed (opens the
-  Move-to popup, anchored at the current folder — rename is the common case,
-  move is discoverable inside). Viewer docs get
-  the popup too; uploads viewers carry no chip (no dead buttons). The
+  provisional (opens empty placement), quiet outline "Rename" once homed
+  (opens the same field, pre-filled and selected — rename is the common case,
+  folder browsing keeps move discoverable). Viewer docs get the field too;
+  uploads viewers carry no chip (no dead buttons). The
   device-only warning (warning tokens, `TriangleAlert`) outranks the chip
   after unsynced words persist for a 2s sustained grace — the clock is the
   reconciler's per-document `pendingSince`, so remounting chrome (tab
   switches) cannot restart the window.
-- **Destination keyboard path**: placement ArrowDown/ArrowUp enters the
-  suggestion list through its typed focus handle; the Move-to popup focuses
-  its first browser row on open. Rows retain arrow wrapping and Enter select.
+- **Destination keyboard path**: ArrowDown/ArrowUp enters the suggestion list
+  through its typed focus handle. Rows retain arrow wrapping and Enter select;
+  folder selection can drill to arbitrary existing depth.
 
 The tab strip still follows the settled tonal treatment: it paints nothing,
 active tabs continue the canvas upward, inactive neighbors alone receive short

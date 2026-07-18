@@ -50,8 +50,8 @@ Shared across both shells:
   the parent `../ContextPaneController.tsx` owns reconciliation and selection
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
-  + `IdentityMovePopup.tsx` (the universal breadcrumb band — inline rename AND
-  move live there, committed through `use-identity-commit.ts`). New untitled
+  (the universal breadcrumb band — placement, rename, and move share one inline
+  field, committed through `use-identity-commit.ts`). New untitled
   tabs use the same Yjs-first editor as tracked documents; the detached
   session is materialized by the `untitled-reconciler.ts` engine;
   `untitled-reconciler-browser.ts` owns browser/API/React bindings.
