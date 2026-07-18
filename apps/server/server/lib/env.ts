@@ -29,6 +29,11 @@ export const recentEventsEnabled = resolveRecentEventsEnabled({
   rawNodeEnv: process.env.NODE_ENV,
 });
 
+export const obsVerbose = resolveObsVerbose({
+  rawNodeEnv: process.env.NODE_ENV,
+  obsVerbose: process.env.OBS_VERBOSE,
+});
+
 /**
  * Fail-safe model-request debug capture gate.
  *
@@ -48,4 +53,20 @@ export function resolveModelRequestDebugCaptureEnabled(input: {
 /** Recent-event consumption is structurally unavailable outside local test/dev processes. */
 export function resolveRecentEventsEnabled(input: { rawNodeEnv?: string }): boolean {
   return input.rawNodeEnv === "development" || input.rawNodeEnv === "test";
+}
+
+/** Verbose observability is an explicit opt-in that cannot be enabled in production. */
+export function resolveObsVerbose(input: {
+  rawNodeEnv?: string;
+  obsVerbose?: string;
+}): ReadonlySet<string> {
+  if (input.rawNodeEnv !== "development" && input.rawNodeEnv !== "test") return new Set();
+
+  const knownCategories = new Set(["gateway.chunks"]);
+  return new Set(
+    input.obsVerbose
+      ?.split(",")
+      .map((category) => category.trim())
+      .filter((category) => knownCategories.has(category)) ?? [],
+  );
 }
