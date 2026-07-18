@@ -38,6 +38,7 @@ import {
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { insertionAttributions } from "../domain/provenance.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
@@ -351,7 +352,7 @@ async function insertCheckpoint(
   const stateVector = Y.encodeStateVectorFromUpdate(state);
   const authority = await readDocumentAuthority(db, documentId);
   const attributionManifest = await checkpointAttributionManifest(db, documentId, upToSeq);
-  const [row] = await db
+  const [inserted] = await db
     .insert(documentYjsCheckpoints)
     .values({
       documentId: asDocumentId(documentId),
@@ -363,12 +364,34 @@ async function insertCheckpoint(
       upToSeq,
       reason,
     })
-    .returning({ id: documentYjsCheckpoints.id });
+    .onConflictDoNothing({
+      target: documentYjsCheckpoints.documentId,
+      where: sql`${documentYjsCheckpoints.upToSeq} = 0`,
+    })
+    .returning({ id: documentYjsCheckpoints.id, stateVector: documentYjsCheckpoints.stateVector });
+  const [adopted] = inserted
+    ? [inserted]
+    : upToSeq === 0
+      ? await db
+          .select({
+            id: documentYjsCheckpoints.id,
+            stateVector: documentYjsCheckpoints.stateVector,
+          })
+          .from(documentYjsCheckpoints)
+          .where(
+            and(
+              eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+              eq(documentYjsCheckpoints.upToSeq, 0),
+            ),
+          )
+          .limit(1)
+      : [];
+  const row = inserted ?? adopted;
   if (!row) throw new Error("Failed to insert Yjs checkpoint");
 
   await upsertHead(db, documentId, {
     latestUpdateSeq: upToSeq,
-    latestStateVector: stateVector,
+    latestStateVector: toBytes(row.stateVector),
     latestCheckpointId: row.id,
   });
 
@@ -733,8 +756,8 @@ async function persistRedoEntries(
 export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
   return {
     async append(docId, update, meta) {
-      return db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      return runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         return (await appendUpdate(txDb, docId, update, meta)).seq;
       });
@@ -1020,20 +1043,21 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       docId,
       opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
     ): Promise<JournalSnapshot> {
-      await assertReadableHead(db, docId);
+      const readDb = currentDrizzleDb(db as Database) as JournalDb;
+      await assertReadableHead(readDb, docId);
 
       const fromCheckpoint = opts.fromCheckpoint ?? true;
       const checkpoint = fromCheckpoint
         ? opts.until !== undefined
-          ? await latestCheckpointAtOrBefore(db, docId, opts.until)
-          : await latestCheckpoint(db, docId)
-        : await reconstructionCheckpoint(db, docId, opts.until);
+          ? await latestCheckpointAtOrBefore(readDb, docId, opts.until)
+          : await latestCheckpoint(readDb, docId)
+        : await reconstructionCheckpoint(readDb, docId, opts.until);
       const authority = checkpoint
         ? {
             authorityId: checkpoint.authorityId,
             generation: checkpoint.authorityGeneration,
           }
-        : await readDocumentAuthority(db, docId);
+        : await readDocumentAuthority(readDb, docId);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         eq(documentYjsUpdates.authorityId, authority.authorityId),
@@ -1043,7 +1067,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
       if (opts.until !== undefined) conditions.push(lte(documentYjsUpdates.id, opts.until));
 
-      const rows = await db
+      const rows = await readDb
         .select()
         .from(documentYjsUpdates)
         .where(and(...conditions))
@@ -1065,7 +1089,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     },
 
     async checkpoint(docId, state, upToSeq) {
-      await db.transaction(async (tx) => {
+      await runInDrizzleTransaction(db as Database, async () => {
+        const tx = currentDrizzleDb(db as Database);
         // upToSeq must be ≤ the updates reflected in state; replaying extra
         // updates is idempotent, but skipping one loses durable document data.
         await insertCheckpoint(tx as JournalDb, docId, state, upToSeq, "checkpoint");
@@ -1311,10 +1336,11 @@ export function createServerDocumentLifecycle(
 ): DocumentLifecycle {
   return {
     async ensureDocument(docId) {
+      const lifecycleDb = currentDrizzleDb(db as Database) as JournalDb;
       // Never stamp a head before verifying the stored head is not stale.
-      await assertReadableHead(db, docId);
+      await assertReadableHead(lifecycleDb, docId);
       const snapshot = await journal.read(docId);
-      await upsertHead(db, docId);
+      await upsertHead(lifecycleDb, docId);
       if (snapshot.checkpoint || snapshot.updates.length > 0) return;
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.

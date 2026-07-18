@@ -362,10 +362,12 @@ export type BranchPeerShadowAccess = {
     threadId?: ThreadId | null;
     responseId?: string | null;
   }): Promise<{ documentId: DocumentId; members: string[] }>;
+  reconcileProjectManifest(projectId: ProjectId): Promise<void>;
   recordManifestDocumentCreated(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
   ): Promise<void>;
+  /** The documents.deleted_at transaction must commit before this notification. */
   recordManifestDocumentDeleted(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },

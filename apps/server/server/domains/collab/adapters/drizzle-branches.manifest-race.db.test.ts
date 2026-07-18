@@ -15,7 +15,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-
+import { hasLiveManifestMembership } from "../../../routes/ws/yjs.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 
@@ -95,9 +95,12 @@ describe("Drizzle manifest persistence", () => {
     return { updates: updates?.count ?? 0, checkpoints: checkpoints?.count ?? 0 };
   }
 
-  it("adopts one manifest identity across concurrent cold resolutions", async () => {
+  it("serializes concurrent cold reconciliation without history growth on repeat", async () => {
     const { projectId, contextSourceId } = await createProjectFixture("race");
 
+    await Promise.all(
+      Array.from({ length: 8 }, () => store.reconcileProjectManifest(projectId as never)),
+    );
     const resolutions = await Promise.all(
       Array.from({ length: 8 }, () =>
         store.resolveManifestMembership({ projectId: projectId as never }),
@@ -121,11 +124,29 @@ describe("Drizzle manifest persistence", () => {
         ),
       );
     expect(activeManifests).toEqual([{ id: documentId }]);
+    await expect(manifestHistoryCounts(documentId as string)).resolves.toEqual({
+      updates: 1,
+      checkpoints: 1,
+    });
+
+    await Promise.all(
+      Array.from({ length: 8 }, () => store.reconcileProjectManifest(projectId as never)),
+    );
+    await Promise.all(
+      Array.from({ length: 8 }, () =>
+        store.resolveManifestMembership({ projectId: projectId as never }),
+      ),
+    );
+    await expect(manifestHistoryCounts(documentId as string)).resolves.toEqual({
+      updates: 1,
+      checkpoints: 1,
+    });
   });
 
-  it("does not journal an unchanged live manifest reconciliation", async () => {
+  it("keeps resolved membership reads pure after explicit reconciliation", async () => {
     const { projectId, contentDocumentId } = await createProjectFixture("idempotence");
 
+    await store.reconcileProjectManifest(projectId as never);
     const first = await store.resolveManifestMembership({ projectId: projectId as never });
     const firstHistory = await manifestHistoryCounts(first.documentId);
     const second = await store.resolveManifestMembership({ projectId: projectId as never });
@@ -134,5 +155,23 @@ describe("Drizzle manifest persistence", () => {
     expect(second).toEqual(first);
     expect(firstHistory).toEqual({ updates: 1, checkpoints: 1 });
     await expect(manifestHistoryCounts(first.documentId)).resolves.toEqual(firstHistory);
+  });
+
+  it("heals a live-room gate miss with exactly one seed update", async () => {
+    const { projectId, contentDocumentId } = await createProjectFixture("gate-heal");
+    const manifest = await store.ensureProjectManifest({ projectId: projectId as never });
+    manifest.doc.destroy();
+
+    await expect(manifestHistoryCounts(manifest.documentId)).resolves.toEqual({
+      updates: 0,
+      checkpoints: 1,
+    });
+    await expect(hasLiveManifestMembership(store, projectId, contentDocumentId)).resolves.toBe(
+      true,
+    );
+    await expect(manifestHistoryCounts(manifest.documentId)).resolves.toEqual({
+      updates: 1,
+      checkpoints: 1,
+    });
   });
 });
