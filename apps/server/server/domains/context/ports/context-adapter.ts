@@ -8,7 +8,6 @@ import type { Result } from "../../../shared/result.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
-  ContextCreateUntitledDocumentResult,
   ContextEditCommand,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
@@ -37,6 +36,8 @@ export interface SchemeCapabilities {
 export type AdapterFault =
   | { code: "permission_denied" }
   | { code: "conflict" }
+  | { code: "stale_source" }
+  | { code: "stale_target" }
   | { code: "invalid_operation"; message?: string }
   | { code: "context_unavailable" }
   | { code: "io_error"; message: string };
@@ -58,6 +59,15 @@ export type AdapterFileRef = FileRef extends infer T
 /** A search hit as produced by an adapter: `uri` is a scheme-relative path. */
 export type AdapterSearchHit = Omit<SearchResult, "uri"> & { path: string };
 
+export type AdapterUntitledDocumentResult = {
+  status: "created" | "already-exists";
+  documentId: string;
+  path: string;
+  name: string;
+};
+
+export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status">;
+
 export type AdapterMoveResult = {
   movedNodeId?: string;
   path: string;
@@ -69,6 +79,9 @@ export type AdapterDeleteResult = {
 
 export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
+  commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<void, AdapterFault>>;
   commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>>;
@@ -99,10 +112,12 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  /** Find an active document owned by this adapter's source. */
+  locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   createUntitledDocument(
     path: string,
     options: ContextCreateUntitledDocumentOptions,
-  ): Promise<Result<ContextCreateUntitledDocumentResult, AdapterFault>>;
+  ): Promise<Result<AdapterUntitledDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,

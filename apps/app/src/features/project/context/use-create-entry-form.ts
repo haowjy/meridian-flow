@@ -63,6 +63,7 @@ export function useCreateEntryForm({
   const form = useInlineNameForm({
     initialName: "",
     siblingNames,
+    kind,
     isPending: mutation.isPending,
     onSubmit: handleSubmit,
     onDone,

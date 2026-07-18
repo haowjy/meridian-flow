@@ -18,7 +18,7 @@
  */
 import { cn } from "@/lib/utils";
 
-/** Chrome rows aligned to the prose edge (toolbar row, temp save bar). */
+/** Chrome rows aligned to the prose edge (the toolbar row). */
 export const editorColumnChrome = "mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16";
 
 /** The scrolling canvas wrapper around `EditorContent`. */

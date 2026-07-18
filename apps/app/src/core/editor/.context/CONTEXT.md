@@ -22,7 +22,11 @@ Yjs document session. It must stay structurally aligned with
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
-  transport to that same session once. Teardown always preserves IndexedDB by
+  transport to that same session once. Retention accepts an explicit detached
+  room set so restored pending tabs create local sessions without probing a
+  server row that does not exist yet. If an older client already left that room
+  terminally denied, post-create reconciliation restarts it before attachment.
+  Teardown always preserves IndexedDB by
   default because it may contain the only copy of unsynced words; only confirmed
   cleanup paths may request persistence deletion. Retention and unavailable-room
   recovery must not materialize or replace a detached session implicitly.

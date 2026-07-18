@@ -47,11 +47,13 @@ import "./editor.css";
 
 export type EditorViewProps = {
   documentId: string;
+  /** Keep a not-yet-materialized live document off server transport. */
+  detached?: boolean;
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
   className?: string;
   user?: EditorUser;
-  /** Optional in-flow status or review surface rendered above the writing area. */
+  /** In-flow status or review surface docked between toolbar and prose. */
   belowToolbar?: ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
@@ -94,7 +96,7 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId, reviewDraftId, reviewRoomName } = props;
+  const { documentId, detached = false, reviewDraftId, reviewRoomName } = props;
   const roomKey = reviewRoomName ?? documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
@@ -107,11 +109,13 @@ export function EditorView(props: EditorViewProps) {
     const registry = getDocumentSessionRegistry();
     const ownerId = sessionOwnerIdRef.current;
     if (!ownerId) return;
-    registry.retain(ownerId, [roomKey]);
-    const session = registry.getRoom(roomKey);
+    registry.retain(ownerId, [roomKey], {
+      detachedRoomKeys: detached ? [roomKey] : [],
+    });
+    const session = detached ? registry.getDetached(roomKey) : registry.getRoom(roomKey);
     setBoundSession(session);
     return () => registry.release(ownerId);
-  }, [documentId, roomKey]);
+  }, [detached, documentId, roomKey]);
 
   useEffect(() => {
     if (!reviewDraftId || boundSession?.roomKey !== roomKey) return;
@@ -397,7 +401,6 @@ function SessionEditorView({
         className,
       )}
     >
-      {belowToolbar}
       {!inReview ? <SafetyNoticeReceipt session={session} /> : null}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
@@ -431,6 +434,7 @@ function SessionEditorView({
             />
           ) : undefined
         }
+        belowToolbar={belowToolbar}
         scrollRef={scrollContainerRef}
         dragActive={dragActive}
         onScroll={(event) => {
@@ -463,10 +467,10 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
         className,
       )}
     >
-      {belowToolbar}
       <TrackedEditorCanvas
         editor={null}
         toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
+        belowToolbar={belowToolbar}
       />
     </section>
   );
@@ -475,6 +479,7 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
 function TrackedEditorCanvas({
   editor,
   toolbar,
+  belowToolbar,
   scrollRef,
   dragActive = false,
   onScroll,
@@ -483,6 +488,7 @@ function TrackedEditorCanvas({
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
+  belowToolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
@@ -492,6 +498,7 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
+      belowToolbar={belowToolbar}
       editor={editor}
       scrollRef={scrollRef}
       scrollClassName={cn(

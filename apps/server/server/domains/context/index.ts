@@ -14,6 +14,7 @@ export {
   UNIFIED_CONTEXT_SCHEMES,
 } from "./context/uri.js";
 export {
+  contextPortForProjectAuthorities,
   contextPortForProjectBrowse,
   contextPortForThread,
   resolveThreadContext,

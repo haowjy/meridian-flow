@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useDefaultWorkId } from "@/client/query/useWorks";
-import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   clearRoutes,
@@ -22,7 +22,7 @@ import {
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
-import { deriveContextPaneState } from "./context/context-pane-state";
+import { deriveContextPaneState, findActiveUntitledTab } from "./context/context-pane-state";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import {
@@ -30,11 +30,9 @@ import {
   findContextFileByDocumentId,
   firstContextFile,
 } from "./context/context-tree";
-import {
-  appendPendingUntitled,
-  isUntitledPending,
-  untitledDocumentIsEmpty,
-} from "./context/untitled-reconciler";
+import { untitledDocumentIsEmpty } from "./context/untitled-reconciler";
+import { appendPendingUntitled, isUntitledPending } from "./context/untitled-reconciler-browser";
+import { identityCommitMayNavigate } from "./context/use-identity-commit";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -186,10 +184,9 @@ export function ContextViewerSurfaceController({
     if (tabs.length === 0) setWantsDefaultOpen(true);
   }, [active]);
 
-  const selectedUntitledTab =
-    activeContextPath === ""
-      ? (tabs.find((tab) => tab.documentId === retainedActiveTabId && tab.kind === "new") ?? null)
-      : null;
+  // Untitled tabs are store-owned until materialization gives them a server
+  // route. Their activation must not depend on search-param validation.
+  const selectedUntitledTab = findActiveUntitledTab(tabs, retainedActiveTabId);
   const paneState = deriveContextPaneState({
     activeTab: activeTab ?? selectedUntitledTab,
     destination:
@@ -307,7 +304,7 @@ export function ContextViewerSurfaceController({
     if (!tab) return;
     selectTab(projectId, documentId);
     if (tab.kind === "new") {
-      onSelectContextPath("", activeContextScheme ?? undefined);
+      onSelectContextPath("", "scratch");
       return;
     }
     onSelectContextPath(tab.path, tab.scheme);
@@ -345,7 +342,7 @@ export function ContextViewerSurfaceController({
     // re-persist — the tab we just closed.
     openedKeyRef.current = openTabKey;
     if (fallback?.kind === "new") {
-      onSelectContextPath("", activeContextScheme ?? undefined);
+      onSelectContextPath("", "scratch");
       return;
     }
     if (fallback) {
@@ -430,6 +427,7 @@ export function ContextViewerSurfaceController({
     <ContextViewer
       projectId={projectId}
       activeThreadId={activeThreadId}
+      defaultWorkId={defaultWorkId}
       tabs={tabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}
@@ -444,12 +442,36 @@ export function ContextViewerSurfaceController({
         getDocumentSessionRegistry().getDetached(documentId);
         openTab(projectId, { kind: "new", documentId, name: "Untitled" });
         selectTab(projectId, documentId);
-        onSelectContextPath("", activeContextScheme ?? undefined);
+        onSelectContextPath("", "scratch");
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
-      onUntitledRenamed={(documentId, name, path) => {
-        updateTrackedTab(projectId, documentId, { name, path, provisionalName: false });
-        onSelectContextPath(path, "scratch");
+      onCommitted={(documentId, next, ownership) => {
+        const liveSlice = useContextTabsStore.getState().byProject[projectId];
+        const target = liveSlice?.tabs.find((candidate) => candidate.documentId === documentId);
+        if (ownership.isLatest && target?.kind === "viewer") {
+          // openTab merges metadata for an already-open tab; the store has no
+          // viewer-specific patch action.
+          openTab(projectId, {
+            ...target,
+            scheme: next.scheme,
+            path: next.path,
+            name: next.name,
+            workId: next.workId,
+          });
+        } else if (ownership.isLatest) {
+          // Any commit through the identity bar is an explicit writer save:
+          // the document graduates out of provisional naming (D8).
+          updateTrackedTab(projectId, documentId, {
+            scheme: next.scheme,
+            path: next.path,
+            name: next.name,
+            workId: next.workId,
+            provisionalName: false,
+          });
+        }
+        if (identityCommitMayNavigate(ownership, liveSlice?.activeTabId, documentId)) {
+          onSelectContextPath(next.path, next.scheme);
+        }
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
     />

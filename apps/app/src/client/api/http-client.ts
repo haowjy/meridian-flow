@@ -5,10 +5,9 @@
  * `getJson`/`postJson`/`deleteRequest` wrappers (proxy to `apps/server`). The
  * single low-level HTTP surface the other `*-api.ts` modules build on.
  *
- * Key decision: failure paths throw `MeridianApiError` so the structured
- * envelope (`code`, `retryable`, `source`, `details`) survives to the UI
- * banner. The same error type is used by the WS dispatcher — one client-side
- * error type for both transports.
+ * Key decision: every HTTP failure preserves its status. Structured envelopes
+ * additionally remain `MeridianApiError` instances so the HTTP and WS paths
+ * share the same domain error fields.
  */
 import { deserializeTransport } from "@meridian/contracts/protocol";
 
@@ -16,24 +15,31 @@ import { meridianApiErrorFromPayload } from "./meridian-error";
 
 export { isMeridianApiError, MeridianApiError } from "./meridian-error";
 
+export class HttpResponseError extends Error {
+  readonly name = "HttpResponseError";
+
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly payload: unknown,
+  ) {
+    super(message);
+  }
+}
+
 /**
  * Build the error thrown for a non-OK response. Prefers the structured
  * `MeridianError` envelope when the server sends one (top-level or wrapped as
  * `{ kind: "error", error }`), so consumers can read `code`/`retryable`/
- * `source`. Falls back to a generic `Error` only when no envelope is present.
+ * `source`. Plain Nitro error bodies still become a typed status-bearing error.
  */
 function errorFromResponse(payload: unknown, status: number): Error {
-  const structured = meridianApiErrorFromPayload(payload);
+  const structured = meridianApiErrorFromPayload(payload, status);
   if (structured) return structured;
-  return new Error(errorMessageFromPayload(payload, status));
+  return new HttpResponseError(errorMessageFromPayload(payload, status), status, payload);
 }
 
 export async function readResponsePayload(response: Response): Promise<unknown> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    return response.json();
-  }
-
   const text = await response.text();
   if (!text) return null;
   try {

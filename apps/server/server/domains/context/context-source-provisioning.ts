@@ -31,14 +31,8 @@ const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsS
 };
 
 async function ensureUserContextProject(db: Database, userId: string): Promise<string> {
-  const [existing] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
-    )
-    .limit(1);
-  if (existing) return existing.id;
+  const existing = await findUserContextProject(db, userId);
+  if (existing) return existing;
 
   const id = crypto.randomUUID();
   const [created] = await db
@@ -55,14 +49,25 @@ async function ensureUserContextProject(db: Database, userId: string): Promise<s
   return created.id;
 }
 
+async function findUserContextProject(db: Database, userId: string): Promise<string | null> {
+  const [existing] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
+    )
+    .limit(1);
+  return existing?.id ?? null;
+}
+
 async function findProjectContextSource(
   db: Database,
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
 ): Promise<string | null> {
-  const sourceProjectId =
-    scheme === "user" ? await ensureUserContextProject(db, userId) : projectId;
+  const sourceProjectId = scheme === "user" ? await findUserContextProject(db, userId) : projectId;
+  if (!sourceProjectId) return null;
   const [row] = await db
     .select({ id: contextSources.id })
     .from(contextSources)
@@ -163,12 +168,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 
   constructor(
     private readonly db: Database,
-    private readonly resolveSourceId: () => Promise<string>,
+    private readonly ensureSourceId: () => Promise<string>,
+    private readonly findSourceId: () => Promise<string | null>,
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
   ) {}
 
   private async sourceStore(): Promise<DrizzleContextDocumentStore> {
-    this.sourceId ??= this.resolveSourceId();
+    this.sourceId ??= this.ensureSourceId();
     return new DrizzleContextDocumentStore({
       db: this.db,
       contextSourceId: await this.sourceId,
@@ -220,6 +226,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.sourceStore()).contextSourceId();
   }
 
+  async existingContextSourceId(): Promise<string | null> {
+    if (this.sourceId) return this.sourceId;
+    const sourceId = await this.findSourceId();
+    if (sourceId) this.sourceId = Promise.resolve(sourceId);
+    return sourceId;
+  }
+
   async transaction<T>(operation: () => Promise<T>) {
     return (await this.sourceStore()).transaction(operation);
   }
@@ -243,6 +256,7 @@ export function createProjectContextDocumentStore(
   return new SourceResolvedContextDocumentStore(
     db,
     () => ensureProjectContextSource(db, projectId, scheme, userId),
+    () => findProjectContextSource(db, projectId, scheme, userId),
     membershipObserver,
   );
 }
@@ -256,6 +270,7 @@ export function createWorkContextDocumentStore(
   return new SourceResolvedContextDocumentStore(
     db,
     () => ensureWorkContextSource(db, workId, scheme),
+    () => findWorkContextSource(db, workId, scheme),
     membershipObserver,
   );
 }

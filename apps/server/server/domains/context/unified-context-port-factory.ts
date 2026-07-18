@@ -112,6 +112,9 @@ const emptyWorkScopedAdapter: ContextSchemeAdapter = {
   async createTrackedDocument() {
     return Err({ code: "permission_denied" });
   },
+  async locateDocument() {
+    return Ok(null);
+  },
   async createUntitledDocument() {
     return Err({ code: "permission_denied" });
   },
@@ -248,6 +251,10 @@ function buildUnifiedContextPort(input: {
 
   return createContextPortRouter({
     adapters,
+    adapterAuthorities:
+      scope.kind === "work"
+        ? new Map(WORK_SCOPED_CONTEXTFS_SCHEMES.map((scheme) => [scheme, scope.workId]))
+        : undefined,
     allowedAuthorities: scope.kind === "work" ? scope.allowedAuthorities : undefined,
     primaryWorkId: scope.kind === "work" ? scope.workId : undefined,
     resolveWorkAdapters:

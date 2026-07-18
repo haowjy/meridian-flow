@@ -15,6 +15,7 @@ import {
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
+  apiProjectContextMovePath,
   apiProjectContextReadPath,
   apiProjectContextRenamePath,
   apiProjectContextTreePath,
@@ -35,6 +36,8 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
+  type MoveContextEntryRequest,
+  type MoveContextEntryResult,
   type ProjectContextRequestOptions,
   type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
@@ -216,6 +219,21 @@ export async function renameContextEntry(
         ? "conflict"
         : "renamed",
   };
+}
+
+/**
+ * Move (and optionally rename) a context entry across folders or schemes.
+ * Paths in the request/response are scheme-relative WITHOUT a leading slash
+ * (the tree DTO uses leading slashes — callers translate at this seam).
+ */
+export async function moveContextEntry(
+  projectId: string,
+  sourceScheme: ProjectContextTreeScheme,
+  body: MoveContextEntryRequest,
+): Promise<MoveContextEntryResult> {
+  return postJson(apiProjectContextMovePath(projectId, sourceScheme), body, {
+    acceptStatuses: [409],
+  });
 }
 
 export async function deleteContextEntry(

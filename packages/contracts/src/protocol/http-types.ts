@@ -94,11 +94,13 @@ export type CreateUntitledContextDocumentRequest = {
 };
 
 export type CreateUntitledContextDocumentResponse = {
-  status: "created" | "already-exists";
+  status: "created" | "already-materialized";
   documentId: string;
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
+  /** Present only when the canonical location is Work-scoped. */
+  workId?: string;
 };
 
 export type CreateUntitledContextDocumentResult =
@@ -113,6 +115,42 @@ export type RenameContextEntryRequest = {
 export type RenameContextEntrySuccess = { status: "renamed" };
 export type RenameContextEntryConflict = { status: "conflict" };
 export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContextEntryConflict;
+
+export type MoveContextEntryRequest = {
+  path: string;
+  destinationScheme: ProjectContextTreeScheme;
+  /** Scheme-relative parent folder; the empty string means the scheme root. */
+  destinationFolderPath: string;
+  newName?: string;
+  sourceWorkId?: string;
+  destinationWorkId?: string;
+};
+
+export type MoveContextEntrySuccess = {
+  status: "moved";
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+};
+/** Canonical, server-normalized location used by Open-existing recovery. */
+export type MoveContextEntryLocator = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  /** Present only for scratch/uploads locations. */
+  workId?: string;
+};
+export type MoveContextEntryConflict = {
+  status: "conflict";
+  collision: MoveContextEntryLocator;
+};
+export type MoveContextEntryRetry = {
+  status: "retry";
+  reason: "stale-source" | "stale-target";
+};
+export type MoveContextEntryResult =
+  | MoveContextEntrySuccess
+  | MoveContextEntryConflict
+  | MoveContextEntryRetry;
 
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (

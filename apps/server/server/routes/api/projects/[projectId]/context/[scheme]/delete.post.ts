@@ -6,7 +6,8 @@
  * ContextTreeMover.
  */
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
+import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface DeleteBody {
   /** Path of the entry to delete (e.g. "chapter-1.md" or "notes"). */
@@ -17,9 +18,7 @@ function parseBody(raw: unknown): DeleteBody {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   const body = raw as Partial<DeleteBody>;
-  if (typeof body.path !== "string" || body.path.trim() === "")
-    throw createError({ statusCode: 400, message: "`path` is required" });
-  return { path: sanitizePath(body.path) };
+  return { path: parseContextMutationPath(body.path, "path") };
 }
 
 export default defineEventHandler(async (event) => {
