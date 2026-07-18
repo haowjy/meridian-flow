@@ -13,7 +13,7 @@ records; adapters decide where safe records go.
 - **`EventQuery`** — filtered newest-first recent history and live subscriptions.
 - **`emitEvent`** — timestamping helper for non-critical diagnostics.
 - **Safe-event helpers** — id stamping, key-pattern redaction, secret stripping,
-  and truncation before records leave process memory.
+  bounded envelopes, detachment, and freezing before records leave process memory.
 - **`DeferredEventSink`** — process bootstrap sink that buffers startup/crash
   events until production composition binds the real sink.
 - **`LocalEventSink`** — local/prod-default adapter: always writes structured
@@ -23,7 +23,7 @@ records; adapters decide where safe records go.
   When JSONL mirroring is enabled, the factory retains 14 daily files by default;
   override with `LOG_RETENTION_DAYS`.
 - **`InMemoryEventSink`** / **`NoopEventSink`** — tests and disabled paths.
-- **`RecentEventsBuffer`** — dev/test-only sanitized 5,000-record ring behind
+- **`RecentEventsBuffer`** — dev/test-only 5,000-record ring of safe snapshots behind
   `EventQuery`; `TeeEventSink` composes it with the local sink.
 
 ## Wiring
@@ -53,8 +53,10 @@ or an adapter over it. Do not build dashboards by scraping arbitrary console tex
 
 ## Safety model
 
-Adapters sanitize with `safe-event.ts` before records leave process memory;
-the recent buffer sanitizes on insert before either queries or listeners see a record.
+The process-scoped `DeferredEventSink` is the single `safe-event.ts` boundary:
+it sanitizes, detaches, and freezes each record synchronously before buffering or
+delegating it. The tee, local sink, recent ring, queries, and listeners all receive
+that same immutable snapshot, so fan-out does not repeat traversal or share caller-owned aliases.
 Call sites should still emit allowlisted metadata and correlation ids rather than
 raw prompts, model text, tool arguments/results, uploaded bytes, cookies, or
 headers.

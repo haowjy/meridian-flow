@@ -1,6 +1,6 @@
 /**
- * Safe-event helpers: event id stamping plus conservative payload sanitization
- * used by every EventSink adapter before diagnostics leave process memory.
+ * Safe-event helpers: event id stamping plus conservative envelope sanitization
+ * used at an EventSink boundary before diagnostics leave process memory.
  * This is the boundary between ordinary searchable logs and protected replay
  * artifacts that may contain raw prompts, tool args, model text, or secrets.
  */
@@ -11,6 +11,7 @@ const SENSITIVE_KEY_PATTERN =
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_ARRAY_ITEMS = 20;
+const MAX_OBJECT_KEYS = 50;
 
 function redactString(value: string): string {
   const withoutSecrets = value.replace(SECRET_TEXT_PATTERN, "[redacted-secret]");
@@ -26,26 +27,41 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
   if (typeof value === "bigint") return value.toString();
   if (depth > 5) return "[redacted-depth]";
   if (Array.isArray(value)) {
-    return value.slice(0, MAX_ARRAY_ITEMS).map((item) => sanitizeValue("item", item, depth + 1));
+    return Object.freeze(
+      value.slice(0, MAX_ARRAY_ITEMS).map((item) => sanitizeValue("item", item, depth + 1)),
+    );
   }
   if (typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
-        childKey,
-        sanitizeValue(childKey, childValue, depth + 1),
-      ]),
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .slice(0, MAX_OBJECT_KEYS)
+          .map(([childKey, childValue]) => [
+            childKey,
+            sanitizeValue(childKey, childValue, depth + 1),
+          ]),
+      ),
     );
   }
   return String(value);
 }
 
 export function sanitizeEventRecord(event: EventRecord): EventRecord {
-  return {
-    ...event,
+  return Object.freeze({
     eventId: event.eventId ?? crypto.randomUUID(),
+    timestamp: event.timestamp,
+    level: event.level,
+    source: event.source,
+    name: event.name,
     sensitivity: event.sensitivity ?? "safe",
     payload: sanitizeValue("payload", event.payload, 0) as Record<string, unknown>,
-  };
+    ...(event.correlation !== undefined && {
+      correlation: sanitizeValue("correlation", event.correlation, 0) as EventRecord["correlation"],
+    }),
+    ...(event.stream !== undefined && {
+      stream: sanitizeValue("stream", event.stream, 0) as EventRecord["stream"],
+    }),
+  });
 }
 
 export function safeSnippet(value: string, maxLength = 160): string {

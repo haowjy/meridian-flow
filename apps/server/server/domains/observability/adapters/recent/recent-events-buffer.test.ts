@@ -1,6 +1,7 @@
 /** RecentEventsBuffer behavior tests for bounded storage, filtering, and live delivery. */
 import { describe, expect, it, vi } from "vitest";
 import type { EventLevel, EventRecord } from "../../ports/event-sink.js";
+import { DeferredEventSink } from "../deferred/deferred-event-sink.js";
 import { RecentEventsBuffer } from "./recent-events-buffer.js";
 
 function event(
@@ -98,20 +99,51 @@ describe("RecentEventsBuffer", () => {
     ).toEqual(["new", "same-time", "cursor"]);
   });
 
-  it("publishes the sanitized inserted record and supports unsubscribe", () => {
+  it("publishes one immutable safe snapshot and supports unsubscribe", () => {
     const buffer = new RecentEventsBuffer();
+    const boundary = new DeferredEventSink();
+    boundary.bind(buffer);
+    buffer.subscribe((record) => {
+      if (record.correlation) record.correlation.threadId = "listener-mutated";
+    });
     const listener = vi.fn();
     const unsubscribe = buffer.subscribe(listener);
-    const unsafe = event("unsafe", { payload: { token: "secret", visible: "ok" } });
+    const correlation = { threadId: "thread-original" };
+    const stream = {
+      streamId: "thread:thread-original",
+      transport: "thread" as const,
+      observedAt: "server" as const,
+      observerSeq: 1,
+    };
+    const unsafe = event("unsafe", {
+      correlation,
+      stream,
+      payload: { token: "secret", nested: { visible: "ok" } },
+    });
 
-    buffer.emit(unsafe);
+    boundary.emit(unsafe);
+    correlation.threadId = "caller-mutated";
+    stream.streamId = "thread:caller-mutated";
+    (unsafe.payload.nested as { visible: string }).visible = "caller-mutated";
     const stored = buffer.query({}).events[0];
-    expect(stored).toMatchObject({ payload: { token: "[redacted]", visible: "ok" } });
+    expect(stored).toMatchObject({
+      correlation: { threadId: "thread-original" },
+      stream: { streamId: "thread:thread-original" },
+      payload: { token: "[redacted]", nested: { visible: "ok" } },
+    });
     expect(listener).toHaveBeenCalledWith(stored);
     expect(stored).not.toBe(unsafe);
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(Object.isFrozen(stored?.payload)).toBe(true);
+    expect(Object.isFrozen(stored?.payload.nested)).toBe(true);
+    expect(Object.isFrozen(stored?.correlation)).toBe(true);
+    expect(Object.isFrozen(stored?.stream)).toBe(true);
+    expect(() => {
+      if (stored?.correlation) stored.correlation.threadId = "query-mutated";
+    }).toThrow(TypeError);
 
     unsubscribe();
-    buffer.emit(event("after"));
+    boundary.emit(event("after"));
     expect(listener).toHaveBeenCalledTimes(1);
   });
 

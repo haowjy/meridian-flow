@@ -1,4 +1,4 @@
-/** RecentEventsBuffer: sanitized, bounded in-memory history and live event query adapter. */
+/** RecentEventsBuffer: bounded in-memory history and live query over safe event snapshots. */
 import {
   type EventQuery,
   type EventQueryFilter,
@@ -6,7 +6,6 @@ import {
   eventMatchesQueryFilter,
 } from "../../ports/event-query.js";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
-import { sanitizeEventRecord } from "../../safe-event.js";
 
 const DEFAULT_CAPACITY = 5_000;
 const DEFAULT_QUERY_LIMIT = 200;
@@ -28,18 +27,17 @@ export class RecentEventsBuffer implements EventSink, EventQuery {
   }
 
   emit(event: EventRecord): void {
-    const sanitized = sanitizeEventRecord(event);
     if (this.size === this.capacity) {
-      this.records[this.head] = sanitized;
+      this.records[this.head] = event;
       this.head = (this.head + 1) % this.capacity;
       this.dropped += 1;
     } else {
-      this.records[(this.head + this.size) % this.capacity] = sanitized;
+      this.records[(this.head + this.size) % this.capacity] = event;
       this.size += 1;
     }
     for (const listener of this.listeners) {
       try {
-        listener(sanitized);
+        listener(event);
       } catch {
         // A debug consumer cannot break the application emission path.
       }

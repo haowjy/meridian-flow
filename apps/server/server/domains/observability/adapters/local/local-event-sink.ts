@@ -7,7 +7,6 @@
 import { appendFile as appendFileToDisk, mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
-import { sanitizeEventRecord } from "../../safe-event.js";
 
 type EventOutput = {
   write(chunk: string): boolean;
@@ -168,10 +167,12 @@ export class LocalEventSink implements EventSink {
       const dropped = this.droppedEvents;
       if (dropped > 0) {
         events.unshift({
+          eventId: crypto.randomUUID(),
           timestamp: this.now().toISOString(),
           level: "warn",
           source: "observability",
           name: "sink.dropped",
+          sensitivity: "safe",
           payload: { dropped },
         });
       }
@@ -181,9 +182,7 @@ export class LocalEventSink implements EventSink {
   }
 
   private async appendEvents(events: EventRecord[]): Promise<void> {
-    const payload = events
-      .map((event) => `${JSON.stringify(sanitizeEventRecord(event))}\n`)
-      .join("");
+    const payload = events.map((event) => `${JSON.stringify(event)}\n`).join("");
     if (!this.stdout.write(payload)) {
       await new Promise<void>((resolve) => this.stdout.once("drain", resolve));
     }
