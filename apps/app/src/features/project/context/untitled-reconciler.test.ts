@@ -127,12 +127,15 @@ function harness() {
 
 function fakeSession(document: Y.Doc) {
   let status: DocumentSessionSnapshot["status"] = "synced";
+  let whenLocalPersistenceSynced = vi.fn(async () => {});
   let waitForDurableSync = vi.fn(async () => {});
   let flushLocalPersistence = vi.fn(async () => {});
   return {
     document,
     fragmentName: "prosemirror" as const,
-    whenLocalPersistenceSynced: vi.fn(async () => {}),
+    get whenLocalPersistenceSynced() {
+      return whenLocalPersistenceSynced;
+    },
     getSnapshot: () => ({ status }) as DocumentSessionSnapshot,
     get waitForDurableSync() {
       return waitForDurableSync;
@@ -142,6 +145,9 @@ function fakeSession(document: Y.Doc) {
     },
     setStatus(next: DocumentSessionSnapshot["status"]) {
       status = next;
+    },
+    setLocalWait(wait: () => Promise<void>) {
+      whenLocalPersistenceSynced = vi.fn(wait);
     },
     setDurableWait(wait: () => Promise<void>) {
       waitForDurableSync = vi.fn(wait);
@@ -211,6 +217,147 @@ describe("untitled reconciler lifecycle", () => {
 });
 
 describe("untitled reconciliation durability", () => {
+  it("preserves identity queued while local persistence is loading", async () => {
+    const h = harness();
+    const session = fakeSession(contentDocument(""));
+    let finishLocalSync!: () => void;
+    session.setLocalWait(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLocalSync = resolve;
+        }),
+    );
+    h.sessions.set("doc-1", session);
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+
+    h.queued.shift()?.();
+    await Promise.resolve();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
+    finishLocalSync();
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.deps.api.move).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "doc-1" }),
+      "/Untitled",
+      expect.objectContaining({ name: "Opening.md" }),
+    );
+    expect(h.cleared).toEqual([]);
+  });
+
+  it("preserves the newest identity queued while an older move is pending", async () => {
+    const h = harness();
+    h.create
+      .mockResolvedValueOnce({
+        status: "created",
+        documentId: "doc-1",
+        scheme: "scratch",
+        path: "/Untitled",
+        name: "Untitled",
+      })
+      .mockResolvedValueOnce({
+        status: "already-materialized",
+        documentId: "doc-1",
+        scheme: "manuscript",
+        path: "/Act 1/First.md",
+        name: "First.md",
+      });
+    let finishFirstMove!: (result: {
+      status: "moved";
+      scheme: "manuscript";
+      path: string;
+      name: string;
+    }) => void;
+    (h.deps.api.move as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFirstMove = resolve;
+        }),
+    );
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "First.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
+
+    h.queued.shift()?.();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Latest.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 2" },
+      },
+    );
+    finishFirstMove({
+      status: "moved",
+      scheme: "manuscript",
+      path: "Act 1/First.md",
+      name: "First.md",
+    });
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+
+    expect(storedEntries(h.values)[0]?.desiredIdentity).toEqual({
+      name: "Latest.md",
+      destination: { scheme: "manuscript", folderPath: "/Act 2" },
+    });
+    await h.runQueue();
+    expect(h.deps.api.move).toHaveBeenLastCalledWith(
+      expect.objectContaining({ documentId: "doc-1" }),
+      "/Act 1/First.md",
+      expect.objectContaining({ name: "Latest.md" }),
+    );
+    expect(storedEntries(h.values)).toEqual([]);
+  });
+
+  it("does not drain identity work queued while durable sync is pending", async () => {
+    const h = harness();
+    const session = fakeSession(contentDocument());
+    let finishDurableSync!: () => void;
+    session.setDurableWait(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDurableSync = resolve;
+        }),
+    );
+    h.sessions.set("doc-1", session);
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+
+    h.queued.shift()?.();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Latest.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
+    finishDurableSync();
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+
+    expect(storedEntries(h.values)[0]?.desiredIdentity?.name).toBe("Latest.md");
+    await h.runQueue();
+    expect(h.deps.api.move).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "doc-1" }),
+      "/Untitled",
+      expect.objectContaining({ name: "Latest.md" }),
+    );
+  });
+
   it("materializes an explicitly named empty document and keeps it pending across reload", async () => {
     const h = harness();
     h.sessions.set("doc-1", fakeSession(contentDocument("")));

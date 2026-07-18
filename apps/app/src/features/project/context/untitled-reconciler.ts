@@ -116,6 +116,8 @@ export function resolveUntitledHome(activeWorkId: string | null): UntitledHome |
 
 export type ReconciliationRecord = {
   documentId: string;
+  /** Monotonic guard for work captured across asynchronous boundaries. */
+  revision: number;
   materialization: { phase: "pending"; entry: PendingUntitled } | { phase: "synced" };
   desiredIdentity?: DesiredIdentity;
   failure?: QueuedIdentityFailure;
@@ -174,6 +176,7 @@ export class UntitledReconciler {
     if (current?.materialization.phase === "pending") return;
     this.records.set(entry.documentId, {
       documentId: entry.documentId,
+      revision: (current?.revision ?? 0) + 1,
       materialization: { phase: "pending", entry },
       desiredIdentity: current?.desiredIdentity,
       failure: current?.failure,
@@ -203,7 +206,7 @@ export class UntitledReconciler {
     if (next.materialization.phase === "synced" && !next.desiredIdentity) {
       this.records.delete(documentId);
     } else {
-      this.records.set(documentId, next);
+      this.records.set(documentId, { ...next, revision: record.revision + 1 });
     }
     this.persistAndEmit();
   }
@@ -223,6 +226,7 @@ export class UntitledReconciler {
     this.records.set(entry.documentId, {
       ...current,
       documentId: entry.documentId,
+      revision: (current?.revision ?? 0) + 1,
       materialization,
       desiredIdentity,
       failure: undefined,
@@ -250,17 +254,13 @@ export class UntitledReconciler {
     this.running = true;
     let failed = false;
     try {
-      const pending = [...this.records.values()].filter(
-        (
-          record,
-        ): record is ReconciliationRecord & {
-          materialization: { phase: "pending"; entry: PendingUntitled };
-        } => record.materialization.phase === "pending",
-      );
-      for (const record of pending) {
+      const pendingDocumentIds = [...this.records.values()]
+        .filter((record) => record.materialization.phase === "pending")
+        .map((record) => record.documentId);
+      for (const documentId of pendingDocumentIds) {
         if (!this.started) break;
         try {
-          await this.reconcile(record);
+          await this.reconcile(documentId);
         } catch {
           failed = true;
         }
@@ -276,36 +276,47 @@ export class UntitledReconciler {
     }
   }
 
-  private async reconcile(
-    record: ReconciliationRecord & {
-      materialization: { phase: "pending"; entry: PendingUntitled };
-    },
-  ): Promise<void> {
+  private async reconcile(documentId: string): Promise<void> {
+    let record = this.pendingRecord(documentId);
+    if (!record) return;
     const entry = record.materialization.entry;
     const home = entry.home ?? (await this.deps.api.resolveHome(entry.projectId));
     if (!home) throw new Error("Untitled home is not available yet");
-    const resolvedEntry = entry.home
-      ? (entry as PendingUntitled & { home: UntitledHome })
-      : { ...entry, home };
-    if (!entry.home) {
-      record = { ...record, materialization: { phase: "pending", entry: resolvedEntry } };
-      this.records.set(entry.documentId, record);
+    record = this.pendingRecord(documentId);
+    if (!record) return;
+    if (!record.materialization.entry.home) {
+      record = {
+        ...record,
+        revision: record.revision + 1,
+        materialization: {
+          phase: "pending",
+          entry: { ...record.materialization.entry, home },
+        },
+      };
+      this.records.set(documentId, record);
       this.persist();
     }
+    const resolvedEntry = record.materialization.entry as PendingUntitled & {
+      home: UntitledHome;
+    };
 
-    const owner = `untitled-reconciler:${entry.documentId}`;
-    const session = this.deps.sessions.getDetached(entry.documentId);
-    this.deps.sessions.retain(owner, [entry.documentId]);
+    const owner = `untitled-reconciler:${documentId}`;
+    const session = this.deps.sessions.getDetached(documentId);
+    this.deps.sessions.retain(owner, [documentId]);
     try {
       await session.whenLocalPersistenceSynced();
+      record = this.pendingRecord(documentId);
+      if (!record) return;
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
-      if (
-        empty &&
-        !record.desiredIdentity &&
-        !(await this.deps.api.serverDocumentExists(resolvedEntry))
-      ) {
-        await this.drain(entry.documentId, true);
-        return;
+      if (empty && !record.desiredIdentity) {
+        const emptyCheckRevision = record.revision;
+        const exists = await this.deps.api.serverDocumentExists(resolvedEntry);
+        record = this.pendingRecord(documentId);
+        if (!record) return;
+        if (!exists && !record.desiredIdentity && record.revision === emptyCheckRevision) {
+          await this.drain(documentId, emptyCheckRevision, true);
+          return;
+        }
       }
 
       const result = await this.deps.api.create(resolvedEntry);
@@ -313,14 +324,18 @@ export class UntitledReconciler {
         await this.remint(resolvedEntry, session);
         return;
       }
-      this.candidates.get(entry.documentId)?.onMaterialized(result);
-      await this.applyDesiredIdentity(resolvedEntry, result);
+      record = this.pendingRecord(documentId);
+      if (!record) return;
+      this.candidates.get(documentId)?.onMaterialized(result);
+      const processedRevision = await this.applyDesiredIdentity(resolvedEntry, result);
 
-      const attached = this.deps.sessions.attachDetached(entry.documentId);
+      record = this.pendingRecord(documentId);
+      if (!record) return;
+      const attached = this.deps.sessions.attachDetached(documentId);
       await attached.waitForDurableSync();
       const snapshot = attached.getSnapshot();
       if (snapshot.status !== "synced") throw syncFailure(snapshot);
-      await this.drain(entry.documentId, false);
+      await this.drain(documentId, processedRevision, false);
     } finally {
       this.deps.sessions.release(owner);
     }
@@ -329,37 +344,57 @@ export class UntitledReconciler {
   private async applyDesiredIdentity(
     entry: PendingUntitled & { home: UntitledHome },
     result: CreateUntitledContextDocumentResponse,
-  ): Promise<void> {
-    const desired = this.records.get(entry.documentId)?.desiredIdentity;
-    if (!desired) return;
+  ): Promise<number> {
+    const record = this.records.get(entry.documentId);
+    const desired = record?.desiredIdentity;
+    if (!record) return -1;
+    if (!desired) return record.revision;
+    const attemptRevision = record.revision;
     try {
       const moved = await this.deps.api.move(entry, result.path, desired);
       if (moved.status === "retry") throw new Error(`Context move needs retry: ${moved.reason}`);
       if (moved.status === "conflict") {
-        this.finishIdentityAttempt(entry.documentId, {
+        const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision, {
           kind: "conflict",
           name: desired.name,
           scheme: moved.collision.scheme,
           path: `/${moved.collision.path}`,
           ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
         });
-        return;
+        return finished ? attemptRevision + 1 : attemptRevision;
       }
-      this.finishIdentityAttempt(entry.documentId);
-      this.candidates.get(entry.documentId)?.onIdentityCommitted?.({
-        ...moved,
-        path: `/${moved.path}`,
-      });
+      const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision);
+      if (finished) {
+        this.candidates.get(entry.documentId)?.onIdentityCommitted?.({
+          ...moved,
+          path: `/${moved.path}`,
+        });
+      }
+      return finished ? attemptRevision + 1 : attemptRevision;
     } catch {
-      this.finishIdentityAttempt(entry.documentId, { kind: "error", name: desired.name });
+      const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision, {
+        kind: "error",
+        name: desired.name,
+      });
+      return finished ? attemptRevision + 1 : attemptRevision;
     }
   }
 
-  private finishIdentityAttempt(documentId: string, failure?: QueuedIdentityFailure): void {
+  private finishIdentityAttempt(
+    documentId: string,
+    attemptRevision: number,
+    failure?: QueuedIdentityFailure,
+  ): boolean {
     const record = this.records.get(documentId);
-    if (!record) return;
-    this.records.set(documentId, { ...record, desiredIdentity: undefined, failure });
+    if (!record || record.revision !== attemptRevision) return false;
+    this.records.set(documentId, {
+      ...record,
+      revision: record.revision + 1,
+      desiredIdentity: undefined,
+      failure,
+    });
     this.persistAndEmit();
+    return true;
   }
 
   private async remint(
@@ -379,6 +414,7 @@ export class UntitledReconciler {
     this.records.set(replacementId, {
       ...record,
       documentId: replacementId,
+      revision: record.revision + 1,
       materialization: {
         phase: "pending",
         entry: { ...entry, documentId: replacementId },
@@ -390,11 +426,17 @@ export class UntitledReconciler {
     candidate?.onReminted(replacementId);
   }
 
-  private async drain(documentId: string, clearPersistence: boolean): Promise<void> {
+  private async drain(
+    documentId: string,
+    processedRevision: number,
+    clearPersistence: boolean,
+  ): Promise<void> {
     const record = this.records.get(documentId);
+    if (!record || record.revision !== processedRevision) return;
     if (record?.failure) {
       this.records.set(documentId, {
         ...record,
+        revision: record.revision + 1,
         desiredIdentity: undefined,
         materialization: { phase: "synced" },
         pendingSinceMs: null,
@@ -406,6 +448,19 @@ export class UntitledReconciler {
     if (clearPersistence) {
       await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
     }
+  }
+
+  private pendingRecord(documentId: string):
+    | (ReconciliationRecord & {
+        materialization: { phase: "pending"; entry: PendingUntitled };
+      })
+    | null {
+    const record = this.records.get(documentId);
+    return record?.materialization.phase === "pending"
+      ? (record as ReconciliationRecord & {
+          materialization: { phase: "pending"; entry: PendingUntitled };
+        })
+      : null;
   }
 
   private persist(): void {
@@ -442,7 +497,10 @@ function readRegistry(storage: StoragePort): ReconciliationRecord[] {
   try {
     const parsed: unknown = JSON.parse(storage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isReconciliationRecord);
+    return parsed.filter(isReconciliationRecord).map((record) => ({
+      ...record,
+      revision: record.revision ?? 0,
+    }));
   } catch {
     return [];
   }
@@ -451,7 +509,14 @@ function readRegistry(storage: StoragePort): ReconciliationRecord[] {
 function isReconciliationRecord(value: unknown): value is ReconciliationRecord {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<ReconciliationRecord>;
-  if (typeof record.documentId !== "string" || !record.materialization) return false;
+  if (
+    typeof record.documentId !== "string" ||
+    !record.materialization ||
+    (record.revision !== undefined &&
+      (!Number.isInteger(record.revision) || (record.revision ?? -1) < 0))
+  ) {
+    return false;
+  }
   if (record.desiredIdentity !== undefined && !isDesiredIdentity(record.desiredIdentity)) {
     return false;
   }

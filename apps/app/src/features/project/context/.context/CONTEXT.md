@@ -52,9 +52,12 @@ Y.Doc + IndexedDB exist without opening an unauthorized server room.
 `untitled-reconciler.ts` is the browser-independent materialization engine;
 `untitled-reconciler-browser.ts` binds localStorage, APIs, editor sessions, and
 React hooks. The localStorage registry (`meridian:pending-untitled`) stores one
-record per document: materialization phase, desired identity, failure receipt,
+record per document: a monotonic revision, materialization phase, desired identity, failure receipt,
 and the pending timestamp. Explicit writer actions and recovery receipts are
-therefore crash-safe. Events only schedule the same deferred, idempotent sweep. The sweep creates through
+therefore crash-safe. Reconciliation re-reads the live revision after every
+await; an attempt may clear identity work or drain a record only when that exact
+revision is still current, so the last explicit writer identity wins. Events
+only schedule the same deferred, idempotent sweep. The sweep creates through
 `create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
 sync, then drains the entry. A closed tab is not special: the same entry drives
 a headless attach/flush. A never-materialized empty is the only path that clears
