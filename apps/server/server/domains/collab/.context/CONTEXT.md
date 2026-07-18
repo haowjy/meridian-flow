@@ -153,11 +153,15 @@ history is preserved for attribution, echo, and undo dependency checking.
   kernel seals canonical swept-block identities and captured bodies into the
   branch journal row's update metadata before persistence; push projection
   consumes that evidence independently of the row's Apply-only draft base.
-- **Writer ingress barrier**: after fencing and provenance validation, updates
-  already contained by the live authority are acknowledged without admission.
-  Novel live updates are journaled and joined to unresolved settlements before
-  Hocuspocus apply/broadcast/ack. The domain seam drains started admissions and
-  detects later admission generations.
+- **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
+  type/payload once. After fencing and provenance validation, a cached,
+  mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
+  struct novelty takes the state-vector fast path without constructing a
+  history-sized snapshot. Already-contained updates are acknowledged without
+  admission. Novel live updates are journaled through the narrow writer-ingress
+  capability and joined to unresolved settlements before Hocuspocus
+  apply/broadcast/ack. The domain seam drains started admissions and detects
+  later admission generations.
 - **Push settlement authority**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the

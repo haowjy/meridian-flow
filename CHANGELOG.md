@@ -37,6 +37,10 @@
 - `apps/app`: collaborative document transport now waits for IndexedDB replay
   before connecting, avoiding redundant full-state uploads on reopen while a
   one-second fallback keeps connectivity available when local storage stalls.
+- `apps/server`: live writer sync admission now uses Hocuspocus's single decoded
+  `beforeSync` payload, a mutation-aware exact containment cache with a
+  state-vector novelty fast path, and a narrow reusable writer-ingress
+  capability instead of rebuilding a full document-authority facade per frame.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
