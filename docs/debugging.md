@@ -30,13 +30,12 @@ If the signal would help another agent tomorrow, use structured observability
 instead of `console.log`.
 
 - Server diagnostics go through `EventSink` / `emitEvent`.
-- In local dev, `pnpm dev` defaults `LOG_DIR` to `logs/events/` so structured
-  events are mirrored to `logs/events/YYYY-MM-DD.jsonl` in addition to interleaved
-  stdout in `logs/portless.log`. Review later: structured events are in
-  `logs/events/*.jsonl`. Gate probers and reviewers should read
-  `logs/events/*.jsonl` for structured event history (idempotency hits,
-  staged-write discards, response lifecycle errors) instead of grepping
-  `logs/portless.log` for unstructured output.
+- Stdout is authoritative and lands interleaved in `logs/portless.log` during
+  local dev. `LOG_DIR` adds a best-effort daily JSONL mirror at
+  `logs/events/YYYY-MM-DD.jsonl`; files are day-pruned, not an audit log.
+- The JSONL writer holds at most 5,000 pending events. Filesystem backpressure
+  drops oldest first; the next successful write prepends an
+  `observability.sink.dropped` record with the loss count.
 - Model-request diagnostics can use the existing model-request debug capture
   path when that is the right level of detail. Broader prompt and agent-run
   trace capture is not implemented yet; until it exists, use safe metadata in
@@ -45,8 +44,39 @@ instead of `console.log`.
   `EventRecord`s in debug-enabled builds. Open **Streams** from the debug pill
   for the live viewer, or use `window.__meridianTrace` for programmatic queries,
   stats, clearing, and next-event waits. API results are detached clones; caller
-  mutation cannot alter retained evidence. This is client wire visibility only
-  until the server event feed and durability receipts ship.
+  mutation cannot alter retained evidence. Use the server feed below for
+  process-side records until the viewer's server-feed toggle ships.
+
+## Consume Server Events
+
+Authenticated local development/test servers with the `local` event provider
+retain 5,000 sanitized records in memory. Other environments and disabled
+providers return 404; there is no runtime override.
+
+`GET /api/debug/events` returns newest first. Filters are `source` (exact),
+`name` (prefix), `level` (severity floor), `sinceEventId` (exclusive),
+`sinceTimestamp` (inclusive), `limit` (default 200, max 1,000), and every
+`EventCorrelation` key as an equality parameter.
+
+```bash
+curl -sS -b "$COOKIE_JAR" \
+  "$SERVER_URL/api/debug/events?source=wire.yjs&documentId=X&limit=50" | jq .
+```
+
+`GET /api/debug/events/stream` is live-only SSE with the same record filters.
+Each message carries one `EventRecord` as JSON in its `data` field; history stays
+on the query endpoint.
+
+```bash
+curl -N -b "$COOKIE_JAR" "$SERVER_URL/api/debug/events/stream?source=wire.yjs&documentId=X"
+```
+
+After a restart, use the JSONL mirror for best-effort forensics:
+
+```bash
+jq -c 'select(.source == "wire.yjs" and .correlation.documentId == "X")' \
+  logs/events/*.jsonl | tail -n 50
+```
 
 ## Cleanup
 

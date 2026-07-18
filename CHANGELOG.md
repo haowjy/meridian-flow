@@ -12,6 +12,8 @@
 - `apps/server`: authenticated development/test servers now expose filtered
   recent events at `/api/debug/events` and a live SSE feed at
   `/api/debug/events/stream`; production and disabled providers return 404.
+- Server debugging guidance now distinguishes authoritative stdout from the
+  best-effort bounded JSONL mirror and documents query, SSE, and `jq` workflows.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
