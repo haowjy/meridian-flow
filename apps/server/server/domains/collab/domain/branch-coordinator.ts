@@ -245,6 +245,7 @@ export function createBranchCoordinator(input: {
     snapshot: BranchSnapshot,
     doc: Y.Doc,
     journal?: AppendBranchJournalInput,
+    publishUpdate?: Uint8Array,
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
@@ -269,8 +270,8 @@ export function createBranchCoordinator(input: {
     const publish = () => {
       dirtyTransientBranches.delete(snapshot.branchId);
       cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
-      if (journal)
-        input.onBranchUpdate?.({ branchId: snapshot.branchId, update: journal.updateData });
+      const update = journal?.updateData ?? publishUpdate;
+      if (update) input.onBranchUpdate?.({ branchId: snapshot.branchId, update });
     };
     if (currentResponseTransactionId()) {
       enlistResponseParticipant({ commit: publish, abort() {} });
@@ -327,6 +328,7 @@ export function createBranchCoordinator(input: {
   async function runWithRetry<T>(
     branchId: string,
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
+    updateToPublish?: (result: T) => Uint8Array,
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -338,7 +340,7 @@ export function createBranchCoordinator(input: {
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
-          await persist(snapshot, doc);
+          await persist(snapshot, doc, undefined, updateToPublish?.(result));
           return result;
         });
       } catch (cause) {
@@ -470,7 +472,11 @@ export function createBranchCoordinator(input: {
     },
 
     pullFromDoc(branchId, upstream) {
-      return runWithRetry(branchId, async (_snapshot, doc) => replicateFrozenCut(upstream, doc));
+      return runWithRetry(
+        branchId,
+        async (_snapshot, doc) => replicateFrozenCut(upstream, doc),
+        (update) => update,
+      );
     },
 
     async pullFromBranch(branchId, upstreamBranchId) {

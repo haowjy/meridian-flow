@@ -1,6 +1,8 @@
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
@@ -31,23 +33,46 @@ describe("Yjs branch handshake route guard", () => {
   it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
     const live = new Y.Doc({ gc: false });
     live.getText("content").insert(0, "live advanced");
-    const branch = new Y.Doc({ gc: false });
+    const loadedRoom = new Y.Doc({ gc: false });
+    let storedState = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
     let releasePull: (() => void) | undefined;
     const pullBlocked = new Promise<void>((resolve) => {
       releasePull = resolve;
+    });
+    const branchCoordinator = createBranchCoordinator({
+      store: {
+        getBranch: async () => ({
+          branchId: "branch_1",
+          documentId: "document-1" as never,
+          kind: "work_draft",
+          upstreamBranchId: null,
+          workId: "work-1" as never,
+          threadId: null,
+          pushPolicy: "manual",
+          status: "active",
+          generation: 3,
+          state: storedState,
+          stateVector: Y.encodeStateVectorFromUpdate(storedState),
+          discardedStateVector: null,
+          schemaVersion: COLLAB_SCHEMA_VERSION,
+        }),
+        async updateBranchSnapshot(input) {
+          await pullBlocked;
+          storedState = input.state;
+          return true;
+        },
+        deferUntilCommit: () => false,
+      },
+      onBranchUpdate: ({ update }) => {
+        Y.applyUpdate(loadedRoom, update);
+      },
     });
     const branchPulls = createBranchPullService({
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
         recover: async () => {},
       },
-      branchCoordinator: {
-        pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
-          await pullBlocked;
-          Y.applyUpdate(branch, Y.encodeStateAsUpdate(upstream));
-          return new Uint8Array();
-        },
-      } as never,
+      branchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
         ensureWorkDraftBranch: async () => ({ branchId: "branch_1" }),
@@ -83,12 +108,16 @@ describe("Yjs branch handshake route guard", () => {
       } as never),
     ).resolves.toBeUndefined();
     expect(flushBranchLivePull).toHaveBeenCalledWith("document-1");
-    expect(branch.getText("content").toString()).toBe("");
+    expect(loadedRoom.getText("content").toString()).toBe("");
 
     releasePull?.();
+    await flushBranchLivePull.mock.results[0]?.value;
     await vi.waitFor(() => {
-      expect(branch.getText("content").toString()).toBe("live advanced");
+      expect(loadedRoom.getText("content").toString()).toBe("live advanced");
     });
+    const persisted = new Y.Doc({ gc: false });
+    Y.applyUpdate(persisted, storedState);
+    expect(persisted.getText("content").toString()).toBe("live advanced");
   });
 
   it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
