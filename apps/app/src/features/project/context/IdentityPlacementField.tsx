@@ -199,7 +199,10 @@ export function IdentityPlacementField({
       <ValidationNote
         severity={{
           level: "error",
-          message: t`A file named ${identityNote.name} already exists in this location.`,
+          message:
+            identityNote.collision.kind === "dir"
+              ? t`A folder named ${identityNote.name} already exists in this location.`
+              : t`A file named ${identityNote.name} already exists in this location.`,
         }}
         action={
           identityNote.collision.kind !== "dir" ? (

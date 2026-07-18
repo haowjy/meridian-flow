@@ -121,7 +121,6 @@ describe("IdentityPlacementField placement ghost", () => {
         const input = document.querySelector<HTMLInputElement>(
           'input[aria-label="Document name and location"]',
         );
-        Object.assign(input ?? {}, { attachEvent: () => {}, detachEvent: () => {} });
         window.requestAnimationFrame = (callback) => window.setTimeout(callback, 0);
         expect(input?.value).toBe("");
         expect(input?.placeholder).toBe("the-moonlit-bridge-trembled-beneath-her");
@@ -166,6 +165,7 @@ describe("IdentityPlacementField graduated editing", () => {
         const input = document.querySelector<HTMLInputElement>(
           'input[aria-label="Document name and location"]',
         );
+        Object.assign(input ?? {}, { attachEvent: () => {}, detachEvent: () => {} });
         await act(async () => {
           input?.dispatchEvent(
             new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
@@ -205,6 +205,36 @@ describe("IdentityPlacementField graduated editing", () => {
         expect(document.body.textContent).toContain("Scenes");
         expect(document.body.textContent).toContain("Manuscript");
         expect(document.body.textContent).toContain("Knowledge Base");
+      },
+    );
+  });
+
+  it("names folder collisions accurately and offers no dead Open existing action", async () => {
+    await withReactRoot(
+      <IdentityPlacementField
+        projectId="project-1"
+        activeThreadId={null}
+        defaultWorkId={null}
+        tab={graduatedTab}
+        location={tabLocation(graduatedTab)}
+        failure={{ kind: "error", name: "Scenes" }}
+        commit={vi.fn()}
+        onExit={() => {}}
+        onOpenExisting={vi.fn()}
+      />,
+      async () => {
+        await act(async () => {
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+        });
+
+        expect(document.body.textContent).toContain(
+          "A folder named Scenes already exists in this location.",
+        );
+        expect(
+          [...document.querySelectorAll("button")].some(
+            (button) => button.textContent === "Open existing",
+          ),
+        ).toBe(false);
       },
     );
   });
