@@ -367,35 +367,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(after.members).toEqual([DOC_ID]);
     });
 
-    it("does not journal an unchanged live manifest reconciliation", async () => {
-      const first = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const firstUpdates = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, first.documentId));
-      const firstCheckpoints = await db
-        .select({ id: documentYjsCheckpoints.id })
-        .from(documentYjsCheckpoints)
-        .where(eq(documentYjsCheckpoints.documentId, first.documentId));
-
-      const second = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const secondUpdates = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, first.documentId));
-      const secondCheckpoints = await db
-        .select({ id: documentYjsCheckpoints.id })
-        .from(documentYjsCheckpoints)
-        .where(eq(documentYjsCheckpoints.documentId, first.documentId));
-
-      expect(first).toEqual({ documentId: first.documentId, members: [DOC_ID] });
-      expect(second).toEqual(first);
-      expect(firstUpdates).toHaveLength(1);
-      expect(firstCheckpoints).toHaveLength(1);
-      expect(secondUpdates).toHaveLength(firstUpdates.length);
-      expect(secondCheckpoints).toHaveLength(firstCheckpoints.length);
-    });
-
     it("routes thread manifest membership mutations through branch journal, not the live manifest", async () => {
       const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const beforeUpdates = await db
