@@ -327,6 +327,32 @@ describe("ContextTreePanel row menus", () => {
     });
   });
 
+  it("keeps revealed target and ancestor folders open after creation is cancelled", async () => {
+    await renderPanel(async () => {
+      await clickMenuItem(entryMenuRoot("notes"), "[data-context-menu-item]", "New folder");
+      const folderRow = (name: string) =>
+        [...document.querySelectorAll<HTMLElement>('[role="button"]')].find(
+          (row) => row.getAttribute("aria-label") === `Toggle folder ${name}`,
+        );
+
+      expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => {
+        folderRow("notes")?.click();
+        folderRow("alpha")?.click();
+      });
+      expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("true");
+      expect(folderRow("alpha")?.getAttribute("aria-expanded")).toBe("true");
+
+      await act(async () => {
+        createInput().dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+      });
+      expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("true");
+      expect(folderRow("alpha")?.getAttribute("aria-expanded")).toBe("true");
+    });
+  });
+
   it("scopes collision validation to the target folder's children", async () => {
     await renderPanel(async () => {
       await clickMenuItem(entryMenuRoot("alpha"), "[data-context-menu-item]", "New file");

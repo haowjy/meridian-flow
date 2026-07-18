@@ -36,8 +36,9 @@ success. Invalidation is scheme-scoped.
 flattened client-side view. It never adds a server-search path; hosts constrain
 schemes and file/directory kinds, then mount the presentation-only list.
 
-Desktop renders recursively (`TreeBlock` → `DirRow` / `FileRow`). Mobile renders
-one level at a time via route params.
+Desktop scheme/query orchestration lives in `ContextTreePanel`; `ContextTreeRows`
+renders recursive rows through one scheme-scoped environment. Mobile renders one
+level at a time via route params.
 
 ## Editor tabs and untitled documents
 
@@ -182,11 +183,12 @@ One creation state serves every entry point: `{ scheme, kind, parentPath }`
 (`TreeCreationProvider` request, or the phone drawer's controlled mirror),
 with `""` meaning the scheme root. Scheme headers request the root; a folder
 row requests itself; a file row requests its parent
-(`parentContextEntryPath`). The single inline CreateRow renders at the
-target: root requests mount above the tree in `SchemeSection` (visible even
-while the tree is still fetching), nested requests render inside the target
-folder's `TreeBlock` at child depth. A folder is forced open while a request
-targets it or a descendant (and stays open after), and sibling-collision
+(`parentContextEntryPath`). The single `TreeChildren` renderer inserts the
+inline CreateRow at the target; the root calls it with an empty child list
+before fetch, while nested folders use the same mount at child depth. Creation
+explicitly reveals every target ancestor in the stored expansion model before
+the request starts. Those ancestor toggles are ignored until creation ends, so
+revealed folders stay open afterward. Sibling-collision
 validation uses the target folder's children. Starting a creation anywhere
 replaces a pending one; Escape/blur semantics are the shared
 `useInlineNameForm` contract.

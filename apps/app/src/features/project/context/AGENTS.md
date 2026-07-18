@@ -41,7 +41,9 @@ Shared across both shells:
 
 ## File groups
 
-- **Shells**: `ContextTreePanel.tsx` (desktop sidebar and phone drawer), `MobileContextBrowser.tsx` (phone Files destination)
+- **Shells**: `ContextTreePanel.tsx` (desktop scheme/query orchestration),
+  `ContextTreeRows.tsx` (recursive desktop rows), `MobileContextBrowser.tsx`
+  (phone Files destination)
 - **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
