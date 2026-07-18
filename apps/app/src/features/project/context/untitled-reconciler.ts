@@ -42,6 +42,11 @@ type Candidate = {
   onIdentityCommitted?: (result: MoveContextEntrySuccess) => void;
 };
 
+type MaterializationReceipt = {
+  result: CreateUntitledContextDocumentResponse;
+  identity?: MoveContextEntrySuccess;
+};
+
 /**
  * Receipt for a queued desired identity that could not be applied when its
  * document materialized. Held in reconciler state (not a promise) so the
@@ -129,6 +134,7 @@ export type ReconciliationRecord = {
 export class UntitledReconciler {
   private readonly records = new Map<string, ReconciliationRecord>();
   private readonly candidates = new Map<string, Candidate>();
+  private readonly materializationReceipts = new Map<string, MaterializationReceipt>();
   private running = false;
   private scheduled = false;
   private started = false;
@@ -167,6 +173,11 @@ export class UntitledReconciler {
 
   registerCandidate(documentId: string, candidate: Candidate): () => void {
     this.candidates.set(documentId, candidate);
+    const receipt = this.materializationReceipts.get(documentId);
+    if (receipt) {
+      this.materializationReceipts.delete(documentId);
+      this.publishMaterialization(candidate, receipt);
+    }
     return () => {
       if (this.candidates.get(documentId) === candidate) this.candidates.delete(documentId);
     };
@@ -328,7 +339,10 @@ export class UntitledReconciler {
       record = this.pendingRecord(documentId);
       if (!record) return;
       const identity = await this.applyDesiredIdentity(resolvedEntry, result);
-      this.candidates.get(documentId)?.onMaterialized(identity.result);
+      const receipt = { result: identity.result, identity: identity.identity };
+      const candidate = this.candidates.get(documentId);
+      if (candidate) this.publishMaterialization(candidate, receipt);
+      else this.materializationReceipts.set(documentId, receipt);
       const processedRevision = identity.revision;
 
       record = this.pendingRecord(documentId);
@@ -349,7 +363,11 @@ export class UntitledReconciler {
   private async applyDesiredIdentity(
     entry: PendingUntitled & { home: UntitledHome },
     result: CreateUntitledContextDocumentResponse,
-  ): Promise<{ revision: number; result: CreateUntitledContextDocumentResponse }> {
+  ): Promise<{
+    revision: number;
+    result: CreateUntitledContextDocumentResponse;
+    identity?: MoveContextEntrySuccess;
+  }> {
     const record = this.records.get(entry.documentId);
     const desired = record?.desiredIdentity;
     if (!record) return { revision: -1, result };
@@ -369,12 +387,7 @@ export class UntitledReconciler {
         return { revision: finished ? attemptRevision + 1 : attemptRevision, result };
       }
       const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision);
-      if (finished) {
-        this.candidates.get(entry.documentId)?.onIdentityCommitted?.({
-          ...moved,
-          path: `/${moved.path}`,
-        });
-      }
+      const identity = { ...moved, path: `/${moved.path}` };
       return {
         revision: finished ? attemptRevision + 1 : attemptRevision,
         result: {
@@ -385,6 +398,7 @@ export class UntitledReconciler {
           name: moved.name,
           ...(desired.destination.workId ? { workId: desired.destination.workId } : {}),
         },
+        ...(finished ? { identity } : {}),
       };
     } catch (error) {
       if (!isTerminalIdentityError(error)) throw error;
@@ -411,6 +425,11 @@ export class UntitledReconciler {
     });
     this.persistAndEmit();
     return true;
+  }
+
+  private publishMaterialization(candidate: Candidate, receipt: MaterializationReceipt): void {
+    candidate.onMaterialized(receipt.result);
+    if (receipt.identity) candidate.onIdentityCommitted?.(receipt.identity);
   }
 
   private async remint(

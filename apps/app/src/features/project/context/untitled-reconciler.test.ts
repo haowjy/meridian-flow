@@ -595,6 +595,42 @@ describe("untitled reconciliation durability", () => {
 });
 
 describe("queued identity receipts", () => {
+  it("replays the final canonical identity to a tab restored after materialization", async () => {
+    const h = harness();
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
+
+    await h.runQueue();
+    const onMaterialized = vi.fn();
+    const onIdentityCommitted = vi.fn();
+    reconciler.registerCandidate("doc-1", {
+      onReminted: vi.fn(),
+      onMaterialized,
+      onIdentityCommitted,
+    });
+
+    expect(onMaterialized).toHaveBeenCalledWith({
+      status: "already-materialized",
+      documentId: "doc-1",
+      scheme: "manuscript",
+      path: "/Act 1/Opening.md",
+      name: "Opening.md",
+    });
+    expect(onIdentityCommitted).toHaveBeenCalledWith({
+      status: "moved",
+      scheme: "manuscript",
+      path: "/Act 1/Opening.md",
+      name: "Opening.md",
+    });
+  });
+
   it("retries a stale identity result without discarding the queued identity", async () => {
     const h = harness();
     (h.deps.api.move as ReturnType<typeof vi.fn>)
