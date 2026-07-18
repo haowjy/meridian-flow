@@ -140,6 +140,7 @@ export function clearQueuedIdentityFailure(documentId: string): void {
   getUntitledReconciler().clearQueuedIdentityFailure(documentId);
 }
 
-export function queueUntitledIdentity(documentId: string, desired: DesiredIdentity): void {
-  getUntitledReconciler().queueIdentity(documentId, desired);
+export function queueUntitledIdentity(entry: PendingUntitled, desired: DesiredIdentity): void {
+  getUntitledReconciler().queueIdentity(entry, desired);
+  flushContextDesks();
 }

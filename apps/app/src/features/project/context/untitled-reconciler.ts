@@ -119,10 +119,7 @@ export function untitledHomeUri(
 
 export type ReconciliationRecord = {
   documentId: string;
-  materialization:
-    | { phase: "idle" }
-    | { phase: "pending"; entry: PendingUntitled }
-    | { phase: "synced" };
+  materialization: { phase: "pending"; entry: PendingUntitled } | { phase: "synced" };
   desiredIdentity?: DesiredIdentity;
   failure?: QueuedIdentityFailure;
   /** Epoch ms for device-only grace; meaningful only while pending. */
@@ -220,16 +217,19 @@ export class UntitledReconciler {
   };
 
   /** Last explicit writer identity wins and is durable before this returns. */
-  queueIdentity(documentId: string, desiredIdentity: DesiredIdentity): void {
-    const current = this.records.get(documentId) ?? {
-      documentId,
-      materialization: { phase: "idle" as const },
-      pendingSinceMs: null,
-    };
-    this.records.set(documentId, {
+  queueIdentity(entry: PendingUntitled, desiredIdentity: DesiredIdentity): void {
+    const current = this.records.get(entry.documentId);
+    const materialization =
+      current?.materialization.phase === "pending"
+        ? current.materialization
+        : { phase: "pending" as const, entry };
+    this.records.set(entry.documentId, {
       ...current,
+      documentId: entry.documentId,
+      materialization,
       desiredIdentity,
       failure: undefined,
+      pendingSinceMs: current?.pendingSinceMs ?? Date.now(),
     });
     this.persistAndEmit();
     this.schedule();
@@ -302,7 +302,11 @@ export class UntitledReconciler {
     try {
       await session.whenLocalPersistenceSynced();
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
-      if (empty && !(await this.deps.api.serverDocumentExists(resolvedEntry))) {
+      if (
+        empty &&
+        !record.desiredIdentity &&
+        !(await this.deps.api.serverDocumentExists(resolvedEntry))
+      ) {
         await this.drain(entry.documentId, true);
         return;
       }
@@ -390,10 +394,11 @@ export class UntitledReconciler {
 
   private async drain(documentId: string, clearPersistence: boolean): Promise<void> {
     const record = this.records.get(documentId);
-    if (record?.desiredIdentity || record?.failure) {
+    if (record?.failure) {
       this.records.set(documentId, {
         ...record,
-        materialization: clearPersistence ? { phase: "idle" } : { phase: "synced" },
+        desiredIdentity: undefined,
+        materialization: { phase: "synced" },
         pendingSinceMs: null,
       });
     } else {
@@ -453,7 +458,7 @@ function isReconciliationRecord(value: unknown): value is ReconciliationRecord {
     return false;
   }
   if (record.failure !== undefined && !isIdentityFailure(record.failure)) return false;
-  if (record.materialization.phase === "idle" || record.materialization.phase === "synced") {
+  if (record.materialization.phase === "synced") {
     return record.pendingSinceMs === null;
   }
   if (record.materialization.phase !== "pending") return false;

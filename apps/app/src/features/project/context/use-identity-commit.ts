@@ -83,7 +83,7 @@ export function useIdentityCommit({
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
     if (plan.kind === "queue") {
-      queueUntitledIdentity(tab.documentId, plan.desired);
+      queueUntitledIdentity({ documentId: tab.documentId, projectId }, plan.desired);
       return { status: "committed" };
     }
     if (plan.kind === "no-op") return { status: "committed" };

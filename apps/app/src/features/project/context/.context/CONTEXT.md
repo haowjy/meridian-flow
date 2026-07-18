@@ -59,7 +59,7 @@ sync, then drains the entry. A closed tab is not special: the same entry drives
 a headless attach/flush. A never-materialized empty is the only path that clears
 IndexedDB. A foreign UUID conflict clones the Yjs state into a newly minted
 detached session and replaces the new tab's identity in place before retrying.
-Named/viewed documents never enter this engine.
+Named/viewed documents never enter this engine. Naming an otherwise-empty new document is itself pending materialization work: the explicit identity keeps the tab reload-safe and is applied immediately after the row is created.
 
 After create returns, the placeholder becomes a normal route-owned `tracked`
 tab in place. `provisionalName` comes from the tree DTO and drives the identity

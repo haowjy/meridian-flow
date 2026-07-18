@@ -211,15 +211,54 @@ describe("untitled reconciler lifecycle", () => {
 });
 
 describe("untitled reconciliation durability", () => {
+  it("materializes an explicitly named empty document and keeps it pending across reload", async () => {
+    const h = harness();
+    h.sessions.set("doc-1", fakeSession(contentDocument("")));
+    const first = new UntitledReconciler(h.deps);
+    first.start();
+    first.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
+    first.dispose();
+
+    const restored = new UntitledReconciler(h.deps);
+    restored.rehydrate();
+    expect(restored.has("doc-1")).toBe(true);
+    restored.start();
+    await h.runQueue(); // stale callback from the disposed instance
+    await h.runQueue();
+
+    expect(h.create).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "doc-1", projectId: "project-1", home: HOME }),
+    );
+    expect(h.deps.api.move).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "doc-1" }),
+      "/Untitled",
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
+    expect(storedEntries(h.values)).toEqual([]);
+    expect(h.cleared).toEqual([]);
+  });
+
   it("restores an explicit desired identity after a reload", async () => {
     const h = harness();
     const first = new UntitledReconciler(h.deps);
     first.start();
     first.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    first.queueIdentity("doc-1", {
-      name: "Opening.md",
-      destination: { scheme: "manuscript", folderPath: "/Act 1" },
-    });
+    first.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "/Act 1" },
+      },
+    );
     first.dispose();
 
     expect(storedEntries(h.values)[0]?.desiredIdentity).toEqual({
@@ -307,10 +346,13 @@ describe("untitled reconciliation durability", () => {
     const first = new UntitledReconciler(h.deps);
     first.start();
     first.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    first.queueIdentity("doc-1", {
-      name: "taken.md",
-      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-    });
+    first.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "taken.md",
+        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+      },
+    );
     await h.runQueue();
     first.dispose();
 
@@ -361,10 +403,13 @@ describe("queued identity receipts", () => {
     const reconciler = new UntitledReconciler(h.deps);
     reconciler.start();
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity("doc-1", {
-      name: "taken.md",
-      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-    });
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "taken.md",
+        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+      },
+    );
 
     await h.runQueue();
 
@@ -400,17 +445,23 @@ describe("queued identity receipts", () => {
     const reconciler = new UntitledReconciler(h.deps);
     reconciler.start();
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity("doc-1", {
-      name: "taken.md",
-      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-    });
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "taken.md",
+        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+      },
+    );
     await h.runQueue();
     expect(reconciler.queuedIdentityFailure("doc-1")?.kind).toBe("conflict");
 
-    reconciler.queueIdentity("doc-1", {
-      name: "free-name.md",
-      destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-    });
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "free-name.md",
+        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
+      },
+    );
     expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
   });
 
@@ -425,10 +476,13 @@ describe("queued identity receipts", () => {
       onIdentityCommitted,
     });
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity("doc-1", {
-      name: "Opening.md",
-      destination: { scheme: "manuscript", folderPath: "Act 1" },
-    });
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1" },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
     await h.runQueue();
 
     expect(h.deps.api.move).toHaveBeenCalledWith(
@@ -453,10 +507,13 @@ describe("queued identity receipts", () => {
       collision: { scheme: "manuscript" as const, path: "Act 1/Opening.md" },
     });
     reconciler.append({ documentId: "doc-2", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity("doc-2", {
-      name: "Opening.md",
-      destination: { scheme: "manuscript", folderPath: "Act 1" },
-    });
+    reconciler.queueIdentity(
+      { documentId: "doc-2", projectId: "project-1" },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
     await h.runQueue();
     expect(reconciler.queuedIdentityFailure("doc-2")).toEqual({
       kind: "conflict",
