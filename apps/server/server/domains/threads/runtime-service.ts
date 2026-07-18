@@ -109,6 +109,7 @@ async function generateTurnPlan(
   const result = await gateway.generate({
     messages: [{ role: "user", content: [{ type: "text", text: input.userText }] }],
     maxTokens: 4096,
+    correlation: { threadId: input.threadId },
   });
   const assistantText = result.content
     .filter(

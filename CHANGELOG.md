@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: gateway calls now emit correlated open, first-output, retry,
+  and close lifecycle events; development/test processes can opt into
+  metadata-only chunk events with `OBS_VERBOSE=gateway.chunks`.
 - `apps/server`: local JSONL diagnostics now bound pending writes to 5,000
   events, drop oldest under filesystem backpressure, and report loss through
   `observability.sink.dropped`.

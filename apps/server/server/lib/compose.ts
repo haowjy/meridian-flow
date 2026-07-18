@@ -76,6 +76,7 @@ import {
   createChildRunCoordinator,
   createGatewayFromEnv,
   createHelperResultDelivery,
+  createInstrumentedGateway,
   createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
@@ -130,6 +131,7 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
+import { obsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
   createAgentEditResponseWriteLifecycle,
@@ -257,7 +259,7 @@ export async function createProductionAppPorts(input: {
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway } = await createGatewayFromEnv(environment, {
+  const { gateway: rawGateway } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -278,6 +280,10 @@ export async function createProductionAppPorts(input: {
         payload: span.attributes ?? {},
       });
     },
+  });
+  const gateway = createInstrumentedGateway(rawGateway, {
+    sink: eventSink,
+    verbose: obsVerbose,
   });
   const db = input.db;
   const threadRepos = createDrizzleRepositories(db);
