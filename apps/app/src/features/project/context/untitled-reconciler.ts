@@ -331,6 +331,16 @@ export class UntitledReconciler {
         const checkedRevision = record.revision;
         const exists = await this.deps.api.serverDocumentExists(resolvedEntry);
         if (!exists) {
+          record = this.pendingRecord(documentId);
+          if (
+            !record ||
+            record.revision !== checkedRevision ||
+            record.desiredIdentity ||
+            this.candidates.has(documentId) ||
+            !untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName))
+          ) {
+            return;
+          }
           // Materialize-at-identity will replace this best-effort abandonment
           // path. Until then, retain orphaned IndexedDB rather than risk clearing
           // persistence reacquired by a restored editor.
