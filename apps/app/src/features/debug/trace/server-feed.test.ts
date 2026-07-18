@@ -13,13 +13,15 @@ class FakeEventSource {
   static instances: FakeEventSource[] = [];
 
   readonly url: string;
+  readonly options: EventSourceInit | undefined;
   readonly close = vi.fn();
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((message: MessageEvent<string>) => void) | null = null;
 
-  constructor(url: string | URL) {
+  constructor(url: string | URL, options?: EventSourceInit) {
     this.url = url.toString();
+    this.options = options;
     FakeEventSource.instances.push(this);
   }
 
@@ -61,6 +63,7 @@ describe("server feed", () => {
 
     const source = FakeEventSource.instances[0];
     expect(source?.url).toBe("/api/debug/events/stream");
+    expect(source?.options).toEqual({ withCredentials: true });
     source?.message(JSON.stringify(record));
 
     expect(getTraceSnapshot().entries).toEqual([record]);

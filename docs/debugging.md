@@ -53,6 +53,17 @@ Authenticated local development/test servers with the `local` event provider
 retain 5,000 sanitized records in memory. Other environments and disabled
 providers return 404; there is no runtime override.
 
+For direct `curl` access, bootstrap through the app and retarget the host-only
+development session cookie to the paired server origin:
+
+```bash
+APP_URL=https://<lane>.app.meridian.localhost
+SERVER_URL=https://<lane>.server.meridian.localhost
+COOKIE_JAR=auth.cookies
+curl -sS -c "$COOKIE_JAR" "$APP_URL/api/auth/dev-login" >/dev/null
+sed -i 's/app\.meridian\.localhost/server.meridian.localhost/' "$COOKIE_JAR"
+```
+
 `GET /api/debug/events` returns newest first. Filters are `source` (exact),
 `name` (prefix), `level` (severity floor), `sinceEventId` (exclusive),
 `sinceTimestamp` (inclusive), `limit` (default 200, max 1,000), and every

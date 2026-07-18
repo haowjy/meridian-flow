@@ -27,13 +27,15 @@ function isEventRecord(value: unknown): value is EventRecord {
   );
 }
 
-/** Open the same-origin server feed. Native EventSource owns reconnection. */
+/** Open the server feed. Native EventSource owns reconnection. */
 export function startServerFeed(): void {
   if (eventSource) return;
 
   setState("connecting");
   try {
-    const source = new EventSource(SERVER_FEED_PATH);
+    const source = new EventSource(SERVER_FEED_PATH, {
+      withCredentials: true,
+    });
     eventSource = source;
     source.onopen = () => {
       if (eventSource === source) setState("open");
