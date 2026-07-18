@@ -119,11 +119,14 @@ function createStreamObservation(input: {
     if (closed) return;
     closed = true;
     const terminalAt = terminal?.at ?? Date.now();
-    const outcome: Outcome = input.request.signal?.aborted
-      ? "cancelled"
-      : terminal?.type === "end"
-        ? "ok"
-        : "error";
+    const outcome: Outcome =
+      terminal?.type === "error"
+        ? "error"
+        : input.request.signal?.aborted
+          ? "cancelled"
+          : terminal?.type === "end"
+            ? "ok"
+            : "error";
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
