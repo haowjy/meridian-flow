@@ -169,6 +169,24 @@ Desktop context menu and kebab both render `ActionMenuItems`, but Radix
 `ContextMenu.Item` and `DropdownMenu.Item` are different primitives — the
 component is not literally shared, only the labels, icons, and dispatch logic.
 The kebab stops propagation so it doesn't trigger the row's click handler.
+`EntryAction` is four actions in fixed order — New file, New folder,
+separator, Rename, Delete (creation first, destructive last) — identical in
+both triggers.
+
+## Creation targeting
+
+One creation state serves every entry point: `{ scheme, kind, parentPath }`
+(`TreeCreationProvider` request, or the phone drawer's controlled mirror),
+with `""` meaning the scheme root. Scheme headers request the root; a folder
+row requests itself; a file row requests its parent
+(`parentContextEntryPath`). The single inline CreateRow renders at the
+target: root requests mount above the tree in `SchemeSection` (visible even
+while the tree is still fetching), nested requests render inside the target
+folder's `TreeBlock` at child depth. A folder is forced open while a request
+targets it or a descendant (and stays open after), and sibling-collision
+validation uses the target folder's children. Starting a creation anywhere
+replaces a pending one; Escape/blur semantics are the shared
+`useInlineNameForm` contract.
 
 ## Tree query invalidation
 
