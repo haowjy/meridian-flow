@@ -2,23 +2,40 @@ import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/rea
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useEffect } from "react";
+import { getAccountSettings } from "@/client/api/account-api";
+import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import {
   loadProjectList,
   ProjectStoreProvider,
+  rehydrateContextDesks,
   ThreadStoreProvider,
   useIndependentProjectsStore,
 } from "@/client/stores";
+import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import {
   isSettingsSection,
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
+import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import {
+  getUntitledReconciler,
+  isUntitledPending,
+} from "@/features/project/context/untitled-reconciler-browser";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
+import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
+
+// Composition-root prerequisite: product descendants create both client
+// sockets as soon as they render, so capture must be installed first.
+if (DEBUG_FEATURE_ALLOWED) {
+  installTraceCapture();
+}
 
 // Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate
 // so the entire feature (and its lazy chunk) is dead-code-eliminated from
@@ -66,37 +83,64 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect(target);
     }
 
-    const currentUser = { userId: user.id, email: user.email ?? null };
     const now = Date.now();
+    const requestInit = ssrApiRequestInit();
+    const settingsPromise = loadAccountSettingsWithDeadline((signal) =>
+      getAccountSettings({ ...requestInit, signal }),
+    );
 
     // `/` immediately redirects to the default project, so skip its list fetch;
     // every other authenticated route mounts the same shell and wants the list.
     if (location.pathname === "/") {
+      const settings = await settingsPromise;
+      const currentUser = {
+        userId: user.id,
+        email: user.email ?? null,
+        workingSetSyncEnabled: settings?.workingSetSyncEnabled ?? null,
+      };
       return { user: currentUser, projects: null, now };
     }
 
-    try {
-      return { user: currentUser, projects: await loadProjectList(), now };
-    } catch (error) {
-      console.error("Failed to load project list during SSR:", error);
-      return { user: currentUser, projects: null, now };
+    const [settingsResult, projectsResult] = await Promise.allSettled([
+      settingsPromise,
+      loadProjectList(),
+    ]);
+    if (projectsResult.status === "rejected") {
+      console.error("Failed to load project list during SSR:", projectsResult.reason);
     }
+    const currentUser = {
+      userId: user.id,
+      email: user.email ?? null,
+      workingSetSyncEnabled:
+        settingsResult.status === "fulfilled"
+          ? (settingsResult.value?.workingSetSyncEnabled ?? null)
+          : null,
+    };
+    return {
+      user: currentUser,
+      projects: projectsResult.status === "fulfilled" ? projectsResult.value : null,
+      now,
+    };
   },
   staleTime: 60_000,
   component: AuthenticatedLayout,
 });
 
 function AuthenticatedLayout() {
-  const { projects, now } = Route.useLoaderData();
+  const { projects, now, user } = Route.useLoaderData();
+  configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // Rehydrate localStorage-backed UI stores on the client only (all use
   // skipHydration to avoid SSR mismatch). Idempotent; fires once after mount.
   useEffect(() => {
+    const untitledReconciler = getUntitledReconciler();
+    untitledReconciler.rehydrate();
+    rehydrateContextDesks(user.userId, isUntitledPending);
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
-  }, []);
+  }, [user.userId]);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same
@@ -118,7 +162,7 @@ function AuthenticatedLayout() {
                   <Outlet key={pathname} />
                 </div>
               </div>
-              <SettingsDialog />
+              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
               {DebugOverlay ? (
                 <Suspense fallback={null}>
                   <DebugOverlay />

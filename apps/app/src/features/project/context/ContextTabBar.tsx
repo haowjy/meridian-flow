@@ -38,14 +38,17 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type HTMLAttributes, type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { fileKindIcon } from "./context-file-icon";
+import type { OptimisticContextTab } from "./context-pane-state";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
+  optimisticTab?: OptimisticContextTab | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
   onNewDocument: () => void;
@@ -65,6 +68,7 @@ export type ContextTabBarProps = {
 export function ContextTabBar({
   tabs,
   activeTabId,
+  optimisticTab,
   onSelect,
   onClose,
   onNewDocument,
@@ -96,6 +100,7 @@ export function ContextTabBar({
             />
           );
         })}
+        {optimisticTab ? <OptimisticTabChip key={optimisticTab.id} tab={optimisticTab} /> : null}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -107,7 +112,9 @@ export function ContextTabBar({
               {/* Same divider grammar as between tabs: a line sets the New-tab
                   control apart from the working set, except when the active
                   tab's canvas shape already separates it. */}
-              {tabs.length > 0 && tabs[tabs.length - 1]?.documentId !== activeTabId ? (
+              {!optimisticTab &&
+              tabs.length > 0 &&
+              tabs[tabs.length - 1]?.documentId !== activeTabId ? (
                 <span
                   aria-hidden
                   className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
@@ -126,6 +133,29 @@ export function ContextTabBar({
   );
 }
 
+function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
+  // Same name + kind glyph the settled tab will render — the chip should be
+  // indistinguishable from the tab it becomes, minus interactivity.
+  const Icon = fileKindIcon(tab.name);
+  return (
+    <TabChipFrame
+      active
+      divider={false}
+      tabProps={{
+        role: "tab",
+        tabIndex: -1,
+        "aria-selected": true,
+        "aria-label": t`Loading ${tab.name}`,
+      }}
+    >
+      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
+        {tab.name}
+      </span>
+    </TabChipFrame>
+  );
+}
+
 function TabChip({
   tab,
   active,
@@ -139,33 +169,8 @@ function TabChip({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const chipRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // Keep the active tab visible when the strip overflows — activating a tab
-    // (e.g. via the `+` button) must never land it off-screen.
-    if (active) chipRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }, [active]);
   return (
-    <div
-      ref={chipRef}
-      className={cn(
-        // No h-full: items-stretch sizes the chip so the active tab's mt-1
-        // subtracts from its height instead of overflowing the strip (which
-        // grew a vertical scroll axis on the overflow-x scroller).
-        // Geometry (flares, hover pill, snap-not-fade activation) is the
-        // shared tab-chip grammar — see globals.css.
-        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3",
-        active
-          ? "tab-chip-active text-foreground"
-          : "tab-chip-inactive text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {divider ? (
-        <span
-          aria-hidden
-          className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
-        />
-      ) : null}
+    <TabChipFrame active={active} divider={divider}>
       <button
         type="button"
         role="tab"
@@ -198,6 +203,52 @@ function TabChip({
       >
         <X className="size-3" aria-hidden />
       </button>
+    </TabChipFrame>
+  );
+}
+
+function useActiveTabVisibility(active: boolean) {
+  const chipRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Selecting or optimistically restoring a tab must never leave the active
+    // chip outside an overflowing strip's viewport.
+    if (active) chipRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [active]);
+  return chipRef;
+}
+
+function TabChipFrame({
+  active,
+  divider,
+  children,
+  tabProps,
+}: {
+  active: boolean;
+  divider: boolean;
+  children: ReactNode;
+  tabProps?: HTMLAttributes<HTMLDivElement>;
+}) {
+  const chipRef = useActiveTabVisibility(active);
+  return (
+    <div
+      {...tabProps}
+      ref={chipRef}
+      className={cn(
+        // No h-full: items-stretch sizes the chip so the active tab's mt-1
+        // subtracts from its height instead of overflowing the strip.
+        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3",
+        active
+          ? "tab-chip-active text-foreground"
+          : "tab-chip-inactive text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {divider ? (
+        <span
+          aria-hidden
+          className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+        />
+      ) : null}
+      {children}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-/** Drop local worktree databases whose git worktree no longer exists. */
+/** Drop local project-prefixed databases that no live git worktree owns. */
 import { realpathSync } from "node:fs";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -17,6 +17,7 @@ import {
   resolveWorktreeDatabaseName,
   runGit,
 } from "./lib/dev-env";
+import { classifyTestDatabaseCleanup } from "./lib/test-db-lifecycle";
 import { resolveSessionIdentity } from "./session-identity";
 
 interface WorktreeInfo {
@@ -142,12 +143,14 @@ async function main(): Promise<void> {
 
   const found = await listWorktreeDatabasesForUrl(databaseUrl, mainDbNames);
   const live = resolveLiveWorktreeDatabaseNames(repoRoot, mainDbNames);
-  const orphaned = found.filter((dbName) => !live.has(dbName));
+  const { activeManaged, manual, orphaned } = classifyTestDatabaseCleanup(found, live, mainDbNames);
   const reserved = orphaned.filter((dbName) => isReservedDatabase(dbName, mainDbNames));
   const droppable = orphaned.filter((dbName) => !isReservedDatabase(dbName, mainDbNames));
 
-  printList("Found worktree databases", found);
+  printList("Found project databases", found);
   printList("Live worktree databases", [...live].sort());
+  printList("Active managed test databases", activeManaged);
+  printList("Manual test databases (not dropped)", manual);
   printList("Orphaned databases", orphaned);
   if (reserved.length > 0) printList("Reserved orphaned databases (not dropped)", reserved);
 

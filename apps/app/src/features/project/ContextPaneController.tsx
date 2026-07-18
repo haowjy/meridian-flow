@@ -6,20 +6,23 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useDefaultWorkId } from "@/client/query/useWorks";
 import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import {
+  buildWorkingSetRoute,
+  clearRoutes,
+  promoteRoute,
+  readRecentRoutes,
+  removeRoute,
+} from "@/client/working-set";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
-import {
-  type LastContextRoute,
-  readLastContextRoute,
-  saveLastContextRoute,
-} from "./context/context-last-route";
+import { deriveContextPaneState } from "./context/context-pane-state";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import {
@@ -42,6 +45,12 @@ export type ContextViewerSurfaceControllerProps = {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
+  /**
+   * Clears the routed destination entirely (no scheme/path in the URL) —
+   * closing the LAST tab must leave a fresh-entry URL so a reload runs
+   * restore/default-open instead of resurrecting an explicit empty path.
+   */
+  onClearContextDestination: () => void;
   active: boolean;
   /** Project left-sidebar expand toggle, surfaced via the tab strip. */
   sidebarToggle: PaneHeaderRailToggle;
@@ -58,6 +67,7 @@ export function ContextViewerSurfaceController({
   sidebarToggle,
   dockToggle,
   onSelectContextPath,
+  onClearContextDestination,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
   const defaultWorkId = useDefaultWorkId(projectId);
@@ -75,7 +85,7 @@ export function ContextViewerSurfaceController({
   );
   const [rememberedRoute, setRememberedRoute] = useState<{
     projectId: string;
-    route: LastContextRoute;
+    route: WorkingSetRoute;
   } | null>(null);
   const lastContextRoute = rememberedRoute?.projectId === projectId ? rememberedRoute.route : null;
   const lastActiveTabIdRef = useRef<string | null>(null);
@@ -88,7 +98,11 @@ export function ContextViewerSurfaceController({
       : null);
 
   const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
-  const { tree: routeTree } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
+  const {
+    tree: routeTree,
+    isError: routeTreeIsError,
+    isFetching: routeTreeIsFetching,
+  } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
     enabled: activeContextScheme !== null && activeContextPath !== null,
     activeThreadId,
     workId: routeWorkId,
@@ -118,9 +132,9 @@ export function ContextViewerSurfaceController({
   }, [activeTab, projectId, selectTab]);
 
   // Device-local routes are unavailable during SSR. Read after hydration so
-  // the server and first client render agree, then mirror persistence writes.
+  // the server and first client render agree, then keep the resume label current.
   useEffect(() => {
-    const route = readLastContextRoute(projectId);
+    const route = readRecentRoutes(projectId)[0];
     setRememberedRoute(route ? { projectId, route } : null);
   }, [projectId]);
 
@@ -132,10 +146,11 @@ export function ContextViewerSurfaceController({
   // next visit.
   useEffect(() => {
     if (!activeTab || activeTab.draftOnly) return;
-    const route = { scheme: activeTab.scheme, path: activeTab.path };
-    saveLastContextRoute(projectId, route);
+    const route = buildWorkingSetRoute(activeTab.scheme, activeTab.path, routeWorkId);
+    if (!route) return;
+    promoteRoute(projectId, route);
     setRememberedRoute({ projectId, route });
-  }, [activeTab, projectId]);
+  }, [activeTab, projectId, routeWorkId]);
 
   // Restore, once per SCREEN ENTRY (user call 2026-07-16 — "the last opened
   // thing"): entering Context with no destination replays the remembered
@@ -147,7 +162,7 @@ export function ContextViewerSurfaceController({
   // already forgets the route, and the ref stays spent while you stay here.
   const restoreAttemptedRef = useRef(false);
   const [wantsDefaultOpen, setWantsDefaultOpen] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) {
       restoreAttemptedRef.current = false;
       setWantsDefaultOpen(false);
@@ -156,7 +171,7 @@ export function ContextViewerSurfaceController({
     if (restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     if (activeContextScheme !== null || activeContextPath !== null) return;
-    const last = readLastContextRoute(projectId);
+    const last = readRecentRoutes(projectId)[0];
     if (last) {
       onSelectContextPath(last.path, last.scheme, { replace: true });
       return;
@@ -167,6 +182,32 @@ export function ContextViewerSurfaceController({
     // call 2026-07-16: "there should always be documents loaded").
     if (tabs.length === 0) setWantsDefaultOpen(true);
   }, [active]);
+
+  const selectedUntitledTab =
+    activeContextPath === ""
+      ? (tabs.find((tab) => tab.documentId === retainedActiveTabId && tab.kind === "new") ?? null)
+      : null;
+  const paneState = deriveContextPaneState({
+    activeTab: activeTab ?? selectedUntitledTab,
+    destination:
+      activeContextScheme !== null && activeContextPath && openTabKey
+        ? {
+            path: activeContextPath,
+            optimisticTab: {
+              id: `optimistic:${openTabKey}`,
+              // Full basename, not the extension-stripped resume label — the chip
+              // must match the settled tab's name (`file.name`) it will become.
+              name: contextRouteFileName(activeContextPath),
+            },
+          }
+        : null,
+    tree: routeTree,
+    isFetching: routeTreeIsFetching,
+    isError: routeTreeIsError,
+    // Closing stamps this key before removing the tab. Sharing the guard
+    // prevents the loading projection from resurrecting the closed route.
+    autoOpenBlocked: openTabKey !== null && openedKeyRef.current === openTabKey,
+  });
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
     enabled: wantsDefaultOpen,
@@ -201,7 +242,7 @@ export function ContextViewerSurfaceController({
       return;
     }
     onSelectContextPath("", activeContextScheme ?? undefined);
-    saveLastContextRoute(projectId, null);
+    clearRoutes(projectId);
     setRememberedRoute(null);
   }, [
     activeContextPath,
@@ -280,11 +321,19 @@ export function ContextViewerSurfaceController({
         void registry.destroyRoom(documentId, { clearPersistence: true });
       }
     }
-    // Closing the last tab is a deliberate "empty desk" — forget the
-    // remembered file so it doesn't resurrect on the next visit.
-    if (!fallback) {
-      saveLastContextRoute(projectId, null);
+    // Closing the LAST tab is a deliberate "empty desk" — forget the
+    // remembered routes so they don't resurrect on the next visit. The
+    // signal is the desk being empty, NOT a null fallback: closeTab only
+    // returns a fallback when the closed tab was active, so `!fallback`
+    // fired on every non-active close and wiped (then synced!) an empty
+    // route set across devices.
+    const deskNowEmpty = !tabs.some((candidate) => candidate.documentId !== documentId);
+    if (deskNowEmpty) {
+      clearRoutes(projectId);
       setRememberedRoute(null);
+    } else if (tab && tab.kind !== "new") {
+      const route = buildWorkingSetRoute(tab.scheme, tab.path, tab.workId ?? routeWorkId);
+      if (route) removeRoute(projectId, route);
     }
     if (!closedWasActive) return;
     // The route keeps pointing at the closed file until the navigation
@@ -300,11 +349,14 @@ export function ContextViewerSurfaceController({
       onSelectContextPath(fallback.path, fallback.scheme);
       return;
     }
-    onSelectContextPath("", activeContextScheme ?? undefined);
+    // Desk emptied: clear the destination entirely (path="" would survive
+    // a reload as an explicit New-document deep link and block the
+    // cleared-desk contract's default-open on next entry).
+    onClearContextDestination();
   }
 
   function handleResumeDocument() {
-    const last = readLastContextRoute(projectId);
+    const last = readRecentRoutes(projectId)[0];
     if (!last) return;
     onSelectContextPath(last.path, last.scheme);
   }
@@ -377,13 +429,13 @@ export function ContextViewerSurfaceController({
       activeThreadId={activeThreadId}
       defaultWorkId={defaultWorkId}
       tabs={tabs}
-      activeTabId={retainedActiveTabId}
+      paneState={paneState}
       onSelectTab={handleSelectTab}
       onCloseTab={handleCloseTab}
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
       active={active}
-      resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
+      resumeDocumentName={lastContextRoute ? contextRouteFileName(lastContextRoute.path) : null}
       onResumeDocument={handleResumeDocument}
       onNewDocument={() => {
         const documentId = crypto.randomUUID();
@@ -423,10 +475,9 @@ export function ContextViewerSurfaceController({
   );
 }
 
-function contextRouteName(path: string): string {
-  const basename = path.slice(path.lastIndexOf("/") + 1);
-  const extensionIndex = basename.lastIndexOf(".");
-  return extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename;
+/** Full basename ("chapter-1.md") — matches the name a settled tab displays. */
+function contextRouteFileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }
 
 function findEditorScroller(documentId: string): HTMLElement | null {

@@ -8,6 +8,7 @@ import {
   listProjectWorks,
   moveContextEntry,
 } from "@/client/api/projects-api";
+import { flushContextDesks } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { DesiredIdentity } from "./identity-location";
 import {
@@ -99,6 +100,9 @@ export function registerUntitledCandidate(
 
 export function appendPendingUntitled(entry: PendingUntitled): void {
   getUntitledReconciler().append(entry);
+  // The new tab is opened before this append. Flush after the reconciler has
+  // made it eligible for desk persistence so a same-tick reload cannot lose it.
+  flushContextDesks();
 }
 
 export function isUntitledPending(documentId: string): boolean {

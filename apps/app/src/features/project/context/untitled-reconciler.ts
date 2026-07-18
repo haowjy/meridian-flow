@@ -142,13 +142,17 @@ export class UntitledReconciler {
 
   constructor(private readonly deps: UntitledReconcilerDeps) {}
 
+  /** Loads durable records before the tab desk filters provisional tabs. */
+  rehydrate(): void {
+    for (const record of readRegistry(this.deps.storage)) {
+      if (!this.records.has(record.documentId)) this.records.set(record.documentId, record);
+    }
+  }
+
   start(): void {
     if (this.started) return;
     this.started = true;
-    for (const record of readRegistry(this.deps.storage)) {
-      if (this.records.has(record.documentId)) continue;
-      this.records.set(record.documentId, record);
-    }
+    this.rehydrate();
     this.removeOnlineListener = this.deps.scheduler.onOnline(this.schedule);
     this.emit();
     this.schedule();

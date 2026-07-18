@@ -8,11 +8,13 @@ import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
+import type { ContextPaneState } from "./context-pane-state";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import type { IdentityCommitted } from "./use-identity-commit";
 
@@ -26,7 +28,7 @@ export type ContextViewerProps = {
   /** Active work for work-scoped destinations (Scratch) in identity commits. */
   defaultWorkId: string | null;
   tabs: ContextTab[];
-  activeTabId: string | null;
+  paneState: ContextPaneState;
   onSelectTab: (documentId: string) => void;
   onCloseTab: (documentId: string) => void;
   /**
@@ -63,7 +65,7 @@ export function ContextViewer({
   activeThreadId,
   defaultWorkId,
   tabs,
-  activeTabId,
+  paneState,
   onSelectTab,
   onCloseTab,
   sidebarToggle,
@@ -80,7 +82,9 @@ export function ContextViewer({
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
-  const activeTab = tabs.find((candidate) => candidate.documentId === activeTabId) ?? null;
+  const activeTab = paneState.kind === "document" ? paneState.tab : null;
+  const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
+  const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
 
   return (
@@ -91,6 +95,7 @@ export function ContextViewer({
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
+        optimisticTab={optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
         onNewDocument={onNewDocument}
@@ -141,13 +146,38 @@ export function ContextViewer({
             />
           </div>
         ) : null}
-        {!activeTab ? (
+        {optimisticTab ? <OptimisticDocumentLoading name={optimisticTab.name} /> : null}
+        {paneState.kind === "empty-desk" ||
+        paneState.kind === "dead-route" ||
+        paneState.kind === "route-error" ? (
           <EditorEmptyState
             resumeDocumentName={resumeDocumentName}
             onResumeDocument={onResumeDocument}
             onNewDocument={onNewDocument}
           />
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function OptimisticDocumentLoading({ name }: { name: string }) {
+  return (
+    <div className="flex min-h-0 flex-1 justify-center overflow-hidden px-8 py-12" role="status">
+      <span className="sr-only">
+        <Trans>Loading {name}</Trans>
+      </span>
+      <div aria-hidden className="w-full max-w-2xl space-y-5">
+        <Skeleton className="h-7 w-2/5" />
+        <div className="space-y-3 pt-3">
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-11/12" />
+          <Skeleton className="h-3 w-4/5" />
+        </div>
+        <div className="space-y-3 pt-2">
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-5/6" />
+        </div>
       </div>
     </div>
   );

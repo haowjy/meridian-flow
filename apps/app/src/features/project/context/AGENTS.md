@@ -46,8 +46,9 @@ Shared across both shells:
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
 - **Tab/route**: `ContextTabBar.tsx`, `context-tab-identity.ts`,
-  `context-tab-from-file.ts`, `context-tab-from-draft.ts`, `context-last-route.ts`;
-  the parent `../ContextPaneController.tsx` owns reconciliation and selection
+  `context-tab-from-file.ts`, `context-tab-from-draft.ts`; the parent
+  `../ContextPaneController.tsx` owns reconciliation and selection, while
+  `../../../client/working-set/` owns device-local route memory
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
   (the universal breadcrumb band — placement, rename, and move share one inline

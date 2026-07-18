@@ -122,6 +122,9 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
+      '@meridian/yjs-inspect':
+        specifier: workspace:*
+        version: link:../../packages/yjs-inspect
       '@tanstack/react-query':
         specifier: ^5.101.1
         version: 5.101.1(react@19.2.7)

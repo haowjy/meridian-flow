@@ -4,6 +4,7 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
+import type { WorkId } from "../ids.js";
 import type { Project, ProjectStatsResponse } from "../projects/index.js";
 import type {
   Block,
@@ -154,8 +155,81 @@ export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTr
   "uploads",
 ]);
 
-export function isWorkScopedProjectContextScheme(scheme: ProjectContextTreeScheme): boolean {
+export function isWorkScopedProjectContextScheme(
+  scheme: ProjectContextTreeScheme,
+): scheme is WorkAuthorityScheme {
   return WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES.has(scheme);
+}
+
+export type WorkAuthorityScheme = "scratch" | "uploads";
+
+export type WorkingSetRoute =
+  | {
+      scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
+      path: string;
+      workId?: never;
+    }
+  | { scheme: WorkAuthorityScheme; path: string; workId: WorkId };
+
+export type WorkingSetRouteParseResult =
+  | { ok: true; value: WorkingSetRoute }
+  | { ok: false; message: string };
+
+export type WorkingSetRouteListParseResult =
+  | { ok: true; value: WorkingSetRoute[] }
+  | { ok: false; message: string };
+
+export type ProjectWorkingSet = {
+  userId: string;
+  projectId: string;
+  recentRoutes: WorkingSetRoute[];
+  lastThreadId: string | null;
+  revision: number;
+  updatedAt: string;
+};
+
+export type AccountSettings = { workingSetSyncEnabled: boolean };
+
+export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, message: "Working-set route must be an object" };
+  }
+
+  const route = input as Record<string, unknown>;
+  if (!isProjectContextTreeScheme(route.scheme)) {
+    return { ok: false, message: "Working-set route has an unknown scheme" };
+  }
+  if (typeof route.path !== "string" || route.path.length === 0 || route.path.length > 1024) {
+    return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
+  }
+
+  if (isWorkScopedProjectContextScheme(route.scheme)) {
+    if (typeof route.workId !== "string" || route.workId.length === 0) {
+      return { ok: false, message: "Work-scoped routes require a workId" };
+    }
+    return {
+      ok: true,
+      value: { scheme: route.scheme, path: route.path, workId: route.workId as WorkId },
+    };
+  }
+
+  if (route.workId !== undefined) {
+    return { ok: false, message: "Non-work-scoped routes must not include a workId" };
+  }
+  return { ok: true, value: { scheme: route.scheme, path: route.path } };
+}
+
+export function parseWorkingSetRouteList(input: unknown): WorkingSetRouteListParseResult {
+  if (!Array.isArray(input)) {
+    return { ok: false, message: "Working-set routes must be an array" };
+  }
+  const routes: WorkingSetRoute[] = [];
+  for (const entry of input) {
+    const parsed = parseWorkingSetRoute(entry);
+    if (!parsed.ok) return parsed;
+    routes.push(parsed.value);
+  }
+  return { ok: true, value: routes };
 }
 
 type ProjectContextTreeFileBase = {
