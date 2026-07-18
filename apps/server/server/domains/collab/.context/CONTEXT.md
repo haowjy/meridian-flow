@@ -65,34 +65,14 @@ attribution authority.
 
 ## Live manifest membership
 
-The project manifest is a `kind = "manifest"` Y.Doc whose `documents` map lists
-every member document; membership drives the ws live-room gate
-(`resolveManifestMembership`), so an unregistered document renders a permanently
-dead editor. See
+The project manifest's `documents` Y.Map is the membership authority used by the
+live-room gate. `reconcileLiveManifest` is additive-only and idempotent: it seeds
+missing database content rows, but never rewrites an existing key or removes an
+entry. Creation and deletion flow through `recordManifestDocument{Created,Deleted}`.
+Preserve every no-op guard: setting an equal Y.Map value still creates Yjs
+history. See
 [KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
-for the port decision and self-healing rationale.
-
-Three mutation paths touch the manifest, all idempotent — each guards a no-op
-mutation and only persists a Yjs update when `updateChangesState(beforeState,
-update)` is true:
-
-- **`reconcileLiveManifest` is additive-only.** It adds DB content rows that are
-  missing from the `documents` map and skips rows already present
-  (`if (map.has(row)) continue`). It never deletes an entry. Deleting a member
-  flows only through the explicit membership port
-  (`recordManifestDocumentDeleted`), not through reconciliation. Do not add
-  prune-from-manifest cleanup here — additive self-healing (legacy gaps close on
-  first access, repeated reads converge) depends on reconciliation never
-  removing entries.
-- **`recordManifestDocument{Created,Deleted}`** (the membership port) set or
-  delete a single entry with a no-op guard (`if (present ? map.has : !map.has)
-  return {}`).
-
-The skip-already-present guard in `reconcileLiveManifest` is load-bearing, not
-redundant: re-setting an equal Y.Map value still emits a Yjs update struct, so
-unguarded reconciliation appends an identical update row on every read —
-unbounded manifest-history growth and eventual worker OOM (fixed in
-`d281c74d`).
+for the cross-domain port decision and self-healing rationale.
 
 ## Durable records
 
