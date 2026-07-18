@@ -13,7 +13,7 @@ describe("create untitled route contract", () => {
         status: "created" as const,
         documentId: DOCUMENT_ID,
         path: "drafts/Untitled 1.md",
-        name: "Untitled 1",
+        name: "Untitled 1.md",
       },
     }));
 
@@ -30,7 +30,7 @@ describe("create untitled route contract", () => {
       documentId: DOCUMENT_ID,
       scheme: "manuscript",
       path: "drafts/Untitled 1.md",
-      name: "Untitled 1",
+      name: "Untitled 1.md",
     });
     expect(createUntitledDocument).toHaveBeenCalledWith("manuscript://drafts", {
       documentId: DOCUMENT_ID,
@@ -42,10 +42,12 @@ describe("create untitled route contract", () => {
     const createUntitledDocument = vi.fn(async () => ({
       ok: true as const,
       value: {
-        status: "already-exists" as const,
+        status: "already-materialized" as const,
         documentId: DOCUMENT_ID,
-        path: "Untitled 1.md",
-        name: "Untitled 1",
+        scheme: "scratch" as const,
+        workId: "work-2",
+        path: "moved/Untitled 1.md",
+        name: "Untitled 1.md",
       },
     }));
 

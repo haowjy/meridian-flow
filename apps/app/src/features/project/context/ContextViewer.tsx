@@ -3,6 +3,7 @@
  * surface. File navigation belongs to the project sidebar.
  */
 import { Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
@@ -14,6 +15,8 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState } from "./context-pane-state";
+import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
   return tab.kind === "tracked" || tab.kind === "new";
@@ -22,6 +25,8 @@ function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tra
 export type ContextViewerProps = {
   projectId: string;
   activeThreadId: string | null;
+  /** Active work for work-scoped destinations (Scratch) in identity commits. */
+  defaultWorkId: string | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (documentId: string) => void;
@@ -45,11 +50,12 @@ export type ContextViewerProps = {
   onResumeDocument: () => void;
   onNewDocument: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
-  onUntitledRenamed: (documentId: string, name: string, path: string) => void;
-  onOpenExisting: (
-    scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
-    path: string,
+  onCommitted: (
+    documentId: string,
+    next: IdentityCommitted,
+    ownership: IdentityCommitOwnership,
   ) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 
 /**
@@ -61,6 +67,7 @@ export type ContextViewerProps = {
 export function ContextViewer({
   projectId,
   activeThreadId,
+  defaultWorkId,
   tabs,
   paneState,
   onSelectTab,
@@ -72,7 +79,7 @@ export function ContextViewer({
   onResumeDocument,
   onNewDocument,
   onUntitledBecameNonEmpty,
-  onUntitledRenamed,
+  onCommitted,
   onOpenExisting,
 }: ContextViewerProps) {
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
@@ -102,6 +109,19 @@ export function ContextViewer({
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
       <div className="page-sheet">
+        {/* Identity bar — the top edge of the page every open document
+            shares. Keyed by document so edit state never crosses tabs. */}
+        {activeTab ? (
+          <DocumentIdentityBar
+            key={activeTab.documentId}
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            defaultWorkId={defaultWorkId}
+            tab={activeTab}
+            onCommitted={onCommitted}
+            onOpenExisting={onOpenExisting}
+          />
+        ) : null}
         {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just
@@ -118,8 +138,6 @@ export function ContextViewer({
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
               onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
-              onUntitledRenamed={onUntitledRenamed}
-              onOpenExisting={onOpenExisting}
             />
           </div>
         ) : null}

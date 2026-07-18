@@ -243,6 +243,25 @@ export class DocumentSession {
     this.emit();
   }
 
+  /** Replace a terminal transport while preserving local persistence and the live Y.Doc. */
+  async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
+    if (this.destroyed) {
+      throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
+    }
+    const previous = this.transportProvider;
+    this.unsubscribeTransportStatus?.();
+    this.unsubscribeSafetyNotices?.();
+    this.unsubscribeTransportStatus = null;
+    this.unsubscribeSafetyNotices = null;
+    this.transportProvider = null;
+    this.transportState = null;
+    this.transportInitialSyncComplete = false;
+    this.transportDurableSyncComplete = false;
+    this.status = "detached";
+    await previous?.destroy();
+    this.attachTransport(transportFactory);
+  }
+
   get cursorProvider(): { awareness: Awareness } {
     return { awareness: this.transportProvider?.awareness ?? this.awareness };
   }

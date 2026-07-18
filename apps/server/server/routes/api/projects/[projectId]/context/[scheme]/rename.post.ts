@@ -10,22 +10,20 @@ import type {
   RenameContextEntrySuccess,
 } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
+import {
+  parseContextMutationName,
+  parseContextMutationPath,
+} from "../../../../../../lib/context-mutation-validation.js";
+import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 function parseBody(raw: unknown): RenameContextEntryRequest {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   const body = raw as Partial<RenameContextEntryRequest>;
-  if (typeof body.path !== "string" || body.path.trim() === "")
-    throw createError({ statusCode: 400, message: "`path` is required" });
-  if (typeof body.newName !== "string" || body.newName.trim() === "")
-    throw createError({ statusCode: 400, message: "`newName` is required" });
-  const newName = body.newName.trim();
-  if (newName.includes("/"))
-    throw createError({ statusCode: 400, message: "`newName` must not contain '/'" });
-  if (newName === "." || newName === "..")
-    throw createError({ statusCode: 400, message: "`newName` must not be '.' or '..'" });
-  return { path: sanitizePath(body.path), newName };
+  return {
+    path: parseContextMutationPath(body.path, "path"),
+    newName: parseContextMutationName(body.newName, "newName"),
+  };
 }
 
 export default defineEventHandler(async (event) => {

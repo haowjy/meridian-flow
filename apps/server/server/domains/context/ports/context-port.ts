@@ -44,12 +44,22 @@ export interface ContextCreateTrackedDocumentResult {
   documentId: string;
 }
 
-export interface ContextCreateUntitledDocumentResult {
-  status: "created" | "already-exists";
-  documentId: string;
-  path: string;
-  name: string;
-}
+export type ContextCreateUntitledDocumentResult =
+  | {
+      status: "created";
+      documentId: string;
+      path: string;
+      name: string;
+    }
+  | {
+      status: "already-materialized";
+      documentId: string;
+      scheme: ContextScheme;
+      path: string;
+      name: string;
+      /** Present only when the canonical location is Work-scoped. */
+      workId?: string;
+    };
 
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;
@@ -135,6 +145,8 @@ export type ContextError =
   | { code: "not_found"; uri: string }
   | { code: "permission_denied"; uri: string }
   | { code: "conflict"; uri: string }
+  | { code: "stale_source"; uri: string }
+  | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string }
   | { code: "context_unavailable"; uri: string }
   | { code: "invalid_uri"; uri: string; reason: string }
@@ -161,6 +173,8 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 
 export interface ContextMoveResult {
   movedNodeId?: string;
+  /** Scheme-relative path durably committed by the tree mutation. */
+  destinationPath: string;
 }
 
 /** Certified context edits are closed semantic commands, never opaque callbacks. */
@@ -233,6 +247,13 @@ export interface ContextPort {
     sourceUri: string,
     destinationUri: string,
     options?: ContextMoveOptions,
+  ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /** Commit a file's exact writer-facing identity and end provisional naming. */
+  commitWriterLocation(
+    sourceUri: string,
+    destinationUri: string,
+    options?: ContextWriteOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
   delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;

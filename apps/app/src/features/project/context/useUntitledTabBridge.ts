@@ -2,7 +2,11 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
-import { isUntitledPending, registerUntitledCandidate } from "./untitled-reconciler";
+import {
+  isUntitledPending,
+  registerUntitledCandidate,
+  syncUntitledReceiptOwners,
+} from "./untitled-reconciler-browser";
 
 export function useUntitledTabBridge({
   projectId,
@@ -18,6 +22,7 @@ export function useUntitledTabBridge({
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
 
   useEffect(() => {
+    syncUntitledReceiptOwners();
     const cleanups = tabs
       .filter(
         (tab) =>
@@ -36,7 +41,7 @@ export function useUntitledTabBridge({
               scheme: result.scheme,
               path: result.path,
               name: result.name,
-              workId: defaultWorkId ?? undefined,
+              workId: result.workId,
               editable: true,
               filetype: "markdown",
               schemaType: "document",
@@ -46,12 +51,18 @@ export function useUntitledTabBridge({
               onSelectContextPath(result.path, result.scheme);
             }
           },
-          onRenamed: (name, path) => {
-            updateTrackedTab(projectId, tab.documentId, { name, path, provisionalName: false });
+          onIdentityCommitted: (result) => {
+            updateTrackedTab(projectId, tab.documentId, {
+              scheme: result.scheme,
+              path: result.path,
+              name: result.name,
+              workId: result.scheme === "scratch" ? (defaultWorkId ?? undefined) : undefined,
+              provisionalName: false,
+            });
             if (
               useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
             ) {
-              onSelectContextPath(path, "scratch");
+              onSelectContextPath(result.path, result.scheme);
             }
           },
         }),
