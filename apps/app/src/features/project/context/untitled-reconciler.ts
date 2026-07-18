@@ -21,6 +21,7 @@ import type { DesiredIdentity } from "./identity-location";
 const STORAGE_KEY = "meridian:pending-untitled";
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
+const MAX_MATERIALIZATION_RECEIPTS = 16;
 
 export type UntitledHome = {
   scheme: "scratch";
@@ -183,6 +184,12 @@ export class UntitledReconciler {
     };
   }
 
+  retainMaterializationReceipts(documentIds: ReadonlySet<string>): void {
+    for (const documentId of this.materializationReceipts.keys()) {
+      if (!documentIds.has(documentId)) this.materializationReceipts.delete(documentId);
+    }
+  }
+
   append(entry: PendingUntitled): void {
     const current = this.records.get(entry.documentId);
     if (current?.materialization.phase === "pending") return;
@@ -343,7 +350,7 @@ export class UntitledReconciler {
       const receipt = { result: identity.result, identity: identity.identity };
       const candidate = this.candidates.get(documentId);
       if (candidate) this.publishMaterialization(candidate, receipt);
-      else this.materializationReceipts.set(documentId, receipt);
+      else this.rememberMaterializationReceipt(documentId, receipt);
       const processedRevision = identity.revision;
 
       record = this.pendingRecord(documentId);
@@ -431,6 +438,19 @@ export class UntitledReconciler {
   private publishMaterialization(candidate: Candidate, receipt: MaterializationReceipt): void {
     candidate.onMaterialized(receipt.result);
     if (receipt.identity) candidate.onIdentityCommitted?.(receipt.identity);
+  }
+
+  private rememberMaterializationReceipt(
+    documentId: string,
+    receipt: MaterializationReceipt,
+  ): void {
+    this.materializationReceipts.delete(documentId);
+    this.materializationReceipts.set(documentId, receipt);
+    while (this.materializationReceipts.size > MAX_MATERIALIZATION_RECEIPTS) {
+      const oldest = this.materializationReceipts.keys().next().value;
+      if (oldest === undefined) break;
+      this.materializationReceipts.delete(oldest);
+    }
   }
 
   private async remint(

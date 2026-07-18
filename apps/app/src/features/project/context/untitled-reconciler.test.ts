@@ -661,6 +661,47 @@ describe("queued identity receipts", () => {
     });
   });
 
+  it("discards replay receipts once no desk references the document", async () => {
+    const h = harness();
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+    await h.runQueue();
+
+    reconciler.retainMaterializationReceipts(new Set());
+    const onMaterialized = vi.fn();
+    reconciler.registerCandidate("doc-1", {
+      onReminted: vi.fn(),
+      onMaterialized,
+    });
+
+    expect(onMaterialized).not.toHaveBeenCalled();
+  });
+
+  it("bounds replay receipts by dropping the oldest", async () => {
+    const h = harness();
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    for (let index = 0; index < 17; index += 1) {
+      reconciler.append({ documentId: `doc-${index}`, projectId: "project-1", home: HOME });
+      await h.runQueue();
+    }
+
+    const oldestMaterialized = vi.fn();
+    reconciler.registerCandidate("doc-0", {
+      onReminted: vi.fn(),
+      onMaterialized: oldestMaterialized,
+    });
+    const newestMaterialized = vi.fn();
+    reconciler.registerCandidate("doc-16", {
+      onReminted: vi.fn(),
+      onMaterialized: newestMaterialized,
+    });
+
+    expect(oldestMaterialized).not.toHaveBeenCalled();
+    expect(newestMaterialized).toHaveBeenCalledOnce();
+  });
+
   it("retries a stale identity result without discarding the queued identity", async () => {
     const h = harness();
     (h.deps.api.move as ReturnType<typeof vi.fn>)

@@ -7,7 +7,7 @@ import {
   getProjectContextTree,
   listProjectWorks,
 } from "@/client/api/projects-api";
-import { flushContextDesks } from "@/client/stores";
+import { flushContextDesks, useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { ContextIdentityMutationService } from "./context-identity-mutation";
 import type { DesiredIdentity } from "./identity-location";
@@ -106,6 +106,15 @@ export function registerUntitledCandidate(
   candidate: Parameters<UntitledReconciler["registerCandidate"]>[1],
 ): () => void {
   return getUntitledReconciler().registerCandidate(documentId, candidate);
+}
+
+export function pruneUntitledReceipts(): void {
+  const referencedDocumentIds = new Set(
+    Object.values(useContextTabsStore.getState().byProject).flatMap((desk) =>
+      desk.tabs.map((tab) => tab.documentId),
+    ),
+  );
+  getUntitledReconciler().retainMaterializationReceipts(referencedDocumentIds);
 }
 
 export function appendPendingUntitled(entry: PendingUntitled): void {

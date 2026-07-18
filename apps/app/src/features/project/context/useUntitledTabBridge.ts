@@ -2,7 +2,11 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
-import { isUntitledPending, registerUntitledCandidate } from "./untitled-reconciler-browser";
+import {
+  isUntitledPending,
+  pruneUntitledReceipts,
+  registerUntitledCandidate,
+} from "./untitled-reconciler-browser";
 
 export function useUntitledTabBridge({
   projectId,
@@ -18,6 +22,7 @@ export function useUntitledTabBridge({
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
 
   useEffect(() => {
+    pruneUntitledReceipts();
     const cleanups = tabs
       .filter(
         (tab) =>
