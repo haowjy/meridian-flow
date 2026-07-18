@@ -44,8 +44,8 @@ instead of `console.log`.
   `EventRecord`s in debug-enabled builds. Open **Streams** from the debug pill
   for the live viewer, or use `window.__meridianTrace` for programmatic queries,
   stats, clearing, and next-event waits. API results are detached clones; caller
-  mutation cannot alter retained evidence. Use the server feed below for
-  process-side records until the viewer's server-feed toggle ships.
+  mutation cannot alter retained evidence. Enable **Server feed** in Streams for
+  process-side records, or use the HTTP surfaces below directly.
 
 ## Consume Server Events
 
