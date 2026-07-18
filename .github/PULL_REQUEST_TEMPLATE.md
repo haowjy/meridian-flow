@@ -48,6 +48,18 @@
 - [ ] `pnpm check`
 - [ ] Runtime smoke / browser probe where behavior changed
 
+## Deferred
+
+<!-- Make consciously-not-done work inspectable. List what this PR deliberately
+     leaves out — follow-ups, known limitations, improvements rejected for now —
+     and name the tracking home for each: a GitHub issue for cross-cutting or
+     externally visible items, or the nearest `.context/TODO` (must-do) /
+     `.context/FUTURE` (nice-to-have) for code-local ones. A deferral worth
+     mentioning is worth a tracking home; untracked deferrals are scope leaks.
+     If nothing was deferred, say so. -->
+
+- [ ] Every deferral names its issue or `.context/TODO` / `.context/FUTURE` entry, or "nothing deferred"
+
 ## Knowledge Updates
 
 <!-- Show that future contributors will learn the new mental model. List the
