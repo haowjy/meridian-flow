@@ -29,8 +29,11 @@ ContextPaneController
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
-Mutations (`create`, `rename`, `delete`, `upload`) invalidate the tree cache on
-success. Invalidation is scheme-scoped.
+Mutations (`create`, `rename`, `move`, `delete`, `upload`) invalidate the tree
+cache on success. Invalidation is scheme-scoped. Foreground identity saves and
+background untitled create/move reconciliation share
+`context-identity-mutation.ts`; every successful receipt invalidates its
+materialized tree or both move endpoints, even when no tab is open.
 
 `useFileSuggestions` composes those same cached per-scheme queries and ranks a
 flattened client-side view. It never adds a server-search path; hosts constrain

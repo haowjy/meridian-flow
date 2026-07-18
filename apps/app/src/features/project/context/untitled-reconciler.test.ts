@@ -254,7 +254,7 @@ describe("untitled reconciliation durability", () => {
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.deps.api.move).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
-      "/Untitled",
+      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
       expect.objectContaining({ name: "Opening.md" }),
     );
     expect(h.cleared).toEqual([]);
@@ -323,7 +323,7 @@ describe("untitled reconciliation durability", () => {
     await h.runQueue();
     expect(h.deps.api.move).toHaveBeenLastCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
-      "/Act 1/First.md",
+      expect.objectContaining({ path: "/Act 1/First.md", scheme: "manuscript" }),
       expect.objectContaining({ name: "Latest.md" }),
     );
     expect(storedEntries(h.values)).toEqual([]);
@@ -360,7 +360,7 @@ describe("untitled reconciliation durability", () => {
     await h.runQueue();
     expect(h.deps.api.move).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
-      "/Untitled",
+      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
       expect.objectContaining({ name: "Latest.md" }),
     );
   });
@@ -391,7 +391,7 @@ describe("untitled reconciliation durability", () => {
     );
     expect(h.deps.api.move).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
-      "/Untitled",
+      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
       {
         name: "Opening.md",
         destination: { scheme: "manuscript", folderPath: "/Act 1" },
@@ -426,7 +426,7 @@ describe("untitled reconciliation durability", () => {
     await h.runQueue();
     expect(h.deps.api.move).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
-      "/Untitled",
+      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
       {
         name: "Opening.md",
         destination: { scheme: "manuscript", folderPath: "/Act 1" },
@@ -641,7 +641,7 @@ describe("queued identity receipts", () => {
 
     expect(h.deps.api.move).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: "doc-1" }),
-      "/Untitled",
+      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
       {
         name: "Opening.md",
         destination: { scheme: "manuscript", folderPath: "Act 1" },

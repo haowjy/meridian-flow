@@ -98,7 +98,7 @@ type ApiPort = {
   serverDocumentExists(entry: PendingUntitled & { home: UntitledHome }): Promise<boolean>;
   move(
     entry: PendingUntitled & { home: UntitledHome },
-    path: string,
+    source: CreateUntitledContextDocumentResponse,
     desired: DesiredIdentity,
   ): Promise<MoveContextEntryResult>;
 };
@@ -355,7 +355,7 @@ export class UntitledReconciler {
     if (!desired) return record.revision;
     const attemptRevision = record.revision;
     try {
-      const moved = await this.deps.api.move(entry, result.path, desired);
+      const moved = await this.deps.api.move(entry, result, desired);
       if (moved.status === "retry") throw new Error(`Context move needs retry: ${moved.reason}`);
       if (moved.status === "conflict") {
         const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision, {

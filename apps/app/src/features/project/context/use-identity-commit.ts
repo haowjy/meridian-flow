@@ -3,9 +3,8 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { moveContextEntry } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
+import { createContextIdentityMutationService } from "./context-identity-mutation";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
 import { queueUntitledIdentity } from "./untitled-reconciler-browser";
 
@@ -33,10 +32,6 @@ type IdentityCommitPlan =
   | { kind: "queue"; desired: DesiredIdentity }
   | { kind: "no-op" }
   | { kind: "commit"; desired: DesiredIdentity };
-
-function stripLeadingSlash(path: string): string {
-  return path.replace(/^\/+/, "");
-}
 
 export function deriveIdentityCommitPlan(
   tab: ContextTab,
@@ -74,6 +69,7 @@ export function useIdentityCommit({
   onCommitted: (documentId: string, next: IdentityCommitted) => void;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const queryClient = useQueryClient();
+  const identityMutations = createContextIdentityMutationService(queryClient);
 
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
@@ -86,16 +82,11 @@ export function useIdentityCommit({
 
     try {
       const destination = plan.desired.destination;
-      const moved = await moveContextEntry(projectId, tab.scheme, {
-        path: stripLeadingSlash(tab.path),
-        ...(tab.workId ? { sourceWorkId: tab.workId } : {}),
-        destinationScheme: destination.scheme,
-        destinationFolderPath: stripLeadingSlash(
-          destination.folderPath === "/" ? "" : destination.folderPath,
-        ),
-        ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
-        ...(plan.desired.name !== tab.name ? { newName: plan.desired.name } : {}),
-      });
+      const moved = await identityMutations.move(
+        projectId,
+        { scheme: tab.scheme, path: tab.path, ...(tab.workId ? { workId: tab.workId } : {}) },
+        plan.desired,
+      );
       if (moved.status === "retry") throw new Error(`Context move needs retry: ${moved.reason}`);
       if (moved.status === "conflict") {
         return {
@@ -107,14 +98,6 @@ export function useIdentityCommit({
           },
         };
       }
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextTree(projectId, tab.scheme, tab.workId),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextTree(projectId, moved.scheme, destination.workId),
-        }),
-      ]);
       onCommitted(tab.documentId, {
         scheme: moved.scheme,
         path: `/${moved.path}`,

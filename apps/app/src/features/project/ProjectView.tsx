@@ -29,7 +29,10 @@ import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
-import { getUntitledReconciler } from "./context/untitled-reconciler-browser";
+import {
+  configureUntitledIdentityMutations,
+  getUntitledReconciler,
+} from "./context/untitled-reconciler-browser";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -168,11 +171,16 @@ function ProjectDraftReviewProvider({
 
 function HydratedProject(props: ProjectViewProps) {
   const usePhone = usePhoneShell();
+  const queryClient = useQueryClient();
   useEffect(() => {
+    const releaseIdentityMutations = configureUntitledIdentityMutations(queryClient);
     const reconciler = getUntitledReconciler();
     reconciler.start();
-    return () => reconciler.dispose();
-  }, []);
+    return () => {
+      reconciler.dispose();
+      releaseIdentityMutations();
+    };
+  }, [queryClient]);
   if (usePhone === null) return null;
   return usePhone ? <MobileProject {...props} /> : <DesktopProject {...props} />;
 }

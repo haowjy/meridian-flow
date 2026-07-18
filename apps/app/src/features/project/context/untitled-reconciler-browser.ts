@@ -1,15 +1,19 @@
 /** Browser adapters and React bindings for the durable untitled reconciler engine. */
 
 import type { ProjectContextTreeNode } from "@meridian/contracts/protocol";
+import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import {
   createUntitledContextDocument,
   getProjectContextTree,
   listProjectWorks,
-  moveContextEntry,
 } from "@/client/api/projects-api";
 import { flushContextDesks } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import {
+  type ContextIdentityMutationService,
+  createContextIdentityMutationService,
+} from "./context-identity-mutation";
 import type { DesiredIdentity } from "./identity-location";
 import {
   type PendingUntitled,
@@ -29,6 +33,8 @@ function treeContainsDocument(
       : node.documentId === documentId,
   );
 }
+
+let identityMutations: ContextIdentityMutationService | null = null;
 
 function browserDeps(): UntitledReconcilerDeps {
   const registry = getDocumentSessionRegistry();
@@ -50,8 +56,8 @@ function browserDeps(): UntitledReconcilerDeps {
         const works = await listProjectWorks(projectId);
         return resolveUntitledHome(works.defaultWorkId);
       },
-      create(entry) {
-        return createUntitledContextDocument(
+      async create(entry) {
+        const result = await createUntitledContextDocument(
           entry.projectId,
           entry.home.scheme,
           {
@@ -60,6 +66,10 @@ function browserDeps(): UntitledReconcilerDeps {
           },
           { workId: entry.home.workId },
         );
+        if (result.status !== "conflict") {
+          await identityMutations?.materialized(entry.projectId, result);
+        }
+        return result;
       },
       async serverDocumentExists(entry) {
         const response = await getProjectContextTree(entry.projectId, entry.home.scheme, {
@@ -67,19 +77,27 @@ function browserDeps(): UntitledReconcilerDeps {
         });
         return treeContainsDocument(response.tree.children, entry.documentId);
       },
-      move(entry, path, desired: DesiredIdentity) {
-        const { destination, name } = desired;
-        const currentName = path.slice(path.lastIndexOf("/") + 1);
-        return moveContextEntry(entry.projectId, entry.home.scheme, {
-          path: path.replace(/^\/+/, ""),
-          sourceWorkId: entry.home.workId,
-          destinationScheme: destination.scheme,
-          destinationFolderPath: destination.folderPath.replace(/^\/+/, ""),
-          ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
-          ...(name !== currentName ? { newName: name } : {}),
-        });
+      move(entry, source, desired: DesiredIdentity) {
+        if (!identityMutations) throw new Error("Untitled identity cache adapter is unavailable");
+        return identityMutations.move(
+          entry.projectId,
+          {
+            scheme: source.scheme,
+            path: source.path,
+            ...(source.workId ? { workId: source.workId } : {}),
+          },
+          desired,
+        );
       },
     },
+  };
+}
+
+export function configureUntitledIdentityMutations(queryClient: QueryClient): () => void {
+  const configured = createContextIdentityMutationService(queryClient);
+  identityMutations = configured;
+  return () => {
+    if (identityMutations === configured) identityMutations = null;
   };
 }
 
