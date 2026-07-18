@@ -111,10 +111,14 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     registry.destroyAll();
   });
 
-  it("replaces a retained live session denied before draft materialization", async () => {
+  it("restarts a denied room's transport without replacing its words or Y.Doc", async () => {
     const registry = new DocumentSessionRegistry();
     registry.retain("test-owner", ["document-1"]);
     const deniedSession = registry.get("document-1");
+    deniedSession.document
+      .getText("writer-words")
+      .insert(0, "words written before materialization");
+    const document = deniedSession.document;
     await deniedSession.waitForCurrentSync(100);
     const providerCount = providers.length;
     providers.at(-1)?.emit({ kind: "unauthorized", reason: "document access denied", code: 4403 });
@@ -123,7 +127,11 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
 
     expect(providers).toHaveLength(providerCount + 1);
     expect(providers[providerCount - 1]?.destroy).toHaveBeenCalledOnce();
-    expect(registry.get("document-1")).not.toBe(deniedSession);
+    expect(registry.get("document-1")).toBe(deniedSession);
+    expect(deniedSession.document).toBe(document);
+    expect(document.getText("writer-words").toString()).toBe(
+      "words written before materialization",
+    );
     registry.destroyAll();
   });
 

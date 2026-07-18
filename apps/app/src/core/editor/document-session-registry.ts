@@ -158,7 +158,7 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * Replace a room whose authorization failed before the document existed.
+   * Restart transport for a room whose authorization failed before the document existed.
    * Authorization denials are terminal at the transport layer, so a newly
    * materialized draft document needs a fresh provider rather than a normal
    * reconnect attempt. Healthy sessions are deliberately left untouched.
@@ -177,9 +177,9 @@ export class DocumentSessionRegistry {
     }
 
     this.cancelPendingTeardown(roomKey);
-    this.sessions.delete(roomKey);
-    await session.destroy();
-    if (this.isRetained(roomKey)) this.getRoom(roomKey);
+    await session.restartTransport(({ roomKey, document, awareness }) =>
+      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    );
     return true;
   }
 
