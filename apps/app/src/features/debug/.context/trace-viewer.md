@@ -66,6 +66,6 @@ viewer, filters, automation boundary, and exports need no server-specific path.
 ## Scope and deferred work
 
 Server-side collab operations still emit zero success-path structured events;
-the feed only exposes records that server domains emit. S6 adds the LLM calls
-lens after the gateway events exist. Burst grouping is intentionally deferred;
-see [FUTURE](FUTURE).
+the feed only exposes records that server domains emit. Burst grouping is
+intentionally deferred; see [FUTURE](FUTURE). Gateway call projection stays in
+the sibling [LLM Calls viewer](llm-calls.md), not in the trace ring.

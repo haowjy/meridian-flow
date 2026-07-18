@@ -41,7 +41,7 @@ function optionalNumber(value: unknown): number | undefined {
 function terminalOutcome(record: EventRecord): Exclude<LlmCallOutcome, "in-flight"> | undefined {
   if (record.name !== "stream.close") return undefined;
   const outcome = record.payload.outcome;
-  return outcome === "ok" || outcome === "cancelled" || outcome === "error" ? outcome : undefined;
+  return outcome === "ok" || outcome === "cancelled" || outcome === "error" ? outcome : "error";
 }
 
 function compareEvents(left: EventRecord, right: EventRecord): number {

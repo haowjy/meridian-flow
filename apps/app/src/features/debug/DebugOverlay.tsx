@@ -30,6 +30,11 @@ import { cn } from "@/lib/utils";
 
 import { DebugErrorBoundary } from "./DebugErrorBoundary";
 import { InlineInspector } from "./InlineInspector";
+import {
+  LlmCallsViewer,
+  type LlmCallsViewerTarget,
+  openLlmCallsViewerWindow,
+} from "./llm-calls/LlmCallsViewer";
 import { ConversationSection } from "./sections/ConversationSection";
 import { TransportSection, useConnectionState } from "./sections/TransportSection";
 import {
@@ -73,6 +78,9 @@ const SERVER_FEED_DOT: Record<ServerFeedState, string> = {
 function DebugPill({ onDisable }: { onDisable: () => void }) {
   const [open, setOpen] = useState(false);
   const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
+  const [llmCallsViewerTarget, setLlmCallsViewerTarget] = useState<LlmCallsViewerTarget | null>(
+    null,
+  );
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [serverFeedEnabled, setServerFeedEnabled] = useState(false);
   const serverFeedState = useSyncExternalStore(
@@ -84,6 +92,9 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
   const dot = (conn && CONNECTION_DOT[conn.kind]) ?? "bg-muted-foreground";
   const closeTraceViewer = useCallback((target: TraceViewerTarget) => {
     setTraceViewerTarget((current) => (current === target ? null : current));
+  }, []);
+  const closeLlmCallsViewer = useCallback((target: LlmCallsViewerTarget) => {
+    setLlmCallsViewerTarget((current) => (current === target ? null : current));
   }, []);
 
   useEffect(() => {
@@ -113,10 +124,31 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
     setOpen(false);
   }
 
+  function openLlmCallsViewer() {
+    if (llmCallsViewerTarget && !llmCallsViewerTarget.popup.closed) {
+      llmCallsViewerTarget.popup.focus();
+      setPopupBlocked(false);
+      setOpen(false);
+      return;
+    }
+
+    const target = openLlmCallsViewerWindow();
+    if (!target) {
+      setPopupBlocked(true);
+      return;
+    }
+    setPopupBlocked(false);
+    setLlmCallsViewerTarget(target);
+    setOpen(false);
+  }
+
   return (
     <>
       <DebugErrorBoundary title="Streams">
         <TraceViewer target={traceViewerTarget} onClose={closeTraceViewer} />
+      </DebugErrorBoundary>
+      <DebugErrorBoundary title="LLM Calls">
+        <LlmCallsViewer target={llmCallsViewerTarget} onClose={closeLlmCallsViewer} />
       </DebugErrorBoundary>
       <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
         {open ? (
@@ -146,13 +178,22 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 <ConversationSection />
               </PillSection>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
-                  onClick={openTraceViewer}
-                >
-                  Streams
-                </button>
+                <div className="flex min-w-0 flex-1 gap-2">
+                  <button
+                    type="button"
+                    className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
+                    onClick={openTraceViewer}
+                  >
+                    Streams
+                  </button>
+                  <button
+                    type="button"
+                    className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
+                    onClick={openLlmCallsViewer}
+                  >
+                    LLM Calls
+                  </button>
+                </div>
                 <label
                   htmlFor="debug-server-feed"
                   className="flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"

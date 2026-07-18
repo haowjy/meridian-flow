@@ -22,9 +22,10 @@ export function openDebugPopoutWindow(options: {
 
   popup.document.open();
   popup.document.write(
-    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${options.title}</title></head><body><div id="debug-popout-root"></div></body></html>`,
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="debug-popout-root"></div></body></html>',
   );
   popup.document.close();
+  popup.document.title = options.title;
 
   copyDocumentAttributes(document.documentElement, popup.document.documentElement);
   copyDocumentAttributes(document.body, popup.document.body);

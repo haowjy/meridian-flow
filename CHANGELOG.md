@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events, summarizes latency, tokens, outcomes, retries, and verbose chunks, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events; development/test processes can opt into
   metadata-only chunk events with `OBS_VERBOSE=gateway.chunks`.
