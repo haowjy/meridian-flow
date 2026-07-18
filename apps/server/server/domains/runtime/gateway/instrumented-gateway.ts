@@ -95,76 +95,35 @@ function streamClosePayload(input: {
   };
 }
 
-async function* observeStream(input: {
-  source: AsyncIterable<StreamEvent>;
+type StreamTerminal =
+  | { type: "end"; at: number; result: GenerateResult }
+  | { type: "error"; at: number; errorCode: string };
+
+function createStreamObservation(input: {
   request: GenerateRequest;
   emitter: CallEmitter;
   verboseChunks: boolean;
   startedAt: number;
-}): AsyncIterable<StreamEvent> {
+}): {
+  observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent>;
+  close(): void;
+} {
   let route = { provider: input.request.provider, model: input.request.model };
   let startCount = 0;
   let chunkCount = 0;
   let firstOutputMs: number | undefined;
-  let result: GenerateResult | undefined;
-  let errorCode: string | undefined;
-  let terminalAt: number | undefined;
+  let terminal: StreamTerminal | undefined;
+  let closed = false;
 
-  try {
-    for await (const event of input.source) {
-      chunkCount++;
-
-      if (event.type === "start") {
-        route = { provider: event.provider, model: event.model };
-        startCount++;
-        if (startCount === 1) {
-          input.emitter.emit("debug", "stream.open", routePayload(route), route);
-        } else {
-          input.emitter.emit(
-            "warn",
-            "stream.retry",
-            { attempt: startCount, ...routePayload(route) },
-            route,
-          );
-        }
-      }
-
-      let eventAt: number | undefined;
-      if (firstOutputMs === undefined && isPartialOutputEvent(event)) {
-        eventAt = Date.now();
-        firstOutputMs = eventAt - input.startedAt;
-        input.emitter.emit("debug", "stream.first_output", { latencyMs: firstOutputMs }, route);
-      }
-
-      if (event.type === "end") {
-        result = event.result;
-        route = { provider: result.provider, model: result.model };
-        terminalAt = eventAt ?? Date.now();
-      } else if (event.type === "error") {
-        errorCode = event.code;
-        terminalAt = Date.now();
-      }
-
-      if (input.verboseChunks) {
-        const bytes =
-          event.type === "text.delta" || event.type === "reasoning.delta"
-            ? event.text.length
-            : undefined;
-        input.emitter.emit(
-          "trace",
-          "stream.chunk",
-          {},
-          route,
-          bytes === undefined ? { messageClass: event.type } : { messageClass: event.type, bytes },
-        );
-      }
-
-      yield event;
-      if (terminalAt !== undefined) return;
-    }
-  } finally {
-    terminalAt ??= Date.now();
-    const outcome: Outcome = input.request.signal?.aborted ? "cancelled" : result ? "ok" : "error";
+  function close(): void {
+    if (closed) return;
+    closed = true;
+    const terminalAt = terminal?.at ?? Date.now();
+    const outcome: Outcome = input.request.signal?.aborted
+      ? "cancelled"
+      : terminal?.type === "end"
+        ? "ok"
+        : "error";
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
@@ -172,13 +131,72 @@ async function* observeStream(input: {
         durationMs: terminalAt - input.startedAt,
         firstOutputMs,
         chunkCount,
-        result,
+        result: terminal?.type === "end" ? terminal.result : undefined,
         outcome,
-        errorCode,
+        errorCode: terminal?.type === "error" ? terminal.errorCode : undefined,
       }),
       route,
     );
   }
+
+  async function* observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent> {
+    try {
+      for await (const event of source) {
+        chunkCount++;
+
+        if (event.type === "start") {
+          route = { provider: event.provider, model: event.model };
+          startCount++;
+          if (startCount === 1) {
+            input.emitter.emit("debug", "stream.open", routePayload(route), route);
+          } else {
+            input.emitter.emit(
+              "warn",
+              "stream.retry",
+              { attempt: startCount, ...routePayload(route) },
+              route,
+            );
+          }
+        }
+
+        let eventAt: number | undefined;
+        if (firstOutputMs === undefined && isPartialOutputEvent(event)) {
+          eventAt = Date.now();
+          firstOutputMs = eventAt - input.startedAt;
+          input.emitter.emit("debug", "stream.first_output", { latencyMs: firstOutputMs }, route);
+        }
+
+        if (terminal === undefined && event.type === "end") {
+          route = { provider: event.result.provider, model: event.result.model };
+          terminal = { type: "end", result: event.result, at: eventAt ?? Date.now() };
+        } else if (terminal === undefined && event.type === "error") {
+          terminal = { type: "error", errorCode: event.code, at: Date.now() };
+        }
+
+        if (input.verboseChunks) {
+          const bytes =
+            event.type === "text.delta" || event.type === "reasoning.delta"
+              ? event.text.length
+              : undefined;
+          input.emitter.emit(
+            "trace",
+            "stream.chunk",
+            {},
+            route,
+            bytes === undefined
+              ? { messageClass: event.type }
+              : { messageClass: event.type, bytes },
+          );
+        }
+
+        yield event;
+      }
+    } finally {
+      close();
+    }
+  }
+
+  return { observe, close };
 }
 
 /** Adds fixed-cost lifecycle events and optional metadata-only chunk events to a Gateway. */
@@ -191,13 +209,18 @@ export function createInstrumentedGateway(
       const startedAt = Date.now();
       const gatewayCallId = crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
-      return observeStream({
-        source: gateway.stream(request),
+      const observation = createStreamObservation({
         request,
         emitter,
         verboseChunks: deps.verbose.has(VERBOSE_CHUNKS),
         startedAt,
       });
+      try {
+        return observation.observe(gateway.stream(request));
+      } catch (error) {
+        observation.close();
+        throw error;
+      }
     },
 
     async generate(request) {
