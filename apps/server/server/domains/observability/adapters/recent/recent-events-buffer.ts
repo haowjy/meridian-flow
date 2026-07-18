@@ -13,8 +13,10 @@ const DEFAULT_QUERY_LIMIT = 200;
 
 export class RecentEventsBuffer implements EventSink, EventQuery {
   private readonly capacity: number;
-  private readonly records: EventRecord[] = [];
+  private readonly records: Array<EventRecord | undefined>;
   private readonly listeners = new Set<(event: EventRecord) => void>();
+  private head = 0;
+  private size = 0;
   private dropped = 0;
 
   constructor(capacity = DEFAULT_CAPACITY) {
@@ -22,14 +24,18 @@ export class RecentEventsBuffer implements EventSink, EventQuery {
       throw new Error("RecentEventsBuffer capacity must be a positive integer");
     }
     this.capacity = capacity;
+    this.records = new Array(capacity);
   }
 
   emit(event: EventRecord): void {
     const sanitized = sanitizeEventRecord(event);
-    this.records.push(sanitized);
-    if (this.records.length > this.capacity) {
-      this.records.shift();
+    if (this.size === this.capacity) {
+      this.records[this.head] = sanitized;
+      this.head = (this.head + 1) % this.capacity;
       this.dropped += 1;
+    } else {
+      this.records[(this.head + this.size) % this.capacity] = sanitized;
+      this.size += 1;
     }
     for (const listener of this.listeners) {
       try {
@@ -53,7 +59,8 @@ export class RecentEventsBuffer implements EventSink, EventQuery {
     if (!Number.isInteger(limit) || limit < 1) return { events: [], dropped: this.dropped };
 
     const events: EventRecord[] = [];
-    for (let index = this.records.length - 1; index >= 0; index -= 1) {
+    for (let offset = this.size - 1; offset >= 0; offset -= 1) {
+      const index = (this.head + offset) % this.capacity;
       const event = this.records[index];
       if (!event) continue;
       if (filter.sinceEventId !== undefined && event.eventId === filter.sinceEventId) break;

@@ -32,6 +32,59 @@ export type LocalEventSinkOptions = {
 const DAILY_LOG_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}\.jsonl$/;
 const DEFAULT_PENDING_EVENT_CAPACITY = 5_000;
 
+class BoundedEventQueue {
+  private readonly records: Array<EventRecord | undefined>;
+  private head = 0;
+  private size = 0;
+
+  constructor(private readonly capacity: number) {
+    this.records = new Array(capacity);
+  }
+
+  get length(): number {
+    return this.size;
+  }
+
+  pushBatch(events: readonly EventRecord[]): number {
+    if (events.length >= this.capacity) {
+      const dropped = this.size + events.length - this.capacity;
+      const retained = events.slice(-this.capacity);
+      for (let index = 0; index < retained.length; index += 1) {
+        this.records[index] = retained[index];
+      }
+      this.head = 0;
+      this.size = this.capacity;
+      return dropped;
+    }
+
+    let dropped = 0;
+    for (const event of events) {
+      if (this.size === this.capacity) {
+        this.records[this.head] = event;
+        this.head = (this.head + 1) % this.capacity;
+        dropped += 1;
+      } else {
+        this.records[(this.head + this.size) % this.capacity] = event;
+        this.size += 1;
+      }
+    }
+    return dropped;
+  }
+
+  drain(): EventRecord[] {
+    const events: EventRecord[] = [];
+    for (let offset = 0; offset < this.size; offset += 1) {
+      const index = (this.head + offset) % this.capacity;
+      const event = this.records[index];
+      if (event) events.push(event);
+      this.records[index] = undefined;
+    }
+    this.head = 0;
+    this.size = 0;
+    return events;
+  }
+}
+
 function utcDateStamp(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -50,7 +103,7 @@ export class LocalEventSink implements EventSink {
   private readonly stdout: EventOutput;
   private readonly appendFile: typeof appendFileToDisk;
   private readonly pendingEventCapacity: number;
-  private readonly pendingEvents: EventRecord[] = [];
+  private readonly pendingEvents: BoundedEventQueue;
   private droppedEvents = 0;
   private drainPromise: Promise<void> | null = null;
   private activeDate: string | null = null;
@@ -66,6 +119,7 @@ export class LocalEventSink implements EventSink {
     if (!Number.isInteger(this.pendingEventCapacity) || this.pendingEventCapacity < 1) {
       throw new Error("pendingEventCapacity must be a positive integer");
     }
+    this.pendingEvents = new BoundedEventQueue(this.pendingEventCapacity);
   }
 
   emit(event: EventRecord): void {
@@ -89,25 +143,7 @@ export class LocalEventSink implements EventSink {
   }
 
   private enqueue(events: EventRecord[]): void {
-    if (events.length >= this.pendingEventCapacity) {
-      this.droppedEvents += this.pendingEvents.length + events.length - this.pendingEventCapacity;
-      this.pendingEvents.length = 0;
-      for (
-        let index = events.length - this.pendingEventCapacity;
-        index < events.length;
-        index += 1
-      ) {
-        const event = events[index];
-        if (event) this.pendingEvents.push(event);
-      }
-    } else {
-      const overflow = this.pendingEvents.length + events.length - this.pendingEventCapacity;
-      if (overflow > 0) {
-        this.pendingEvents.splice(0, overflow);
-        this.droppedEvents += overflow;
-      }
-      this.pendingEvents.push(...events);
-    }
+    this.droppedEvents += this.pendingEvents.pushBatch(events);
     if (!this.drainPromise) this.startDrain();
   }
 
@@ -128,7 +164,7 @@ export class LocalEventSink implements EventSink {
 
   private async drain(): Promise<void> {
     while (this.pendingEvents.length > 0) {
-      const events = this.pendingEvents.splice(0);
+      const events = this.pendingEvents.drain();
       const dropped = this.droppedEvents;
       if (dropped > 0) {
         events.unshift({
