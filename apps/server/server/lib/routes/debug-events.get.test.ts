@@ -1,10 +1,9 @@
 /** Recent-events query route coverage for filter delegation and disabled gating. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type EventQuery, RecentEventsBuffer } from "../../domains/observability/index.js";
 
 const mocks = vi.hoisted(() => ({
-  eventQuery: undefined as
-    | { query: ReturnType<typeof vi.fn>; subscribe: ReturnType<typeof vi.fn> }
-    | undefined,
+  eventQuery: undefined as EventQuery | undefined,
   query: {} as Record<string, string>,
 }));
 
@@ -37,6 +36,37 @@ describe("GET /api/debug/events", () => {
       correlation: { documentId: "doc" },
       limit: 50,
     });
+  });
+
+  it("filters gateway calls by exact correlation id", async () => {
+    const events = new RecentEventsBuffer();
+    events.emit({
+      eventId: "other-call",
+      timestamp: "2026-07-18T00:00:00.000Z",
+      level: "info",
+      source: "gateway",
+      name: "stream.close",
+      correlation: { gatewayCallId: "call-2" },
+      payload: {},
+    });
+    events.emit({
+      eventId: "matching-call",
+      timestamp: "2026-07-18T00:00:01.000Z",
+      level: "info",
+      source: "gateway",
+      name: "stream.close",
+      correlation: { gatewayCallId: "call-1" },
+      payload: {},
+    });
+    mocks.eventQuery = events;
+    mocks.query = { gatewayCallId: "call-1" };
+
+    await expect(handler({})).resolves.toMatchObject({
+      events: [{ eventId: "matching-call" }],
+    });
+
+    mocks.query = { gatewayCallId: "unknown" };
+    await expect(handler({})).resolves.toMatchObject({ events: [] });
   });
 
   it("returns 404 when the query surface is absent", async () => {
