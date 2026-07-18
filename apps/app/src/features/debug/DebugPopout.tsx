@@ -65,10 +65,14 @@ export function DebugPopout({
     const handlePopupClose = () => onClose(target);
     target.popup.addEventListener("beforeunload", handlePopupClose);
     window.addEventListener("beforeunload", closePopup);
+    const closedCheck = window.setInterval(() => {
+      if (target.popup.closed) handlePopupClose();
+    }, 500);
 
     return () => {
       target.popup.removeEventListener("beforeunload", handlePopupClose);
       window.removeEventListener("beforeunload", closePopup);
+      window.clearInterval(closedCheck);
       if (!target.popup.closed) target.popup.close();
     };
   }, [onClose, target]);
