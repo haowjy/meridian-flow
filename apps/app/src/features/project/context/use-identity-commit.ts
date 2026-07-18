@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { moveContextEntry, renameContextEntry } from "@/client/api/projects-api";
+import { moveContextEntry } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextTab } from "@/client/stores";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
@@ -32,15 +32,10 @@ export type IdentityCommitted = {
 type IdentityCommitPlan =
   | { kind: "queue"; desired: DesiredIdentity }
   | { kind: "no-op" }
-  | { kind: "rename"; desired: DesiredIdentity }
-  | { kind: "move" | "graduate"; desired: DesiredIdentity };
+  | { kind: "commit"; desired: DesiredIdentity };
 
 function stripLeadingSlash(path: string): string {
   return path.replace(/^\/+/, "");
-}
-
-function replaceBasename(path: string, name: string): string {
-  return `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
 }
 
 export function deriveIdentityCommitPlan(
@@ -62,9 +57,9 @@ export function deriveIdentityCommitPlan(
     desired.destination.workId === current.workId;
   const sameName = desired.name === location.leaf;
   if (sameDestination && sameName) {
-    return location.provisional ? { kind: "graduate", desired } : { kind: "no-op" };
+    return location.provisional ? { kind: "commit", desired } : { kind: "no-op" };
   }
-  return sameDestination ? { kind: "rename", desired } : { kind: "move", desired };
+  return { kind: "commit", desired };
 }
 
 export function useIdentityCommit({
@@ -90,35 +85,6 @@ export function useIdentityCommit({
     if (tab.kind === "new") return { status: "committed" };
 
     try {
-      if (plan.kind === "rename") {
-        const result = await renameContextEntry(
-          projectId,
-          tab.scheme,
-          { path: tab.path, newName: plan.desired.name },
-          tab.workId ? { workId: tab.workId } : undefined,
-        );
-        if (result.status === "conflict") {
-          return {
-            status: "conflict",
-            locator: {
-              scheme: tab.scheme,
-              path: replaceBasename(tab.path, plan.desired.name),
-              ...(tab.workId ? { workId: tab.workId } : {}),
-            },
-          };
-        }
-        await queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextTree(projectId, tab.scheme, tab.workId),
-        });
-        onCommitted(tab.documentId, {
-          scheme: tab.scheme,
-          path: replaceBasename(tab.path, plan.desired.name),
-          name: plan.desired.name,
-          ...(tab.workId ? { workId: tab.workId } : {}),
-        });
-        return { status: "committed" };
-      }
-
       const destination = plan.desired.destination;
       const moved = await moveContextEntry(projectId, tab.scheme, {
         path: stripLeadingSlash(tab.path),

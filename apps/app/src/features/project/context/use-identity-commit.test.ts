@@ -25,7 +25,7 @@ const desired = {
 describe("deriveIdentityCommitPlan", () => {
   it("graduates an explicitly saved provisional identity even when every value is unchanged", () => {
     expect(deriveIdentityCommitPlan(provisional, desired, "work-1")).toEqual({
-      kind: "graduate",
+      kind: "commit",
       desired,
     });
   });
@@ -36,16 +36,16 @@ describe("deriveIdentityCommitPlan", () => {
     ).toEqual({ kind: "no-op" });
   });
 
-  it("derives rename and move in one place", () => {
+  it("routes rename and move through one commit plan", () => {
     expect(
       deriveIdentityCommitPlan(provisional, { ...desired, name: "Opening.md" }, "work-1").kind,
-    ).toBe("rename");
+    ).toBe("commit");
     expect(
       deriveIdentityCommitPlan(
         provisional,
         { destination: { scheme: "manuscript", folderPath: "/Act 1" }, name: "Opening.md" },
         "work-1",
       ).kind,
-    ).toBe("move");
+    ).toBe("commit");
   });
 });

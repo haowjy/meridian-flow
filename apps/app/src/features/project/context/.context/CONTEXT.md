@@ -104,8 +104,9 @@ Contracts:
   drills deeper and builds the destination prefix, so rename, move, and
   rename-plus-move remain one gesture without a second popup or name row.
 - **Commit seam**: the field submits one final `{ destination, name }` to
-  `use-identity-commit.ts`. That seam alone derives no-op, rename, move, or
-  graduation and chooses transport. A same-name explicit Save on a provisional
+  `use-identity-commit.ts`. That seam derives queue, no-op, or commit; every
+  tracked-document commit uses the move transport so canonical collision
+  locators and graduation semantics have one owner. A same-name explicit Save on a provisional
   document is therefore always a graduation, regardless of which surface
   submitted it. Conflicts return the canonical locator for Open-existing.
 - **Queued receipts**: a `new` tab's desired identity applies when the document
