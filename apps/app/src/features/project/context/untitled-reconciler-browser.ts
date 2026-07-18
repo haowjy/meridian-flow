@@ -1,7 +1,6 @@
 /** Browser adapters and React bindings for the durable untitled reconciler engine. */
 
 import type { ProjectContextTreeNode } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import {
   createUntitledContextDocument,
@@ -10,10 +9,7 @@ import {
 } from "@/client/api/projects-api";
 import { flushContextDesks } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import {
-  type ContextIdentityMutationService,
-  createContextIdentityMutationService,
-} from "./context-identity-mutation";
+import type { ContextIdentityMutationService } from "./context-identity-mutation";
 import type { DesiredIdentity } from "./identity-location";
 import {
   type PendingUntitled,
@@ -34,9 +30,7 @@ function treeContainsDocument(
   );
 }
 
-let identityMutations: ContextIdentityMutationService | null = null;
-
-function browserDeps(): UntitledReconcilerDeps {
+function browserDeps(identityMutations: ContextIdentityMutationService): UntitledReconcilerDeps {
   const registry = getDocumentSessionRegistry();
   return {
     storage: localStorage,
@@ -67,7 +61,7 @@ function browserDeps(): UntitledReconcilerDeps {
           { workId: entry.home.workId },
         );
         if (result.status !== "conflict") {
-          await identityMutations?.materialized(entry.projectId, result);
+          await identityMutations.materialized(entry.projectId, result);
         }
         return result;
       },
@@ -78,7 +72,6 @@ function browserDeps(): UntitledReconcilerDeps {
         return treeContainsDocument(response.tree.children, entry.documentId);
       },
       move(entry, source, desired: DesiredIdentity) {
-        if (!identityMutations) throw new Error("Untitled identity cache adapter is unavailable");
         return identityMutations.move(
           entry.projectId,
           {
@@ -93,18 +86,14 @@ function browserDeps(): UntitledReconcilerDeps {
   };
 }
 
-export function configureUntitledIdentityMutations(queryClient: QueryClient): () => void {
-  const configured = createContextIdentityMutationService(queryClient);
-  identityMutations = configured;
-  return () => {
-    if (identityMutations === configured) identityMutations = null;
-  };
-}
-
 let shared: UntitledReconciler | null = null;
 
-export function getUntitledReconciler(): UntitledReconciler {
-  if (!shared && typeof window !== "undefined") shared = new UntitledReconciler(browserDeps());
+export function getUntitledReconciler(
+  identityMutations?: ContextIdentityMutationService,
+): UntitledReconciler {
+  if (!shared && typeof window !== "undefined" && identityMutations) {
+    shared = new UntitledReconciler(browserDeps(identityMutations));
+  }
   if (!shared) throw new Error("Untitled reconciler is browser-only");
   return shared;
 }

@@ -28,11 +28,9 @@ import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
+import { createContextIdentityMutationService } from "./context/context-identity-mutation";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
-import {
-  configureUntitledIdentityMutations,
-  getUntitledReconciler,
-} from "./context/untitled-reconciler-browser";
+import { getUntitledReconciler } from "./context/untitled-reconciler-browser";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -173,12 +171,11 @@ function HydratedProject(props: ProjectViewProps) {
   const usePhone = usePhoneShell();
   const queryClient = useQueryClient();
   useEffect(() => {
-    const releaseIdentityMutations = configureUntitledIdentityMutations(queryClient);
-    const reconciler = getUntitledReconciler();
+    const identityMutations = createContextIdentityMutationService(queryClient);
+    const reconciler = getUntitledReconciler(identityMutations);
     reconciler.start();
     return () => {
       reconciler.dispose();
-      releaseIdentityMutations();
     };
   }, [queryClient]);
   if (usePhone === null) return null;
