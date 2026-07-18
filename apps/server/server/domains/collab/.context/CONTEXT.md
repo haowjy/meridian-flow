@@ -69,7 +69,10 @@ journal rows and live journal metadata; memory-only runtime maps are never an
 attribution authority.
 Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
 maximum), on branch review room open/reconnect, and at agent tool boundaries. The
-room trigger is fire-and-forget; Hocuspocus admission never waits for the pull.
+room trigger is fire-and-forget; Hocuspocus admission never waits for the pull. Once
+durable, pull deltas use the branch coordinator's existing update publisher so loaded
+Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
+persistence-only.
 
 ## Live manifest membership
 
