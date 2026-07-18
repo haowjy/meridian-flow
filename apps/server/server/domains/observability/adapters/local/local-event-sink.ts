@@ -9,6 +9,11 @@ import path from "node:path";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 import { sanitizeEventRecord } from "../../safe-event.js";
 
+type EventOutput = {
+  write(chunk: string): boolean;
+  once(event: "drain", listener: () => void): unknown;
+};
+
 export type LocalEventSinkOptions = {
   /** Optional directory for daily JSONL files; omitted means stdout-only. */
   dir?: string;
@@ -17,7 +22,7 @@ export type LocalEventSinkOptions = {
   /** Injectable clock for tests and deterministic filenames. */
   now?: () => Date;
   /** Injectable output stream for tests; defaults to process stdout. */
-  stdout?: Pick<NodeJS.WriteStream, "write">;
+  stdout?: EventOutput;
   /** Injectable JSONL writer for deterministic backpressure tests. */
   appendFile?: typeof appendFileToDisk;
   /** Maximum number of events waiting behind the active write. */
@@ -42,7 +47,7 @@ export class LocalEventSink implements EventSink {
   private readonly dir: string | undefined;
   private readonly retentionDays: number | undefined;
   private readonly now: () => Date;
-  private readonly stdout: Pick<NodeJS.WriteStream, "write">;
+  private readonly stdout: EventOutput;
   private readonly appendFile: typeof appendFileToDisk;
   private readonly pendingEventCapacity: number;
   private readonly pendingEvents: EventRecord[] = [];
@@ -143,7 +148,9 @@ export class LocalEventSink implements EventSink {
     const payload = events
       .map((event) => `${JSON.stringify(sanitizeEventRecord(event))}\n`)
       .join("");
-    this.stdout.write(payload);
+    if (!this.stdout.write(payload)) {
+      await new Promise<void>((resolve) => this.stdout.once("drain", resolve));
+    }
     if (!this.dir) return;
     try {
       const filePath = await this.resolveFilePath();
