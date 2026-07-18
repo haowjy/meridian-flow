@@ -17,6 +17,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/change-trail-persistence-atomicity.db.test.ts",
   "apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-change-trail-dispatcher.db.test.ts",
+  "apps/server/server/domains/collab/adapters/drizzle-branches.manifest-race.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
 ];
