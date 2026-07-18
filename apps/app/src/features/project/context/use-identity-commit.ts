@@ -4,7 +4,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import { createContextIdentityMutationService } from "./context-identity-mutation";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
 import { queueUntitledIdentity } from "./untitled-reconciler-browser";
@@ -101,13 +101,49 @@ export function useIdentityCommit({
     if (tab.kind === "new") return { status: "committed" };
 
     try {
-      const destination = plan.desired.destination;
-      const moved = await identityMutations.move(
+      let activeDesired = plan.desired;
+      let destination = activeDesired.destination;
+      let moved = await identityMutations.move(
         projectId,
         { scheme: tab.scheme, path: tab.path, ...(tab.workId ? { workId: tab.workId } : {}) },
-        plan.desired,
+        activeDesired,
       );
-      if (moved.status === "retry") throw new Error(`Context move needs retry: ${moved.reason}`);
+      if (moved.status === "retry") {
+        const freshTab = useContextTabsStore
+          .getState()
+          .byProject[projectId]?.tabs.find((candidate) => candidate.documentId === tab.documentId);
+        if (!freshTab) {
+          return {
+            status: "error",
+            message: t`This document changed elsewhere. Reopen it and try again.`,
+          };
+        }
+        const freshPlan = deriveIdentityCommitPlan(freshTab, target, defaultWorkId);
+        if (freshPlan.kind === "no-op") return { status: "committed" };
+        if (freshPlan.kind !== "commit" || freshTab.kind === "new") {
+          return {
+            status: "error",
+            message: t`This document changed elsewhere. Reopen it and try again.`,
+          };
+        }
+        activeDesired = freshPlan.desired;
+        destination = activeDesired.destination;
+        moved = await identityMutations.move(
+          projectId,
+          {
+            scheme: freshTab.scheme,
+            path: freshTab.path,
+            ...(freshTab.workId ? { workId: freshTab.workId } : {}),
+          },
+          activeDesired,
+        );
+        if (moved.status === "retry") {
+          return {
+            status: "error",
+            message: t`This document keeps changing elsewhere. Reopen it and try again.`,
+          };
+        }
+      }
       if (moved.status === "conflict") {
         return {
           status: "conflict",

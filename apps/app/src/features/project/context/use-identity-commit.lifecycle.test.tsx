@@ -1,8 +1,8 @@
 /** Operation ownership coverage for asynchronous document identity commits. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { DesiredIdentity } from "./identity-location";
 
@@ -12,6 +12,9 @@ vi.mock("./context-identity-mutation", () => ({
   createContextIdentityMutationService: () => ({ move: moveMock }),
 }));
 vi.mock("./untitled-reconciler-browser", () => ({ queueUntitledIdentity: vi.fn() }));
+vi.mock("@lingui/core/macro", () => ({
+  t: (parts: TemplateStringsArray) => parts.join(""),
+}));
 
 const { identityCommitMayNavigate, useIdentityCommit } = await import("./use-identity-commit");
 
@@ -29,6 +32,79 @@ const tab: ContextTab = {
 };
 
 describe("identity commit operation ownership", () => {
+  beforeEach(() => {
+    moveMock.mockReset();
+  });
+
+  it.each([
+    "stale-source",
+    "stale-target",
+  ] as const)("re-derives and retries a %s result once", async (reason) => {
+    useContextTabsStore.setState({
+      byProject: {
+        "project-1": { tabs: [tab], activeTabId: tab.documentId },
+      },
+    });
+    moveMock.mockResolvedValueOnce({ status: "retry", reason }).mockResolvedValueOnce({
+      status: "moved",
+      scheme: "manuscript",
+      path: "Act 1/Opening.md",
+      name: "Opening.md",
+    });
+    const onCommitted = vi.fn();
+    let commit!: (target: DesiredIdentity) => Promise<unknown>;
+
+    function Harness() {
+      commit = useIdentityCommit({
+        projectId: "project-1",
+        tab,
+        defaultWorkId: "work-1",
+        onCommitted,
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await expect(commit(target("Opening.md"))).resolves.toEqual({ status: "committed" });
+      },
+    );
+
+    expect(moveMock).toHaveBeenCalledTimes(2);
+    expect(onCommitted).toHaveBeenCalledOnce();
+  });
+
+  it("returns an actionable error when a fresh retry is still stale", async () => {
+    useContextTabsStore.setState({
+      byProject: { "project-1": { tabs: [tab], activeTabId: tab.documentId } },
+    });
+    moveMock.mockResolvedValue({ status: "retry", reason: "stale-source" });
+    let commit!: (target: DesiredIdentity) => Promise<unknown>;
+    function Harness() {
+      commit = useIdentityCommit({
+        projectId: "project-1",
+        tab,
+        defaultWorkId: "work-1",
+        onCommitted: vi.fn(),
+      });
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await expect(commit(target("Opening.md"))).resolves.toMatchObject({
+          status: "error",
+          message: expect.stringContaining("keeps changing"),
+        });
+      },
+    );
+  });
+
   it("marks only the newest overlapping commit as the navigation owner", async () => {
     const finishes: Array<(name: string) => void> = [];
     moveMock.mockImplementation(

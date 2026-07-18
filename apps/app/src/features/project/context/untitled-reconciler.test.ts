@@ -658,6 +658,47 @@ describe("queued identity receipts", () => {
     expect(storedEntries(h.values)).toEqual([]);
   });
 
+  it("applies a rehydrated queued identity when connectivity returns", async () => {
+    const h = harness();
+    h.values.set(
+      "meridian:pending-untitled",
+      JSON.stringify([
+        {
+          documentId: "doc-1",
+          revision: 1,
+          materialization: {
+            phase: "pending",
+            entry: { documentId: "doc-1", projectId: "project-1", home: HOME },
+          },
+          desiredIdentity: {
+            name: "Opening.md",
+            destination: { scheme: "manuscript", folderPath: "Act 1" },
+          },
+          pendingSinceMs: Date.now(),
+        },
+      ]),
+    );
+    (h.deps.api.move as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce({
+        status: "moved" as const,
+        scheme: "manuscript" as const,
+        path: "Act 1/Opening.md",
+        name: "Opening.md",
+      });
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+
+    await h.runQueue();
+    expect(h.deps.api.move).toHaveBeenCalledOnce();
+
+    for (const notifyOnline of h.online) notifyOnline();
+    await h.runQueue();
+
+    expect(h.deps.api.move).toHaveBeenCalledTimes(2);
+    expect(storedEntries(h.values)).toEqual([]);
+  });
+
   it("records a conflict receipt when the queued identity conflicts after materialization", async () => {
     const h = harness();
     (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValue({
