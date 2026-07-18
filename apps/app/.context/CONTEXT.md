@@ -56,7 +56,8 @@ Two interfaces are the only paths between the visual layer and the substrate:
   is the chat-independent seam for work-scoped surfaces.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
-  seeds per-project threads and works before the workspace renders.
+  seeds per-project threads and works before the workspace renders, and carries
+  the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
   `streamingThreadId`, pending stream metadata. `applyThreadSnapshot` writes
   turns only. Soft-delete undo lives in the **project-store**, not here.

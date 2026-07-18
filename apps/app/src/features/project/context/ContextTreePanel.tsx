@@ -22,6 +22,7 @@ import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   ContextEntryMenu,
@@ -221,9 +222,13 @@ function SchemeSection({
           {isError ? (
             <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
           ) : !tree ? (
-            <EmptyHint>
-              {isFetching ? <Trans>Loading files…</Trans> : <Trans>No context files yet.</Trans>}
-            </EmptyHint>
+            isFetching ? (
+              <TreeLoadingSkeleton />
+            ) : (
+              <EmptyHint>
+                <Trans>No context files yet.</Trans>
+              </EmptyHint>
+            )
           ) : tree.children.length === 0 && !creating ? (
             <EmptyHint>
               <Trans>No context files yet.</Trans>
@@ -335,6 +340,28 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
     <p className="py-1.5 pr-2 text-xs text-ink-subtle" style={{ paddingLeft: rowPaddingLeft(1) }}>
       {children}
     </p>
+  );
+}
+
+/** Placeholder rows echoing the tree's row geometry while files load. */
+function TreeLoadingSkeleton() {
+  return (
+    <div role="status">
+      <span className="sr-only">
+        <Trans>Loading files…</Trans>
+      </span>
+      <div aria-hidden>
+        {["w-24", "w-32", "w-20"].map((width) => (
+          <div
+            key={width}
+            className="flex h-7 items-center pr-2"
+            style={{ paddingLeft: rowPaddingLeft(1) }}
+          >
+            <Skeleton className={cn("h-3", width)} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

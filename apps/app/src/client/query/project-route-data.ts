@@ -5,9 +5,17 @@
  * SSR data priming so project data is ready on a cold refresh.
  */
 
-import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
+import type {
+  ListWorksResponse,
+  ProjectWorkingSet,
+  ThreadListItem,
+} from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
-import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
+import {
+  getProjectWorkingSet,
+  listProjectThreads,
+  listProjectWorks,
+} from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 
 import { projectQueryKeys } from "./project-query-keys";
@@ -15,6 +23,10 @@ import { projectQueryKeys } from "./project-query-keys";
 export type ProjectRouteData = {
   threads: ThreadListItem[] | null;
   works: ListWorksResponse | null;
+  workingSet:
+    | { status: "row"; row: ProjectWorkingSet }
+    | { status: "absent" }
+    | { status: "unavailable" };
 };
 
 function errorMessage(error: unknown): string {
@@ -37,14 +49,21 @@ function settledValue<T>(result: PromiseSettledResult<T>): T | null {
 
 export async function loadProjectRouteData(projectId: string): Promise<ProjectRouteData> {
   const init = ssrApiRequestInit();
-  const [threads, works] = await Promise.allSettled([
+  const [threads, works, workingSet] = await Promise.allSettled([
     listProjectThreads(projectId, init),
     listProjectWorks(projectId, init),
+    getProjectWorkingSet(projectId, init),
   ]);
 
   return {
     threads: settledValue(threads),
     works: settledValue(works),
+    workingSet:
+      workingSet.status === "rejected"
+        ? { status: "unavailable" }
+        : workingSet.value
+          ? { status: "row", row: workingSet.value }
+          : { status: "absent" },
   };
 }
 

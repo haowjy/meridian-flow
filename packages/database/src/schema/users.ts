@@ -4,7 +4,7 @@
  * Why independent: Identity persistence shape is shared schema infrastructure;
  * authentication providers and authorization policies live outside this package.
  */
-import { index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable(
   "users",
@@ -21,6 +21,7 @@ export const users = pgTable(
      * plus soft-delete state before trusting this soft pointer.
      */
     lastActiveProjectId: uuid("last_active_project_id"),
+    workingSetSyncEnabled: boolean("working_set_sync_enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),

@@ -222,6 +222,14 @@ export function createDrizzleThreadRepository(
         );
       return row ? mapThread(row) : null;
     },
+    async findProjectIdByIdIncludingDeleted(id: ThreadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ projectId: schema.threads.projectId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, id))
+        .limit(1);
+      return row?.projectId ?? null;
+    },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
         .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })

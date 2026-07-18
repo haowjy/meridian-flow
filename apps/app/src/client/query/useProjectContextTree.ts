@@ -3,11 +3,24 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 
 import { getProjectContextTree } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 import { contextRequestOptionsForScheme, useContextWorkId } from "./useContextWorkId";
+
+export function projectContextTreeQueryOptions(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  workId: string | null,
+) {
+  return queryOptions({
+    queryKey: projectQueryKeys.contextTree(projectId, scheme, workId),
+    queryFn: () =>
+      getProjectContextTree(projectId, scheme, contextRequestOptionsForScheme(scheme, workId)),
+    staleTime: 30_000,
+  });
+}
 
 /**
  * Project context tree for the given scheme (`manuscript`, `kb`, `work`, or `user`).
@@ -32,11 +45,8 @@ export function useProjectContextTree(
   const workId = options?.workId !== undefined ? options.workId : threadWorkId;
   const workScoped = isWorkScopedProjectContextScheme(scheme);
   const enabled = (options?.enabled ?? true) && (!workScoped || workId !== null);
-  const contextOpts = contextRequestOptionsForScheme(scheme, workId);
   const { data, isError, isFetching, refetch } = useQuery({
-    queryKey: projectQueryKeys.contextTree(projectId, scheme, workId),
-    queryFn: () => getProjectContextTree(projectId, scheme, contextOpts),
-    staleTime: 30_000,
+    ...projectContextTreeQueryOptions(projectId, scheme, workId),
     enabled,
   });
 

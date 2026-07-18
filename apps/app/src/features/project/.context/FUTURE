@@ -31,3 +31,13 @@
 - Invalid explicit `?thread=` id: useResolvedChatThread trusts the route id
   without existence-checking it (chat/chat-thread-resolution.ts); behavior
   for a stale/foreign id is undocumented — decide and document.
+- Bounded live sessions for restored desks (#217 follow-on, research-backed):
+  the persisted desk (context-tabs-store/context-desk-storage.ts) restores
+  every open tab, and the document-session registry keeps a live
+  websocket-subscribed Y.Doc per open tab — a 30-tab desk means 30 live
+  sessions on every reload. Editor VIEWS are already bounded
+  (ContextEditorMountHost MAX_MOUNTED_EDITORS=6, LRU); sessions are not.
+  The move: lazy-connect background tabs' sessions on first view (same
+  LRU shape as the view warm set), keeping only active/recent tabs live.
+  Prior art: Yjs FAQ warns against hydrating many Y.Docs; research brief
+  work/writer-ux/research/wss-localfirst-research-brief.md §4 (docs repo).

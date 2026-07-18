@@ -42,8 +42,9 @@ shape for parity and lower merge risk.
 
 The shipped route surface covers:
 
-- Project CRUD, stats, preferences, library, works list, work threads, and
-  project thread list/create.
+- Project CRUD, stats, preferences, working-set snapshots, library, works list,
+  work threads, and project thread list/create; account settings expose the
+  working-set sync toggle.
 - Agent and skill definition reads, saves, revision lists, revision restores,
   restore-original, and agent skill-link patching.
 - Package preview/apply, update check/apply, and export.
@@ -174,4 +175,4 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 ## Cross-module links
 
 → [../../app/.context/CONTEXT.md](../../app/.context/CONTEXT.md) — frontend state/transport seams
-→ [`server/domains/`](../server/domains/) — projects, projects, threads, context, runtime, packages, collab, storage, billing, observability, preferences
+→ [`server/domains/`](../server/domains/) — projects, threads, context, runtime, packages, collab, storage, billing, observability, preferences, working-set

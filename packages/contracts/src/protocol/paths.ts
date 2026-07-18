@@ -24,6 +24,7 @@ export const API_PROJECTS_HOME_PATH = `${API_PROJECTS_PATH}/home`;
 export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
+export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
 
 export function apiProjectsHomePath(): string {
@@ -40,6 +41,10 @@ export function apiProjectThreadsPath(projectId: string): string {
 
 export function apiProjectWorksPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/works`;
+}
+
+export function apiProjectWorkingSetPath(projectId: string): string {
+  return `${API_PROJECTS_PATH}/${projectId}/working-set`;
 }
 
 export function apiProjectWorkWriteModePath(projectId: string, workId: string): string {

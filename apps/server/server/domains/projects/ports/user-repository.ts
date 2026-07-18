@@ -21,4 +21,6 @@ export interface UserRepository {
   ensureUser(input: EnsureUserInput): Promise<UserId>;
   getLastActiveProjectId(userId: UserId): Promise<ProjectId | null>;
   setLastActiveProjectId(userId: UserId, projectId: ProjectId | null): Promise<void>;
+  getWorkingSetSyncEnabled(userId: UserId): Promise<boolean>;
+  updateWorkingSetSyncEnabled(userId: UserId, enabled: boolean): Promise<boolean>;
 }
