@@ -92,6 +92,8 @@ export function createContextIdentityMutationService(
           };
           operation.canonicalLocation = canonicalLocation;
           await invalidate(projectId, [actualSource, canonicalLocation]);
+        } else if (result.status === "retry") {
+          operation.canonicalLocation = undefined;
         }
         return result;
       });
@@ -100,6 +102,11 @@ export function createContextIdentityMutationService(
         () => undefined,
       );
       operations.set(documentId, operation);
+      void operation.tail.then(() => {
+        if (operation.generation !== generation) return;
+        operation.canonicalLocation = undefined;
+        if (operations.get(documentId) === operation) operations.delete(documentId);
+      });
       return run.then((result) => ({ result, isLatest: generation === operation.generation }));
     },
   };

@@ -114,4 +114,99 @@ describe("context identity mutation cache receipts", () => {
       newName: "Latest.md",
     });
   });
+
+  it("uses a fresh source after the prior queue settles and another device moves the document", async () => {
+    const queryClient = new QueryClient();
+    const move = vi
+      .fn<typeof moveContextEntry>()
+      .mockResolvedValueOnce({
+        status: "moved",
+        scheme: "manuscript",
+        path: "Drafts/First.md",
+        name: "First.md",
+      })
+      .mockResolvedValueOnce({
+        status: "moved",
+        scheme: "manuscript",
+        path: "Final/Latest.md",
+        name: "Latest.md",
+      });
+    const service = createContextIdentityMutationService(queryClient, move);
+
+    await service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
+      { name: "First.md", destination: { scheme: "manuscript", folderPath: "/Drafts" } },
+    );
+    await service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "manuscript", path: "/External/Elsewhere.md" },
+      { name: "Latest.md", destination: { scheme: "manuscript", folderPath: "/Final" } },
+    );
+
+    expect(move).toHaveBeenNthCalledWith(2, "project-1", "manuscript", {
+      path: "External/Elsewhere.md",
+      destinationScheme: "manuscript",
+      destinationFolderPath: "Final",
+      newName: "Latest.md",
+    });
+  });
+
+  it("drops a queued canonical source after a stale outcome", async () => {
+    const queryClient = new QueryClient();
+    let finishFirst!: (result: Awaited<ReturnType<typeof moveContextEntry>>) => void;
+    const move = vi
+      .fn<typeof moveContextEntry>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ status: "retry", reason: "stale-source" })
+      .mockResolvedValueOnce({
+        status: "moved",
+        scheme: "manuscript",
+        path: "Final/Latest.md",
+        name: "Latest.md",
+      });
+    const service = createContextIdentityMutationService(queryClient, move);
+
+    const first = service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
+      { name: "First.md", destination: { scheme: "manuscript", folderPath: "/Drafts" } },
+    );
+    const stale = service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
+      { name: "Stale.md", destination: { scheme: "manuscript", folderPath: "/Stale" } },
+    );
+    const fresh = service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "manuscript", path: "/External/Elsewhere.md" },
+      { name: "Latest.md", destination: { scheme: "manuscript", folderPath: "/Final" } },
+    );
+    await Promise.resolve();
+    finishFirst({
+      status: "moved",
+      scheme: "manuscript",
+      path: "Drafts/First.md",
+      name: "First.md",
+    });
+
+    await Promise.all([first, stale, fresh]);
+
+    expect(move).toHaveBeenNthCalledWith(3, "project-1", "manuscript", {
+      path: "External/Elsewhere.md",
+      destinationScheme: "manuscript",
+      destinationFolderPath: "Final",
+      newName: "Latest.md",
+    });
+  });
 });
