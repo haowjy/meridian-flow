@@ -6,8 +6,10 @@
  *
  * One affordance: **the chip**. Jade "Choose a home" on provisional docs and
  * quiet outline "Rename" once homed both open the same inline identity field.
- * Device-only words outrank it in the same slot. The breadcrumb itself is inert, reserved for a future
- * per-segment navigator (see IdentityPath).
+ * Device-only words add a quiet status beside it — never in its place:
+ * placement commits queue durably offline, so the action stays available
+ * exactly when the writer is device-only. The breadcrumb itself is inert,
+ * reserved for a future per-segment navigator (see IdentityPath).
  *
  * Keystroke-path contract: at rest the bar renders from tab metadata only.
  * Content observers mount only while a field is open on a provisional doc.
@@ -171,10 +173,13 @@ function IdentityPath({ location }: { location: TabLocation }) {
 }
 
 /**
- * Single-occupancy chip slot at the bar's right edge. Severity ladder:
- * device-only words (warning tokens, 2s sustained grace) outrank the
- * permanent home chip — jade "Choose a home" while provisional (an
- * invitation), quiet outline "Rename" once homed (a tool).
+ * Chip slot at the bar's right edge. The device-only status (warning tokens,
+ * 2s sustained grace) and the permanent home chip **coexist**: status quiet
+ * on the left, action anchored at the right edge. Never let the status
+ * replace the action — placement commits queue durably offline, so
+ * device-only is exactly when a writer may want to file the document.
+ * The status stays visible while the field is open; only the action chip
+ * yields (the open field *is* the action).
  */
 function IdentityChipSlot({
   documentId,
@@ -188,9 +193,13 @@ function IdentityChipSlot({
   onChooseHome: () => void;
 }) {
   const deviceOnly = useDeviceOnly(documentId);
-  if (deviceOnly) return <DeviceOnlyChip />;
-  if (!show) return null;
-  return <HomeChip provisional={location.provisional} onClick={onChooseHome} />;
+  if (!deviceOnly && !show) return null;
+  return (
+    <>
+      {deviceOnly ? <DeviceOnlyChip /> : null}
+      {show ? <HomeChip provisional={location.provisional} onClick={onChooseHome} /> : null}
+    </>
+  );
 }
 
 const chipClass = cn(

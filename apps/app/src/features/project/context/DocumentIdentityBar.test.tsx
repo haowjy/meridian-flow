@@ -1,5 +1,5 @@
 import { act, type ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ContextTab } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -28,10 +28,13 @@ vi.mock("./file-suggestions", async (importOriginal) => {
     useFileSuggestions: () => ({ suggestions: [], isFetching: false, isError: false }),
   };
 });
+const { pendingSince } = vi.hoisted(() => ({
+  pendingSince: { value: null as number | null },
+}));
 vi.mock("./untitled-reconciler-browser", () => ({
   clearQueuedIdentityFailure: vi.fn(),
   useQueuedIdentityFailure: () => null,
-  useUntitledPendingSince: () => null,
+  useUntitledPendingSince: () => pendingSince.value,
 }));
 vi.mock("./use-identity-commit", () => ({
   useIdentityCommit: () => vi.fn(),
@@ -48,29 +51,74 @@ const graduatedTab: ContextTab = {
   schemaType: "document",
 };
 
+const provisionalTab: ContextTab = {
+  kind: "new",
+  documentId: "doc-new",
+  name: "Untitled 4",
+};
+
+function barFor(tab: ContextTab) {
+  return (
+    <DocumentIdentityBar
+      projectId="project-1"
+      activeThreadId={null}
+      defaultWorkId={null}
+      tab={tab}
+      onCommitted={() => {}}
+      onOpenExisting={() => {}}
+    />
+  );
+}
+
 describe("DocumentIdentityBar affordances", () => {
+  afterEach(() => {
+    pendingSince.value = null;
+  });
+
   it("opens the inline identity field from a graduated Rename chip", async () => {
-    await withReactRoot(
-      <DocumentIdentityBar
-        projectId="project-1"
-        activeThreadId={null}
-        defaultWorkId={null}
-        tab={graduatedTab}
-        onCommitted={() => {}}
-        onOpenExisting={() => {}}
-      />,
-      async () => {
-        expect(document.querySelector('input[aria-label="Document name and location"]')).toBeNull();
-        const chip = findButton("Rename");
-        await act(async () => chip.click());
-        const input = document.querySelector<HTMLInputElement>(
-          'input[aria-label="Document name and location"]',
-        );
-        expect(input?.value).toBe("chapter-1.md");
-        expect(input?.selectionStart).toBe(0);
-        expect(input?.selectionEnd).toBe("chapter-1.md".length);
-      },
-    );
+    await withReactRoot(barFor(graduatedTab), async () => {
+      expect(document.querySelector('input[aria-label="Document name and location"]')).toBeNull();
+      const chip = findButton("Rename");
+      await act(async () => chip.click());
+      const input = document.querySelector<HTMLInputElement>(
+        'input[aria-label="Document name and location"]',
+      );
+      expect(input?.value).toBe("chapter-1.md");
+      expect(input?.selectionStart).toBe(0);
+      expect(input?.selectionEnd).toBe("chapter-1.md".length);
+    });
+  });
+
+  // Regression: the device-only status must never replace the placement
+  // action — placement commits queue durably offline, so device-only is
+  // exactly when a writer may want to file the document.
+  it("shows the device-only status beside a provisional Choose a home chip", async () => {
+    pendingSince.value = Date.now() - 5_000;
+    await withReactRoot(barFor(provisionalTab), async () => {
+      const status = document.querySelector('[role="status"]');
+      expect(status?.textContent).toContain("Only on this device");
+      const chip = findButton("Choose a home");
+      await act(async () => chip.click());
+      const input = document.querySelector<HTMLInputElement>(
+        'input[aria-label="Document name and location"]',
+      );
+      // Placement grammar: the field opens empty on a never-homed doc.
+      expect(input?.value).toBe("");
+      // The status keeps its place while the field is open.
+      expect(document.querySelector('[role="status"]')?.textContent).toContain(
+        "Only on this device",
+      );
+    });
+  });
+
+  it("shows the device-only status beside a graduated Rename chip", async () => {
+    pendingSince.value = Date.now() - 5_000;
+    await withReactRoot(barFor(graduatedTab), async () => {
+      expect(document.querySelector('[role="status"]')?.textContent).toContain(
+        "Only on this device",
+      );
+      expect(findButton("Rename")).toBeTruthy();
+    });
   });
 });
 

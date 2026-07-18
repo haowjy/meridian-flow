@@ -118,16 +118,19 @@ Contracts:
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.
-- **Chip slot**: single occupancy, right edge. The chip is permanent (D4) and
-  its label graduates with the document: jade "Choose a home" while
-  provisional (opens empty placement), quiet outline "Rename" once homed
-  (opens the same field, pre-filled and selected — rename is the common case,
-  folder browsing keeps move discoverable). Viewer docs get the field too;
-  uploads viewers carry no chip (no dead buttons). The
-  device-only warning (warning tokens, `TriangleAlert`) outranks the chip
+- **Chip slot**: right edge. The action chip is permanent (D4) and its label
+  graduates with the document: jade "Choose a home" while provisional (opens
+  empty placement), quiet outline "Rename" once homed (opens the same field,
+  pre-filled and selected — rename is the common case, folder browsing keeps
+  move discoverable). Viewer docs get the field too; uploads viewers carry no
+  chip (no dead buttons). The device-only status (warning tokens,
+  `TriangleAlert`) appears *beside* the action — quiet on its left, never in
+  its place: placement commits queue durably offline, so device-only is
+  exactly when the writer may want to file the document. It claims its spot
   after unsynced words persist for a 2s sustained grace — the clock is the
   reconciler's per-document `pendingSince`, so remounting chrome (tab
-  switches) cannot restart the window.
+  switches) cannot restart the window. While the field is open only the
+  action chip yields (the field is the action); the status stays.
 - **Destination keyboard path**: ArrowDown/ArrowUp enters the suggestion list
   through its typed focus handle. Rows retain arrow wrapping and Enter select;
   folder selection can drill to arbitrary existing depth.
