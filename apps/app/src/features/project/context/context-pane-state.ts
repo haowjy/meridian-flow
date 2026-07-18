@@ -4,6 +4,16 @@
  */
 import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
+
+export function findActiveUntitledTab(
+  tabs: readonly ContextTab[],
+  activeTabId: string | null,
+): Extract<ContextTab, { kind: "new" }> | null {
+  if (!activeTabId) return null;
+  const tab = tabs.find((candidate) => candidate.documentId === activeTabId);
+  return tab?.kind === "new" ? tab : null;
+}
+
 import { findContextFile } from "./context-tree";
 
 export type OptimisticContextTab = { id: string; name: string };

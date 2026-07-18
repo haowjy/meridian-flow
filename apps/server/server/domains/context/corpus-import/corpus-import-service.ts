@@ -143,6 +143,9 @@ function contextErrorMessage(error: ContextError): string {
       return "Context path not found";
     case "conflict":
       return "Context path conflict";
+    case "stale_source":
+    case "stale_target":
+      return "Context location changed; retry the operation";
     case "invalid_operation":
       return error.message ?? "Invalid context operation";
   }

@@ -19,16 +19,20 @@ journaling.
 
 ## HTTP routes
 
-Seven context routes live under
-`routes/api/projects/[projectId]/context/[scheme]/`. All share `_helpers.ts`
-which provides:
+Eight context routes live under
+`routes/api/projects/[projectId]/context/[scheme]/`. Most use `_helpers.ts` for
+auth, project ownership, scheme/Work resolution, canonical error translation,
+and URI construction. Writer-facing mutation input goes through the shared
+reason-coded validators in `lib/context-mutation-validation.ts`.
 
-- `resolveContextRoute(event)` — the common preamble: auth → project ownership
-  → scheme parsing → workId resolution → context port resolution. Returns
-  `{ app, userId, projectId, scheme, workId, port }`.
-- `sanitizePath(raw)` — rejects `.`/`..` segments at the route boundary
-  (defense-in-depth; the domain layer also validates).
-- `parseScheme`, `contextErrorToHttp`, `toUri`.
+`move.post.ts` is intentionally a thinner shell over `lib/context-move-route.ts`:
+the route core authorizes every referenced Work authority and calls
+`ContextPort.commitWriterLocation`. Proven destination occupation returns a
+collision locator; stale source/target plans return a retry result instead.
 
-Routes: `tree.get.ts`, `read.get.ts`, `create.post.ts`, `create-untitled.post.ts`, `rename.post.ts`,
-`delete.post.ts`, `upload.post.ts`.
+`create-untitled.post.ts` accepts a client-minted document ID. Idempotent retries
+recover that ID across all project and authorized Work schemes, returning its
+canonical scheme/path/Work authority. Returned `name` values are full filenames.
+
+Routes: `tree.get.ts`, `read.get.ts`, `create.post.ts`, `create-untitled.post.ts`,
+`rename.post.ts`, `move.post.ts`, `delete.post.ts`, `upload.post.ts`.

@@ -58,10 +58,12 @@ toggle, inspector, active-thread resolution, and hydration invariant.
 
 ## Pop-out observability viewers
 
-The **Streams** action and its transport-observation contracts live in
-[trace-viewer.md](trace-viewer.md). The metadata-only gateway call projection
-and its content-isolation boundary live in [llm-calls.md](llm-calls.md). Both
-viewers use the shared `DebugPopout` window lifecycle and chrome.
+The **Streams** action, client transport taps, and optional server event feed
+live in [trace-viewer.md](trace-viewer.md). Client and server records share one
+trace ring, filter model, automation boundary, and export path. The
+metadata-only gateway call projection and its content-isolation boundary live
+in [llm-calls.md](llm-calls.md). Both viewers use the shared `DebugPopout`
+window lifecycle and chrome.
 
 ## Document sessions
 

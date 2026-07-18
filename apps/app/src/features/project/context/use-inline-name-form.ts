@@ -11,13 +11,14 @@
  * Blocking errors keep the row open and refocus the input.
  */
 import { type KeyboardEvent, type RefObject, useEffect, useRef, useState } from "react";
-
+import type { ContextCreateKind } from "./context-create-kind";
 import { type ContextEntryNameSeverity, validateContextEntryName } from "./context-entry-name";
 
 export type UseInlineNameFormOptions = {
   initialName: string;
   siblingNames: readonly string[];
   isPending: boolean;
+  kind?: ContextCreateKind;
   /** Perform the actual mutation. Throw on server error. */
   onSubmit: (trimmedName: string) => Promise<void>;
   /** Called when the form completes (successful submit or cancel). */
@@ -42,6 +43,7 @@ export function useInlineNameForm({
   initialName,
   siblingNames,
   isPending,
+  kind = "file",
   onSubmit,
   onDone,
   isCancelName,
@@ -70,7 +72,7 @@ export function useInlineNameForm({
 
   const severity: ContextEntryNameSeverity | null = serverError
     ? { level: "error", message: serverError }
-    : validateContextEntryName(name, siblingNames);
+    : validateContextEntryName(name, siblingNames, kind);
 
   async function submit() {
     if (isPending) return;
@@ -79,7 +81,7 @@ export function useInlineNameForm({
       onDone();
       return;
     }
-    const check = validateContextEntryName(name, siblingNames);
+    const check = validateContextEntryName(name, siblingNames, kind);
     if (check?.level === "error") {
       inputRef.current?.focus();
       return;

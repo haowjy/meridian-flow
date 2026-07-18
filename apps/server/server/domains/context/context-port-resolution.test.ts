@@ -1,6 +1,10 @@
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { contextPortForThread, resolveThreadContext } from "./context-port-resolution.js";
+import {
+  contextPortForProjectRecovery,
+  contextPortForThread,
+  resolveThreadContext,
+} from "./context-port-resolution.js";
 import type { ContextPort } from "./ports/context-port.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
@@ -59,5 +63,38 @@ describe("thread context-port resolution", () => {
     contextPortForThread(contextPorts, resolution);
 
     expect(calls).toEqual([{ workId: WORK_ID, projectId: CUSTOM_PROJECT_ID, threadId: THREAD_ID }]);
+  });
+});
+
+describe("project recovery context-port resolution", () => {
+  it("authorizes every active Work while keeping the requested Work primary", async () => {
+    const calls: Array<{ workId: string; authorities: string[] }> = [];
+    const contextPorts = {
+      forWork: (workId: string, _projectId: string, _userId: string, authorities: Set<string>) => {
+        calls.push({ workId, authorities: [...authorities] });
+        return {} as ContextPort;
+      },
+      forProject: () => {
+        throw new Error("active Works must use a Work-scoped recovery port");
+      },
+    } as UnifiedContextPortFactory;
+
+    await contextPortForProjectRecovery({
+      deps: {
+        contextPorts,
+        works: {
+          findById: async () => null,
+          listByProject: async () =>
+            ["work-1", "work-2"].map((id) => ({ id })) as Awaited<
+              ReturnType<import("../projects/index.js").WorkRepository["listByProject"]>
+            >,
+        },
+      },
+      projectId: CUSTOM_PROJECT_ID,
+      userId: "user-1",
+      requestedWorkId: "work-1",
+    });
+
+    expect(calls).toEqual([{ workId: "work-1", authorities: ["work-1", "work-2"] }]);
   });
 });

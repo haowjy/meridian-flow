@@ -20,6 +20,30 @@
   trace ring, filters, and exports.
 - Server debugging guidance now distinguishes authoritative stdout from the
   best-effort bounded JSONL mirror and documents query, SSE, and `jq` workflows.
+- `apps/app`: universal document identity bar — every open document shows a
+  quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
+  match the suggestion dropdown, with a permanent chip whose label graduates
+  with the document (“Choose a home” in jade while untitled, quiet outline
+  “Rename” once homed) and the device-only warning in the same slot (2s
+  grace, tracked per document). The chip is the only edit entry — the
+  breadcrumb is inert, reserved for per-segment navigation. Untitled drafts
+  place themselves through an empty field with the content-derived name as
+  ghost text and a destination browser that opens on the scheme roots. Homed
+  documents use the same inline field, pre-filled and selected for immediate
+  rename, with current-folder siblings and writable roots for moves. The field
+  carries explicit ✓/× buttons mirroring Enter/Esc. Collisions surface the
+  canonical locator with Open-existing recovery; intents queued on
+  still-materializing drafts report failures instead of dropping them.
+  Replaces the provisional-only untitled rename line.
+- `apps/server`: context moves gain `clearProvisionalName` — the writer-facing
+  move route ends provisional naming on every explicit placement (even when
+  the name stays Untitled-N), while port-level system moves preserve it.
+- `apps/server`, `@meridian/contracts`: context entries can move across folders,
+  schemes, and Work scopes over HTTP; Scratch documents can be promoted to the
+  Manuscript without changing their Yjs authority or provisional-name state.
+  Move targets now have exact collision semantics, return a canonical collision
+  locator for Open-existing recovery, and share reason-coded path normalization
+  with client create/rename validation.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening

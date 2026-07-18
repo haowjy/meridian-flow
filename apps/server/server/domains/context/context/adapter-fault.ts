@@ -8,6 +8,10 @@ export function adapterFaultToContextError(fault: AdapterFault, uri: string): Co
       return { code: "permission_denied", uri };
     case "conflict":
       return { code: "conflict", uri };
+    case "stale_source":
+      return { code: "stale_source", uri };
+    case "stale_target":
+      return { code: "stale_target", uri };
     case "invalid_operation":
       return { code: "invalid_operation", uri, message: fault.message };
     case "context_unavailable":

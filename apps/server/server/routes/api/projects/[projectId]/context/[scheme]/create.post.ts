@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
-import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
+import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateContextEntryBody {
   type: "file" | "folder";
@@ -13,11 +14,13 @@ export function parseCreateContextEntryBody(raw: unknown): CreateContextEntryBod
   const body = raw as Partial<CreateContextEntryBody>;
   if (body.type !== "file" && body.type !== "folder")
     throw createError({ statusCode: 400, message: "`type` must be 'file' or 'folder'" });
-  if (typeof body.path !== "string" || body.path.trim() === "")
-    throw createError({ statusCode: 400, message: "`path` is required" });
   if (body.content !== undefined && typeof body.content !== "string")
     throw createError({ statusCode: 400, message: "`content` must be a string" });
-  return { type: body.type, path: sanitizePath(body.path), content: body.content };
+  return {
+    type: body.type,
+    path: parseContextMutationPath(body.path, "path"),
+    content: body.content,
+  };
 }
 
 export async function createContextEntry(input: {

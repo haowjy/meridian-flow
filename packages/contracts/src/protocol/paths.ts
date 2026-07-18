@@ -151,6 +151,13 @@ export function apiProjectContextRenamePath(
   return `${apiProjectPath(projectId)}/context/${scheme}/rename${projectContextQuery(scheme, opts)}`;
 }
 
+export function apiProjectContextMovePath(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+): string {
+  return `${apiProjectPath(projectId)}/context/${scheme}/move`;
+}
+
 export function apiProjectContextDeletePath(
   projectId: string,
   scheme: ProjectContextTreeScheme,

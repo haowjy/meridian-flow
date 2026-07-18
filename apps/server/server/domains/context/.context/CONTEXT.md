@@ -36,7 +36,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   a closed command surface; its current command is a fresh end-of-document
   append. Opaque caller callbacks do not cross the boundary.
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
-  for `move`/`delete` operations.
+  for `move`/`delete` operations. Callers may request exact-target moves so an
+  existing destination folder is a collision rather than a Unix-style container.
+  Successful moves return the domain-committed destination path. The project
+  context HTTP surface exposes cross-folder and cross-scheme moves, including
+  explicit Work authorities on either side when a scheme is Work-scoped.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
@@ -46,10 +50,10 @@ with a single unified `ContextPort` that resolves durable project schemes
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `writeBinary`, `mkdir`, `list`, `search`, `edit`, `move`, `delete`. No errors cross as throws. |
-| `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. |
-| `ContextDocumentStore` | Primitive folder/document backing store for one context source. |
-| `ContextTreeMutationStore` | Tree-aware mutation store with CAS conformance (`move`/`delete` with location tokens). |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
+| `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
+| `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
+| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. |
 
 ## URI and router invariants
 
@@ -62,6 +66,7 @@ with a single unified `ContextPort` that resolves durable project schemes
   `kb://`, `user://` carry no work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Router methods attach the canonical URI to every `ContextError`.
+- Writer-facing HTTP mutations use `context-mutation-validation.ts`, which delegates to the shared reason-coded path/name validators before constructing ContextPort URIs.
 - Adapter `Ok(null)` becomes `not_found`; `permission_denied`,
   `context_unavailable`, and `io_error` stay generic context/backing-store
   faults.
@@ -98,17 +103,24 @@ with a single unified `ContextPort` that resolves durable project schemes
   classifies every registered filetype; unknown persisted prose defaults to the
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
-  boundary: it atomically allocates `Untitled N`, persists `provisionalName`,
+  boundary: it atomically allocates `Untitled N.md`, persists `provisionalName`,
   and only ensures an empty Yjs authority. The client owns initial CRDT content;
   this path must never seed markdown. Creation finalization is repairable: both
   new creates and idempotent retries re-ensure manifest membership and the Yjs
-  authority after the document row exists. A successful basename change clears the
-  flag in the shared tree-mutation store, while path-only moves preserve it.
+  authority after the document row exists. Router-level retries locate the ID
+  across every project scheme and authorized Work authority and return
+  `already-materialized` with the actual canonical scheme/path/Work. This is
+  distinct from a true allocation conflict. Response `name` is always the full
+  basename including extension. A successful basename change clears the flag in
+  the shared tree-mutation store, while path-only moves preserve it.
 - Every document creation registers in the live project manifest via the required
   manifest-membership port wired in `unified-context-port-factory.ts`. Work-scoped
   `scratch`/`uploads` stores resolve the project through their Work and deliberately
   register in the live view, not a work-draft view: the ws live-room gate checks the
   live project manifest. Any unregistered document renders a permanently dead editor.
+- Cross-source moves preserve document identity and therefore preserve the same live
+  project-manifest membership; source scope is storage location, not a second
+  manifest namespace. The move commit must not rewrite document Yjs authority or journal rows.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
@@ -117,8 +129,12 @@ with a single unified `ContextPort` that resolves durable project schemes
   touching is a separate post-write hook and is not part of this bridge yet.
 - Binary documents are storage-backed metadata rows. `read` rejects them as
   `io_error`; `stat`/`list` return binary refs with storage URL and MIME data.
-- `move`/`delete` use `ContextTreeMutationStore` with CAS location tokens
-  (atomic read→write/deletion-path guard).
+- `move`/`commitWriterLocation`/`delete` use `ContextTreeMutationStore` with
+  location-only CAS tokens (atomic read→write/deletion-path guard). Markdown
+  projection and activity writes may change `documents.updated_at` without
+  invalidating a location plan. `stale_source` and `stale_target` remain typed
+  through store, adapter, port, and HTTP route; only proven occupation is a
+  `conflict` with an Open-existing locator.
 
 ## Deleted (cleanse removal)
 
