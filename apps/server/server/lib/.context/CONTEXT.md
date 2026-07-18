@@ -12,7 +12,7 @@ collaboration. Concrete adapters are chosen in `compose.ts`; nothing in
 |---|---|
 | `env.ts` | Typed env schema via `@t3-oss/env-core` + zod. Single source of truth for server env vars. |
 | `db.ts` | Singleton Drizzle `PostgresJsDatabase` client, lazily created from `DATABASE_URL`. |
-| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op). |
+| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op); local dev/test composition also exposes the recent-event query port. |
 | `observability.ts` | Process-scoped deferred EventSink; startup binds the concrete sink before validation/logging. |
 | `object-store-factory.ts` | Env-driven object-store adapter factory. |
 | `compose.ts` | `AppServices` type, production adapter-port construction, pure runtime service wiring, and in-memory stub factory for tests/dev. |
@@ -66,6 +66,7 @@ represented as a fully-typed slot:
 | `agents` | agents | Package store (skeleton) |
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
+| `eventQuery` | observability | Optional recent-event query port, present only for local dev/test composition |
 | `packageRepository` | packages | Drizzle package store |
 | `preferences` | preferences | Drizzle project preferences repository |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
@@ -112,6 +113,9 @@ access uses `DocumentAccessPort.canAccessDocument()`.
 | `ws-safe-send.ts` | Defensive `peer.send` wrapper used for all server-initiated sends. |
 
 ## Route helpers / services
+
+Route tests that import Nitro handlers live under `lib/routes/`, never beside
+the handlers: Nitro treats test modules under `routes/` as production routes.
 
 | File | One-liner |
 |---|---|
