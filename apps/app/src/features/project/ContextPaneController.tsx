@@ -22,7 +22,7 @@ import {
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
-import { deriveContextPaneState } from "./context/context-pane-state";
+import { deriveContextPaneState, findActiveUntitledTab } from "./context/context-pane-state";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import {
@@ -184,10 +184,9 @@ export function ContextViewerSurfaceController({
     if (tabs.length === 0) setWantsDefaultOpen(true);
   }, [active]);
 
-  const selectedUntitledTab =
-    activeContextPath === ""
-      ? (tabs.find((tab) => tab.documentId === retainedActiveTabId && tab.kind === "new") ?? null)
-      : null;
+  // Untitled tabs are store-owned until materialization gives them a server
+  // route. Their activation must not depend on search-param validation.
+  const selectedUntitledTab = findActiveUntitledTab(tabs, retainedActiveTabId);
   const paneState = deriveContextPaneState({
     activeTab: activeTab ?? selectedUntitledTab,
     destination:
@@ -305,7 +304,7 @@ export function ContextViewerSurfaceController({
     if (!tab) return;
     selectTab(projectId, documentId);
     if (tab.kind === "new") {
-      onSelectContextPath("", activeContextScheme ?? undefined);
+      onSelectContextPath("", "scratch");
       return;
     }
     onSelectContextPath(tab.path, tab.scheme);
@@ -343,7 +342,7 @@ export function ContextViewerSurfaceController({
     // re-persist — the tab we just closed.
     openedKeyRef.current = openTabKey;
     if (fallback?.kind === "new") {
-      onSelectContextPath("", activeContextScheme ?? undefined);
+      onSelectContextPath("", "scratch");
       return;
     }
     if (fallback) {
@@ -443,7 +442,7 @@ export function ContextViewerSurfaceController({
         getDocumentSessionRegistry().getDetached(documentId);
         openTab(projectId, { kind: "new", documentId, name: "Untitled" });
         selectTab(projectId, documentId);
-        onSelectContextPath("", activeContextScheme ?? undefined);
+        onSelectContextPath("", "scratch");
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
       onCommitted={(documentId, next, ownership) => {

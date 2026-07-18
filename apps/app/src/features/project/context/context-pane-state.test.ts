@@ -1,7 +1,7 @@
 import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { deriveContextPaneState } from "./context-pane-state";
+import { deriveContextPaneState, findActiveUntitledTab } from "./context-pane-state";
 
 const route = { path: "/chapter-1.md", optimisticTab: { id: "route", name: "chapter-1.md" } };
 const emptyTree: ProjectContextTreeDirectory = {
@@ -51,6 +51,14 @@ function derive(overrides: Partial<Parameters<typeof deriveContextPaneState>[0]>
 }
 
 describe("deriveContextPaneState", () => {
+  it("activates a fresh-project untitled tab without a routed scheme", () => {
+    const untitled: ContextTab = { kind: "new", documentId: "new-1", name: "Untitled" };
+    expect(findActiveUntitledTab([untitled], "new-1")).toBe(untitled);
+    expect(
+      derive({ activeTab: findActiveUntitledTab([untitled], "new-1"), destination: null }),
+    ).toEqual({ kind: "document", tab: untitled });
+  });
+
   it("keeps a cached miss optimistic while the tree revalidates", () => {
     expect(derive({ tree: emptyTree, isFetching: true }).kind).toBe("optimistic-loading");
   });

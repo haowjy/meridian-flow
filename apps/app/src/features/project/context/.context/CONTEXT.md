@@ -76,6 +76,10 @@ channel. Desk-restored `new` tabs retain their sessions in explicit detached
 mode; no transport is created before the server row exists. Successful
 materialization restarts any terminal pre-row session before attaching and
 waiting for durable sync.
+Before materialization, active `new` tabs are projected from the desk store,
+not reconstructed from `scheme`/`path` search params. New-tab navigation still
+uses the canonical Scratch empty route, but a fresh project with no prior scheme
+can activate its local editor immediately.
 
 ## Document identity bar
 
