@@ -205,8 +205,9 @@ row requests itself; a file row requests its parent
 inline CreateRow at the target; the root calls it with an empty child list
 before fetch, while nested folders use the same mount at child depth. Creation
 explicitly reveals every target ancestor in the stored expansion model before
-the request starts. Those ancestor toggles are ignored until creation ends, so
-revealed folders stay open afterward. Sibling-collision
+the request starts. Clicking any scheme or folder disclosure while the row is
+open cancels creation and then performs the requested toggle; disclosure clicks
+must never feel inert. Sibling-collision
 validation uses the target folder's children. Starting a creation anywhere
 replaces a pending one; Escape/blur semantics are the shared
 `useInlineNameForm` contract.

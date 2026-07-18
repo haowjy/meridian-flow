@@ -17,6 +17,7 @@ import {
   type ContextEntryValidationError,
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
+import type { ContextCreateKind } from "./context-create-kind";
 
 function validationReason(error: ContextEntryValidationError): string {
   switch (error.reason) {
@@ -85,6 +86,7 @@ export type ContextEntryNameSeverity = {
 export function validateContextEntryName(
   raw: string,
   siblingNames: readonly string[],
+  kind: ContextCreateKind = "file",
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -94,7 +96,10 @@ export function validateContextEntryName(
   if (collides) {
     return {
       level: "error",
-      message: t`A file named ${trimmed} already exists in this location.`,
+      message:
+        kind === "folder"
+          ? t`A folder named ${trimmed} already exists in this location.`
+          : t`A file named ${trimmed} already exists in this location.`,
     };
   }
   if (raw !== trimmed) {

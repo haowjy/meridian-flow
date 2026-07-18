@@ -124,7 +124,10 @@ function DirRow({
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
   const isOpen = env.isExpanded(dir.path, depth);
-  const toggle = () => env.togglePath(dir.path, depth < 2);
+  const toggle = () => {
+    if (env.creating) env.onCreateDone();
+    env.togglePath(dir.path, depth < 2);
+  };
 
   function handleAction(action: EntryAction) {
     if (action === "new-file") env.onRequestCreate("file", dir.path);
@@ -140,6 +143,7 @@ function DirRow({
         path={dir.path}
         currentName={dir.name}
         siblingNames={siblingNames}
+        kind="folder"
         depth={depth}
         icon={isOpen ? FolderOpen : Folder}
         onDone={() => setRenaming(false)}
@@ -202,6 +206,7 @@ function FileRow({
         path={file.path}
         currentName={file.name}
         siblingNames={siblingNames}
+        kind="file"
         depth={depth}
         icon={fileKindIcon(file)}
         onDone={() => setRenaming(false)}
@@ -237,6 +242,7 @@ function RenameRow({
   path,
   currentName,
   siblingNames,
+  kind,
   depth,
   icon,
   onDone,
@@ -244,6 +250,7 @@ function RenameRow({
   path: string;
   currentName: string;
   siblingNames: readonly string[];
+  kind: ContextCreateKind;
   depth: number;
   icon: typeof Folder;
   onDone: () => void;
@@ -256,6 +263,7 @@ function RenameRow({
     path,
     currentName,
     siblingNames,
+    kind,
     onDone,
   });
   return (

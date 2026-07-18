@@ -327,7 +327,7 @@ describe("ContextTreePanel row menus", () => {
     });
   });
 
-  it("keeps revealed target and ancestor folders open after creation is cancelled", async () => {
+  it("cancels creation and toggles when its target disclosure is clicked", async () => {
     await renderPanel(async () => {
       await clickMenuItem(entryMenuRoot("notes"), "[data-context-menu-item]", "New folder");
       const folderRow = (name: string) =>
@@ -336,19 +336,9 @@ describe("ContextTreePanel row menus", () => {
         );
 
       expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("true");
-      await act(async () => {
-        folderRow("notes")?.click();
-        folderRow("alpha")?.click();
-      });
-      expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("true");
-      expect(folderRow("alpha")?.getAttribute("aria-expanded")).toBe("true");
-
-      await act(async () => {
-        createInput().dispatchEvent(
-          new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-        );
-      });
-      expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => folderRow("notes")?.click());
+      expect(document.querySelector('input[aria-label="Folder name"]')).toBeNull();
+      expect(folderRow("notes")?.getAttribute("aria-expanded")).toBe("false");
       expect(folderRow("alpha")?.getAttribute("aria-expanded")).toBe("true");
     });
   });
@@ -368,6 +358,17 @@ describe("ContextTreePanel row menus", () => {
         type: "file",
         path: "/alpha/top.md",
       });
+    });
+  });
+
+  it("names folder collisions as folders", async () => {
+    await renderPanel(async () => {
+      await clickMenuItem(entryMenuRoot("alpha"), "[data-context-menu-item]", "New folder");
+      await typeAndCommit(createInput(), "notes");
+      expect(createEntryMock).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        "A folder named notes already exists in this location.",
+      );
     });
   });
 

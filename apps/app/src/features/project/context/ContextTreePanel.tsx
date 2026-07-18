@@ -188,18 +188,9 @@ function SchemeSection({
     [onRequestCreate, revealPath],
   );
 
-  const togglePath = useCallback(
-    (path: string, defaultOpen: boolean) => {
-      if (
-        creating &&
-        (creating.parentPath === path || creating.parentPath.startsWith(`${path}/`))
-      ) {
-        return;
-      }
-      setExpandedPaths((current) => ({ ...current, [path]: !(current[path] ?? defaultOpen) }));
-    },
-    [creating],
-  );
+  const togglePath = useCallback((path: string, defaultOpen: boolean) => {
+    setExpandedPaths((current) => ({ ...current, [path]: !(current[path] ?? defaultOpen) }));
+  }, []);
 
   const { tree, isError, isFetching, refetch } = useProjectContextTree(projectId, scheme, {
     enabled: isOpen,
@@ -253,7 +244,8 @@ function SchemeSection({
         icon={schemeIcon(scheme)}
         expanded={isOpen}
         onToggle={() => {
-          if (!creating) setExpanded((previous) => !previous);
+          if (creating) onCreateDone();
+          setExpanded((previous) => !previous);
         }}
         onNewFile={() => requestCreate("file", "")}
         onNewFolder={() => requestCreate("folder", "")}
