@@ -33,6 +33,7 @@ import {
   useDeleteConfirmation,
 } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
+import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
@@ -66,8 +67,17 @@ export type ContextTreePanelProps = {
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  creating?: { kind: ContextCreateKind; scheme: ProjectContextTreeScheme } | null;
-  onRequestCreate?: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
+  creating?: {
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+    /** Target folder path (`""` = scheme root). */
+    parentPath: string;
+  } | null;
+  onRequestCreate?: (
+    scheme: ProjectContextTreeScheme,
+    kind: ContextCreateKind,
+    parentPath: string,
+  ) => void;
   onCreateDone?: () => void;
 };
 
@@ -113,8 +123,12 @@ export function ContextTreePanel({
             activePath={activePath}
             defaultExpanded={scheme === schemes[0]}
             onSelectFile={onSelectFile}
-            creating={creating?.scheme === scheme ? creating.kind : null}
-            onRequestCreate={(kind) => onRequestCreate(scheme, kind)}
+            creating={
+              creating?.scheme === scheme
+                ? { kind: creating.kind, parentPath: creating.parentPath }
+                : null
+            }
+            onRequestCreate={(kind, parentPath) => onRequestCreate(scheme, kind, parentPath)}
             onCreateDone={onCreateDone}
           />
         </Fragment>
@@ -162,8 +176,8 @@ function SchemeSection({
   activePath: string | null;
   defaultExpanded: boolean;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  creating: ContextCreateKind | null;
-  onRequestCreate: (kind: ContextCreateKind) => void;
+  creating: { kind: ContextCreateKind; parentPath: string } | null;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onCreateDone: () => void;
 }) {
   // The user-controlled toggle. `isOpen` derives from it plus the cases where
@@ -202,17 +216,18 @@ function SchemeSection({
         icon={schemeIcon(scheme)}
         expanded={isOpen}
         onToggle={() => setExpanded((prev) => !prev)}
-        onNewFile={() => onRequestCreate("file")}
-        onNewFolder={() => onRequestCreate("folder")}
+        onNewFile={() => onRequestCreate("file", "")}
+        onNewFolder={() => onRequestCreate("folder", "")}
       />
       {isOpen ? (
         <div>
-          {creating ? (
+          {creating && creating.parentPath === "" ? (
             <CreateRow
               projectId={projectId}
               activeThreadId={activeThreadId}
               scheme={scheme}
-              kind={creating}
+              kind={creating.kind}
+              parent=""
               depth={1}
               siblingNames={rootSiblingNames}
               onDone={onCreateDone}
@@ -243,8 +258,12 @@ function SchemeSection({
               activeScheme={activeScheme}
               activePath={activePath}
               activeLocationPath={activeLocationPath}
+              creating={creating}
               onSelectFile={onSelectFile}
+              onRequestCreate={onRequestCreate}
               onRequestDelete={deleteConfirm.requestDelete}
+              onCreateDone={onCreateDone}
+              onCreatedFilePath={setPendingOpenPath}
             />
           )}
         </div>
@@ -374,8 +393,12 @@ function TreeBlock({
   activeScheme,
   activePath,
   activeLocationPath,
+  creating,
   onSelectFile,
+  onRequestCreate,
   onRequestDelete,
+  onCreateDone,
+  onCreatedFilePath,
 }: {
   dir: ContextDir;
   depth: number;
@@ -385,12 +408,29 @@ function TreeBlock({
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   activeLocationPath: string | null;
+  creating: { kind: ContextCreateKind; parentPath: string } | null;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onRequestDelete: (target: EntryActionTarget) => void;
+  onCreateDone: () => void;
+  onCreatedFilePath: (path: string) => void;
 }) {
   const siblingNames = dir.children.map((child) => child.name);
   return (
     <>
+      {creating && creating.parentPath === dir.path ? (
+        <CreateRow
+          projectId={projectId}
+          activeThreadId={activeThreadId}
+          scheme={scheme}
+          kind={creating.kind}
+          parent={creating.parentPath}
+          depth={depth}
+          siblingNames={siblingNames}
+          onDone={onCreateDone}
+          onCreatedFilePath={onCreatedFilePath}
+        />
+      ) : null}
       {dir.children.map((child) =>
         child.kind === "dir" ? (
           <DirRow
@@ -403,9 +443,13 @@ function TreeBlock({
             activeScheme={activeScheme}
             activePath={activePath}
             activeLocationPath={activeLocationPath}
+            creating={creating}
             siblingNames={siblingNames}
             onSelectFile={onSelectFile}
+            onRequestCreate={onRequestCreate}
             onRequestDelete={onRequestDelete}
+            onCreateDone={onCreateDone}
+            onCreatedFilePath={onCreatedFilePath}
           />
         ) : (
           <FileRow
@@ -418,6 +462,7 @@ function TreeBlock({
             active={scheme === activeScheme && child.path === activePath}
             siblingNames={siblingNames}
             onSelect={onSelectFile}
+            onRequestCreate={onRequestCreate}
             onRequestDelete={onRequestDelete}
           />
         ),
@@ -456,9 +501,13 @@ function DirRow({
   activeScheme,
   activePath,
   activeLocationPath,
+  creating,
   siblingNames,
   onSelectFile,
+  onRequestCreate,
   onRequestDelete,
+  onCreateDone,
+  onCreatedFilePath,
 }: {
   dir: ContextDir;
   depth: number;
@@ -468,24 +517,38 @@ function DirRow({
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   activeLocationPath: string | null;
+  creating: { kind: ContextCreateKind; parentPath: string } | null;
   siblingNames: readonly string[];
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onRequestDelete: (target: EntryActionTarget) => void;
+  onCreateDone: () => void;
+  onCreatedFilePath: (path: string) => void;
 }) {
   const ownsActive =
     scheme === activeScheme &&
     (activeLocationPath === dir.path || (activeLocationPath?.startsWith(`${dir.path}/`) ?? false));
+  // A create row targeting this folder (or a descendant) must stay visible, so
+  // its presence forces the folder open — same rule the section applies.
+  const ownsCreation =
+    creating !== null &&
+    (creating.parentPath === dir.path || creating.parentPath.startsWith(`${dir.path}/`));
   const [expanded, setExpanded] = useState(depth < 2 || ownsActive);
   const [renaming, setRenaming] = useState(false);
+  const isOpen = expanded || ownsCreation;
 
   useEffect(() => {
-    if (ownsActive) setExpanded(true);
-  }, [ownsActive]);
+    // Persist forced-open states so the folder stays open once the active file
+    // moves elsewhere or the create row completes.
+    if (ownsActive || ownsCreation) setExpanded(true);
+  }, [ownsActive, ownsCreation]);
 
   const toggle = () => setExpanded((prev) => !prev);
 
   function handleAction(action: EntryAction) {
-    if (action === "rename") setRenaming(true);
+    if (action === "new-file") onRequestCreate("file", dir.path);
+    else if (action === "new-folder") onRequestCreate("folder", dir.path);
+    else if (action === "rename") setRenaming(true);
     else if (action === "delete") onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
   }
 
@@ -499,7 +562,7 @@ function DirRow({
         currentName={dir.name}
         siblingNames={siblingNames}
         depth={depth}
-        icon={expanded ? FolderOpen : Folder}
+        icon={isOpen ? FolderOpen : Folder}
         onDone={() => setRenaming(false)}
       />
     );
@@ -513,20 +576,20 @@ function DirRow({
         <div
           role="button"
           tabIndex={0}
-          aria-expanded={expanded}
+          aria-expanded={isOpen}
           aria-label={t`Toggle folder ${dir.name}`}
           onClick={toggle}
           onKeyDown={activateOnKey(toggle)}
           className="group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
-          <Twistie expanded={expanded} />
-          <RowIcon icon={expanded ? FolderOpen : Folder} />
+          <Twistie expanded={isOpen} />
+          <RowIcon icon={isOpen ? FolderOpen : Folder} />
           <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
           <EntryKebabButton onAction={handleAction} />
         </div>
       </ContextEntryMenu>
-      {expanded ? (
+      {isOpen ? (
         <TreeBlock
           dir={dir}
           depth={depth + 1}
@@ -536,8 +599,12 @@ function DirRow({
           activeScheme={activeScheme}
           activePath={activePath}
           activeLocationPath={activeLocationPath}
+          creating={creating}
           onSelectFile={onSelectFile}
+          onRequestCreate={onRequestCreate}
           onRequestDelete={onRequestDelete}
+          onCreateDone={onCreateDone}
+          onCreatedFilePath={onCreatedFilePath}
         />
       ) : null}
     </>
@@ -553,6 +620,7 @@ function FileRow({
   active,
   siblingNames,
   onSelect,
+  onRequestCreate,
   onRequestDelete,
 }: {
   file: ContextFile;
@@ -563,13 +631,16 @@ function FileRow({
   active: boolean;
   siblingNames: readonly string[];
   onSelect: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const select = () => onSelect(scheme, file);
 
   function handleAction(action: EntryAction) {
-    if (action === "rename") setRenaming(true);
+    if (action === "new-file") onRequestCreate("file", parentContextEntryPath(file.path));
+    else if (action === "new-folder") onRequestCreate("folder", parentContextEntryPath(file.path));
+    else if (action === "rename") setRenaming(true);
     else if (action === "delete")
       onRequestDelete({ name: file.name, path: file.path, kind: "file" });
   }
@@ -680,6 +751,7 @@ function CreateRow({
   activeThreadId,
   scheme,
   kind,
+  parent,
   depth,
   siblingNames,
   onDone,
@@ -689,6 +761,8 @@ function CreateRow({
   activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
+  /** Parent folder path (`""` = scheme root) prefixing the submitted path. */
+  parent: string;
   depth: number;
   siblingNames: readonly string[];
   onDone: () => void;
@@ -700,6 +774,7 @@ function CreateRow({
     activeThreadId,
     scheme,
     kind,
+    parent,
     siblingNames,
     onDone,
     onCreated: kind === "file" ? onCreatedFilePath : undefined,

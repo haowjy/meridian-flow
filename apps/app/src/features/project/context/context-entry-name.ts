@@ -46,6 +46,16 @@ export function joinContextEntryPath(parent: string, leaf: string): string {
 }
 
 /**
+ * Parent folder of an absolute scheme-relative entry path — the inverse of
+ * `joinContextEntryPath`. Top-level entries (`/notes.md`) return `""`, the
+ * same scheme-root sentinel the create flow already uses for `parent`.
+ */
+export function parentContextEntryPath(path: string): string {
+  const cut = path.lastIndexOf("/");
+  return cut <= 0 ? "" : path.slice(0, cut);
+}
+
+/**
  * Localized validation error for a proposed (already-trimmed) entry name, or
  * null when the name is acceptable. An empty name is not an error — both
  * create rows treat committing an empty input as cancel, so only callers

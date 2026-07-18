@@ -2,14 +2,15 @@
  * ContextEntryActions — right-click context menu and hover kebab button for
  * file/folder rows in the desktop context tree.
  *
- * Actions: Rename (opens inline rename row), Delete (confirms then deletes).
- * Both the right-click menu and the kebab dropdown share the same action
- * dispatch — only the trigger differs.
+ * Actions: New file / New folder (open the inline create row nested at the
+ * target folder), Rename (opens inline rename row), Delete (confirms then
+ * deletes). Both the right-click menu and the kebab dropdown share the same
+ * action dispatch — only the trigger differs.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Ellipsis, Pencil, Trash2 } from "lucide-react";
+import { Ellipsis, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { useCallback, useState } from "react";
 
@@ -28,6 +29,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
@@ -35,7 +37,7 @@ import { cn } from "@/lib/utils";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
-export type EntryAction = "rename" | "delete";
+export type EntryAction = "new-file" | "new-folder" | "rename" | "delete";
 
 export type EntryActionTarget = {
   /** Display name of the entry (basename). */
@@ -99,6 +101,21 @@ export function EntryKebabButton({
       >
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-sm"
+          onSelect={() => onAction("new-file")}
+        >
+          <FilePlus className="size-3.5 text-muted-foreground" aria-hidden />
+          <Trans>New file</Trans>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="cursor-pointer gap-2 text-sm"
+          onSelect={() => onAction("new-folder")}
+        >
+          <FolderPlus className="size-3.5 text-muted-foreground" aria-hidden />
+          <Trans>New folder</Trans>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="cursor-pointer gap-2 text-sm"
           onSelect={() => onAction("rename")}
         >
           <Pencil className="size-3.5 text-muted-foreground" aria-hidden />
@@ -121,6 +138,21 @@ export function EntryKebabButton({
 function ActionMenuItems({ onAction }: { onAction: (action: EntryAction) => void }) {
   return (
     <>
+      <ContextMenuPrimitive.Item
+        className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50"
+        onSelect={() => onAction("new-file")}
+      >
+        <FilePlus className="size-3.5 text-muted-foreground" aria-hidden />
+        <Trans>New file</Trans>
+      </ContextMenuPrimitive.Item>
+      <ContextMenuPrimitive.Item
+        className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50"
+        onSelect={() => onAction("new-folder")}
+      >
+        <FolderPlus className="size-3.5 text-muted-foreground" aria-hidden />
+        <Trans>New folder</Trans>
+      </ContextMenuPrimitive.Item>
+      <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
       <ContextMenuPrimitive.Item
         className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50"
         onSelect={() => onAction("rename")}

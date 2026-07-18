@@ -47,6 +47,7 @@ export function NavigationDrawer({
   const [creating, setCreating] = useState<{
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
+    parentPath: string;
   } | null>(null);
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) setCreating(null);
@@ -130,7 +131,9 @@ export function NavigationDrawer({
                 activePath={activeContextPath}
                 onSelectFile={handleSelectFile}
                 creating={creating}
-                onRequestCreate={(scheme, kind) => setCreating({ kind, scheme })}
+                onRequestCreate={(scheme, kind, parentPath) =>
+                  setCreating({ kind, scheme, parentPath })
+                }
                 onCreateDone={() => setCreating(null)}
               />
             </WorkspaceNavBody>
