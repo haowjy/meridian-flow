@@ -13,7 +13,10 @@ import {
   projectBrowseContextUri,
   WORK_SCOPED_BROWSE_SCHEMES,
 } from "../../../../../../domains/context/browse-layer-scheme.js";
-import { contextPortForProjectBrowse } from "../../../../../../domains/context/context-port-resolution.js";
+import {
+  contextPortForProjectBrowse,
+  contextPortForProjectRecovery,
+} from "../../../../../../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
@@ -29,7 +32,10 @@ export function parseScheme(value: string): ProjectContextTreeScheme {
 export const toUri = projectBrowseContextUri;
 
 /** Common preamble: auth → project ownership → scheme → workId → context port. */
-export async function resolveContextRoute(event: H3Event): Promise<{
+export async function resolveContextRoute(
+  event: H3Event,
+  options: { recoverAcrossProject?: boolean } = {},
+): Promise<{
   app: AppServices;
   userId: string;
   projectId: string;
@@ -46,12 +52,15 @@ export async function resolveContextRoute(event: H3Event): Promise<{
   if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme) && !workId) {
     throw createError({ statusCode: 400, message: "`workId` is required" });
   }
-  const port = await contextPortForProjectBrowse({
-    deps: { contextPorts: app.contextPorts, works: app.workRepo },
-    projectId,
-    userId: user.userId,
-    workId,
-  });
+  const deps = { contextPorts: app.contextPorts, works: app.workRepo };
+  const port = options.recoverAcrossProject
+    ? await contextPortForProjectRecovery({
+        deps,
+        projectId,
+        userId: user.userId,
+        requestedWorkId: workId,
+      })
+    : await contextPortForProjectBrowse({ deps, projectId, userId: user.userId, workId });
   if (!port) throw createError({ statusCode: 404, message: "Work not found" });
   return { app, userId: user.userId, projectId, scheme, workId, port };
 }

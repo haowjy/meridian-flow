@@ -34,6 +34,43 @@ describe("context router listings", () => {
 });
 
 describe("context router untitled identity recovery", () => {
+  it("returns the primary Work authority for a retry found in the base adapter map", async () => {
+    const scratch = {
+      name: "scratch",
+      capabilities: { writable: true, searchable: true },
+      locateDocument: async (documentId: string) =>
+        Ok({ documentId, path: "Untitled 1.md", name: "Untitled 1.md" }),
+      createUntitledDocument: async (_path: string, options: { documentId: string }) =>
+        Ok({
+          status: "already-exists" as const,
+          documentId: options.documentId,
+          path: "Untitled 1.md",
+          name: "Untitled 1.md",
+        }),
+    } as unknown as ContextSchemeAdapter;
+    const port = createContextPortRouter({
+      adapters: new Map([["scratch", scratch]]),
+      adapterAuthorities: new Map([["scratch", "work-1"]]),
+      primaryWorkId: "work-1",
+      allowedAuthorities: new Set(["work-1"]),
+      resolveWorkAdapters: () => new Map([["scratch", scratch]]),
+    });
+
+    await expect(
+      port.createUntitledDocument("scratch://work-1", {
+        documentId: "00000000-0000-4000-8000-000000000100",
+        origin: { type: "system" },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        status: "already-materialized",
+        scheme: "scratch",
+        workId: "work-1",
+      },
+    });
+  });
+
   it("returns an existing document's canonical cross-scheme location without creating a row", async () => {
     const requestedCreate = vi.fn();
     const manuscript = {

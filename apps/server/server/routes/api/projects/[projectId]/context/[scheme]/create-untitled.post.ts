@@ -53,7 +53,9 @@ export async function createUntitledContextDocument(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, workId, port } = await resolveContextRoute(event);
+  const { userId, scheme, workId, port } = await resolveContextRoute(event, {
+    recoverAcrossProject: true,
+  });
   return createUntitledContextDocument({
     port,
     userId,

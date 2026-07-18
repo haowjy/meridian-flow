@@ -34,6 +34,8 @@ import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri
 
 export interface ContextPortRouterDeps {
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  /** Canonical Work authority for Work-scoped adapters already present in the base map. */
+  adapterAuthorities?: ReadonlyMap<ContextScheme, string>;
   /** Work IDs this port may address through `scheme://<workId>/...` authority URIs. */
   allowedAuthorities?: ReadonlySet<string>;
   /** Primary Work for bare Work-scoped URIs in this router. */
@@ -252,14 +254,24 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         scheme: ContextScheme;
         authority: string | null;
         adapter: ContextSchemeAdapter;
-      }> = [...adapters].map(([scheme, candidate]) => ({
-        scheme,
-        authority: null,
-        adapter: candidate,
-      }));
+      }> = [];
+      const locationKeys = new Set<string>();
+      const addLocation = (
+        scheme: ContextScheme,
+        authority: string | null,
+        candidate: ContextSchemeAdapter,
+      ) => {
+        const key = `${scheme}:${authority ?? ""}`;
+        if (locationKeys.has(key)) return;
+        locationKeys.add(key);
+        locations.push({ scheme, authority, adapter: candidate });
+      };
+      for (const [scheme, candidate] of adapters) {
+        addLocation(scheme, deps.adapterAuthorities?.get(scheme) ?? null, candidate);
+      }
       for (const authority of deps.allowedAuthorities ?? []) {
         for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
-          locations.push({ scheme, authority, adapter: candidate });
+          addLocation(scheme, authority, candidate);
         }
       }
       for (const location of locations) {

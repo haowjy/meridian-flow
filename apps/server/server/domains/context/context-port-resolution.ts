@@ -59,7 +59,23 @@ export function contextPortForThread(
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "findById">;
+  works: Pick<WorkRepository, "findById" | "listByProject">;
+}
+
+/** Resolve the project-owned recovery surface across every active Work. */
+export async function contextPortForProjectRecovery(input: {
+  deps: ProjectBrowseContextPortDeps;
+  projectId: string;
+  userId: string;
+  requestedWorkId?: string | null;
+}): Promise<ContextPort> {
+  const works = await input.deps.works.listByProject(input.projectId);
+  const workIds = new Set(works.map((work) => work.id));
+  const primaryWorkId = input.requestedWorkId ?? works[0]?.id ?? null;
+  if (!primaryWorkId || !workIds.has(primaryWorkId)) {
+    return input.deps.contextPorts.forProject(input.projectId, input.userId);
+  }
+  return input.deps.contextPorts.forWork(primaryWorkId, input.projectId, input.userId, workIds);
 }
 
 /** Resolve one project-browse port whose Work authorities have all been proven. */
