@@ -589,6 +589,7 @@ describe("untitled reconciliation durability", () => {
     finishFlush();
     for (let index = 0; index < 8; index += 1) await Promise.resolve();
     expect(storedEntries(h.values)[0]?.documentId).toBe("replacement");
+    expect(h.cleared).toEqual(["original"]);
     expect(untitledDocumentIsEmpty(replacement.document.getXmlFragment("prosemirror"))).toBe(false);
   });
 });

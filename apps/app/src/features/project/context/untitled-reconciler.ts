@@ -410,6 +410,7 @@ export class UntitledReconciler {
     await replacement.whenLocalPersistenceSynced();
     Y.applyUpdate(replacement.document, Y.encodeStateAsUpdate(session.document));
     await replacement.flushLocalPersistence();
+    await this.deps.sessions.destroyRoom(entry.documentId, { clearPersistence: true });
 
     const record = this.records.get(entry.documentId);
     if (!record) return;
