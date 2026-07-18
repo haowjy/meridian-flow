@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: cross-device working-set sync — reopening
+  Meridian on another device resumes the same document, recent tabs, and
+  chat thread (#217). One row per user·project (`project_user_working_sets`);
+  debounced whole-snapshot PUTs with revision-checked acks; four-case
+  hydration at project entry (server wins on true conflict); recovery paths
+  (PUT failure, offline→online, sync re-enable) mark the baseline suspect
+  and GET-before-PUT so stale offline state never overwrites newer devices.
+  One toggle in Settings › Preferences: "Resume where I left off on any
+  device" (default ON; fails closed when the preference can't be read).
+  Device-local restore storage (`context-last-route`) is replaced by the
+  canonical working-set store; local restore behavior is unchanged.
+  Resume is optimistic: the remembered document's tab and a loading
+  skeleton render immediately on entry instead of flashing the empty
+  "Resume / New document" state while the file tree loads. Settings ›
+  Preferences is split into "This device" (language, text size) and
+  "Account" (sync toggle) tabs.
+  The full tab desk persists device-locally: reload restores every open
+  tab (including in-flight untitled docs) on all sync branches — inside
+  the sync debounce, with sync off, or offline; a newer server snapshot
+  still replaces the desk. Closing a background tab no longer erases the
+  synced recent list; deleted documents drop out of it on next entry;
+  clearing the desk then reloading default-opens instead of landing on
+  an empty New-document canvas.
 - `apps/app`: the dev debug overlay gains a pop-out Streams trace viewer showing
   live client Yjs and agent-stream wire traffic as metadata-only records without
   blocking the editor;

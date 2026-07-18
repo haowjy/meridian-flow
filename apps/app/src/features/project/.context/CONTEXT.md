@@ -175,10 +175,15 @@ The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
 projection, close fallbacks, scroll restoration, and screen-entry defaults:
 entering with no destination replays the remembered last file
-(`context-last-route.ts`; re-arms every entry — the controller is persistent,
-so a mount-scoped one-shot only ever fires once), and a desk with nothing to
-restore and no tabs default-opens the first manuscript document. Deliberate
-empty desks stay empty (closing the last tab forgets the route).
+(`client/working-set/`; replay re-arms every entry because the controller is
+persistent). A known active route is projected as a loading tab and document
+surface until the context tree validates and materializes its durable tab; a
+resolved missing route drops that projection and returns to the empty state.
+A desk with nothing to restore and no tabs runs the
+default-open ladder. Clearing the desk clears its remembered routes without
+changing the current entry; on the next entry, the default-open ladder runs.
+This cleared state is intentionally ephemeral and has the same behavior on
+every device.
 `ContextViewer` and `ContextTabBar` are controlled views. The tab strip also owns the collapsed
 sidebar/dock expand controls; Editor therefore supplies no separate route pane
 or header band.

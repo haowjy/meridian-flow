@@ -12,8 +12,17 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { ProjectRouteData } from "@/client/query/project-route-data";
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useWorks } from "@/client/query/useWorks";
+import { useContextTabsStore } from "@/client/stores";
+import {
+  hydrateWorkingSet,
+  retryWorkingSetHydration,
+  type WorkingSetHydrationPlan,
+} from "@/client/working-set";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -36,6 +45,11 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
+import {
+  contextDeskReconciliation,
+  seedWorkingSetTabs,
+  validateContextDeskTabs,
+} from "./working-set-tab-seeding";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -44,6 +58,8 @@ const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
 
 export type ProjectViewProps = {
   projectId: string;
+  workingSet: ProjectRouteData["workingSet"];
+  workingSetSyncEnabled: boolean;
   /** Resolved screen key from the route (defaults to home). */
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
@@ -75,11 +91,52 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
+  // The route keys ProjectView by projectId. This initializer therefore runs
+  // before any gated child for each project entry; the driver makes a strict-
+  // mode replay of the same loader revision an adoption no-op.
+  const [entryHydration] = useState<WorkingSetHydrationPlan>(() =>
+    hydrateWorkingSet(props.projectId, props.workingSet, props.workingSetSyncEnabled),
+  );
+  const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
+  const workingSetHydration = retriedHydration ?? entryHydration;
+  const queryClient = useQueryClient();
+  const threadWorkId = useContextWorkId(props.projectId, props.activeThreadId);
+  const { defaultWorkId } = useWorks(props.projectId);
+  const routeWorkId = threadWorkId ?? defaultWorkId;
+  const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
+  const reconciledDeskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (workingSetHydration.status !== "read-degraded") return;
+    const retry = () => {
+      void retryWorkingSetHydration(props.projectId).then(setRetriedHydration);
+    };
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [props.projectId, workingSetHydration.status]);
+
+  useEffect(() => {
+    if (!deskHydrated) return;
+    const reconciliation = contextDeskReconciliation(workingSetHydration);
+    const reconciliationKey = `${props.projectId}:${reconciliation}`;
+    if (reconciledDeskRef.current === reconciliationKey) return;
+    reconciledDeskRef.current = reconciliationKey;
+    if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
+      void seedWorkingSetTabs({
+        queryClient,
+        projectId: props.projectId,
+        routes: workingSetHydration.row.recentRoutes,
+        routeWorkId,
+      });
+      return;
+    }
+    void validateContextDeskTabs({ queryClient, projectId: props.projectId, routeWorkId });
+  }, [deskHydrated, props.projectId, queryClient, routeWorkId, workingSetHydration]);
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
   // (localStorage), so this is at most one frame — no visible flash. Gating here
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
-  const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
+  const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
+  const hydrated = prefsHydrated && deskHydrated;
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
@@ -208,6 +265,7 @@ function DesktopProject(props: ProjectViewProps) {
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           dockToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectContextPath={props.onSelectContextPath}
+          onClearContextDestination={props.onExitContextScheme}
         />
       ),
     },
