@@ -39,6 +39,7 @@ const correlationParsers = {
   toolName: parseStringCorrelation,
   toolCallId: parseStringCorrelation,
   errorCode: parseStringCorrelation,
+  gatewayCallId: parseStringCorrelation,
   documentId: parseStringCorrelation,
   branchId: parseStringCorrelation,
   branchGeneration: parseNumberCorrelation,
