@@ -21,29 +21,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { createCollabDomain } = await import("../../../../../../domains/collab/composition.js");
+    const { createCollabDomain } = await import("../../domains/collab/composition.js");
     const { createProductionUnifiedContextPortFactory } = await import(
-      "../../../../../../domains/context/unified-context-port-factory.js"
+      "../../domains/context/unified-context-port-factory.js"
     );
-    const { createNoopEventSink } = await import(
-      "../../../../../../domains/observability/index.js"
+    const { createNoopEventSink } = await import("../../domains/observability/index.js");
+    const { createDrizzleProjectRepository } = await import("../../domains/projects/index.js");
+    const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
+    const { handleContextReadRequest } = await import("../context-read-route.js");
+    const { createDrizzleDocumentAccess } = await import("../document-access.js");
+    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { createContextEntry, parseCreateContextEntryBody } = await import(
+      "../../routes/api/projects/[projectId]/context/[scheme]/create.post.js"
     );
-    const { createDrizzleProjectRepository } = await import(
-      "../../../../../../domains/projects/index.js"
-    );
-    const { createInMemoryObjectStore } = await import(
-      "../../../../../../domains/storage/index.js"
-    );
-    const { handleContextReadRequest } = await import(
-      "../../../../../../lib/context-read-route.js"
-    );
-    const { createDrizzleDocumentAccess } = await import(
-      "../../../../../../lib/document-access.js"
-    );
-    const { truncateDrizzleTables } = await import(
-      "../../../../../../test-support/drizzle-reset.js"
-    );
-    const { createContextEntry, parseCreateContextEntryBody } = await import("./create.post.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000921";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000922";

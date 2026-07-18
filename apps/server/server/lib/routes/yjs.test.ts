@@ -17,7 +17,7 @@ import {
   createYjsWebSocketHooks,
   enforceBranchHandshake,
   subscribeWriterNoticeTransport,
-} from "./yjs";
+} from "../../routes/ws/yjs.js";
 
 const documentName = "branch:branch_1:gen:3";
 

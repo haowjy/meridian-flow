@@ -8,7 +8,7 @@ import WebSocket from "ws";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
-import { admitLiveWriterMessage } from "./yjs.js";
+import { admitLiveWriterMessage } from "../../routes/ws/yjs.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
