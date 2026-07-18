@@ -22,15 +22,23 @@
  * - i18n exception: DEV-only debug surface; inline English strings bypass
  *   Lingui by design.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { DebugErrorBoundary } from "./DebugErrorBoundary";
 import { InlineInspector } from "./InlineInspector";
 import { ConversationSection } from "./sections/ConversationSection";
 import { TransportSection, useConnectionState } from "./sections/TransportSection";
+import {
+  getServerFeedState,
+  type ServerFeedState,
+  startServerFeed,
+  stopServerFeed,
+  subscribeToServerFeed,
+} from "./trace/server-feed";
 import { openTraceViewerWindow, TraceViewer, type TraceViewerTarget } from "./trace/TraceViewer";
 import { DEBUG_FEATURE_ALLOWED, useDebugEnabled } from "./use-debug-enabled";
 
@@ -55,15 +63,37 @@ const CONNECTION_DOT: Record<string, string> = {
   closed: "bg-destructive",
 };
 
+const SERVER_FEED_DOT: Record<ServerFeedState, string> = {
+  idle: "bg-muted-foreground",
+  connecting: "bg-status-warning",
+  open: "bg-primary",
+  error: "bg-destructive",
+};
+
 function DebugPill({ onDisable }: { onDisable: () => void }) {
   const [open, setOpen] = useState(false);
   const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
+  const [serverFeedEnabled, setServerFeedEnabled] = useState(false);
+  const serverFeedState = useSyncExternalStore(
+    subscribeToServerFeed,
+    getServerFeedState,
+    getServerFeedState,
+  );
   const conn = useConnectionState();
   const dot = (conn && CONNECTION_DOT[conn.kind]) ?? "bg-muted-foreground";
   const closeTraceViewer = useCallback((target: TraceViewerTarget) => {
     setTraceViewerTarget((current) => (current === target ? null : current));
   }, []);
+
+  useEffect(() => {
+    if (!serverFeedEnabled) {
+      stopServerFeed();
+      return;
+    }
+    startServerFeed();
+    return stopServerFeed;
+  }, [serverFeedEnabled]);
 
   function openTraceViewer() {
     if (traceViewerTarget && !traceViewerTarget.popup.closed) {
@@ -115,13 +145,34 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               <PillSection title="Active thread">
                 <ConversationSection />
               </PillSection>
-              <button
-                type="button"
-                className="focus-ring rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
-                onClick={openTraceViewer}
-              >
-                Streams
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
+                  onClick={openTraceViewer}
+                >
+                  Streams
+                </button>
+                <label
+                  htmlFor="debug-server-feed"
+                  className="flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"
+                >
+                  <span>Server feed</span>
+                  <span
+                    className={cn("size-1.5 rounded-full", SERVER_FEED_DOT[serverFeedState])}
+                    aria-hidden
+                  />
+                  <span className="font-mono" aria-live="polite">
+                    {serverFeedState}
+                  </span>
+                  <Switch
+                    id="debug-server-feed"
+                    checked={serverFeedEnabled}
+                    onCheckedChange={setServerFeedEnabled}
+                    aria-label="Server feed"
+                  />
+                </label>
+              </div>
               {popupBlocked ? (
                 <p className="text-meta text-status-warning" role="status">
                   Popup blocked — allow popups and try again.
