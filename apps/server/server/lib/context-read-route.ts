@@ -6,7 +6,6 @@ import {
   workScopedBrowseUri,
 } from "../domains/context/browse-layer-scheme.js";
 import {
-  type ContextError,
   contextPortForProjectBrowse,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
@@ -17,6 +16,7 @@ import {
   type WorkRepository,
 } from "../domains/projects/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
+import { contextErrorToHttp } from "./context-error-http.js";
 
 export interface ContextReadRouteDeps {
   projectRepo: ProjectRepository;
@@ -35,34 +35,6 @@ export interface ContextReadRouteInput {
 interface ResolvedReadPath {
   uri: string;
   path: string;
-}
-
-function contextErrorToHttp(error: ContextError): never {
-  switch (error.code) {
-    case "invalid_uri":
-      throw createError({ statusCode: 400, message: error.reason });
-    case "permission_denied":
-      throw createError({ statusCode: 403, message: "Context access denied" });
-    case "conflict":
-      throw createError({ statusCode: 409, message: "Context path conflict" });
-    case "stale_source":
-    case "stale_target":
-      throw createError({
-        statusCode: 409,
-        message: "Context location changed; retry the operation",
-      });
-    case "invalid_operation":
-      throw createError({
-        statusCode: 400,
-        message: error.message ?? "Invalid context operation",
-      });
-    case "not_found":
-      throw createError({ statusCode: 404, message: "Context path not found" });
-    case "context_unavailable":
-      throw createError({ statusCode: 503, message: "Context is unavailable" });
-    case "io_error":
-      throw createError({ statusCode: 502, message: error.message });
-  }
 }
 
 function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): string {
