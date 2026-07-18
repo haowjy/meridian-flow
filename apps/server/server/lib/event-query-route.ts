@@ -7,38 +7,44 @@ import { type EventQueryFilter, eventMatchesQueryFilter } from "../domains/obser
 export type EventQueryParameters = Record<string, string | string[] | undefined>;
 
 const EVENT_LEVELS = new Set<EventLevel>(["trace", "debug", "info", "warn", "error", "fatal"]);
-const STRING_CORRELATION_KEYS = [
-  "traceId",
-  "runId",
-  "parentRunId",
-  "requestId",
-  "threadId",
-  "turnId",
-  "childRunId",
-  "agentSlug",
-  "attemptId",
-  "provider",
-  "model",
-  "route",
-  "method",
-  "projectId",
-  "workId",
-  "toolName",
-  "toolCallId",
-  "errorCode",
-  "documentId",
-  "branchId",
-  "yjsSpans",
-] as const satisfies readonly (keyof EventCorrelation)[];
-const NUMBER_CORRELATION_KEYS = [
-  "iteration",
-  "branchGeneration",
-  "yjsClient",
-] as const satisfies readonly (keyof EventCorrelation)[];
 
 function badQuery(message: string): never {
   throw createError({ statusCode: 400, message });
 }
+
+type CorrelationParser = (value: string, key: keyof EventCorrelation) => string | number;
+const parseStringCorrelation: CorrelationParser = (value) => value;
+const parseNumberCorrelation: CorrelationParser = (value, key) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) badQuery(`${key} must be a number`);
+  return parsed;
+};
+const correlationParsers = {
+  traceId: parseStringCorrelation,
+  runId: parseStringCorrelation,
+  parentRunId: parseStringCorrelation,
+  requestId: parseStringCorrelation,
+  threadId: parseStringCorrelation,
+  turnId: parseStringCorrelation,
+  childRunId: parseStringCorrelation,
+  agentSlug: parseStringCorrelation,
+  iteration: parseNumberCorrelation,
+  attemptId: parseStringCorrelation,
+  provider: parseStringCorrelation,
+  model: parseStringCorrelation,
+  route: parseStringCorrelation,
+  method: parseStringCorrelation,
+  projectId: parseStringCorrelation,
+  workId: parseStringCorrelation,
+  toolName: parseStringCorrelation,
+  toolCallId: parseStringCorrelation,
+  errorCode: parseStringCorrelation,
+  documentId: parseStringCorrelation,
+  branchId: parseStringCorrelation,
+  branchGeneration: parseNumberCorrelation,
+  yjsClient: parseNumberCorrelation,
+  yjsSpans: parseStringCorrelation,
+} satisfies Record<keyof EventCorrelation, CorrelationParser>;
 
 function singleValue(query: EventQueryParameters, key: string): string | undefined {
   const value = query[key];
@@ -73,16 +79,9 @@ export function parseEventQueryFilter(query: EventQueryParameters): EventQueryFi
   }
 
   const correlationEntries: Array<[keyof EventCorrelation, string | number]> = [];
-  for (const key of STRING_CORRELATION_KEYS) {
+  for (const key of Object.keys(correlationParsers) as Array<keyof EventCorrelation>) {
     const value = singleValue(query, key);
-    if (value !== undefined) correlationEntries.push([key, value]);
-  }
-  for (const key of NUMBER_CORRELATION_KEYS) {
-    const value = singleValue(query, key);
-    if (value === undefined) continue;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) badQuery(`${key} must be a number`);
-    correlationEntries.push([key, parsed]);
+    if (value !== undefined) correlationEntries.push([key, correlationParsers[key](value, key)]);
   }
 
   const correlation = Object.fromEntries(correlationEntries) as Partial<EventCorrelation>;
