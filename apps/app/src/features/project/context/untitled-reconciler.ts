@@ -442,7 +442,6 @@ export class UntitledReconciler {
     await replacement.whenLocalPersistenceSynced();
     Y.applyUpdate(replacement.document, Y.encodeStateAsUpdate(session.document));
     await replacement.flushLocalPersistence();
-    await this.deps.sessions.destroyRoom(entry.documentId, { clearPersistence: true });
 
     const record = this.records.get(entry.documentId);
     if (!record) return;
@@ -461,6 +460,7 @@ export class UntitledReconciler {
     if (candidate) this.candidates.set(replacementId, candidate);
     this.persistAndEmit();
     candidate?.onReminted(replacementId);
+    await this.deps.sessions.destroyRoom(entry.documentId, { clearPersistence: true });
   }
 
   private drain(documentId: string, processedRevision: number): void {

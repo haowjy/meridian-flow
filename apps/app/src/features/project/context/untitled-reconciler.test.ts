@@ -593,6 +593,32 @@ describe("untitled reconciliation durability", () => {
     expect(h.cleared).toEqual(["original"]);
     expect(untitledDocumentIsEmpty(replacement.document.getXmlFragment("prosemirror"))).toBe(false);
   });
+
+  it("leaves a recoverable replacement record when original-room cleanup is interrupted", async () => {
+    const h = harness();
+    h.create.mockResolvedValueOnce({ status: "conflict" });
+    h.sessions.set("original", fakeSession(contentDocument("irreplaceable words")));
+    const replacement = fakeSession(contentDocument(""));
+    h.sessions.set("replacement", replacement);
+    h.deps.sessions.destroyRoom = vi.fn(async () => {
+      throw new Error("interrupted before original cleanup");
+    });
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "original", projectId: "project-1", home: HOME });
+
+    await h.runQueue();
+
+    expect(storedEntries(h.values)).toEqual([
+      expect.objectContaining({
+        documentId: "replacement",
+        materialization: expect.objectContaining({
+          entry: expect.objectContaining({ documentId: "replacement" }),
+        }),
+      }),
+    ]);
+    expect(untitledDocumentIsEmpty(replacement.document.getXmlFragment("prosemirror"))).toBe(false);
+  });
 });
 
 describe("queued identity receipts", () => {
