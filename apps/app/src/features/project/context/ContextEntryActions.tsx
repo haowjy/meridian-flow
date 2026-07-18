@@ -10,9 +10,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Ellipsis, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { Ellipsis, FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,27 @@ import { cn } from "@/lib/utils";
 // ─── Action types ────────────────────────────────────────────────────────────
 
 export type EntryAction = "new-file" | "new-folder" | "rename" | "delete";
+
+type EntryActionSpec = {
+  action: EntryAction;
+  label: React.ReactNode;
+  icon: LucideIcon;
+  group: "create" | "manage";
+  destructive?: true;
+};
+
+const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
+  { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
+  { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
+  { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
+  {
+    action: "delete",
+    label: <Trans>Delete</Trans>,
+    icon: Trash2,
+    group: "manage",
+    destructive: true,
+  },
+];
 
 export type EntryActionTarget = {
   /** Display name of the entry (basename). */
@@ -65,7 +86,7 @@ export function ContextEntryMenu({
           onCloseAutoFocus={onCloseAutoFocus}
           className="z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
-          <ActionMenuItems onAction={dispatch} />
+          <ContextActionItems onAction={dispatch} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
@@ -133,76 +154,70 @@ export function EntryKebabButton({
         onCloseAutoFocus={onCloseAutoFocus}
         className="min-w-[8rem]"
       >
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-sm"
-          onSelect={() => dispatch("new-file")}
-        >
-          <FilePlus className="size-3.5 text-muted-foreground" aria-hidden />
-          <Trans>New file</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-sm"
-          onSelect={() => dispatch("new-folder")}
-        >
-          <FolderPlus className="size-3.5 text-muted-foreground" aria-hidden />
-          <Trans>New folder</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-sm"
-          onSelect={() => dispatch("rename")}
-        >
-          <Pencil className="size-3.5 text-muted-foreground" aria-hidden />
-          <Trans>Rename</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-sm text-destructive focus:text-destructive"
-          onSelect={() => dispatch("delete")}
-        >
-          <Trash2 className="size-3.5" aria-hidden />
-          <Trans>Delete</Trans>
-        </DropdownMenuItem>
+        <DropdownActionItems onAction={dispatch} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-// ─── Shared menu items (used by both context menu and dropdown) ─────────────
+// ─── Primitive-specific renderers over the shared action specification ─────
 
-function ActionMenuItems({ onAction }: { onAction: (action: EntryAction) => void }) {
+function ContextActionItems({ onAction }: { onAction: (action: EntryAction) => void }) {
   return (
     <>
-      <ContextMenuPrimitive.Item
-        className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50"
-        onSelect={() => onAction("new-file")}
-      >
-        <FilePlus className="size-3.5 text-muted-foreground" aria-hidden />
-        <Trans>New file</Trans>
-      </ContextMenuPrimitive.Item>
-      <ContextMenuPrimitive.Item
-        className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50"
-        onSelect={() => onAction("new-folder")}
-      >
-        <FolderPlus className="size-3.5 text-muted-foreground" aria-hidden />
-        <Trans>New folder</Trans>
-      </ContextMenuPrimitive.Item>
-      <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
-      <ContextMenuPrimitive.Item
-        className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50"
-        onSelect={() => onAction("rename")}
-      >
-        <Pencil className="size-3.5 text-muted-foreground" aria-hidden />
-        <Trans>Rename</Trans>
-      </ContextMenuPrimitive.Item>
-      <ContextMenuPrimitive.Item
-        className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-destructive data-[disabled]:opacity-50"
-        onSelect={() => onAction("delete")}
-      >
-        <Trash2 className="size-3.5" aria-hidden />
-        <Trans>Delete</Trans>
-      </ContextMenuPrimitive.Item>
+      {ENTRY_ACTIONS.map((spec, index) => {
+        const Icon = spec.icon;
+        const startsGroup = index > 0 && ENTRY_ACTIONS[index - 1]?.group !== spec.group;
+        return (
+          <Fragment key={spec.action}>
+            {startsGroup ? (
+              <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
+            ) : null}
+            <ContextMenuPrimitive.Item
+              className={cn(
+                "relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-50",
+                spec.destructive
+                  ? "text-destructive data-[highlighted]:text-destructive"
+                  : "data-[highlighted]:text-accent-foreground",
+              )}
+              onSelect={() => onAction(spec.action)}
+            >
+              <Icon
+                className={cn("size-3.5", !spec.destructive && "text-muted-foreground")}
+                aria-hidden
+              />
+              {spec.label}
+            </ContextMenuPrimitive.Item>
+          </Fragment>
+        );
+      })}
     </>
   );
+}
+
+function DropdownActionItems({ onAction }: { onAction: (action: EntryAction) => void }) {
+  return ENTRY_ACTIONS.map((spec, index) => {
+    const Icon = spec.icon;
+    const startsGroup = index > 0 && ENTRY_ACTIONS[index - 1]?.group !== spec.group;
+    return (
+      <Fragment key={spec.action}>
+        {startsGroup ? <DropdownMenuSeparator /> : null}
+        <DropdownMenuItem
+          className={cn(
+            "cursor-pointer gap-2 text-sm",
+            spec.destructive && "text-destructive focus:text-destructive",
+          )}
+          onSelect={() => onAction(spec.action)}
+        >
+          <Icon
+            className={cn("size-3.5", !spec.destructive && "text-muted-foreground")}
+            aria-hidden
+          />
+          {spec.label}
+        </DropdownMenuItem>
+      </Fragment>
+    );
+  });
 }
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────

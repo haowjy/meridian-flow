@@ -23,9 +23,8 @@ Shared across both shells:
 - **Inline name forms** (`useInlineNameForm`): shared state machine; create and
   rename are thin adapters over it. Extend the core, don't fork.
 - **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
-  (right-click context menu + hover kebab) dispatching the same `EntryAction`
-  type through shared `ActionMenuItems`. Add an action once; both triggers
-  inherit it.
+  (right-click context menu + hover kebab) rendered from one ordered action
+  specification. Add an action once; both primitive-specific renderers inherit it.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
 

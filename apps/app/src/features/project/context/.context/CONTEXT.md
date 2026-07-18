@@ -167,9 +167,9 @@ Both adapters are ~25 lines. The shared core is ~100 lines.
 
 ## Dual-trigger caveat
 
-Desktop context menu and kebab both render `ActionMenuItems`, but Radix
-`ContextMenu.Item` and `DropdownMenu.Item` are different primitives — the
-component is not literally shared, only the labels, icons, and dispatch logic.
+Desktop context menu and kebab map one ordered action specification through thin
+renderers for Radix `ContextMenu.Item` and `DropdownMenu.Item`. Labels, icons,
+grouping, destructive metadata, order, and dispatch actions therefore cannot drift.
 The kebab stops propagation so it doesn't trigger the row's click handler.
 `EntryAction` is four actions in fixed order — New file, New folder,
 separator, Rename, Delete (creation first, destructive last) — identical in
