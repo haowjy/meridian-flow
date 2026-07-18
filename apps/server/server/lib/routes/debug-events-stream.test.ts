@@ -5,7 +5,7 @@ import type { EventRecord } from "../../domains/observability/index.js";
 const mocks = vi.hoisted(() => ({
   closed: undefined as (() => void) | undefined,
   listener: undefined as ((event: EventRecord) => void) | undefined,
-  push: vi.fn(async () => undefined),
+  push: vi.fn(async (_frame: { data: string; id?: string }) => undefined),
   pushComment: vi.fn(async () => undefined),
   close: vi.fn(async () => undefined),
   send: vi.fn(() => "sse-body"),
@@ -79,23 +79,45 @@ describe("GET /api/debug/events/stream", () => {
     expect(mocks.unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it("closes a stalled stream instead of growing an unbounded write queue", async () => {
+  it("serializes stalled writes and closes exactly when the pending queue overflows", async () => {
     const request = new AbortController();
-    mocks.push.mockImplementation(() => new Promise<undefined>(() => undefined));
+    const pendingPushes: Array<() => void> = [];
+    mocks.push.mockImplementation(
+      () => new Promise<undefined>((resolve) => pendingPushes.push(() => resolve(undefined))),
+    );
     await handler({ req: { signal: request.signal } });
-    const record: EventRecord = {
-      eventId: "event",
+    const record = (sequence: number): EventRecord => ({
+      eventId: `event-${sequence}`,
       timestamp: "2026-07-18T00:00:00.000Z",
       level: "info",
       source: "wire.yjs",
       name: "frame.received",
       correlation: { documentId: "doc" },
-      payload: {},
-    };
+      payload: { sequence },
+    });
 
-    for (let index = 0; index < 1_002; index += 1) mocks.listener?.(record);
+    mocks.listener?.(record(0));
+    mocks.listener?.(record(1));
+    mocks.listener?.(record(2));
+    expect(mocks.push).toHaveBeenCalledOnce();
+
+    pendingPushes[0]?.();
+    await vi.waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(2));
+    expect(mocks.push.mock.calls.map(([frame]) => JSON.parse(frame.data).eventId)).toEqual([
+      "event-0",
+      "event-1",
+    ]);
+
+    for (let index = 3; index < 1_002; index += 1) mocks.listener?.(record(index));
+    expect(mocks.close).not.toHaveBeenCalled();
+    mocks.listener?.(record(1_002));
 
     expect(mocks.close).toHaveBeenCalledOnce();
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce();
+    expect(mocks.push).toHaveBeenCalledTimes(2);
+
+    request.abort();
+    mocks.closed?.();
     expect(mocks.unsubscribe).toHaveBeenCalledOnce();
   });
 });
