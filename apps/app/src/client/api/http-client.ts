@@ -40,11 +40,6 @@ function errorFromResponse(payload: unknown, status: number): Error {
 }
 
 export async function readResponsePayload(response: Response): Promise<unknown> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    return response.json();
-  }
-
   const text = await response.text();
   if (!text) return null;
   try {
