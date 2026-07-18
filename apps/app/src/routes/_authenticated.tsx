@@ -1,7 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useMemo } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
@@ -23,6 +24,7 @@ import {
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
 import {
   getUntitledReconciler,
   isUntitledPending,
@@ -131,52 +133,77 @@ function AuthenticatedLayout() {
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
-  // Rehydrate localStorage-backed UI stores on the client only (all use
-  // skipHydration to avoid SSR mismatch). Idempotent; fires once after mount.
-  useEffect(() => {
-    const untitledReconciler = getUntitledReconciler();
-    untitledReconciler.rehydrate();
-    rehydrateContextDesks(user.userId, isUntitledPending);
-    void useIndependentProjectsStore.persist.rehydrate();
-    void useProjectSurfacePrefsStore.persist.rehydrate();
-    useProjectSurfacePrefsStore.getState().setHydrated();
-  }, [user.userId]);
-
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same
   // stores. No pathname-based provider gating: a conditional tree dropped
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <ProjectStoreProvider now={now}>
-        <ThreadStoreProvider now={now}>
-          <TransportProvider>
-            <MeridianCopilotProvider>
-              <div className="app-frame flex flex-col">
-                <ConnectionBanner />
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {/* Keyed by pathname to force a full remount per route — the
+      <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+    </AppQueryProvider>
+  );
+}
+
+function AuthenticatedProviderTree({
+  now,
+  pathname,
+  user,
+}: {
+  now: number;
+  pathname: string;
+  user: { userId: string; workingSetSyncEnabled: boolean | null };
+}) {
+  const queryClient = useQueryClient();
+  const untitledReconciler = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? null
+        : getUntitledReconciler(createContextIdentityMutationService(queryClient)),
+    [queryClient],
+  );
+
+  // Browser persistence is initialized only after the Query composition root
+  // exists. Constructing these services during SSR crashes the authenticated shell.
+  useEffect(() => {
+    if (!untitledReconciler) return;
+    untitledReconciler.rehydrate();
+    untitledReconciler.start();
+    rehydrateContextDesks(user.userId, isUntitledPending);
+    void useIndependentProjectsStore.persist.rehydrate();
+    void useProjectSurfacePrefsStore.persist.rehydrate();
+    useProjectSurfacePrefsStore.getState().setHydrated();
+    return () => untitledReconciler.dispose();
+  }, [untitledReconciler, user.userId]);
+
+  return (
+    <ProjectStoreProvider now={now}>
+      <ThreadStoreProvider now={now}>
+        <TransportProvider>
+          <MeridianCopilotProvider>
+            <div className="app-frame flex flex-col">
+              <ConnectionBanner />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {/* Keyed by pathname to force a full remount per route — the
                       providers above stay mounted, so this intentionally discards
                       in-route state on navigation (e.g. /project/$id ↔ /billing)
                       rather than reconciling stale subtrees across routes. */}
-                  <Outlet key={pathname} />
-                </div>
+                <Outlet key={pathname} />
               </div>
-              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
-              {DebugOverlay ? (
-                <Suspense fallback={null}>
-                  <DebugOverlay />
-                </Suspense>
-              ) : null}
-              {ReactQueryDevtools ? (
-                <Suspense fallback={null}>
-                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                </Suspense>
-              ) : null}
-            </MeridianCopilotProvider>
-          </TransportProvider>
-        </ThreadStoreProvider>
-      </ProjectStoreProvider>
-    </AppQueryProvider>
+            </div>
+            <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
+            {DebugOverlay ? (
+              <Suspense fallback={null}>
+                <DebugOverlay />
+              </Suspense>
+            ) : null}
+            {ReactQueryDevtools ? (
+              <Suspense fallback={null}>
+                <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+              </Suspense>
+            ) : null}
+          </MeridianCopilotProvider>
+        </TransportProvider>
+      </ThreadStoreProvider>
+    </ProjectStoreProvider>
   );
 }

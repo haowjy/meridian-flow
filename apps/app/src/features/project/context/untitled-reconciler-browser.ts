@@ -89,6 +89,7 @@ function browserDeps(identityMutations: ContextIdentityMutationService): Untitle
 }
 
 let shared: UntitledReconciler | null = null;
+const noopSubscribe = () => () => {};
 
 export function getUntitledReconciler(
   identityMutations?: ContextIdentityMutationService,
@@ -119,28 +120,28 @@ export function isUntitledPending(documentId: string): boolean {
 }
 
 export function useUntitledPending(documentId: string): boolean {
-  const reconciler = getUntitledReconciler();
+  const reconciler = typeof window === "undefined" ? null : getUntitledReconciler();
   return useSyncExternalStore(
-    reconciler.subscribe,
-    () => reconciler.has(documentId),
+    reconciler?.subscribe ?? noopSubscribe,
+    () => reconciler?.has(documentId) ?? false,
     () => false,
   );
 }
 
 export function useUntitledPendingSince(documentId: string): number | null {
-  const reconciler = getUntitledReconciler();
+  const reconciler = typeof window === "undefined" ? null : getUntitledReconciler();
   return useSyncExternalStore(
-    reconciler.subscribe,
-    () => reconciler.pendingSince(documentId),
+    reconciler?.subscribe ?? noopSubscribe,
+    () => reconciler?.pendingSince(documentId) ?? null,
     () => null,
   );
 }
 
 export function useQueuedIdentityFailure(documentId: string): QueuedIdentityFailure | null {
-  const reconciler = getUntitledReconciler();
+  const reconciler = typeof window === "undefined" ? null : getUntitledReconciler();
   return useSyncExternalStore(
-    reconciler.subscribe,
-    () => reconciler.queuedIdentityFailure(documentId),
+    reconciler?.subscribe ?? noopSubscribe,
+    () => reconciler?.queuedIdentityFailure(documentId) ?? null,
     () => null,
   );
 }
