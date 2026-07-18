@@ -63,6 +63,17 @@ reactivation fence, or scope routing. Cold attribution uses persisted branch
 journal rows and live journal metadata; memory-only runtime maps are never an
 attribution authority.
 
+## Live manifest membership
+
+The project manifest's `documents` Y.Map is the membership authority used by the
+live-room gate. `reconcileLiveManifest` is additive-only and idempotent: it seeds
+missing database content rows, but never rewrites an existing key or removes an
+entry. Creation and deletion flow through `recordManifestDocument{Created,Deleted}`.
+Preserve every no-op guard: setting an equal Y.Map value still creates Yjs
+history. See
+[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
+for the cross-domain port decision and self-healing rationale.
+
 ## Durable records
 
 - `document_yjs_updates` is the live update journal.
@@ -75,16 +86,16 @@ attribution authority.
   full-Yjs-identity evidence sealed to successful model responses. Agent-authored
   live journal, mutation, and reversal rows have an authoring-response FK seam.
 
-Human-origin edits (connection-origin Hocuspocus `onChange`) produce one journal
-row per keystroke. A 50-character sentence becomes ~50 rows / ~935 bytes. This
-is expected: checkpoint compaction recovers storage, and journal row counts are
-not equivalent to semantic edits. Reopening a document without editing may also
-append human-origin rows (a full-state sync-step-2 update plus a no-op).
+Human-origin edits produce one journal row per keystroke. A 50-character
+sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
+recovers storage, and journal row counts are not equivalent to semantic edits.
+Reconnect frames already contained by the live authority are acknowledged but
+do not enter the journal or trigger post-persistence hooks.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
 `document_yjs_draft_updates`) are not part of the model.
 
-Initial live sync-step-2 integration is the offline-reconciliation hook. It
+Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
 durable journal for origin and structural-delete attribution, and judges the
 removed canonical block identity through the response ObservationSnapshot.
@@ -134,9 +145,11 @@ history is preserved for attribution, echo, and undo dependency checking.
   kernel seals canonical swept-block identities and captured bodies into the
   branch journal row's update metadata before persistence; push projection
   consumes that evidence independently of the row's Apply-only draft base.
-- **Writer ingress barrier**: authenticated live updates are journaled and joined
-  to unresolved settlements before Hocuspocus apply/broadcast/ack. The domain seam
-  drains started admissions and detects later admission generations.
+- **Writer ingress barrier**: after fencing and provenance validation, updates
+  already contained by the live authority are acknowledged without admission.
+  Novel live updates are journaled and joined to unresolved settlements before
+  Hocuspocus apply/broadcast/ack. The domain seam drains started admissions and
+  detects later admission generations.
 - **Push settlement authority**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the

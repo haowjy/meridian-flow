@@ -26,6 +26,8 @@
   Move targets now have exact collision semantics, return a canonical collision
   locator for Open-existing recovery, and share reason-coded path normalization
   with client create/rename validation.
+- `apps/server`: repeated project-manifest reads no longer append identical Yjs
+  updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
   Meridian on another device resumes the same document, recent tabs, and
   chat thread (#217). One row per user·project (`project_user_working_sets`);
@@ -49,6 +51,10 @@
   synced recent list; deleted documents drop out of it on next entry;
   clearing the desk then reloading default-opens instead of landing on
   an empty New-document canvas.
+- `apps/server`: concurrent cold project loads now adopt one active manifest
+  identity instead of failing the losing request with a uniqueness error.
+- `apps/server`: reconnecting to a document no longer journals already-contained
+  cached Yjs state or delete sets as fresh human edits.
 - `apps/app`: the dev debug overlay gains a pop-out Streams trace viewer showing
   live client Yjs and agent-stream wire traffic as metadata-only records without
   blocking the editor;

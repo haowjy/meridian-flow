@@ -304,6 +304,7 @@ export function createDrizzleBranchStore(
     const before = Y.encodeStateVector(doc);
     for (const row of await listProjectContentDocumentIds(projectId)) {
       if (excludeDocumentIds.has(row)) continue;
+      if (map.has(row)) continue;
       map.set(row, { present: true });
     }
     const update = Y.encodeStateAsUpdate(doc, before);
@@ -482,7 +483,7 @@ export function createDrizzleBranchStore(
   ): Promise<DocumentId> {
     const txDb = currentDrizzleDb(db);
     const contextSourceId = explicitContextSourceId ?? (await findProjectContextSource(projectId));
-    const [row] = await txDb
+    const [created] = await txDb
       .insert(documents)
       .values({
         id: randomUUID() as DocumentId,
@@ -493,9 +494,26 @@ export function createDrizzleBranchStore(
         fileType: "json",
         markdownProjection: "",
       })
+      .onConflictDoNothing({
+        target: documents.contextSourceId,
+        where: sql`${documents.deletedAt} IS NULL AND ${documents.kind} = 'manifest'`,
+      })
       .returning({ id: documents.id });
-    if (!row) throw new Error("Failed to create project manifest identity document");
-    return row.id;
+    if (created) return created.id;
+
+    const [raced] = await txDb
+      .select({ id: documents.id })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.contextSourceId, contextSourceId),
+          eq(documents.kind, "manifest"),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!raced) throw new Error("Failed to create project manifest identity document");
+    return raced.id;
   }
 
   async function findProjectContextSource(projectId: ProjectId): Promise<string> {

@@ -10,6 +10,7 @@
     "db:studio": "pnpm --filter @meridian/database db:studio",
     "dev": "tsx tools/dev/dev-tmux.ts",
     "dev:local": "tsx tools/dev/dev-tmux.ts --no-tailscale",
+    "dev:stop": "tsx tools/dev/dev-tmux.ts --stop",
     "dev:restart": "tsx tools/dev/dev-tmux.ts --restart --preserve-mode",
     "dev:infra": "docker compose -f tools/dev/docker-compose.yml up -d --wait",
     "dev:infra:down": "docker compose -f tools/dev/docker-compose.yml down -t 5",
