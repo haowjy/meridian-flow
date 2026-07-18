@@ -202,6 +202,23 @@ describe("BranchCoordinator", () => {
     expect(Y.encodeStateAsUpdate(work)).toEqual(Y.encodeStateAsUpdate(live));
   });
 
+  it("publishes pulled updates to an already-loaded branch room", async () => {
+    const store = new MemoryBranchStore();
+    const live = docWithText("live prose");
+    const loadedRoom = new Y.Doc({ gc: false });
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: loadedRoom }));
+
+    const coordinator = createBranchCoordinator({
+      store,
+      onBranchUpdate: ({ branchId, update }) => {
+        if (branchId === "work") Y.applyUpdate(loadedRoom, update);
+      },
+    });
+    await coordinator.pullFromDoc("work", live);
+
+    expect(loadedRoom.getText("content").toString()).toBe("live prose");
+  });
+
   it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
     const store = new MemoryBranchStore();
     const live = docWithText("live prose");
