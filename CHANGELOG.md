@@ -26,6 +26,9 @@
   Move targets now have exact collision semantics, return a canonical collision
   locator for Open-existing recovery, and share reason-coded path normalization
   with client create/rename validation.
+- `apps/app`: collaborative document transport now waits for IndexedDB replay
+  before connecting, avoiding redundant full-state uploads on reopen while a
+  one-second fallback keeps connectivity available when local storage stalls.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
