@@ -110,10 +110,7 @@ export type UntitledReconcilerDeps = {
   newDocumentId: () => string;
 };
 
-export function untitledHomeUri(
-  _projectId: string,
-  activeWorkId: string | null,
-): UntitledHome | null {
+export function resolveUntitledHome(activeWorkId: string | null): UntitledHome | null {
   return activeWorkId ? { scheme: "scratch", workId: activeWorkId } : null;
 }
 
@@ -511,9 +508,5 @@ function nodeHasContent(value: unknown): boolean {
     if (!["doc", "paragraph", "heading"].includes(value.nodeName)) return true;
     return value.toArray().some(nodeHasContent);
   }
-  if (!value || typeof value !== "object") return typeof value === "string" && value.length > 0;
-  const node = value as { type?: string; text?: string; content?: unknown[] };
-  if (node.text?.length) return true;
-  if (node.type && !["doc", "paragraph", "heading"].includes(node.type)) return true;
-  return (node.content ?? []).some(nodeHasContent);
+  return typeof value === "string" && value.length > 0;
 }

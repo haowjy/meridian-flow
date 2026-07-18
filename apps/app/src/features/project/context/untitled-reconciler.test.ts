@@ -7,10 +7,10 @@ import type { DocumentSessionSnapshot } from "@/core/editor/document-session";
 import {
   type PendingUntitled,
   type ReconciliationRecord,
+  resolveUntitledHome,
   UntitledReconciler,
   type UntitledReconcilerDeps,
   untitledDocumentIsEmpty,
-  untitledHomeUri,
 } from "./untitled-reconciler";
 
 const HOME = { scheme: "scratch", workId: "work-1" } as const;
@@ -526,8 +526,8 @@ describe("queued identity receipts", () => {
 
 describe("untitled document decisions", () => {
   it("resolves the default work scratch root through one seam", () => {
-    expect(untitledHomeUri("project-1", "work-1")).toEqual(HOME);
-    expect(untitledHomeUri("project-1", null)).toBeNull();
+    expect(resolveUntitledHome("work-1")).toEqual(HOME);
+    expect(resolveUntitledHome(null)).toBeNull();
   });
 
   it("treats structural paragraphs as empty and atoms as content", () => {

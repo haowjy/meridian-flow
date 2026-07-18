@@ -14,9 +14,9 @@ import type { DesiredIdentity } from "./identity-location";
 import {
   type PendingUntitled,
   type QueuedIdentityFailure,
+  resolveUntitledHome,
   UntitledReconciler,
   type UntitledReconcilerDeps,
-  untitledHomeUri,
 } from "./untitled-reconciler";
 
 function treeContainsDocument(
@@ -48,7 +48,7 @@ function browserDeps(): UntitledReconcilerDeps {
     api: {
       async resolveHome(projectId) {
         const works = await listProjectWorks(projectId);
-        return untitledHomeUri(projectId, works.defaultWorkId);
+        return resolveUntitledHome(works.defaultWorkId);
       },
       create(entry) {
         return createUntitledContextDocument(

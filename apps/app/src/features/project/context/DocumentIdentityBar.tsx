@@ -66,7 +66,7 @@ export function DocumentIdentityBar({
 
   // The chip always opens the one inline field when moving the document is
   // legal. Uploads aren't writing material, so those show no chip.
-  const showChip = location.editable || location.scheme !== "uploads";
+  const showChip = location.scheme !== "uploads";
 
   return (
     <div className="@container shrink-0">
@@ -278,16 +278,21 @@ const DEVICE_ONLY_GRACE_MS = 2_000;
  */
 function useDeviceOnly(documentId: string): boolean {
   const since = useUntitledPendingSince(documentId);
-  const [, bump] = useState(0);
-  const sustained = since !== null && Date.now() - since >= DEVICE_ONLY_GRACE_MS;
+  const [sustained, setSustained] = useState(false);
   useEffect(() => {
-    if (since === null || sustained) return;
-    const timer = window.setTimeout(
-      () => bump((tick) => tick + 1),
-      DEVICE_ONLY_GRACE_MS - (Date.now() - since),
-    );
+    if (since === null) {
+      setSustained(false);
+      return;
+    }
+    const remaining = DEVICE_ONLY_GRACE_MS - (Date.now() - since);
+    if (remaining <= 0) {
+      setSustained(true);
+      return;
+    }
+    setSustained(false);
+    const timer = window.setTimeout(() => setSustained(true), remaining);
     return () => window.clearTimeout(timer);
-  }, [since, sustained]);
+  }, [documentId, since]);
   return sustained;
 }
 

@@ -14,36 +14,16 @@ import {
   WORK_SCOPED_BROWSE_SCHEMES,
 } from "../../../../../../domains/context/browse-layer-scheme.js";
 import { contextPortForProjectBrowse } from "../../../../../../domains/context/context-port-resolution.js";
-import type { ContextError, ContextPort } from "../../../../../../domains/context/index.js";
+import type { ContextPort } from "../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
 
+export { contextErrorToHttp } from "../../../../../../lib/context-error-http.js";
+
 export function parseScheme(value: string): ProjectContextTreeScheme {
   if (isProjectContextTreeScheme(value)) return value;
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
-}
-
-export function contextErrorToHttp(error: ContextError): never {
-  switch (error.code) {
-    case "invalid_uri":
-      throw createError({ statusCode: 400, message: error.reason });
-    case "permission_denied":
-      throw createError({ statusCode: 403, message: "Context access denied" });
-    case "conflict":
-      throw createError({ statusCode: 409, message: "Context path conflict" });
-    case "invalid_operation":
-      throw createError({
-        statusCode: 400,
-        message: error.message ?? "Invalid context operation",
-      });
-    case "not_found":
-      throw createError({ statusCode: 404, message: "Context path not found" });
-    case "context_unavailable":
-      throw createError({ statusCode: 503, message: "Context is unavailable" });
-    case "io_error":
-      throw createError({ statusCode: 502, message: error.message });
-  }
 }
 
 export const toUri = projectBrowseContextUri;

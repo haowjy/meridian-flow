@@ -38,6 +38,13 @@ import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
 type ConflictLocator = { scheme: ProjectContextTreeScheme; path: string; workId?: string };
+type LocalCollision = AnnotatedFileSuggestion | null;
+
+type IdentityNote =
+  | { kind: "conflict"; locator: ConflictLocator; name: string }
+  | { kind: "local-collision"; collision: AnnotatedFileSuggestion; name: string }
+  | { kind: "error"; message: string }
+  | null;
 
 export function IdentityPlacementField({
   projectId,
@@ -150,67 +157,73 @@ export function IdentityPlacementField({
     : "";
 
   const liveReason = noteValue.trim() ? invalidContextEntryNameReason(noteValue.trim()) : null;
-  const localCollision = useMemo(() => {
-    const name = noteValue.trim();
-    if (!name) return null;
-    const scheme = destination?.scheme ?? location.scheme;
-    const folder = destination?.folderPath ?? location.parentPath;
-    return (
-      folderChildren(allEntries, scheme, folder).find(
-        (entry) => entry.name === name && entry.path !== location.path,
-      ) ?? null
-    );
-  }, [allEntries, destination, location, noteValue]);
-
-  const conflictName = conflict?.path.slice(conflict.path.lastIndexOf("/") + 1);
-  const note = conflict ? (
-    <ValidationNote
-      severity={{
-        level: "error",
-        message: t`A file named ${conflictName ?? ""} already exists in this location.`,
-      }}
-      action={
-        <button
-          data-file-suggestion
-          type="button"
-          tabIndex={-1}
-          className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
-          onClick={() => onOpenExisting(conflict.scheme, conflict.path)}
-        >
-          <Trans>Open existing</Trans>
-        </button>
-      }
-      className="m-1 mb-0"
-    />
-  ) : localCollision ? (
-    <ValidationNote
-      severity={{
-        level: "error",
-        message: t`A file named ${noteValue.trim()} already exists in this location.`,
-      }}
-      action={
-        localCollision.kind !== "dir" ? (
+  const localCollision = useMemo(
+    () =>
+      findCollision(
+        allEntries,
+        destination?.scheme ?? location.scheme,
+        destination?.folderPath ?? location.parentPath,
+        noteValue.trim(),
+        location.path,
+      ),
+    [allEntries, destination, location, noteValue],
+  );
+  const identityNote = deriveIdentityNote({
+    conflict,
+    localCollision,
+    name: noteValue.trim(),
+    validationReason: commitReason ?? liveReason,
+    requestError,
+  });
+  const note =
+    identityNote?.kind === "conflict" ? (
+      <ValidationNote
+        severity={{
+          level: "error",
+          message: t`A file named ${identityNote.name} already exists in this location.`,
+        }}
+        action={
           <button
             data-file-suggestion
             type="button"
             tabIndex={-1}
             className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
-            onClick={() => onOpenExisting(localCollision.scheme, localCollision.path)}
+            onClick={() => onOpenExisting(identityNote.locator.scheme, identityNote.locator.path)}
           >
             <Trans>Open existing</Trans>
           </button>
-        ) : undefined
-      }
-      className="m-1 mb-0"
-    />
-  ) : (commitReason ?? liveReason) ? (
-    <ValidationNote
-      severity={{ level: "error", message: commitReason ?? liveReason ?? "" }}
-      className="m-1 mb-0"
-    />
-  ) : requestError ? (
-    <ValidationNote severity={{ level: "error", message: requestError }} className="m-1 mb-0" />
-  ) : null;
+        }
+        className="m-1 mb-0"
+      />
+    ) : identityNote?.kind === "local-collision" ? (
+      <ValidationNote
+        severity={{
+          level: "error",
+          message: t`A file named ${identityNote.name} already exists in this location.`,
+        }}
+        action={
+          identityNote.collision.kind !== "dir" ? (
+            <button
+              data-file-suggestion
+              type="button"
+              tabIndex={-1}
+              className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
+              onClick={() =>
+                onOpenExisting(identityNote.collision.scheme, identityNote.collision.path)
+              }
+            >
+              <Trans>Open existing</Trans>
+            </button>
+          ) : undefined
+        }
+        className="m-1 mb-0"
+      />
+    ) : identityNote?.kind === "error" ? (
+      <ValidationNote
+        severity={{ level: "error", message: identityNote.message }}
+        className="m-1 mb-0"
+      />
+    ) : null;
 
   async function submit() {
     if (saving) return;
@@ -226,7 +239,15 @@ export function IdentityPlacementField({
       setNoteValue(value);
       return;
     }
-    if (collisionNow(name)) {
+    if (
+      findCollision(
+        allEntries,
+        destination?.scheme ?? location.scheme,
+        destination?.folderPath ?? location.parentPath,
+        name,
+        location.path,
+      )
+    ) {
       setNoteValue(value || name);
       return;
     }
@@ -234,14 +255,6 @@ export function IdentityPlacementField({
       destination: identityDestination(location, defaultWorkId, destination ?? undefined),
       name,
     });
-  }
-
-  function collisionNow(name: string): boolean {
-    const scheme = destination?.scheme ?? location.scheme;
-    const folder = destination?.folderPath ?? location.parentPath;
-    return folderChildren(allEntries, scheme, folder).some(
-      (entry) => entry.name === name && entry.path !== location.path,
-    );
   }
 
   async function runCommit(target: IdentityCommitTarget) {
@@ -389,6 +402,47 @@ export function IdentityPlacementField({
       </PopoverContent>
     </Popover>
   );
+}
+
+function findCollision(
+  entries: readonly AnnotatedFileSuggestion[],
+  scheme: ProjectContextTreeScheme,
+  folderPath: string,
+  name: string,
+  currentPath: string | null,
+): LocalCollision {
+  if (!name) return null;
+  return (
+    folderChildren(entries, scheme, folderPath).find(
+      (entry) => entry.name === name && entry.path !== currentPath,
+    ) ?? null
+  );
+}
+
+function deriveIdentityNote({
+  conflict,
+  localCollision,
+  name,
+  validationReason,
+  requestError,
+}: {
+  conflict: ConflictLocator | null;
+  localCollision: LocalCollision;
+  name: string;
+  validationReason: string | null;
+  requestError: string | null;
+}): IdentityNote {
+  if (conflict) {
+    return {
+      kind: "conflict",
+      locator: conflict,
+      name: conflict.path.slice(conflict.path.lastIndexOf("/") + 1),
+    };
+  }
+  if (localCollision) return { kind: "local-collision", collision: localCollision, name };
+  if (validationReason) return { kind: "error", message: validationReason };
+  if (requestError) return { kind: "error", message: requestError };
+  return null;
 }
 
 function treeSegments(path: string): string[] {
