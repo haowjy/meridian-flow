@@ -171,7 +171,9 @@ component is not literally shared, only the labels, icons, and dispatch logic.
 The kebab stops propagation so it doesn't trigger the row's click handler.
 `EntryAction` is four actions in fixed order — New file, New folder,
 separator, Rename, Delete (creation first, destructive last) — identical in
-both triggers.
+both triggers. Actions dispatch from `onCloseAutoFocus`, after the menu has
+fully closed with its focus return suppressed: menu teardown otherwise blurs
+a freshly mounted inline row, and blur commits/cancels it.
 
 ## Creation targeting
 
