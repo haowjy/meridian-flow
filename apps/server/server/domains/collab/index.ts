@@ -84,6 +84,10 @@ export type CollabPersistenceMetrics = {
   openConnectionCount: number;
 };
 
+export type AdmitLiveWriterUpdateResult =
+  | { admitted: true; joinedSettlement: boolean }
+  | { admitted: false; joinedSettlement: false };
+
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
   resolveBranchHocuspocusRoom(
@@ -105,7 +109,7 @@ export type CollabTransport = {
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" }>;
     expectedGeneration: bigint;
-  }): Promise<{ joinedSettlement: boolean }>;
+  }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   validateBranchWriterUpdate(input: {
     branchId: string;

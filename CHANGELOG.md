@@ -27,6 +27,8 @@
   an empty New-document canvas.
 - `apps/server`: concurrent cold project loads now adopt one active manifest
   identity instead of failing the losing request with a uniqueness error.
+- `apps/server`: reconnecting to a document no longer journals already-contained
+  cached Yjs state or delete sets as fresh human edits.
 - `apps/app`: the dev debug overlay gains a pop-out Streams trace viewer showing
   live client Yjs and agent-stream wire traffic as metadata-only records without
   blocking the editor;

@@ -228,11 +228,11 @@ describe("Yjs live writer admission", () => {
     let commit: (() => void) | undefined;
     const admitLiveWriterUpdate = vi.fn(
       () =>
-        new Promise<{ joinedSettlement: boolean }>((resolve) => {
+        new Promise<{ admitted: true; joinedSettlement: boolean }>((resolve) => {
           events.push("accept");
           commit = () => {
             events.push("journal");
-            resolve({ joinedSettlement: true });
+            resolve({ admitted: true, joinedSettlement: true });
           };
         }),
     );
@@ -284,12 +284,35 @@ describe("Yjs live writer admission", () => {
     expect(admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
+  it("returns a contained admission without closing the transport", async () => {
+    const payload = new Uint8Array([0, 0]);
+    const admitLiveWriterUpdate = vi.fn(async () => ({
+      admitted: false as const,
+      joinedSettlement: false as const,
+    }));
+    const closeTransport = vi.fn();
+
+    await expect(
+      admitLiveWriterMessage({
+        services: {
+          ...services(false),
+          documentSync: { admitLiveWriterUpdate } as never,
+        },
+        documentName: "document-1",
+        update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
+        userId: "user-1" as never,
+        closeTransport,
+      }),
+    ).resolves.toEqual({ admitted: false, joinedSettlement: false });
+    expect(closeTransport).not.toHaveBeenCalled();
+  });
+
   it("rejects a failed admission and accepts the client's resubmitted update", async () => {
     const payload = new Uint8Array([7, 8, 9]);
     const admitLiveWriterUpdate = vi
       .fn()
       .mockRejectedValueOnce(new Error("journal down"))
-      .mockResolvedValueOnce({ joinedSettlement: false });
+      .mockResolvedValueOnce({ admitted: true, joinedSettlement: false });
     const closeTransport = vi.fn();
     const input = {
       services: {
@@ -307,7 +330,10 @@ describe("Yjs live writer admission", () => {
       code: 1013,
     });
     expect(closeTransport).toHaveBeenCalledOnce();
-    await expect(admitLiveWriterMessage(input)).resolves.toBeUndefined();
+    await expect(admitLiveWriterMessage(input)).resolves.toEqual({
+      admitted: true,
+      joinedSettlement: false,
+    });
     expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
   });
 });

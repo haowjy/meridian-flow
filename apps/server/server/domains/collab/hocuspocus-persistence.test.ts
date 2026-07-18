@@ -237,6 +237,99 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
 });
 
 describe("createHocuspocusPersistenceService writer ingress", () => {
+  it("suppresses contained reconnect updates without advancing writer ingress", async () => {
+    const authority = tombstoneBearingDoc();
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const onLiveUpdatePersisted = vi.fn();
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+      onLiveUpdatePersisted,
+    });
+    const ingressGeneration = await persistence.writerIngressBarrier.drain(DOCUMENT_ID);
+    const fullState = Y.encodeStateAsUpdate(authority);
+    const containedDeleteSet = Y.diffUpdate(fullState, Y.encodeStateVector(authority));
+    expect(Y.decodeUpdate(containedDeleteSet).structs).toHaveLength(0);
+
+    for (const update of [fullState, containedDeleteSet, new Uint8Array([0, 0])]) {
+      await expect(
+        persistence.admitLiveWriterUpdate({
+          documentId: DOCUMENT_ID,
+          update,
+          origin: { type: "user", userId: "user-1" },
+          expectedGeneration: 1n,
+        }),
+      ).resolves.toEqual({ admitted: false, joinedSettlement: false });
+      expect(
+        persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, ingressGeneration),
+      ).toBe(true);
+    }
+
+    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
+    expect(onLiveUpdatePersisted).not.toHaveBeenCalled();
+  });
+
+  it("admits novel insertion and delete-only updates", async () => {
+    const authority = tombstoneBearingDoc();
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const onLiveUpdatePersisted = vi.fn();
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+      onLiveUpdatePersisted,
+    });
+    const insertionClient = cloneDoc(authority);
+    const beforeInsertion = Y.encodeStateVector(insertionClient);
+    insertionClient.getText("content").insert(insertionClient.getText("content").length, "!");
+    const insertion = Y.encodeStateAsUpdate(insertionClient, beforeInsertion);
+
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update: insertion,
+        origin: { type: "user", userId: "user-1" },
+        expectedGeneration: 1n,
+      }),
+    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
+
+    const deletionClient = cloneDoc(authority);
+    const beforeDeletion = Y.encodeStateVector(deletionClient);
+    deletionClient.getText("content").delete(0, 1);
+    const deletion = Y.encodeStateAsUpdate(deletionClient, beforeDeletion);
+    expect(Y.decodeUpdate(deletion).structs).toHaveLength(0);
+
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update: deletion,
+        origin: { type: "user", userId: "user-1" },
+        expectedGeneration: 1n,
+      }),
+    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
+
+    expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
+      1,
+      DOCUMENT_ID,
+      insertion,
+      expect.anything(),
+    );
+    expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
+      2,
+      DOCUMENT_ID,
+      deletion,
+      expect.anything(),
+    );
+    expect(onLiveUpdatePersisted).toHaveBeenCalledTimes(2);
+  });
+
   it("disconnects the retired live generation and rejects its replayed bytes", async () => {
     const checkpoint = docWithText("checkpoint");
     const retired = cloneDoc(checkpoint);
@@ -297,7 +390,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 2n,
       }),
-    ).resolves.toEqual({ joinedSettlement: false });
+    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
   });
 
   it("rejects a retained-identity delete-only replay without journaling or applying", async () => {
@@ -458,7 +551,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await Promise.resolve();
     expect(events).toEqual(["journal:start"]);
     commit?.();
-    await expect(admission).resolves.toEqual({ joinedSettlement: true });
+    await expect(admission).resolves.toEqual({ admitted: true, joinedSettlement: true });
     expect(events).toEqual(["journal:start", "journal:commit", "apply/broadcast/ack"]);
   });
 

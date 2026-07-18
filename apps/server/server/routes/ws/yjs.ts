@@ -13,7 +13,7 @@ import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
-import type { UpdateOrigin } from "../../domains/collab/index.js";
+import type { AdmitLiveWriterUpdateResult, UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
@@ -233,7 +233,7 @@ export async function admitLiveWriterMessage(input: {
   userId: UserId;
   closeTransport?(): void;
   expectedGeneration?: bigint;
-}): Promise<void> {
+}): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
   if (room.kind !== "live") return;
   const message = syncMessage(input.update, input.documentName);
@@ -245,7 +245,7 @@ export async function admitLiveWriterMessage(input: {
     return;
   }
   try {
-    await input.services.documentSync.admitLiveWriterUpdate({
+    return await input.services.documentSync.admitLiveWriterUpdate({
       documentId: room.documentId,
       update: message.payload,
       origin: { type: "user", userId: input.userId },
@@ -367,7 +367,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         update,
         closeTransport: context.closeWriterTransport as (() => void) | undefined,
       });
-      await admitLiveWriterMessage({
+      const liveAdmission = await admitLiveWriterMessage({
         services,
         documentName,
         update,
@@ -375,7 +375,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         closeTransport: context.closeWriterTransport as (() => void) | undefined,
         expectedGeneration: context.liveGenerations?.get(documentName),
       });
-      rememberOfflineLiveSync({ documentName, update, context });
+      if (liveAdmission?.admitted) {
+        rememberOfflineLiveSync({ documentName, update, context });
+      }
     },
     async onLoadDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);

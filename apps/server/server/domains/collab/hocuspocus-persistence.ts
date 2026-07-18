@@ -1,6 +1,6 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import { bytesEqual, type UpdateJournal, type UpdateMeta } from "@meridian/agent-edit";
+import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -332,6 +332,11 @@ export function createHocuspocusPersistenceService(
         rejectReservedClientIdUpdate({ ...input, reservedClientId });
         throw new Error("reserved-writer-client-id");
       }
+      // Reconnects replay cached state and delete sets that Yjs would discard
+      // on apply; admitting them wastes storage and pollutes safety signals.
+      if (authoritativeDoc && documentContainsUpdate(authoritativeDoc, input.update)) {
+        return { admitted: false, joinedSettlement: false };
+      }
       const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
       ingressGenerations.set(input.documentId, generation);
       const admitted = admittedByDocument.get(input.documentId) ?? new Map();
@@ -392,7 +397,7 @@ export function createHocuspocusPersistenceService(
       try {
         const result = await append;
         deps.onLiveUpdatePersisted?.(input.documentId);
-        return { joinedSettlement: result.joinedSettlement };
+        return { admitted: true, joinedSettlement: result.joinedSettlement };
       } finally {
         admitted.delete(generation);
         if (admitted.size === 0) admittedByDocument.delete(input.documentId);
@@ -436,7 +441,7 @@ export function createHocuspocusPersistenceService(
         current?.status !== "active" ||
         current.kind !== "work_draft" ||
         current.generation !== input.expectedGeneration ||
-        !documentContainsState(input.document, current.state)
+        !documentContainsUpdate(input.document, current.state)
       ) {
         throw new BranchStaleUpdateError(input.branchId);
       }
@@ -554,27 +559,8 @@ function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSna
   return false;
 }
 
-function documentContainsState(document: Y.Doc, state: Uint8Array): boolean {
-  if (!stateVectorCovers(Y.encodeStateVector(document), Y.encodeStateVectorFromUpdate(state))) {
-    return false;
-  }
-  const probe = new Y.Doc({ gc: false });
-  try {
-    Y.applyUpdate(probe, Y.encodeStateAsUpdate(document));
-    const before = Y.encodeStateAsUpdate(probe);
-    Y.applyUpdate(probe, state);
-    return bytesEqual(before, Y.encodeStateAsUpdate(probe));
-  } finally {
-    probe.destroy();
-  }
-}
-
-function stateVectorCovers(candidate: Uint8Array, required: Uint8Array): boolean {
-  const candidateClocks = Y.decodeStateVector(candidate);
-  for (const [client, requiredClock] of Y.decodeStateVector(required)) {
-    if ((candidateClocks.get(client) ?? 0) < requiredClock) return false;
-  }
-  return true;
+function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
+  return Y.snapshotContainsUpdate(Y.snapshot(document), update);
 }
 
 function replaysRetiredGeneration(
