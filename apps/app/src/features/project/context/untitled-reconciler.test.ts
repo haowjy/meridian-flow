@@ -1,8 +1,9 @@
 /** Behavioral coverage for the registry-driven untitled reconciliation loop. */
 
 import type { CreateUntitledContextDocumentResult } from "@meridian/contracts/protocol";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { moveContextEntry } from "@/client/api/projects-api";
 import type { DocumentSessionSnapshot } from "@/core/editor/document-session";
 import {
   type PendingUntitled,
@@ -14,6 +15,8 @@ import {
 } from "./untitled-reconciler";
 
 const HOME = { scheme: "scratch", workId: "work-1" } as const;
+
+afterEach(() => vi.unstubAllGlobals());
 
 function contentDocument(text = "words"): Y.Doc {
   const document = new Y.Doc();
@@ -719,6 +722,85 @@ describe("queued identity receipts", () => {
 
     expect(h.deps.api.move).toHaveBeenCalledTimes(2);
     expect(storedEntries(h.values)).toEqual([]);
+  });
+
+  it.each([
+    400, 401, 403, 404,
+  ])("terminalizes a queued identity after a production-shaped HTTP %s response", async (status) => {
+    const h = harness();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ statusCode: status, statusMessage: "Rejected", message: "Rejected" }),
+            { status, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+    (h.deps.api.move as ReturnType<typeof vi.fn>).mockImplementation((_entry, source, desired) =>
+      moveContextEntry("project-1", source.scheme, {
+        path: source.path,
+        destinationScheme: desired.destination.scheme,
+        destinationFolderPath: desired.destination.folderPath,
+      }),
+    );
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
+
+    await h.runQueue();
+
+    expect(reconciler.has("doc-1")).toBe(false);
+    expect(reconciler.queuedIdentityFailure("doc-1")).toEqual({
+      kind: "error",
+      name: "Opening.md",
+    });
+    expect(h.timers).toHaveLength(0);
+  });
+
+  it("retries a production-shaped HTTP 5xx response", async () => {
+    const h = harness();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ statusCode: 503, message: "Unavailable" }), {
+            status: 503,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      ),
+    );
+    (h.deps.api.move as ReturnType<typeof vi.fn>).mockImplementation((_entry, source, desired) =>
+      moveContextEntry("project-1", source.scheme, {
+        path: source.path,
+        destinationScheme: desired.destination.scheme,
+        destinationFolderPath: desired.destination.folderPath,
+      }),
+    );
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
+
+    await h.runQueue();
+
+    expect(reconciler.has("doc-1")).toBe(true);
+    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
+    expect(h.timers).toHaveLength(1);
   });
 
   it("applies a rehydrated queued identity when connectivity returns", async () => {

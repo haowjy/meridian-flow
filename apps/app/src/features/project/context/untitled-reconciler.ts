@@ -517,9 +517,11 @@ export class UntitledReconciler {
 }
 
 function isTerminalIdentityError(error: unknown): error is { retryable: false } {
-  return (
-    typeof error === "object" && error !== null && "retryable" in error && error.retryable === false
-  );
+  if (typeof error !== "object" || error === null) return false;
+  if ("status" in error && typeof error.status === "number") {
+    return error.status >= 400 && error.status < 500;
+  }
+  return "retryable" in error && error.retryable === false;
 }
 
 function syncFailure(snapshot: DocumentSessionSnapshot): Error {
