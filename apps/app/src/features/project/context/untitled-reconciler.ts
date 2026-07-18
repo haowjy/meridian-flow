@@ -309,7 +309,7 @@ export class UntitledReconciler {
       record = this.pendingRecord(documentId);
       if (!record) return;
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
-      if (empty && !record.desiredIdentity) {
+      if (empty && !record.desiredIdentity && !this.candidates.has(documentId)) {
         const emptyCheckRevision = record.revision;
         const exists = await this.deps.api.serverDocumentExists(resolvedEntry);
         record = this.pendingRecord(documentId);
@@ -437,6 +437,16 @@ export class UntitledReconciler {
   ): Promise<void> {
     const record = this.records.get(documentId);
     if (!record || record.revision !== processedRevision) return;
+    if (clearPersistence) {
+      const session = this.deps.sessions.getDetached(documentId);
+      if (
+        this.candidates.has(documentId) ||
+        !untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName))
+      ) {
+        return;
+      }
+      await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
+    }
     if (record?.failure) {
       this.records.set(documentId, {
         ...record,
@@ -449,9 +459,6 @@ export class UntitledReconciler {
       this.records.delete(documentId);
     }
     this.persistAndEmit();
-    if (clearPersistence) {
-      await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
-    }
   }
 
   private pendingRecord(documentId: string):

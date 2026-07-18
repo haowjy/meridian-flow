@@ -449,6 +449,52 @@ describe("untitled reconciliation durability", () => {
     expect(storedEntries(h.values)).toEqual([]);
   });
 
+  it("does not empty-drain an open candidate", async () => {
+    const h = harness();
+    h.sessions.set("doc-1", fakeSession(contentDocument("")));
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.registerCandidate("doc-1", {
+      onReminted: vi.fn(),
+      onMaterialized: vi.fn(),
+    });
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+
+    await h.runQueue();
+
+    expect(h.exists).not.toHaveBeenCalled();
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.cleared).toEqual([]);
+  });
+
+  it("preserves words typed while the empty server check is in flight", async () => {
+    const h = harness();
+    const session = fakeSession(contentDocument(""));
+    h.sessions.set("doc-1", session);
+    let finishExistsCheck!: (exists: boolean) => void;
+    h.exists.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishExistsCheck = resolve;
+        }),
+    );
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+
+    h.queued.shift()?.();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("words typed during the check")]);
+    session.document.getXmlFragment("prosemirror").insert(0, [paragraph]);
+    finishExistsCheck(false);
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+
+    expect(h.cleared).toEqual([]);
+    expect(h.sessions.get("doc-1")?.document).toBe(session.document);
+    expect(untitledDocumentIsEmpty(session.document.getXmlFragment("prosemirror"))).toBe(false);
+  });
+
   it("attaches and durably flushes empty history when a server row exists", async () => {
     const h = harness();
     h.exists.mockResolvedValue(true);
