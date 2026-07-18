@@ -84,7 +84,7 @@ do not enter the journal or trigger post-persistence hooks.
 The deleted legacy draft tables (`document_yjs_drafts`,
 `document_yjs_draft_updates`) are not part of the model.
 
-Initial live sync-step-2 integration is the offline-reconciliation hook. It
+Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
 durable journal for origin and structural-delete attribution, and judges the
 removed canonical block identity through the response ObservationSnapshot.
@@ -134,9 +134,11 @@ history is preserved for attribution, echo, and undo dependency checking.
   kernel seals canonical swept-block identities and captured bodies into the
   branch journal row's update metadata before persistence; push projection
   consumes that evidence independently of the row's Apply-only draft base.
-- **Writer ingress barrier**: authenticated live updates are journaled and joined
-  to unresolved settlements before Hocuspocus apply/broadcast/ack. The domain seam
-  drains started admissions and detects later admission generations.
+- **Writer ingress barrier**: after fencing and provenance validation, updates
+  already contained by the live authority are acknowledged without admission.
+  Novel live updates are journaled and joined to unresolved settlements before
+  Hocuspocus apply/broadcast/ack. The domain seam drains started admissions and
+  detects later admission generations.
 - **Push settlement authority**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the
