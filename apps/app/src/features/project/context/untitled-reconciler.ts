@@ -321,12 +321,13 @@ export class UntitledReconciler {
       if (!record) return;
       const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
       if (empty && !record.desiredIdentity && !this.candidates.has(documentId)) {
-        const emptyCheckRevision = record.revision;
+        const checkedRevision = record.revision;
         const exists = await this.deps.api.serverDocumentExists(resolvedEntry);
-        record = this.pendingRecord(documentId);
-        if (!record) return;
-        if (!exists && !record.desiredIdentity && record.revision === emptyCheckRevision) {
-          await this.drain(documentId, emptyCheckRevision, true);
+        if (!exists) {
+          // Materialize-at-identity will replace this best-effort abandonment
+          // path. Until then, retain orphaned IndexedDB rather than risk clearing
+          // persistence reacquired by a restored editor.
+          this.drain(documentId, checkedRevision);
           return;
         }
       }
@@ -354,7 +355,7 @@ export class UntitledReconciler {
       await attached.waitForDurableSync();
       const snapshot = attached.getSnapshot();
       if (snapshot.status !== "synced") throw syncFailure(snapshot);
-      await this.drain(documentId, processedRevision, false);
+      this.drain(documentId, processedRevision);
     } finally {
       this.deps.sessions.release(owner);
     }
@@ -462,23 +463,9 @@ export class UntitledReconciler {
     candidate?.onReminted(replacementId);
   }
 
-  private async drain(
-    documentId: string,
-    processedRevision: number,
-    clearPersistence: boolean,
-  ): Promise<void> {
+  private drain(documentId: string, processedRevision: number): void {
     const record = this.records.get(documentId);
     if (!record || record.revision !== processedRevision) return;
-    if (clearPersistence) {
-      const session = this.deps.sessions.getDetached(documentId);
-      if (
-        this.candidates.has(documentId) ||
-        !untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName))
-      ) {
-        return;
-      }
-      await this.deps.sessions.destroyRoom(documentId, { clearPersistence: true });
-    }
     if (record?.failure) {
       this.records.set(documentId, {
         ...record,

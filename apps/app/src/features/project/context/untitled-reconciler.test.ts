@@ -434,7 +434,7 @@ describe("untitled reconciliation durability", () => {
     );
   });
 
-  it("clears an empty local room only after the server confirms no row", async () => {
+  it("drops the record but retains empty local persistence after the server confirms no row", async () => {
     const h = harness();
     h.sessions.set("doc-1", fakeSession(contentDocument("")));
     const reconciler = new UntitledReconciler(h.deps);
@@ -445,7 +445,7 @@ describe("untitled reconciliation durability", () => {
 
     expect(h.exists).toHaveBeenCalledOnce();
     expect(h.create).not.toHaveBeenCalled();
-    expect(h.cleared).toEqual(["doc-1"]);
+    expect(h.cleared).toEqual([]);
     expect(storedEntries(h.values)).toEqual([]);
   });
 
@@ -467,7 +467,7 @@ describe("untitled reconciliation durability", () => {
     expect(h.cleared).toEqual([]);
   });
 
-  it("preserves words typed while the empty server check is in flight", async () => {
+  it("never clears words typed while the empty server check is in flight", async () => {
     const h = harness();
     const session = fakeSession(contentDocument(""));
     h.sessions.set("doc-1", session);
@@ -493,6 +493,7 @@ describe("untitled reconciliation durability", () => {
     expect(h.cleared).toEqual([]);
     expect(h.sessions.get("doc-1")?.document).toBe(session.document);
     expect(untitledDocumentIsEmpty(session.document.getXmlFragment("prosemirror"))).toBe(false);
+    expect(storedEntries(h.values)).toEqual([]);
   });
 
   it("attaches and durably flushes empty history when a server row exists", async () => {
