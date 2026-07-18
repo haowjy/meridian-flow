@@ -40,7 +40,12 @@ import {
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
-import { createNoopEventSink, type EventSink, emitEvent } from "../domains/observability/index.js";
+import {
+  createNoopEventSink,
+  type EventQuery,
+  type EventSink,
+  emitEvent,
+} from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
   createDefaultPackageSeeder,
@@ -155,6 +160,7 @@ export type AppServices = {
   agents: AgentPackageStore;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
   defaultPackageSeeder: DefaultPackageSeeder;
@@ -189,6 +195,7 @@ export type ProductionAppPorts = {
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   runtimeTools: RuntimeToolRegistry;
@@ -245,6 +252,7 @@ function observationRenderBudgetBytes(request: {
 export async function createProductionAppPorts(input: {
   db: Database;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
@@ -349,6 +357,7 @@ export async function createProductionAppPorts(input: {
     journalReader,
     journalWriter,
     eventSink,
+    eventQuery: input.eventQuery,
     documentSync,
     contextPorts,
     runtimeTools,
@@ -532,6 +541,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agents: ports.agents,
     interruptRegistry,
     eventSink: ports.eventSink,
+    eventQuery: ports.eventQuery,
     packageRepository: ports.packageRepository,
     marsPackageFetcher: ports.marsPackageFetcher,
     defaultPackageSeeder: ports.defaultPackageSeeder,
