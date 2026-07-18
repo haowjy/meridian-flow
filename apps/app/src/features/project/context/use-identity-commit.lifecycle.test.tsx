@@ -9,7 +9,21 @@ import type { DesiredIdentity } from "./identity-location";
 const { moveMock } = vi.hoisted(() => ({ moveMock: vi.fn() }));
 
 vi.mock("./context-identity-mutation", () => ({
-  createContextIdentityMutationService: () => ({ move: moveMock }),
+  createContextIdentityMutationService: () => {
+    let generation = 0;
+    let tail = Promise.resolve();
+    return {
+      move: (...args: unknown[]) => {
+        const current = ++generation;
+        const run = tail.then(() => moveMock(...args));
+        tail = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run.then((result) => ({ result, isLatest: current === generation }));
+      },
+    };
+  },
 }));
 vi.mock("./untitled-reconciler-browser", () => ({ queueUntitledIdentity: vi.fn() }));
 vi.mock("@lingui/core/macro", () => ({
@@ -105,7 +119,7 @@ describe("identity commit operation ownership", () => {
     );
   });
 
-  it("marks only the newest overlapping commit as the navigation owner", async () => {
+  it("serializes overlapping commits and marks only the newest as navigation owner", async () => {
     const finishes: Array<(name: string) => void> = [];
     moveMock.mockImplementation(
       () =>
@@ -135,22 +149,24 @@ describe("identity commit operation ownership", () => {
       async () => {
         const first = commit(target("First.md"));
         const second = commit(target("Latest.md"));
-        finishes[1]?.("Latest.md");
-        await second;
+        await Promise.resolve();
         finishes[0]?.("First.md");
         await first;
+        await Promise.resolve();
+        finishes[1]?.("Latest.md");
+        await second;
 
         expect(onCommitted).toHaveBeenNthCalledWith(
           1,
           "doc-1",
-          expect.objectContaining({ name: "Latest.md" }),
-          { isLatest: true },
+          expect.objectContaining({ name: "First.md" }),
+          { isLatest: false },
         );
         expect(onCommitted).toHaveBeenNthCalledWith(
           2,
           "doc-1",
-          expect.objectContaining({ name: "First.md" }),
-          { isLatest: false },
+          expect.objectContaining({ name: "Latest.md" }),
+          { isLatest: true },
         );
       },
     );

@@ -71,8 +71,9 @@ function browserDeps(identityMutations: ContextIdentityMutationService): Untitle
         });
         return treeContainsDocument(response.tree.children, entry.documentId);
       },
-      move(entry, source, desired: DesiredIdentity) {
-        return identityMutations.move(
+      async move(entry, source, desired: DesiredIdentity) {
+        const { result } = await identityMutations.move(
+          entry.documentId,
           entry.projectId,
           {
             scheme: source.scheme,
@@ -81,6 +82,7 @@ function browserDeps(identityMutations: ContextIdentityMutationService): Untitle
           },
           desired,
         );
+        return result;
       },
     },
   };

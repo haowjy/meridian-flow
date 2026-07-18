@@ -39,6 +39,7 @@ describe("context identity mutation cache receipts", () => {
     const service = createContextIdentityMutationService(queryClient, move);
 
     await service.move(
+      "doc-1",
       "project-1",
       { scheme: "scratch", path: "/Untitled", workId: "work-1" },
       {
@@ -60,6 +61,57 @@ describe("context identity mutation cache receipts", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: projectQueryKeys.contextTree("project-1", "manuscript", undefined),
+    });
+  });
+
+  it("serializes one document's moves and rebases the newest intent on the canonical receipt", async () => {
+    const queryClient = new QueryClient();
+    let finishBackground!: (result: Awaited<ReturnType<typeof moveContextEntry>>) => void;
+    const move = vi
+      .fn<typeof moveContextEntry>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishBackground = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: "moved",
+        scheme: "manuscript",
+        path: "Final/Latest.md",
+        name: "Latest.md",
+      });
+    const service = createContextIdentityMutationService(queryClient, move);
+
+    const background = service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
+      { name: "Background.md", destination: { scheme: "manuscript", folderPath: "/Drafts" } },
+    );
+    const foreground = service.move(
+      "doc-1",
+      "project-1",
+      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
+      { name: "Latest.md", destination: { scheme: "manuscript", folderPath: "/Final" } },
+    );
+
+    await Promise.resolve();
+    expect(move).toHaveBeenCalledOnce();
+    finishBackground({
+      status: "moved",
+      scheme: "manuscript",
+      path: "Drafts/Background.md",
+      name: "Background.md",
+    });
+
+    await expect(background).resolves.toMatchObject({ isLatest: false });
+    await expect(foreground).resolves.toMatchObject({ isLatest: true });
+    expect(move).toHaveBeenNthCalledWith(2, "project-1", "manuscript", {
+      path: "Drafts/Background.md",
+      destinationScheme: "manuscript",
+      destinationFolderPath: "Final",
+      newName: "Latest.md",
     });
   });
 });

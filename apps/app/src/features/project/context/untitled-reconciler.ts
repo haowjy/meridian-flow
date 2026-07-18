@@ -327,8 +327,9 @@ export class UntitledReconciler {
       }
       record = this.pendingRecord(documentId);
       if (!record) return;
-      this.candidates.get(documentId)?.onMaterialized(result);
-      const processedRevision = await this.applyDesiredIdentity(resolvedEntry, result);
+      const identity = await this.applyDesiredIdentity(resolvedEntry, result);
+      this.candidates.get(documentId)?.onMaterialized(identity.result);
+      const processedRevision = identity.revision;
 
       record = this.pendingRecord(documentId);
       if (!record) return;
@@ -348,11 +349,11 @@ export class UntitledReconciler {
   private async applyDesiredIdentity(
     entry: PendingUntitled & { home: UntitledHome },
     result: CreateUntitledContextDocumentResponse,
-  ): Promise<number> {
+  ): Promise<{ revision: number; result: CreateUntitledContextDocumentResponse }> {
     const record = this.records.get(entry.documentId);
     const desired = record?.desiredIdentity;
-    if (!record) return -1;
-    if (!desired) return record.revision;
+    if (!record) return { revision: -1, result };
+    if (!desired) return { revision: record.revision, result };
     const attemptRevision = record.revision;
     try {
       const moved = await this.deps.api.move(entry, result, desired);
@@ -365,7 +366,7 @@ export class UntitledReconciler {
           path: `/${moved.collision.path}`,
           ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
         });
-        return finished ? attemptRevision + 1 : attemptRevision;
+        return { revision: finished ? attemptRevision + 1 : attemptRevision, result };
       }
       const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision);
       if (finished) {
@@ -374,14 +375,24 @@ export class UntitledReconciler {
           path: `/${moved.path}`,
         });
       }
-      return finished ? attemptRevision + 1 : attemptRevision;
+      return {
+        revision: finished ? attemptRevision + 1 : attemptRevision,
+        result: {
+          status: "already-materialized",
+          documentId: entry.documentId,
+          scheme: moved.scheme,
+          path: `/${moved.path}`,
+          name: moved.name,
+          ...(desired.destination.workId ? { workId: desired.destination.workId } : {}),
+        },
+      };
     } catch (error) {
       if (!isTerminalIdentityError(error)) throw error;
       const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision, {
         kind: "error",
         name: desired.name,
       });
-      return finished ? attemptRevision + 1 : attemptRevision;
+      return { revision: finished ? attemptRevision + 1 : attemptRevision, result };
     }
   }
 

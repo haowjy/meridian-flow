@@ -3,7 +3,6 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import { createContextIdentityMutationService } from "./context-identity-mutation";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
@@ -88,10 +87,7 @@ export function useIdentityCommit({
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const queryClient = useQueryClient();
   const identityMutations = createContextIdentityMutationService(queryClient);
-  const latestOperation = useRef(0);
-
   return async (target) => {
-    const operation = ++latestOperation.current;
     const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
     if (plan.kind === "queue") {
       queueUntitledIdentity({ documentId: tab.documentId, projectId }, plan.desired);
@@ -103,11 +99,13 @@ export function useIdentityCommit({
     try {
       let activeDesired = plan.desired;
       let destination = activeDesired.destination;
-      let moved = await identityMutations.move(
+      let moveReceipt = await identityMutations.move(
+        tab.documentId,
         projectId,
         { scheme: tab.scheme, path: tab.path, ...(tab.workId ? { workId: tab.workId } : {}) },
         activeDesired,
       );
+      let moved = moveReceipt.result;
       if (moved.status === "retry") {
         const freshTab = useContextTabsStore
           .getState()
@@ -128,7 +126,8 @@ export function useIdentityCommit({
         }
         activeDesired = freshPlan.desired;
         destination = activeDesired.destination;
-        moved = await identityMutations.move(
+        moveReceipt = await identityMutations.move(
+          tab.documentId,
           projectId,
           {
             scheme: freshTab.scheme,
@@ -137,6 +136,7 @@ export function useIdentityCommit({
           },
           activeDesired,
         );
+        moved = moveReceipt.result;
         if (moved.status === "retry") {
           return {
             status: "error",
@@ -162,7 +162,7 @@ export function useIdentityCommit({
           name: moved.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
         },
-        { isLatest: operation === latestOperation.current },
+        { isLatest: moveReceipt.isLatest },
       );
       return { status: "committed" };
     } catch {
