@@ -5,7 +5,8 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { mapFigureFileType } from "../../../../../../domains/context/figures/figure-file-types.js";
-import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
+import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 function formText(
   parts: Awaited<ReturnType<typeof readMultipartFormData>>,
@@ -28,7 +29,7 @@ export default defineEventHandler(async (event) => {
   if (!fileType)
     throw createError({ statusCode: 415, message: `Unsupported file type: ${mimeType}` });
   const rawPath = formText(parts, "path");
-  const path = rawPath ? sanitizePath(rawPath) : `/uploads/${file.filename}`;
+  const path = parseContextMutationPath(rawPath ?? `uploads/${file.filename}`, "path");
   const uri = toUri(scheme, path, workId);
   const existing = await port.stat(uri);
   if (existing.ok) throw createError({ statusCode: 409, message: `Path already exists: ${path}` });

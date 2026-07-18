@@ -23,9 +23,8 @@ Shared across both shells:
 - **Inline name forms** (`useInlineNameForm`): shared state machine; create and
   rename are thin adapters over it. Extend the core, don't fork.
 - **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
-  (right-click context menu + hover kebab) dispatching the same `EntryAction`
-  type through shared `ActionMenuItems`. Add an action once; both triggers
-  inherit it.
+  (right-click context menu + hover kebab) rendered from one ordered action
+  specification. Add an action once; both primitive-specific renderers inherit it.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
 
@@ -41,7 +40,9 @@ Shared across both shells:
 
 ## File groups
 
-- **Shells**: `ContextTreePanel.tsx` (desktop sidebar and phone drawer), `MobileContextBrowser.tsx` (phone Files destination)
+- **Shells**: `ContextTreePanel.tsx` (desktop scheme/query orchestration),
+  `ContextTreeRows.tsx` (recursive desktop rows), `MobileContextBrowser.tsx`
+  (phone Files destination)
 - **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
@@ -50,10 +51,12 @@ Shared across both shells:
   `../ContextPaneController.tsx` owns reconciliation and selection, while
   `../../../client/working-set/` owns device-local route memory
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
-  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`. New untitled
-  tabs use the same Yjs-first editor as tracked documents; the detached session
-  is materialized by `untitled-reconciler.ts`. `UntitledRenameLine.tsx` is now
-  the provisional-document rename line (Enter commits; moves stay in tree actions).
+  `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
+  (the universal breadcrumb band — placement, rename, and move share one inline
+  field, committed through `use-identity-commit.ts`). New untitled
+  tabs use the same Yjs-first editor as tracked documents; the detached
+  session is materialized by the `untitled-reconciler.ts` engine;
+  `untitled-reconciler-browser.ts` owns browser/API/React bindings.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,

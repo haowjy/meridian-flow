@@ -59,7 +59,49 @@ export function contextPortForThread(
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "findById">;
+  works: Pick<WorkRepository, "findById" | "listByProject">;
+}
+
+/** Resolve the project-owned recovery surface across every active Work. */
+export async function contextPortForProjectRecovery(input: {
+  deps: ProjectBrowseContextPortDeps;
+  projectId: string;
+  userId: string;
+  requestedWorkId?: string | null;
+}): Promise<ContextPort> {
+  const works = await input.deps.works.listByProject(input.projectId);
+  const workIds = new Set(works.map((work) => work.id));
+  const primaryWorkId = input.requestedWorkId ?? works[0]?.id ?? null;
+  if (!primaryWorkId || !workIds.has(primaryWorkId)) {
+    return input.deps.contextPorts.forProject(input.projectId, input.userId);
+  }
+  return input.deps.contextPorts.forWork(primaryWorkId, input.projectId, input.userId, workIds);
+}
+
+/** Resolve one project-browse port whose Work authorities have all been proven. */
+export async function contextPortForProjectAuthorities(input: {
+  deps: ProjectBrowseContextPortDeps;
+  projectId: string;
+  userId: string;
+  workIds: ReadonlySet<string>;
+  primaryWorkId?: string | null;
+}): Promise<ContextPort | null> {
+  if (input.workIds.size === 0) {
+    return input.deps.contextPorts.forProject(input.projectId, input.userId);
+  }
+  if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
+  const works = await Promise.all(
+    [...input.workIds].map((workId) => input.deps.works.findById(workId)),
+  );
+  if (works.some((work) => !work || work.deletedAt || work.projectId !== input.projectId)) {
+    return null;
+  }
+  return input.deps.contextPorts.forWork(
+    input.primaryWorkId,
+    input.projectId,
+    input.userId,
+    input.workIds,
+  );
 }
 
 /**
@@ -73,14 +115,10 @@ export async function contextPortForProjectBrowse(input: {
   userId: string;
   workId?: string | null;
 }): Promise<ContextPort | null> {
-  if (!input.workId) return input.deps.contextPorts.forProject(input.projectId, input.userId);
-
-  const work = await input.deps.works.findById(input.workId);
-  if (!work || work.deletedAt || work.projectId !== input.projectId) return null;
-  return input.deps.contextPorts.forWork(
-    input.workId,
-    input.projectId,
-    input.userId,
-    new Set([input.workId]),
-  );
+  const workIds = new Set(input.workId ? [input.workId] : []);
+  return contextPortForProjectAuthorities({
+    ...input,
+    workIds,
+    primaryWorkId: input.workId,
+  });
 }

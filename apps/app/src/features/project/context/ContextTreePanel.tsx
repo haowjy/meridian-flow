@@ -16,44 +16,24 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
-import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus } from "lucide-react";
-import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
+import { ChevronRight, FilePlus, FolderPlus } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import {
-  ContextEntryMenu,
-  DeleteConfirmationDialog,
-  type EntryAction,
-  type EntryActionTarget,
-  EntryKebabButton,
-  useDeleteConfirmation,
-} from "./ContextEntryActions";
+import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
+import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
-import { fileKindIcon } from "./context-file-icon";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "./context-schemes";
-import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
-import { InlineValidationOverlay } from "./InlineValidationOverlay";
-import { useOptionalTreeCreation } from "./TreeCreationProvider";
-import { useCreateEntryForm } from "./use-create-entry-form";
-import { useRenameEntryForm } from "./use-rename-entry-form";
+import { type ContextFile, findContextFile } from "./context-tree";
+import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
 function rowPaddingLeft(depth: number): number {
   return 8 + depth * 16;
-}
-
-/** Enter/Space activate a `role="button"` row (full-row primary action). */
-function activateOnKey(handler: () => void) {
-  return (event: KeyboardEvent) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      handler();
-    }
-  };
 }
 
 export type ContextTreePanelProps = {
@@ -66,8 +46,8 @@ export type ContextTreePanelProps = {
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  creating?: { kind: ContextCreateKind; scheme: ProjectContextTreeScheme } | null;
-  onRequestCreate?: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
+  creating?: TreeCreationRequest | null;
+  onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
 };
 
@@ -113,8 +93,12 @@ export function ContextTreePanel({
             activePath={activePath}
             defaultExpanded={scheme === schemes[0]}
             onSelectFile={onSelectFile}
-            creating={creating?.scheme === scheme ? creating.kind : null}
-            onRequestCreate={(kind) => onRequestCreate(scheme, kind)}
+            creating={
+              creating?.scheme === scheme
+                ? { kind: creating.kind, parentPath: creating.parentPath }
+                : null
+            }
+            onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
             onCreateDone={onCreateDone}
           />
         </Fragment>
@@ -162,28 +146,56 @@ function SchemeSection({
   activePath: string | null;
   defaultExpanded: boolean;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  creating: ContextCreateKind | null;
-  onRequestCreate: (kind: ContextCreateKind) => void;
+  creating: { kind: ContextCreateKind; parentPath: string } | null;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onCreateDone: () => void;
 }) {
-  // The user-controlled toggle. `isOpen` derives from it plus the cases where
-  // the section MUST be visible (owns the active file / has an open create row).
-  const [expanded, setExpanded] = useState<boolean>(defaultExpanded);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const owns = activeLocationPath !== null;
-  // Path of a just-created file we want to open as a tab once the tree refetch
-  // (triggered by the create mutation's cache invalidation) lands. Cleared in
-  // the resolve-effect below — the local replacement for the old URL round-trip.
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const isOpen = expanded || owns || creating !== null || pendingOpenPath !== null;
+
+  const revealPath = useCallback((path: string) => {
+    const segments = path.split("/").filter(Boolean);
+    if (segments.length === 0) return;
+    setExpandedPaths((current) => {
+      const next = { ...current };
+      let ancestor = "";
+      for (const segment of segments) {
+        ancestor += `/${segment}`;
+        next[ancestor] = true;
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (activeLocationPath) revealPath(parentContextPath(activeLocationPath));
+  }, [activeLocationPath, revealPath]);
+
+  useEffect(() => {
+    if (creating) revealPath(creating.parentPath);
+  }, [creating, revealPath]);
+
+  const requestCreate = useCallback(
+    (kind: ContextCreateKind, parentPath: string) => {
+      setExpanded(true);
+      revealPath(parentPath);
+      onRequestCreate(kind, parentPath);
+    },
+    [onRequestCreate, revealPath],
+  );
+
+  const togglePath = useCallback((path: string, defaultOpen: boolean) => {
+    setExpandedPaths((current) => ({ ...current, [path]: !(current[path] ?? defaultOpen) }));
+  }, []);
 
   const { tree, isError, isFetching, refetch } = useProjectContextTree(projectId, scheme, {
     enabled: isOpen,
     activeThreadId,
   });
-  // Resolve the newly-created file once the refetched tree has it, then follow
-  // the same tab + route path as a tree-row click. The first effect after the
-  // mutation may still see the stale cached tree, so keep waiting if absent.
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
     const file = findContextFile(tree, pendingOpenPath);
@@ -192,8 +204,38 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, tree, onSelectFile, scheme]);
 
-  const rootSiblingNames = tree ? tree.children.map((child) => child.name) : [];
   const deleteConfirm = useDeleteConfirmation({ projectId, activeThreadId, scheme });
+  const env = useMemo<TreeEnv>(
+    () => ({
+      projectId,
+      activeThreadId,
+      scheme,
+      activeScheme,
+      activePath,
+      creating,
+      onSelectFile,
+      onRequestCreate: requestCreate,
+      onRequestDelete: deleteConfirm.requestDelete,
+      onCreateDone,
+      onCreatedFilePath: setPendingOpenPath,
+      isExpanded: (path, depth) => expandedPaths[path] ?? depth < 2,
+      togglePath,
+    }),
+    [
+      projectId,
+      activeThreadId,
+      scheme,
+      activeScheme,
+      activePath,
+      creating,
+      onSelectFile,
+      requestCreate,
+      deleteConfirm.requestDelete,
+      onCreateDone,
+      expandedPaths,
+      togglePath,
+    ],
+  );
 
   return (
     <section>
@@ -201,53 +243,34 @@ function SchemeSection({
         label={schemeLabel(scheme)}
         icon={schemeIcon(scheme)}
         expanded={isOpen}
-        onToggle={() => setExpanded((prev) => !prev)}
-        onNewFile={() => onRequestCreate("file")}
-        onNewFolder={() => onRequestCreate("folder")}
+        onToggle={() => {
+          if (creating) onCreateDone();
+          setExpanded((previous) => !previous);
+        }}
+        onNewFile={() => requestCreate("file", "")}
+        onNewFolder={() => requestCreate("folder", "")}
       />
       {isOpen ? (
-        <div>
-          {creating ? (
-            <CreateRow
-              projectId={projectId}
-              activeThreadId={activeThreadId}
-              scheme={scheme}
-              kind={creating}
-              depth={1}
-              siblingNames={rootSiblingNames}
-              onDone={onCreateDone}
-              onCreatedFilePath={setPendingOpenPath}
-            />
-          ) : null}
-          {isError ? (
-            <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-          ) : !tree ? (
-            isFetching ? (
-              <TreeLoadingSkeleton />
-            ) : (
+        <TreeEnvProvider value={env}>
+          <div>
+            <TreeChildren parentPath="" children={tree?.children ?? []} depth={1} />
+            {isError ? (
+              <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+            ) : !tree ? (
+              isFetching ? (
+                <TreeLoadingSkeleton />
+              ) : creating?.parentPath !== "" ? (
+                <EmptyHint>
+                  <Trans>No context files yet.</Trans>
+                </EmptyHint>
+              ) : null
+            ) : tree.children.length === 0 && !creating ? (
               <EmptyHint>
                 <Trans>No context files yet.</Trans>
               </EmptyHint>
-            )
-          ) : tree.children.length === 0 && !creating ? (
-            <EmptyHint>
-              <Trans>No context files yet.</Trans>
-            </EmptyHint>
-          ) : (
-            <TreeBlock
-              dir={tree}
-              depth={1}
-              projectId={projectId}
-              activeThreadId={activeThreadId}
-              scheme={scheme}
-              activeScheme={activeScheme}
-              activePath={activePath}
-              activeLocationPath={activeLocationPath}
-              onSelectFile={onSelectFile}
-              onRequestDelete={deleteConfirm.requestDelete}
-            />
-          )}
-        </div>
+            ) : null}
+          </div>
+        </TreeEnvProvider>
       ) : null}
       <DeleteConfirmationDialog
         target={deleteConfirm.target}
@@ -257,6 +280,11 @@ function SchemeSection({
       />
     </section>
   );
+}
+
+function parentContextPath(path: string): string {
+  const separator = path.lastIndexOf("/");
+  return separator <= 0 ? "" : path.slice(0, separator);
 }
 
 /**
@@ -360,372 +388,6 @@ function TreeLoadingSkeleton() {
             <Skeleton className={cn("h-3", width)} />
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function TreeBlock({
-  dir,
-  depth,
-  projectId,
-  activeThreadId,
-  scheme,
-  activeScheme,
-  activePath,
-  activeLocationPath,
-  onSelectFile,
-  onRequestDelete,
-}: {
-  dir: ContextDir;
-  depth: number;
-  projectId: string;
-  activeThreadId: string | null;
-  scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
-  activeLocationPath: string | null;
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
-}) {
-  const siblingNames = dir.children.map((child) => child.name);
-  return (
-    <>
-      {dir.children.map((child) =>
-        child.kind === "dir" ? (
-          <DirRow
-            key={child.path}
-            dir={child}
-            depth={depth}
-            projectId={projectId}
-            activeThreadId={activeThreadId}
-            scheme={scheme}
-            activeScheme={activeScheme}
-            activePath={activePath}
-            activeLocationPath={activeLocationPath}
-            siblingNames={siblingNames}
-            onSelectFile={onSelectFile}
-            onRequestDelete={onRequestDelete}
-          />
-        ) : (
-          <FileRow
-            key={child.path}
-            file={child}
-            depth={depth}
-            projectId={projectId}
-            activeThreadId={activeThreadId}
-            scheme={scheme}
-            active={scheme === activeScheme && child.path === activePath}
-            siblingNames={siblingNames}
-            onSelect={onSelectFile}
-            onRequestDelete={onRequestDelete}
-          />
-        ),
-      )}
-    </>
-  );
-}
-
-/** Fixed-width twistie cell (16px) — chevron for folders/sections. */
-function Twistie({ expanded }: { expanded: boolean }) {
-  return (
-    <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-      <ChevronRight
-        aria-hidden
-        className={cn("size-3 transition-transform", expanded && "rotate-90")}
-      />
-    </span>
-  );
-}
-
-/** Fixed-width kind-icon cell (16px) — mono, muted. */
-function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
-  return (
-    <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-      <Icon aria-hidden className="size-3.5" />
-    </span>
-  );
-}
-
-function DirRow({
-  dir,
-  depth,
-  projectId,
-  activeThreadId,
-  scheme,
-  activeScheme,
-  activePath,
-  activeLocationPath,
-  siblingNames,
-  onSelectFile,
-  onRequestDelete,
-}: {
-  dir: ContextDir;
-  depth: number;
-  projectId: string;
-  activeThreadId: string | null;
-  scheme: ProjectContextTreeScheme;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
-  activeLocationPath: string | null;
-  siblingNames: readonly string[];
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
-}) {
-  const ownsActive =
-    scheme === activeScheme &&
-    (activeLocationPath === dir.path || (activeLocationPath?.startsWith(`${dir.path}/`) ?? false));
-  const [expanded, setExpanded] = useState(depth < 2 || ownsActive);
-  const [renaming, setRenaming] = useState(false);
-
-  useEffect(() => {
-    if (ownsActive) setExpanded(true);
-  }, [ownsActive]);
-
-  const toggle = () => setExpanded((prev) => !prev);
-
-  function handleAction(action: EntryAction) {
-    if (action === "rename") setRenaming(true);
-    else if (action === "delete") onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-  }
-
-  if (renaming) {
-    return (
-      <RenameRow
-        projectId={projectId}
-        activeThreadId={activeThreadId}
-        scheme={scheme}
-        path={dir.path}
-        currentName={dir.name}
-        siblingNames={siblingNames}
-        depth={depth}
-        icon={expanded ? FolderOpen : Folder}
-        onDone={() => setRenaming(false)}
-      />
-    );
-  }
-
-  return (
-    <>
-      <ContextEntryMenu onAction={handleAction}>
-        {/* biome-ignore lint/a11y/useSemanticElements: full-row toggle that
-            nests the hover kebab button; a native <button> can't nest one. */}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded}
-          aria-label={t`Toggle folder ${dir.name}`}
-          onClick={toggle}
-          onKeyDown={activateOnKey(toggle)}
-          className="group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
-          style={{ paddingLeft: rowPaddingLeft(depth) }}
-        >
-          <Twistie expanded={expanded} />
-          <RowIcon icon={expanded ? FolderOpen : Folder} />
-          <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
-          <EntryKebabButton onAction={handleAction} />
-        </div>
-      </ContextEntryMenu>
-      {expanded ? (
-        <TreeBlock
-          dir={dir}
-          depth={depth + 1}
-          projectId={projectId}
-          activeThreadId={activeThreadId}
-          scheme={scheme}
-          activeScheme={activeScheme}
-          activePath={activePath}
-          activeLocationPath={activeLocationPath}
-          onSelectFile={onSelectFile}
-          onRequestDelete={onRequestDelete}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function FileRow({
-  file,
-  depth,
-  projectId,
-  activeThreadId,
-  scheme,
-  active,
-  siblingNames,
-  onSelect,
-  onRequestDelete,
-}: {
-  file: ContextFile;
-  depth: number;
-  projectId: string;
-  activeThreadId: string | null;
-  scheme: ProjectContextTreeScheme;
-  active: boolean;
-  siblingNames: readonly string[];
-  onSelect: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
-}) {
-  const [renaming, setRenaming] = useState(false);
-  const select = () => onSelect(scheme, file);
-
-  function handleAction(action: EntryAction) {
-    if (action === "rename") setRenaming(true);
-    else if (action === "delete")
-      onRequestDelete({ name: file.name, path: file.path, kind: "file" });
-  }
-
-  if (renaming) {
-    return (
-      <RenameRow
-        projectId={projectId}
-        activeThreadId={activeThreadId}
-        scheme={scheme}
-        path={file.path}
-        currentName={file.name}
-        siblingNames={siblingNames}
-        depth={depth}
-        icon={fileKindIcon(file)}
-        onDone={() => setRenaming(false)}
-      />
-    );
-  }
-
-  return (
-    <ContextEntryMenu onAction={handleAction}>
-      {/* biome-ignore lint/a11y/useSemanticElements: full-row open target that
-          nests the hover kebab button; a native <button> can't nest one. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={select}
-        onKeyDown={activateOnKey(select)}
-        className={cn(
-          "group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm hover:bg-sidebar-accent",
-          // Routine selection presses INTO the rail (sidebar-accent — the
-          // shelf-active tint on the rail), never an accent hue.
-          active ? "bg-sidebar-accent font-medium text-foreground" : "text-foreground",
-        )}
-        style={{ paddingLeft: rowPaddingLeft(depth) }}
-      >
-        {/* Empty twistie cell keeps files aligned under folder labels. */}
-        <span className="h-7 w-4 shrink-0" aria-hidden />
-        <RowIcon icon={fileKindIcon(file)} />
-        <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
-        <EntryKebabButton onAction={handleAction} />
-      </div>
-    </ContextEntryMenu>
-  );
-}
-
-/** Inline rename row — replaces the normal row while renaming. */
-function RenameRow({
-  projectId,
-  activeThreadId,
-  scheme,
-  path,
-  currentName,
-  siblingNames,
-  depth,
-  icon,
-  onDone,
-}: {
-  projectId: string;
-  activeThreadId: string | null;
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  currentName: string;
-  siblingNames: readonly string[];
-  depth: number;
-  icon: typeof Folder;
-  onDone: () => void;
-}) {
-  const form = useRenameEntryForm({
-    projectId,
-    activeThreadId,
-    scheme,
-    path,
-    currentName,
-    siblingNames,
-    onDone,
-  });
-
-  return (
-    <div className="flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
-      <span className="h-7 w-4 shrink-0" aria-hidden />
-      <RowIcon icon={icon} />
-      <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
-        <input
-          ref={form.inputRef}
-          type="text"
-          value={form.name}
-          onChange={form.onChange}
-          onKeyDown={form.onKeyDown}
-          onBlur={form.onBlur}
-          aria-label={t`Rename`}
-          disabled={form.isPending}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-border bg-sidebar-accent px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
-        />
-        <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
-      </div>
-    </div>
-  );
-}
-
-/** Inline naming row — chrome only; state machine lives in useCreateEntryForm. */
-function CreateRow({
-  projectId,
-  activeThreadId,
-  scheme,
-  kind,
-  depth,
-  siblingNames,
-  onDone,
-  onCreatedFilePath,
-}: {
-  projectId: string;
-  activeThreadId: string | null;
-  scheme: ProjectContextTreeScheme;
-  kind: ContextCreateKind;
-  depth: number;
-  siblingNames: readonly string[];
-  onDone: () => void;
-  /** New file's path, so the section can open it as a tab post-refetch. */
-  onCreatedFilePath: (path: string) => void;
-}) {
-  const form = useCreateEntryForm({
-    projectId,
-    activeThreadId,
-    scheme,
-    kind,
-    siblingNames,
-    onDone,
-    onCreated: kind === "file" ? onCreatedFilePath : undefined,
-  });
-
-  return (
-    <div className="flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
-      <span className="h-7 w-4 shrink-0" aria-hidden />
-      <RowIcon icon={form.icon} />
-      <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
-        <input
-          ref={form.inputRef}
-          type="text"
-          value={form.name}
-          onChange={form.onChange}
-          onKeyDown={form.onKeyDown}
-          onBlur={form.onBlur}
-          placeholder={form.placeholder}
-          aria-label={form.placeholder}
-          disabled={form.isPending}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-border bg-sidebar-accent px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
-        />
-        <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
       </div>
     </div>
   );

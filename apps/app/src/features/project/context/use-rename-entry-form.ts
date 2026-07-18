@@ -10,6 +10,7 @@ import { useCallback, useMemo } from "react";
 
 import { useRenameContextEntry } from "@/client/query/useRenameContextEntry";
 
+import type { ContextCreateKind } from "./context-create-kind";
 import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
 
 export type UseRenameEntryFormOptions = {
@@ -22,6 +23,7 @@ export type UseRenameEntryFormOptions = {
   currentName: string;
   /** Sibling names for collision detection (should include all siblings). */
   siblingNames: readonly string[];
+  kind: ContextCreateKind;
   /** Called when the form completes (successful rename or cancel). */
   onDone: () => void;
 };
@@ -35,6 +37,7 @@ export function useRenameEntryForm({
   path,
   currentName,
   siblingNames,
+  kind,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
   const mutation = useRenameContextEntry(projectId, scheme, { activeThreadId });
@@ -65,6 +68,7 @@ export function useRenameEntryForm({
   return useInlineNameForm({
     initialName: currentName,
     siblingNames: filteredSiblings,
+    kind,
     isPending: mutation.isPending,
     onSubmit: handleSubmit,
     onDone,

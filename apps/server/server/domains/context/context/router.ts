@@ -13,6 +13,7 @@ import type {
 } from "../ports/context-adapter.js";
 import type {
   ContextCreateTrackedDocumentResult,
+  ContextCreateUntitledDocumentResult,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
@@ -33,6 +34,8 @@ import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri
 
 export interface ContextPortRouterDeps {
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  /** Canonical Work authority for Work-scoped adapters already present in the base map. */
+  adapterAuthorities?: ReadonlyMap<ContextScheme, string>;
   /** Work IDs this port may address through `scheme://<workId>/...` authority URIs. */
   allowedAuthorities?: ReadonlySet<string>;
   /** Primary Work for bare Work-scoped URIs in this router. */
@@ -238,12 +241,79 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
-    async createUntitledDocument(homeUri, options) {
+    async createUntitledDocument(
+      homeUri,
+      options,
+    ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>> {
       const r = await resolve(homeUri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      return callAdapter(canonical, () => adapter.createUntitledDocument(path, options));
+
+      const locations: Array<{
+        scheme: ContextScheme;
+        authority: string | null;
+        adapter: ContextSchemeAdapter;
+      }> = [];
+      const locationKeys = new Set<string>();
+      const addLocation = (
+        scheme: ContextScheme,
+        authority: string | null,
+        candidate: ContextSchemeAdapter,
+      ) => {
+        const key = `${scheme}:${authority ?? ""}`;
+        if (locationKeys.has(key)) return;
+        locationKeys.add(key);
+        locations.push({ scheme, authority, adapter: candidate });
+      };
+      for (const [scheme, candidate] of adapters) {
+        addLocation(scheme, deps.adapterAuthorities?.get(scheme) ?? null, candidate);
+      }
+      for (const authority of deps.allowedAuthorities ?? []) {
+        for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
+          addLocation(scheme, authority, candidate);
+        }
+      }
+      for (const location of locations) {
+        const locationUri = uriFor(location.scheme, "", location.authority);
+        const found = await callAdapter(locationUri, () =>
+          location.adapter.locateDocument(options.documentId),
+        );
+        if (!found.ok) return found;
+        if (!found.value) continue;
+        const finalized = await callAdapter(locationUri, () =>
+          location.adapter.createUntitledDocument(found.value?.path ?? "", options),
+        );
+        if (!finalized.ok) return finalized;
+        return Ok({
+          status: "already-materialized",
+          documentId: finalized.value.documentId,
+          scheme: location.scheme,
+          path: finalized.value.path,
+          name: finalized.value.name,
+          ...(location.authority ? { workId: location.authority } : {}),
+        });
+      }
+
+      const created = await callAdapter(canonical, () =>
+        adapter.createUntitledDocument(path, options),
+      );
+      if (!created.ok) return created;
+      return created.value.status === "created"
+        ? Ok({
+            status: "created",
+            documentId: created.value.documentId,
+            path: created.value.path,
+            name: created.value.name,
+          })
+        : Ok({
+            status: "already-materialized",
+            documentId: created.value.documentId,
+            scheme: r.value.scheme,
+            path: created.value.path,
+            name: created.value.name,
+            ...(r.value.authority ? { workId: r.value.authority } : {}),
+          });
     },
 
     async edit(
@@ -282,9 +352,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!source.ok) return source;
       const destination = await resolve(destinationUri);
       if (!destination.ok) return destination;
-      if (source.value.canonical === destination.value.canonical) {
-        return Err({ code: "invalid_operation", uri: destination.value.canonical });
-      }
       if (
         source.value.scheme === destination.value.scheme &&
         source.value.workScopeId === destination.value.workScopeId
@@ -299,6 +366,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: destination.value.canonical });
       }
       return treeMover.move(source.value, destination.value, options);
+    },
+
+    async commitWriterLocation(sourceUri, destinationUri, _options) {
+      const source = await resolve(sourceUri);
+      if (!source.ok) return source;
+      const destination = await resolve(destinationUri);
+      if (!destination.ok) return destination;
+      return treeMover.commitWriterLocation(source.value, destination.value);
     },
 
     async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {

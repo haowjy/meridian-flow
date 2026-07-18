@@ -37,8 +37,8 @@ and input.
 
 ## Hosts
 
-The current host is the temporary-document save destination typeahead, limited
-to durable-scheme directories. The collision note's "Open existing" action
+The current host is the identity bar's unified placement/rename/move field
+(`IdentityPlacementField.tsx`), which browses writable-scheme directories. The collision note's "Open existing" action
 rides inside the roving walk via the `header` slot, so keyboard users can reach
 it. Intended reuse includes the composer attach-file picker and ⌘O quick open.
 Those hosts should compose this public contract rather than fork matching or

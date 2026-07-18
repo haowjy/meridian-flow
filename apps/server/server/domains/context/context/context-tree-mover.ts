@@ -1,6 +1,6 @@
 /**
  * ContextTreeMover owns filesystem move/delete semantics after URI routing.
- * It prepares ContextLocationToken CAS plans (same-path guard, Unix basename
+ * It prepares ContextLocationToken CAS plans (same-path guard, exact or Unix
  * target resolution, overwrite/type rules, and folder-into-self rejection) and
  * delegates the single durable commit to a ContextTreeMutationStore-backed
  * adapter capability.
@@ -73,9 +73,8 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     options?: ContextMoveOptions,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    if (source.canonical === destination.canonical) {
+    if (source.canonical === destination.canonical)
       return Err({ code: "invalid_operation", uri: destination.canonical });
-    }
     if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
       return Err({ code: "permission_denied", uri: destination.canonical });
     }
@@ -83,7 +82,10 @@ export class ContextTreeMover {
       return Err({ code: "permission_denied", uri: destination.canonical });
     }
 
-    const prepared = await this.prepareMove(source, destination, options);
+    const prepared = await this.prepareMove(source, destination, {
+      target: "container",
+      overwrite: options?.overwrite === true,
+    });
     if (!prepared.ok) return prepared;
 
     const result = await callAdapter(
@@ -93,7 +95,64 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    return Ok({ movedNodeId: result.value.movedNodeId });
+    return Ok({
+      movedNodeId: result.value.movedNodeId,
+      destinationPath: prepared.value.destinationPath,
+    });
+  }
+
+  async commitWriterLocation(
+    source: ContextTreeDispatch,
+    destination: ContextTreeDispatch,
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    if (source.canonical === destination.canonical) return this.graduateInPlace(source);
+    if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
+      return Err({ code: "permission_denied", uri: destination.canonical });
+    }
+    if (!source.adapter.tree || !destination.adapter.tree) {
+      return Err({ code: "permission_denied", uri: destination.canonical });
+    }
+
+    const prepared = await this.prepareMove(source, destination, {
+      target: "exact",
+      graduateProvisionalName: true,
+      overwrite: false,
+    });
+    if (!prepared.ok) return prepared;
+    const result = await callAdapter(
+      destination.canonical,
+      () =>
+        destination.adapter.tree?.commitPreparedMove(prepared.value) ??
+        Promise.resolve(Err({ code: "permission_denied" } as const)),
+    );
+    if (!result.ok) return result;
+    return Ok({
+      movedNodeId: result.value.movedNodeId,
+      destinationPath: prepared.value.destinationPath,
+    });
+  }
+
+  private async graduateInPlace(
+    source: ContextTreeDispatch,
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    if (!source.adapter.capabilities.writable || !source.adapter.tree) {
+      return Err({ code: "permission_denied", uri: source.canonical });
+    }
+    const token = await this.inspect(source);
+    if (!token.ok) return token;
+    if (token.value === null) return Err({ code: "not_found", uri: source.canonical });
+    if (token.value.kind !== "file") {
+      return Err({ code: "invalid_operation", uri: source.canonical });
+    }
+    const fileToken = token.value;
+    const result = await callAdapter(
+      source.canonical,
+      () =>
+        source.adapter.tree?.commitProvisionalGraduation(fileToken) ??
+        Promise.resolve(Err({ code: "permission_denied" } as const)),
+    );
+    if (!result.ok) return result;
+    return Ok({ movedNodeId: fileToken.nodeId, destinationPath: fileToken.path });
   }
 
   async delete(
@@ -121,7 +180,9 @@ export class ContextTreeMover {
   private async prepareMove(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    options?: ContextMoveOptions,
+    policy:
+      | { target: "container"; overwrite: boolean }
+      | { target: "exact"; overwrite: false; graduateProvisionalName: true },
   ): Promise<Result<PreparedContextMove, ContextError>> {
     const sourceToken = await this.inspect(source);
     if (!sourceToken.ok) return sourceToken;
@@ -133,7 +194,11 @@ export class ContextTreeMover {
     const destinationSourceId = await this.destinationSourceId(destination);
     if (!destinationSourceId.ok) return destinationSourceId;
 
-    const targetPath = await this.resolveTarget(destination, sourceBasename);
+    const targetPath = await this.resolveTarget(
+      destination,
+      sourceBasename,
+      policy.target === "exact",
+    );
     if (!targetPath.ok) return targetPath;
 
     const existingTarget = await this.inspect({ ...destination, path: targetPath.value });
@@ -143,7 +208,7 @@ export class ContextTreeMover {
         sourceToken.value,
         existingTarget.value,
         destination.canonical,
-        options,
+        { overwrite: policy.overwrite },
       );
       if (!guard.ok) return guard;
     }
@@ -159,15 +224,24 @@ export class ContextTreeMover {
       }
     }
 
-    return Ok({
+    const expectedTarget = existingTarget.value
+      ? ({ state: "occupied", token: existingTarget.value } as const)
+      : ({ state: "absent" } as const);
+    const prepared = {
       source: sourceToken.value,
       destinationSourceId: destinationSourceId.value,
       destinationPath: targetPath.value,
-      expectedTarget: existingTarget.value
-        ? { state: "occupied", token: existingTarget.value }
-        : { state: "absent" },
-      overwrite: options?.overwrite === true,
-    });
+      expectedTarget,
+      overwrite: policy.overwrite,
+    };
+    return sourceToken.value.kind === "file"
+      ? Ok({
+          ...prepared,
+          source: sourceToken.value,
+          graduateProvisionalName:
+            policy.target === "exact" && policy.graduateProvisionalName === true,
+        })
+      : Ok({ ...prepared, source: sourceToken.value });
   }
 
   private async inspect(
@@ -192,7 +266,15 @@ export class ContextTreeMover {
   private async resolveTarget(
     destination: ContextTreeDispatch,
     sourceBasename: string,
+    exactTarget = false,
   ): Promise<Result<string, ContextError>> {
+    if (exactTarget) {
+      const targetPath = destination.path.split("/").filter(Boolean).join("/");
+      if (!basename(targetPath)) {
+        return Err({ code: "invalid_operation", uri: destination.canonical });
+      }
+      return Ok(targetPath);
+    }
     const destinationEntry = await this.inspect(destination);
     if (!destinationEntry.ok) return destinationEntry;
     const targetPath =
