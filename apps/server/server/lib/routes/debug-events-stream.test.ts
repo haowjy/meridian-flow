@@ -1,6 +1,6 @@
 /** Recent-events SSE route coverage for live filtering, frames, and cleanup. */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EventRecord } from "../../../../domains/observability/index.js";
+import type { EventRecord } from "../../domains/observability/index.js";
 
 const mocks = vi.hoisted(() => ({
   closed: undefined as (() => void) | undefined,
@@ -25,7 +25,7 @@ vi.mock("nitro/h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
   getQuery: () => ({ source: "wire.yjs", documentId: "doc" }),
 }));
-vi.mock("../../../../lib/auth-gate.js", () => ({
+vi.mock("../auth-gate.js", () => ({
   requireAppUser: async () => ({
     app: {
       eventQuery: {
@@ -39,7 +39,9 @@ vi.mock("../../../../lib/auth-gate.js", () => ({
   }),
 }));
 
-const handler = (await import("./stream.get.js")).default as (event: unknown) => Promise<unknown>;
+const handler = (await import("../../routes/api/debug/events/stream.get.js")).default as (
+  event: unknown,
+) => Promise<unknown>;
 
 afterEach(() => {
   mocks.closed?.();

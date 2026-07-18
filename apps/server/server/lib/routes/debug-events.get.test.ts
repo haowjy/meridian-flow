@@ -14,11 +14,13 @@ vi.mock("nitro/h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
   getQuery: () => mocks.query,
 }));
-vi.mock("../../../lib/auth-gate.js", () => ({
+vi.mock("../auth-gate.js", () => ({
   requireAppUser: async () => ({ app: { eventQuery: mocks.eventQuery } }),
 }));
 
-const handler = (await import("./events.get.js")).default as (event: unknown) => Promise<unknown>;
+const handler = (await import("../../routes/api/debug/events.get.js")).default as (
+  event: unknown,
+) => Promise<unknown>;
 
 describe("GET /api/debug/events", () => {
   beforeEach(() => {
