@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: repeated project-manifest reads no longer append identical Yjs
+  updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
   Meridian on another device resumes the same document, recent tabs, and
   chat thread (#217). One row per user·project (`project_user_working_sets`);
