@@ -4,7 +4,7 @@
  * log directory is configured. Daily files can be retained for a bounded number
  * of days. Writes are serialized per process.
  */
-import { appendFile, mkdir, readdir, unlink } from "node:fs/promises";
+import { appendFile as appendFileToDisk, mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 import { sanitizeEventRecord } from "../../safe-event.js";
@@ -18,9 +18,14 @@ export type LocalEventSinkOptions = {
   now?: () => Date;
   /** Injectable output stream for tests; defaults to process stdout. */
   stdout?: Pick<NodeJS.WriteStream, "write">;
+  /** Injectable JSONL writer for deterministic backpressure tests. */
+  appendFile?: typeof appendFileToDisk;
+  /** Maximum number of events waiting behind the active write. */
+  pendingEventCapacity?: number;
 };
 
 const DAILY_LOG_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}\.jsonl$/;
+const DEFAULT_PENDING_EVENT_CAPACITY = 5_000;
 
 function utcDateStamp(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -38,7 +43,11 @@ export class LocalEventSink implements EventSink {
   private readonly retentionDays: number | undefined;
   private readonly now: () => Date;
   private readonly stdout: Pick<NodeJS.WriteStream, "write">;
-  private writeChain: Promise<void> = Promise.resolve();
+  private readonly appendFile: typeof appendFileToDisk;
+  private readonly pendingEventCapacity: number;
+  private readonly pendingEvents: EventRecord[] = [];
+  private droppedEvents = 0;
+  private drainPromise: Promise<void> | null = null;
   private activeDate: string | null = null;
   private activePath: string | null = null;
 
@@ -47,6 +56,11 @@ export class LocalEventSink implements EventSink {
     this.retentionDays = options.retentionDays;
     this.now = options.now ?? (() => new Date());
     this.stdout = options.stdout ?? process.stdout;
+    this.appendFile = options.appendFile ?? appendFileToDisk;
+    this.pendingEventCapacity = options.pendingEventCapacity ?? DEFAULT_PENDING_EVENT_CAPACITY;
+    if (!Number.isInteger(this.pendingEventCapacity) || this.pendingEventCapacity < 1) {
+      throw new Error("pendingEventCapacity must be a positive integer");
+    }
   }
 
   emit(event: EventRecord): void {
@@ -59,7 +73,9 @@ export class LocalEventSink implements EventSink {
   }
 
   async flush(): Promise<void> {
-    await this.writeChain;
+    while (this.drainPromise) {
+      await this.drainPromise;
+    }
   }
 
   /** Resolved path for the active daily file — test hook for reading back lines. */
@@ -68,7 +84,59 @@ export class LocalEventSink implements EventSink {
   }
 
   private enqueue(events: EventRecord[]): void {
-    this.writeChain = this.writeChain.catch(() => undefined).then(() => this.appendEvents(events));
+    if (events.length >= this.pendingEventCapacity) {
+      this.droppedEvents += this.pendingEvents.length + events.length - this.pendingEventCapacity;
+      this.pendingEvents.length = 0;
+      for (
+        let index = events.length - this.pendingEventCapacity;
+        index < events.length;
+        index += 1
+      ) {
+        const event = events[index];
+        if (event) this.pendingEvents.push(event);
+      }
+    } else {
+      const overflow = this.pendingEvents.length + events.length - this.pendingEventCapacity;
+      if (overflow > 0) {
+        this.pendingEvents.splice(0, overflow);
+        this.droppedEvents += overflow;
+      }
+      this.pendingEvents.push(...events);
+    }
+    if (!this.drainPromise) this.startDrain();
+  }
+
+  private startDrain(): void {
+    const drainPromise = Promise.resolve().then(() => this.drain());
+    this.drainPromise = drainPromise;
+    void drainPromise.then(
+      () => this.finishDrain(drainPromise),
+      () => this.finishDrain(drainPromise),
+    );
+  }
+
+  private finishDrain(completed: Promise<void>): void {
+    if (this.drainPromise !== completed) return;
+    this.drainPromise = null;
+    if (this.pendingEvents.length > 0) this.startDrain();
+  }
+
+  private async drain(): Promise<void> {
+    while (this.pendingEvents.length > 0) {
+      const events = this.pendingEvents.splice(0);
+      const dropped = this.droppedEvents;
+      if (dropped > 0) {
+        events.unshift({
+          timestamp: this.now().toISOString(),
+          level: "warn",
+          source: "observability",
+          name: "sink.dropped",
+          payload: { dropped },
+        });
+      }
+      await this.appendEvents(events);
+      if (dropped > 0) this.droppedEvents -= dropped;
+    }
   }
 
   private async appendEvents(events: EventRecord[]): Promise<void> {
@@ -79,7 +147,7 @@ export class LocalEventSink implements EventSink {
     if (!this.dir) return;
     try {
       const filePath = await this.resolveFilePath();
-      if (filePath) await appendFile(filePath, payload, { encoding: "utf8", flag: "a" });
+      if (filePath) await this.appendFile(filePath, payload, { encoding: "utf8", flag: "a" });
     } catch {
       // Stdout is the required local sink; JSONL mirroring is best-effort.
     }
