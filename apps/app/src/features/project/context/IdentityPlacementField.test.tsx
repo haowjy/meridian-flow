@@ -141,6 +141,47 @@ describe("IdentityPlacementField placement ghost", () => {
 });
 
 describe("IdentityPlacementField graduated editing", () => {
+  it("does not blur-dismiss while a save is pending", async () => {
+    let finishCommit!: () => void;
+    const commit = vi.fn(
+      () =>
+        new Promise<{ status: "committed" }>((resolve) => {
+          finishCommit = () => resolve({ status: "committed" });
+        }),
+    );
+    const onExit = vi.fn();
+    await withReactRoot(
+      <IdentityPlacementField
+        projectId="project-1"
+        activeThreadId={null}
+        defaultWorkId={null}
+        tab={graduatedTab}
+        location={tabLocation(graduatedTab)}
+        failure={null}
+        commit={commit}
+        onExit={onExit}
+        onOpenExisting={() => {}}
+      />,
+      async () => {
+        const input = document.querySelector<HTMLInputElement>(
+          'input[aria-label="Document name and location"]',
+        );
+        await act(async () => {
+          input?.dispatchEvent(
+            new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+          );
+        });
+        await act(async () =>
+          input?.dispatchEvent(new window.FocusEvent("focusout", { bubbles: true })),
+        );
+        expect(onExit).not.toHaveBeenCalled();
+
+        await act(async () => finishCommit());
+        expect(onExit).toHaveBeenCalledWith("commit");
+      },
+    );
+  });
+
   it("opens selected with the current name and offers siblings plus roots", async () => {
     await withReactRoot(
       <IdentityPlacementField

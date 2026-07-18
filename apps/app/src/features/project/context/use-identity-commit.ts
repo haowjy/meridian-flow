@@ -3,6 +3,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { createContextIdentityMutationService } from "./context-identity-mutation";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
@@ -27,6 +28,19 @@ export type IdentityCommitted = {
   name: string;
   workId?: string;
 };
+
+export type IdentityCommitOwnership = {
+  /** True only for the latest operation started by this identity surface. */
+  isLatest: boolean;
+};
+
+export function identityCommitMayNavigate(
+  ownership: IdentityCommitOwnership,
+  activeDocumentId: string | null | undefined,
+  committedDocumentId: string,
+): boolean {
+  return ownership.isLatest && activeDocumentId === committedDocumentId;
+}
 
 type IdentityCommitPlan =
   | { kind: "queue"; desired: DesiredIdentity }
@@ -66,12 +80,18 @@ export function useIdentityCommit({
   projectId: string;
   tab: ContextTab;
   defaultWorkId: string | null;
-  onCommitted: (documentId: string, next: IdentityCommitted) => void;
+  onCommitted: (
+    documentId: string,
+    next: IdentityCommitted,
+    ownership: IdentityCommitOwnership,
+  ) => void;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const queryClient = useQueryClient();
   const identityMutations = createContextIdentityMutationService(queryClient);
+  const latestOperation = useRef(0);
 
   return async (target) => {
+    const operation = ++latestOperation.current;
     const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
     if (plan.kind === "queue") {
       queueUntitledIdentity({ documentId: tab.documentId, projectId }, plan.desired);
@@ -98,12 +118,16 @@ export function useIdentityCommit({
           },
         };
       }
-      onCommitted(tab.documentId, {
-        scheme: moved.scheme,
-        path: `/${moved.path}`,
-        name: moved.name,
-        ...(destination.workId ? { workId: destination.workId } : {}),
-      });
+      onCommitted(
+        tab.documentId,
+        {
+          scheme: moved.scheme,
+          path: `/${moved.path}`,
+          name: moved.name,
+          ...(destination.workId ? { workId: destination.workId } : {}),
+        },
+        { isLatest: operation === latestOperation.current },
+      );
       return { status: "committed" };
     } catch {
       return { status: "error", message: t`Couldn't save this document's home. Try again.` };

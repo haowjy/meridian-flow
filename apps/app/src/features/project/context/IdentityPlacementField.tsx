@@ -338,6 +338,7 @@ export function IdentityPlacementField({
               }
             }}
             onBlur={(event) => {
+              if (saving) return;
               const next = event.relatedTarget as HTMLElement | null;
               if (next?.closest("[data-file-suggestion]")) return;
               onExit("blur");

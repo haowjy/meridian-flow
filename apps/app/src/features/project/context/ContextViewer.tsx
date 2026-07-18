@@ -16,7 +16,7 @@ import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState } from "./context-pane-state";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
-import type { IdentityCommitted } from "./use-identity-commit";
+import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
   return tab.kind === "tracked" || tab.kind === "new";
@@ -50,7 +50,11 @@ export type ContextViewerProps = {
   onResumeDocument: () => void;
   onNewDocument: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
-  onCommitted: (documentId: string, next: IdentityCommitted) => void;
+  onCommitted: (
+    documentId: string,
+    next: IdentityCommitted,
+    ownership: IdentityCommitOwnership,
+  ) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 

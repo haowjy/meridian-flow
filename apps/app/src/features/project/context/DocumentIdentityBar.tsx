@@ -32,14 +32,22 @@ import {
   useQueuedIdentityFailure,
   useUntitledPendingSince,
 } from "./untitled-reconciler-browser";
-import { type IdentityCommitted, useIdentityCommit } from "./use-identity-commit";
+import {
+  type IdentityCommitOwnership,
+  type IdentityCommitted,
+  useIdentityCommit,
+} from "./use-identity-commit";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
   activeThreadId: string | null;
   defaultWorkId: string | null;
   tab: ContextTab;
-  onCommitted: (documentId: string, next: IdentityCommitted) => void;
+  onCommitted: (
+    documentId: string,
+    next: IdentityCommitted,
+    ownership: IdentityCommitOwnership,
+  ) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 

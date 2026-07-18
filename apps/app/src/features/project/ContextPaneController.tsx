@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useDefaultWorkId } from "@/client/query/useWorks";
-import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   clearRoutes,
@@ -32,6 +32,7 @@ import {
 } from "./context/context-tree";
 import { untitledDocumentIsEmpty } from "./context/untitled-reconciler";
 import { appendPendingUntitled, isUntitledPending } from "./context/untitled-reconciler-browser";
+import { identityCommitMayNavigate } from "./context/use-identity-commit";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -445,9 +446,10 @@ export function ContextViewerSurfaceController({
         onSelectContextPath("", activeContextScheme ?? undefined);
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
-      onCommitted={(documentId, next) => {
-        const target = tabs.find((candidate) => candidate.documentId === documentId);
-        if (target?.kind === "viewer") {
+      onCommitted={(documentId, next, ownership) => {
+        const liveSlice = useContextTabsStore.getState().byProject[projectId];
+        const target = liveSlice?.tabs.find((candidate) => candidate.documentId === documentId);
+        if (ownership.isLatest && target?.kind === "viewer") {
           // openTab merges metadata for an already-open tab; the store has no
           // viewer-specific patch action.
           openTab(projectId, {
@@ -457,7 +459,7 @@ export function ContextViewerSurfaceController({
             name: next.name,
             workId: next.workId,
           });
-        } else {
+        } else if (ownership.isLatest) {
           // Any commit through the identity bar is an explicit writer save:
           // the document graduates out of provisional naming (D8).
           updateTrackedTab(projectId, documentId, {
@@ -468,7 +470,9 @@ export function ContextViewerSurfaceController({
             provisionalName: false,
           });
         }
-        onSelectContextPath(next.path, next.scheme);
+        if (identityCommitMayNavigate(ownership, liveSlice?.activeTabId, documentId)) {
+          onSelectContextPath(next.path, next.scheme);
+        }
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
     />

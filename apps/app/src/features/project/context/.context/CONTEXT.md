@@ -119,6 +119,11 @@ Contracts:
   locators and graduation semantics have one owner. A same-name explicit Save on a provisional
   document is therefore always a graduation, regardless of which surface
   submitted it. Conflicts return the canonical locator for Open-existing.
+  Every asynchronous commit carries an operation generation. Every successful
+  receipt invalidates caches; the latest receipt updates tab metadata even when
+  inactive, while stale out-of-order receipts cannot overwrite it. Navigation
+  additionally requires that the committed document is still the active tab.
+  The field does not blur-dismiss while a save is pending.
 - **Queued receipts**: a `new` tab's desired identity applies when the document
   materializes; its outcome is reconciler *state*
   (`queuedIdentityFailure(documentId)`), never a promise — the edit session is
