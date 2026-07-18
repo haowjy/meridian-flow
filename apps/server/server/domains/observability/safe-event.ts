@@ -12,7 +12,7 @@ const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]
 const MAX_STRING_LENGTH = 1_000;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
-/** Metric keys whose names collide with the sensitive pattern but carry only numbers. */
+/** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"]);
 
 function redactString(value: string): string {
@@ -22,7 +22,9 @@ function redactString(value: string): string {
 }
 
 function sanitizeValue(key: string, value: unknown, depth: number): unknown {
-  if (!SAFE_METRIC_KEYS.has(key) && SENSITIVE_KEY_PATTERN.test(key)) return "[redacted]";
+  const isSafeMetric =
+    SAFE_METRIC_KEYS.has(key) && typeof value === "number" && Number.isFinite(value);
+  if (!isSafeMetric && SENSITIVE_KEY_PATTERN.test(key)) return "[redacted]";
   if (value == null) return value;
   if (typeof value === "string") return redactString(value);
   if (typeof value === "number" || typeof value === "boolean") return value;
