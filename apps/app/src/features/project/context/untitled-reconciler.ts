@@ -72,6 +72,7 @@ type ReconcilerSession = Pick<
 type SessionRegistryPort = {
   getDetached(documentId: string): ReconcilerSession;
   attachDetached(documentId: string): ReconcilerSession;
+  restartUnavailableRoom(documentId: string): Promise<boolean>;
   retain(owner: string, ids: Iterable<string>): void;
   release(owner: string): void;
   destroyRoom(documentId: string, options?: { clearPersistence?: boolean }): Promise<void>;
@@ -329,6 +330,9 @@ export class UntitledReconciler {
       this.candidates.get(documentId)?.onMaterialized(result);
       const processedRevision = await this.applyDesiredIdentity(resolvedEntry, result);
 
+      record = this.pendingRecord(documentId);
+      if (!record) return;
+      await this.deps.sessions.restartUnavailableRoom(documentId);
       record = this.pendingRecord(documentId);
       if (!record) return;
       const attached = this.deps.sessions.attachDetached(documentId);

@@ -69,7 +69,10 @@ After create returns, the placeholder becomes a normal route-owned `tracked`
 tab in place. `provisionalName` comes from the tree DTO and drives the identity
 bar's provisional state; a cached tree refetch refreshes open-tab metadata so a
 cross-device rename eventually dissolves the state without another invalidation
-channel.
+channel. Desk-restored `new` tabs retain their sessions in explicit detached
+mode; no transport is created before the server row exists. Successful
+materialization restarts any terminal pre-row session before attaching and
+waiting for durable sync.
 
 ## Document identity bar
 

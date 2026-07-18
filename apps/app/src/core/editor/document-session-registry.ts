@@ -38,8 +38,11 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 
 export class DocumentSessionRegistry {
   private readonly sessions = new Map<string, DocumentSession>();
-  /** opener id → Yjs room keys that opener currently considers open. */
-  private readonly retainedByOwner = new Map<string, Set<string>>();
+  /** opener id → Yjs room keys plus whether first acquisition must stay detached. */
+  private readonly retainedByOwner = new Map<
+    string,
+    { roomKeys: Set<string>; detachedRoomKeys: Set<string> }
+  >();
   /** room key → pending deferred teardown timer. */
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
@@ -165,7 +168,11 @@ export class DocumentSessionRegistry {
     if (!session) return false;
     const snapshot = session.getSnapshot();
     if (snapshot.status === "detached") return false;
-    if (snapshot.status !== "access-lost" && snapshot.connectionState?.kind !== "unauthorized") {
+    if (
+      snapshot.status !== "access-lost" &&
+      snapshot.connectionState?.kind !== "unauthorized" &&
+      snapshot.connectionState?.kind !== "terminal"
+    ) {
       return false;
     }
 
@@ -184,8 +191,15 @@ export class DocumentSessionRegistry {
    * UNION of every opener's retained set, which prevents one mount path from
    * accidentally closing a session still owned by another path.
    */
-  retain(ownerId: string, openRoomKeys: Iterable<string>): void {
-    this.retainedByOwner.set(ownerId, new Set(openRoomKeys));
+  retain(
+    ownerId: string,
+    openRoomKeys: Iterable<string>,
+    options: { detachedRoomKeys?: Iterable<string> } = {},
+  ): void {
+    this.retainedByOwner.set(ownerId, {
+      roomKeys: new Set(openRoomKeys),
+      detachedRoomKeys: new Set(options.detachedRoomKeys),
+    });
     this.reconcileRetainedSessions();
   }
 
@@ -228,13 +242,20 @@ export class DocumentSessionRegistry {
 
   private reconcileRetainedSessions(): void {
     const keep = new Set<string>();
-    for (const ids of this.retainedByOwner.values()) {
-      for (const id of ids) keep.add(id);
+    const attachOnCreate = new Set<string>();
+    for (const { roomKeys, detachedRoomKeys } of this.retainedByOwner.values()) {
+      for (const id of roomKeys) {
+        keep.add(id);
+        if (!detachedRoomKeys.has(id)) attachOnCreate.add(id);
+      }
     }
 
     for (const id of keep) {
       this.cancelPendingTeardown(id);
-      if (!this.sessions.has(id)) this.get(id);
+      if (!this.sessions.has(id)) {
+        if (attachOnCreate.has(id)) this.get(id);
+        else this.getDetached(id);
+      }
     }
 
     for (const id of this.sessions.keys()) {
@@ -268,8 +289,8 @@ export class DocumentSessionRegistry {
   }
 
   private isRetained(roomKey: string): boolean {
-    for (const ids of this.retainedByOwner.values()) {
-      if (ids.has(roomKey)) return true;
+    for (const { roomKeys } of this.retainedByOwner.values()) {
+      if (roomKeys.has(roomKey)) return true;
     }
     return false;
   }

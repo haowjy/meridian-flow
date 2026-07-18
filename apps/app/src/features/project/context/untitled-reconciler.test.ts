@@ -90,8 +90,15 @@ function harness() {
       attachDetached(id) {
         const session = sessions.get(id);
         if (!session) throw new Error(`missing session ${id}`);
+        if (session.getSnapshot().status === "detached") session.setStatus("synced");
         return session;
       },
+      restartUnavailableRoom: vi.fn(async (id: string) => {
+        const session = sessions.get(id);
+        if (session?.getSnapshot().status !== "access-lost") return false;
+        session.setStatus("detached");
+        return true;
+      }),
       retain: vi.fn(),
       release: vi.fn(),
       async destroyRoom(id, options) {
@@ -465,7 +472,7 @@ describe("untitled reconciliation durability", () => {
     expect(storedEntries(h.values)).toEqual([]);
   });
 
-  it("retains terminally denied words while continuing with other entries", async () => {
+  it("restarts a pre-materialization denial and continues with other entries", async () => {
     const h = harness();
     const denied = fakeSession(contentDocument("first"));
     denied.setStatus("access-lost");
@@ -478,10 +485,10 @@ describe("untitled reconciliation durability", () => {
 
     await h.runQueue();
 
-    expect(storedEntries(h.values).map((entry) => entry.documentId)).toEqual(["denied"]);
+    expect(storedEntries(h.values)).toEqual([]);
     expect(h.cleared).toEqual([]);
     expect(h.create).toHaveBeenCalledTimes(2);
-    expect(h.timers).toHaveLength(1);
+    expect(h.deps.sessions.restartUnavailableRoom).toHaveBeenCalledWith("denied");
   });
 
   it("restores a failure receipt without restoring the device-only warning", async () => {

@@ -47,6 +47,8 @@ import "./editor.css";
 
 export type EditorViewProps = {
   documentId: string;
+  /** Keep a not-yet-materialized live document off server transport. */
+  detached?: boolean;
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
   className?: string;
@@ -94,7 +96,7 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId, reviewDraftId, reviewRoomName } = props;
+  const { documentId, detached = false, reviewDraftId, reviewRoomName } = props;
   const roomKey = reviewRoomName ?? documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
@@ -107,11 +109,13 @@ export function EditorView(props: EditorViewProps) {
     const registry = getDocumentSessionRegistry();
     const ownerId = sessionOwnerIdRef.current;
     if (!ownerId) return;
-    registry.retain(ownerId, [roomKey]);
-    const session = registry.getRoom(roomKey);
+    registry.retain(ownerId, [roomKey], {
+      detachedRoomKeys: detached ? [roomKey] : [],
+    });
+    const session = detached ? registry.getDetached(roomKey) : registry.getRoom(roomKey);
     setBoundSession(session);
     return () => registry.release(ownerId);
-  }, [documentId, roomKey]);
+  }, [detached, documentId, roomKey]);
 
   useEffect(() => {
     if (!reviewDraftId || boundSession?.roomKey !== roomKey) return;

@@ -36,12 +36,12 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
   it("keeps a detached room and its Y.Doc intact until explicit attachment", async () => {
     providers.length = 0;
     const registry = new DocumentSessionRegistry();
+    registry.retain("untitled-tab", ["document-detached"], {
+      detachedRoomKeys: ["document-detached"],
+    });
     const detached = registry.getDetached("document-detached");
     const document = detached.document;
 
-    expect(detached.getSnapshot().status).toBe("detached");
-    expect(providers).toHaveLength(0);
-    registry.retain("untitled-tab", ["document-detached"]);
     expect(detached.getSnapshot().status).toBe("detached");
     expect(providers).toHaveLength(0);
     await expect(registry.restartUnavailableRoom("document-detached")).resolves.toBe(false);

@@ -119,7 +119,9 @@ export function ContextEditorMountHost({
   // list so we re-run when the membership actually changes, not on every
   // parent render (the array identity is fresh each time).
   const trackedIds = trackedTabs.map((t) => t.documentId);
+  const untitledIds = trackedTabs.filter((tab) => tab.kind === "new").map((tab) => tab.documentId);
   const trackedIdsKey = trackedIds.join("|");
+  const untitledIdsKey = untitledIds.join("|");
   useEffect(() => {
     const known = new Set(trackedIds);
     lruRef.current = lruRef.current.filter((id) => known.has(id));
@@ -130,8 +132,10 @@ export function ContextEditorMountHost({
   // longer tears down Yjs); they are reclaimed when their document closes
   // (drops out of `trackedTabs`) or when this host unmounts entirely.
   useEffect(() => {
-    getDocumentSessionRegistry().retain(DESKTOP_CONTEXT_EDITOR_OWNER, trackedIds);
-  }, [trackedIdsKey]);
+    getDocumentSessionRegistry().retain(DESKTOP_CONTEXT_EDITOR_OWNER, trackedIds, {
+      detachedRoomKeys: untitledIds,
+    });
+  }, [trackedIdsKey, untitledIdsKey]);
 
   useEffect(() => {
     return () => {
@@ -236,6 +240,7 @@ export function ContextEditorMountHost({
                 <EditorView
                   projectId={projectId}
                   documentId={tab.documentId}
+                  detached={tab.kind === "new"}
                   schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                   belowToolbar={
                     <EditorBannerSlot
