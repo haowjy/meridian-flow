@@ -13,7 +13,8 @@ import {
   BranchStaleUpdateError,
   type BranchStore,
 } from "./domain/branch-coordinator.js";
-import { createDocumentAuthority } from "./domain/document-authority.js";
+import { createWriterIngress, ReservedWriterClientIdError } from "./domain/document-authority.js";
+import { createDocumentContainment } from "./domain/document-containment.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { validateClientUpdateAdmission } from "./domain/provenance.js";
@@ -73,7 +74,25 @@ export function createHocuspocusPersistenceService(
   const retiredStateVectors = new Map<string, Uint8Array>();
   const retiredLiveDocuments = new WeakSet<Y.Doc>();
   const liveGenerations = new Map<string, bigint>();
+  const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
+
+  const writerIngress = createWriterIngress<UpdateOrigin>({
+    async admitWriterUpdate({ documentId, update, context }) {
+      const admitted = (await deps.journal.appendWriterUpdate?.(
+        documentId,
+        update,
+        deps.metaForOrigin(context),
+      )) ?? {
+        seq: await deps.journal.append(documentId, update, deps.metaForOrigin(context)),
+        joinedSettlement: false,
+      };
+      return {
+        sequence: BigInt(admitted.seq),
+        joined: admitted.joinedSettlement ? 1 : 0,
+      };
+    },
+  });
 
   const writerIngressBarrier: WriterIngressBarrier = {
     async drain(documentId) {
@@ -311,79 +330,42 @@ export function createHocuspocusPersistenceService(
         recordDroppedConnectionUpdate(input.documentId);
         throw new Error("stale-authority-generation");
       }
-      const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
+      const authoritativeDoc = input.document;
       const retiredStateVector = retiredStateVectors.get(input.documentId);
       if (
         retiredStateVector &&
-        replaysRetiredGeneration(
-          input.update,
-          authoritativeDoc ?? new Y.Doc({ gc: false }),
-          retiredStateVector,
-        )
+        replaysRetiredGeneration(input.update, authoritativeDoc, retiredStateVector)
       ) {
         recordDroppedConnectionUpdate(input.documentId);
         throw new Error("stale-authority-generation");
       }
-      const { reservedClientId } = validateClientUpdateAdmission(
-        authoritativeDoc ?? new Y.Doc({ gc: false }),
-        input.update,
-      );
-      if (reservedClientId !== null) {
-        rejectReservedClientIdUpdate({ ...input, reservedClientId });
-        throw new Error("reserved-writer-client-id");
+      let preparedAdmission: ReturnType<typeof writerIngress.prepare>;
+      try {
+        preparedAdmission = writerIngress.prepare({
+          documentId: input.documentId,
+          authority: authoritativeDoc,
+          update: input.update,
+          source: { kind: "writer" },
+          context: input.origin,
+        });
+      } catch (cause) {
+        if (cause instanceof ReservedWriterClientIdError) {
+          rejectReservedClientIdUpdate({ ...input, reservedClientId: cause.clientId });
+          throw new Error("reserved-writer-client-id");
+        }
+        throw cause;
       }
       // Reconnects replay cached state and delete sets that Yjs would discard
       // on apply; admitting them wastes storage and pollutes safety signals.
-      if (authoritativeDoc && documentContainsUpdate(authoritativeDoc, input.update)) {
+      if (documentContainment.contains(authoritativeDoc, input.update)) {
         return { admitted: false, joinedSettlement: false };
       }
       const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
       ingressGenerations.set(input.documentId, generation);
       const admitted = admittedByDocument.get(input.documentId) ?? new Map();
       admittedByDocument.set(input.documentId, admitted);
-      const unsupported = async (): Promise<never> => {
-        throw new Error("Document authority strategy is unavailable at writer ingress");
-      };
-      const authority = createDocumentAuthority({
-        readMutableAuthority: () => ({
-          documentId: input.documentId,
-          generation: 0n,
-          doc: authoritativeDoc ?? new Y.Doc({ gc: false }),
-        }),
-        admitImmediate: async ({ update }) => {
-          const admitted = (await deps.journal.appendWriterUpdate?.(
-            input.documentId,
-            update,
-            deps.metaForOrigin(input.origin),
-          )) ?? {
-            seq: await deps.journal.append(
-              input.documentId,
-              update,
-              deps.metaForOrigin(input.origin),
-            ),
-            joinedSettlement: false,
-          };
-          return {
-            sequence: BigInt(admitted.seq),
-            joined: admitted.joinedSettlement ? 1 : 0,
-          };
-        },
-        readFrozenCut: unsupported,
-        readCurrentRevision: unsupported,
-        lowerCertifiedMutation: unsupported,
-        loadCheckpoint: unsupported,
-        unresolvedSettlements: unsupported,
-        replaceGeneration: unsupported,
-        disconnectGeneration: unsupported,
-        stagePush: unsupported,
-        completePush: unsupported,
-      });
-      const append = authority
-        .mutate({
-          kind: "attributedFreshAuthorship",
-          source: { kind: "writer" },
-          update: input.update,
-        })
+      const append = preparedAdmission
+        .admit()
         .then((result) => ({
           seq: Number(result.sequence),
           joinedSettlement: (result.joined ?? 0) > 0,
@@ -441,7 +423,7 @@ export function createHocuspocusPersistenceService(
         current?.status !== "active" ||
         current.kind !== "work_draft" ||
         current.generation !== input.expectedGeneration ||
-        !documentContainsUpdate(input.document, current.state)
+        !documentContainment.contains(input.document, current.state)
       ) {
         throw new BranchStaleUpdateError(input.branchId);
       }
@@ -557,10 +539,6 @@ function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSna
     if (Math.min(clientClock, discardedClock) > currentClock) return true;
   }
   return false;
-}
-
-function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
-  return Y.snapshotContainsUpdate(Y.snapshot(document), update);
 }
 
 function replaysRetiredGeneration(

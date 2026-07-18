@@ -259,6 +259,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       await expect(
         persistence.admitLiveWriterUpdate({
           documentId: DOCUMENT_ID,
+          document: authority,
           update,
           origin: { type: "user", userId: "user-1" },
           expectedGeneration: 1n,
@@ -294,6 +295,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: authority,
         update: insertion,
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -309,6 +311,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: authority,
         update: deletion,
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -356,6 +359,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: checkpoint,
         update: retiredUpdate,
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -386,6 +390,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: current,
         update: Y.encodeStateAsUpdate(client, before),
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 2n,
@@ -417,6 +422,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: current,
         update: deleteOnly,
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 2n,
@@ -443,6 +449,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: retired,
         update: writerUpdate(),
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -482,6 +489,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: authority,
         update: Y.encodeStateAsUpdate(client, vector),
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -506,6 +514,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: new Y.Doc({ gc: false }),
         update: Y.encodeStateAsUpdate(client),
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -539,6 +548,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const admission = persistence
       .admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
+        document: new Y.Doc({ gc: false }),
         update,
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -573,6 +583,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       persistence
         .admitLiveWriterUpdate({
           documentId: DOCUMENT_ID,
+          document: new Y.Doc({ gc: false }),
           update: writerUpdate(),
           origin: { type: "user", userId: "user-1" },
           expectedGeneration: 1n,
@@ -605,6 +616,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     });
     const first = persistence.admitLiveWriterUpdate({
       documentId: DOCUMENT_ID,
+      document: new Y.Doc({ gc: false }),
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" },
       expectedGeneration: 1n,
@@ -619,6 +631,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
 
     const second = persistence.admitLiveWriterUpdate({
       documentId: DOCUMENT_ID,
+      document: new Y.Doc({ gc: false }),
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" },
       expectedGeneration: 1n,

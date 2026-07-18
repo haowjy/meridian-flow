@@ -107,6 +107,7 @@ export type CollabTransport = {
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   admitLiveWriterUpdate(input: {
     documentId: DocumentId;
+    document: Y.Doc;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" }>;
     expectedGeneration: bigint;

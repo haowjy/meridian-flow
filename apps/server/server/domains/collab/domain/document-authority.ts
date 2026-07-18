@@ -53,6 +53,22 @@ export type ImmediateAdmission = {
   attribution: AuthorshipSource | { kind: "agent" };
 };
 
+export type WriterIngressPort<Context> = {
+  admitWriterUpdate(input: {
+    documentId: string;
+    update: Uint8Array;
+    source: Extract<AuthorshipSource, { kind: "writer" }>;
+    context: Context;
+  }): Promise<{ sequence: bigint; joined: number }>;
+};
+
+export class ReservedWriterClientIdError extends Error {
+  constructor(readonly clientId: number) {
+    super("Reserved server client IDs cannot author fresh prose");
+    this.name = "ReservedWriterClientIdError";
+  }
+}
+
 export type FrozenAuthorityCut = {
   cutId: string;
   documentId: string;
@@ -99,6 +115,34 @@ export class DocumentAuthorityError extends Error {
 }
 
 export type DocumentAuthority = ReturnType<typeof createDocumentAuthority>;
+
+/** The writer transport's deliberately narrow admission capability. */
+export function createWriterIngress<Context>(port: WriterIngressPort<Context>) {
+  return {
+    prepare(input: {
+      documentId: string;
+      authority: Y.Doc;
+      update: Uint8Array;
+      source: Extract<AuthorshipSource, { kind: "writer" }>;
+      context: Context;
+    }): { admit(): Promise<{ sequence: bigint; joined: number }> } {
+      assertFreshSource(input.source);
+      assertNonEmptyUpdate(input.update);
+      let admission: ReturnType<typeof validateClientUpdateAdmission>;
+      try {
+        admission = validateClientUpdateAdmission(input.authority, input.update);
+      } catch (cause) {
+        invalid(
+          cause instanceof Error ? cause.message : "Client update failed authority validation",
+        );
+      }
+      if (admission.reservedClientId !== null) {
+        throw new ReservedWriterClientIdError(admission.reservedClientId);
+      }
+      return { admit: () => port.admitWriterUpdate(input) };
+    },
+  };
+}
 
 /**
  * Owns strategy validation and update production. Persistence owns the transaction,
