@@ -7,6 +7,8 @@
   `observability.sink.dropped`.
 - `apps/server`: observability events now receive stable IDs at emit time for
   use as incremental debug-feed cursors.
+- `apps/server`: observability now provides a sanitized 5,000-record recent
+  events ring, filtered query/subscription port, and multi-sink tee adapter.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
