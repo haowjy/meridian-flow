@@ -29,7 +29,7 @@ export function DraftEntryBanner({ group, draft }: DraftEntryBannerProps) {
 
   return (
     <section
-      className="surface-card flex min-w-0 shrink-0 items-center gap-3 border-border-subtle border-b px-4 py-2"
+      className="flex min-w-0 shrink-0 items-center gap-3 border-border-subtle border-b px-4 py-2"
       data-draft-entry-banner
       role="status"
       aria-live="polite"

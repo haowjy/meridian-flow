@@ -221,9 +221,17 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-muted px-[18px] py-[14px] text-prose-foreground;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-[18px] py-[14px] text-prose-foreground;
 }
 
+/* Context-dependent interactive lift for chat elements (user bubble, composer,
+   turn-edit cards). The page-sheet placement (centered chat) lifts above the
+   warm page with --color-card; the dock placement lifts above the chrome with
+   --color-background. Both resolve to the same visual role ("raised interactive
+   surface") without per-component forks. */
+@utility bg-chat-interactive {
+  background-color: var(--color-chat-interactive, var(--color-background));
+}
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
    own whitespace, so this wrapper sets typography without `whitespace-pre-wrap`.
    Use this for any `<Markdown>` so size/color stay consistent with the plain-text
@@ -436,6 +444,8 @@
  * sheet is the ONE sanctioned surface paint on top of it.
  */
 @utility page-sheet {
+  /* Chat interactive surfaces lift above the warm page (card = brighter). */
+  --color-chat-interactive: var(--color-card);
   @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
 }
 
@@ -465,6 +475,8 @@
  * would drop one of the pair.
  */
 @utility dock-surface {
+  /* Chat interactive surfaces lift above the chrome (background = page tone). */
+  --color-chat-interactive: var(--color-background);
   background-color: var(--color-sidebar);
   background-image: var(--background-image-dock-airlight);
 }

@@ -27,7 +27,6 @@ import { announceError, useThreadActions, useThreadStore } from "@/client/stores
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
 
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
@@ -151,22 +150,14 @@ export function ChatView({
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
       footer={
-        <div
-          data-debug-composer={threadId}
-          // The dock is chrome on top of the composer: when mounted, the two
-          // share ONE bordered, rounded, container-query box (radius/border here,
-          // Composer runs flush). Empty → the composer keeps its own box.
-          className={cn(
-            "@container",
-            dock.mounted &&
-              "overflow-hidden rounded-composer-pinned border border-composer-border transition-[border-color] focus-within:border-border-focus",
-          )}
-        >
+        <div data-debug-composer={threadId} className="@container">
+          {/* The dock strip sits BEHIND (below) the composer — narrower via
+              mx-2, top corners rounded, jade-tinted background. The composer
+              always keeps its own border and overlaps the strip's edge. */}
           <DraftDock dock={dock} />
           <Composer
             ref={composerRef}
             variant="pinned"
-            flush={dock.mounted}
             placeholder={t`Reply to the agent, or steer the analysis…`}
             streaming={isStreaming}
             onSubmit={handleSubmit}

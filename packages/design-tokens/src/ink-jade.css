@@ -109,10 +109,16 @@
   --color-sidebar: oklch(0.945 0.012 84);
   --color-sidebar-accent: oklch(0.898 0.014 84);
 
-  /* Pinned composer — the manuscript tone everywhere (same as the page).
-     Distinct via border + focus ring only — no lift, no shadow, no chrome-mix.
-     Reads as "writing surface" on gold-grey dock, grey chrome, or center page. */
-  --color-composer-surface: var(--color-background);
+  /* Dock surface — a jade-whisper tint of recess, used as the DraftDock
+     strip background. The 4% jade keeps it in the warm ladder's low-chroma
+     band but gives draft chrome a faint "this is AI material" signal. */
+  --color-dock-surface: color-mix(in oklab, var(--color-primary) 4%, var(--color-muted));
+
+  /* Pinned composer — surfaces the chat-interactive token so the composer,
+     user bubbles, and turn-edit cards all share one placement-aware lift.
+     The token is set by placement wrappers (page-sheet → card, dock-surface
+     → background) in globals.css; the composer itself stays context-free. */
+  --color-composer-surface: var(--color-chat-interactive, var(--color-background));
   --color-composer-border: var(--color-border);
 
   /* Shelf — the left rail: the chrome's grey-gold, one shade darker
