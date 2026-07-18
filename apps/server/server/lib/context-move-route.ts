@@ -157,6 +157,12 @@ export async function commitContextMove(input: {
     { origin: { type: "human", userId: input.userId } },
   );
   if (!result.ok) {
+    if (result.error.code === "stale_source" || result.error.code === "stale_target") {
+      return {
+        status: "retry",
+        reason: result.error.code === "stale_source" ? "stale-source" : "stale-target",
+      };
+    }
     if (result.error.code === "conflict") {
       const collision = parseUnifiedContextUri(result.error.uri);
       if (!collision.ok) contextErrorToHttp(collision.error);

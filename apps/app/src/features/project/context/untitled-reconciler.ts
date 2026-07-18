@@ -334,6 +334,7 @@ export class UntitledReconciler {
     if (!desired) return;
     try {
       const moved = await this.deps.api.move(entry, result.path, desired);
+      if (moved.status === "retry") throw new Error(`Context move needs retry: ${moved.reason}`);
       if (moved.status === "conflict") {
         this.finishIdentityAttempt(entry.documentId, {
           kind: "conflict",

@@ -228,7 +228,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps a committed Postgres projection when an in-flight move loses CAS", async () => {
+    it("allows a Postgres rename while projection activity changes mid-flight", async () => {
       const { context, move, mutationStore } = createContextHarness();
       const initial = await context.write("chapter.md", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
@@ -239,8 +239,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(move("chapter.md", "archive/chapter.txt")).resolves.toMatchObject({
-        ok: false,
-        error: { code: "conflict" },
+        ok: true,
+        value: { destinationPath: "archive/chapter.txt" },
       });
 
       expect(concurrentWrite).toMatchObject({
@@ -261,12 +261,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: initial.value.documentId,
           name: "chapter",
-          extension: "md",
+          extension: "txt",
           markdown: "Revised chapter",
           filetype: "markdown",
         },
       ]);
-      await expect(db.select().from(folders)).resolves.toHaveLength(0);
+      await expect(db.select().from(folders)).resolves.toHaveLength(1);
     });
 
     it("refuses to convert a storage-backed binary row to tracked text", async () => {
@@ -293,7 +293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(store.findDocument(null, "cover", "webp")).resolves.toEqual(binary);
     });
 
-    it("does not dispatch overwrite-delete membership events when the later source move rolls back", async () => {
+    it("ignores source content activity during an overwrite move", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
       const observer = {
@@ -334,9 +334,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(documents)
         .where(eq(documents.id, DOC_ROLLBACK_TARGET_ID));
 
-      expect(result).toEqual({ ok: false, error: { code: "stale_source" } });
-      expect(targetAfter?.deletedAt).toBeNull();
-      expect(observer.documentDeleted).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID } });
+      expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
+      expect(observer.documentDeleted).toHaveBeenCalledWith(DOC_ROLLBACK_TARGET_ID);
     });
 
     it("awaits create membership before returning the tracked document", async () => {

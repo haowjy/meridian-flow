@@ -141,7 +141,14 @@ export type MoveContextEntryConflict = {
   status: "conflict";
   collision: MoveContextEntryLocator;
 };
-export type MoveContextEntryResult = MoveContextEntrySuccess | MoveContextEntryConflict;
+export type MoveContextEntryRetry = {
+  status: "retry";
+  reason: "stale-source" | "stale-target";
+};
+export type MoveContextEntryResult =
+  | MoveContextEntrySuccess
+  | MoveContextEntryConflict
+  | MoveContextEntryRetry;
 
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (

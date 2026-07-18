@@ -165,6 +165,18 @@ describe("handleContextMoveRequest", () => {
     );
   });
 
+  it.each([
+    ["stale_source", "stale-source"],
+    ["stale_target", "stale-target"],
+  ] as const)("returns %s as a retry without a collision locator", async (code, reason) => {
+    const deps = depsFor();
+    deps.port.commitWriterLocation.mockResolvedValue({
+      ok: false,
+      error: { code, uri: "manuscript://Dest/Source.md" },
+    });
+    await expect(request(deps)).resolves.toEqual({ status: "retry", reason });
+  });
+
   it("shapes a collision with its canonical locator", async () => {
     const deps = depsFor();
     deps.port.commitWriterLocation.mockResolvedValue({

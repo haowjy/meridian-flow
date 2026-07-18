@@ -1,8 +1,8 @@
 /**
  * Atomic ContextFS tree mutation contract shared by durable backends.
- * Key decision: moves/deletes use one location token as the CAS primitive, so
- * path inspection and durable mutation no longer depend on router-threaded
- * source facts or per-call adoption seams.
+ * Moves/deletes use stable location fields as the CAS primitive. Content writes
+ * may change document activity timestamps without invalidating a prepared tree
+ * mutation.
  */
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
@@ -18,8 +18,6 @@ export type ContextLocationToken =
       sourceId: string;
       /** Normalized scheme-relative path that resolved to this node. */
       path: string;
-      /** `documents.updated_at` observed at prepare — content-safe CAS revision. */
-      revision: string;
       /** Persisted Yjs classification; null identifies a storage-backed document. */
       filetype: string | null;
     }
@@ -31,8 +29,6 @@ export type ContextLocationToken =
       sourceId: string;
       /** Normalized scheme-relative path that resolved to this node. */
       path: string;
-      /** `folders.updated_at` observed at prepare; empty for the synthetic source root. */
-      revision: string;
     };
 
 export type ContextTargetExpectation =

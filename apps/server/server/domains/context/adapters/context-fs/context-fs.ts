@@ -687,7 +687,9 @@ export class ContextFS implements ContextSchemeAdapter {
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
     switch (error.code) {
       case "stale_source":
+        return { code: "stale_source" };
       case "stale_target":
+        return { code: "stale_target" };
       case "conflict":
         return { code: "conflict" };
       case "invalid_operation":

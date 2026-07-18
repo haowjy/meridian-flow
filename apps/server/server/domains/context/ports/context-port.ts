@@ -135,6 +135,8 @@ export type ContextError =
   | { code: "not_found"; uri: string }
   | { code: "permission_denied"; uri: string }
   | { code: "conflict"; uri: string }
+  | { code: "stale_source"; uri: string }
+  | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string }
   | { code: "context_unavailable"; uri: string }
   | { code: "invalid_uri"; uri: string; reason: string }

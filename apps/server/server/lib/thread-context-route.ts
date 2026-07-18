@@ -22,6 +22,12 @@ function contextErrorToHttp(error: ContextError): never {
       throw createError({ statusCode: 403, message: "Context access denied" });
     case "conflict":
       throw createError({ statusCode: 409, message: "Context path conflict" });
+    case "stale_source":
+    case "stale_target":
+      throw createError({
+        statusCode: 409,
+        message: "Context location changed; retry the operation",
+      });
     case "invalid_operation":
       throw createError({
         statusCode: 400,

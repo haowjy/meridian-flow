@@ -96,6 +96,7 @@ export function useIdentityCommit({
         ...(destination.workId ? { destinationWorkId: destination.workId } : {}),
         ...(plan.desired.name !== tab.name ? { newName: plan.desired.name } : {}),
       });
+      if (moved.status === "retry") throw new Error(`Context move needs retry: ${moved.reason}`);
       if (moved.status === "conflict") {
         return {
           status: "conflict",
