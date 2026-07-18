@@ -12,7 +12,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Ellipsis, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
@@ -56,16 +56,48 @@ export function ContextEntryMenu({
   children: React.ReactNode;
   onAction: (action: EntryAction) => void;
 }) {
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
-        <ContextMenuPrimitive.Content className="z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
-          <ActionMenuItems onAction={onAction} />
+        <ContextMenuPrimitive.Content
+          onCloseAutoFocus={onCloseAutoFocus}
+          className="z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+        >
+          <ActionMenuItems onAction={dispatch} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
   );
+}
+
+/**
+ * Radix menu teardown fights inline inputs for focus: selecting an item
+ * closes the menu, whose focus scope reclaims focus mid-teardown and then
+ * returns it to the trigger. An action that mounts an autofocusing row
+ * (create/rename) would have its input blurred instantly — and blur commits
+ * or cancels the row. So actions are deferred to `onCloseAutoFocus`: the
+ * menu is fully closed before the action runs, and the default focus return
+ * is suppressed so the row's own autofocus wins. Plain dismissal
+ * (Escape/outside click) selects nothing and keeps the focus restore.
+ */
+function useMenuActionDispatch(onAction: (action: EntryAction) => void) {
+  const pendingRef = useRef<EntryAction | null>(null);
+  const dispatch = useCallback((action: EntryAction) => {
+    pendingRef.current = action;
+  }, []);
+  const onCloseAutoFocus = useCallback(
+    (event: Event) => {
+      const action = pendingRef.current;
+      if (action === null) return;
+      pendingRef.current = null;
+      event.preventDefault();
+      onAction(action);
+    },
+    [onAction],
+  );
+  return { dispatch, onCloseAutoFocus };
 }
 
 // ─── Hover kebab button + dropdown ──────────────────────────────────────────
@@ -77,6 +109,7 @@ export function EntryKebabButton({
   onAction: (action: EntryAction) => void;
   className?: string;
 }) {
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -97,18 +130,19 @@ export function EntryKebabButton({
         align="start"
         sideOffset={2}
         onClick={(e) => e.stopPropagation()}
+        onCloseAutoFocus={onCloseAutoFocus}
         className="min-w-[8rem]"
       >
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-sm"
-          onSelect={() => onAction("new-file")}
+          onSelect={() => dispatch("new-file")}
         >
           <FilePlus className="size-3.5 text-muted-foreground" aria-hidden />
           <Trans>New file</Trans>
         </DropdownMenuItem>
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-sm"
-          onSelect={() => onAction("new-folder")}
+          onSelect={() => dispatch("new-folder")}
         >
           <FolderPlus className="size-3.5 text-muted-foreground" aria-hidden />
           <Trans>New folder</Trans>
@@ -116,14 +150,14 @@ export function EntryKebabButton({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-sm"
-          onSelect={() => onAction("rename")}
+          onSelect={() => dispatch("rename")}
         >
           <Pencil className="size-3.5 text-muted-foreground" aria-hidden />
           <Trans>Rename</Trans>
         </DropdownMenuItem>
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-sm text-destructive focus:text-destructive"
-          onSelect={() => onAction("delete")}
+          onSelect={() => dispatch("delete")}
         >
           <Trash2 className="size-3.5" aria-hidden />
           <Trans>Delete</Trans>

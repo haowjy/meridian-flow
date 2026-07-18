@@ -35,8 +35,23 @@ vi.mock("radix-ui", async (importOriginal) => {
       Root: ({ children }: { children?: ReactNode }) => <div data-entry-menu-root>{children}</div>,
       Trigger: ({ children }: { children?: ReactNode }) => children,
       Portal: ({ children }: { children?: ReactNode }) => children,
-      Content: ({ children }: { children?: ReactNode }) => (
-        <div data-context-menu-content>{children}</div>
+      Content: ({
+        children,
+        onCloseAutoFocus,
+      }: {
+        children?: ReactNode;
+        onCloseAutoFocus?: (event: Event) => void;
+      }) => (
+        // Selecting an item bubbles here; firing close-auto-focus afterwards
+        // mirrors the real menu closing on select (actions are close-deferred).
+        // biome-ignore lint/a11y/noStaticElementInteractions: test double
+        // biome-ignore lint/a11y/useKeyWithClickEvents: test double
+        <div
+          data-context-menu-content
+          onClick={() => onCloseAutoFocus?.(new Event("closeAutoFocus"))}
+        >
+          {children}
+        </div>
       ),
       Item: ({ children, onSelect }: { children?: ReactNode; onSelect?: () => void }) => (
         <button type="button" data-context-menu-item onClick={() => onSelect?.()}>
@@ -53,15 +68,24 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({
     children,
     onClick,
+    onCloseAutoFocus,
   }: {
     children?: ReactNode;
     onClick?: (event: React.MouseEvent) => void;
+    onCloseAutoFocus?: (event: Event) => void;
   }) => (
-    // Forward the real content's stopPropagation so item clicks don't also
-    // activate the row underneath (kebab items nest inside the row div).
+    // Forwards the real content's stopPropagation (kebab items nest inside the
+    // row div), then fires close-auto-focus to mirror the menu closing on
+    // select — entry actions are close-deferred.
     // biome-ignore lint/a11y/noStaticElementInteractions: test double
     // biome-ignore lint/a11y/useKeyWithClickEvents: test double
-    <div data-dropdown-menu-content onClick={onClick}>
+    <div
+      data-dropdown-menu-content
+      onClick={(event) => {
+        onClick?.(event);
+        onCloseAutoFocus?.(new Event("closeAutoFocus"));
+      }}
+    >
       {children}
     </div>
   ),
