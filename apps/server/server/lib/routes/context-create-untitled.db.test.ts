@@ -36,6 +36,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_ID = "00000000-0000-4000-8000-000000000931";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000933";
     const REPAIR_DOCUMENT_ID = "00000000-0000-4000-8000-000000000934";
+    const CROSS_SCHEME_DOCUMENT_ID = "00000000-0000-4000-8000-000000000935";
     const db = createDb(DATABASE_URL, { max: 4 });
 
     beforeEach(async () => {
@@ -97,7 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         scheme: "scratch",
         path: "Untitled 1.md",
-        name: "Untitled 1",
+        name: "Untitled 1.md",
       });
 
       const treeResponse = () =>
@@ -173,10 +174,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(create()).rejects.toThrow("simulated manifest membership failure");
       await expect(create()).resolves.toMatchObject({
-        status: "already-exists",
+        status: "already-materialized",
         documentId: REPAIR_DOCUMENT_ID,
         path: "Untitled 1.md",
-        name: "Untitled 1",
+        name: "Untitled 1.md",
       });
 
       const membership = await collab.resolveManifestMembership({ projectId });
@@ -184,6 +185,45 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db.select().from(schema.documents).where(eq(schema.documents.id, REPAIR_DOCUMENT_ID)),
       ).resolves.toHaveLength(1);
+    });
+
+    it("recovers across schemes without materializing sources during the lookup scan", async () => {
+      const { projectId, workId } = await provisionProject();
+      const collab = createBoundCollab();
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+      const port = contextPorts.forWork(workId, projectId, USER_ID, new Set([workId]));
+
+      await expect(
+        createUntitledContextDocument({
+          port,
+          userId: USER_ID,
+          scheme: "manuscript",
+          workId: null,
+          body: { documentId: CROSS_SCHEME_DOCUMENT_ID },
+        }),
+      ).resolves.toMatchObject({ status: "created", scheme: "manuscript" });
+
+      await expect(
+        createUntitledContextDocument({
+          port,
+          userId: USER_ID,
+          scheme: "scratch",
+          workId,
+          body: { documentId: CROSS_SCHEME_DOCUMENT_ID },
+        }),
+      ).resolves.toMatchObject({
+        status: "already-materialized",
+        scheme: "manuscript",
+        documentId: CROSS_SCHEME_DOCUMENT_ID,
+      });
+
+      await expect(db.select().from(schema.contextSources)).resolves.toEqual([
+        expect.objectContaining({ projectId, slug: "manuscript", scope: "project" }),
+      ]);
     });
   });
 }

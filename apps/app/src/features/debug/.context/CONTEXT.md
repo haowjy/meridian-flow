@@ -58,9 +58,9 @@ toggle, inspector, active-thread resolution, and hydration invariant.
 
 ## Realtime stream inspector
 
-The **Streams** action and its transport-observation contracts live in
-[trace-viewer.md](trace-viewer.md). It is the client wire core, not the final
-multi-source observability surface.
+The **Streams** action, client transport taps, and optional server event feed
+live in [trace-viewer.md](trace-viewer.md). Client and server records share one
+trace ring, filter model, automation boundary, and export path.
 
 ## Document sessions
 

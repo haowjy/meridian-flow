@@ -153,6 +153,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
+    commitProvisionalGraduation: (source) => this.commitProvisionalGraduation(source),
     commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
     commitPreparedDelete: (token) => this.commitPreparedDelete(token),
   };
@@ -355,6 +356,18 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({ documentId: doc.id });
   }
 
+  async locateDocument(documentId: string) {
+    const sourceId = await this.store.existingContextSourceId();
+    if (!sourceId) return Ok(null);
+    const located = await this.store.findDocumentById(documentId);
+    if (!located || located.contextSourceId !== sourceId || !located.active) return Ok(null);
+    return Ok({
+      documentId: located.document.id,
+      path: located.path,
+      name: renderFilename(located.document.name, located.document.extension),
+    });
+  }
+
   async createUntitledDocument(
     path: string,
     options: ContextCreateUntitledDocumentOptions,
@@ -381,7 +394,7 @@ export class ContextFS implements ContextSchemeAdapter {
         status: "already-exists",
         documentId: existing.document.id,
         path: existing.path,
-        name: existing.document.name,
+        name: renderFilename(existing.document.name, existing.document.extension),
       });
     }
 
@@ -413,7 +426,7 @@ export class ContextFS implements ContextSchemeAdapter {
           status: "created",
           documentId: document.id,
           path: joinPath(path, renderFilename(document.name, document.extension)),
-          name: document.name,
+          name: renderFilename(document.name, document.extension),
         });
       }
 
@@ -429,7 +442,7 @@ export class ContextFS implements ContextSchemeAdapter {
         status: "already-exists",
         documentId: collision.document.id,
         path: collision.path,
-        name: collision.document.name,
+        name: renderFilename(collision.document.name, collision.document.extension),
       });
     }
     return Err({ code: "conflict" });
@@ -686,7 +699,9 @@ export class ContextFS implements ContextSchemeAdapter {
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
     switch (error.code) {
       case "stale_source":
+        return { code: "stale_source" };
       case "stale_target":
+        return { code: "stale_target" };
       case "conflict":
         return { code: "conflict" };
       case "invalid_operation":
@@ -707,16 +722,21 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    const source = prepared.source;
-    if (source.kind === "file") {
+    if (prepared.source.kind === "file") {
+      const source = prepared.source;
       if (!(await this.isVisibleDocument(source.nodeId))) {
         return Err({ code: "invalid_operation" });
       }
       const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
-        ...prepared,
         source,
+        destinationSourceId: prepared.destinationSourceId,
+        destinationPath: prepared.destinationPath,
+        expectedTarget: prepared.expectedTarget,
+        overwrite: prepared.overwrite,
+        graduateProvisionalName:
+          "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
         destinationFiletype: destinationFiletype.value,
       });
       if (!committed.ok) return Err(this.mutationFault(committed.error));
@@ -725,12 +745,30 @@ export class ContextFS implements ContextSchemeAdapter {
         path: prepared.destinationPath,
       });
     }
-    const committed = await this.mutationStore.commitMove({ ...prepared, source });
+    const source = prepared.source;
+    const committed = await this.mutationStore.commitMove({
+      source,
+      destinationSourceId: prepared.destinationSourceId,
+      destinationPath: prepared.destinationPath,
+      expectedTarget: prepared.expectedTarget,
+      overwrite: prepared.overwrite,
+    });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       path: prepared.destinationPath,
     });
+  }
+
+  private async commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<void, AdapterFault>> {
+    if (!(await this.isVisibleDocument(source.nodeId))) {
+      return Err({ code: "invalid_operation" });
+    }
+    const committed = await this.mutationStore.commitProvisionalGraduation(source);
+    if (!committed.ok) return Err(this.mutationFault(committed.error));
+    return Ok(undefined);
   }
 
   private async commitPreparedDelete(

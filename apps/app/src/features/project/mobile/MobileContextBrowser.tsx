@@ -413,6 +413,7 @@ function MobileFolderRow({
           path={dir.path}
           currentName={dir.name}
           siblingNames={siblingNames}
+          kind="folder"
           icon={Folder}
           onDone={() => setRenaming(false)}
         />
@@ -470,6 +471,7 @@ function MobileFileRow({
           path={file.path}
           currentName={file.name}
           siblingNames={siblingNames}
+          kind="file"
           icon={FileIcon}
           onDone={() => setRenaming(false)}
         />
@@ -504,6 +506,7 @@ function MobileRenameRow({
   path,
   currentName,
   siblingNames,
+  kind,
   icon: Icon,
   onDone,
 }: {
@@ -513,6 +516,7 @@ function MobileRenameRow({
   path: string;
   currentName: string;
   siblingNames: readonly string[];
+  kind: ContextCreateKind;
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   onDone: () => void;
 }) {
@@ -523,6 +527,7 @@ function MobileRenameRow({
     path,
     currentName,
     siblingNames,
+    kind,
     onDone,
   });
 

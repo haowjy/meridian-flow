@@ -153,6 +153,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return this.sourceId;
   }
 
+  async existingContextSourceId(): Promise<string> {
+    return this.sourceId;
+  }
+
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
     return runInDrizzleTransaction(this.db, operation);
   }
@@ -400,18 +404,8 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
     a?.nodeId === b?.nodeId &&
     a?.sourceId === b?.sourceId &&
     a?.path === b?.path &&
-    a?.revision === b?.revision &&
     (a?.kind !== "file" || b?.kind !== "file" || a.filetype === b.filetype)
   );
-}
-
-/** Postgres timestamptz text from `::text` — full microsecond precision for CAS tokens. */
-function documentRevisionWhere(revision: string) {
-  return revision ? [sql`${documents.updatedAt} = ${revision}::timestamptz`] : [];
-}
-
-function folderRevisionWhere(revision: string) {
-  return revision ? [sql`${folders.updatedAt} = ${revision}::timestamptz`] : [];
 }
 
 function isPgConstraintError(error: unknown): boolean {
@@ -606,7 +600,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         nodeId: CONTEXT_ROOT_DIRECTORY_ID,
         sourceId,
         path: "",
-        revision: "",
       };
     }
     const doc = await this.findDocumentAtPath(sourceId, normalized);
@@ -616,7 +609,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         nodeId: doc.id,
         sourceId,
         path: normalized,
-        revision: doc.updatedAt,
         filetype: doc.filetype,
       };
     }
@@ -627,7 +619,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         nodeId: folder.id,
         sourceId,
         path: normalized,
-        revision: folder.updatedAt,
       };
     }
     return null;
@@ -704,7 +695,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
                 eq(documents.id, targetToken.nodeId),
                 eq(documents.contextSourceId, input.destinationSourceId),
                 isNull(documents.deletedAt),
-                ...documentRevisionWhere(targetToken.revision),
               ),
             )
             .returning({ id: documents.id });
@@ -722,7 +712,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             folderId: destParentId,
             name,
             extension,
-            ...(basenameChanged ? { provisionalName: false } : {}),
+            ...(basenameChanged ||
+            ("graduateProvisionalName" in input && input.graduateProvisionalName)
+              ? { provisionalName: false }
+              : {}),
             ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
             updatedAt: new Date(),
           })
@@ -731,7 +724,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               eq(documents.id, input.source.nodeId),
               eq(documents.contextSourceId, input.source.sourceId),
               isNull(documents.deletedAt),
-              ...documentRevisionWhere(input.source.revision),
             ),
           )
           .returning({ id: documents.id });
@@ -753,7 +745,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               eq(folders.id, input.source.nodeId),
               eq(folders.contextSourceId, input.source.sourceId),
               isNull(folders.deletedAt),
-              ...folderRevisionWhere(input.source.revision),
             ),
           )
           .returning({ id: folders.id });
@@ -775,7 +766,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             eq(folders.id, input.source.nodeId),
             eq(folders.contextSourceId, input.source.sourceId),
             isNull(folders.deletedAt),
-            ...folderRevisionWhere(input.source.revision),
           ),
         )
         .returning({ id: folders.id });
@@ -821,6 +811,27 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     });
   }
 
+  async commitProvisionalGraduation(
+    source: Extract<ContextLocationToken, { kind: "file" }>,
+  ): Promise<Result<void, ContextTreeMutationError>> {
+    return this.withMutationTransaction(async () => {
+      await this.lockSources([source.sourceId]);
+      const graduated = await currentDrizzleDb(this.db)
+        .update(documents)
+        .set({ provisionalName: false })
+        .where(
+          and(
+            eq(documents.id, source.nodeId),
+            eq(documents.contextSourceId, source.sourceId),
+            isNull(documents.deletedAt),
+          ),
+        )
+        .returning({ id: documents.id });
+      if (graduated.length !== 1) rollback("stale_source");
+      return Ok(undefined);
+    });
+  }
+
   async commitDelete(
     token: ContextLocationToken,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>> {
@@ -842,7 +853,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               eq(documents.contextSourceId, token.sourceId),
               contentDocumentPredicate(),
               isNull(documents.deletedAt),
-              ...documentRevisionWhere(token.revision),
             ),
           )
           .returning({ id: documents.id });
@@ -887,7 +897,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             eq(folders.id, token.nodeId),
             eq(folders.contextSourceId, token.sourceId),
             isNull(folders.deletedAt),
-            ...folderRevisionWhere(token.revision),
             sql`NOT EXISTS (
               SELECT 1 FROM folders AS child_folders
               WHERE child_folders.parent_id = ${token.nodeId}

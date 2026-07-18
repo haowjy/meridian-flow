@@ -16,8 +16,9 @@ export class MeridianApiError extends Error {
   readonly source: MeridianError["source"];
   readonly details: MeridianError["details"];
   readonly envelope: MeridianError;
+  readonly status: number | undefined;
 
-  constructor(envelope: MeridianError) {
+  constructor(envelope: MeridianError, status?: number) {
     super(envelope.message);
     this.name = "MeridianApiError";
     this.code = envelope.code;
@@ -25,6 +26,7 @@ export class MeridianApiError extends Error {
     this.source = envelope.source;
     this.details = envelope.details;
     this.envelope = envelope;
+    this.status = status;
   }
 }
 
@@ -40,16 +42,19 @@ export function isMeridianApiError(value: unknown): value is MeridianApiError {
  * the same helper works for HTTP bodies and WS frames after their type-tag is
  * removed by the caller.
  */
-export function meridianApiErrorFromPayload(payload: unknown): MeridianApiError | null {
+export function meridianApiErrorFromPayload(
+  payload: unknown,
+  status?: number,
+): MeridianApiError | null {
   if (!payload || typeof payload !== "object") return null;
 
   if (isMeridianError(payload)) {
-    return new MeridianApiError(payload);
+    return new MeridianApiError(payload, status);
   }
 
   const wrapped = payload as { kind?: unknown; error?: unknown };
   if (wrapped.kind === "error" && isMeridianError(wrapped.error)) {
-    return new MeridianApiError(wrapped.error);
+    return new MeridianApiError(wrapped.error, status);
   }
 
   return null;

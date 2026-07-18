@@ -154,7 +154,7 @@ describe("ContextFS rename filetype invariant", () => {
     });
   });
 
-  it("keeps a completed projection when an in-flight move loses its CAS race", async () => {
+  it("allows a rename while content projection changes mid-flight", async () => {
     const { backing, context, move, mutationStore } = createHarness();
     const initial = await context.write("chapter.md", "Chapter");
     if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
@@ -165,8 +165,8 @@ describe("ContextFS rename filetype invariant", () => {
     });
 
     await expect(move("chapter.md", "archive/chapter.txt")).resolves.toMatchObject({
-      ok: false,
-      error: { code: "conflict" },
+      ok: true,
+      value: { destinationPath: "archive/chapter.txt" },
     });
 
     expect(concurrentWrite).toMatchObject({
@@ -175,12 +175,13 @@ describe("ContextFS rename filetype invariant", () => {
     });
     expect(backing.documents.get(initial.value.documentId)).toMatchObject({
       name: "chapter",
-      extension: "md",
+      extension: "txt",
       markdown: "Revised chapter",
-      filetype: "markdown",
+      filetype: "text",
     });
-    await expect(context.list("")).resolves.not.toMatchObject({
-      value: expect.arrayContaining([expect.objectContaining({ path: "archive" })]),
+    await expect(context.stat("archive/chapter.txt")).resolves.toMatchObject({
+      ok: true,
+      value: { documentId: initial.value.documentId },
     });
   });
 
@@ -215,7 +216,7 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(firstMove).resolves.toMatchObject({ ok: true });
     await expect(secondMove).resolves.toMatchObject({
       ok: false,
-      error: { code: "conflict" },
+      error: { code: "stale_source" },
     });
     expect([...backing.documents.values()].filter((row) => row.deletedAt === null)).toHaveLength(1);
     await expect(context.stat("chapter.md")).resolves.toEqual({ ok: true, value: null });
