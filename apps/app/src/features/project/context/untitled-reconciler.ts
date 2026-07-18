@@ -136,6 +136,7 @@ export class UntitledReconciler {
   private readonly records = new Map<string, ReconciliationRecord>();
   private readonly candidates = new Map<string, Candidate>();
   private readonly materializationReceipts = new Map<string, MaterializationReceipt>();
+  private materializationReceiptOwners = new Set<string>();
   private running = false;
   private scheduled = false;
   private started = false;
@@ -184,10 +185,9 @@ export class UntitledReconciler {
     };
   }
 
-  retainMaterializationReceipts(documentIds: ReadonlySet<string>): void {
-    for (const documentId of this.materializationReceipts.keys()) {
-      if (!documentIds.has(documentId)) this.materializationReceipts.delete(documentId);
-    }
+  setMaterializationReceiptOwners(documentIds: ReadonlySet<string>): void {
+    this.materializationReceiptOwners = new Set(documentIds);
+    this.evictUnreferencedMaterializationReceipts();
   }
 
   append(entry: PendingUntitled): void {
@@ -456,10 +456,21 @@ export class UntitledReconciler {
   ): void {
     this.materializationReceipts.delete(documentId);
     this.materializationReceipts.set(documentId, receipt);
-    while (this.materializationReceipts.size > MAX_MATERIALIZATION_RECEIPTS) {
-      const oldest = this.materializationReceipts.keys().next().value;
-      if (oldest === undefined) break;
-      this.materializationReceipts.delete(oldest);
+    this.evictUnreferencedMaterializationReceipts();
+  }
+
+  private evictUnreferencedMaterializationReceipts(): void {
+    let unreferencedCount = 0;
+    for (const documentId of this.materializationReceipts.keys()) {
+      if (!this.materializationReceiptOwners.has(documentId)) unreferencedCount += 1;
+    }
+    if (unreferencedCount <= MAX_MATERIALIZATION_RECEIPTS) return;
+
+    for (const documentId of this.materializationReceipts.keys()) {
+      if (this.materializationReceiptOwners.has(documentId)) continue;
+      this.materializationReceipts.delete(documentId);
+      unreferencedCount -= 1;
+      if (unreferencedCount === MAX_MATERIALIZATION_RECEIPTS) return;
     }
   }
 

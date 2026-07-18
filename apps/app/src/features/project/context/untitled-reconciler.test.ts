@@ -667,21 +667,21 @@ describe("queued identity receipts", () => {
     });
   });
 
-  it("discards replay receipts once no desk references the document", async () => {
+  it("keeps an unreferenced replay receipt within the replay cap", async () => {
     const h = harness();
     const reconciler = new UntitledReconciler(h.deps);
     reconciler.start();
     reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
     await h.runQueue();
 
-    reconciler.retainMaterializationReceipts(new Set());
+    reconciler.setMaterializationReceiptOwners(new Set());
     const onMaterialized = vi.fn();
     reconciler.registerCandidate("doc-1", {
       onReminted: vi.fn(),
       onMaterialized,
     });
 
-    expect(onMaterialized).not.toHaveBeenCalled();
+    expect(onMaterialized).toHaveBeenCalledOnce();
   });
 
   it("bounds replay receipts by dropping the oldest", async () => {
@@ -706,6 +706,27 @@ describe("queued identity receipts", () => {
 
     expect(oldestMaterialized).not.toHaveBeenCalled();
     expect(newestMaterialized).toHaveBeenCalledOnce();
+  });
+
+  it("retains more than 16 replay receipts while desks reference them", async () => {
+    const h = harness();
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.setMaterializationReceiptOwners(
+      new Set(Array.from({ length: 17 }, (_, index) => `doc-${index}`)),
+    );
+    for (let index = 0; index < 17; index += 1) {
+      reconciler.append({ documentId: `doc-${index}`, projectId: "project-1", home: HOME });
+      await h.runQueue();
+    }
+
+    const oldestMaterialized = vi.fn();
+    reconciler.registerCandidate("doc-0", {
+      onReminted: vi.fn(),
+      onMaterialized: oldestMaterialized,
+    });
+
+    expect(oldestMaterialized).toHaveBeenCalledOnce();
   });
 
   it("retries a stale identity result without discarding the queued identity", async () => {

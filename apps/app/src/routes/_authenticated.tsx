@@ -28,7 +28,7 @@ import { createContextIdentityMutationService } from "@/features/project/context
 import {
   getUntitledReconciler,
   isUntitledPending,
-  pruneUntitledReceipts,
+  syncUntitledReceiptOwners,
 } from "@/features/project/context/untitled-reconciler-browser";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
@@ -170,7 +170,7 @@ function AuthenticatedProviderTree({
     untitledReconciler.rehydrate();
     untitledReconciler.start();
     rehydrateContextDesks(user.userId, isUntitledPending);
-    pruneUntitledReceipts();
+    syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();

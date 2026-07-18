@@ -4,8 +4,8 @@ import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import {
   isUntitledPending,
-  pruneUntitledReceipts,
   registerUntitledCandidate,
+  syncUntitledReceiptOwners,
 } from "./untitled-reconciler-browser";
 
 export function useUntitledTabBridge({
@@ -22,7 +22,7 @@ export function useUntitledTabBridge({
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
 
   useEffect(() => {
-    pruneUntitledReceipts();
+    syncUntitledReceiptOwners();
     const cleanups = tabs
       .filter(
         (tab) =>

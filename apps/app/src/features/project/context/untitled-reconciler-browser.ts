@@ -108,13 +108,13 @@ export function registerUntitledCandidate(
   return getUntitledReconciler().registerCandidate(documentId, candidate);
 }
 
-export function pruneUntitledReceipts(): void {
+export function syncUntitledReceiptOwners(): void {
   const referencedDocumentIds = new Set(
     Object.values(useContextTabsStore.getState().byProject).flatMap((desk) =>
       desk.tabs.map((tab) => tab.documentId),
     ),
   );
-  getUntitledReconciler().retainMaterializationReceipts(referencedDocumentIds);
+  getUntitledReconciler().setMaterializationReceiptOwners(referencedDocumentIds);
 }
 
 export function appendPendingUntitled(entry: PendingUntitled): void {
