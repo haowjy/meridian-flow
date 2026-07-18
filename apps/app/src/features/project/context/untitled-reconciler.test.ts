@@ -595,6 +595,69 @@ describe("untitled reconciliation durability", () => {
 });
 
 describe("queued identity receipts", () => {
+  it("retries a stale identity result without discarding the queued identity", async () => {
+    const h = harness();
+    (h.deps.api.move as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ status: "retry" as const, reason: "stale-source" as const })
+      .mockResolvedValueOnce({
+        status: "moved" as const,
+        scheme: "manuscript" as const,
+        path: "Act 1/Opening.md",
+        name: "Opening.md",
+      });
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
+
+    await h.runQueue();
+    expect(storedEntries(h.values)[0]?.desiredIdentity?.name).toBe("Opening.md");
+
+    h.timers.shift()?.();
+    await h.runQueue();
+
+    expect(h.deps.api.move).toHaveBeenCalledTimes(2);
+    expect(storedEntries(h.values)).toEqual([]);
+  });
+
+  it("retries a transient identity failure without discarding the queued identity", async () => {
+    const h = harness();
+    (h.deps.api.move as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce({
+        status: "moved" as const,
+        scheme: "manuscript" as const,
+        path: "Act 1/Opening.md",
+        name: "Opening.md",
+      });
+    const reconciler = new UntitledReconciler(h.deps);
+    reconciler.start();
+    reconciler.queueIdentity(
+      { documentId: "doc-1", projectId: "project-1", home: HOME },
+      {
+        name: "Opening.md",
+        destination: { scheme: "manuscript", folderPath: "Act 1" },
+      },
+    );
+
+    await h.runQueue();
+
+    expect(storedEntries(h.values)[0]?.desiredIdentity?.name).toBe("Opening.md");
+    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
+    expect(h.timers).toHaveLength(1);
+
+    h.timers.shift()?.();
+    await h.runQueue();
+
+    expect(h.deps.api.move).toHaveBeenCalledTimes(2);
+    expect(storedEntries(h.values)).toEqual([]);
+  });
+
   it("records a conflict receipt when the queued identity conflicts after materialization", async () => {
     const h = harness();
     (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValue({

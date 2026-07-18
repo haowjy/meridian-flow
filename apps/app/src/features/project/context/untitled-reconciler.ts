@@ -375,7 +375,8 @@ export class UntitledReconciler {
         });
       }
       return finished ? attemptRevision + 1 : attemptRevision;
-    } catch {
+    } catch (error) {
+      if (!isTerminalIdentityError(error)) throw error;
       const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision, {
         kind: "error",
         name: desired.name,
@@ -496,6 +497,12 @@ export class UntitledReconciler {
   private emit(): void {
     for (const listener of this.listeners) listener();
   }
+}
+
+function isTerminalIdentityError(error: unknown): error is { retryable: false } {
+  return (
+    typeof error === "object" && error !== null && "retryable" in error && error.retryable === false
+  );
 }
 
 function syncFailure(snapshot: DocumentSessionSnapshot): Error {
