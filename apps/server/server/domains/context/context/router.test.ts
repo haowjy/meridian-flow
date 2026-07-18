@@ -46,13 +46,13 @@ describe("context router untitled identity recovery", () => {
       name: "scratch",
       capabilities: { writable: true, searchable: true },
       locateDocument: async (documentId: string) =>
-        Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1" }),
+        Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1.md" }),
       createUntitledDocument: async (_path: string, options: { documentId: string }) =>
         Ok({
           status: "already-exists" as const,
           documentId: options.documentId,
           path: "moved/Untitled 1.md",
-          name: "Untitled 1",
+          name: "Untitled 1.md",
         }),
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
@@ -74,7 +74,7 @@ describe("context router untitled identity recovery", () => {
         scheme: "scratch",
         workId: "work-2",
         path: "moved/Untitled 1.md",
-        name: "Untitled 1",
+        name: "Untitled 1.md",
       },
     });
     expect(requestedCreate).not.toHaveBeenCalled();

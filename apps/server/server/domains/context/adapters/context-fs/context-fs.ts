@@ -363,7 +363,7 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       documentId: located.document.id,
       path: located.path,
-      name: located.document.name,
+      name: renderFilename(located.document.name, located.document.extension),
     });
   }
 
@@ -393,7 +393,7 @@ export class ContextFS implements ContextSchemeAdapter {
         status: "already-exists",
         documentId: existing.document.id,
         path: existing.path,
-        name: existing.document.name,
+        name: renderFilename(existing.document.name, existing.document.extension),
       });
     }
 
@@ -425,7 +425,7 @@ export class ContextFS implements ContextSchemeAdapter {
           status: "created",
           documentId: document.id,
           path: joinPath(path, renderFilename(document.name, document.extension)),
-          name: document.name,
+          name: renderFilename(document.name, document.extension),
         });
       }
 
@@ -441,7 +441,7 @@ export class ContextFS implements ContextSchemeAdapter {
         status: "already-exists",
         documentId: collision.document.id,
         path: collision.path,
-        name: collision.document.name,
+        name: renderFilename(collision.document.name, collision.document.extension),
       });
     }
     return Err({ code: "conflict" });

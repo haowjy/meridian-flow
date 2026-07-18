@@ -95,7 +95,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         scheme: "scratch",
         path: "Untitled 1.md",
-        name: "Untitled 1",
+        name: "Untitled 1.md",
       });
 
       const treeResponse = () =>
@@ -174,7 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "already-materialized",
         documentId: REPAIR_DOCUMENT_ID,
         path: "Untitled 1.md",
-        name: "Untitled 1",
+        name: "Untitled 1.md",
       });
 
       const membership = await collab.resolveManifestMembership({ projectId });

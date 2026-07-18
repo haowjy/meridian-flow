@@ -60,7 +60,7 @@ describe("ContextFS createUntitledDocument", () => {
       fs.createUntitledDocument("drafts", untitledOptions(DOCUMENT_A)),
     ).resolves.toMatchObject({
       ok: true,
-      value: { status: "created", name: "Untitled 1" },
+      value: { status: "created", name: "Untitled 1.md" },
     });
     await expect(fs.createUntitledDocument("drafts", untitledOptions(DOCUMENT_A))).resolves.toEqual(
       {
@@ -68,7 +68,7 @@ describe("ContextFS createUntitledDocument", () => {
         value: {
           status: "already-exists",
           documentId: DOCUMENT_A,
-          name: "Untitled 1",
+          name: "Untitled 1.md",
           path: "drafts/Untitled 1.md",
         },
       },
@@ -127,7 +127,7 @@ describe("ContextFS createUntitledDocument", () => {
     ]);
     expect(
       outcomes.map((outcome) => (outcome.ok ? outcome.value.name : outcome.error.code)).sort(),
-    ).toEqual(["Untitled 1", "Untitled 2"]);
+    ).toEqual(["Untitled 1.md", "Untitled 2.md"]);
   });
 
   it("ignores untitled suffixes that cannot be safely incremented", async () => {
@@ -143,7 +143,7 @@ describe("ContextFS createUntitledDocument", () => {
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
       {
         ok: true,
-        value: { status: "created", name: "Untitled 1" },
+        value: { status: "created", name: "Untitled 1.md" },
       },
     );
   });
