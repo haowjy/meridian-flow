@@ -139,8 +139,8 @@ export function createTurnRunner(deps: {
     }): Promise<{
       userTurnId: string;
       assistantTurnId: string;
-      streamCursor: string;
-      ackHeadSeq: string;
+      resumeAfterSeq: string;
+      snapshotFloorNextSeq: string;
     }> {
       if (running.has(input.threadId)) {
         throw new Error(`Turn already running for thread: ${input.threadId}`);
@@ -155,7 +155,7 @@ export function createTurnRunner(deps: {
       try {
         assertConnectionTokenLive(input.connectionToken);
 
-        const streamCursorBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
+        const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
 
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,
@@ -166,7 +166,7 @@ export function createTurnRunner(deps: {
         // The assistant generator may append concurrently after runTurn commits,
         // so this can exceed the user-turn sequence. That only raises the client
         // floor past snapshots whose content is already reflected locally.
-        const headSeqAtAck = (await deps.hub.headSeq(input.threadId)).toString();
+        const snapshotFloorNextSeq = ((await deps.hub.headSeq(input.threadId)) + 1n).toString();
 
         running.set(input.threadId, {
           controller,
@@ -211,8 +211,8 @@ export function createTurnRunner(deps: {
         return {
           userTurnId: handle.userTurnId,
           assistantTurnId: handle.assistantTurnId,
-          streamCursor: streamCursorBeforeStart,
-          ackHeadSeq: headSeqAtAck,
+          resumeAfterSeq: resumeAfterSeqBeforeStart,
+          snapshotFloorNextSeq,
         };
       } catch (error) {
         running.delete(input.threadId);

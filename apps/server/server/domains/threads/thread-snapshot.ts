@@ -2,9 +2,8 @@
  * Thread snapshot builder: assembles the full ThreadSnapshotResponse (thread,
  * turns, blocks, model responses, event cursor) for an initial client load.
  * Owns the snapshot projection; depends inward on the thread repositories and event hub.
- * Key decision: liveState carries both the current stream head (`nextSeq`) and
- * the read-model projection cursor (`resumeAfterSeq`) because journaled deltas
- * can be newer than the rows this snapshot reads.
+ * The envelope carries the snapshot sequence while liveState carries the
+ * read-model projection cursor used to replay newer journaled deltas.
  */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
@@ -123,8 +122,7 @@ export async function buildThreadSnapshot(
       status: thread.status,
       runningTurnId,
       currentAgent: thread.currentAgent,
-      nextSeq,
-      // `nextSeq` is the live journal/AG-UI head + 1. During an active run,
+      // During an active run,
       // stream.delta rows can sit between that head and the last read-model
       // projection, so resume from the projection cursor and replay only the
       // unmaterialized delta window the snapshot could not include.

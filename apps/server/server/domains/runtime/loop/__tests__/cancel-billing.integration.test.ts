@@ -185,7 +185,6 @@ describe("cancel billing", () => {
           status: "idle",
           runningTurnId: runner.getRunningTurnId(thread.id),
           currentAgent: null,
-          nextSeq: "1",
           resumeAfterSeq: "0",
         };
       },
@@ -265,7 +264,6 @@ describe("cancel billing", () => {
           status: "idle",
           runningTurnId: runner.getRunningTurnId(thread.id),
           currentAgent: null,
-          nextSeq: "1",
           resumeAfterSeq: "0",
         };
       },
@@ -344,7 +342,6 @@ describe("cancel billing", () => {
           status: "idle",
           runningTurnId: runner.getRunningTurnId(thread.id),
           currentAgent: null,
-          nextSeq: "1",
           resumeAfterSeq: "0",
         };
       },

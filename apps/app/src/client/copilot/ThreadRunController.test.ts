@@ -238,7 +238,6 @@ function makeSnapshot(): ThreadSnapshotResponse {
       status: "active",
       runningTurnId: "turn_1",
       currentAgent: null,
-      nextSeq: "10",
       resumeAfterSeq: "9",
     },
     attention: "none",
@@ -275,8 +274,8 @@ describe("ThreadRunController", () => {
     const actions = makeActions();
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       assistantTurnId: "turn_1",
-      streamCursor: "42",
-      ackHeadSeq: "42",
+      resumeAfterSeq: "42",
+      snapshotFloorNextSeq: "42",
     });
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
@@ -296,14 +295,14 @@ describe("ThreadRunController", () => {
     });
   });
 
-  it("appends the user message, subscribes from streamCursor, applies events, and tears down on RUN_FINISHED", async () => {
+  it("appends the user message, subscribes from resumeAfterSeq, applies events, and tears down on RUN_FINISHED", async () => {
     const transport = new FakeThreadTransport();
     transport.setConnectionToken("conn-test");
     const actions = makeActions();
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       assistantTurnId: "turn_1",
-      streamCursor: "42",
-      ackHeadSeq: "42",
+      resumeAfterSeq: "42",
+      snapshotFloorNextSeq: "42",
     });
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
@@ -341,8 +340,8 @@ describe("ThreadRunController", () => {
       threadId: "thread_1",
       userTurnId: "turn_user_server",
       assistantTurnId: "turn_1",
-      streamCursor: "42",
-      ackHeadSeq: "42",
+      resumeAfterSeq: "42",
+      snapshotFloorNextSeq: "43",
       status: "accepted",
     });
     const controller = new ThreadRunController({
@@ -576,8 +575,8 @@ describe("ThreadRunController", () => {
     const actions = makeActions();
     const append = deferred<{
       assistantTurnId: string;
-      streamCursor: string;
-      ackHeadSeq: string;
+      resumeAfterSeq: string;
+      snapshotFloorNextSeq: string;
     }>();
     const controller = new ThreadRunController({
       transport,
@@ -589,7 +588,7 @@ describe("ThreadRunController", () => {
     await expect(controller.submit("thread_1", "second")).rejects.toThrow(
       "submit already in flight",
     );
-    append.resolve({ assistantTurnId: "turn_1", streamCursor: "42", ackHeadSeq: "42" });
+    append.resolve({ assistantTurnId: "turn_1", resumeAfterSeq: "42", snapshotFloorNextSeq: "42" });
     await firstSubmit;
 
     expect(transport.subscribeCount).toBe(1);
@@ -667,13 +666,13 @@ describe("ThreadRunController", () => {
       .fn()
       .mockResolvedValueOnce({
         assistantTurnId: "turn_1",
-        streamCursor: "42",
-        ackHeadSeq: "42",
+        resumeAfterSeq: "42",
+        snapshotFloorNextSeq: "42",
       })
       .mockResolvedValueOnce({
         assistantTurnId: "turn_2",
-        streamCursor: "100",
-        ackHeadSeq: "100",
+        resumeAfterSeq: "100",
+        snapshotFloorNextSeq: "100",
       });
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 

@@ -237,7 +237,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return turn;
         },
 
-        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, ackHeadSeq) {
+        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, snapshotFloorNextSeq) {
           if (!serverTurnId || optimisticTurnId === serverTurnId) return;
 
           set((state) => {
@@ -273,10 +273,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 return turn;
               });
 
-            // Stored watermarks use snapshot nextSeq (journal head + 1), so an
-            // acknowledged head H raises the safe floor to H + 1. Never let an
-            // older acknowledgement move the per-thread floor backwards.
-            const acknowledgedNextSeq = BigInt(ackHeadSeq) + 1n;
+            // Never let an older acknowledgement move the snapshot floor backwards.
+            const acknowledgedNextSeq = BigInt(snapshotFloorNextSeq);
             const currentNextSeq = state.snapshotNextSeqFloorByThread[threadId];
             const nextSeq =
               currentNextSeq === undefined || acknowledgedNextSeq > BigInt(currentNextSeq)

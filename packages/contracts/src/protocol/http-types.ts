@@ -44,8 +44,7 @@ export type ThreadLiveState = {
   status: Thread["status"];
   runningTurnId: string | null;
   currentAgent: string | null;
-  nextSeq: string;
-  /** WS cursor for replaying events not yet reflected in snapshot read-model rows. */
+  /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };
 
@@ -395,13 +394,13 @@ export type SendMessageResponse = {
   threadId: string;
   userTurnId: string;
   assistantTurnId: string;
-  streamCursor: string;
+  /** Pre-start event position; the client subscription replays events strictly after it. */
+  resumeAfterSeq: string;
   /**
-   * Journal head observed when the user-turn append was acknowledged. Snapshots
-   * whose nextSeq is <= this predate the acknowledged user turn (or are already
-   * reflected locally) and must not be applied.
+   * Minimum snapshot nextSeq that the client may apply after acknowledgement;
+   * snapshots with a smaller nextSeq are rejected.
    */
-  ackHeadSeq: string;
+  snapshotFloorNextSeq: string;
   status: "accepted";
 };
 
@@ -417,6 +416,7 @@ export type ThreadSnapshotResponse = {
   turns: Turn[];
   liveState: ThreadLiveState;
   attention: ThreadAttention;
+  /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
 };
 

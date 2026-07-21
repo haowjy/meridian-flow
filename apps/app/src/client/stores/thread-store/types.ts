@@ -102,7 +102,7 @@ export type ThreadStoreActions = {
     threadId: string,
     optimisticTurnId: string,
     serverTurnId: string,
-    ackHeadSeq: string,
+    snapshotFloorNextSeq: string,
   ): void;
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;

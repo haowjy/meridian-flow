@@ -58,7 +58,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
       status: thread.status === "archived" ? "archived" : "idle",
       runningTurnId: null,
       currentAgent: thread.currentAgentId,
-      nextSeq: (headSeq + 1n).toString(),
       resumeAfterSeq: headSeq.toString(),
     };
   }

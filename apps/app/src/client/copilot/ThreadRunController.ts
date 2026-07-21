@@ -23,9 +23,9 @@ import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 
 type AppendUserMessageFn = (args: { data: AppendUserMessageInput }) => Promise<{
   assistantTurnId?: SendMessageResponse["assistantTurnId"];
-  streamCursor: SendMessageResponse["streamCursor"];
+  resumeAfterSeq: SendMessageResponse["resumeAfterSeq"];
   userTurnId?: SendMessageResponse["userTurnId"];
-  ackHeadSeq: SendMessageResponse["ackHeadSeq"];
+  snapshotFloorNextSeq: SendMessageResponse["snapshotFloorNextSeq"];
 }>;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
@@ -129,14 +129,14 @@ export class ThreadRunController {
         threadId,
         options.optimisticUserTurnId,
         result.userTurnId,
-        result.ackHeadSeq,
+        result.snapshotFloorNextSeq,
       );
     }
     if (this.admissionEpoch !== admissionEpoch) return;
 
     const token = this.startRun(threadId, { pruneAbandonedTurn: true });
     this.attachLiveSubscription(threadId, token, {
-      after: result.streamCursor,
+      after: result.resumeAfterSeq,
       expectedTurnId: result.assistantTurnId || undefined,
     });
   }

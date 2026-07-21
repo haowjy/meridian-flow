@@ -129,9 +129,9 @@ Snapshot application stays in data-sync hooks and transport recovery.
 **Identity bridge.** When the user submits a message, the client creates an
 optimistic turn with a `turn_local_*` ID. The POST /messages response is the
 identity bridge: `acknowledgeUserTurn` rewrites the local row to the
-canonical server ID. The response also carries `ackHeadSeq`, the journal head
+canonical server ID. The response also carries `snapshotFloorNextSeq`, the journal head
 observed after the append committed. Acknowledgement raises the thread's stored
-snapshot floor to `ackHeadSeq + 1` (snapshot `nextSeq` terms), so a stale
+snapshot floor to `snapshotFloorNextSeq + 1` (snapshot `nextSeq` terms), so a stale
 snapshot cannot remove the rewritten row while the projector catches up.
 
 **Monotonic sequence guard.** `applyThreadSnapshot` accepts an opt-in
