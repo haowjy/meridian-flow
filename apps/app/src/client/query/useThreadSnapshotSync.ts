@@ -54,16 +54,16 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     actions.applyThreadSnapshot(data.thread, data.turns, {
       runningTurnId: data.liveState.runningTurnId,
       attention: data.attention,
+      nextSeq: data.nextSeq,
     });
   }, [actions, data]);
 
   useEffect(() => {
     if (!data) return;
     void markThreadOpened(threadId).then(() => {
-      actions.applyThreadSnapshot(data.thread, data.turns, {
-        runningTurnId: data.liveState.runningTurnId,
-        attention: data.attention === "unread" ? "none" : data.attention,
-      });
+      if (data.attention === "unread") {
+        actions.setThreadAttention(threadId, "none");
+      }
     });
   }, [actions, data, threadId]);
 

@@ -124,15 +124,16 @@ export function ChatView({
 
     try {
       await controller.submit(threadId, text, { optimisticUserTurnId: optimisticUserTurn.id });
-
-      // The PRIOR assistant turn may have errored and the projector clears it
-      // off `status:error` when the next user turn arrives — a side-effect with
-      // no journal/WS event. Refresh only after POST acknowledgement so this
-      // fetch cannot race ahead of the newly persisted user turn. (Fix A2.)
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit message";
       announceError(message);
+    } finally {
+      // The PRIOR assistant turn may have errored and the projector clears it
+      // off `status:error` when the next user turn arrives — a side-effect with
+      // no journal/WS event. Refresh only after submit settles so this fetch
+      // cannot race ahead of a persisted user turn; `finally` also reconciles
+      // ambiguous failures where the response was lost after persistence.
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     }
   }
 

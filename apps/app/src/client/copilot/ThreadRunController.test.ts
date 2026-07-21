@@ -99,6 +99,7 @@ function makeActions(): ThreadStoreActions {
     turns: vi.fn((threadId: string) => turnsByThread[threadId]),
     setStreamingThreadId: vi.fn(),
     ensureThread: vi.fn(),
+    setThreadAttention: vi.fn(),
     markHandoffPending: vi.fn(),
     appendUserTurn: vi.fn(),
     removeOptimisticUserTurn: vi.fn(),
@@ -373,6 +374,27 @@ describe("ThreadRunController", () => {
       .turns("thread_1")
       ?.filter((turn) => turn.role === "user");
     expect(userTurns?.map((turn) => turn.id)).toEqual(["turn_user_server"]);
+  });
+
+  it("rejects older ordered snapshots after the projector catches up", () => {
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
+    const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
+    store.getState().acknowledgeUserTurn("thread_1", optimisticTurn.id, "turn_user_server");
+    const persistedTurn = serverUserTurnFrom(optimisticTurn, "turn_user_server");
+
+    store.getState().applyThreadSnapshot(thread, [persistedTurn], { nextSeq: "9007199254740993" });
+    store.getState().applyThreadSnapshot(thread, [], { nextSeq: "9007199254740992" });
+
+    expect(
+      store
+        .getState()
+        .turns("thread_1")
+        ?.map((turn) => turn.id),
+    ).toEqual(["turn_user_server"]);
+
+    // Unordered callers remain authoritative; the sequence guard is opt-in.
+    store.getState().applyThreadSnapshot(thread, []);
+    expect(store.getState().turns("thread_1")).toEqual([]);
   });
 
   it("resumes from a cursor without requiring RUN_STARTED first", () => {
