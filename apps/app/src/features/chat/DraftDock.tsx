@@ -270,9 +270,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </>
           ) : (
             <>
-              {!guided && firstPending ? (
-                <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
-              ) : null}
               <QuietButton
                 onClick={() => {
                   if (single && firstPending) dock.discardRow(firstPending);
@@ -291,6 +288,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               >
                 {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
               </QuietButton>
+              {!guided && firstPending ? (
+                <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
+              ) : null}
             </>
           )}
         </div>

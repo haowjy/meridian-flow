@@ -110,6 +110,7 @@ export function ContextViewer({
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
+        reviewingTabId={activeReviewDraftId ? activeTabId : null}
         optimisticTab={optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
