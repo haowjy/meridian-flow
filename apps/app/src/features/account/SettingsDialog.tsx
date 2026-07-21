@@ -274,13 +274,9 @@ function TextSizeLabel({ textSize }: { textSize: TextSize }) {
 function UiThemeLabel({ theme }: { theme: UiTheme }) {
   switch (theme) {
     case "ink-jade":
-      return <Trans>Ink & Jade</Trans>;
-    case "porcelain":
-      return <Trans>Porcelain</Trans>;
-    case "graphite":
-      return <Trans>Graphite</Trans>;
-    case "moss":
-      return <Trans>Moss & Cream</Trans>;
+      return <Trans>Light</Trans>;
+    case "dark":
+      return <Trans>Dark</Trans>;
   }
 }
 

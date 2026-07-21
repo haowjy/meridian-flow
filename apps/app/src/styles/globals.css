@@ -9,7 +9,9 @@
 @import "@meridian/design-tokens/themes.css";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/* Components' `dark:` utilities key off the UI-theme attribute the boot
+   script stamps on <html> — one switch for tokens and variants alike. */
+@custom-variant dark (&:is([data-ui-theme="dark"] *));
 
 @theme {
   --container-chat-column: 48rem;

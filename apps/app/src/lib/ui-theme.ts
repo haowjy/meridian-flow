@@ -11,7 +11,7 @@
 export const UI_THEME_STORAGE_KEY = "meridian:ui-theme";
 export const UI_THEME_ATTRIBUTE = "data-ui-theme";
 
-export const UI_THEMES = ["ink-jade", "porcelain", "graphite", "moss"] as const;
+export const UI_THEMES = ["ink-jade", "dark"] as const;
 export type UiTheme = (typeof UI_THEMES)[number];
 
 export const DEFAULT_UI_THEME: UiTheme = "ink-jade";

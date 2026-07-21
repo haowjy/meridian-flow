@@ -3,96 +3,96 @@
  *
  * Contract: `ink-jade.css` defines the token vocabulary (the `--color-*`
  * names); a theme is a `:root[data-ui-theme="<name>"]` block that re-points
- * those same names. The default Ink & Jade palette is the ABSENCE of the
- * attribute — never define an `[data-ui-theme="ink-jade"]` block, so the
+ * those same names. The default Ink & Jade light palette is the ABSENCE of
+ * the attribute — never define an `[data-ui-theme="ink-jade"]` block, so the
  * default path stays the plain `@theme` values.
  *
  * The attribute is set pre-paint by the app's boot script (see
  * `apps/app/src/lib/ui-theme.ts`) and switched at runtime from Preferences.
- * Dark mode, when it lands, is one more theme block here riding the same
- * attribute — not a separate mechanism.
  *
- * Derivation rules per theme:
- * - Tokens defined as `var()` references in ink-jade.css (muted/secondary/
- *   accent → recess atom, ring/status-streaming → primary, shelf hover/border
- *   mixes → shelf) follow automatically; override the atoms, not each alias.
- * - Accent-shifting themes must also re-point the accent-derived LITERALS:
- *   border-focus, chip-primary-bg, status-done-*, mark-to — and the shelf
- *   inks when the shell hue moves (warm ink on a cool wall reads as rust).
- * - Every theme keeps the ladder ordering: page brightest, rail darkest,
- *   chrome between; large surfaces stay low-chroma.
+ * ── Dark — the Ink & Jade night palette. Re-derived from the light ladder
+ * with the same ordering: the page stays the BRIGHTEST surface, the rail the
+ * deepest, and the whole shell keeps the one warm grey-gold family (hue 84)
+ * so night mode reads as the same room with the lamps low — never a neutral
+ * gray app. Inks flip to warm cream (hue ~90); actives LIGHTEN instead of
+ * darken; jade brightens to keep its voice on dark ground. Atmosphere
+ * gradients thin to moonlight (~×0.25 alpha) per the light-file's note.
  */
+:root[data-ui-theme="dark"] {
+  /* Surface ladder (dark): shelf .215 < dock-surface .235 < chrome .25 <
+     page .285 — page brightest, one warm family. */
+  --color-background: oklch(0.285 0.012 84);
+  --ink-jade-lift: oklch(0.325 0.012 84);
+  --ink-jade-recess: oklch(0.245 0.012 84);
+  --color-foreground: oklch(0.9 0.012 90);
+  --color-muted-foreground: oklch(0.7 0.014 88);
+  --color-prose-foreground: oklch(0.86 0.012 88);
+  --color-ink-muted: oklch(0.76 0.012 88);
+  --color-ink-subtle: oklch(0.64 0.012 88);
 
-/* ── Porcelain — subtractive minimal. ONE neutral family; jade is the only
-   color anywhere. For writers who want the quietest possible shell. */
-:root[data-ui-theme="porcelain"] {
-  --color-background: oklch(0.985 0.002 100);
-  --ink-jade-lift: oklch(0.995 0.001 100);
-  --ink-jade-recess: oklch(0.952 0.003 100);
-  --color-border: oklch(0.9 0.003 100);
-  --color-border-subtle: oklch(0.93 0.003 100);
-  --color-sidebar: oklch(0.965 0.003 100);
-  --color-sidebar-accent: oklch(0.922 0.004 100);
-  --color-shelf: oklch(0.952 0.003 100);
-  --color-shelf-active: oklch(0.905 0.004 100);
-  --color-shelf-ink-subtle: oklch(0.42 0.01 100);
-  --color-shelf-ink-muted: oklch(0.42 0.006 100);
-  --color-dock-surface: oklch(0.952 0.003 100);
-  --color-code-surface: oklch(0.96 0.003 100);
-  --color-code-border: oklch(0.89 0.004 100);
-}
+  --color-border: oklch(0.38 0.014 84);
+  --color-border-subtle: oklch(0.335 0.012 84);
+  --color-border-focus: oklch(0.55 0.07 175);
 
-/* ── Graphite — cool studio: neutral-cool shell, slate accent replaces
-   jade. Tests the non-warm identity. */
-:root[data-ui-theme="graphite"] {
-  --color-background: oklch(0.978 0.003 250);
-  --ink-jade-lift: oklch(0.99 0.002 250);
-  --ink-jade-recess: oklch(0.938 0.005 250);
-  --color-border: oklch(0.888 0.006 250);
-  --color-border-subtle: oklch(0.918 0.005 250);
-  --color-sidebar: oklch(0.946 0.006 250);
-  --color-sidebar-accent: oklch(0.9 0.008 250);
-  --color-shelf: oklch(0.918 0.008 250);
-  --color-shelf-active: oklch(0.872 0.01 250);
-  --color-shelf-ink-subtle: oklch(0.42 0.02 250);
-  --color-shelf-ink-muted: oklch(0.42 0.008 250);
-  --color-dock-surface: oklch(0.93 0.007 250);
-  --color-code-surface: oklch(0.945 0.006 250);
-  --color-code-border: oklch(0.875 0.008 250);
-  /* Accent: slate replaces jade. */
-  --color-primary: oklch(0.5 0.1 255);
-  --color-brand-jade: oklch(0.5 0.1 255);
-  --color-jade-text: oklch(0.44 0.085 255);
-  --color-border-focus: oklch(0.78 0.05 255);
-  --color-chip-primary-bg: oklch(0.93 0.03 255);
-  --color-status-done-bg: oklch(0.92 0.035 255);
-  --color-status-done-foreground: oklch(0.38 0.06 255);
-  --color-mark-to: oklch(0.4 0.07 255);
-}
+  --color-sidebar: oklch(0.25 0.012 84);
+  --color-sidebar-accent: oklch(0.31 0.014 84);
+  --color-dock-surface: oklch(0.235 0.012 84);
 
-/* ── Moss & Cream — organic: cream paper, sage shell, deep moss accent. */
-:root[data-ui-theme="moss"] {
-  --color-background: oklch(0.977 0.008 100);
-  --ink-jade-lift: oklch(0.988 0.005 100);
-  --ink-jade-recess: oklch(0.934 0.01 115);
-  --color-border: oklch(0.884 0.012 120);
-  --color-border-subtle: oklch(0.915 0.01 118);
-  --color-sidebar: oklch(0.945 0.012 120);
-  --color-sidebar-accent: oklch(0.898 0.016 122);
-  --color-shelf: oklch(0.92 0.015 122);
-  --color-shelf-active: oklch(0.87 0.02 124);
-  --color-shelf-ink-subtle: oklch(0.42 0.025 130);
-  --color-shelf-ink-muted: oklch(0.42 0.012 122);
-  --color-dock-surface: oklch(0.93 0.013 120);
-  --color-code-surface: oklch(0.944 0.011 115);
-  --color-code-border: oklch(0.87 0.013 118);
-  /* Accent: deep moss replaces jade. */
-  --color-primary: oklch(0.47 0.095 150);
-  --color-brand-jade: oklch(0.47 0.095 150);
-  --color-jade-text: oklch(0.42 0.08 150);
-  --color-border-focus: oklch(0.78 0.05 150);
-  --color-chip-primary-bg: oklch(0.93 0.03 150);
-  --color-status-done-bg: oklch(0.92 0.035 150);
-  --color-status-done-foreground: oklch(0.38 0.06 150);
-  --color-mark-to: oklch(0.38 0.07 150);
+  --color-shelf: oklch(0.215 0.012 84);
+  --color-shelf-active: oklch(0.29 0.016 84);
+  --color-shelf-ink-subtle: oklch(0.78 0.02 84);
+  --color-shelf-ink-muted: oklch(0.74 0.012 84);
+  --color-shelf-destructive: oklch(0.68 0.14 17);
+
+  /* Jade brightens for dark ground; primary text stays dark ink so the
+     filled pill reads as lit jade, not a hole. */
+  --color-primary: oklch(0.68 0.09 175);
+  --color-brand-jade: oklch(0.68 0.09 175);
+  --color-primary-foreground: oklch(0.2 0.02 175);
+  --color-jade-text: oklch(0.75 0.08 176);
+  --color-mark-to: oklch(0.78 0.08 176);
+  --color-chip-primary-bg: oklch(0.34 0.05 175);
+  --color-status-done-bg: oklch(0.34 0.05 175);
+  --color-status-done-foreground: oklch(0.82 0.08 176);
+
+  --color-cinnabar: oklch(0.64 0.16 29);
+  --color-destructive: oklch(0.66 0.16 17);
+  --color-destructive-tint: oklch(0.3 0.06 22);
+  --color-destructive-border: oklch(0.44 0.1 20);
+
+  --color-warning-bg: oklch(0.3 0.045 80);
+  --color-warning-border: oklch(0.44 0.07 80);
+  --color-warning-foreground: oklch(0.86 0.09 70);
+
+  /* Code tablet: recessed below the dark page, light glyphs. */
+  --color-code-surface: oklch(0.24 0.012 85);
+  --color-code-foreground: oklch(0.87 0.01 90);
+  --color-code-border: oklch(0.35 0.014 85);
+
+  /* Syntax — the light palette's dark inks are illegible here; same hue
+     story, lifted to L ~.7 for >=4.5:1 on the code tablet. */
+  --color-syntax-keyword: oklch(0.72 0.1 175);
+  --color-syntax-string: oklch(0.76 0.1 55);
+  --color-syntax-comment: oklch(0.58 0.012 100);
+  --color-syntax-number: oklch(0.73 0.12 32);
+  --color-syntax-function: oklch(0.76 0.1 80);
+  --color-syntax-attr: oklch(0.72 0.08 155);
+  --color-syntax-builtin: oklch(0.72 0.09 195);
+  --color-syntax-punctuation: oklch(0.68 0.008 100);
+
+  /* Atmosphere thins to moonlight: airlight at ~×0.25 alpha; the shelf's
+     shadow pools deeper black instead of grey-gold. */
+  --background-image-dock-airlight: linear-gradient(
+    to top,
+    oklch(0.99 0.003 84 / 0.04) 0%,
+    oklch(0.99 0.003 84 / 0.02) 26%,
+    oklch(0.99 0.002 84 / 0.007) 46%,
+    transparent 68%
+  );
+  --background-image-shelf-depth: linear-gradient(
+    to top,
+    oklch(0.1 0.008 84 / 0.5) 0%,
+    oklch(0.1 0.008 84 / 0.22) 30%,
+    transparent 62%
+  );
 }
