@@ -28,25 +28,24 @@ column: it is pane-wide navigation chrome, like the tab strip.)
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
 
-## Banner slot
+## Draft chrome
 
-`EditorBannerSlot` is the single-occupancy strip docked between the toolbar
-row and the scroll area (`EditorSurfaceFrame`'s `belowToolbar` slot — order:
-identity bar → toolbar → banner → prose). Its
-`tenants` array is ordered from highest to lowest priority; the first tenant
-with a renderable element owns the slot and every lower tenant yields. Tenant
-content is restricted to `ReactElement | null`; the runtime selection is also
-defensive against React-empty `false` and `undefined` values. The tenant name is
-its stable React identity, preventing local state from crossing between
-occupants. Draft chrome is the sole tenant, with `DraftEntryBanner` and
-`DraftReviewHeader` as two modes of one surface. Register another tenant by
-adding one ordered entry rather than mounting another strip beside the slot.
+Two self-contained surfaces, both resolving their own state from
+`DraftReviewProvider` (never props-drilled):
 
-**Tenancy is content-state only.** Document identity chrome (naming,
-location, the provisional-rename invitation) lives in the context feature's
-`DocumentIdentityBar` above the toolbar and must never occupy this slot again
-— the former `UntitledRenameLine` tenant was deleted with that separation
-(2026-07-17).
+- `DraftReviewChip` — the pending-changes nudge, mounted by the context
+  feature's `DocumentIdentityBar` in the breadcrumb row. Hides itself while
+  its document is under inline review.
+- `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
+  ABOVE the identity bar (order: tab strip → review strip → identity bar →
+  toolbar → prose). Matches the DraftDock strip's geometry and tone
+  (`min-h-7`, `bg-dock-surface`, `text-caption`); destructive verb left,
+  jade primary pill far right — the same order as the dock.
+
+The chip and header are mutually exclusive by the chip's own inline-review
+check, not by a shared slot. (The former `EditorBannerSlot`/`belowToolbar`
+tenancy mechanism was deleted 2026-07-21 when the review strip moved above
+the identity bar.)
 
 ### Rejected placements
 

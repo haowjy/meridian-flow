@@ -9,6 +9,8 @@ import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
@@ -91,6 +93,14 @@ export function ContextViewer({
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
 
+  // Draft review state — the banner sits above the identity bar so review
+  // chrome is the first thing the writer sees when entering review mode.
+  const { controller } = useDraftReview();
+  const activeReviewDraftId =
+    activeTab && controller.inlineReview?.documentId === activeTab.documentId
+      ? controller.inlineReview.draftId
+      : null;
+
   return (
     <div
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
@@ -99,6 +109,7 @@ export function ContextViewer({
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
+        reviewingTabId={activeReviewDraftId ? activeTabId : null}
         optimisticTab={optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
@@ -109,6 +120,11 @@ export function ContextViewer({
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
       <div className="page-sheet">
+        {/* Review banner — above the identity bar so it's the first chrome
+            the writer sees when entering review mode. */}
+        {activeTab && activeReviewDraftId ? (
+          <DraftReviewHeader documentId={activeTab.documentId} draftId={activeReviewDraftId} />
+        ) : null}
         {/* Identity bar — the top edge of the page every open document
             shares. Keyed by document so edit state never crosses tabs. */}
         {activeTab ? (

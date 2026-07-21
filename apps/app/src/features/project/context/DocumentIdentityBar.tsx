@@ -18,10 +18,12 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FolderDown, TriangleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -112,6 +114,7 @@ export function DocumentIdentityBar({
           <IdentityPath location={location} />
         )}
         <span className="min-w-1 flex-1" />
+        <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           documentId={tab.documentId}
           location={location}

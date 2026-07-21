@@ -37,8 +37,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useTextSize } from "@/hooks/use-text-size";
+import { useUiTheme } from "@/hooks/use-ui-theme";
 import { changeLocale, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
+import { changeUiTheme, UI_THEMES, type UiTheme } from "@/lib/ui-theme";
 import { cn } from "@/lib/utils";
 import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSettings";
 
@@ -269,6 +271,15 @@ function TextSizeLabel({ textSize }: { textSize: TextSize }) {
   }
 }
 
+function UiThemeLabel({ theme }: { theme: UiTheme }) {
+  switch (theme) {
+    case "ink-jade":
+      return <Trans>Light</Trans>;
+    case "dark":
+      return <Trans>Dark</Trans>;
+  }
+}
+
 function SectionHeading({ title, description }: { title: ReactNode; description: ReactNode }) {
   return (
     <header className="mb-5">
@@ -336,6 +347,7 @@ function PreferencesSection({
   const { i18n } = useLingui();
   const currentLocale = i18n.locale as SupportedLocale;
   const currentTextSize = useTextSize();
+  const currentUiTheme = useUiTheme();
   const stacked = presentation === "phone";
   const rowClassName = cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6");
   const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
@@ -391,6 +403,27 @@ function PreferencesSection({
 
         <TabsContent value="device">
           <div className="space-y-4">
+            <div className={rowClassName}>
+              <span className={labelClassName}>
+                <Trans>Theme</Trans>
+              </span>
+              <Select
+                value={currentUiTheme}
+                onValueChange={(value) => changeUiTheme(value as UiTheme)}
+              >
+                <SelectTrigger className={triggerClassName} aria-label={t`Color theme`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {UI_THEMES.map((theme) => (
+                    <SelectItem key={theme} value={theme}>
+                      <UiThemeLabel theme={theme} />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className={rowClassName}>
               <span className={labelClassName}>
                 <Trans>Language</Trans>
