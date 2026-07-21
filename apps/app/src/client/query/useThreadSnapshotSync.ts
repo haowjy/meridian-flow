@@ -12,6 +12,7 @@ import {
   deserializeThreadSnapshot,
   getThreadSnapshot,
   markThreadOpened,
+  toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 
@@ -51,19 +52,15 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
 
   useEffect(() => {
     if (!data) return;
-    actions.applyThreadSnapshot(data.thread, data.turns, {
-      runningTurnId: data.liveState.runningTurnId,
-      attention: data.attention,
-    });
+    actions.applyThreadSnapshot(data.thread, data.turns, toThreadSnapshotApplyOptions(data));
   }, [actions, data]);
 
   useEffect(() => {
     if (!data) return;
     void markThreadOpened(threadId).then(() => {
-      actions.applyThreadSnapshot(data.thread, data.turns, {
-        runningTurnId: data.liveState.runningTurnId,
-        attention: data.attention === "unread" ? "none" : data.attention,
-      });
+      if (data.attention === "unread") {
+        actions.setThreadAttention(threadId, "none");
+      }
     });
   }, [actions, data, threadId]);
 

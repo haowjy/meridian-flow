@@ -47,6 +47,11 @@ export default defineProject({
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
     fileParallelism: false,
+    // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
+    // timed-out test's async DB work is NOT cancelled — it overlaps the next
+    // test's destructive reset and corrupts it. 30s matches the server/database
+    // unit configs. (#314)
+    testTimeout: 30_000,
     reporters: [
       "default",
       fileURLToPath(new URL("../../tools/ci/db-test-reporter.ts", import.meta.url)),

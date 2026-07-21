@@ -8,6 +8,38 @@ async function* emptyEvents() {
 }
 
 describe("createTurnRunner", () => {
+  it("captures resume position before setup and snapshot floor after setup", async () => {
+    const heads = [10n, 20n];
+    const runner = createTurnRunner({
+      orchestrator: {
+        async runTurn() {
+          return {
+            userTurnId: "turn-user",
+            assistantTurnId: "turn-assistant",
+            events: emptyEvents(),
+          };
+        },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
+      },
+      eventSink: createInMemoryEventSink(),
+      hub: {
+        headSeq: async () => heads.shift() ?? 99n,
+      } as never,
+      repos: {
+        turns: {
+          findById: async () => null,
+        } as never,
+      },
+    });
+
+    await expect(
+      runner.startTurn({ threadId: "thread-1", userText: "hello" }),
+    ).resolves.toMatchObject({
+      resumeAfterSeq: "10",
+      snapshotFloorNextSeq: "21",
+    });
+  });
+
   it("reserves a thread before orchestrator setup completes", async () => {
     let releaseRunTurn!: () => void;
     const runTurnGate = new Promise<void>((resolve) => {

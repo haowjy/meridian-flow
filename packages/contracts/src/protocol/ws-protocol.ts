@@ -97,7 +97,6 @@ const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   status: z.enum(["idle", "active", "blocked", "error", "archived"]),
   runningTurnId: z.string().min(1).nullable(),
   currentAgent: z.string().nullable(),
-  nextSeq: wsEventSeqSchema,
   resumeAfterSeq: wsEventSeqSchema,
 });
 
@@ -118,6 +117,7 @@ export type WsServerMessage =
       threadId: string;
       catchup: SequencedEvent[];
       state: ThreadLiveState;
+      /** First event position after the subscription snapshot. */
       nextSeq: string;
     }
   | {

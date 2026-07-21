@@ -6,27 +6,23 @@
  * events, applies accepted events directly to ThreadStore, handles deferred
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
-import type { SendMessageResponse, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
-  type AppendUserMessageInput,
   appendUserMessage,
   deserializeThreadSnapshot,
   getThreadSnapshot,
+  toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 
-type AppendUserMessageFn = (args: { data: AppendUserMessageInput }) => Promise<{
-  assistantTurnId?: SendMessageResponse["assistantTurnId"];
-  streamCursor: SendMessageResponse["streamCursor"];
-  userTurnId?: SendMessageResponse["userTurnId"];
-}>;
+type AppendUserMessageFn = typeof appendUserMessage;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
+type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
 export type SubscribeLiveOptions = {
   /** Server-side cursor: last event seq the client has already incorporated. */
@@ -78,6 +74,8 @@ export class ThreadRunController {
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
 
   private activeRun: ActiveRun | null = null;
+  private admissionInFlight = false;
+  private admissionEpoch = 0;
   private abortRequested = false;
   private runToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
@@ -90,31 +88,50 @@ export class ThreadRunController {
   }
 
   async submit(threadId: string, text: string, options: SubmitOptions = {}): Promise<void> {
-    const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+    if (this.admissionInFlight) {
+      if (options.optimisticUserTurnId) {
+        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+      }
+      throw new Error("submit already in flight");
+    }
+
+    this.admissionInFlight = true;
+    const admissionEpoch = this.admissionEpoch;
+    let result: Awaited<ReturnType<AppendUserMessageFn>>;
 
     try {
       const connectionToken = await this.transport.awaitConnectionToken();
-      const result = await this.appendUserMessageFn({
+      result = await this.appendUserMessageFn({
         data: {
           threadId,
           text,
           connectionToken,
         },
       });
-      if (options.optimisticUserTurnId && result.userTurnId) {
-        this.actions.acknowledgeUserTurn(threadId, options.optimisticUserTurnId, result.userTurnId);
-      }
-      if (!this.isActiveToken(token)) return;
-      this.attachLiveSubscription(threadId, token, {
-        after: result.streamCursor,
-        expectedTurnId: result.assistantTurnId || undefined,
-      });
     } catch (error) {
-      if (this.isActiveToken(token)) {
-        this.cleanupActiveRun();
+      if (options.optimisticUserTurnId && isMeridianApiError(error)) {
+        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
       throw error;
+    } finally {
+      this.admissionInFlight = false;
     }
+
+    if (options.optimisticUserTurnId) {
+      this.actions.acknowledgeUserTurn(
+        threadId,
+        options.optimisticUserTurnId,
+        result.userTurnId,
+        result.snapshotFloorNextSeq,
+      );
+    }
+    if (this.admissionEpoch !== admissionEpoch) return;
+
+    const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+    this.attachLiveSubscription(threadId, token, {
+      after: result.resumeAfterSeq,
+      expectedTurnId: result.assistantTurnId,
+    });
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
@@ -141,10 +158,14 @@ export class ThreadRunController {
   }
 
   teardown(): void {
+    // Prevent an append already in flight from attaching after teardown.
+    this.admissionEpoch += 1;
+    this.runToken += 1;
     this.cleanupActiveRun();
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
+    this.runToken += 1;
     this.cleanupActiveRun();
     if (options.pruneAbandonedTurn) {
       // Only a fresh user submit proves the previous non-terminal assistant row
@@ -152,10 +173,8 @@ export class ThreadRunController {
       this.actions.pruneStaleAssistantTurns(threadId);
     }
     this.abortRequested = false;
-    this.runToken += 1;
-    const token = this.runToken;
-    this.activeRun = { threadId, token };
-    return token;
+    this.activeRun = { threadId, token: this.runToken };
+    return this.runToken;
   }
 
   private attachLiveSubscription(
@@ -286,12 +305,9 @@ export class ThreadRunController {
     return recovery;
   }
 
-  private applySnapshot({ thread, turns, liveState, attention }: ThreadSnapshotResponse): void {
-    this.actions.ensureThread(thread);
-    this.actions.applyThreadSnapshot(thread, turns, {
-      runningTurnId: liveState.runningTurnId,
-      attention,
-    });
+  private applySnapshot(snapshot: DeserializedThreadSnapshot): void {
+    const { thread, turns } = snapshot;
+    this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
   }
 
   private cleanupActiveRun(): void {

@@ -76,9 +76,7 @@ export function appendUserMessage({
 }: {
   data: AppendUserMessageInput;
 }): Promise<SendMessageResponse> {
-  return postJson(apiThreadMessagePath(data.threadId), data, {
-    acceptStatuses: [202, 409],
-  });
+  return postJson(apiThreadMessagePath(data.threadId), data);
 }
 
 export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelTurnResponse> {
@@ -117,6 +115,17 @@ export function deserializeThreadSnapshot(
       typeof value === "bigint" ? value.toString() : value,
     ),
   ) as ThreadSnapshotResponse;
+}
+
+/** Canonical projection from the wire snapshot to the store apply boundary. */
+export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
+  return {
+    lifecycle: {
+      attention: snapshot.attention,
+      runningTurnId: snapshot.liveState.runningTurnId,
+    },
+    nextSeq: snapshot.nextSeq,
+  };
 }
 
 /**

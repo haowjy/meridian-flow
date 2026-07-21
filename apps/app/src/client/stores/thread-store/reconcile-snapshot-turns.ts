@@ -115,7 +115,9 @@ export function reconcileSnapshotTurns(
 
   localTurns.forEach((localTurn, localIndex) => {
     if (reconciledIds.has(localTurn.id)) return;
-    if (!isOptimisticTurnId(localTurn.id) && localTurn.id !== runningTurnId) return;
+    if (!isOptimisticTurnId(localTurn.id) && localTurn.id !== runningTurnId) {
+      return;
+    }
     insertLocalOnlyTurn(localTurn, localIndex);
   });
 

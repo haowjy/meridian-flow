@@ -136,7 +136,12 @@ export function createTurnRunner(deps: {
       threadId: ThreadId;
       userText: string;
       connectionToken?: string;
-    }): Promise<{ userTurnId: string; assistantTurnId: string; streamCursor: string }> {
+    }): Promise<{
+      userTurnId: string;
+      assistantTurnId: string;
+      resumeAfterSeq: string;
+      snapshotFloorNextSeq: string;
+    }> {
       if (running.has(input.threadId)) {
         throw new Error(`Turn already running for thread: ${input.threadId}`);
       }
@@ -150,13 +155,18 @@ export function createTurnRunner(deps: {
       try {
         assertConnectionTokenLive(input.connectionToken);
 
-        const streamCursorBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
+        const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
 
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,
           userText: input.userText,
           signal: controller.signal,
         });
+
+        // runTurn only constructs a lazy async generator; no generator event can
+        // append until the background for-await below begins driving it. Capture
+        // the post-setup head now so the floor exactly covers the persisted turns.
+        const snapshotFloorNextSeq = ((await deps.hub.headSeq(input.threadId)) + 1n).toString();
 
         running.set(input.threadId, {
           controller,
@@ -201,7 +211,8 @@ export function createTurnRunner(deps: {
         return {
           userTurnId: handle.userTurnId,
           assistantTurnId: handle.assistantTurnId,
-          streamCursor: streamCursorBeforeStart,
+          resumeAfterSeq: resumeAfterSeqBeforeStart,
+          snapshotFloorNextSeq,
         };
       } catch (error) {
         running.delete(input.threadId);

@@ -95,9 +95,15 @@ export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
+  setThreadAttention(threadId: string, attention: ThreadListItem["attention"]): void;
   markHandoffPending(threadId: string): void;
   appendUserTurn(threadId: string, text: string): Turn;
-  acknowledgeUserTurn(threadId: string, optimisticTurnId: string, serverTurnId: string): void;
+  acknowledgeUserTurn(
+    threadId: string,
+    optimisticTurnId: string,
+    serverTurnId: string,
+    snapshotFloorNextSeq: string,
+  ): void;
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
@@ -112,7 +118,10 @@ export type ThreadStoreActions = {
   applyThreadSnapshot(
     thread: Thread,
     turns: Turn[],
-    lifecycle?: Pick<ThreadListItem, "attention" | "runningTurnId">,
+    options: {
+      lifecycle: Pick<ThreadListItem, "attention" | "runningTurnId">;
+      nextSeq: string;
+    },
   ): void;
   markPendingStream(threadId: string, start?: PendingStreamStart): void;
   consumePendingStream(threadId: string): PendingStreamStart | null;
