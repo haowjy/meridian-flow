@@ -35,7 +35,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
           <Trans>Back to live</Trans>
         </button>
       }
-      label={<Trans>Reviewing changes</Trans>}
+      label={<Trans>Reviewing draft</Trans>}
       alert={
         staleMessage ? (
           <p className="text-destructive text-xs" role="alert">
