@@ -93,36 +93,43 @@ export class ThreadRunController {
   }
 
   async submit(threadId: string, text: string, options: SubmitOptions = {}): Promise<void> {
-    const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+    // Reserve the next run without replacing the current one. The server may
+    // reject this append because that run is still active, in which case its
+    // subscription must remain able to deliver the terminal events.
+    const token = this.reserveRunToken();
+    let result: Awaited<ReturnType<AppendUserMessageFn>>;
 
     try {
       const connectionToken = await this.transport.awaitConnectionToken();
-      const result = await this.appendUserMessageFn({
+      result = await this.appendUserMessageFn({
         data: {
           threadId,
           text,
           connectionToken,
         },
       });
-      if (options.optimisticUserTurnId && result.userTurnId) {
-        this.actions.acknowledgeUserTurn(
-          threadId,
-          options.optimisticUserTurnId,
-          result.userTurnId,
-          result.ackHeadSeq,
-        );
-      }
-      if (!this.isActiveToken(token)) return;
-      this.attachLiveSubscription(threadId, token, {
-        after: result.streamCursor,
-        expectedTurnId: result.assistantTurnId || undefined,
-      });
     } catch (error) {
-      if (this.isActiveToken(token)) {
-        this.cleanupActiveRun();
+      if (options.optimisticUserTurnId) {
+        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
       throw error;
     }
+
+    if (options.optimisticUserTurnId && result.userTurnId) {
+      this.actions.acknowledgeUserTurn(
+        threadId,
+        options.optimisticUserTurnId,
+        result.userTurnId,
+        result.ackHeadSeq,
+      );
+    }
+    if (this.runToken !== token) return;
+
+    this.activateRun(threadId, token, { pruneAbandonedTurn: true });
+    this.attachLiveSubscription(threadId, token, {
+      after: result.streamCursor,
+      expectedTurnId: result.assistantTurnId || undefined,
+    });
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
@@ -149,10 +156,27 @@ export class ThreadRunController {
   }
 
   teardown(): void {
+    // Prevent an append already in flight from attaching after teardown.
+    this.runToken += 1;
     this.cleanupActiveRun();
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
+    const token = this.reserveRunToken();
+    this.activateRun(threadId, token, options);
+    return token;
+  }
+
+  private reserveRunToken(): number {
+    this.runToken += 1;
+    return this.runToken;
+  }
+
+  private activateRun(
+    threadId: string,
+    token: number,
+    options: { pruneAbandonedTurn?: boolean } = {},
+  ): void {
     this.cleanupActiveRun();
     if (options.pruneAbandonedTurn) {
       // Only a fresh user submit proves the previous non-terminal assistant row
@@ -160,10 +184,7 @@ export class ThreadRunController {
       this.actions.pruneStaleAssistantTurns(threadId);
     }
     this.abortRequested = false;
-    this.runToken += 1;
-    const token = this.runToken;
     this.activeRun = { threadId, token };
-    return token;
   }
 
   private attachLiveSubscription(
