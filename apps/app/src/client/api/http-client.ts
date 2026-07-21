@@ -83,7 +83,7 @@ export async function getJson<T>(
 export type PostJsonOptions = {
   /** Extra headers to merge with the default Content-Type. */
   headers?: HeadersInit;
-  /** Treat these HTTP statuses as success (e.g. 409 already_active). */
+  /** Treat selected non-2xx HTTP statuses as successful domain responses. */
   acceptStatuses?: number[];
   /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;

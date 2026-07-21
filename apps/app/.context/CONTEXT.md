@@ -59,8 +59,9 @@ Two interfaces are the only paths between the visual layer and the substrate:
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
-  `streamingThreadId`, pending stream metadata. `applyThreadSnapshot` writes
-  turns only. Soft-delete undo lives in the **project-store**, not here.
+  `streamingThreadId`, pending stream metadata, snapshot reconciliation
+  watermark (`snapshotNextSeqFloorByThread`). Soft-delete undo lives in the
+  **project-store**, not here. See "Thread snapshot reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
   `WsThreadTransport`, which connects to `/api/threads/ws`.
@@ -111,16 +112,54 @@ Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),
 deterministic reconcile path on response or failure.
 
-### Thread snapshot writes (two sources, two hooks)
+### Thread snapshot reconciliation
 
-Authoritative turn history enters the store through exactly two paths:
+Authoritative turn history enters the store through `applyThreadSnapshot`,
+which reconciles server turns against local optimistic state via
+`reconcileSnapshotTurns`. Two callers:
 
 | Source | When | Code |
 |--------|------|------|
-| **HTTP** | Chat route mount / reload | `useThreadSnapshotSync` (Query fetch → `applyThreadSnapshot` for turns) |
-| **WebSocket** | Reconnect/gap recovery | `ThreadRunController` fetches a snapshot and calls `applyThreadSnapshot` |
+| **HTTP** | Chat route mount / reload | `useThreadSnapshotSync` (Query fetch) |
+| **WebSocket** | Reconnect/gap recovery | `ThreadRunController.applySnapshot` |
 
-Do not call `applyThreadSnapshot` from `ChatView` or other view effects. Snapshot application stays in data-sync hooks and transport recovery, and uses identity-based block reconciliation.
+Do not call `applyThreadSnapshot` from `ChatView` or other view effects.
+Snapshot application stays in data-sync hooks and transport recovery.
+
+**Identity bridge.** When the user submits a message, the client creates an
+optimistic turn with a `turn_local_*` ID. The POST /messages response is the
+identity bridge: `acknowledgeUserTurn` rewrites the local row to the
+canonical server ID. The response also carries `snapshotFloorNextSeq` — the
+minimum snapshot `nextSeq` that reflects the append (the server computes
+head+1; the client stores it directly, no arithmetic). Acknowledgement raises
+the thread's stored snapshot floor to it, so a stale snapshot cannot remove
+the rewritten row while the projector catches up.
+
+**Monotonic sequence guard.** `applyThreadSnapshot` requires a
+`nextSeq` option (the server-assigned journal sequence for the snapshot).
+The store tracks `snapshotNextSeqFloorByThread` and rejects
+any snapshot whose `nextSeq` is strictly less than the stored value
+(BigInt comparison for journal sequences beyond Number.MAX_SAFE_INTEGER).
+Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
+(no `nextSeq`) is treated as authoritative and always applies -- omitting
+`nextSeq` is intentional only for the handoff/pending-creation path.
+
+**Anti-pattern: reapplying captured snapshots for side effects.**
+`useThreadSnapshotSync`'s attention-downgrade effect previously reapplied
+the entire captured snapshot after `markThreadOpened` resolved, solely to
+set `attention: "none"`. A delayed continuation could reapply an older
+snapshot after a newer one had advanced the sequence watermark, dropping the
+user turn again. The fix: use the narrow
+`setThreadAttention(threadId, attention)` action instead. Never replay a
+whole snapshot to achieve a single field mutation.
+
+**Rejected alternative: extending acknowledged-ID retention windows.** The
+alternative of retaining acknowledged IDs "until all in-flight snapshots
+settle" was rejected. There is no clean signal for when older in-flight
+snapshots cannot apply -- React Query deduplicates concurrent fetches of the
+same key, but nothing in the cache contract guarantees ordering of
+independent fetches. The monotonic sequence guard solves the ordering
+problem structurally.
 
 ## Authenticated layout shell
 

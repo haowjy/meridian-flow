@@ -47,6 +47,8 @@ type PendingCreationState = {
 
 type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
+  /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
+  snapshotNextSeqFloorByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
@@ -156,6 +158,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     turns: state.turns,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
+    setThreadAttention: state.setThreadAttention,
     markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
@@ -180,6 +183,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
       (set, get) => ({
         now,
         turnsByThread: {},
+        snapshotNextSeqFloorByThread: {},
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
@@ -203,6 +207,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               ? state
               : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
           );
+        },
+
+        setThreadAttention(threadId, attention) {
+          threadCache.patchThread(threadId, { attention });
         },
 
         markHandoffPending(threadId) {
@@ -229,8 +237,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return turn;
         },
 
-        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId) {
-          if (!serverTurnId || optimisticTurnId === serverTurnId) return;
+        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, snapshotFloorNextSeq) {
+          if (optimisticTurnId === serverTurnId) return;
 
           set((state) => {
             if (!isOptimisticTurnId(optimisticTurnId)) return state;
@@ -265,7 +273,21 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 return turn;
               });
 
-            return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+            // Never let an older acknowledgement move the snapshot floor backwards.
+            const acknowledgedNextSeq = BigInt(snapshotFloorNextSeq);
+            const currentNextSeq = state.snapshotNextSeqFloorByThread[threadId];
+            const nextSeq =
+              currentNextSeq === undefined || acknowledgedNextSeq > BigInt(currentNextSeq)
+                ? acknowledgedNextSeq.toString()
+                : currentNextSeq;
+
+            return {
+              snapshotNextSeqFloorByThread: {
+                ...state.snapshotNextSeqFloorByThread,
+                [threadId]: nextSeq,
+              },
+              turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
+            };
           });
         },
 
@@ -430,8 +452,13 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return nextEventsApplied;
         },
 
-        applyThreadSnapshot(thread, serverTurns, lifecycle) {
+        applyThreadSnapshot(thread, serverTurns, options) {
           const threadId = thread.id;
+          const { nextSeq, lifecycle } = options;
+          const lastAppliedSeq = get().snapshotNextSeqFloorByThread[threadId];
+          if (lastAppliedSeq !== undefined && BigInt(nextSeq) < BigInt(lastAppliedSeq)) {
+            return;
+          }
           /**
            * Handoff: the optimistic Home → Project navigation flow.
            *
@@ -461,28 +488,39 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             }
 
             if (keepLocalTurns) {
-              return { handoffPendingThreadIds };
+              return {
+                handoffPendingThreadIds,
+                snapshotNextSeqFloorByThread: {
+                  ...state.snapshotNextSeqFloorByThread,
+                  [threadId]: nextSeq,
+                },
+              };
             }
 
             const localTurns = state.turnsByThread[threadId] ?? [];
-            const runningTurnId = lifecycle?.runningTurnId ?? null;
-            const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, { runningTurnId });
+            const runningTurnId = lifecycle.runningTurnId;
+            const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
+              runningTurnId,
+            });
 
             const nextState: Partial<ThreadStoreSliceState> = {
               handoffPendingThreadIds,
               turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
             };
 
-            if (lifecycle && "runningTurnId" in lifecycle) {
-              const meta = liveMetaFor(state.liveMeta, threadId);
-              nextState.liveMeta = {
-                ...state.liveMeta,
-                [threadId]: {
-                  ...meta,
-                  runningTurnId,
-                },
-              };
-            }
+            nextState.snapshotNextSeqFloorByThread = {
+              ...state.snapshotNextSeqFloorByThread,
+              [threadId]: nextSeq,
+            };
+
+            const meta = liveMetaFor(state.liveMeta, threadId);
+            nextState.liveMeta = {
+              ...state.liveMeta,
+              [threadId]: {
+                ...meta,
+                runningTurnId,
+              },
+            };
 
             return nextState;
           });

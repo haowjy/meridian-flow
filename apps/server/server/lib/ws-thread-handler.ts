@@ -148,7 +148,7 @@ async function subscribeThread(peer: WsPeer, threadId: ThreadId, lastSeq?: strin
     threadId,
     catchup: catchup.map(toProtocolSequencedEvent),
     state: liveState,
-    nextSeq: liveState.nextSeq,
+    nextSeq: ((await auth.app.hub.headSeq(threadId)) + 1n).toString(),
   });
 }
 
