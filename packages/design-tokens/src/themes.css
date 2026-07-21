@@ -1,0 +1,117 @@
+/**
+ * UI themes — alternate palettes for the Ink & Jade token surface.
+ *
+ * Contract: `ink-jade.css` defines the token vocabulary (the `--color-*`
+ * names); a theme is a `:root[data-ui-theme="<name>"]` block that re-points
+ * those same names. The default Ink & Jade palette is the ABSENCE of the
+ * attribute — never define an `[data-ui-theme="ink-jade"]` block, so the
+ * default path stays the plain `@theme` values.
+ *
+ * The attribute is set pre-paint by the app's boot script (see
+ * `apps/app/src/lib/ui-theme.ts`) and switched at runtime from Preferences.
+ * Dark mode, when it lands, is one more theme block here riding the same
+ * attribute — not a separate mechanism.
+ *
+ * Derivation rules per theme:
+ * - Tokens defined as `var()` references in ink-jade.css (muted/secondary/
+ *   accent → recess atom, ring/status-streaming → primary, shelf hover/border
+ *   mixes → shelf) follow automatically; override the atoms, not each alias.
+ * - Accent-shifting themes must also re-point the accent-derived LITERALS:
+ *   border-focus, chip-primary-bg, status-done-*, mark-to — and the shelf
+ *   inks when the shell hue moves (warm ink on a cool wall reads as rust).
+ * - Every theme keeps the ladder ordering: page brightest, rail darkest,
+ *   chrome between; large surfaces stay low-chroma.
+ */
+
+/* ── Porcelain — subtractive minimal. ONE neutral family; jade is the only
+   color anywhere. For writers who want the quietest possible shell. */
+:root[data-ui-theme="porcelain"] {
+  --color-background: oklch(0.985 0.002 100);
+  --ink-jade-lift: oklch(0.995 0.001 100);
+  --ink-jade-recess: oklch(0.952 0.003 100);
+  --color-border: oklch(0.9 0.003 100);
+  --color-border-subtle: oklch(0.93 0.003 100);
+  --color-sidebar: oklch(0.965 0.003 100);
+  --color-sidebar-accent: oklch(0.922 0.004 100);
+  --color-shelf: oklch(0.952 0.003 100);
+  --color-shelf-active: oklch(0.905 0.004 100);
+  --color-shelf-ink-subtle: oklch(0.42 0.01 100);
+  --color-shelf-ink-muted: oklch(0.42 0.006 100);
+  --color-dock-surface: oklch(0.952 0.003 100);
+  --color-code-surface: oklch(0.96 0.003 100);
+  --color-code-border: oklch(0.89 0.004 100);
+}
+
+/* ── Parchment — commit harder to warmth: deeper paper, more tonal depth,
+   gold-leaning shell. The scriptorium take. */
+:root[data-ui-theme="parchment"] {
+  --color-background: oklch(0.966 0.015 90);
+  --ink-jade-lift: oklch(0.978 0.012 92);
+  --ink-jade-recess: oklch(0.92 0.016 87);
+  --color-border: oklch(0.868 0.016 85);
+  --color-border-subtle: oklch(0.9 0.014 86);
+  --color-sidebar: oklch(0.932 0.018 84);
+  --color-sidebar-accent: oklch(0.882 0.02 84);
+  --color-shelf: oklch(0.9 0.02 84);
+  --color-shelf-active: oklch(0.848 0.024 84);
+  --color-dock-surface: oklch(0.916 0.018 84);
+  --color-code-surface: oklch(0.93 0.016 85);
+  --color-code-border: oklch(0.86 0.018 85);
+  --color-foreground: oklch(0.25 0.015 80);
+  --color-prose-foreground: oklch(0.3 0.012 80);
+}
+
+/* ── Graphite — cool studio: neutral-cool shell, slate accent replaces
+   jade. Tests the non-warm identity. */
+:root[data-ui-theme="graphite"] {
+  --color-background: oklch(0.978 0.003 250);
+  --ink-jade-lift: oklch(0.99 0.002 250);
+  --ink-jade-recess: oklch(0.938 0.005 250);
+  --color-border: oklch(0.888 0.006 250);
+  --color-border-subtle: oklch(0.918 0.005 250);
+  --color-sidebar: oklch(0.946 0.006 250);
+  --color-sidebar-accent: oklch(0.9 0.008 250);
+  --color-shelf: oklch(0.918 0.008 250);
+  --color-shelf-active: oklch(0.872 0.01 250);
+  --color-shelf-ink-subtle: oklch(0.42 0.02 250);
+  --color-shelf-ink-muted: oklch(0.42 0.008 250);
+  --color-dock-surface: oklch(0.93 0.007 250);
+  --color-code-surface: oklch(0.945 0.006 250);
+  --color-code-border: oklch(0.875 0.008 250);
+  /* Accent: slate replaces jade. */
+  --color-primary: oklch(0.5 0.1 255);
+  --color-brand-jade: oklch(0.5 0.1 255);
+  --color-jade-text: oklch(0.44 0.085 255);
+  --color-border-focus: oklch(0.78 0.05 255);
+  --color-chip-primary-bg: oklch(0.93 0.03 255);
+  --color-status-done-bg: oklch(0.92 0.035 255);
+  --color-status-done-foreground: oklch(0.38 0.06 255);
+  --color-mark-to: oklch(0.4 0.07 255);
+}
+
+/* ── Moss & Cream — organic: cream paper, sage shell, deep moss accent. */
+:root[data-ui-theme="moss"] {
+  --color-background: oklch(0.977 0.008 100);
+  --ink-jade-lift: oklch(0.988 0.005 100);
+  --ink-jade-recess: oklch(0.934 0.01 115);
+  --color-border: oklch(0.884 0.012 120);
+  --color-border-subtle: oklch(0.915 0.01 118);
+  --color-sidebar: oklch(0.945 0.012 120);
+  --color-sidebar-accent: oklch(0.898 0.016 122);
+  --color-shelf: oklch(0.92 0.015 122);
+  --color-shelf-active: oklch(0.87 0.02 124);
+  --color-shelf-ink-subtle: oklch(0.42 0.025 130);
+  --color-shelf-ink-muted: oklch(0.42 0.012 122);
+  --color-dock-surface: oklch(0.93 0.013 120);
+  --color-code-surface: oklch(0.944 0.011 115);
+  --color-code-border: oklch(0.87 0.013 118);
+  /* Accent: deep moss replaces jade. */
+  --color-primary: oklch(0.47 0.095 150);
+  --color-brand-jade: oklch(0.47 0.095 150);
+  --color-jade-text: oklch(0.42 0.08 150);
+  --color-border-focus: oklch(0.78 0.05 150);
+  --color-chip-primary-bg: oklch(0.93 0.03 150);
+  --color-status-done-bg: oklch(0.92 0.035 150);
+  --color-status-done-foreground: oklch(0.38 0.06 150);
+  --color-mark-to: oklch(0.38 0.07 150);
+}
