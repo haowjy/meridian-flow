@@ -11,7 +11,7 @@ import type { AGUIEvent, Thread, ThreadSnapshotResponse, Turn } from "@meridian/
 import { EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-
+import { MeridianApiError } from "@/client/api/meridian-error";
 import type { ThreadStoreActions } from "@/client/stores";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
@@ -618,7 +618,14 @@ describe("ThreadRunController", () => {
     const controller = new ThreadRunController({
       transport,
       actions: store.getState(),
-      appendUserMessageFn: vi.fn().mockRejectedValue(new Error("Turn already running")),
+      appendUserMessageFn: vi.fn().mockRejectedValue(
+        new MeridianApiError({
+          code: "already_active",
+          message: "Turn already running",
+          retryable: false,
+          source: "system",
+        }),
+      ),
     });
 
     await expect(
@@ -626,6 +633,25 @@ describe("ThreadRunController", () => {
     ).rejects.toThrow("Turn already running");
 
     expect(store.getState().turns("thread_1")).toEqual([]);
+  });
+
+  it("retains the optimistic user turn when submit fails ambiguously", async () => {
+    const transport = new FakeThreadTransport();
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
+    const optimisticTurn = store.getState().appendUserTurn("thread_1", "possibly persisted");
+    const controller = new ThreadRunController({
+      transport,
+      actions: store.getState(),
+      appendUserMessageFn: vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    });
+
+    await expect(
+      controller.submit("thread_1", "possibly persisted", {
+        optimisticUserTurnId: optimisticTurn.id,
+      }),
+    ).rejects.toThrow("fetch failed");
+
+    expect(store.getState().turns("thread_1")).toEqual([optimisticTurn]);
   });
 
   it("prunes an abandoned live assistant turn before submitting again after transport failure", async () => {

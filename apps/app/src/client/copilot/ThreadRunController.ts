@@ -116,7 +116,7 @@ export class ThreadRunController {
         },
       });
     } catch (error) {
-      if (options.optimisticUserTurnId) {
+      if (options.optimisticUserTurnId && isMeridianApiError(error)) {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
       throw error;

@@ -131,8 +131,9 @@ export function ChatView({
       // The PRIOR assistant turn may have errored and the projector clears it
       // off `status:error` when the next user turn arrives — a side-effect with
       // no journal/WS event. Refresh only after submit settles so this fetch
-      // cannot race ahead of a persisted user turn; `finally` also reconciles
-      // ambiguous failures where the response was lost after persistence.
+      // cannot race ahead of a persisted user turn. Definitive API rejections
+      // roll back the optimistic row; ambiguous transport failures retain it
+      // until a later acknowledgement or reload can reconcile the write.
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     }
   }
