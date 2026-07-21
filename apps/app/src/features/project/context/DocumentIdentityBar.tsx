@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -50,8 +51,6 @@ export type DocumentIdentityBarProps = {
     ownership: IdentityCommitOwnership,
   ) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
-  /** Optional slot for draft-review chrome (e.g. a small "Review" chip). */
-  draftChip?: ReactNode;
 };
 
 export function DocumentIdentityBar({
@@ -61,7 +60,6 @@ export function DocumentIdentityBar({
   tab,
   onCommitted,
   onOpenExisting,
-  draftChip,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -116,7 +114,7 @@ export function DocumentIdentityBar({
           <IdentityPath location={location} />
         )}
         <span className="min-w-1 flex-1" />
-        {draftChip}
+        <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           documentId={tab.documentId}
           location={location}

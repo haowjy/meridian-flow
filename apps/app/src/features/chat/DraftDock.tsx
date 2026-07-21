@@ -42,8 +42,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
-  const reviewedRows = useMemo(() => rows.filter((row) => row.state === "reviewed"), [rows]);
-  const hasPending = pendingRows.length > 0;
 
   // Sequential Apply all / Discard all. The shared accept/reject mutation and
   // its `isPending` gate make concurrent disposition unsafe, so we run one
@@ -117,14 +115,10 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     generating,
     rows,
     pendingRows,
-    reviewedRows,
-    hasPending,
-    reviewedCount: reviewedRows.length,
+    reviewedCount: rows.filter((row) => row.state === "reviewed").length,
     totalCount: rows.length,
     aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
-    mounted: hasPending,
-    phase: (hasPending ? "settled" : "hidden") as "settled" | "hidden",
-    bulkActive: bulk !== null,
+    mounted: pendingRows.length > 0,
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
     isBusy: controller.isDisposing || bulk !== null,
     needsRereview: controller.needsRereview,

@@ -249,7 +249,6 @@
     var(--color-status-warning) 52%,
     transparent
   );
-  --color-review-warning-ring: color-mix(in oklab, var(--color-status-warning) 58%, transparent);
   --color-review-warning-chip-bg: var(--color-warning-bg);
   --color-review-warning-chip-foreground: var(--color-warning-foreground);
 

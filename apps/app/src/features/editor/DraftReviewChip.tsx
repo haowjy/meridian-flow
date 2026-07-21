@@ -38,7 +38,7 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
   return (
     <button
       type="button"
-      data-draft-entry-banner
+      data-draft-review-chip
       onClick={() =>
         openAiDraft(
           {

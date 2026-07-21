@@ -123,10 +123,6 @@ function newestUpdatedAt(group: ThreadDraftGroup): number {
   return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
 }
 
-export function dockedDraftCountKey(groups: readonly ThreadDraftGroup[]): string {
-  return groups.map((group) => `${group.documentId}:${group.drafts.length}`).join("|");
-}
-
 function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
   const hasKnownOperationCount = typeof draft.proposedOperationCount === "number";
   const hasKnownWordDelta =

@@ -10,7 +10,6 @@ import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
@@ -137,7 +136,6 @@ export function ContextViewer({
             tab={activeTab}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
-            draftChip={<DraftReviewChip documentId={activeTab.documentId} />}
           />
         ) : null}
         {/* The TRACKED editor host stays mounted while ANY tracked tab is

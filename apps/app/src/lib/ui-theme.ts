@@ -2,14 +2,14 @@
  * UI-theme preference — local, pre-paint palette selection for the whole app.
  *
  * Device-local like text size: writers may want different palettes on
- * different screens. The default Ink & Jade palette is represented by the
- * ABSENCE of the DOM attribute so the plain token path stays the default;
- * every other theme is a `:root[data-ui-theme]` override block in
- * `@meridian/design-tokens/themes.css`. Dark mode will ship as one more
- * theme riding this same attribute.
+ * different screens. The default Ink & Jade light palette is represented by
+ * the ABSENCE of the DOM attribute so the plain token path stays the default;
+ * every other theme (currently Dark) is a `:root[data-ui-theme]` override
+ * block in `@meridian/design-tokens/themes.css`. Components' Tailwind `dark:`
+ * variants key off the same attribute (see globals.css).
  */
-export const UI_THEME_STORAGE_KEY = "meridian:ui-theme";
-export const UI_THEME_ATTRIBUTE = "data-ui-theme";
+const UI_THEME_STORAGE_KEY = "meridian:ui-theme";
+const UI_THEME_ATTRIBUTE = "data-ui-theme";
 
 export const UI_THEMES = ["ink-jade", "dark"] as const;
 export type UiTheme = (typeof UI_THEMES)[number];
@@ -18,11 +18,11 @@ export const DEFAULT_UI_THEME: UiTheme = "ink-jade";
 
 const listeners = new Set<() => void>();
 
-export function isUiTheme(value: string): value is UiTheme {
+function isUiTheme(value: string): value is UiTheme {
   return (UI_THEMES as readonly string[]).includes(value);
 }
 
-export function normalizeUiTheme(value: string | null | undefined): UiTheme {
+function normalizeUiTheme(value: string | null | undefined): UiTheme {
   return value && isUiTheme(value) ? value : DEFAULT_UI_THEME;
 }
 
@@ -39,7 +39,7 @@ function notifyUiThemeListeners(): void {
   for (const listener of listeners) listener();
 }
 
-export function applyUiTheme(theme: UiTheme): void {
+function applyUiTheme(theme: UiTheme): void {
   if (typeof document === "undefined") return;
   if (theme === DEFAULT_UI_THEME) {
     document.documentElement.removeAttribute(UI_THEME_ATTRIBUTE);
@@ -48,10 +48,8 @@ export function applyUiTheme(theme: UiTheme): void {
   document.documentElement.setAttribute(UI_THEME_ATTRIBUTE, theme);
 }
 
-export function applyStoredUiTheme(): UiTheme {
-  const theme = resolveUiTheme();
-  applyUiTheme(theme);
-  return theme;
+function applyStoredUiTheme(): void {
+  applyUiTheme(resolveUiTheme());
 }
 
 export function changeUiTheme(theme: UiTheme): void {

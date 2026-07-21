@@ -8,12 +8,6 @@ import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
   toolbar?: ReactNode;
-  /**
-   * In-flow chrome docked between the toolbar row and the scroll area — the
-   * editor banner slot (draft chrome). Ordering contract: identity bar (host
-   * chrome) → toolbar → banner → prose.
-   */
-  belowToolbar?: ReactNode;
   children: ReactNode;
   /**
    * When given, the whole scroll area becomes click-to-focus territory: a
@@ -58,7 +52,6 @@ function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLD
 
 export function EditorSurfaceFrame({
   toolbar,
-  belowToolbar,
   children,
   editor,
   scrollClassName,
@@ -72,7 +65,6 @@ export function EditorSurfaceFrame({
           <div className={editorColumnChrome}>{toolbar}</div>
         </div>
       ) : null}
-      {belowToolbar}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the mousedown is
           pointer-only caret delegation into the editor (page-margin clicks);
           keyboard users reach the same editor via Tab focus on the prose node. */}
