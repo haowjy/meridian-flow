@@ -330,7 +330,7 @@ describe("ThreadRunController", () => {
     expect(transport.handlers).toBeNull();
   });
 
-  it("acknowledges the optimistic user turn before snapshot reconcile so one server-id user turn remains", async () => {
+  it("keeps an acknowledged user turn while the snapshot projection catches up", async () => {
     const transport = new FakeThreadTransport();
     const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
     const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
@@ -355,6 +355,15 @@ describe("ThreadRunController", () => {
     ).toEqual([optimisticTurn.id]);
 
     await controller.submit("thread_1", "Hello", { optimisticUserTurnId: optimisticTurn.id });
+    store.getState().applyThreadSnapshot(thread, []);
+
+    expect(
+      store
+        .getState()
+        .turns("thread_1")
+        ?.map((turn) => turn.id),
+    ).toEqual(["turn_user_server"]);
+
     store
       .getState()
       .applyThreadSnapshot(thread, [serverUserTurnFrom(optimisticTurn, "turn_user_server")]);
