@@ -359,7 +359,10 @@ describe("ThreadRunController", () => {
     ).toEqual([optimisticTurn.id]);
 
     await controller.submit("thread_1", "Hello", { optimisticUserTurnId: optimisticTurn.id });
-    store.getState().applyThreadSnapshot(thread, [], { nextSeq: "42" });
+    store.getState().applyThreadSnapshot(thread, [], {
+      nextSeq: "42",
+      lifecycle: { attention: "none", runningTurnId: null },
+    });
 
     expect(
       store
@@ -372,6 +375,7 @@ describe("ThreadRunController", () => {
       .getState()
       .applyThreadSnapshot(thread, [serverUserTurnFrom(optimisticTurn, "turn_user_server")], {
         nextSeq: "43",
+        lifecycle: { attention: "none", runningTurnId: null },
       });
 
     const userTurns = store
@@ -389,8 +393,14 @@ describe("ThreadRunController", () => {
       .acknowledgeUserTurn("thread_1", optimisticTurn.id, "turn_user_server", "9007199254740992");
     const persistedTurn = serverUserTurnFrom(optimisticTurn, "turn_user_server");
 
-    store.getState().applyThreadSnapshot(thread, [persistedTurn], { nextSeq: "9007199254740993" });
-    store.getState().applyThreadSnapshot(thread, [], { nextSeq: "9007199254740992" });
+    store.getState().applyThreadSnapshot(thread, [persistedTurn], {
+      nextSeq: "9007199254740993",
+      lifecycle: { attention: "none", runningTurnId: null },
+    });
+    store.getState().applyThreadSnapshot(thread, [], {
+      nextSeq: "9007199254740992",
+      lifecycle: { attention: "none", runningTurnId: null },
+    });
 
     expect(
       store
@@ -398,10 +408,6 @@ describe("ThreadRunController", () => {
         .turns("thread_1")
         ?.map((turn) => turn.id),
     ).toEqual(["turn_user_server"]);
-
-    // Unordered callers remain authoritative; the sequence guard is opt-in.
-    store.getState().applyThreadSnapshot(thread, []);
-    expect(store.getState().turns("thread_1")).toEqual([]);
   });
 
   it("resumes from a cursor without requiring RUN_STARTED first", () => {
@@ -708,7 +714,10 @@ describe("ThreadRunController", () => {
   it("rejects an older gap-recovery snapshot after a newer snapshot applies", async () => {
     const transport = new FakeThreadTransport();
     const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    store.getState().applyThreadSnapshot(thread, [assistantTurn], { nextSeq: "9007199254740993" });
+    store.getState().applyThreadSnapshot(thread, [assistantTurn], {
+      nextSeq: "9007199254740993",
+      lifecycle: { attention: "none", runningTurnId: null },
+    });
     const applyThreadSnapshot = vi.spyOn(store.getState(), "applyThreadSnapshot");
     const snapshot = makeSnapshot();
     const staleSnapshot = {

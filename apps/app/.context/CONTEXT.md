@@ -60,7 +60,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  watermark (`lastAppliedSnapshotSeqByThread`). Soft-delete undo lives in the
+  watermark (`snapshotNextSeqFloorByThread`). Soft-delete undo lives in the
   **project-store**, not here. See "Thread snapshot reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
@@ -136,7 +136,7 @@ snapshot cannot remove the rewritten row while the projector catches up.
 
 **Monotonic sequence guard.** `applyThreadSnapshot` accepts an opt-in
 `nextSeq` parameter (the server-assigned journal sequence for the snapshot).
-When supplied, the store tracks `lastAppliedSnapshotSeqByThread` and rejects
+When supplied, the store tracks `snapshotNextSeqFloorByThread` and rejects
 any snapshot whose `nextSeq` is strictly less than the stored value
 (BigInt comparison for journal sequences beyond Number.MAX_SAFE_INTEGER).
 Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
