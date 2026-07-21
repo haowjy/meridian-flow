@@ -109,10 +109,13 @@
   --color-sidebar: oklch(0.945 0.012 84);
   --color-sidebar-accent: oklch(0.898 0.014 84);
 
-  /* Dock surface — a jade-whisper tint of recess, used as the DraftDock
-     strip background. The 4% jade keeps it in the warm ladder's low-chroma
-     band but gives draft chrome a faint "this is AI material" signal. */
-  --color-dock-surface: color-mix(in oklab, var(--color-primary) 4%, var(--color-muted));
+  /* Dock surface — draft chrome (DraftDock strip, review banner, reviewing
+     tab). The chrome's own grey-gold family (hue 84, c .012) one step darker
+     than the tab band — same material in shadow, like the shelf. The "AI
+     material" signal lives in the jade accents ON the strip (dot, pills),
+     never in the wall itself (earthen-ladder rule: color identity in
+     accents, not walls). */
+  --color-dock-surface: oklch(0.929 0.012 84);
 
   /* Pinned composer — surfaces the chat-interactive token so the composer,
      user bubbles, and turn-edit cards all share one placement-aware lift.
