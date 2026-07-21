@@ -411,6 +411,7 @@ export function createThreadRuntimeService(deps: {
         userTurnId,
         assistantTurnId,
         streamCursor: completedEvents.at(-1)?.seq.toString() ?? "0",
+        ackHeadSeq: completedEvents.at(-1)?.seq.toString() ?? "0",
         status: "accepted",
       };
     },

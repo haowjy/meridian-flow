@@ -60,8 +60,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  bookkeeping (`acknowledgedUserTurnIdsByThread`,
-  `lastAppliedSnapshotSeqByThread`). Soft-delete undo lives in the
+  watermark (`lastAppliedSnapshotSeqByThread`). Soft-delete undo lives in the
   **project-store**, not here. See "Thread snapshot reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
@@ -130,16 +129,15 @@ Snapshot application stays in data-sync hooks and transport recovery.
 **Identity bridge.** When the user submits a message, the client creates an
 optimistic turn with a `turn_local_*` ID. The POST /messages response is the
 identity bridge: `acknowledgeUserTurn` rewrites the local row to the
-canonical server ID. Until the next HTTP snapshot contains that canonical ID,
-the store retains it in `acknowledgedUserTurnIdsByThread` so that
-`reconcileSnapshotTurns` preserves the turn even when a stale snapshot
-omits it. The protection clears automatically when a snapshot arrives that
-includes the canonical ID.
+canonical server ID. The response also carries `ackHeadSeq`, the journal head
+observed after the append committed. Acknowledgement raises the thread's stored
+snapshot floor to `ackHeadSeq + 1` (snapshot `nextSeq` terms), so a stale
+snapshot cannot remove the rewritten row while the projector catches up.
 
 **Monotonic sequence guard.** `applyThreadSnapshot` accepts an opt-in
 `nextSeq` parameter (the server-assigned journal sequence for the snapshot).
 When supplied, the store tracks `lastAppliedSnapshotSeqByThread` and rejects
-any snapshot whose `nextSeq` is strictly less than the last applied value
+any snapshot whose `nextSeq` is strictly less than the stored value
 (BigInt comparison for journal sequences beyond Number.MAX_SAFE_INTEGER).
 Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
 (no `nextSeq`) is treated as authoritative and always applies -- omitting
@@ -149,8 +147,8 @@ Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
 `useThreadSnapshotSync`'s attention-downgrade effect previously reapplied
 the entire captured snapshot after `markThreadOpened` resolved, solely to
 set `attention: "none"`. A delayed continuation could reapply an older
-snapshot after a newer one had cleared the acknowledged-ID protection,
-dropping the user turn again. The fix: use the narrow
+snapshot after a newer one had advanced the sequence watermark, dropping the
+user turn again. The fix: use the narrow
 `setThreadAttention(threadId, attention)` action instead. Never replay a
 whole snapshot to achieve a single field mutation.
 

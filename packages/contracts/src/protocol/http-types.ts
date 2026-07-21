@@ -396,6 +396,12 @@ export type SendMessageResponse = {
   userTurnId: string;
   assistantTurnId: string;
   streamCursor: string;
+  /**
+   * Journal head observed when the user-turn append was acknowledged. Snapshots
+   * whose nextSeq is <= this predate the acknowledged user turn (or are already
+   * reflected locally) and must not be applied.
+   */
+  ackHeadSeq: string;
   status: "accepted" | "already_active";
 };
 

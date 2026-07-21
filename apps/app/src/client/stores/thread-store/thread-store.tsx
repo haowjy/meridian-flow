@@ -47,8 +47,6 @@ type PendingCreationState = {
 
 type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
-  /** Canonical user IDs waiting for the snapshot projector to catch up. */
-  acknowledgedUserTurnIdsByThread: Record<string, Record<string, true>>;
   /** Last ordered HTTP snapshot applied for each thread. */
   lastAppliedSnapshotSeqByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
@@ -185,7 +183,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
       (set, get) => ({
         now,
         turnsByThread: {},
-        acknowledgedUserTurnIdsByThread: {},
         lastAppliedSnapshotSeqByThread: {},
         liveMeta: {},
         handoffPendingThreadIds: {},
@@ -240,7 +237,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return turn;
         },
 
-        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId) {
+        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, ackHeadSeq) {
           if (!serverTurnId || optimisticTurnId === serverTurnId) return;
 
           set((state) => {
@@ -276,26 +273,21 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 return turn;
               });
 
-            const acknowledgedUserTurnIdsByThread = {
-              ...state.acknowledgedUserTurnIdsByThread,
-            };
-            if (hasServerTurn) {
-              const pendingIds = { ...acknowledgedUserTurnIdsByThread[threadId] };
-              delete pendingIds[serverTurnId];
-              if (Object.keys(pendingIds).length > 0) {
-                acknowledgedUserTurnIdsByThread[threadId] = pendingIds;
-              } else {
-                delete acknowledgedUserTurnIdsByThread[threadId];
-              }
-            } else {
-              acknowledgedUserTurnIdsByThread[threadId] = {
-                ...acknowledgedUserTurnIdsByThread[threadId],
-                [serverTurnId]: true,
-              };
-            }
+            // Stored watermarks use snapshot nextSeq (journal head + 1), so an
+            // acknowledged head H raises the safe floor to H + 1. Never let an
+            // older acknowledgement move the per-thread floor backwards.
+            const acknowledgedNextSeq = BigInt(ackHeadSeq) + 1n;
+            const currentNextSeq = state.lastAppliedSnapshotSeqByThread[threadId];
+            const nextSeq =
+              currentNextSeq === undefined || acknowledgedNextSeq > BigInt(currentNextSeq)
+                ? acknowledgedNextSeq.toString()
+                : currentNextSeq;
 
             return {
-              acknowledgedUserTurnIdsByThread,
+              lastAppliedSnapshotSeqByThread: {
+                ...state.lastAppliedSnapshotSeqByThread,
+                [threadId]: nextSeq,
+              },
               turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
             };
           });
@@ -465,10 +457,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         applyThreadSnapshot(thread, serverTurns, options) {
           const threadId = thread.id;
           const nextSeq = options?.nextSeq;
-          const lifecycle =
-            options && options.attention !== undefined && options.runningTurnId !== undefined
-              ? { attention: options.attention, runningTurnId: options.runningTurnId }
-              : undefined;
+          const lifecycle = options?.lifecycle;
           const lastAppliedSeq = get().lastAppliedSnapshotSeqByThread[threadId];
           if (
             nextSeq !== undefined &&
@@ -520,29 +509,12 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             }
 
             const localTurns = state.turnsByThread[threadId] ?? [];
-            const runningTurnId = options?.runningTurnId ?? null;
-            const pendingAcknowledgedIds = state.acknowledgedUserTurnIdsByThread[threadId] ?? {};
+            const runningTurnId = lifecycle?.runningTurnId ?? null;
             const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
               runningTurnId,
-              acknowledgedUserTurnIds: new Set(Object.keys(pendingAcknowledgedIds)),
             });
-            const serverTurnIds = new Set(serverTurns.map((turn) => turn.id));
-            const remainingAcknowledgedIds = Object.fromEntries(
-              Object.keys(pendingAcknowledgedIds)
-                .filter((turnId) => !serverTurnIds.has(turnId))
-                .map((turnId) => [turnId, true] as const),
-            );
-            const acknowledgedUserTurnIdsByThread = {
-              ...state.acknowledgedUserTurnIdsByThread,
-            };
-            if (Object.keys(remainingAcknowledgedIds).length > 0) {
-              acknowledgedUserTurnIdsByThread[threadId] = remainingAcknowledgedIds;
-            } else {
-              delete acknowledgedUserTurnIdsByThread[threadId];
-            }
 
             const nextState: Partial<ThreadStoreSliceState> = {
-              acknowledgedUserTurnIdsByThread,
               handoffPendingThreadIds,
               turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
             };
@@ -554,7 +526,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               };
             }
 
-            if (options && "runningTurnId" in options) {
+            if (lifecycle) {
               const meta = liveMetaFor(state.liveMeta, threadId);
               nextState.liveMeta = {
                 ...state.liveMeta,
