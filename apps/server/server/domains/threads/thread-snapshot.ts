@@ -69,6 +69,10 @@ export async function buildThreadSnapshot(
   // Capture liveness BEFORE reading the durable turn list (ordering matters — see below).
   const runnerTurnId = runner.getRunningTurnId(threadId);
 
+  // Capture the head before any payload reads: the advertised sequence must
+  // never be newer than the payload, or a client can accept a torn snapshot.
+  const headSeq = await hub.headSeq(threadId);
+
   const turns = orderTurnsCausally(await repos.turns.listByThread(threadId));
   const threadTurns = await Promise.all(
     turns.map(async (turn): Promise<Turn> => {
@@ -83,7 +87,6 @@ export async function buildThreadSnapshot(
     }),
   );
 
-  const headSeq = await hub.headSeq(threadId);
   const nextSeq = (headSeq + 1n).toString();
   const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
   const headTurn = thread.activeLeafTurnId
