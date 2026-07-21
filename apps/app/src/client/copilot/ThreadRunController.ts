@@ -81,6 +81,8 @@ export class ThreadRunController {
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
 
   private activeRun: ActiveRun | null = null;
+  private admissionInFlight = false;
+  private admissionEpoch = 0;
   private abortRequested = false;
   private runToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
@@ -93,10 +95,15 @@ export class ThreadRunController {
   }
 
   async submit(threadId: string, text: string, options: SubmitOptions = {}): Promise<void> {
-    // Reserve the next run without replacing the current one. The server may
-    // reject this append because that run is still active, in which case its
-    // subscription must remain able to deliver the terminal events.
-    const token = this.reserveRunToken();
+    if (this.admissionInFlight) {
+      if (options.optimisticUserTurnId) {
+        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+      }
+      throw new Error("submit already in flight");
+    }
+
+    this.admissionInFlight = true;
+    const admissionEpoch = this.admissionEpoch;
     let result: Awaited<ReturnType<AppendUserMessageFn>>;
 
     try {
@@ -113,6 +120,8 @@ export class ThreadRunController {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
       throw error;
+    } finally {
+      this.admissionInFlight = false;
     }
 
     if (options.optimisticUserTurnId && result.userTurnId) {
@@ -123,9 +132,9 @@ export class ThreadRunController {
         result.ackHeadSeq,
       );
     }
-    if (this.runToken !== token) return;
+    if (this.admissionEpoch !== admissionEpoch) return;
 
-    this.activateRun(threadId, token, { pruneAbandonedTurn: true });
+    const token = this.startRun(threadId, { pruneAbandonedTurn: true });
     this.attachLiveSubscription(threadId, token, {
       after: result.streamCursor,
       expectedTurnId: result.assistantTurnId || undefined,
@@ -157,26 +166,13 @@ export class ThreadRunController {
 
   teardown(): void {
     // Prevent an append already in flight from attaching after teardown.
+    this.admissionEpoch += 1;
     this.runToken += 1;
     this.cleanupActiveRun();
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
-    const token = this.reserveRunToken();
-    this.activateRun(threadId, token, options);
-    return token;
-  }
-
-  private reserveRunToken(): number {
     this.runToken += 1;
-    return this.runToken;
-  }
-
-  private activateRun(
-    threadId: string,
-    token: number,
-    options: { pruneAbandonedTurn?: boolean } = {},
-  ): void {
     this.cleanupActiveRun();
     if (options.pruneAbandonedTurn) {
       // Only a fresh user submit proves the previous non-terminal assistant row
@@ -184,7 +180,8 @@ export class ThreadRunController {
       this.actions.pruneStaleAssistantTurns(threadId);
     }
     this.abortRequested = false;
-    this.activeRun = { threadId, token };
+    this.activeRun = { threadId, token: this.runToken };
+    return this.runToken;
   }
 
   private attachLiveSubscription(

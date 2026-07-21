@@ -565,6 +565,31 @@ describe("ThreadRunController", () => {
     expect(actions.pruneStaleAssistantTurns).not.toHaveBeenCalled();
   });
 
+  it("rejects a second submit while admission is pending", async () => {
+    const transport = new FakeThreadTransport();
+    const actions = makeActions();
+    const append = deferred<{
+      assistantTurnId: string;
+      streamCursor: string;
+      ackHeadSeq: string;
+    }>();
+    const controller = new ThreadRunController({
+      transport,
+      actions,
+      appendUserMessageFn: vi.fn().mockReturnValue(append.promise),
+    });
+
+    const firstSubmit = controller.submit("thread_1", "first");
+    await expect(controller.submit("thread_1", "second")).rejects.toThrow(
+      "submit already in flight",
+    );
+    append.resolve({ assistantTurnId: "turn_1", streamCursor: "42", ackHeadSeq: "42" });
+    await firstSubmit;
+
+    expect(transport.subscribeCount).toBe(1);
+    expect(transport.subscribeOptions).toEqual({ after: "42" });
+  });
+
   it("keeps Stop targeting the previous run while a new submit is pending", async () => {
     const transport = new FakeThreadTransport();
     const actions = makeActions();
