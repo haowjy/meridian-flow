@@ -1,17 +1,18 @@
 /**
  * DraftReviewChip — a subtle identity-bar chip that nudges the writer to
  * review pending AI changes. Lives in the breadcrumb row alongside "Rename" /
- * "Choose a home", replacing the old full-width DraftEntryBanner. The chip
- * follows the same visual grammar as the home chip: small rounded pill,
- * jade-tinted when pending.
+ * "Choose a home". Jade-tinted pill matching the identity bar's chip grammar.
+ *
+ * Adapts its label to the number of reviewable drafts on this document:
+ * one draft → "Review draft", multiple → "Review N drafts".
  *
  * Self-contained: resolves its own draft state from DraftReviewProvider
  * context, so the identity bar just mounts it and passes the documentId.
  */
-import { Trans } from "@lingui/react/macro";
+import { Plural } from "@lingui/react/macro";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { pendingReviewDraft } from "@/features/chat/docked-drafts";
+import { pendingReviewDraft, pendingReviewDraftCount } from "@/features/chat/docked-drafts";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,8 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
   if (!group) return null;
   const draft = pendingReviewDraft(group, nowMs);
   if (!draft) return null;
+
+  const count = pendingReviewDraftCount(group, nowMs);
 
   return (
     <button
@@ -54,7 +57,7 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
       )}
     >
       <span aria-hidden className="size-1.5 rounded-full bg-primary" />
-      <Trans>Review</Trans>
+      <Plural value={count} one="Review draft" other="Review # drafts" />
     </button>
   );
 }

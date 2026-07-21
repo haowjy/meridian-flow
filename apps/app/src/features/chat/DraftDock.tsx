@@ -458,7 +458,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       disabled={disabled}
       className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 text-caption font-semibold text-primary-foreground disabled:opacity-50"
     >
-      <Trans>Review</Trans>
+      <Trans>Review draft</Trans>
     </button>
   );
 }
