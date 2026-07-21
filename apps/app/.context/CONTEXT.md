@@ -129,14 +129,15 @@ Snapshot application stays in data-sync hooks and transport recovery.
 **Identity bridge.** When the user submits a message, the client creates an
 optimistic turn with a `turn_local_*` ID. The POST /messages response is the
 identity bridge: `acknowledgeUserTurn` rewrites the local row to the
-canonical server ID. The response also carries `snapshotFloorNextSeq`, the journal head
-observed after the append committed. Acknowledgement raises the thread's stored
-snapshot floor to `snapshotFloorNextSeq + 1` (snapshot `nextSeq` terms), so a stale
-snapshot cannot remove the rewritten row while the projector catches up.
+canonical server ID. The response also carries `snapshotFloorNextSeq` — the
+minimum snapshot `nextSeq` that reflects the append (the server computes
+head+1; the client stores it directly, no arithmetic). Acknowledgement raises
+the thread's stored snapshot floor to it, so a stale snapshot cannot remove
+the rewritten row while the projector catches up.
 
-**Monotonic sequence guard.** `applyThreadSnapshot` accepts an opt-in
-`nextSeq` parameter (the server-assigned journal sequence for the snapshot).
-When supplied, the store tracks `snapshotNextSeqFloorByThread` and rejects
+**Monotonic sequence guard.** `applyThreadSnapshot` requires a
+`nextSeq` option (the server-assigned journal sequence for the snapshot).
+The store tracks `snapshotNextSeqFloorByThread` and rejects
 any snapshot whose `nextSeq` is strictly less than the stored value
 (BigInt comparison for journal sequences beyond Number.MAX_SAFE_INTEGER).
 Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
