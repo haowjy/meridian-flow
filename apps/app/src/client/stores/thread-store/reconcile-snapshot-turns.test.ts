@@ -182,4 +182,18 @@ describe("reconcileSnapshotTurns", () => {
 
     expect(reconciled).toEqual([runningTurn]);
   });
+
+  it("preserves an acknowledged user turn until the snapshot contains its canonical id", () => {
+    const acknowledgedTurn = { ...turn("turn-user-1"), role: "user" as const };
+
+    const staleSnapshot = reconcileSnapshotTurns([acknowledgedTurn], [], {
+      acknowledgedUserTurnIds: new Set([acknowledgedTurn.id]),
+    });
+    const caughtUpSnapshot = reconcileSnapshotTurns([acknowledgedTurn], [acknowledgedTurn], {
+      acknowledgedUserTurnIds: new Set([acknowledgedTurn.id]),
+    });
+
+    expect(staleSnapshot).toEqual([acknowledgedTurn]);
+    expect(caughtUpSnapshot).toEqual([acknowledgedTurn]);
+  });
 });
