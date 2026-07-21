@@ -275,21 +275,21 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               ) : null}
               <QuietButton
                 onClick={() => {
-                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
-                  else dock.startApplyAll();
-                }}
-                disabled={dock.generating || dock.isBusy || !firstPending}
-              >
-                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
-              </QuietButton>
-              <QuietButton
-                onClick={() => {
                   if (single && firstPending) dock.discardRow(firstPending);
                   else setConfirmingDiscardAll(true);
                 }}
                 disabled={dock.generating || dock.isBusy || !firstPending}
               >
                 {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
+              </QuietButton>
+              <QuietButton
+                onClick={() => {
+                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
+                  else dock.startApplyAll();
+                }}
+                disabled={dock.generating || dock.isBusy || !firstPending}
+              >
+                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
               </QuietButton>
             </>
           )}
