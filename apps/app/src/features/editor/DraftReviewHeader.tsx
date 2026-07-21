@@ -6,7 +6,6 @@
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, Loader2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftBannerStrip } from "./DraftBannerStrip";
 
@@ -49,22 +48,21 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
             type="button"
             onClick={() => controller.reject(documentId, draftId)}
             disabled={busy}
-            className="text-button text-xs"
+            className="text-button"
           >
             <Trans>Discard all</Trans>
           </button>
-          <Button
+          <button
             type="button"
-            size="sm"
-            variant="default"
             onClick={() => controller.accept(documentId, draftId)}
             disabled={busy}
+            className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
           >
             {controller.isAccepting ? (
               <Loader2 className="size-3 animate-spin" aria-hidden />
             ) : null}
             <Trans>Apply all</Trans>
-          </Button>
+          </button>
         </>
       }
     />

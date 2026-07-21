@@ -28,18 +28,18 @@ export function DraftBannerStrip({
 }: DraftBannerStripProps) {
   return (
     <section
-      className="flex shrink-0 flex-wrap items-center gap-3 border-border border-b px-4 py-2"
+      className="flex min-h-7 shrink-0 flex-wrap items-center gap-1.5 border-border border-b bg-dock-surface px-2.5 text-caption"
       role="status"
       aria-live="polite"
       {...dataAttrs}
     >
       {leading}
-      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground">
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary opacity-70" />
         <span className="truncate">{label}</span>
       </span>
       {alert}
-      <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>
     </section>
   );
 }
