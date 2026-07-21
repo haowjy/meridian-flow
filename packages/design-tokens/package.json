@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./ink-jade.css": "./src/ink-jade.css"
+    "./ink-jade.css": "./src/ink-jade.css",
+    "./themes.css": "./src/themes.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

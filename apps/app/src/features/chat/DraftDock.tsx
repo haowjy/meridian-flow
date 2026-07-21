@@ -2,12 +2,14 @@
  * DraftDock — the composer-attached strip that is the SINGLE actionable surface
  * for a Work's pending AI changes.
  *
- * It is chrome, not a card: a thin strip that shares the composer's border box
- * (no lift, no shadow, radius on the shared outer container only). One instance,
- * work-scoped, updates in place across turns; nothing about pending changes ever
- * renders in the transcript. States mirror the design gallery A1–A8:
- * settled (single / multi) → expanded checklist → guided
- * progression → all-reviewed fade-out;.
+ * Visual model: a jade-tinted strip that sits BEHIND the composer (narrower
+ * via horizontal margin, top corners rounded) — the composer keeps its own
+ * border and overlaps the strip's top edge, creating a layered look. The strip
+ * mounts only when pending drafts exist; no terminal flash, no generating
+ * state — the streaming turn in the transcript is sufficient.
+ *
+ * Single doc: name inline, clicking the strip opens review directly.
+ * Multi doc: "N documents" with chevron, clicking toggles expand/collapse.
  *
  * All visibility derives from `DraftReviewProvider` state (never raw queries),
  * so the dock, the editor bar, and the transcript can never disagree about what
@@ -16,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -24,8 +26,6 @@ import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
-
-const TERMINAL_FLASH_MS = 1500;
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
@@ -42,30 +42,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
-  const reviewedRows = useMemo(() => rows.filter((row) => row.state === "reviewed"), [rows]);
-  const hasPending = pendingRows.length > 0;
-
-  // All-reviewed flash: when the last active draft goes terminal, hold the
-  // "✓ All changes reviewed" strip briefly, then unmount. Instant unmount under
-  // reduced motion.
-  const [terminalFlash, setTerminalFlash] = useState(false);
-  const hadPendingRef = useRef(false);
-  useEffect(() => {
-    const hadPending = hadPendingRef.current;
-    hadPendingRef.current = hasPending;
-    if (hasPending) {
-      setTerminalFlash(false);
-      return;
-    }
-    if (!hadPending) return;
-    if (prefersReducedMotion()) {
-      setTerminalFlash(false);
-      return;
-    }
-    setTerminalFlash(true);
-    const id = window.setTimeout(() => setTerminalFlash(false), TERMINAL_FLASH_MS);
-    return () => window.clearTimeout(id);
-  }, [hasPending]);
 
   // Sequential Apply all / Discard all. The shared accept/reject mutation and
   // its `isPending` gate make concurrent disposition unsafe, so we run one
@@ -139,20 +115,10 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     generating,
     rows,
     pendingRows,
-    reviewedRows,
-    hasPending,
-    reviewedCount: reviewedRows.length,
+    reviewedCount: rows.filter((row) => row.state === "reviewed").length,
     totalCount: rows.length,
     aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
-    mounted: hasPending || terminalFlash || generating,
-    phase: (generating
-      ? "generating"
-      : hasPending
-        ? "settled"
-        : terminalFlash
-          ? "terminal"
-          : "hidden") as "generating" | "settled" | "terminal" | "hidden",
-    bulkActive: bulk !== null,
+    mounted: pendingRows.length > 0,
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
     isBusy: controller.isDisposing || bulk !== null,
     needsRereview: controller.needsRereview,
@@ -195,22 +161,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   if (!dock.mounted) return null;
 
-  if (dock.phase === "terminal") {
-    return (
-      <div
-        className="flex min-h-7 items-center justify-center bg-card text-caption font-medium text-jade-text motion-safe:animate-out motion-safe:fade-out motion-safe:duration-1000 motion-safe:fill-mode-forwards"
-        data-draft-dock="terminal"
-      >
-        <Trans>✓ All changes reviewed</Trans>
-      </div>
-    );
-  }
-
-  // Generating changes exactly ONE thing: the bulk verbs are disabled (you
-  // can't dispose a changeset that is still growing). No spinner, no label
-  // swap — "the model is working" already lives in the transcript's streaming
-  // turn; duplicating it here is noise.
-  const generating = dock.phase === "generating";
   const multi = dock.rows.length > 1;
   const guided = dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
   const single = dock.rows.length === 1;
@@ -222,17 +172,17 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   }
 
   return (
-    <div className="bg-card" data-draft-dock={generating ? "generating" : "settled"}>
+    <div className="mx-2 rounded-t-lg bg-dock-surface" data-draft-dock="settled">
       {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
           intercept their own clicks below. Tiny chevron-only targets read as
           broken affordance. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
-        onClick={multi ? () => setExpanded((value) => !value) : undefined}
+        onClick={multi ? () => setExpanded((value) => !value) : () => dock.reviewFirst()}
         className={cn(
-          "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-prose-foreground",
-          multi && "cursor-pointer transition-colors hover:bg-muted",
+          "flex min-h-7 items-center gap-1.5 px-2.5 text-caption text-prose-foreground",
+          multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
         {multi ? (
@@ -265,17 +215,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
           </span>
           {dock.aggregateStats ? (
-            <span className="shrink-0 whitespace-nowrap">
-              <span className="text-ink-subtle" aria-hidden>
-                ·{" "}
-              </span>
+            <span className="shrink-0 whitespace-nowrap text-ink-subtle">
               <DraftStatsLabel stats={dock.aggregateStats} />
             </span>
           ) : null}
           {guided ? (
             <span className="@max-[360px]:hidden shrink-0 whitespace-nowrap text-ink-subtle">
               <Trans>
-                · {dock.reviewedCount} of {dock.totalCount} reviewed
+                {dock.reviewedCount} of {dock.totalCount} reviewed
               </Trans>
             </span>
           ) : null}
@@ -317,27 +264,27 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </>
           ) : (
             <>
-              {!guided && firstPending ? (
-                <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
-              ) : null}
-              <QuietButton
-                onClick={() => {
-                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
-                  else dock.startApplyAll();
-                }}
-                disabled={generating || dock.isBusy || !firstPending}
-              >
-                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
-              </QuietButton>
               <QuietButton
                 onClick={() => {
                   if (single && firstPending) dock.discardRow(firstPending);
                   else setConfirmingDiscardAll(true);
                 }}
-                disabled={generating || dock.isBusy || !firstPending}
+                disabled={dock.generating || dock.isBusy || !firstPending}
               >
                 {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
               </QuietButton>
+              <QuietButton
+                onClick={() => {
+                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
+                  else dock.startApplyAll();
+                }}
+                disabled={dock.generating || dock.isBusy || !firstPending}
+              >
+                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
+              </QuietButton>
+              {!guided && firstPending ? (
+                <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
+              ) : null}
             </>
           )}
         </div>
@@ -505,7 +452,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       disabled={disabled}
       className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 text-caption font-semibold text-primary-foreground disabled:opacity-50"
     >
-      <Trans>Review</Trans>
+      <Trans>Review draft</Trans>
     </button>
   );
 }
@@ -529,13 +476,5 @@ function QuietButton({
     >
       {children}
     </button>
-  );
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
 }

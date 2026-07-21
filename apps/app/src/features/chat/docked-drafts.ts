@@ -70,7 +70,7 @@ export function documentBasename(contextPath: string | null | undefined): string
 /**
  * The one draft a document's Review verb targets: the newest active draft
  * that actually has review content, or null. THE per-document pending-changes
- * signal — the dock's pending rows and the editor's DraftEntryBanner both
+ * signal — the dock's pending rows and the identity bar's DraftReviewChip both
  * derive from this, so "does this document have changes to review?" can never
  * disagree between surfaces.
  */
@@ -110,12 +110,17 @@ export function pendingDockedDraftCount(groups: ThreadDraftGroup[] | null | unde
   return activeDockedDraftGroups(groups).length;
 }
 
-function newestUpdatedAt(group: ThreadDraftGroup): number {
-  return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
+/** How many active drafts with actual review content a single document has. */
+export function pendingReviewDraftCount(
+  group: ThreadDraftGroup | null | undefined,
+  nowMs: number,
+): number {
+  const { active } = reviewableDraftsFromGroup(group, nowMs);
+  return active.filter(draftHasReviewContent).length;
 }
 
-export function dockedDraftCountKey(groups: readonly ThreadDraftGroup[]): string {
-  return groups.map((group) => `${group.documentId}:${group.drafts.length}`).join("|");
+function newestUpdatedAt(group: ThreadDraftGroup): number {
+  return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
 }
 
 function draftHasReviewContent(draft: ThreadDraftListItem): boolean {

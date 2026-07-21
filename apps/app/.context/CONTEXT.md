@@ -300,12 +300,16 @@ chrome). Loaded via Google Fonts in the app root layout. Headline weight/size
 comes from `text-headline-*` tokens — components consume token classes, not font
 family names directly.
 
-### Dark mode (not yet shipped, prepare the seams)
+### UI themes and dark mode
 
-Today the shared design-token package defines the light `@theme` values and
-`globals.css` adds only project-specific theme/root variables. Adding dark mode is a single
-move: add a `.dark` block that overrides the same token names with dark
-values. Because every component consumes via tokens, the swap stays token-contained.
+Theme switching is token-contained: `@meridian/design-tokens/themes.css`
+holds `:root[data-ui-theme="<name>"]` blocks (currently `dark`) that
+re-point the same token names; the default light palette is the absence of
+the attribute. The device-local preference lives in `src/lib/ui-theme.ts`
+(localStorage + pre-paint boot script in `__root.tsx`, mirroring text
+size) and is switched from Settings → Preferences. Tailwind's `dark:`
+variant keys off the same attribute (see `globals.css`) — never a `.dark`
+class.
 
 ## i18n
 

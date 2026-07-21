@@ -40,7 +40,6 @@ import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
-import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -53,8 +52,6 @@ export type EditorViewProps = {
   schemaType?: YjsTrackedSchemaType;
   className?: string;
   user?: EditorUser;
-  /** In-flow status or review surface docked between toolbar and prose. */
-  belowToolbar?: ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -148,7 +145,6 @@ function SessionEditorView({
   schemaType = "document",
   className,
   user,
-  belowToolbar,
   editable = true,
   showToolbar = true,
   ariaLabel,
@@ -401,7 +397,6 @@ function SessionEditorView({
         className,
       )}
     >
-      {!inReview ? <SafetyNoticeReceipt session={session} /> : null}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
       {session ? (
@@ -434,7 +429,6 @@ function SessionEditorView({
             />
           ) : undefined
         }
-        belowToolbar={belowToolbar}
         scrollRef={scrollContainerRef}
         dragActive={dragActive}
         onScroll={(event) => {
@@ -459,7 +453,7 @@ function SessionEditorView({
   );
 }
 
-function PendingEditorShell({ className, belowToolbar, showToolbar = true }: EditorViewProps) {
+function PendingEditorShell({ className, showToolbar = true }: EditorViewProps) {
   return (
     <section
       className={cn(
@@ -470,7 +464,6 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
       <TrackedEditorCanvas
         editor={null}
         toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
-        belowToolbar={belowToolbar}
       />
     </section>
   );
@@ -479,7 +472,6 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
 function TrackedEditorCanvas({
   editor,
   toolbar,
-  belowToolbar,
   scrollRef,
   dragActive = false,
   onScroll,
@@ -488,7 +480,6 @@ function TrackedEditorCanvas({
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
-  belowToolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
@@ -498,7 +489,6 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
-      belowToolbar={belowToolbar}
       editor={editor}
       scrollRef={scrollRef}
       scrollClassName={cn(

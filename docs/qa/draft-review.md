@@ -48,13 +48,14 @@ Review verb a silent no-op).
 
 [#153]: https://github.com/haowjy/meridian-flow/issues/153
 
-## Probe D — entry banner and tree freshness
+## Probe D — review chip and tree freshness
 
 1. On a live document with a pending overwrite draft, opened from the tree:
-   PASS: the `DraftEntryBanner` strip renders below the toolbar ("AI changes
-   ready for review" + Review). It and `DraftReviewHeader` must never render
-   simultaneously; Review swaps banner → header, Back to live swaps back.
-   A document with no pending draft shows no banner.
+   PASS: the `DraftReviewChip` renders in the identity bar ("Review draft",
+   or "Review N drafts" with multiple). It and `DraftReviewHeader` must
+   never render simultaneously; the chip opens review mode (header strip
+   above the breadcrumb), Back to live swaps back. A document with no
+   pending draft shows no chip.
 2. With the Manuscript tree mounted, have the agent write a new document in
    auto-apply mode. PASS: the tree shows the document within ~5s of turn end
    with no navigation or reload.

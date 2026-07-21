@@ -48,6 +48,12 @@ import type { OptimisticContextTab } from "./context-pane-state";
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
+  /**
+   * Tab whose document is under inline draft review. That chip surfaces the
+   * review strip's tone (dock-surface) instead of canvas, so the tab and the
+   * review banner below it read as one continuous surface.
+   */
+  reviewingTabId?: string | null;
   optimisticTab?: OptimisticContextTab | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
@@ -68,6 +74,7 @@ export type ContextTabBarProps = {
 export function ContextTabBar({
   tabs,
   activeTabId,
+  reviewingTabId,
   optimisticTab,
   onSelect,
   onClose,
@@ -92,6 +99,7 @@ export function ContextTabBar({
               key={tab.documentId}
               tab={tab}
               active={active}
+              reviewing={tab.documentId === reviewingTabId}
               // Divider only between two adjacent inactive tabs — the active
               // tab's canvas shape provides its own separation.
               divider={!active && previous !== undefined && previous.documentId !== activeTabId}
@@ -159,18 +167,20 @@ function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
 function TabChip({
   tab,
   active,
+  reviewing,
   divider,
   onSelect,
   onClose,
 }: {
   tab: ContextTab;
   active: boolean;
+  reviewing: boolean;
   divider: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
   return (
-    <TabChipFrame active={active} divider={divider}>
+    <TabChipFrame active={active} reviewing={reviewing} divider={divider}>
       <button
         type="button"
         role="tab"
@@ -219,11 +229,13 @@ function useActiveTabVisibility(active: boolean) {
 
 function TabChipFrame({
   active,
+  reviewing = false,
   divider,
   children,
   tabProps,
 }: {
   active: boolean;
+  reviewing?: boolean;
   divider: boolean;
   children: ReactNode;
   tabProps?: HTMLAttributes<HTMLDivElement>;
@@ -240,6 +252,9 @@ function TabChipFrame({
         active
           ? "tab-chip-active text-foreground"
           : "tab-chip-inactive text-muted-foreground hover:text-foreground",
+        // Under review the chip surfaces the review strip's tone so tab and
+        // banner read as one continuous surface.
+        reviewing && "[--tab-chip-surface:var(--color-dock-surface)]",
       )}
     >
       {divider ? (

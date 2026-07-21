@@ -78,7 +78,7 @@ export function TurnEditsCard({
   return (
     // overflow-hidden clips the header hover wash to the card radius.
     <div
-      className="mt-3 overflow-hidden rounded-lg border border-border bg-card text-caption text-ink-muted"
+      className="mt-3 overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
       data-turn-edits-card
     >
       {/* The WHOLE header row is the expand/collapse target — hover washes the
