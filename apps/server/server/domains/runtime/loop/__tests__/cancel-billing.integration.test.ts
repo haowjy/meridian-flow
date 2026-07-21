@@ -189,9 +189,6 @@ describe("cancel billing", () => {
           resumeAfterSeq: "0",
         };
       },
-      async sendMessage() {
-        throw new Error("not used");
-      },
       async journalEvents() {
         return [];
       },
@@ -272,9 +269,6 @@ describe("cancel billing", () => {
           resumeAfterSeq: "0",
         };
       },
-      async sendMessage() {
-        throw new Error("not used");
-      },
       async journalEvents() {
         return [];
       },
@@ -353,9 +347,6 @@ describe("cancel billing", () => {
           nextSeq: "1",
           resumeAfterSeq: "0",
         };
-      },
-      async sendMessage() {
-        throw new Error("not used");
       },
       async journalEvents() {
         return [];
