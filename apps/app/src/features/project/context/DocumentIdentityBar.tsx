@@ -18,6 +18,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FolderDown, TriangleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
@@ -49,6 +50,8 @@ export type DocumentIdentityBarProps = {
     ownership: IdentityCommitOwnership,
   ) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  /** Optional slot for draft-review chrome (e.g. a small "Review" chip). */
+  draftChip?: ReactNode;
 };
 
 export function DocumentIdentityBar({
@@ -58,6 +61,7 @@ export function DocumentIdentityBar({
   tab,
   onCommitted,
   onOpenExisting,
+  draftChip,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -112,6 +116,7 @@ export function DocumentIdentityBar({
           <IdentityPath location={location} />
         )}
         <span className="min-w-1 flex-1" />
+        {draftChip}
         <IdentityChipSlot
           documentId={tab.documentId}
           location={location}

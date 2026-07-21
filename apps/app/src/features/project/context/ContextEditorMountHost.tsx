@@ -35,8 +35,6 @@ import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { pendingReviewDraft } from "@/features/chat/docked-drafts";
-import { DraftEntryBanner } from "@/features/editor/DraftEntryBanner";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { EditorBannerSlot } from "@/features/editor/EditorBannerSlot";
 import { cn } from "@/lib/utils";
@@ -94,8 +92,7 @@ export function ContextEditorMountHost({
   active,
   onUntitledBecameNonEmpty,
 }: ContextEditorMountHostProps) {
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId, groupForDocument, nowMs } =
-    useDraftReview();
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   // Track the focused tracked editor even when Context is parked in the dock —
   // lineage chip freshness listens on this id, not on `?screen=context`.
   useEffect(() => {
@@ -171,15 +168,6 @@ export function ContextEditorMountHost({
             : null;
           const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
           const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
-          // The not-in-review counterpart to the review header. The same
-          // pendingReviewDraft signal drives the dock, so the surfaces never
-          // disagree. Only the active tab resolves it; hidden warm-set editors
-          // never register draft chrome.
-          const pendingGroup =
-            tab.kind === "tracked" && active && isActive && !reviewDraftId
-              ? groupForDocument(tab.documentId)
-              : null;
-          const pendingDraft = pendingReviewDraft(pendingGroup, nowMs);
           return (
             <div
               key={tab.documentId}
@@ -253,8 +241,6 @@ export function ContextEditorMountHost({
                                 documentId={tab.documentId}
                                 draftId={reviewDraftId}
                               />
-                            ) : pendingGroup && pendingDraft ? (
-                              <DraftEntryBanner group={pendingGroup} draft={pendingDraft} />
                             ) : null,
                         },
                       ]}

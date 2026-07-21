@@ -70,7 +70,7 @@ export function documentBasename(contextPath: string | null | undefined): string
 /**
  * The one draft a document's Review verb targets: the newest active draft
  * that actually has review content, or null. THE per-document pending-changes
- * signal — the dock's pending rows and the editor's DraftEntryBanner both
+ * signal — the dock's pending rows and the identity bar's DraftReviewChip both
  * derive from this, so "does this document have changes to review?" can never
  * disagree between surfaces.
  */
