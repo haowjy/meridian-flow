@@ -31,6 +31,7 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       userTurnId: result.userTurnId,
       assistantTurnId: result.assistantTurnId,
       streamCursor: result.streamCursor,
+      ackHeadSeq: result.ackHeadSeq,
       status: "accepted",
     };
   } catch (error) {

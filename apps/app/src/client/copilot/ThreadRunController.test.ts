@@ -276,6 +276,7 @@ describe("ThreadRunController", () => {
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       assistantTurnId: "turn_1",
       streamCursor: "42",
+      ackHeadSeq: "42",
     });
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
@@ -302,6 +303,7 @@ describe("ThreadRunController", () => {
     const appendUserMessageFn = vi.fn().mockResolvedValue({
       assistantTurnId: "turn_1",
       streamCursor: "42",
+      ackHeadSeq: "42",
     });
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
@@ -340,6 +342,7 @@ describe("ThreadRunController", () => {
       userTurnId: "turn_user_server",
       assistantTurnId: "turn_1",
       streamCursor: "42",
+      ackHeadSeq: "42",
       status: "accepted",
     });
     const controller = new ThreadRunController({
@@ -356,7 +359,7 @@ describe("ThreadRunController", () => {
     ).toEqual([optimisticTurn.id]);
 
     await controller.submit("thread_1", "Hello", { optimisticUserTurnId: optimisticTurn.id });
-    store.getState().applyThreadSnapshot(thread, []);
+    store.getState().applyThreadSnapshot(thread, [], { nextSeq: "42" });
 
     expect(
       store
@@ -367,7 +370,9 @@ describe("ThreadRunController", () => {
 
     store
       .getState()
-      .applyThreadSnapshot(thread, [serverUserTurnFrom(optimisticTurn, "turn_user_server")]);
+      .applyThreadSnapshot(thread, [serverUserTurnFrom(optimisticTurn, "turn_user_server")], {
+        nextSeq: "43",
+      });
 
     const userTurns = store
       .getState()
@@ -379,7 +384,9 @@ describe("ThreadRunController", () => {
   it("rejects older ordered snapshots after the projector catches up", () => {
     const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
     const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
-    store.getState().acknowledgeUserTurn("thread_1", optimisticTurn.id, "turn_user_server");
+    store
+      .getState()
+      .acknowledgeUserTurn("thread_1", optimisticTurn.id, "turn_user_server", "9007199254740992");
     const persistedTurn = serverUserTurnFrom(optimisticTurn, "turn_user_server");
 
     store.getState().applyThreadSnapshot(thread, [persistedTurn], { nextSeq: "9007199254740993" });
@@ -539,10 +546,12 @@ describe("ThreadRunController", () => {
       .mockResolvedValueOnce({
         assistantTurnId: "turn_1",
         streamCursor: "42",
+        ackHeadSeq: "42",
       })
       .mockResolvedValueOnce({
         assistantTurnId: "turn_2",
         streamCursor: "100",
+        ackHeadSeq: "100",
       });
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
@@ -574,8 +583,7 @@ describe("ThreadRunController", () => {
     await vi.waitFor(() => {
       expect(actions.ensureThread).toHaveBeenCalledWith(thread);
       expect(actions.applyThreadSnapshot).toHaveBeenCalledWith(thread, [assistantTurn], {
-        runningTurnId: "turn_1",
-        attention: "none",
+        lifecycle: { runningTurnId: "turn_1", attention: "none" },
         nextSeq: "10",
       });
     });

@@ -17,11 +17,6 @@ export type ReconcileSnapshotTurnsOptions = {
    * the snapshot's `turns[]` projection has not caught up to include it yet.
    */
   runningTurnId?: string | null;
-  /**
-   * User turns whose POST acknowledgement has supplied a canonical ID, but
-   * which have not appeared in an HTTP snapshot yet.
-   */
-  acknowledgedUserTurnIds?: ReadonlySet<string>;
 };
 
 function uniqueById(turns: readonly Turn[]): Turn[] {
@@ -94,7 +89,6 @@ export function reconcileSnapshotTurns(
 
   const reconciledIds = new Set(reconciled.map((turn) => turn.id));
   const runningTurnId = options.runningTurnId ?? null;
-  const acknowledgedUserTurnIds = options.acknowledgedUserTurnIds ?? new Set<string>();
 
   function insertLocalOnlyTurn(localTurn: Turn, localIndex: number): void {
     for (let index = localIndex - 1; index >= 0; index -= 1) {
@@ -121,11 +115,7 @@ export function reconcileSnapshotTurns(
 
   localTurns.forEach((localTurn, localIndex) => {
     if (reconciledIds.has(localTurn.id)) return;
-    if (
-      !isOptimisticTurnId(localTurn.id) &&
-      localTurn.id !== runningTurnId &&
-      !acknowledgedUserTurnIds.has(localTurn.id)
-    ) {
+    if (!isOptimisticTurnId(localTurn.id) && localTurn.id !== runningTurnId) {
       return;
     }
     insertLocalOnlyTurn(localTurn, localIndex);

@@ -119,6 +119,17 @@ export function deserializeThreadSnapshot(
   ) as ThreadSnapshotResponse;
 }
 
+/** Canonical projection from the wire snapshot to the store apply boundary. */
+export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
+  return {
+    lifecycle: {
+      attention: snapshot.attention,
+      runningTurnId: snapshot.liveState.runningTurnId,
+    },
+    nextSeq: snapshot.nextSeq,
+  };
+}
+
 /**
  * GET /api/threads/:threadId/uploads — files the user uploaded into this
  * thread (`thread_documents` rows where the relationship is an upload).

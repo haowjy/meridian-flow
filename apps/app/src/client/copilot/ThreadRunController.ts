@@ -14,6 +14,7 @@ import {
   appendUserMessage,
   deserializeThreadSnapshot,
   getThreadSnapshot,
+  toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
@@ -24,6 +25,7 @@ type AppendUserMessageFn = (args: { data: AppendUserMessageInput }) => Promise<{
   assistantTurnId?: SendMessageResponse["assistantTurnId"];
   streamCursor: SendMessageResponse["streamCursor"];
   userTurnId?: SendMessageResponse["userTurnId"];
+  ackHeadSeq: SendMessageResponse["ackHeadSeq"];
 }>;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
@@ -103,7 +105,12 @@ export class ThreadRunController {
         },
       });
       if (options.optimisticUserTurnId && result.userTurnId) {
-        this.actions.acknowledgeUserTurn(threadId, options.optimisticUserTurnId, result.userTurnId);
+        this.actions.acknowledgeUserTurn(
+          threadId,
+          options.optimisticUserTurnId,
+          result.userTurnId,
+          result.ackHeadSeq,
+        );
       }
       if (!this.isActiveToken(token)) return;
       this.attachLiveSubscription(threadId, token, {
@@ -287,19 +294,10 @@ export class ThreadRunController {
     return recovery;
   }
 
-  private applySnapshot({
-    thread,
-    turns,
-    liveState,
-    attention,
-    nextSeq,
-  }: DeserializedThreadSnapshot): void {
+  private applySnapshot(snapshot: DeserializedThreadSnapshot): void {
+    const { thread, turns } = snapshot;
     this.actions.ensureThread(thread);
-    this.actions.applyThreadSnapshot(thread, turns, {
-      runningTurnId: liveState.runningTurnId,
-      attention,
-      nextSeq,
-    });
+    this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
   }
 
   private cleanupActiveRun(): void {
