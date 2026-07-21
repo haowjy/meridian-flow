@@ -163,9 +163,9 @@ export function createTurnRunner(deps: {
           signal: controller.signal,
         });
 
-        // The assistant generator may append concurrently after runTurn commits,
-        // so this can exceed the user-turn sequence. That only raises the client
-        // floor past snapshots whose content is already reflected locally.
+        // runTurn only constructs a lazy async generator; no generator event can
+        // append until the background for-await below begins driving it. Capture
+        // the post-setup head now so the floor exactly covers the persisted turns.
         const snapshotFloorNextSeq = ((await deps.hub.headSeq(input.threadId)) + 1n).toString();
 
         running.set(input.threadId, {

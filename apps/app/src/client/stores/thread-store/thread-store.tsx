@@ -238,7 +238,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         },
 
         acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, snapshotFloorNextSeq) {
-          if (!serverTurnId || optimisticTurnId === serverTurnId) return;
+          if (optimisticTurnId === serverTurnId) return;
 
           set((state) => {
             if (!isOptimisticTurnId(optimisticTurnId)) return state;

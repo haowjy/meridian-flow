@@ -6,11 +6,9 @@
  * events, applies accepted events directly to ThreadStore, handles deferred
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
-import type { SendMessageResponse } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
-  type AppendUserMessageInput,
   appendUserMessage,
   deserializeThreadSnapshot,
   getThreadSnapshot,
@@ -21,12 +19,7 @@ import { announceError } from "@/client/stores";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 
-type AppendUserMessageFn = (args: { data: AppendUserMessageInput }) => Promise<{
-  assistantTurnId?: SendMessageResponse["assistantTurnId"];
-  resumeAfterSeq: SendMessageResponse["resumeAfterSeq"];
-  userTurnId?: SendMessageResponse["userTurnId"];
-  snapshotFloorNextSeq: SendMessageResponse["snapshotFloorNextSeq"];
-}>;
+type AppendUserMessageFn = typeof appendUserMessage;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
@@ -124,7 +117,7 @@ export class ThreadRunController {
       this.admissionInFlight = false;
     }
 
-    if (options.optimisticUserTurnId && result.userTurnId) {
+    if (options.optimisticUserTurnId) {
       this.actions.acknowledgeUserTurn(
         threadId,
         options.optimisticUserTurnId,
@@ -137,7 +130,7 @@ export class ThreadRunController {
     const token = this.startRun(threadId, { pruneAbandonedTurn: true });
     this.attachLiveSubscription(threadId, token, {
       after: result.resumeAfterSeq,
-      expectedTurnId: result.assistantTurnId || undefined,
+      expectedTurnId: result.assistantTurnId,
     });
   }
 
@@ -314,7 +307,6 @@ export class ThreadRunController {
 
   private applySnapshot(snapshot: DeserializedThreadSnapshot): void {
     const { thread, turns } = snapshot;
-    this.actions.ensureThread(thread);
     this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
   }
 

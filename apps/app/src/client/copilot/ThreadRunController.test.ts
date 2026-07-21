@@ -7,7 +7,13 @@
  * actions.
  */
 
-import type { AGUIEvent, Thread, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
+import type {
+  AGUIEvent,
+  SendMessageResponse,
+  Thread,
+  ThreadSnapshotResponse,
+  Turn,
+} from "@meridian/contracts/protocol";
 import { EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -267,16 +273,24 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function sendResponse(overrides: Partial<SendMessageResponse> = {}): SendMessageResponse {
+  return {
+    threadId: "thread_1",
+    userTurnId: "turn-user",
+    assistantTurnId: "turn_1",
+    resumeAfterSeq: "42",
+    snapshotFloorNextSeq: "43",
+    status: "accepted",
+    ...overrides,
+  };
+}
+
 describe("ThreadRunController", () => {
   it("awaits the server connection token before submit", async () => {
     const transport = new FakeThreadTransport();
     transport.connectionToken = undefined;
     const actions = makeActions();
-    const appendUserMessageFn = vi.fn().mockResolvedValue({
-      assistantTurnId: "turn_1",
-      resumeAfterSeq: "42",
-      snapshotFloorNextSeq: "42",
-    });
+    const appendUserMessageFn = vi.fn().mockResolvedValue(sendResponse());
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
     const submitPromise = controller.submit("thread_1", "Hello");
@@ -299,11 +313,7 @@ describe("ThreadRunController", () => {
     const transport = new FakeThreadTransport();
     transport.setConnectionToken("conn-test");
     const actions = makeActions();
-    const appendUserMessageFn = vi.fn().mockResolvedValue({
-      assistantTurnId: "turn_1",
-      resumeAfterSeq: "42",
-      snapshotFloorNextSeq: "42",
-    });
+    const appendUserMessageFn = vi.fn().mockResolvedValue(sendResponse());
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
     await controller.submit("thread_1", "Hello");
@@ -336,14 +346,11 @@ describe("ThreadRunController", () => {
     const transport = new FakeThreadTransport();
     const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
     const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
-    const appendUserMessageFn = vi.fn().mockResolvedValue({
-      threadId: "thread_1",
-      userTurnId: "turn_user_server",
-      assistantTurnId: "turn_1",
-      resumeAfterSeq: "42",
-      snapshotFloorNextSeq: "43",
-      status: "accepted",
-    });
+    const appendUserMessageFn = vi.fn().mockResolvedValue(
+      sendResponse({
+        userTurnId: "turn_user_server",
+      }),
+    );
     const controller = new ThreadRunController({
       transport,
       actions: store.getState(),
@@ -573,11 +580,7 @@ describe("ThreadRunController", () => {
   it("rejects a second submit while admission is pending", async () => {
     const transport = new FakeThreadTransport();
     const actions = makeActions();
-    const append = deferred<{
-      assistantTurnId: string;
-      resumeAfterSeq: string;
-      snapshotFloorNextSeq: string;
-    }>();
+    const append = deferred<SendMessageResponse>();
     const controller = new ThreadRunController({
       transport,
       actions,
@@ -588,7 +591,7 @@ describe("ThreadRunController", () => {
     await expect(controller.submit("thread_1", "second")).rejects.toThrow(
       "submit already in flight",
     );
-    append.resolve({ assistantTurnId: "turn_1", resumeAfterSeq: "42", snapshotFloorNextSeq: "42" });
+    append.resolve(sendResponse());
     await firstSubmit;
 
     expect(transport.subscribeCount).toBe(1);
@@ -664,16 +667,14 @@ describe("ThreadRunController", () => {
     const actions = makeActions();
     const appendUserMessageFn = vi
       .fn()
-      .mockResolvedValueOnce({
-        assistantTurnId: "turn_1",
-        resumeAfterSeq: "42",
-        snapshotFloorNextSeq: "42",
-      })
-      .mockResolvedValueOnce({
-        assistantTurnId: "turn_2",
-        resumeAfterSeq: "100",
-        snapshotFloorNextSeq: "100",
-      });
+      .mockResolvedValueOnce(sendResponse())
+      .mockResolvedValueOnce(
+        sendResponse({
+          assistantTurnId: "turn_2",
+          resumeAfterSeq: "100",
+          snapshotFloorNextSeq: "101",
+        }),
+      );
     const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
 
     await controller.submit("thread_1", "first");
@@ -702,12 +703,12 @@ describe("ThreadRunController", () => {
 
     snapshot.resolve(makeSnapshot());
     await vi.waitFor(() => {
-      expect(actions.ensureThread).toHaveBeenCalledWith(thread);
       expect(actions.applyThreadSnapshot).toHaveBeenCalledWith(thread, [assistantTurn], {
         lifecycle: { runningTurnId: "turn_1", attention: "none" },
         nextSeq: "10",
       });
     });
+    expect(actions.ensureThread).not.toHaveBeenCalled();
   });
 
   it("rejects an older gap-recovery snapshot after a newer snapshot applies", async () => {
