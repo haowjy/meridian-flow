@@ -277,8 +277,6 @@ function UiThemeLabel({ theme }: { theme: UiTheme }) {
       return <Trans>Ink & Jade</Trans>;
     case "porcelain":
       return <Trans>Porcelain</Trans>;
-    case "parchment":
-      return <Trans>Parchment</Trans>;
     case "graphite":
       return <Trans>Graphite</Trans>;
     case "moss":

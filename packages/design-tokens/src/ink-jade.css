@@ -3,16 +3,16 @@
  * This file is the machine source of truth for the shared palette, typography,
  * radii, shadows, and background-image utilities consumed by app and www.
  *
- * Surface story (slice-7, settled 2026-07-15 after live iteration + measured
- * research on calm writing apps — see writer-ux work notes): an EARTHEN VALUE
- * LADDER, one warm grey-gold family (hue 84, chroma ~.012), separated by
- * lightness rather than pigment. Shelf (left rail, L .91) < chrome (tab band +
- * dock, L .945) < warm paper page (L .977 h 95, always the brightest). The
- * rail is the chrome's own material one shade darker (ΔL .035 — inside the
- * .02–.04 rail↔canvas band the calm-app sampling found), not a second color.
- * ONE black ink everywhere in light mode. Large surfaces stay under chroma
- * ~.015; color identity lives in accents, never in walls. Palette canonical
- * in OKLCH. Rejected directions + evidence: KB decision
+ * Surface story (slice-7 settled 2026-07-15; re-grounded 2026-07-21 when the
+ * theme exploration's Parchment direction was promoted to default): an
+ * EARTHEN VALUE LADDER, one warm grey-gold family (hue 84–90, chroma
+ * .015–.02), separated by lightness rather than pigment. Shelf (left rail,
+ * L .912) < dock-surface (draft chrome, L .916) < chrome (tab band + dock,
+ * L .932) < warm paper page (L .966 h 90, always the brightest). The rail is
+ * the chrome's own material one shade darker, not a second color. ONE warm
+ * ink everywhere in light mode (hue ~80–85 so black-on-cream never reads
+ * blue-black). Color identity lives in accents, never in walls. Palette
+ * canonical in OKLCH. Rejected directions + evidence: KB decision
  * `decisions/earthen-value-ladder-shell.md` and the writer-ux work notes.
  *
  * Accent semantics: jade = "do/go" (actions, links, focus, send/save);
@@ -32,9 +32,9 @@
    roles, never these. Consumers use role tokens only. */
 :root {
   /* Raised cards, bubbles, field fills. */
-  --ink-jade-lift: oklch(0.986 0.003 95);
+  --ink-jade-lift: oklch(0.978 0.012 92);
   /* The page-side recess / surface-2 step below the canvas. */
-  --ink-jade-recess: oklch(0.929 0.005 95);
+  --ink-jade-recess: oklch(0.92 0.016 87);
 }
 
 @theme {
@@ -47,8 +47,13 @@
   /* Surface ladder — tonal (no seam borders): grey-gold shelf < grey-gold
      chrome < warm lit page. The page is the brightest field; tab band + dock
      share one chrome; the active tab chip surfaces the page tone below. */
-  --color-background: oklch(0.977 0.007 95);
-  --color-foreground: oklch(0.24 0.009 100);
+  /* Parchment ground (user call 2026-07-21): the default committed to the
+     deeper-warmth direction from the theme exploration — richer paper, more
+     tonal depth. Chroma on walls runs .015–.02 here, past the old ~.015
+     cap; that's the point of the direction, not an accident. Ink warms to
+     match (hue ~80) so black-on-cream never reads as blue-black. */
+  --color-background: oklch(0.966 0.015 90);
+  --color-foreground: oklch(0.25 0.012 85);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
      bubbles / field fills / floating menus — popover shares it). */
   --color-card: var(--ink-jade-lift);
@@ -99,15 +104,15 @@
 
   /* Hairline borders — the warm ladder leans on these for separation rather
      than shadows. `border-subtle` sits a half-step softer for in-pane rules. */
-  --color-border: oklch(0.892 0.005 100);
+  --color-border: oklch(0.868 0.016 85);
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
 
   /* Chrome — ONE quiet grey-gold for tab band AND right dock (`--color-sidebar`).
      Grey base with an audible gold tint (hue 84, c ~0.012) — warm but still
      shy of yellow; same hue family as the shelf, one step brighter. */
-  --color-sidebar: oklch(0.945 0.012 84);
-  --color-sidebar-accent: oklch(0.898 0.014 84);
+  --color-sidebar: oklch(0.932 0.018 84);
+  --color-sidebar-accent: oklch(0.882 0.02 84);
 
   /* Dock surface — draft chrome (DraftDock strip, review banner, reviewing
      tab). The chrome's own grey-gold family (hue 84, c .012) one step darker
@@ -115,7 +120,7 @@
      material" signal lives in the jade accents ON the strip (dot, pills),
      never in the wall itself (earthen-ladder rule: color identity in
      accents, not walls). */
-  --color-dock-surface: oklch(0.929 0.012 84);
+  --color-dock-surface: oklch(0.916 0.018 84);
 
   /* Pinned composer — surfaces the chat-interactive token so the composer,
      user bubbles, and turn-edit cards all share one placement-aware lift.
@@ -134,8 +139,8 @@
      5.9:1. Re-verify all tiers ≥4.5:1 before dropping L below ~0.8 or
      raising chroma past ~0.015 (see the KB decision for the measured
      failure map of darker/louder walls). */
-  --color-shelf: oklch(0.91 0.012 84);
-  --color-shelf-active: oklch(0.86 0.014 84);
+  --color-shelf: oklch(0.912 0.019 84);
+  --color-shelf-active: oklch(0.858 0.024 84);
   --color-shelf-ink-subtle: oklch(0.42 0.03 84);
   --color-shelf-ink-muted: oklch(0.42 0.012 84);
   --color-shelf-destructive: oklch(0.46 0.15 17);
@@ -148,7 +153,7 @@
   --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 6%, var(--color-shelf));
   --color-shelf-ring: color-mix(in oklab, var(--color-foreground) 65%, transparent);
 
-  --color-border-subtle: oklch(0.918 0.004 100);
+  --color-border-subtle: oklch(0.9 0.014 86);
   --color-border-focus: oklch(0.78 0.05 175);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
@@ -158,9 +163,9 @@
      firmer than border-subtle to bracket the well. Foreground sits a step
      deeper than prose-foreground so the monospaced glyphs land at full ink
      weight on this surface (>=8:1 on --color-code-surface). */
-  --color-code-surface: oklch(0.945 0.012 85);
+  --color-code-surface: oklch(0.93 0.016 85);
   --color-code-foreground: oklch(0.28 0.008 95);
-  --color-code-border: oklch(0.875 0.012 85);
+  --color-code-border: oklch(0.86 0.018 85);
 
   /* Syntax palette — a low-chroma rephrasing of the Ink & Jade identity
      (jade / cinnabar / gold) so highlighted code reads as part of the warm
@@ -209,7 +214,7 @@
   --color-status-warning: oklch(0.66 0.2 48);
   /* Deep jade — the www CTA hover ground (one step deeper than primary). */
   --color-mark-to: oklch(0.4 0.07 176);
-  --color-prose-foreground: oklch(0.3 0.006 100);
+  --color-prose-foreground: oklch(0.3 0.012 80);
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);

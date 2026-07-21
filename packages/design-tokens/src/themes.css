@@ -42,25 +42,6 @@
   --color-code-border: oklch(0.89 0.004 100);
 }
 
-/* ── Parchment — commit harder to warmth: deeper paper, more tonal depth,
-   gold-leaning shell. The scriptorium take. */
-:root[data-ui-theme="parchment"] {
-  --color-background: oklch(0.966 0.015 90);
-  --ink-jade-lift: oklch(0.978 0.012 92);
-  --ink-jade-recess: oklch(0.92 0.016 87);
-  --color-border: oklch(0.868 0.016 85);
-  --color-border-subtle: oklch(0.9 0.014 86);
-  --color-sidebar: oklch(0.932 0.018 84);
-  --color-sidebar-accent: oklch(0.882 0.02 84);
-  --color-shelf: oklch(0.9 0.02 84);
-  --color-shelf-active: oklch(0.848 0.024 84);
-  --color-dock-surface: oklch(0.916 0.018 84);
-  --color-code-surface: oklch(0.93 0.016 85);
-  --color-code-border: oklch(0.86 0.018 85);
-  --color-foreground: oklch(0.25 0.015 80);
-  --color-prose-foreground: oklch(0.3 0.012 80);
-}
-
 /* ── Graphite — cool studio: neutral-cool shell, slate accent replaces
    jade. Tests the non-warm identity. */
 :root[data-ui-theme="graphite"] {
