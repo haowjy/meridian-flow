@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
@@ -120,6 +121,7 @@ export function ContextViewer({
             tab={activeTab}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
+            draftChip={<DraftReviewChip documentId={activeTab.documentId} />}
           />
         ) : null}
         {/* The TRACKED editor host stays mounted while ANY tracked tab is
