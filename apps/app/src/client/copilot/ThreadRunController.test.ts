@@ -538,6 +538,71 @@ describe("ThreadRunController", () => {
     expect(transport.subscribeCount).toBe(0);
   });
 
+  it("keeps the previous run subscribed when a new submit is rejected", async () => {
+    const transport = new FakeThreadTransport();
+    const actions = makeActions();
+    const append = deferred<never>();
+    const controller = new ThreadRunController({
+      transport,
+      actions,
+      appendUserMessageFn: vi.fn().mockReturnValue(append.promise),
+    });
+
+    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
+    const submitPromise = controller.submit("thread_1", "too soon");
+    await vi.waitFor(() => expect(transport.unsubscribeCount).toBe(0));
+
+    append.reject(new Error("Turn already running"));
+    await expect(submitPromise).rejects.toThrow("Turn already running");
+
+    expect(transport.unsubscribeCount).toBe(0);
+    expect(transport.handlers).not.toBeNull();
+    transport.emit({ type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn_1" }, "43");
+    expect(actions.turns("thread_1")?.[0]).toMatchObject({
+      id: "turn_1",
+      status: "complete",
+    });
+    expect(actions.pruneStaleAssistantTurns).not.toHaveBeenCalled();
+  });
+
+  it("keeps Stop targeting the previous run while a new submit is pending", async () => {
+    const transport = new FakeThreadTransport();
+    const actions = makeActions();
+    const append = deferred<never>();
+    const controller = new ThreadRunController({
+      transport,
+      actions,
+      appendUserMessageFn: vi.fn().mockReturnValue(append.promise),
+    });
+
+    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_old" });
+    const submitPromise = controller.submit("thread_1", "too soon");
+    controller.cancel("thread_1");
+    await waitForCancel(transport);
+
+    expect(transport.cancel).toHaveBeenCalledWith("thread_1", "turn_old");
+
+    append.reject(new Error("Turn already running"));
+    await expect(submitPromise).rejects.toThrow("Turn already running");
+  });
+
+  it("removes the optimistic user turn when submit is rejected", async () => {
+    const transport = new FakeThreadTransport();
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
+    const optimisticTurn = store.getState().appendUserTurn("thread_1", "too soon");
+    const controller = new ThreadRunController({
+      transport,
+      actions: store.getState(),
+      appendUserMessageFn: vi.fn().mockRejectedValue(new Error("Turn already running")),
+    });
+
+    await expect(
+      controller.submit("thread_1", "too soon", { optimisticUserTurnId: optimisticTurn.id }),
+    ).rejects.toThrow("Turn already running");
+
+    expect(store.getState().turns("thread_1")).toEqual([]);
+  });
+
   it("prunes an abandoned live assistant turn before submitting again after transport failure", async () => {
     const transport = new FakeThreadTransport();
     const actions = makeActions();
