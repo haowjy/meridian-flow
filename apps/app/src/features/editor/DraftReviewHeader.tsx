@@ -22,7 +22,9 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
 
   return (
     <section
-      className="flex min-h-7 shrink-0 flex-wrap items-center gap-1.5 border-border border-b bg-dock-surface px-2.5 text-caption"
+      // px-4 matches the identity bar's band padding so Apply all and the
+      // Rename chip share one right edge.
+      className="flex min-h-7 shrink-0 flex-wrap items-center gap-1.5 border-border border-b bg-dock-surface px-4 text-caption"
       role="status"
       aria-live="polite"
       data-draft-review-header
