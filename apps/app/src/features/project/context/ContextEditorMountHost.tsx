@@ -35,8 +35,6 @@ import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
-import { EditorBannerSlot } from "@/features/editor/EditorBannerSlot";
 import { cn } from "@/lib/utils";
 import { untitledDocumentIsEmpty } from "./untitled-reconciler";
 
@@ -230,22 +228,6 @@ export function ContextEditorMountHost({
                   documentId={tab.documentId}
                   detached={tab.kind === "new"}
                   schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-                  belowToolbar={
-                    <EditorBannerSlot
-                      tenants={[
-                        {
-                          name: "draft-chrome",
-                          content:
-                            isActive && reviewDraftId ? (
-                              <DraftReviewHeader
-                                documentId={tab.documentId}
-                                draftId={reviewDraftId}
-                              />
-                            ) : null,
-                        },
-                      ]}
-                    />
-                  }
                   reviewDraftId={reviewDraftId}
                   reviewRoomName={reviewRoomName}
                   reviewWorkId={reviewDraftId ? controller.workId : null}
