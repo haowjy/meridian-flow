@@ -76,9 +76,7 @@ export function appendUserMessage({
 }: {
   data: AppendUserMessageInput;
 }): Promise<SendMessageResponse> {
-  return postJson(apiThreadMessagePath(data.threadId), data, {
-    acceptStatuses: [202, 409],
-  });
+  return postJson(apiThreadMessagePath(data.threadId), data);
 }
 
 export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelTurnResponse> {

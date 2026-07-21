@@ -402,7 +402,7 @@ export type SendMessageResponse = {
    * reflected locally) and must not be applied.
    */
   ackHeadSeq: string;
-  status: "accepted" | "already_active";
+  status: "accepted";
 };
 
 export type CancelTurnResponse = {
