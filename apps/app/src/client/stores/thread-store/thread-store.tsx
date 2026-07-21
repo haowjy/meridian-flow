@@ -49,6 +49,8 @@ type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
   /** Canonical user IDs waiting for the snapshot projector to catch up. */
   acknowledgedUserTurnIdsByThread: Record<string, Record<string, true>>;
+  /** Last ordered HTTP snapshot applied for each thread. */
+  lastAppliedSnapshotSeqByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
@@ -158,6 +160,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     turns: state.turns,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
+    setThreadAttention: state.setThreadAttention,
     markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
@@ -183,6 +186,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         now,
         turnsByThread: {},
         acknowledgedUserTurnIdsByThread: {},
+        lastAppliedSnapshotSeqByThread: {},
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
@@ -206,6 +210,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               ? state
               : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
           );
+        },
+
+        setThreadAttention(threadId, attention) {
+          threadCache.patchThread(threadId, { attention });
         },
 
         markHandoffPending(threadId) {
@@ -454,8 +462,21 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return nextEventsApplied;
         },
 
-        applyThreadSnapshot(thread, serverTurns, lifecycle) {
+        applyThreadSnapshot(thread, serverTurns, options) {
           const threadId = thread.id;
+          const nextSeq = options?.nextSeq;
+          const lifecycle =
+            options && options.attention !== undefined && options.runningTurnId !== undefined
+              ? { attention: options.attention, runningTurnId: options.runningTurnId }
+              : undefined;
+          const lastAppliedSeq = get().lastAppliedSnapshotSeqByThread[threadId];
+          if (
+            nextSeq !== undefined &&
+            lastAppliedSeq !== undefined &&
+            BigInt(nextSeq) < BigInt(lastAppliedSeq)
+          ) {
+            return;
+          }
           /**
            * Handoff: the optimistic Home → Project navigation flow.
            *
@@ -485,11 +506,21 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             }
 
             if (keepLocalTurns) {
-              return { handoffPendingThreadIds };
+              return {
+                handoffPendingThreadIds,
+                ...(nextSeq === undefined
+                  ? {}
+                  : {
+                      lastAppliedSnapshotSeqByThread: {
+                        ...state.lastAppliedSnapshotSeqByThread,
+                        [threadId]: nextSeq,
+                      },
+                    }),
+              };
             }
 
             const localTurns = state.turnsByThread[threadId] ?? [];
-            const runningTurnId = lifecycle?.runningTurnId ?? null;
+            const runningTurnId = options?.runningTurnId ?? null;
             const pendingAcknowledgedIds = state.acknowledgedUserTurnIdsByThread[threadId] ?? {};
             const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
               runningTurnId,
@@ -516,7 +547,14 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
             };
 
-            if (lifecycle && "runningTurnId" in lifecycle) {
+            if (nextSeq !== undefined) {
+              nextState.lastAppliedSnapshotSeqByThread = {
+                ...state.lastAppliedSnapshotSeqByThread,
+                [threadId]: nextSeq,
+              };
+            }
+
+            if (options && "runningTurnId" in options) {
               const meta = liveMetaFor(state.liveMeta, threadId);
               nextState.liveMeta = {
                 ...state.liveMeta,
