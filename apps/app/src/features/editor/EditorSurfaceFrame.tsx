@@ -68,10 +68,6 @@ export function EditorSurfaceFrame({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {toolbar ? (
-        // Docked in flow above the scroll area, aligned to the prose column —
-        // no rule below it, separation from the prose is whitespace only.
-        // Being a sibling of the scroll container keeps it in place while
-        // text scrolls beneath.
         <div className="flex h-9 shrink-0 items-center">
           <div className={editorColumnChrome}>{toolbar}</div>
         </div>
