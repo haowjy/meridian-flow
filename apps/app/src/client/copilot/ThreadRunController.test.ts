@@ -576,7 +576,39 @@ describe("ThreadRunController", () => {
       expect(actions.applyThreadSnapshot).toHaveBeenCalledWith(thread, [assistantTurn], {
         runningTurnId: "turn_1",
         attention: "none",
+        nextSeq: "10",
       });
     });
+  });
+
+  it("rejects an older gap-recovery snapshot after a newer snapshot applies", async () => {
+    const transport = new FakeThreadTransport();
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
+    store.getState().applyThreadSnapshot(thread, [assistantTurn], { nextSeq: "9007199254740993" });
+    const applyThreadSnapshot = vi.spyOn(store.getState(), "applyThreadSnapshot");
+    const snapshot = makeSnapshot();
+    const staleSnapshot = {
+      ...snapshot,
+      turns: [],
+      liveState: {
+        ...snapshot.liveState,
+        runningTurnId: null,
+      },
+      nextSeq: "9007199254740992",
+    };
+    const getThreadSnapshotFn = vi.fn().mockResolvedValue(staleSnapshot);
+    const controller = new ThreadRunController({
+      transport,
+      actions: store.getState(),
+      getThreadSnapshotFn,
+    });
+
+    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
+    transport.handlers?.onGap?.({ threadId: "thread_1", cause: "server_restart", gapCount: 1 });
+
+    await vi.waitFor(() => {
+      expect(applyThreadSnapshot).toHaveBeenCalledOnce();
+    });
+    expect(store.getState().turns("thread_1")).toEqual([assistantTurn]);
   });
 });

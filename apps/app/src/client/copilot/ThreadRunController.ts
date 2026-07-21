@@ -6,7 +6,7 @@
  * events, applies accepted events directly to ThreadStore, handles deferred
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
-import type { SendMessageResponse, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import type { SendMessageResponse } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -27,6 +27,7 @@ type AppendUserMessageFn = (args: { data: AppendUserMessageInput }) => Promise<{
 }>;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
+type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
 export type SubscribeLiveOptions = {
   /** Server-side cursor: last event seq the client has already incorporated. */
@@ -286,11 +287,18 @@ export class ThreadRunController {
     return recovery;
   }
 
-  private applySnapshot({ thread, turns, liveState, attention }: ThreadSnapshotResponse): void {
+  private applySnapshot({
+    thread,
+    turns,
+    liveState,
+    attention,
+    nextSeq,
+  }: DeserializedThreadSnapshot): void {
     this.actions.ensureThread(thread);
     this.actions.applyThreadSnapshot(thread, turns, {
       runningTurnId: liveState.runningTurnId,
       attention,
+      nextSeq,
     });
   }
 
