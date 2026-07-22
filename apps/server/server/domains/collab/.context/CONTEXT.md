@@ -49,8 +49,10 @@ deleted on first open, then persisted that deletion. The current engine is
 schema-aware; all new seed and write paths must go through it rather than
 hand-building fragment content. A new document's first seed is installed as its
 generation-1 checkpoint (with no admitted journal mutations, so its initial
-causal cut is `admittedThrough: 0`); later seed attempts use the ordinary
-authorship path. The context caller contract is documented in
+causal cut is `admittedThrough: 0`). Seeding is strictly initialize-only: any
+existing admission or checkpoint makes later attempts successful no-ops. A seed
+is reconciled into an already-open live room before success returns, and a stale
+room checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
 [the context domain](../../context/.context/CONTEXT.md).
 
 ## Branch model
