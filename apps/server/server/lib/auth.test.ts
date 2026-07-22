@@ -255,7 +255,7 @@ describe("WorkOS request auth", () => {
       projects: bootstrap.projects,
     });
     expect(second.userId).toBe(resolved.userId);
-    expect(bootstrap.bootstrapCalls).toBe(1);
+    expect(bootstrap.bootstrapCalls).toBe(2);
   });
 });
 
@@ -295,10 +295,10 @@ describe("auth principal provisioning", () => {
     );
 
     expect(secondUserId).toBe(firstUserId);
-    expect(bootstrap.bootstrapCalls).toBe(1);
+    expect(bootstrap.bootstrapCalls).toBe(2);
   });
 
-  it("bootstraps a personal project only when absent", async () => {
+  it("rechecks bootstrap completion for an existing personal project", async () => {
     const users = createInMemoryUserRepository();
     const bootstrap = createTestProjectBootstrap();
     const externalUser = {
@@ -312,6 +312,6 @@ describe("auth principal provisioning", () => {
     expect(bootstrap.bootstrapCalls).toBe(1);
 
     await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
-    expect(bootstrap.bootstrapCalls).toBe(1);
+    expect(bootstrap.bootstrapCalls).toBe(2);
   });
 });

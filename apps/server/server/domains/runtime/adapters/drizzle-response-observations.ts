@@ -9,15 +9,18 @@ import type {
 } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
-  documentYjsHeads,
   modelResponseCausalCuts,
   modelResponseObservationEntries,
   modelResponseObservationSnapshots,
 } from "@meridian/database";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { DocumentAuthorityHeads } from "../../collab/index.js";
 
-export function createDrizzleResponseObservations(db: Database): {
+export function createDrizzleResponseObservations(
+  db: Database,
+  documentAuthorityHeads: DocumentAuthorityHeads,
+): {
   store: ObservationSnapshotStore;
   freezeCausalCuts(documentIds: readonly string[]): Promise<ResponseCausalCutV1[]>;
 } {
@@ -112,32 +115,17 @@ export function createDrizzleResponseObservations(db: Database): {
     async freezeCausalCuts(documentIds) {
       const uniqueIds = [...new Set(documentIds)].sort();
       if (uniqueIds.length === 0) return [];
-      const rows = await currentDrizzleDb(db)
-        .select({
-          documentId: documentYjsHeads.documentId,
-          authorityId: documentYjsHeads.authorityId,
-          generation: documentYjsHeads.authorityGeneration,
-          nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
-        })
-        .from(documentYjsHeads)
-        .where(inArray(documentYjsHeads.documentId, uniqueIds as DocumentId[]));
-      const byDocument = new Map(rows.map((row) => [row.documentId, row]));
-      return uniqueIds.map((documentId) => ({
+      const heads = await documentAuthorityHeads.ensureAndReadAuthorityHeads(uniqueIds);
+      return heads.map((head) => ({
         id: crypto.randomUUID(),
         version: 1,
-        documentId: documentId as DocumentId,
-        authorityId: requiredAuthority(byDocument.get(documentId), documentId).authorityId,
-        generation: requiredAuthority(byDocument.get(documentId), documentId).generation,
-        admittedThrough:
-          requiredAuthority(byDocument.get(documentId), documentId).nextAdmissionSequence - 1n,
+        documentId: head.documentId,
+        authorityId: head.authorityId,
+        generation: head.generation,
+        admittedThrough: head.admittedThrough,
       }));
     },
   };
-}
-
-function requiredAuthority<T>(value: T | undefined, documentId: string): T {
-  if (!value) throw new Error(`Document authority is unavailable for ${documentId}`);
-  return value;
 }
 
 function required(value: string | null, label: string): string {

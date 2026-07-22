@@ -325,7 +325,7 @@ export async function createProductionAppPorts(input: {
   });
   const projectRepo = createDrizzleProjectRepository({ db });
   const users = createDrizzleUserRepository({ db });
-  const projects = createDrizzleProjectBootstrapRepository(db);
+  const projects = createDrizzleProjectBootstrapRepository({ db, documents: documentSync });
   const workRepo = createDrizzleProjectWorkRepository({ db });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -400,7 +400,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
-  const responseObservations = createDrizzleResponseObservations(ports.db);
+  const responseObservations = createDrizzleResponseObservations(ports.db, ports.documentSync);
   const observationAuthority = createObservationAuthority({ store: responseObservations.store });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,

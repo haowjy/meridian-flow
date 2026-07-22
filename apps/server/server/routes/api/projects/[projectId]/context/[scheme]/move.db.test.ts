@@ -106,10 +106,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     async function arrangeUntitled() {
-      const { projectId, workId } = await createDrizzleProjectBootstrapRepository(
-        db,
-      ).ensureDefaultBootstrap(USER_ID as never);
       const collab = createBoundCollab();
+      const { projectId, workId } = await createDrizzleProjectBootstrapRepository({
+        db,
+        documents: collab,
+      }).ensureDefaultBootstrap(USER_ID as never);
       const contextPorts = createProductionUnifiedContextPortFactory({
         db,
         documentSync: collab,

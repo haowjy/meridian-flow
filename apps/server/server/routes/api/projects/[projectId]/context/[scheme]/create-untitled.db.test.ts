@@ -58,7 +58,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     async function provisionProject() {
-      return createDrizzleProjectBootstrapRepository(db).ensureDefaultBootstrap(USER_ID as never);
+      return createDrizzleProjectBootstrapRepository({
+        db,
+        documents: createBoundCollab(),
+      }).ensureDefaultBootstrap(USER_ID as never);
     }
 
     function createBoundCollab() {
