@@ -342,8 +342,10 @@ export function createMarkdownDocumentEngine(
         typedDocumentId,
         Y.encodeStateAsUpdate(seededDoc),
       );
+      // Both the winning initializer and concurrent no-op callers must wait for
+      // a room opened during bootstrap to converge with the durable journal.
+      await deps.coordinator.recover(typedDocumentId);
       if (seeded) {
-        await deps.coordinator.recover(typedDocumentId);
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
       return Ok(null);
