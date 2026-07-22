@@ -219,6 +219,38 @@ describe("BranchCoordinator", () => {
     expect(loadedRoom.getText("content").toString()).toBe("live prose");
   });
 
+  it("publishes response-transaction pulls once and only after durable commit", async () => {
+    const runPull = async (outcome: "commit" | "rollback") => {
+      const store = new MemoryBranchStore();
+      store.branches.set(
+        "work",
+        branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }),
+      );
+      let durableCommitted = false;
+      const publications: boolean[] = [];
+      const coordinator = createBranchCoordinator({
+        store,
+        onBranchUpdate: () => publications.push(durableCommitted),
+      });
+
+      const transaction = runResponseTransaction(
+        async (operation) => {
+          const result = await operation();
+          if (outcome === "rollback") throw new Error("rollback");
+          durableCommitted = true;
+          return result;
+        },
+        () => coordinator.pullFromDoc("work", docWithText("live prose")),
+      );
+      if (outcome === "rollback") await expect(transaction).rejects.toThrow("rollback");
+      else await transaction;
+      return publications;
+    };
+
+    await expect(runPull("rollback")).resolves.toEqual([]);
+    await expect(runPull("commit")).resolves.toEqual([true]);
+  });
+
   it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
     const store = new MemoryBranchStore();
     const live = docWithText("live prose");
