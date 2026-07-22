@@ -137,7 +137,7 @@ describe("ChangeViewRows", () => {
       async () => {
         expect(document.body.textContent).toContain("Restore");
         expect(document.body.textContent).not.toContain("Copy");
-        await click("Removed a passage that included words the agent hadn't seen.");
+        await click("Removed");
         expect(document.body.textContent).toContain("Restore");
         expect(document.body.textContent).not.toContain("Copy");
       },
@@ -156,9 +156,7 @@ describe("ChangeViewRows", () => {
         runAction={runAction}
       />,
       async () => {
-        expect(document.body.textContent).toContain(
-          "Removed a passage that included words the agent hadn't seen.",
-        );
+        expect(document.body.textContent).toContain("Removed");
         expect(document.body.textContent).toContain("The writer's exact words.");
         await click("Restore");
         expect(document.body.textContent).toContain("Restored");

@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
-/** The open wording veto lives here: changing this one key changes every sweep row. */
-export const sweepWarningText = () =>
-  t`Removed a passage that included words the agent hadn't seen.`;
+/** The sweep label's wording veto lives here: changing this one key changes every sweep row. */
+export const sweepRemovedLabel = () => t`Removed`;
 
 export function ChangeViewRows({
   threadId,
@@ -152,7 +151,7 @@ function ChangeViewRow({
         {protection?.kind === "resurrection" ? (
           <Trans>↻ AI brought back text you deleted</Trans>
         ) : protection?.kind === "sweep" ? (
-          sweepWarningText()
+          sweepRemovedLabel()
         ) : change.kind === "insert" ? (
           <Trans>AI added text</Trans>
         ) : change.kind === "modify" ? (
