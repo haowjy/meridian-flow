@@ -32,7 +32,7 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { TurnEditsCard } from "./TurnEditsCard";
+import { TurnEditsCard, TurnUndoReceipt } from "./TurnEditsCard";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type AssistantTurnProps = {
@@ -92,12 +92,14 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {liveLineageDocuments.length > 0 || changeTrail?.state === "settled" ? (
+      {liveLineageDocuments.length > 0 || liveLineage.receipt ? (
+        <TurnUndoReceipt threadId={resolvedThreadId} turn={turn} receipt={liveLineage.receipt} />
+      ) : null}
+
+      {changeTrail?.state === "settled" && changeTrail.changeCount > 0 ? (
         <TurnEditsCard
           threadId={resolvedThreadId}
-          turn={turn}
           documents={liveLineageDocuments}
-          receipt={liveLineage.receipt}
           changeTrail={changeTrail}
           navigateToChange={navigateToChange}
         />

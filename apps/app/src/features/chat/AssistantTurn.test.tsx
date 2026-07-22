@@ -25,7 +25,10 @@ const { documentsRef } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/client/query/useTurnLiveLineage", () => ({
-  useTurnLiveLineage: () => ({ documents: documentsRef.current }),
+  useTurnLiveLineage: () => ({
+    documents: documentsRef.current,
+    receipt: { state: "live-active", control: "undo" },
+  }),
 }));
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseTurnMutation: () => ({ mutateAsync: vi.fn() }),
@@ -58,10 +61,11 @@ describe("AssistantTurn edit lineage", () => {
     expect(html).not.toContain("data-turn-edits-card");
   });
 
-  it("renders the edit card from server lineage", () => {
+  it("renders lineage-backed Undo without mounting a change card", () => {
     documentsRef.current = [{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }];
     const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
-    expect(html).toContain("data-turn-edits-card");
+    expect(html).toContain("data-turn-undo-receipt");
+    expect(html).not.toContain("data-turn-edits-card");
     expect(html).toContain("Undo");
   });
 });
@@ -113,5 +117,29 @@ describe("AssistantTurn change view", () => {
     await act(async () => reloadedRoot.render(renderTrail(trail("settled", 3))));
     expect(reloadedHost.querySelector("[data-turn-edits-card]")).not.toBeNull();
     await act(async () => reloadedRoot.unmount());
+  });
+
+  it("suppresses a settled zero-change trail while preserving whole-turn Undo", () => {
+    documentsRef.current = [{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }];
+    const html = renderToStaticMarkup(
+      <AssistantTurn
+        threadId="thread-1"
+        turn={turn("turn-1")}
+        changeTrail={{
+          trailId: "trail-1",
+          owner: { kind: "turn", threadId: "thread-1", turnId: "turn-1" },
+          state: "settled",
+          version: 1,
+          changeCount: 0,
+          sweptChangeCount: 0,
+          documentCount: 0,
+          updatedAt: "2026-07-04T00:00:00.000Z",
+          settledAt: "2026-07-04T00:00:00.000Z",
+        }}
+      />,
+    );
+    expect(html).not.toContain("data-turn-edits-card");
+    expect(html).toContain("data-turn-undo-receipt");
+    expect(html).toContain("Undo");
   });
 });

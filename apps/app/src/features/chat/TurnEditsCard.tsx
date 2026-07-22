@@ -3,8 +3,8 @@
  *
  * INVARIANT: record, not control panel — no draft affordance may be added here.
  * Review / Apply / Discard belong to the composer-attached DraftDock. The only
- * draft control this card carries is Undo. Expanded trail rows may carry the
- * safety-specific forward actions Restore and Delete again.
+ * lineage-backed Undo is a separate receipt surface. Expanded trail rows may
+ * carry the safety-specific forward actions Restore and Delete again.
  *
  * Shape: a collapsed card at the end of every turn that edited documents
  * (created files count — they produce mutation rows like any edit). The header
@@ -38,51 +38,27 @@ export type TurnEditDocument = {
 
 export type TurnEditsCardProps = {
   threadId: string;
-  turn: Turn;
   documents: TurnEditDocument[];
-  receipt: TurnReceiptChip | null;
-  changeTrail?: ChangeTrailShell;
+  changeTrail: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
 };
 
 export function TurnEditsCard({
   threadId,
-  turn,
   documents,
-  receipt,
   changeTrail,
   navigateToChange,
 }: TurnEditsCardProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
-  const [pending, setPending] = useState(false);
-  const turnMutation = useReverseTurnMutation(threadId);
-
-  const hasEditedDocuments = documents.length > 0 || Boolean(changeTrail);
-  const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  const guardCopy = undoGuardCopy(receipt);
-
-  async function reverseTurn() {
-    if (pending || !receipt || receipt.control === "view_change") return;
-    setPending(true);
-    try {
-      await turnMutation.mutateAsync({ turnId: turn.id, direction });
-    } catch {
-      // Keep the chip available for retry; history cards do not carry error prose.
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     // overflow-hidden clips the header hover wash to the card radius.
     <div
       className="mt-3 overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
       data-turn-edits-card
     >
-      {/* The WHOLE header row is the expand/collapse target — hover washes the
-            full width, wrapping around the Undo chip, which fences its own click. */}
+      {/* The whole header row is the expand/collapse target. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
@@ -113,22 +89,6 @@ export function TurnEditsCard({
             {documentCountLabel(Math.max(documents.length, changeTrail?.documentCount ?? 0))}
           </span>
         </button>
-        {hasEditedDocuments ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            onClick={(event) => {
-              event.stopPropagation();
-              void reverseTurn();
-            }}
-            disabled={pending || receipt == null || receipt.control === "view_change"}
-            title={guardCopy}
-            className="shrink-0 text-jade-text"
-          >
-            {receipt?.control === "redo" ? t`Redo` : t`Undo`}
-          </Button>
-        ) : null}
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t py-1">
@@ -148,6 +108,48 @@ export function TurnEditsCard({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function TurnUndoReceipt({
+  threadId,
+  turn,
+  receipt,
+}: {
+  threadId: string;
+  turn: Turn;
+  receipt: TurnReceiptChip | null;
+}) {
+  const [pending, setPending] = useState(false);
+  const turnMutation = useReverseTurnMutation(threadId);
+  const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
+
+  async function reverseTurn() {
+    if (pending || !receipt || receipt.control === "view_change") return;
+    setPending(true);
+    try {
+      await turnMutation.mutateAsync({ turnId: turn.id, direction });
+    } catch {
+      // Keep the receipt available for retry; transcript history does not carry error prose.
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 flex justify-end" data-turn-undo-receipt>
+      <Button
+        type="button"
+        variant="quiet"
+        size="meta"
+        onClick={() => void reverseTurn()}
+        disabled={pending || receipt == null || receipt.control === "view_change"}
+        title={undoGuardCopy(receipt)}
+        className="text-jade-text"
+      >
+        {receipt?.control === "redo" ? t`Redo` : t`Undo`}
+      </Button>
     </div>
   );
 }

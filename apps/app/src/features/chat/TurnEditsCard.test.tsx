@@ -1,6 +1,5 @@
 import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
@@ -20,7 +19,7 @@ vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
 }));
 
-const { TurnEditsCard } = await import("./TurnEditsCard");
+const { TurnUndoReceipt } = await import("./TurnEditsCard");
 
 function turn(): Turn {
   return {
@@ -33,17 +32,14 @@ function turn(): Turn {
   } as unknown as Turn;
 }
 
-const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
-
-async function withInteractiveCard(
-  props: Partial<React.ComponentProps<typeof TurnEditsCard>>,
+async function withInteractiveReceipt(
+  props: Partial<React.ComponentProps<typeof TurnUndoReceipt>>,
   run: (card: { click(label: string): Promise<void> }) => Promise<void>,
 ): Promise<void> {
   await withReactRoot(
-    <TurnEditsCard
+    <TurnUndoReceipt
       threadId="thread-1"
       turn={turn()}
-      documents={[liveDocument]}
       receipt={{ state: "live-active", control: "undo" }}
       {...props}
     />,
@@ -65,40 +61,10 @@ async function withInteractiveCard(
   );
 }
 
-describe("TurnEditsCard", () => {
-  it("renders draft-only lineage with turn undo authority", () => {
-    const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "draft" }]}
-        receipt={{ state: "branch-active", control: "undo" }}
-      />,
-    );
-
-    expect(html).toContain("data-turn-edits-card");
-    expect(html).toContain("Edited 1 document");
-    expect(html).toContain("Undo");
-    expect(html).not.toContain("Redo");
-  });
-
-  it("lets live-scope documents own the undo path", () => {
-    const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[liveDocument]}
-        receipt={{ state: "live-active", control: "undo" }}
-      />,
-    );
-
-    expect(html).toContain("Edited 1 document");
-    expect(html).toContain("Undo");
-  });
-
+describe("TurnUndoReceipt", () => {
   it("keeps Undo visible when the reverse endpoint reports no undo happened", async () => {
     mutateAsyncMock.mockResolvedValueOnce({ status: "nothing_to_undo" });
-    await withInteractiveCard({}, async (card) => {
+    await withInteractiveReceipt({}, async (card) => {
       await card.click("Undo");
 
       expect(document.body.textContent).toContain("Undo");
@@ -107,22 +73,18 @@ describe("TurnEditsCard", () => {
   });
 
   it("renders Redo from a server reversed receipt", () => {
-    const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[liveDocument]}
-        receipt={{ state: "live-reversed", control: "redo" }}
-      />,
+    return withInteractiveReceipt(
+      { receipt: { state: "live-reversed", control: "redo" } },
+      async () => {
+        expect(document.body.textContent).toContain("Redo");
+        expect(document.body.textContent).not.toContain("Undo");
+      },
     );
-
-    expect(html).toContain("Redo");
-    expect(html).not.toContain("Undo");
   });
 
   it("does not locally flip Undo to Redo; server receipt owns state", async () => {
     mutateAsyncMock.mockResolvedValueOnce({ status: "reversed" });
-    await withInteractiveCard({}, async (card) => {
+    await withInteractiveReceipt({}, async (card) => {
       await card.click("Undo");
 
       expect(document.body.textContent).toContain("Undo");
@@ -130,29 +92,24 @@ describe("TurnEditsCard", () => {
     });
   });
   it("guards Undo when later rows depend on the change", () => {
-    const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[liveDocument]}
-        receipt={{ state: "cant_undo_dependent", control: "view_change" }}
-      />,
+    return withInteractiveReceipt(
+      { receipt: { state: "cant_undo_dependent", control: "view_change" } },
+      async () => {
+        const button = document.querySelector("button");
+        expect(button?.disabled).toBe(true);
+        expect(button?.title).toContain("later edits depend");
+      },
     );
-    expect(html).toContain("Undo");
-    expect(html).toContain("disabled");
-    expect(html).toContain("later edits depend on this change");
   });
 
   it("uses neutral copy when Undo expired without a dependent row", () => {
-    const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[liveDocument]}
-        receipt={{ state: "expired", control: "view_change" }}
-      />,
+    return withInteractiveReceipt(
+      { receipt: { state: "expired", control: "view_change" } },
+      async () => {
+        const title = document.querySelector("button")?.title;
+        expect(title).toContain("Undo is no longer available");
+        expect(title).not.toContain("later edits depend");
+      },
     );
-    expect(html).toContain("Undo is no longer available");
-    expect(html).not.toContain("later edits depend");
   });
 });
