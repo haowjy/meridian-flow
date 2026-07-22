@@ -51,6 +51,7 @@ import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js"
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import {
+  createDrizzleDocumentAuthorityHeads,
   readDocumentAuthority,
   replaceDocumentAuthorityGeneration,
 } from "./adapters/drizzle-document-authority.js";
@@ -106,6 +107,11 @@ import {
   createOfflineReconciliation,
   type OfflineReconciliation,
 } from "./domain/offline-reconciliation.js";
+import type {
+  DocumentAuthorityHead,
+  DocumentAuthorityHeads,
+} from "./domain/ports/document-authority-heads.js";
+import type { InitialDocumentSeeds } from "./domain/ports/initial-document-seeds.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { createSemanticProvenanceWriter } from "./domain/provenance.js";
 import {
@@ -293,6 +299,8 @@ export type CollabFacadeDeps = {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  initialDocumentSeeds: InitialDocumentSeeds;
+  documentAuthorityHeads: DocumentAuthorityHeads;
   observationSnapshots?: ObservationSnapshotStore;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
@@ -512,6 +520,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal,
     coordinator,
     lifecycle,
+    initialDocumentSeeds: lifecycle,
+    documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     observationSnapshots,
     store,
     hocuspocus: () => boundHocuspocus,
@@ -602,11 +612,39 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   let boundHocuspocus: Hocuspocus | null = null;
+  const authorityHeads = new Map<string, DocumentAuthorityHead>();
 
   return createFacade({
     journal,
     coordinator,
     lifecycle,
+    initialDocumentSeeds: {
+      async seedInitialDocument(documentId, state) {
+        const snapshot = await journal.read(documentId);
+        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
+        await journal.checkpoint(documentId, state, 0);
+        return true;
+      },
+    },
+    documentAuthorityHeads: {
+      async ensureAndReadAuthorityHeads(documentIds) {
+        return Promise.all(
+          [...new Set(documentIds)].sort().map(async (documentId) => {
+            let head = authorityHeads.get(documentId);
+            if (!head) {
+              head = {
+                documentId: documentId as DocumentId,
+                authorityId: crypto.randomUUID() as DocumentAuthorityHead["authorityId"],
+                generation: 1n,
+                admittedThrough: 0n,
+              };
+              authorityHeads.set(documentId, head);
+            }
+            return { ...head, admittedThrough: BigInt(await journal.latestUpdateSeq(documentId)) };
+          }),
+        );
+      },
+    },
     store: inMemoryStore(journal),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
@@ -706,6 +744,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     journal: deps.journal,
     coordinator: deps.coordinator,
     lifecycle: deps.lifecycle,
+    initialDocumentSeeds: deps.initialDocumentSeeds,
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
     identityPreservingWrite: ({ documentId, markdown, actor }) =>
@@ -1199,6 +1238,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   }
 
   return {
+    ensureAndReadAuthorityHeads(documentIds) {
+      return deps.documentAuthorityHeads.ensureAndReadAuthorityHeads(documentIds);
+    },
     agentEdit() {
       return agentEditCore;
     },

@@ -76,7 +76,9 @@ export type CollabFacadeStore = {
 
 export type DrizzleCollabPersistence = {
   journal: UpdateJournal & ReversalStore;
-  lifecycle: DocumentLifecycle;
+  lifecycle: DocumentLifecycle & {
+    seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
+  };
   store: CollabFacadeStore;
 };
 
@@ -1066,9 +1068,17 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
     async checkpoint(docId, state, upToSeq) {
       await db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        const existing = await latestCheckpoint(txDb, docId);
+        // A checkpoint names a durable journal cut. A later snapshot at the same
+        // cut cannot contain legitimate extra state because admission is journal-first.
+        // Keeping the first snapshot prevents a stale warm room from replacing an
+        // initialize-only seed with an empty checkpoint at sequence zero.
+        if (existing && existing.upToSeq >= upToSeq) return;
         // upToSeq must be ≤ the updates reflected in state; replaying extra
         // updates is idempotent, but skipping one loses durable document data.
-        await insertCheckpoint(tx as JournalDb, docId, state, upToSeq, "checkpoint");
+        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint");
       });
     },
 
@@ -1308,8 +1318,33 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 export function createServerDocumentLifecycle(
   db: JournalDb,
   journal: UpdateJournal,
-): DocumentLifecycle {
+): DocumentLifecycle & {
+  seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
+} {
   return {
+    async seedInitialDocument(docId, state) {
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        await assertReadableHead(txDb, docId);
+        await upsertHead(txDb, docId);
+        const [checkpoint, update] = await Promise.all([
+          txDb
+            .select({ id: documentYjsCheckpoints.id })
+            .from(documentYjsCheckpoints)
+            .where(eq(documentYjsCheckpoints.documentId, asDocumentId(docId)))
+            .limit(1),
+          txDb
+            .select({ id: documentYjsUpdates.id })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
+            .limit(1),
+        ]);
+        if (checkpoint[0] || update[0]) return false;
+        await insertCheckpoint(txDb, docId, state, 0, "seed");
+        return true;
+      });
+    },
     async ensureDocument(docId) {
       // Never stamp a head before verifying the stored head is not stale.
       await assertReadableHead(db, docId);

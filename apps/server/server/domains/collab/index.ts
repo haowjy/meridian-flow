@@ -22,6 +22,7 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
@@ -392,6 +393,7 @@ export type TrailForwardActionAccess = {
 };
 
 export type CollabDomain = CollabTransport &
+  DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &
   MarkdownDocumentStore &
@@ -406,6 +408,10 @@ export type CollabDomain = CollabTransport &
   CollabDrafts;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";
+export type {
+  DocumentAuthorityHead,
+  DocumentAuthorityHeads,
+} from "./domain/ports/document-authority-heads.js";
 export {
   isStaleDocumentSchemaError,
   isStaleSchema,
