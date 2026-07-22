@@ -4,7 +4,6 @@
  * when the work-drafts query stays stale.
  */
 import { act, useEffect, useMemo, useRef, useState } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -141,27 +140,61 @@ beforeEach(() => {
 });
 
 describe("DraftDock Apply refusal", () => {
-  it("explains draft-base divergence and renders the writer's live words", () => {
-    const html = renderToStaticMarkup(
+  it.each([
+    [
+      "unsynced_live_edits",
+      "The chapter changed after this draft was written:",
+      "The writer added this live sentence.",
+    ],
+    ["protected_resurrection", "Applying would bring back text you deleted:", "Deleted line."],
+    ["stale_draft", "This draft was updated after you opened it.", null],
+  ] as const)("uses the uniform headline and discloses the %s reason and passages on click", async (reason, explanation, passage) => {
+    await withReactRoot(
       <DraftApplyRefusalNotice
-        refusal={{
-          reason: "unsynced_live_edits",
-          passages: [{ body: "The writer added this live sentence." }],
-        }}
+        refusal={{ reason, passages: passage ? [{ body: passage }] : [] }}
       />,
+      async () => {
+        const notice = document.querySelector(`[data-draft-apply-refusal="${reason}"]`);
+        const headline = notice?.querySelector(".font-medium");
+        const disclosure = notice?.querySelector("button");
+
+        expect(headline?.textContent).toBe("Not applied");
+        expect(notice?.textContent).toBe("Not applied");
+        expect(notice?.textContent).not.toContain(explanation);
+        expect(notice?.getAttribute("data-draft-apply-refusal-expanded")).toBe("false");
+        expect(disclosure?.getAttribute("aria-expanded")).toBe("false");
+        expect(notice?.querySelector("[data-draft-apply-refusal-details]")).toBeNull();
+        if (passage) expect(notice?.textContent).not.toContain(passage);
+
+        await act(async () => disclosure?.click());
+
+        const details = notice?.querySelector("[data-draft-apply-refusal-details]");
+        expect(notice?.textContent).toContain(explanation);
+        expect(notice?.getAttribute("data-draft-apply-refusal-expanded")).toBe("true");
+        expect(disclosure?.getAttribute("aria-expanded")).toBe("true");
+        expect(disclosure?.getAttribute("aria-controls")).toBe(details?.id);
+        expect(details?.querySelector("[data-draft-apply-refusal-explanation]")).not.toBeNull();
+        if (passage) {
+          expect(details?.textContent).toContain(passage);
+          expect(details?.textContent?.indexOf(explanation)).toBeLessThan(
+            details?.textContent?.indexOf(passage) ?? -1,
+          );
+        }
+      },
     );
-    expect(html).toContain("your live document changed since this draft was prepared");
-    expect(html).toContain("The writer added this live sentence.");
   });
 
-  it("renders protected resurrection refusal copy", () => {
-    const html = renderToStaticMarkup(
-      <DraftApplyRefusalNotice
-        refusal={{ reason: "protected_resurrection", passages: [{ body: "Deleted line." }] }}
-      />,
+  it("keeps neutral dock styling", async () => {
+    await withReactRoot(
+      <DraftApplyRefusalNotice refusal={{ reason: "stale_draft", passages: [] }} />,
+      () => {
+        const notice = document.querySelector("[data-draft-apply-refusal]");
+        expect(notice?.className).toContain("border-border-subtle");
+        expect(notice?.className).toContain("bg-muted");
+        expect(notice?.className).toContain("text-prose-foreground");
+        expect(notice?.className).not.toContain("warning");
+      },
     );
-    expect(html).toContain("bring back text you deleted");
-    expect(html).toContain("Deleted line.");
   });
 });
 
