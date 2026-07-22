@@ -47,7 +47,10 @@ client mounts for its filetype. Issue #196 exposed the historical failure mode:
 markdown-only seeding produced schema-invalid content that ProseMirror silently
 deleted on first open, then persisted that deletion. The current engine is
 schema-aware; all new seed and write paths must go through it rather than
-hand-building fragment content. The context caller contract is documented in
+hand-building fragment content. A new document's first seed is installed as its
+generation-1 checkpoint (with no admitted journal mutations, so its initial
+causal cut is `admittedThrough: 0`); later seed attempts use the ordinary
+authorship path. The context caller contract is documented in
 [the context domain](../../context/.context/CONTEXT.md).
 
 ## Branch model

@@ -60,6 +60,7 @@ type MarkdownDocumentEngineDeps = {
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  seedInitialDocument?(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   afterWrite?: MarkdownWriteHook;
   identityPreservingWrite?(input: {
@@ -326,6 +327,33 @@ export function createMarkdownDocumentEngine(
     editMarkdown,
 
     async seedFromMarkdown(documentId, markdown, origin) {
+      if (deps.seedInitialDocument) {
+        const typedDocumentId = documentId as DocumentId;
+        const format = await documentFormat(typedDocumentId);
+        if (!format.ok) return format;
+        const parsed = parseMarkdown(typedDocumentId, markdown, format.value);
+        if (!parsed.ok) return parsed;
+        const seededDoc = createCollabYDoc({ gc: false });
+        seededDoc.transact(() => {
+          deps.model.insertBlocks(toDocHandle(seededDoc), null, parsed.value);
+        }, yjsTransactionOrigin(origin));
+        const canonicalMarkdown = serializeForSchema(seededDoc, format.value.schemaType);
+        const seeded = await deps.seedInitialDocument(
+          typedDocumentId,
+          Y.encodeStateAsUpdate(seededDoc),
+        );
+        if (seeded) {
+          await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
+          return Ok(null);
+        }
+        const existing = await deps.coordinator.withDocument(typedDocumentId, async (doc) =>
+          serializeForSchema(doc, format.value.schemaType),
+        );
+        if (existing === canonicalMarkdown) {
+          await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
+          return Ok(null);
+        }
+      }
       const result = await setMarkdown({ documentId: documentId as DocumentId, markdown, origin });
       return result.ok ? Ok(persistedUpdate(result.value)) : result;
     },

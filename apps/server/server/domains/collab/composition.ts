@@ -51,6 +51,7 @@ import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js"
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import {
+  createDrizzleDocumentAuthorityHeads,
   readDocumentAuthority,
   replaceDocumentAuthorityGeneration,
 } from "./adapters/drizzle-document-authority.js";
@@ -293,6 +294,8 @@ export type CollabFacadeDeps = {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  seedInitialDocument?(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
+  documentAuthorityHeads: import("./domain/ports/document-authority-heads.js").DocumentAuthorityHeads;
   observationSnapshots?: ObservationSnapshotStore;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
@@ -512,6 +515,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal,
     coordinator,
     lifecycle,
+    seedInitialDocument: lifecycle.seedInitialDocument,
+    documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     observationSnapshots,
     store,
     hocuspocus: () => boundHocuspocus,
@@ -602,11 +607,32 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   let boundHocuspocus: Hocuspocus | null = null;
+  const authorityHeads = new Map<
+    string,
+    import("./domain/ports/document-authority-heads.js").DocumentAuthorityHead
+  >();
 
   return createFacade({
     journal,
     coordinator,
     lifecycle,
+    documentAuthorityHeads: {
+      async ensureAndRead(documentIds) {
+        return [...new Set(documentIds)].sort().map((documentId) => {
+          let head = authorityHeads.get(documentId);
+          if (!head) {
+            head = {
+              documentId: documentId as DocumentId,
+              authorityId: crypto.randomUUID() as import("@meridian/contracts").DocumentAuthorityId,
+              generation: 1n,
+              admittedThrough: 0n,
+            };
+            authorityHeads.set(documentId, head);
+          }
+          return head;
+        });
+      },
+    },
     store: inMemoryStore(journal),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
@@ -706,6 +732,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     journal: deps.journal,
     coordinator: deps.coordinator,
     lifecycle: deps.lifecycle,
+    seedInitialDocument: deps.seedInitialDocument,
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
     identityPreservingWrite: ({ documentId, markdown, actor }) =>
@@ -1199,6 +1226,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   }
 
   return {
+    ensureAndRead(documentIds) {
+      return deps.documentAuthorityHeads.ensureAndRead(documentIds);
+    },
     agentEdit() {
       return agentEditCore;
     },

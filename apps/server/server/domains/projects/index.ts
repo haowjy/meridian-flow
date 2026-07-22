@@ -20,6 +20,7 @@ import {
   works,
 } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import type { MarkdownDocumentStore } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
@@ -58,7 +59,11 @@ export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepo
   };
 }
 
-export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBootstrapRepository {
+export function createDrizzleProjectBootstrapRepository(deps: {
+  db: Database;
+  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown">;
+}): ProjectBootstrapRepository {
+  const { db } = deps;
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select">;
 
   async function lockBootstrap(tx: BootstrapDb, userId: UserId): Promise<void> {
@@ -200,9 +205,9 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
   async function ensureDocument(
     tx: BootstrapDb,
     contextSourceId: ContextSourceId,
-  ): Promise<DocumentId> {
+  ): Promise<{ documentId: DocumentId; needsSeed: boolean }> {
     const [existing] = await tx
-      .select({ id: documents.id })
+      .select({ id: documents.id, markdownProjection: documents.markdownProjection })
       .from(documents)
       .where(
         and(
@@ -213,7 +218,9 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
         ),
       )
       .limit(1);
-    if (existing) return existing.id;
+    if (existing) {
+      return { documentId: existing.id, needsSeed: existing.markdownProjection === null };
+    }
 
     const [document] = await tx
       .insert(documents)
@@ -223,11 +230,10 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
         extension: "md",
         fileType: "markdown",
         mimeType: "text/markdown",
-        markdownProjection: "# Chapter 1\n\n",
       })
       .returning({ id: documents.id });
     if (!document) throw new Error("Failed to create chapter document");
-    return document.id;
+    return { documentId: document.id, needsSeed: true };
   }
 
   async function ensureThread(
@@ -302,13 +308,13 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
   return {
     findPersonalProjectId,
     async ensureDefaultBootstrap(userId) {
-      return db.transaction(async (tx): Promise<DefaultBootstrap> => {
+      const { bootstrap, needsSeed } = await db.transaction(async (tx) => {
         await lockBootstrap(tx, userId);
         const projectId = await ensureProject(tx, userId);
         const agentDefinitionId = await ensureAgent(tx, projectId);
         const workId = await ensureWork(tx, projectId, userId);
         const contextSourceId = await ensureContextSource(tx, projectId);
-        const documentId = await ensureDocument(tx, contextSourceId);
+        const { documentId, needsSeed } = await ensureDocument(tx, contextSourceId);
         const threadId = await ensureThread(tx, {
           projectId,
           workId,
@@ -319,15 +325,29 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
         });
 
         return {
-          projectId,
-          workId,
-          threadId,
-          documentId,
-          contextSourceId,
-          agentDefinitionId,
-          uri: DEFAULT_BOOTSTRAP_URI,
+          needsSeed,
+          bootstrap: {
+            projectId,
+            workId,
+            threadId,
+            documentId,
+            contextSourceId,
+            agentDefinitionId,
+            uri: DEFAULT_BOOTSTRAP_URI,
+          } satisfies DefaultBootstrap,
         };
       });
+      if (needsSeed) {
+        const seeded = await deps.documents.seedFromMarkdown(
+          bootstrap.documentId,
+          "# Chapter 1\n\n",
+          { type: "system" },
+        );
+        if (!seeded.ok) {
+          throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
+        }
+      }
+      return bootstrap;
     },
   };
 }

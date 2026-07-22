@@ -4,7 +4,9 @@ import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { DocumentAuthorityHeads } from "../domain/ports/document-authority-heads.js";
 
 type AuthorityDb = Pick<Database, "insert" | "update" | "select">;
 
@@ -60,6 +62,48 @@ async function ensureDocumentAuthority(db: AuthorityDb, documentId: string): Pro
     .insert(documentYjsHeads)
     .values({ documentId: documentId as DocumentId, schemaVersion: COLLAB_SCHEMA_VERSION })
     .onConflictDoNothing({ target: documentYjsHeads.documentId });
+}
+
+export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAuthorityHeads {
+  return {
+    async ensureAndRead(documentIds) {
+      const uniqueIds = [...new Set(documentIds)].sort() as DocumentId[];
+      if (uniqueIds.length === 0) return [];
+
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
+        await tx
+          .insert(documentYjsHeads)
+          .values(
+            uniqueIds.map((documentId) => ({
+              documentId,
+              schemaVersion: COLLAB_SCHEMA_VERSION,
+            })),
+          )
+          .onConflictDoNothing({ target: documentYjsHeads.documentId });
+
+        const rows = await tx
+          .select({
+            documentId: documentYjsHeads.documentId,
+            authorityId: documentYjsHeads.authorityId,
+            generation: documentYjsHeads.authorityGeneration,
+            nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
+          })
+          .from(documentYjsHeads)
+          .where(inArray(documentYjsHeads.documentId, uniqueIds))
+          .orderBy(asc(documentYjsHeads.documentId));
+        if (rows.length !== uniqueIds.length) {
+          throw new Error("Failed to read initialized document authority heads");
+        }
+        return rows.map((row) => ({
+          documentId: row.documentId,
+          authorityId: row.authorityId,
+          generation: row.generation,
+          admittedThrough: row.nextAdmissionSequence - 1n,
+        }));
+      });
+    },
+  };
 }
 
 /**

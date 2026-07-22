@@ -76,7 +76,9 @@ export type CollabFacadeStore = {
 
 export type DrizzleCollabPersistence = {
   journal: UpdateJournal & ReversalStore;
-  lifecycle: DocumentLifecycle;
+  lifecycle: DocumentLifecycle & {
+    seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
+  };
   store: CollabFacadeStore;
 };
 
@@ -1308,8 +1310,33 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 export function createServerDocumentLifecycle(
   db: JournalDb,
   journal: UpdateJournal,
-): DocumentLifecycle {
+): DocumentLifecycle & {
+  seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
+} {
   return {
+    async seedInitialDocument(docId, state) {
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        await assertReadableHead(txDb, docId);
+        await upsertHead(txDb, docId);
+        const [checkpoint, update] = await Promise.all([
+          txDb
+            .select({ id: documentYjsCheckpoints.id })
+            .from(documentYjsCheckpoints)
+            .where(eq(documentYjsCheckpoints.documentId, asDocumentId(docId)))
+            .limit(1),
+          txDb
+            .select({ id: documentYjsUpdates.id })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
+            .limit(1),
+        ]);
+        if (checkpoint[0] || update[0]) return false;
+        await insertCheckpoint(txDb, docId, state, 0, "seed");
+        return true;
+      });
+    },
     async ensureDocument(docId) {
       // Never stamp a head before verifying the stored head is not stale.
       await assertReadableHead(db, docId);
