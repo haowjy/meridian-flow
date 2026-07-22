@@ -487,10 +487,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
       draft.doc.destroy();
     }
-    branchBroadcasts.length = 0;
-    watermarkCommits.length = 0;
-    autoPushSchedules.length = 0;
-    hocuspocus.broadcasts.length = 0;
     await expect(
       collab.agentEdit().write(
         {
@@ -511,6 +507,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     preCommitBranchHashes = await databaseBranchHashes();
+    // Staging pulls legitimately publish into loaded branch rooms. Start the
+    // measurement window after staging so it covers only the commit attempt.
+    branchBroadcasts.length = 0;
+    watermarkCommits.length = 0;
+    autoPushSchedules.length = 0;
+    hocuspocus.broadcasts.length = 0;
   }
 
   async function seedAndStageDestructive(
