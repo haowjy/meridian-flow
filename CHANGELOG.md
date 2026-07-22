@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Change cards now appear only when AI edits touch writer-authored words; purely
+  generative writes keep their write receipt and whole-turn Undo without listing
+  empty “Inserted text” rows.
 - `apps/server`: fresh-project documents are now initialized exactly once in
   canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
   warm collaboration rooms reconcile with the seed, and AI causal-cut capture
