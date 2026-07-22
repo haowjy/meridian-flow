@@ -1809,8 +1809,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async recordManifestDocumentCreated(documentId, view) {
       if (!deps.manifestMembership) return;
-      const projectId = view?.projectId;
-      if (projectId) await deps.manifestMembership.reconcileProjectManifest(projectId);
       const mutation = await deps.manifestMembership.recordManifestDocumentCreated(
         documentId,
         view,
@@ -1824,8 +1822,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async recordManifestDocumentDeleted(documentId, view) {
       if (!deps.manifestMembership) return;
-      const projectId = view?.projectId;
-      if (projectId) await deps.manifestMembership.reconcileProjectManifest(projectId);
       const mutation = await deps.manifestMembership.recordManifestDocumentDeleted(
         documentId,
         view,

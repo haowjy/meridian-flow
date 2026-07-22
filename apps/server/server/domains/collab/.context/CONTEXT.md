@@ -75,10 +75,12 @@ live-room gate. Ordinary `resolveManifestMembership` calls only reconstruct and
 read it. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
 self-heal command: it seeds missing active database content rows, but never
 rewrites an existing key or removes an entry. The WebSocket gate invokes it once
-after a membership miss; write-intent paths invoke it explicitly. Creation and
-deletion flow through `recordManifestDocument{Created,Deleted}`, with SQL
-soft-delete committed before the deletion notification. Preserve every no-op
-guard: setting an equal Y.Map value still creates Yjs history. See
+after a membership miss. Manifest write-intent paths do not run this broad SQL
+reconciliation; draft-scoped creation (`workId` or `threadId`) must not allow
+unstaged document rows to enter live membership. Creation and deletion flow
+through `recordManifestDocument{Created,Deleted}`, with SQL
+soft-delete committed before the deletion notification. Preserve every no-op guard:
+setting an equal Y.Map value still creates Yjs history. See
 [KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
 for the cross-domain port decision and self-healing rationale.
 
