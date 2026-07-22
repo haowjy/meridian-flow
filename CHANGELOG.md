@@ -2,9 +2,10 @@
 
 ## [Unreleased]
 
-- `apps/server`: fresh-project documents are now seeded into canonical Yjs
-  storage, and AI causal-cut capture initializes missing document authority
-  heads without requiring the writer to open the editor first (#317).
+- `apps/server`: fresh-project documents are now initialized exactly once in
+  canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
+  warm collaboration rooms reconcile with the seed, and AI causal-cut capture
+  initializes missing authority heads without requiring an editor open (#317).
 - `apps/app`: universal document identity bar — every open document shows a
   quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
   match the suggestion dropdown, with a permanent chip whose label graduates
