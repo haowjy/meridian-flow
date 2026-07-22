@@ -1068,9 +1068,17 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
     async checkpoint(docId, state, upToSeq) {
       await db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        const existing = await latestCheckpoint(txDb, docId);
+        // A checkpoint names a durable journal cut. A later snapshot at the same
+        // cut cannot contain legitimate extra state because admission is journal-first.
+        // Keeping the first snapshot prevents a stale warm room from replacing an
+        // initialize-only seed with an empty checkpoint at sequence zero.
+        if (existing && existing.upToSeq >= upToSeq) return;
         // upToSeq must be ≤ the updates reflected in state; replaying extra
         // updates is idempotent, but skipping one loses durable document data.
-        await insertCheckpoint(tx as JournalDb, docId, state, upToSeq, "checkpoint");
+        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint");
       });
     },
 

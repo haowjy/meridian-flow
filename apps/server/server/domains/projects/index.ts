@@ -205,9 +205,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   async function ensureDocument(
     tx: BootstrapDb,
     contextSourceId: ContextSourceId,
-  ): Promise<{ documentId: DocumentId; needsSeed: boolean }> {
+  ): Promise<DocumentId> {
     const [existing] = await tx
-      .select({ id: documents.id, markdownProjection: documents.markdownProjection })
+      .select({ id: documents.id })
       .from(documents)
       .where(
         and(
@@ -218,9 +218,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         ),
       )
       .limit(1);
-    if (existing) {
-      return { documentId: existing.id, needsSeed: existing.markdownProjection === null };
-    }
+    if (existing) return existing.id;
 
     const [document] = await tx
       .insert(documents)
@@ -233,7 +231,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       })
       .returning({ id: documents.id });
     if (!document) throw new Error("Failed to create chapter document");
-    return { documentId: document.id, needsSeed: true };
+    return document.id;
   }
 
   async function ensureThread(
@@ -308,13 +306,13 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   return {
     findPersonalProjectId,
     async ensureDefaultBootstrap(userId) {
-      const { bootstrap, needsSeed } = await db.transaction(async (tx) => {
+      const bootstrap = await db.transaction(async (tx) => {
         await lockBootstrap(tx, userId);
         const projectId = await ensureProject(tx, userId);
         const agentDefinitionId = await ensureAgent(tx, projectId);
         const workId = await ensureWork(tx, projectId, userId);
         const contextSourceId = await ensureContextSource(tx, projectId);
-        const { documentId, needsSeed } = await ensureDocument(tx, contextSourceId);
+        const documentId = await ensureDocument(tx, contextSourceId);
         const threadId = await ensureThread(tx, {
           projectId,
           workId,
@@ -325,27 +323,22 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         });
 
         return {
-          needsSeed,
-          bootstrap: {
-            projectId,
-            workId,
-            threadId,
-            documentId,
-            contextSourceId,
-            agentDefinitionId,
-            uri: DEFAULT_BOOTSTRAP_URI,
-          } satisfies DefaultBootstrap,
-        };
+          projectId,
+          workId,
+          threadId,
+          documentId,
+          contextSourceId,
+          agentDefinitionId,
+          uri: DEFAULT_BOOTSTRAP_URI,
+        } satisfies DefaultBootstrap;
       });
-      if (needsSeed) {
-        const seeded = await deps.documents.seedFromMarkdown(
-          bootstrap.documentId,
-          "# Chapter 1\n\n",
-          { type: "system" },
-        );
-        if (!seeded.ok) {
-          throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
-        }
+      const seeded = await deps.documents.seedFromMarkdown(
+        bootstrap.documentId,
+        "# Chapter 1\n\n",
+        { type: "system" },
+      );
+      if (!seeded.ok) {
+        throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
       }
       return bootstrap;
     },

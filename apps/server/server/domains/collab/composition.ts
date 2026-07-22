@@ -107,6 +107,11 @@ import {
   createOfflineReconciliation,
   type OfflineReconciliation,
 } from "./domain/offline-reconciliation.js";
+import type {
+  DocumentAuthorityHead,
+  DocumentAuthorityHeads,
+} from "./domain/ports/document-authority-heads.js";
+import type { InitialDocumentSeeds } from "./domain/ports/initial-document-seeds.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { createSemanticProvenanceWriter } from "./domain/provenance.js";
 import {
@@ -294,8 +299,8 @@ export type CollabFacadeDeps = {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  seedInitialDocument?(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
-  documentAuthorityHeads: import("./domain/ports/document-authority-heads.js").DocumentAuthorityHeads;
+  initialDocumentSeeds: InitialDocumentSeeds;
+  documentAuthorityHeads: DocumentAuthorityHeads;
   observationSnapshots?: ObservationSnapshotStore;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
@@ -515,7 +520,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal,
     coordinator,
     lifecycle,
-    seedInitialDocument: lifecycle.seedInitialDocument,
+    initialDocumentSeeds: lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     observationSnapshots,
     store,
@@ -607,30 +612,37 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   let boundHocuspocus: Hocuspocus | null = null;
-  const authorityHeads = new Map<
-    string,
-    import("./domain/ports/document-authority-heads.js").DocumentAuthorityHead
-  >();
+  const authorityHeads = new Map<string, DocumentAuthorityHead>();
 
   return createFacade({
     journal,
     coordinator,
     lifecycle,
+    initialDocumentSeeds: {
+      async seedInitialDocument(documentId, state) {
+        const snapshot = await journal.read(documentId);
+        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
+        await journal.checkpoint(documentId, state, 0);
+        return true;
+      },
+    },
     documentAuthorityHeads: {
-      async ensureAndRead(documentIds) {
-        return [...new Set(documentIds)].sort().map((documentId) => {
-          let head = authorityHeads.get(documentId);
-          if (!head) {
-            head = {
-              documentId: documentId as DocumentId,
-              authorityId: crypto.randomUUID() as import("@meridian/contracts").DocumentAuthorityId,
-              generation: 1n,
-              admittedThrough: 0n,
-            };
-            authorityHeads.set(documentId, head);
-          }
-          return head;
-        });
+      async ensureAndReadAuthorityHeads(documentIds) {
+        return Promise.all(
+          [...new Set(documentIds)].sort().map(async (documentId) => {
+            let head = authorityHeads.get(documentId);
+            if (!head) {
+              head = {
+                documentId: documentId as DocumentId,
+                authorityId: crypto.randomUUID() as DocumentAuthorityHead["authorityId"],
+                generation: 1n,
+                admittedThrough: 0n,
+              };
+              authorityHeads.set(documentId, head);
+            }
+            return { ...head, admittedThrough: BigInt(await journal.latestUpdateSeq(documentId)) };
+          }),
+        );
       },
     },
     store: inMemoryStore(journal),
@@ -732,7 +744,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     journal: deps.journal,
     coordinator: deps.coordinator,
     lifecycle: deps.lifecycle,
-    seedInitialDocument: deps.seedInitialDocument,
+    initialDocumentSeeds: deps.initialDocumentSeeds,
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
     identityPreservingWrite: ({ documentId, markdown, actor }) =>
@@ -1226,8 +1238,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   }
 
   return {
-    ensureAndRead(documentIds) {
-      return deps.documentAuthorityHeads.ensureAndRead(documentIds);
+    ensureAndReadAuthorityHeads(documentIds) {
+      return deps.documentAuthorityHeads.ensureAndReadAuthorityHeads(documentIds);
     },
     agentEdit() {
       return agentEditCore;

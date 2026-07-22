@@ -11,5 +11,7 @@ export type DocumentAuthorityHead = {
 
 export interface DocumentAuthorityHeads {
   /** Idempotently initializes missing heads, then returns one head per unique document ID. */
-  ensureAndRead(documentIds: readonly string[]): Promise<readonly DocumentAuthorityHead[]>;
+  ensureAndReadAuthorityHeads(
+    documentIds: readonly string[],
+  ): Promise<readonly DocumentAuthorityHead[]>;
 }

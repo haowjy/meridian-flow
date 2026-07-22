@@ -402,6 +402,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
   const collab = createFacade({
     ...persistence,
+    initialDocumentSeeds: persistence.lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(db),
     observationSnapshots,
     coordinator: liveCoordinator,

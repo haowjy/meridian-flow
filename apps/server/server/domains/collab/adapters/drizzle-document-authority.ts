@@ -66,9 +66,12 @@ async function ensureDocumentAuthority(db: AuthorityDb, documentId: string): Pro
 
 export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAuthorityHeads {
   return {
-    async ensureAndRead(documentIds) {
+    async ensureAndReadAuthorityHeads(documentIds) {
       const uniqueIds = [...new Set(documentIds)].sort() as DocumentId[];
       if (uniqueIds.length === 0) return [];
+
+      const existing = await readAuthorityHeads(db, uniqueIds);
+      if (existing.length === uniqueIds.length) return existing;
 
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
@@ -82,28 +85,33 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
           )
           .onConflictDoNothing({ target: documentYjsHeads.documentId });
 
-        const rows = await tx
-          .select({
-            documentId: documentYjsHeads.documentId,
-            authorityId: documentYjsHeads.authorityId,
-            generation: documentYjsHeads.authorityGeneration,
-            nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
-          })
-          .from(documentYjsHeads)
-          .where(inArray(documentYjsHeads.documentId, uniqueIds))
-          .orderBy(asc(documentYjsHeads.documentId));
+        const rows = await readAuthorityHeads(tx, uniqueIds);
         if (rows.length !== uniqueIds.length) {
           throw new Error("Failed to read initialized document authority heads");
         }
-        return rows.map((row) => ({
-          documentId: row.documentId,
-          authorityId: row.authorityId,
-          generation: row.generation,
-          admittedThrough: row.nextAdmissionSequence - 1n,
-        }));
+        return rows;
       });
     },
   };
+}
+
+async function readAuthorityHeads(db: AuthorityDb, documentIds: DocumentId[]) {
+  const rows = await db
+    .select({
+      documentId: documentYjsHeads.documentId,
+      authorityId: documentYjsHeads.authorityId,
+      generation: documentYjsHeads.authorityGeneration,
+      nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
+    })
+    .from(documentYjsHeads)
+    .where(inArray(documentYjsHeads.documentId, documentIds))
+    .orderBy(asc(documentYjsHeads.documentId));
+  return rows.map((row) => ({
+    documentId: row.documentId,
+    authorityId: row.authorityId,
+    generation: row.generation,
+    admittedThrough: row.nextAdmissionSequence - 1n,
+  }));
 }
 
 /**

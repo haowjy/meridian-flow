@@ -115,7 +115,7 @@ export function createDrizzleResponseObservations(
     async freezeCausalCuts(documentIds) {
       const uniqueIds = [...new Set(documentIds)].sort();
       if (uniqueIds.length === 0) return [];
-      const heads = await documentAuthorityHeads.ensureAndRead(uniqueIds);
+      const heads = await documentAuthorityHeads.ensureAndReadAuthorityHeads(uniqueIds);
       return heads.map((head) => ({
         id: crypto.randomUUID(),
         version: 1,

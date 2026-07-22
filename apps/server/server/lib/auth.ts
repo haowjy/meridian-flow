@@ -113,10 +113,7 @@ export async function provisionAuthenticatedUser(
     avatarUrl: user.avatarUrl,
   });
 
-  const personalProjectId = await deps.projects.findPersonalProjectId(userId);
-  if (!personalProjectId) {
-    await deps.projects.ensureDefaultBootstrap(userId);
-  }
+  await deps.projects.ensureDefaultBootstrap(userId);
 
   return userId;
 }
