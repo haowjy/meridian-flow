@@ -4,7 +4,6 @@ import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persis
 
 export {
   mergeTrailChanges,
-  refinePushChanges,
   trailIdForOwner,
 } from "./drizzle-change-trail-aggregate.js";
 

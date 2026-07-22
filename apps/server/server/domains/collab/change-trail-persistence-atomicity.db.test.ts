@@ -116,12 +116,8 @@ describe("change trail (postgres)", () => {
     const selected = await success.seedSelectivePush();
     await expect(success.selectivePush(selected)).resolves.toMatchObject({ status: "pushed" });
     expect(await success.trailRows()).toMatchObject({
-      shells: [{}],
-      details: [
-        {
-          changes: [expect.objectContaining({ kind: "insert", swept: null })],
-        },
-      ],
+      shells: [expect.objectContaining({ changeCount: 0, documentCount: 0 })],
+      details: [],
       outbox: [{}],
     });
 

@@ -77,24 +77,6 @@ export function mergeTrailChanges(
   return [...folded.values()].map((change, ordinal) => ({ ...change, ordinal }));
 }
 
-/** Applies final sweep classification without erasing the push's ordinary edit history. */
-export function refinePushChanges(
-  provisional: readonly TrailChangeV1[],
-  classifiedSweeps: readonly TrailChangeV1[],
-): TrailChangeV1[] {
-  const classifiedKeys = new Set(classifiedSweeps.map(canonicalChangeKey));
-  const ordinary = provisional
-    .filter((change) => !classifiedKeys.has(canonicalChangeKey(change)))
-    .map(withoutProvisionalSweep);
-  return mergeTrailChanges(ordinary, classifiedSweeps);
-}
-
-function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
-  if (change.writerProtection?.kind === "resurrection") return change;
-  const { writerProtection: _writerProtection, ...ordinary } = change;
-  return { ...ordinary, swept: null };
-}
-
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
   return {
     async record(input) {
@@ -157,9 +139,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ? true
           : persistedPushChanges.length === incomingKeys.size &&
             persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
-        const replacement = input.replacePushId
-          ? refinePushChanges(persistedPushChanges, trail.changes)
-          : trail.changes;
+        const replacement = trail.changes;
         const changes = input.refineCurrentVersion
           ? refinementIsComplete
             ? mergeTrailChanges(
@@ -178,10 +158,6 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
         ]);
         for (const documentId of documentIds) {
-          await tx
-            .insert(changeTrailDocumentOccurrences)
-            .values({ trailId, documentId })
-            .onConflictDoNothing();
           const documentChanges = changes.filter((change) => change.documentId === documentId);
           if (documentChanges.length === 0) {
             await tx
@@ -192,8 +168,20 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
                   eq(changeTrailDocumentDetails.documentId, documentId),
                 ),
               );
+            await tx
+              .delete(changeTrailDocumentOccurrences)
+              .where(
+                and(
+                  eq(changeTrailDocumentOccurrences.trailId, trailId),
+                  eq(changeTrailDocumentOccurrences.documentId, documentId),
+                ),
+              );
             continue;
           }
+          await tx
+            .insert(changeTrailDocumentOccurrences)
+            .values({ trailId, documentId })
+            .onConflictDoNothing();
           await tx
             .insert(changeTrailDocumentDetails)
             .values({

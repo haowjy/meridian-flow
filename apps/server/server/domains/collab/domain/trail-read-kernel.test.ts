@@ -242,7 +242,7 @@ describe("trail normalization", () => {
     expect(trails[0].counts.swept).toBe(1);
   });
 
-  it("counts an addition but not as swept", () => {
+  it("omits an ordinary generative addition", () => {
     const trails = normalizeTrailPushes([
       {
         pushId: "p1",
@@ -252,6 +252,7 @@ describe("trail normalization", () => {
         changes: [change({ kind: "insert", beforeText: null })],
       },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 1, swept: 0, documents: 1 });
+    expect(trails[0].counts).toEqual({ changes: 0, swept: 0, documents: 0 });
+    expect(trails[0].changes).toEqual([]);
   });
 });

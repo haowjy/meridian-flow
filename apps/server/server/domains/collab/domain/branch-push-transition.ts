@@ -10,6 +10,7 @@ import {
   normalizeLineageRanges,
   observationCoversRendering,
   snapshotBlocks,
+  subtractLineageRanges,
   toDocHandle,
   type VisibleProseOccurrence,
   type YProsemirrorDocumentModel,
@@ -229,6 +230,30 @@ export function createBranchPushTransition(input: {
       const beforeOccurrences = occurrencesFor(before, preProvenance);
       const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
       const afterOccurrences = occurrencesFor(after, afterProvenance);
+      const survivingRoots = afterOccurrences.map((occurrence) => occurrence.root);
+      const writerTouchedRenderings = new Set(
+        beforeOccurrences.flatMap((occurrence) =>
+          occurrence.provenance === "writer_protected" &&
+          subtractLineageRanges([occurrence.root], survivingRoots).length > 0
+            ? [occurrence.finalRendering]
+            : [],
+        ),
+      );
+      const writerTouchedIdentities = new Set(
+        before.flatMap((block) =>
+          block.clientID !== undefined &&
+          block.clock !== undefined &&
+          writerTouchedRenderings.has(renderingKey(block))
+            ? [
+                canonicalBlockKey({
+                  documentId: pending.push.documentId,
+                  clientID: block.clientID,
+                  clock: block.clock,
+                }),
+              ]
+            : [],
+        ),
+      );
       const evidenceById = new Map(pending.responseEvidence.map((item) => [item.evidenceId, item]));
       const eligibleByRendering = new Map<string, LineageRange[]>();
 
@@ -292,9 +317,6 @@ export function createBranchPushTransition(input: {
         }
       }
 
-      if (eligibleByRendering.size === 0) {
-        return { trail: pending.trail, refineToEmpty: true };
-      }
       const affected = before.filter((block) => {
         return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
       });
@@ -338,7 +360,31 @@ export function createBranchPushTransition(input: {
           },
         ];
       });
-      if (lateChanges.length === 0) return null;
+      if (eligibleByRendering.size > 0 && lateChanges.length === 0) return null;
+      const classifiedSweeps = new Map(
+        lateChanges.flatMap((change) =>
+          change.beforeBlockIdentity
+            ? [[canonicalBlockKey(change.beforeBlockIdentity), change] as const]
+            : [],
+        ),
+      );
+      const retainedChanges = pending.trail.changes.flatMap((change) => {
+        const identityKey = change.beforeBlockIdentity
+          ? canonicalBlockKey(change.beforeBlockIdentity)
+          : null;
+        const classified = identityKey ? classifiedSweeps.get(identityKey) : undefined;
+        if (classified) return [classified];
+        if (change.writerProtection?.kind === "resurrection") return [change];
+        if (!identityKey || !writerTouchedIdentities.has(identityKey)) return [];
+        const { writerProtection: _writerProtection, ...ordinary } = change;
+        return [{ ...ordinary, swept: null }];
+      });
+      if (retainedChanges.length === 0) {
+        return { trail: { ...pending.trail, changes: [] }, refineToEmpty: true };
+      }
+      if (lateChanges.length === 0) {
+        return { trail: { ...pending.trail, changes: retainedChanges } };
+      }
       const swept: PushSweptTrail = {
         affectedBlockHashes: affected.map((block) => block.hash).sort(),
         capturedDeletedBodies: lateChanges.map((change) => ({
@@ -358,7 +404,7 @@ export function createBranchPushTransition(input: {
       return {
         trail: {
           ...pending.trail,
-          changes: lateChanges,
+          changes: retainedChanges,
           transactionalNotice: {
             kind: "push_swept",
             scope: { kind: "document", documentId: pending.push.documentId },

@@ -367,7 +367,9 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
   return [...grouped.values()]
     .sort((left, right) => ownerKey(left.owner).localeCompare(ownerKey(right.owner)))
     .map(({ owner, changes }) => {
-      const folded = foldChanges(changes);
+      const folded = foldChanges(changes).filter(
+        (change) => change.kind !== "insert" || change.writerProtection || change.swept,
+      );
       return {
         owner,
         changes: folded,

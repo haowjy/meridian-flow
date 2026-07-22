@@ -528,7 +528,7 @@ describe("createBranchPushService", () => {
     );
   });
 
-  it("attributes ordinary receipt blocks to their exact journal rows", async () => {
+  it("keeps generative receipt ownership without displayable rows", async () => {
     const harness = new Harness();
     await harness.init();
     const secondTurnId = "00000000-0000-4000-8000-000000000006" as TurnId;
@@ -569,8 +569,8 @@ describe("createBranchPushService", () => {
         trail.changes.length,
       ]),
     ).toEqual([
-      [TURN_ID, 1],
-      [secondTurnId, 1],
+      [TURN_ID, 0],
+      [secondTurnId, 0],
     ]);
   });
   it("attributes one repeatedly edited block to every owning turn", async () => {
