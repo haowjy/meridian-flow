@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -315,27 +315,48 @@ export function DraftApplyRefusalNotice({
 }: {
   refusal: NonNullable<DraftDockModel["applyRefusal"]>;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const explanationId = useId();
+  const explanation =
+    refusal.reason === "stale_draft"
+      ? t`This draft was updated after you opened it.`
+      : refusal.reason === "protected_resurrection"
+        ? t`Applying would bring back text you deleted:`
+        : t`The chapter changed after this draft was written:`;
+
   return (
     <div
-      className="space-y-1 border-warning-border border-b bg-warning-bg px-3 py-2 text-caption text-warning-foreground"
+      className="border-border-subtle border-b bg-muted text-caption text-prose-foreground"
       data-draft-apply-refusal={refusal.reason}
+      data-draft-apply-refusal-expanded={expanded}
     >
-      <p className="font-medium">
-        {refusal.reason === "stale_draft" ? (
-          <Trans>This draft changed. Review the latest version before applying.</Trans>
-        ) : refusal.reason === "protected_resurrection" ? (
-          <Trans>Couldn't apply because this would bring back text you deleted.</Trans>
-        ) : (
-          <Trans>
-            Couldn't apply because your live document changed since this draft was prepared.
-          </Trans>
-        )}
-      </p>
-      {refusal.passages.map((passage) => (
-        <p key={passage.body} className="whitespace-pre-wrap text-prose-foreground">
-          {passage.body}
-        </p>
-      ))}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={explanationId}
+        onClick={() => setExpanded((value) => !value)}
+        className="focus-ring flex w-full items-center gap-1.5 px-3 py-2 text-left hover:bg-card"
+      >
+        <ChevronRight
+          className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")}
+          aria-hidden
+        />
+        <span className="font-medium">
+          <Trans>Not applied</Trans>
+        </span>
+      </button>
+      {expanded ? (
+        <div id={explanationId} className="space-y-1 px-3 pb-2" data-draft-apply-refusal-details>
+          <p className="text-ink-muted" data-draft-apply-refusal-explanation>
+            {explanation}
+          </p>
+          {refusal.passages.map((passage) => (
+            <p key={passage.body} className="whitespace-pre-wrap text-prose-foreground">
+              {passage.body}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
