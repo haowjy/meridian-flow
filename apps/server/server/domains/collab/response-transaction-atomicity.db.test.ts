@@ -86,6 +86,15 @@ describe("change trail (postgres)", () => {
     });
   });
 
+  it("does not compact a retired-generation suffix into restored authority", async () => {
+    const harness = createHarness();
+
+    await expect(harness.compactAfterAuthorityReplacement()).resolves.toEqual({
+      coldMarkdown: "Restored base.\n",
+      currentGenerationUpdateCount: 0,
+    });
+  });
+
   it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
     const harness = createHarness();
     await harness.seedAndStage("outer-rollback-response");

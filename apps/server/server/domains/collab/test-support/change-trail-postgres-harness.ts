@@ -1001,6 +1001,72 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
   }
 
+  async function compactAfterAuthorityReplacement(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    const checkpointId = await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      let before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, "Restored base.");
+      const baseSeq = await persistence.journal.append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `agent:${TURN_ID}`,
+          actorTurnId: TURN_ID,
+          seq: 0,
+        },
+      );
+      await persistence.journal.checkpoint(ALPHA_ID, Y.encodeStateAsUpdate(doc), baseSeq);
+      const [checkpoint] = await db
+        .select({ id: schema.documentYjsCheckpoints.id })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsCheckpoints.id))
+        .limit(1);
+      if (!checkpoint) throw new Error("replacement probe checkpoint is unavailable");
+
+      const block = model.getBlocks(toDocHandle(doc))[0];
+      if (!block) throw new Error("replacement probe block is unavailable");
+      before = Y.encodeStateVector(doc);
+      model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      return checkpoint.id;
+    });
+
+    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityGeneration(db, {
+      documentId: ALPHA_ID,
+      checkpointId,
+      expectedGeneration: authority.generation,
+    });
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+
+    const snapshot = await persistence.journal.read(ALPHA_ID);
+    const coldDoc = new Y.Doc({ gc: false });
+    if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
+    for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
+    const coldMarkdown = serializeMarkdown(coldDoc);
+    coldDoc.destroy();
+    const currentGenerationUpdateCount = (
+      await db
+        .select()
+        .from(schema.documentYjsUpdates)
+        .where(
+          and(
+            eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
+            eq(schema.documentYjsUpdates.authorityGeneration, replaced.generation),
+          ),
+        )
+    ).length;
+    return { coldMarkdown, currentGenerationUpdateCount };
+  }
+
   async function seedLiveCertifiedCarry(input: {
     initialMarkdown: string;
     carriedMarkdown: string | readonly string[];
@@ -1503,6 +1569,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedPendingDependencyPush,
     seedWriterDocument,
     compactMixedProvenanceTwice,
+    compactAfterAuthorityReplacement,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
     seedObservedCertifiedDelete,

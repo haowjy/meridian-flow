@@ -1251,7 +1251,19 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     async compact(docId, before) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
-        const checkpoint = await latestCheckpoint(txDb, docId);
+        const authority = await readDocumentAuthority(txDb, docId);
+        const [checkpoint] = await txDb
+          .select()
+          .from(documentYjsCheckpoints)
+          .where(
+            and(
+              eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
+              eq(documentYjsCheckpoints.authorityId, authority.authorityId),
+              eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+            ),
+          )
+          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+          .limit(1);
         const checkpointSeq = checkpoint?.upToSeq ?? 0;
         // Compaction folds a contiguous seq prefix, so every retained update sits strictly
         // above the latest compacted checkpoint; reconstruction can safely start from the
@@ -1262,6 +1274,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .where(
             and(
               eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+              eq(documentYjsUpdates.authorityId, authority.authorityId),
+              eq(documentYjsUpdates.authorityGeneration, authority.generation),
               gt(documentYjsUpdates.id, checkpointSeq),
             ),
           )
@@ -1291,6 +1305,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             .where(
               and(
                 eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+                eq(documentYjsUpdates.authorityId, authority.authorityId),
+                eq(documentYjsUpdates.authorityGeneration, authority.generation),
                 lte(documentYjsUpdates.id, compactedThroughSeq),
               ),
             );
