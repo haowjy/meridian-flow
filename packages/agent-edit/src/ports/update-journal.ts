@@ -83,7 +83,7 @@ export interface WriteMutationRow {
  * that previously thread-served that race is gone.
  */
 export type PersistUndoResult =
-  | { persisted: true }
+  | { persisted: true; journalCommitKind?: JournalCommitKind }
   | { persisted: false; status: "cant_undo_dependent"; message?: string };
 
 export interface PersistRedoEntry {
@@ -140,8 +140,11 @@ export interface DestructiveProvenanceRun {
 
 /** Write-level reversal store: write ordinals, mutation metadata, and undo/redo rows. */
 export interface ReversalStore {
-  /** Reserve the next durable per-(document, thread) write ordinal. */
-  reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
+  /**
+   * Reserve the next durable per-(document, thread) write ordinal.
+   * Branch adapters may reuse one ordinal for a host-defined durable group.
+   */
+  reserveWriteOrdinal(documentId: string, threadId: string, groupId?: string): Promise<number>;
   /**
    * Earliest reconstructable base: the newest checkpoint strictly below the
    * earliest retained update row, plus the retained updates after it.
@@ -184,12 +187,12 @@ export interface ReversalStore {
     redoUpdate: Uint8Array,
     ref: { threadId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
-  ): Promise<{ consumed: boolean; seq?: number }>;
+  ): Promise<{ consumed: boolean; seq?: number; journalCommitKind?: JournalCommitKind }>;
   /** Consume several redo groups in one persistence transaction. */
   persistRedoBatch(
     docId: string,
     entries: readonly PersistRedoEntry[],
-  ): Promise<{ consumed: boolean; seqs?: number[] }>;
+  ): Promise<{ consumed: boolean; seqs?: number[]; journalCommitKind?: JournalCommitKind }>;
   readReversals(
     docId: string,
     opts?: { threadId?: string; status?: ReversalRecord["status"][] },

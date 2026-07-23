@@ -21,12 +21,20 @@ journal do).
 
 `ResponseCommitter` commits buffered response updates through `UpdateJournal.appendBatch`.
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
-`ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
-use the same store to plan against retained update rows and mutation metadata.
+`ReversalStore.reserveWriteOrdinal`; a host may supply a durable group ID and
+reuse one ordinal for that group when its journal folds the mutations into one
+row. Undo/redo selection and availability then use the same store to plan
+against retained update rows and mutation metadata.
 Scope reversal is operation-atomic: every selected group is reconstructed
 before persistence. Multi-group redo is consumed by
 `persistRedoBatch` in one store transaction, then the prepared updates are
 projected together.
+
+Persistence results distinguish durable from staged commits. A failed staged
+projection restores or evicts the runtime before reporting failure. A failed
+projection after a durable reversal recovers from the journal and reports the
+committed outcome; diagnostics must not turn that committed effect into an
+`internal_error`.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group

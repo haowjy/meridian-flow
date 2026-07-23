@@ -700,6 +700,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               threadId,
               liveJournal: deps.journal,
               pendingJournalEntries,
+              branches: branchAgentEdit.store,
+              branchRows: deps.branchPushStore?.listJournalRowsForBranch
+                ? {
+                    listJournalRowsForBranch: (input) =>
+                      deps.branchPushStore?.listJournalRowsForBranch?.(input) ??
+                      Promise.resolve([]),
+                  }
+                : undefined,
             }),
             coordinator: createBranchAgentEditCoordinator({
               threadId,

@@ -183,6 +183,27 @@ describe("write reversal dependencies", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade. Human."]);
   });
 
+  it("reports a durable reversal honestly when live projection needs recovery", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-durable-recovery" },
+    );
+    let concurrentReads = 0;
+    ctx.coordinator.concurrentUpdatesSince = async () => {
+      concurrentReads += 1;
+      if (concurrentReads === 2) throw new Error("projection unavailable after persistence");
+      return [];
+    };
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(await ctx.journal.readReversals("chapter.md", { status: ["reversed"] })).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
+  });
+
   it("refuses undo with generic wording when an untracked later edit depends on the write", async () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },

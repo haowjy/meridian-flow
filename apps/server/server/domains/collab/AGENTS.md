@@ -79,6 +79,10 @@ propagation between them.
 - **Undo is intrinsically guarded**: `persistUndo` runs the dependency check
   in-transaction under `lockDocumentMutation`. There is no separate guard to
   bypass — every undo path passes through the same gate.
+- **Draft write undo is generation-local**: a response/document folds to one
+  durable handle; undo/redo stages a typed-generation system row and projects it
+  in the same Work-draft commit. Never delegate an active Draft generation to
+  live reversal persistence.
 - **All branch Y.Docs are `gc: false`**: delete sets are preserved; tombstones
   are never cleaned. The undo dependency predicate depends on full struct history.
 - **Push lock ordering**: `BranchCriticalSections` acquires sorted branch locks
