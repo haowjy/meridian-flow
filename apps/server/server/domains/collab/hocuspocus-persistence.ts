@@ -330,7 +330,10 @@ export function createHocuspocusPersistenceService(
         recordDroppedConnectionUpdate(input.documentId);
         throw new Error("stale-authority-generation");
       }
-      const authoritativeDoc = input.document;
+      const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
+      if (!authoritativeDoc || authoritativeDoc !== input.document) {
+        throw new Error("authority-document-mismatch");
+      }
       const retiredStateVector = retiredStateVectors.get(input.documentId);
       if (
         retiredStateVector &&

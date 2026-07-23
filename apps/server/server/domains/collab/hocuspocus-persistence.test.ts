@@ -498,12 +498,38 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("rejects reserved-client-ID injection before journaling", async () => {
+  it("rejects a caller-supplied document that is not the bound room authority", async () => {
+    const authority = reservedAuthorityDoc();
+    const wrongDocument = new Y.Doc({ gc: false });
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
-      hocuspocus: () => null,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        document: wrongDocument,
+        update: writerUpdate(),
+        origin: { type: "user", userId: "user-1" },
+        expectedGeneration: 1n,
+      }),
+    ).rejects.toThrow("authority-document-mismatch");
+    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects reserved-client-ID injection before journaling", async () => {
+    const authority = new Y.Doc({ gc: false });
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
@@ -514,7 +540,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await expect(
       persistence.admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
-        document: new Y.Doc({ gc: false }),
+        document: authority,
         update: Y.encodeStateAsUpdate(client),
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -524,6 +550,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   });
 
   it("does not resolve admission until the journal transaction commits", async () => {
+    const authority = new Y.Doc({ gc: false });
     const events: string[] = [];
     let commit: (() => void) | undefined;
     const journal = fakeJournal();
@@ -539,7 +566,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     );
     const persistence = createHocuspocusPersistenceService({
       journal,
-      hocuspocus: () => null,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
@@ -548,7 +575,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const admission = persistence
       .admitLiveWriterUpdate({
         documentId: DOCUMENT_ID,
-        document: new Y.Doc({ gc: false }),
+        document: authority,
         update,
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
@@ -566,13 +593,19 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   });
 
   it("rejects journal failure before the transport can apply or acknowledge", async () => {
+    const authority = new Y.Doc({ gc: false });
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(async () => {
       throw new Error("database unavailable");
     });
     const persistence = createHocuspocusPersistenceService({
       journal,
-      hocuspocus: () => null,
+      hocuspocus: () =>
+        ({
+          documents: new Map([[DOCUMENT_ID, authority]]),
+          getDocumentsCount: () => 1,
+          getConnectionsCount: () => 0,
+        }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
@@ -583,7 +616,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       persistence
         .admitLiveWriterUpdate({
           documentId: DOCUMENT_ID,
-          document: new Y.Doc({ gc: false }),
+          document: authority,
           update: writerUpdate(),
           origin: { type: "user", userId: "user-1" },
           expectedGeneration: 1n,
@@ -599,6 +632,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   });
 
   it("drains started admissions and detects a later generation", async () => {
+    const authority = new Y.Doc({ gc: false });
     const resolvers: Array<() => void> = [];
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(
@@ -609,14 +643,14 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     );
     const persistence = createHocuspocusPersistenceService({
       journal,
-      hocuspocus: () => null,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
     const first = persistence.admitLiveWriterUpdate({
       documentId: DOCUMENT_ID,
-      document: new Y.Doc({ gc: false }),
+      document: authority,
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" },
       expectedGeneration: 1n,
@@ -631,7 +665,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
 
     const second = persistence.admitLiveWriterUpdate({
       documentId: DOCUMENT_ID,
-      document: new Y.Doc({ gc: false }),
+      document: authority,
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" },
       expectedGeneration: 1n,

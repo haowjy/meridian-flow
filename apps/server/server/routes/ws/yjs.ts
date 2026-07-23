@@ -225,37 +225,47 @@ export async function admitWriterSync(input: {
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
   if (room.kind === "branch") {
-    await enforceBranchHandshake({
-      services: input.services,
-      room,
-      syncType: input.syncType,
-      payload: input.payload,
-      context: input.context,
+    return admitBranchSync(input, room);
+  }
+  return admitLiveSync(input, room);
+}
+
+type WriterSyncInput = Parameters<typeof admitWriterSync>[0];
+
+function carriesUpdate(syncType: number, payload: Uint8Array): boolean {
+  return (syncType === messageYjsSyncStep2 || syncType === messageYjsUpdate) && payload.length > 0;
+}
+
+async function admitBranchSync(
+  input: WriterSyncInput,
+  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>,
+): Promise<undefined> {
+  await enforceBranchHandshake({
+    services: input.services,
+    room,
+    syncType: input.syncType,
+    payload: input.payload,
+    context: input.context,
+  });
+  if (!carriesUpdate(input.syncType, input.payload)) return;
+  try {
+    await input.services.documentSync.validateBranchWriterUpdate({
+      branchId: room.branchId,
+      expectedGeneration: room.generation,
+      update: input.payload,
     });
-    if (
-      (input.syncType !== messageYjsSyncStep2 && input.syncType !== messageYjsUpdate) ||
-      input.payload.length === 0
-    ) {
-      return;
-    }
-    try {
-      await input.services.documentSync.validateBranchWriterUpdate({
-        branchId: room.branchId,
-        expectedGeneration: room.generation,
-        update: input.payload,
-      });
-      return;
-    } catch {
-      input.closeTransport?.();
-      throw permissionDenied("branch-update-admission-failed", 1008);
-    }
-  }
-  if (
-    (input.syncType !== messageYjsSyncStep2 && input.syncType !== messageYjsUpdate) ||
-    input.payload.length === 0
-  ) {
     return;
+  } catch {
+    input.closeTransport?.();
+    throw permissionDenied("branch-update-admission-failed", 1008);
   }
+}
+
+async function admitLiveSync(
+  input: WriterSyncInput,
+  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "live" }>,
+): Promise<AdmitLiveWriterUpdateResult | undefined> {
+  if (!carriesUpdate(input.syncType, input.payload)) return;
   try {
     const admission = await input.services.documentSync.admitLiveWriterUpdate({
       documentId: room.documentId,

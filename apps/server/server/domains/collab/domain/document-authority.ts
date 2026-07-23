@@ -126,16 +126,7 @@ export function createWriterIngress<Context>(port: WriterIngressPort<Context>) {
       source: Extract<AuthorshipSource, { kind: "writer" }>;
       context: Context;
     }): { admit(): Promise<{ sequence: bigint; joined: number }> } {
-      assertFreshSource(input.source);
-      assertNonEmptyUpdate(input.update);
-      let admission: ReturnType<typeof validateClientUpdateAdmission>;
-      try {
-        admission = validateClientUpdateAdmission(input.authority, input.update);
-      } catch (cause) {
-        invalid(
-          cause instanceof Error ? cause.message : "Client update failed authority validation",
-        );
-      }
+      const admission = validateFreshAuthorship(input.authority, input.update, input.source);
       if (admission.reservedClientId !== null) {
         throw new ReservedWriterClientIdError(admission.reservedClientId);
       }
@@ -189,16 +180,9 @@ async function admitFresh(
   port: DocumentAuthorityPort,
   mutation: Extract<DocumentMutation, { kind: "attributedFreshAuthorship" }>,
 ): Promise<{ sequence: bigint; joined: number }> {
-  assertFreshSource(mutation.source);
-  assertNonEmptyUpdate(mutation.update);
   const authorityValue = port.readMutableAuthority();
   const authority = isPromise(authorityValue) ? await authorityValue : authorityValue;
-  let admission: ReturnType<typeof validateClientUpdateAdmission>;
-  try {
-    admission = validateClientUpdateAdmission(authority.doc, mutation.update);
-  } catch (cause) {
-    invalid(cause instanceof Error ? cause.message : "Client update failed authority validation");
-  }
+  const admission = validateFreshAuthorship(authority.doc, mutation.update, mutation.source);
   if (admission.reservedClientId !== null)
     invalid("Reserved server client IDs cannot author fresh prose");
   const admitted = await port.admitImmediate({
@@ -206,6 +190,22 @@ async function admitFresh(
     attribution: mutation.source,
   });
   return { sequence: admitted.sequence, joined: admitted.joined };
+}
+
+function validateFreshAuthorship(
+  authority: Y.Doc,
+  update: Uint8Array,
+  source: AuthorshipSource,
+): ReturnType<typeof validateClientUpdateAdmission> {
+  assertFreshSource(source);
+  assertNonEmptyUpdate(update);
+  let admission: ReturnType<typeof validateClientUpdateAdmission>;
+  try {
+    admission = validateClientUpdateAdmission(authority, update);
+  } catch (cause) {
+    invalid(cause instanceof Error ? cause.message : "Client update failed authority validation");
+  }
+  return admission;
 }
 
 async function admitCertified(
