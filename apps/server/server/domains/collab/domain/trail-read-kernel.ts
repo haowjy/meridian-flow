@@ -1,173 +1,28 @@
 /** Pure change-trail normalization and durable Yjs navigation targets. */
 import {
-  type BlockItemId,
   encodeNavigationPosition,
   getBlockItemId,
-  type LineageRange,
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
 } from "@meridian/agent-edit";
-import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
+import {
+  type CanonicalBlockIdentityV1,
+  type ChangeTrailShellV1,
+  type HistoricalBody,
+  type NavigationTargetV1,
+  parseTrailChangesV1,
+  type TrailChangeV1,
+} from "@meridian/contracts";
 import * as Y from "yjs";
-import { z } from "zod";
 
-export type HistoricalBody =
-  | { status: "available"; markdown: string }
-  | { status: "unavailable"; reason: string };
-
-/** Stable block identity. Display hashlines are deliberately excluded. */
-export type CanonicalBlockIdentityV1 = {
-  documentId: string;
-  clientID: number;
-  clock: number;
+export type {
+  CanonicalBlockIdentityV1,
+  ChangeTrailShellV1,
+  HistoricalBody,
+  NavigationTargetV1,
+  TrailChangeV1,
 };
-
-export type NavigationTargetV1 =
-  | { kind: "live_block_range"; relStart: string; relEnd: string; targetBlockId: BlockItemId }
-  | {
-      kind: "deletion_boundary";
-      position: string;
-      affinity: "before_next" | "after_previous" | "document_start";
-    }
-  | { kind: "unavailable"; reason: string };
-
-export type TrailChangeV1 = {
-  changeId: string;
-  ordinal: number;
-  documentId: string | null;
-  pushId: string | null;
-  receiptId: string | null;
-  kind: "insert" | "modify" | "delete";
-  beforeBlockId: string | null;
-  afterBlockId: string | null;
-  beforeBlockIdentity?: CanonicalBlockIdentityV1 | null;
-  afterBlockIdentity?: CanonicalBlockIdentityV1 | null;
-  beforeText: string | null;
-  afterTextAtReceipt: string | null;
-  navigation: NavigationTargetV1;
-  swept: null | {
-    affectedBlockHash: string;
-    affectedBlockIdentity?: CanonicalBlockIdentityV1;
-    removed: HistoricalBody;
-    beforeContentRef: number | null;
-  };
-  writerProtection?:
-    | { kind: "sweep"; body: HistoricalBody; ranges?: LineageRange[] }
-    | { kind: "resurrection"; body: HistoricalBody };
-  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
-  reversible: false;
-};
-
-export type ChangeTrailShellV1 = {
-  trailId: string;
-  owner:
-    | { kind: "turn"; threadId: string; turnId: string }
-    | { kind: "shared"; threadId: string; turnId: null };
-  state: "building" | "settling" | "settled";
-  version: number;
-  changeCount: number;
-  sweptChangeCount: number;
-  documentCount: number;
-  updatedAt: string;
-  settledAt: string | null;
-};
-
-const historicalBodySchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("available"), markdown: z.string() }),
-  z.object({ status: z.literal("unavailable"), reason: z.string() }),
-]);
-
-const canonicalBlockIdentitySchema = z.object({
-  documentId: z.string(),
-  clientID: z.number().int(),
-  clock: z.number().int(),
-});
-
-const navigationTargetSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("live_block_range"),
-    relStart: z.string(),
-    relEnd: z.string(),
-    targetBlockId: z.object({ clientID: z.number().int(), clock: z.number().int() }),
-  }),
-  z.object({
-    kind: z.literal("deletion_boundary"),
-    position: z.string(),
-    affinity: z.enum(["before_next", "after_previous", "document_start"]),
-  }),
-  z.object({ kind: z.literal("unavailable"), reason: z.string() }),
-]);
-
-const forwardActionStateSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("committed"),
-    update: z.string(),
-    expectedLiveStateHash: z.string(),
-  }),
-  z.object({ status: z.literal("applied"), updateId: z.number().int() }),
-  z.object({
-    status: z.literal("settled"),
-    outcome: z.enum(["anchor_unavailable", "retry_exhausted"]),
-  }),
-]);
-
-const trailChangeSchema: z.ZodType<TrailChangeV1> = z.object({
-  changeId: z.string(),
-  ordinal: z.number().int(),
-  documentId: z.string().nullable(),
-  pushId: z.string().nullable(),
-  receiptId: z.string().nullable(),
-  kind: z.enum(["insert", "modify", "delete"]),
-  beforeBlockId: z.string().nullable(),
-  afterBlockId: z.string().nullable(),
-  beforeBlockIdentity: canonicalBlockIdentitySchema.nullable().optional(),
-  afterBlockIdentity: canonicalBlockIdentitySchema.nullable().optional(),
-  beforeText: z.string().nullable(),
-  afterTextAtReceipt: z.string().nullable(),
-  navigation: navigationTargetSchema,
-  swept: z
-    .object({
-      affectedBlockHash: z.string(),
-      affectedBlockIdentity: canonicalBlockIdentitySchema.optional(),
-      removed: historicalBodySchema,
-      beforeContentRef: z.number().int().nullable(),
-    })
-    .nullable(),
-  writerProtection: z
-    .discriminatedUnion("kind", [
-      z.object({
-        kind: z.literal("sweep"),
-        body: historicalBodySchema,
-        ranges: z
-          .array(
-            z.object({
-              clientID: z.number().int().nonnegative(),
-              clock: z.number().int().nonnegative(),
-              length: z.number().int().positive(),
-            }),
-          )
-          .optional(),
-      }),
-      z.object({ kind: z.literal("resurrection"), body: historicalBodySchema }),
-    ])
-    .optional(),
-  forwardActions: z
-    .object({
-      restore: forwardActionStateSchema.optional(),
-      "delete-again": forwardActionStateSchema.optional(),
-    })
-    .optional(),
-  reversible: z.literal(false),
-});
-
-/** Fails closed when durable JSON no longer matches the trail wire model. */
-export function parseTrailChangesV1(value: unknown): TrailChangeV1[] {
-  const result = z.array(trailChangeSchema).safeParse(value);
-  if (!result.success) {
-    throw new Error(`Corrupt change-trail detail: ${z.prettifyError(result.error)}`);
-  }
-  return result.data;
-}
+export { parseTrailChangesV1 };
 
 export type ChangeTrailDocumentDetailV1 = {
   trailId: string;

@@ -44,6 +44,8 @@ const g8SweptDocument = {
       },
       navigation: { kind: "unavailable", reason: "capture_failed" },
       swept: {
+        affectedBlockHash: "7594",
+        beforeContentRef: null,
         removed: {
           status: "available",
           markdown:
@@ -76,7 +78,11 @@ const g8OrdinaryDocument = {
       changeId: "g8-s10-ordinary-change",
       ordinal: 0,
       documentId: "7a59f55a-ee6f-4659-99b4-17fde01a174c",
+      pushId: null,
+      receiptId: null,
       kind: "delete",
+      beforeBlockId: null,
+      afterBlockId: null,
       beforeText:
         "g8-s10-before|G8 S10 CAPTURED ORDINARY BODY: quiet dragons guarded the western gate.",
       afterTextAtReceipt: null,
@@ -92,7 +98,11 @@ function protectedChange(kind: "sweep" | "resurrection"): TrailChange {
     changeId: `change-${kind}`,
     ordinal: 1,
     documentId: "document-1",
+    pushId: null,
+    receiptId: null,
     kind: kind === "sweep" ? "delete" : "insert",
+    beforeBlockId: null,
+    afterBlockId: null,
     beforeText: null,
     afterTextAtReceipt: null,
     navigation: {

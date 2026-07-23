@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `@meridian/contracts`, `apps/server`, `apps/app`: single-source the complete
+  change-trail wire model and parsers, and add the validated Yjs `change_event`
+  stateless contract for session change marks.
 - `apps/app`, `apps/server`, `@meridian/contracts`: delete the dead, lossy
   writer safety-notice transport and session state; model-context notices remain
   durable while Trail/Restore is the writer-facing report (part of #333).
