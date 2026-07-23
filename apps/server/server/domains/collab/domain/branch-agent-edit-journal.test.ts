@@ -102,7 +102,21 @@ describe("branch agent-edit journal appendBatch", () => {
             : { upstreamBranchId: null, generation: 2 },
       },
       branchRows: {
-        listJournalRowsForBranch: async () => [],
+        listJournalRowsForBranch: async () => [
+          {
+            id: 1,
+            branchId: "work",
+            generation: 2,
+            wId: 1,
+            source: "agent",
+            threadId: THREAD_ID,
+            turnId: null,
+            actorUserId: null,
+            updateData: new Uint8Array([1, 2]),
+            draftBaseUpdateSeq: 1,
+            status: "pushed",
+          },
+        ],
       },
     });
 
