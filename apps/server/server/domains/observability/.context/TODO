@@ -1,0 +1,8 @@
+# TODO
+
+- `adapters/deferred/deferred-event-sink.ts`: the 1,000-record bootstrap
+  buffer evicts oldest without a counter, so pre-bind loss is the one
+  uncounted drop path (policy elsewhere: all bounded loss is counted and
+  surfaced — local sink `sink.dropped`, ring `dropped`, SSE close). Add an
+  eviction counter and surface it on bind (e.g. one summary event when the
+  real sink attaches).

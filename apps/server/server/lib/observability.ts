@@ -3,13 +3,18 @@
  * composition all share this one deferred sink so buffered backends do not split
  * diagnostics across independent queues or lose early boot events.
  */
-import { DeferredEventSink, type EventSink } from "../domains/observability/index.js";
+import {
+  DeferredEventSink,
+  type EventQuery,
+  type EventSink,
+} from "../domains/observability/index.js";
 
 const OBSERVABILITY_KEY = Symbol.for("meridian.api.observability.v1");
 
 type ObservabilityGlobal = typeof globalThis & {
   [OBSERVABILITY_KEY]?: {
     sink: DeferredEventSink;
+    eventQuery?: EventQuery;
     delegateBound: boolean;
     shutdownInstalled: boolean;
     shutdownCallbacks: Array<() => Promise<void> | void>;
@@ -31,22 +36,23 @@ export function getProcessEventSink(): EventSink {
   return state().sink;
 }
 
-export function bindProcessEventSink(delegate: EventSink): EventSink {
+export function getOrBindProcessObservability(
+  createDelegate: () => {
+    sink: EventSink;
+    eventQuery?: EventQuery;
+  },
+): { sink: EventSink; eventQuery?: EventQuery } {
   const current = state();
   if (!current.delegateBound) {
-    current.sink.bind(delegate);
+    const delegate = createDelegate();
+    current.sink.bind(delegate.sink);
+    current.eventQuery = delegate.eventQuery;
     current.delegateBound = true;
   }
-  return current.sink;
-}
-
-export function getOrBindProcessEventSink(createDelegate: () => EventSink): EventSink {
-  const current = state();
-  if (!current.delegateBound) {
-    current.sink.bind(createDelegate());
-    current.delegateBound = true;
-  }
-  return current.sink;
+  return {
+    sink: current.sink,
+    ...(current.eventQuery !== undefined && { eventQuery: current.eventQuery }),
+  };
 }
 
 export function registerProcessShutdownCallback(callback: () => Promise<void> | void): void {
