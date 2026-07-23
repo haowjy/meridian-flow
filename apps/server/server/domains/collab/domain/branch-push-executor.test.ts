@@ -3559,6 +3559,73 @@ describe("thread-peer auto-push wiring", () => {
     ).resolves.toMatchObject({ status: expect.stringMatching(/^(reversed|reconciled)$/) });
   });
 
+  it("rejects a staged reversal when branch history advances after planning", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+    await core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        documentId: DOCUMENT_ID,
+        content: "Draft target.",
+      },
+      {
+        sessionId: "session-draft-race",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-draft-race-write",
+      },
+    );
+    await core.commitResponse("response-draft-race-write");
+    vi.mocked(harness.branchCoordinator.commitSyncFromDoc).mockImplementationOnce(async (input) => {
+      const before = docFromUpdate(harness.work.state);
+      const concurrent = docFromUpdate(harness.work.state);
+      appendParagraph(concurrent, "Concurrent branch row.");
+      const updateData = Y.encodeStateAsUpdate(concurrent, Y.encodeStateVector(before));
+      Y.applyUpdate(before, updateData);
+      harness.work.state = Y.encodeStateAsUpdate(before);
+      harness.work.stateVector = Y.encodeStateVector(before);
+      harness.rows.push({
+        id: harness.rows.length + 1,
+        branchId: harness.work.branchId,
+        generation: harness.work.generation,
+        wId: null,
+        source: "writer",
+        threadId: null,
+        turnId: null,
+        actorUserId: USER_ID,
+        updateData,
+        draftBaseUpdateSeq: 1,
+        status: "active",
+      });
+      before.destroy();
+      concurrent.destroy();
+      const expectedJournalWatermark = input.expectedJournalWatermark;
+      if (
+        expectedJournalWatermark === undefined ||
+        !harness.rows.some((row) => row.id > expectedJournalWatermark)
+      ) {
+        throw new Error("reversal did not carry its branch journal watermark");
+      }
+      throw new Error("stale_branch_journal");
+    });
+
+    const undo = await core.write(
+      { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID },
+      {
+        sessionId: "session-draft-race",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-draft-race-undo",
+      },
+    );
+
+    expect(undo.status).toBe("internal_error");
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Draft target.");
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Concurrent branch row.");
+    expect((await harness.journal.read(DOCUMENT_ID)).updates).toHaveLength(1);
+  });
+
   it("rejects reuse of a response id by a different thread core", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();
@@ -3930,6 +3997,7 @@ class ThreadPeerPushHarness {
         threadId?: ThreadId | null;
         turnId?: TurnId | null;
         expectedGeneration: number;
+        expectedJournalWatermark?: number;
         updateMeta?: unknown;
       }) => {
         if (this.failNextCommitSync) {
@@ -3939,6 +4007,18 @@ class ThreadPeerPushHarness {
         const snapshot = this.snapshot(input.branchId);
         if (snapshot.generation !== input.expectedGeneration) {
           throw new Error("stale_branch_generation");
+        }
+        const expectedJournalWatermark = input.expectedJournalWatermark;
+        if (
+          expectedJournalWatermark !== undefined &&
+          this.rows.some(
+            (row) =>
+              row.branchId === input.branchId &&
+              row.generation === input.expectedGeneration &&
+              row.id > expectedJournalWatermark,
+          )
+        ) {
+          throw new Error("stale_branch_journal");
         }
         const doc = docFromUpdate(snapshot.state);
         const updateData = Y.encodeStateAsUpdate(input.sourceDoc, Y.encodeStateVector(doc));

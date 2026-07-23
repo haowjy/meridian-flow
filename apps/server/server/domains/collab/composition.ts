@@ -695,17 +695,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         commitThreadResponseAtomically: deps.commitThreadResponseAtomically,
         createThreadCore: (threadId) => {
           const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
+          const listBranchRows = deps.branchPushStore?.listJournalRowsForBranch;
           return createAgentEditCore({
             journal: createBranchAgentEditJournal({
               threadId,
               liveJournal: deps.journal,
               pendingJournalEntries,
               branches: branchAgentEdit.store,
-              branchRows: deps.branchPushStore?.listJournalRowsForBranch
+              branchRows: listBranchRows
                 ? {
-                    listJournalRowsForBranch: (input) =>
-                      deps.branchPushStore?.listJournalRowsForBranch?.(input) ??
-                      Promise.resolve([]),
+                    listJournalRowsForBranch: (input) => listBranchRows(input),
                   }
                 : undefined,
             }),

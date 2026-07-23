@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import {
+  activeBranchAgentWriteRows,
   createBranchAgentEditJournal,
   createBranchPendingJournalEntries,
 } from "./branch-agent-edit.js";
@@ -35,6 +36,20 @@ describe("branch agent-edit journal appendBatch", () => {
       },
     ]);
     expect(result.journalCommitKind).toBe("staged");
+  });
+
+  it("single-flights grouped ordinal reservation for concurrent writes", async () => {
+    const branchJournal = createBranchAgentEditJournal({
+      threadId: THREAD_ID,
+      liveJournal: createInMemoryJournal(),
+    });
+
+    await expect(
+      Promise.all([
+        branchJournal.reserveWriteOrdinal("chapter.md", THREAD_ID, "response-1"),
+        branchJournal.reserveWriteOrdinal("chapter.md", THREAD_ID, "response-1"),
+      ]),
+    ).resolves.toEqual([1, 1]);
   });
 
   it("classifies roots absent from live authority as agent-owned branch content", async () => {
@@ -123,6 +138,82 @@ describe("branch agent-edit journal appendBatch", () => {
     await expect(branchJournal.latestActiveWrite("chapter.md", THREAD_ID)).resolves.toMatchObject({
       handle: "w1",
     });
+  });
+
+  it("fails closed when branch mode lacks reversal history access", async () => {
+    const branchJournal = createBranchAgentEditJournal({
+      threadId: THREAD_ID,
+      liveJournal: createInMemoryJournal(),
+      branches: {
+        resolveThreadBranch: async () => ({
+          branchId: "peer",
+          doc: new Y.Doc({ gc: false }),
+          generation: 1,
+        }),
+        ensureThreadPeerBranch: async () => {
+          throw new Error("not used");
+        },
+        ensureWorkDraftBranch: async () => {
+          throw new Error("not used");
+        },
+        listActiveWorkDraftBranchIds: async () => ["work"],
+        getBranch: async () => ({ upstreamBranchId: "work", generation: 1 }),
+      },
+    });
+
+    await expect(branchJournal.activeWriteSummary("chapter.md", THREAD_ID)).rejects.toThrow(
+      "Branch reversal history is unavailable",
+    );
+  });
+
+  it("squashes undone handles and retains redone handles when projecting Apply history", () => {
+    const row = (id: number, wId: number | null, updateMeta?: unknown) => ({
+      id,
+      branchId: "work",
+      generation: 1,
+      wId,
+      source: "agent" as const,
+      threadId: THREAD_ID,
+      turnId: null,
+      actorUserId: null,
+      updateData: new Uint8Array([id]),
+      draftBaseUpdateSeq: 1,
+      status: "pushed" as const,
+      updateMeta,
+    });
+    const forward = [row(1, 1), row(2, 2)];
+    const undo = row(3, null, {
+      origin: "system",
+      seq: 0,
+      branchReversal: {
+        direction: "undo",
+        records: [
+          {
+            documentId: "chapter.md",
+            threadId: THREAD_ID,
+            turnId: null,
+            writeIds: ["w1"],
+            status: "reversed",
+          },
+        ],
+      },
+    });
+
+    expect(activeBranchAgentWriteRows([...forward, undo]).map(({ wId }) => wId)).toEqual([2]);
+    expect(
+      activeBranchAgentWriteRows([
+        ...forward,
+        undo,
+        row(4, null, {
+          origin: "system",
+          seq: 0,
+          branchReversal: {
+            direction: "redo",
+            refs: [{ threadId: THREAD_ID, undoUpdateSeq: 3 }],
+          },
+        }),
+      ]).map(({ wId }) => wId),
+    ).toEqual([1, 2]);
   });
 
   it("seals v2 lineage only when response finalization succeeds", async () => {

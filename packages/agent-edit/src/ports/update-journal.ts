@@ -33,6 +33,8 @@ export type JournalMutation = JournalMutationBase &
         mode: "threadPeer";
         /** Host branch generation captured with the write baseline. */
         branchGeneration: number;
+        /** Branch journal head captured while planning a staged reversal. */
+        branchJournalWatermark?: number;
       }
   );
 
