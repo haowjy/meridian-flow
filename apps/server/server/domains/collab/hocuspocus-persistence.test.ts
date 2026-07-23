@@ -33,6 +33,59 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     ).resolves.toBeUndefined();
     expect(checkpointBranch).not.toHaveBeenCalled();
   });
+
+  it("registers branch admission before validation so store and shutdown drains wait", async () => {
+    const branchDoc = docWithText("seed");
+    const roomDoc = cloneDoc(branchDoc);
+    const before = Y.encodeStateVector(roomDoc);
+    roomDoc.getText("content").insert(4, "!");
+    const update = Y.encodeStateAsUpdate(roomDoc, before);
+    let releaseRead: (() => void) | undefined;
+    const readBlocked = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const commitUpdate = vi.fn(async () => undefined);
+    const persistence = createHocuspocusPersistenceService({
+      journal: fakeJournal(),
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => {
+          await readBlocked;
+          return branchSnapshot(branchDoc);
+        },
+        updateBranchSnapshot: async () => true,
+      },
+      branchCoordinator: { commitUpdate } as never,
+      hocuspocus: () => null,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+
+    const admission = persistence.admitBranchWriterUpdate({
+      branchId: BRANCH_ID,
+      expectedGeneration: 2,
+      update,
+      origin: { type: "user", userId: "user-1" as never },
+      document: cloneDoc(branchDoc),
+    });
+    const store = persistence.storeHocuspocusBranch(BRANCH_ID, new Y.Doc({ gc: false }));
+    const shutdownDrain = persistence.drainHocuspocusPersistence();
+    let drained = false;
+    void Promise.all([store, shutdownDrain]).then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    releaseRead?.();
+    await expect(Promise.all([admission, store, shutdownDrain])).resolves.toBeDefined();
+    expect(commitUpdate).toHaveBeenCalledOnce();
+    expect(drained).toBe(true);
+  });
 });
 
 describe("createHocuspocusPersistenceService branch stale gate", () => {
@@ -60,7 +113,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.persistBranchConnectionUpdate({
+      persistence.admitBranchWriterUpdate({
         branchId: BRANCH_ID,
         expectedGeneration: 2,
         update: Y.encodeStateAsUpdate(client, before),
@@ -99,7 +152,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.persistBranchConnectionUpdate({
+      persistence.admitBranchWriterUpdate({
         branchId: BRANCH_ID,
         expectedGeneration: 2,
         update: humanUpdate,
@@ -139,7 +192,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.persistBranchConnectionUpdate({
+      persistence.admitBranchWriterUpdate({
         branchId: BRANCH_ID,
         expectedGeneration: 2,
         update: staleUpdate,
@@ -215,7 +268,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.persistBranchConnectionUpdate({
+      persistence.admitBranchWriterUpdate({
         branchId: BRANCH_ID,
         expectedGeneration: 3,
         update: freshUpdate,

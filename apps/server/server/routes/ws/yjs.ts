@@ -249,10 +249,12 @@ async function admitBranchSync(
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
   try {
-    await input.services.documentSync.validateBranchWriterUpdate({
+    await input.services.documentSync.admitBranchWriterUpdate({
       branchId: room.branchId,
       expectedGeneration: room.generation,
       update: input.payload,
+      origin: { type: "user", userId: input.userId },
+      document: input.document,
     });
     return;
   } catch {
@@ -413,28 +415,6 @@ export function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           reconcileOffline:
             connection?.context.offlineSyncUpdates?.delete(updateIdentity(update)) ?? false,
         });
-        return;
-      }
-      try {
-        await services.documentSync.persistBranchConnectionUpdate({
-          branchId: room.branchId,
-          update,
-          origin: origin.origin,
-          document,
-          expectedGeneration: room.generation,
-        });
-      } catch (cause) {
-        if (cause instanceof Error && cause.name === "BranchStaleUpdateError") {
-          emitEvent(services.eventSink, {
-            level: "warn",
-            source: "collab.hocuspocus",
-            name: "branch_update.stale_generation",
-            payload: { branchId: room.branchId, generation: room.generation },
-          });
-          connection?.close({ code: 4205, reason: "branch-generation-stale" });
-          return;
-        }
-        throw cause;
       }
     },
     async onStoreDocument({ documentName, document }) {

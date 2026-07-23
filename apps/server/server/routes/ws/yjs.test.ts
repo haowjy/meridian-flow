@@ -24,7 +24,7 @@ function services(stale: boolean) {
     notices: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
-      validateBranchWriterUpdate: vi.fn(async () => undefined),
+      admitBranchWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
 }
@@ -121,19 +121,20 @@ describe("Yjs branch handshake route guard", () => {
   });
 
   it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
-    const validateBranchWriterUpdate = vi.fn(async () => {
+    const admitBranchWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
     const closeTransport = vi.fn();
+    const document = new Y.Doc();
 
     await expect(
       admitWriterSync({
         services: {
           ...services(false),
-          documentSync: { validateBranchWriterUpdate } as never,
+          documentSync: { admitBranchWriterUpdate } as never,
         },
         documentName,
-        document: new Y.Doc(),
+        document,
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
@@ -143,12 +144,50 @@ describe("Yjs branch handshake route guard", () => {
         },
       }),
     ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
-    expect(validateBranchWriterUpdate).toHaveBeenCalledWith({
+    expect(admitBranchWriterUpdate).toHaveBeenCalledWith({
       branchId: "branch_1",
       expectedGeneration: 3,
       update: new Uint8Array([1, 2, 3]),
+      origin: { type: "user", userId: "user-1" },
+      document,
     });
     expect(closeTransport).toHaveBeenCalledOnce();
+  });
+
+  it("waits for branch durability before returning the update to Hocuspocus", async () => {
+    let commit: (() => void) | undefined;
+    const admitBranchWriterUpdate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          commit = resolve;
+        }),
+    );
+    const admission = admitWriterSync({
+      services: {
+        ...services(false),
+        documentSync: { admitBranchWriterUpdate } as never,
+      },
+      documentName,
+      document: new Y.Doc(),
+      syncType: messageYjsUpdate,
+      payload,
+      userId: "user-1" as never,
+      context: {
+        branchSyncState: new Map([["branch_1:3", "passed"]]),
+      },
+    });
+
+    await Promise.resolve();
+    let returned = false;
+    void admission.then(() => {
+      returned = true;
+    });
+    await Promise.resolve();
+    expect(returned).toBe(false);
+
+    commit?.();
+    await expect(admission).resolves.toBeUndefined();
+    expect(returned).toBe(true);
   });
 
   it("forwards writer-visible notice events as stateless WebSocket messages", async () => {

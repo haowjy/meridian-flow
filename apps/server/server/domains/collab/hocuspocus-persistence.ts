@@ -47,9 +47,8 @@ export type HocuspocusPersistenceService = Pick<
   | "loadHocuspocusBranchState"
   | "admitLiveWriterUpdate"
   | "currentLiveGeneration"
-  | "validateBranchWriterUpdate"
+  | "admitBranchWriterUpdate"
   | "persistConnectionUpdate"
-  | "persistBranchConnectionUpdate"
   | "storeHocuspocusDocument"
   | "storeHocuspocusBranch"
   | "drainHocuspocusPersistence"
@@ -283,8 +282,6 @@ export function createHocuspocusPersistenceService(
       return generation;
     },
 
-    validateBranchWriterUpdate,
-
     async resolveBranchHocuspocusRoom(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
       if (
@@ -408,42 +405,40 @@ export function createHocuspocusPersistenceService(
       });
     },
 
-    async persistBranchConnectionUpdate(input) {
+    admitBranchWriterUpdate(input) {
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
-      try {
-        await validateBranchWriterUpdate(input);
-      } catch (cause) {
-        recordDroppedConnectionUpdate(queueKey);
-        deps.emitAgentEditInvariantViolation({
-          message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
-          branchId: input.branchId,
-          originType: input.origin.type,
-        });
-        throw cause;
-      }
-      const current = await requireBranchStore().getBranch(input.branchId);
-      if (
-        current?.status !== "active" ||
-        current.kind !== "work_draft" ||
-        current.generation !== input.expectedGeneration ||
-        !documentContainment.contains(input.document, current.state)
-      ) {
-        throw new BranchStaleUpdateError(input.branchId);
-      }
-      const append = requireBranchCoordinator()
-        .commitUpdate({
+      const admission = (async () => {
+        try {
+          await validateBranchWriterUpdate(input);
+        } catch (cause) {
+          deps.emitAgentEditInvariantViolation({
+            message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
+            branchId: input.branchId,
+            originType: input.origin.type,
+          });
+          throw cause;
+        }
+        const current = await requireBranchStore().getBranch(input.branchId);
+        if (
+          current?.status !== "active" ||
+          current.kind !== "work_draft" ||
+          current.generation !== input.expectedGeneration ||
+          !documentContainment.contains(input.document, current.state)
+        ) {
+          throw new BranchStaleUpdateError(input.branchId);
+        }
+        await requireBranchCoordinator().commitUpdate({
           branchId: input.branchId,
           updateData: input.update,
           source: "writer",
           actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
           expectedGeneration: input.expectedGeneration,
-        })
-        .catch((cause) => {
-          emitPersistenceAppendFailure(queueKey, cause);
-          throw cause;
         });
-      trackAppend(queueKey, append);
-      await append;
+      })();
+      // Register before validation's first await so shutdown cannot miss an
+      // admission that Hocuspocus is already processing.
+      trackAppend(queueKey, admission);
+      return admission;
     },
 
     async storeHocuspocusDocument(documentId, document) {
