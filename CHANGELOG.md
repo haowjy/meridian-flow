@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: the model-facing write contract now
+  names whole-document overwrite, exact `find` replacement, hash anchors, and
+  hash/number scope ranges (#328).
 - `apps/server`: fresh-project documents are now initialized exactly once in
   canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
   warm collaboration rooms reconcile with the seed, and AI causal-cut capture
