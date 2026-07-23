@@ -33,7 +33,7 @@ import type {
   SyncError,
   UpdateOrigin,
 } from "../index.js";
-import { type AuthorshipSource, createDocumentAuthority } from "./document-authority.js";
+import { type AuthorshipSource, createDocumentMutationPolicy } from "./document-mutation-policy.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -178,16 +178,16 @@ export function createMarkdownDocumentEngine(
     const meta = deps.metaForOrigin(origin);
     let seq = 0;
     const unsupported = async (): Promise<never> => {
-      throw new Error("Document authority strategy is unavailable for markdown authorship");
+      throw new Error("Document mutation policy dependency is unavailable for markdown authorship");
     };
-    await createDocumentAuthority({
-      readMutableAuthority: () => ({ documentId, generation: 0n, doc: liveDoc }),
+    await createDocumentMutationPolicy({
+      readMutationTarget: () => ({ documentId, generation: 0n, doc: liveDoc }),
       admitImmediate: async ({ update: admittedUpdate }) => {
         seq = await deps.journal.append(documentId, admittedUpdate, meta);
         Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
         return { sequence: BigInt(seq), joined: 0 };
       },
-      readFrozenCut: unsupported,
+      readFrozenReplicationSource: unsupported,
       readCurrentRevision: unsupported,
       lowerCertifiedMutation: unsupported,
       loadCheckpoint: unsupported,

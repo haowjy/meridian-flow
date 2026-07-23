@@ -1,13 +1,13 @@
-// Strategy and fencing contract for the single document mutation authority.
+// Strategy and fencing contract for the single document mutation policy.
 import type { DocumentRevision } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
-  createDocumentAuthority,
-  DocumentAuthorityError,
-  type DocumentAuthorityPort,
-  type FrozenAuthorityCut,
-} from "./document-authority.js";
+  createDocumentMutationPolicy,
+  DocumentMutationPolicyError,
+  type DocumentMutationPolicyPort,
+  type FrozenReplicationSource,
+} from "./document-mutation-policy.js";
 import { appendProvenanceFacts, PROVENANCE_ROOTS_TYPE } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
@@ -18,12 +18,12 @@ function updateWith(value: string): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-function fakePort(overrides: Partial<DocumentAuthorityPort> = {}): DocumentAuthorityPort {
+function fakePort(overrides: Partial<DocumentMutationPolicyPort> = {}): DocumentMutationPolicyPort {
   const doc = new Y.Doc({ gc: false });
   return {
     admitImmediate: vi.fn(async () => ({ sequence: 4n, joined: 2 })),
-    readMutableAuthority: vi.fn(async () => ({ documentId: "doc-1", generation: 3n, doc })),
-    readFrozenCut: vi.fn(async () => null),
+    readMutationTarget: vi.fn(async () => ({ documentId: "doc-1", generation: 3n, doc })),
+    readFrozenReplicationSource: vi.fn(async () => null),
     readCurrentRevision: vi.fn(async () => revision),
     lowerCertifiedMutation: vi.fn(async () => updateWith("agent")),
     loadCheckpoint: vi.fn(async () => null),
@@ -47,15 +47,15 @@ function fullReplacementIr() {
   };
 }
 
-function frozenCut(doc: Y.Doc, generation = 1n, documentId = "doc-1"): FrozenAuthorityCut {
-  return { cutId: "cut-1", documentId, authorityId: "authority-1", generation, doc };
+function frozenSource(doc: Y.Doc, version = 1n, documentId = "doc-1"): FrozenReplicationSource {
+  return { cutId: "cut-1", documentId, sourceId: "source-1", version, doc };
 }
 
-describe("DocumentAuthority", () => {
+describe("DocumentMutationPolicy", () => {
   it("admits writer restore as exact fresh writer-protected authorship", async () => {
     const port = fakePort();
     const update = updateWith("restored");
-    await createDocumentAuthority(port).mutate({
+    await createDocumentMutationPolicy(port).mutate({
       kind: "attributedFreshAuthorship",
       source: { kind: "writer" },
       update,
@@ -69,7 +69,7 @@ describe("DocumentAuthority", () => {
   it("requires explicit import/seed policy", async () => {
     const port = fakePort();
     await expect(
-      createDocumentAuthority(port).mutate({
+      createDocumentMutationPolicy(port).mutate({
         kind: "attributedFreshAuthorship",
         source: { kind: "import", policy: "unknown" } as never,
         update: updateWith("import"),
@@ -81,7 +81,7 @@ describe("DocumentAuthority", () => {
   it("validates semantic IR and requires retained certificates for agent restoration", async () => {
     const port = fakePort();
     const ir = fullReplacementIr();
-    await createDocumentAuthority(port).mutate({
+    await createDocumentMutationPolicy(port).mutate({
       kind: "certifiedSemanticMutation",
       actor: "agent",
       ir,
@@ -112,7 +112,7 @@ describe("DocumentAuthority", () => {
     };
     const rejectingPort = fakePort();
     await expect(
-      createDocumentAuthority(rejectingPort).mutate({
+      createDocumentMutationPolicy(rejectingPort).mutate({
         kind: "certifiedSemanticMutation",
         actor: "agent",
         ir: restoration,
@@ -125,7 +125,7 @@ describe("DocumentAuthority", () => {
   it("rejects cross-document IR before lowering or admission", async () => {
     const port = fakePort();
     await expect(
-      createDocumentAuthority(port).mutate({
+      createDocumentMutationPolicy(port).mutate({
         kind: "certifiedSemanticMutation",
         actor: "agent",
         ir: { ...fullReplacementIr(), documentId: "doc-2" },
@@ -138,10 +138,10 @@ describe("DocumentAuthority", () => {
   it("computes identity replication bytes from a frozen source cut", async () => {
     const source = new Y.Doc({ gc: false });
     source.getText("prosemirror").insert(0, "source");
-    const port = fakePort({ readFrozenCut: vi.fn(async () => frozenCut(source)) });
-    await createDocumentAuthority(port).mutate({
+    const port = fakePort({ readFrozenReplicationSource: vi.fn(async () => frozenSource(source)) });
+    await createDocumentMutationPolicy(port).mutate({
       kind: "identityReplication",
-      sourceAuthorityCutId: "cut-1",
+      sourceCutId: "cut-1",
       plan: { kind: "wholeDocument" },
     });
     const admission = vi.mocked(port.admitImmediate).mock.calls[0]?.[0];
@@ -158,10 +158,10 @@ describe("DocumentAuthority", () => {
     source.getText("deleted").insert(0, "gone");
     source.getText("deleted").delete(0, 4);
     expect(Y.encodeStateAsUpdate(source, beforeDelete).byteLength).toBeGreaterThan(0);
-    const port = fakePort({ readFrozenCut: vi.fn(async () => frozenCut(source)) });
-    await createDocumentAuthority(port).mutate({
+    const port = fakePort({ readFrozenReplicationSource: vi.fn(async () => frozenSource(source)) });
+    await createDocumentMutationPolicy(port).mutate({
       kind: "identityReplication",
-      sourceAuthorityCutId: "cut-1",
+      sourceCutId: "cut-1",
       plan: { kind: "sharedTypes", names: ["prosemirror"] },
     });
     const admission = vi.mocked(port.admitImmediate).mock.calls[0]?.[0];
@@ -204,11 +204,11 @@ describe("DocumentAuthority", () => {
     const frozen = new Y.Doc({ gc: false });
     Y.applyUpdate(frozen, Y.encodeStateAsUpdate(source));
     source.getText("prosemirror").insert(source.getText("prosemirror").length, " later");
-    const port = fakePort({ readFrozenCut: vi.fn(async () => frozenCut(frozen)) });
+    const port = fakePort({ readFrozenReplicationSource: vi.fn(async () => frozenSource(frozen)) });
 
-    await createDocumentAuthority(port).mutate({
+    await createDocumentMutationPolicy(port).mutate({
       kind: "identityReplication",
-      sourceAuthorityCutId: "cut-1",
+      sourceCutId: "cut-1",
       plan: { kind: "wholeDocument" },
     });
     const admitted = vi.mocked(port.admitImmediate).mock.calls[0]?.[0].update;
@@ -218,18 +218,18 @@ describe("DocumentAuthority", () => {
   });
 
   it("rejects client-authored reserved-type changes", async () => {
-    const authority = new Y.Doc({ gc: false });
+    const targetDocument = new Y.Doc({ gc: false });
     const client = new Y.Doc({ gc: false });
     client.getMap(PROVENANCE_ROOTS_TYPE).set("hostile", { policy: "writer_protected" });
     const port = fakePort({
-      readMutableAuthority: vi.fn(async () => ({
+      readMutationTarget: vi.fn(async () => ({
         documentId: "doc-1",
         generation: 3n,
-        doc: authority,
+        doc: targetDocument,
       })),
     });
     await expect(
-      createDocumentAuthority(port).mutate({
+      createDocumentMutationPolicy(port).mutate({
         kind: "attributedFreshAuthorship",
         source: { kind: "writer" },
         update: Y.encodeStateAsUpdate(client),
@@ -245,22 +245,22 @@ describe("DocumentAuthority", () => {
     const port = fakePort({
       admitImmediate: vi.fn(async () => ({ sequence: 7n, joined: 1 })),
       lowerCertifiedMutation: vi.fn(async () => certified),
-      readFrozenCut: vi.fn(async () => frozenCut(source)),
+      readFrozenReplicationSource: vi.fn(async () => frozenSource(source)),
     });
-    const authority = createDocumentAuthority(port);
-    const writer = await authority.mutate({
+    const mutationPolicy = createDocumentMutationPolicy(port);
+    const writer = await mutationPolicy.mutate({
       kind: "attributedFreshAuthorship",
       source: { kind: "writer" },
       update: updateWith("writer"),
     });
-    const agent = await authority.mutate({
+    const agent = await mutationPolicy.mutate({
       kind: "certifiedSemanticMutation",
       actor: "agent",
       ir: fullReplacementIr(),
     });
-    const replication = await authority.mutate({
+    const replication = await mutationPolicy.mutate({
       kind: "identityReplication",
-      sourceAuthorityCutId: "cut-1",
+      sourceCutId: "cut-1",
       plan: { kind: "wholeDocument" },
     });
     expect([writer.joined, agent.joined, replication.joined]).toEqual([1, 1, 1]);
@@ -272,34 +272,34 @@ describe("DocumentAuthority", () => {
     source.getText("prosemirror").insert(0, "source");
     let read = 0;
     const port = fakePort({
-      readFrozenCut: vi.fn(async () => frozenCut(source, ++read === 1 ? 1n : 2n)),
+      readFrozenReplicationSource: vi.fn(async () => frozenSource(source, ++read === 1 ? 1n : 2n)),
     });
     await expect(
-      createDocumentAuthority(port).mutate({
+      createDocumentMutationPolicy(port).mutate({
         kind: "identityReplication",
-        sourceAuthorityCutId: "cut-1",
+        sourceCutId: "cut-1",
         plan: { kind: "wholeDocument" },
       }),
-    ).rejects.toMatchObject({ code: "stale_source_authority" });
+    ).rejects.toMatchObject({ code: "stale_replication_source" });
     expect(port.admitImmediate).not.toHaveBeenCalled();
   });
 
-  it("rejects a frozen root authority cut from another document before replication", async () => {
+  it("rejects a frozen replication source from another document before replication", async () => {
     const source = new Y.Doc({ gc: false });
     source.getText("prosemirror").insert(0, "same client clocks, wrong document");
     const port = fakePort({
-      readFrozenCut: vi.fn(async () => frozenCut(source, 3n, "doc-2")),
+      readFrozenReplicationSource: vi.fn(async () => frozenSource(source, 3n, "doc-2")),
     });
 
     await expect(
-      createDocumentAuthority(port).mutate({
+      createDocumentMutationPolicy(port).mutate({
         kind: "identityReplication",
-        sourceAuthorityCutId: "cut-1",
+        sourceCutId: "cut-1",
         plan: { kind: "wholeDocument" },
       }),
     ).rejects.toMatchObject({
-      code: "stale_source_authority",
-      message: "Source authority cut belongs to a different document",
+      code: "stale_replication_source",
+      message: "Frozen replication source belongs to a different document",
     });
     expect(port.admitImmediate).not.toHaveBeenCalled();
   });
@@ -313,18 +313,18 @@ describe("DocumentAuthority", () => {
     carryToRoot(source, root, "s");
     const beforeTarget = Y.encodeStateAsUpdate(target);
     const port = fakePort({
-      readMutableAuthority: vi.fn(async () => ({
+      readMutationTarget: vi.fn(async () => ({
         documentId: "target",
         generation: 1n,
         doc: target,
       })),
-      readFrozenCut: vi.fn(async () => frozenCut(source, 1n, "target")),
+      readFrozenReplicationSource: vi.fn(async () => frozenSource(source, 1n, "target")),
     });
 
     await expect(
-      createDocumentAuthority(port).mutate({
+      createDocumentMutationPolicy(port).mutate({
         kind: "identityReplication",
-        sourceAuthorityCutId: "cut-1",
+        sourceCutId: "cut-1",
         plan: { kind: "wholeDocument" },
       }),
     ).rejects.toThrow("One provenance root unit cannot have two visible targets");
@@ -337,7 +337,7 @@ describe("DocumentAuthority", () => {
     const hostile = cloneDoc(target);
     hostile.getArray(PROVENANCE_ROOTS_TYPE).push([{ invalid: true }]);
     const port = fakePort({
-      readMutableAuthority: vi.fn(async () => ({
+      readMutationTarget: vi.fn(async () => ({
         documentId: "target",
         generation: 3n,
         doc: target,
@@ -345,7 +345,7 @@ describe("DocumentAuthority", () => {
     });
 
     await expect(
-      createDocumentAuthority(port).stagePush({
+      createDocumentMutationPolicy(port).stagePush({
         update: Y.encodeStateAsUpdate(hostile, Y.encodeStateVector(target)),
         expectedGeneration: 3n,
       }),
@@ -364,12 +364,12 @@ describe("DocumentAuthority", () => {
       unresolvedSettlements: vi.fn(async () => 1),
     });
     await expect(
-      createDocumentAuthority(port).mutate({
-        kind: "authoritySnapshotReplacement",
+      createDocumentMutationPolicy(port).mutate({
+        kind: "authorityHeadSnapshotReplacement",
         checkpointId: "checkpoint-1",
         replaceGeneration: true,
       }),
-    ).rejects.toEqual(expect.objectContaining({ code: "authority_busy" }));
+    ).rejects.toEqual(expect.objectContaining({ code: "authority_head_busy" }));
     expect(port.replaceGeneration).not.toHaveBeenCalled();
   });
 
@@ -381,8 +381,8 @@ describe("DocumentAuthority", () => {
     };
     const port = fakePort({ loadCheckpoint: vi.fn(async () => checkpoint) });
     await expect(
-      createDocumentAuthority(port).mutate({
-        kind: "authoritySnapshotReplacement",
+      createDocumentMutationPolicy(port).mutate({
+        kind: "authorityHeadSnapshotReplacement",
         checkpointId: "checkpoint-1",
         replaceGeneration: true,
       }),
@@ -400,21 +400,21 @@ describe("DocumentAuthority", () => {
       })),
     });
     await expect(
-      createDocumentAuthority(port).mutate({
-        kind: "authoritySnapshotReplacement",
+      createDocumentMutationPolicy(port).mutate({
+        kind: "authorityHeadSnapshotReplacement",
         checkpointId: "checkpoint-1",
         replaceGeneration: true,
       }),
-    ).rejects.toBeInstanceOf(DocumentAuthorityError);
+    ).rejects.toBeInstanceOf(DocumentMutationPolicyError);
   });
 
   it("exposes staged push and same-generation completion fences", async () => {
     const port = fakePort();
-    const authority = createDocumentAuthority(port);
+    const mutationPolicy = createDocumentMutationPolicy(port);
     await expect(
-      authority.stagePush({ update: updateWith("push"), expectedGeneration: 3n }),
+      mutationPolicy.stagePush({ update: updateWith("push"), expectedGeneration: 3n }),
     ).resolves.toBe("push-1");
-    await authority.completePush({ stagedPushId: "push-1", expectedGeneration: 3n });
+    await mutationPolicy.completePush({ stagedPushId: "push-1", expectedGeneration: 3n });
     expect(port.completePush).toHaveBeenCalledWith({
       stagedPushId: "push-1",
       expectedGeneration: 3n,
@@ -428,20 +428,20 @@ async function replicateInto(
   plan: { kind: "wholeDocument" } | { kind: "sharedTypes"; names: readonly string[] },
 ): Promise<void> {
   const port = fakePort({
-    readMutableAuthority: vi.fn(async () => ({
+    readMutationTarget: vi.fn(async () => ({
       documentId: "target",
       generation: 1n,
       doc: target,
     })),
-    readFrozenCut: vi.fn(async () => frozenCut(source, 1n, "target")),
+    readFrozenReplicationSource: vi.fn(async () => frozenSource(source, 1n, "target")),
     admitImmediate: vi.fn(async ({ update }) => {
       Y.applyUpdate(target, update);
       return { sequence: 1n, joined: 0 };
     }),
   });
-  await createDocumentAuthority(port).mutate({
+  await createDocumentMutationPolicy(port).mutate({
     kind: "identityReplication",
-    sourceAuthorityCutId: "cut-1",
+    sourceCutId: "cut-1",
     plan,
   });
 }

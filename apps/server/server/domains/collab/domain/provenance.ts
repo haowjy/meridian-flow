@@ -113,7 +113,7 @@ export function materializeProvenanceForDoc(input: {
   rows: readonly AttributedJournalRow[];
   retainedAttributions?: readonly AttributionRunV1[];
   /** Settlement lock cuts may contain writer-ingress roots captured before their
-   * attributed replay row; classify that unexplained authority conservatively. */
+   * attributed replay row; classify that unexplained birth source conservatively. */
   fallbackBirthClass?: SafetyBirthClass;
 }): ProvenanceRun[] {
   const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
@@ -242,7 +242,7 @@ export function birthClassFromAttribution(
   return "agent";
 }
 
-/** Append-only authority writer. Facts are arrays, never last-writer-wins maps. */
+/** Append-only provenance-fact writer. Facts are arrays, never last-writer-wins maps. */
 export function appendProvenanceFacts(
   doc: Y.Doc,
   input: {
@@ -261,7 +261,7 @@ export function appendProvenanceFacts(
   doc.transact(() => {
     if (newTargets.length > 0) doc.getArray(PROVENANCE_TARGETS_TYPE).push(newTargets);
     if (newRoots.length > 0) doc.getArray(PROVENANCE_ROOTS_TYPE).push(newRoots);
-  }, "meridian-provenance-authority");
+  }, "meridian-provenance-write");
   primeReservedNamespaceIndex(doc);
   return Y.encodeStateAsUpdate(doc, before);
 }
@@ -425,7 +425,7 @@ function sliceRanges(
   return result;
 }
 
-/** Refresh outside writer admission, immediately after load or authority writes. */
+/** Refresh outside writer admission, immediately after load or provenance writes. */
 export function primeReservedNamespaceIndex(doc: Y.Doc): void {
   provenanceEnumerationCount += 1;
   reservedNamespaceIndexes.set(doc, reservedStructRanges(doc));
@@ -441,23 +441,23 @@ export function resetProvenanceInstrumentation(): void {
 
 /**
  * Rejects client structs that enter the reserved ancestry and delete sets that
- * touch authoritative reserved structs. It inspects decoded ranges and the two
+ * touch existing reserved structs. It inspects decoded ranges and the two
  * reserved subtrees only; it never scratch-applies or scans prose.
  */
 export function assertClientUpdateOutsideReservedNamespace(
-  authoritativeDoc: Y.Doc,
+  referenceDocument: Y.Doc,
   update: Uint8Array,
 ): void {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
   assertDecodedUpdateOutsideReservedNamespace(
-    authoritativeDoc,
+    referenceDocument,
     decoded,
     decoded.structs.map(asStruct),
   );
 }
 
 export function validateClientUpdateAdmission(
-  authoritativeDoc: Y.Doc,
+  referenceDocument: Y.Doc,
   update: Uint8Array,
 ): { reservedClientId: number | null } {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
@@ -465,21 +465,21 @@ export function validateClientUpdateAdmission(
   const reservedClientId =
     incoming.find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id.client ?? null;
   if (reservedClientId === null) {
-    assertDecodedUpdateOutsideReservedNamespace(authoritativeDoc, decoded, incoming);
+    assertDecodedUpdateOutsideReservedNamespace(referenceDocument, decoded, incoming);
   }
   return { reservedClientId };
 }
 
 function assertDecodedUpdateOutsideReservedNamespace(
-  authoritativeDoc: Y.Doc,
+  referenceDocument: Y.Doc,
   decoded: DecodedUpdate,
   incoming: readonly DecodedStruct[],
 ): void {
-  let reserved = reservedNamespaceIndexes.get(authoritativeDoc);
+  let reserved = reservedNamespaceIndexes.get(referenceDocument);
   if (!reserved) {
     provenanceEnumerationCount += 1;
-    reserved = reservedStructRanges(authoritativeDoc);
-    reservedNamespaceIndexes.set(authoritativeDoc, reserved);
+    reserved = reservedStructRanges(referenceDocument);
+    reservedNamespaceIndexes.set(referenceDocument, reserved);
   }
   if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
   const incomingByClient = groupStructs(incoming);
