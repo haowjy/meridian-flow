@@ -137,7 +137,7 @@ function renderActiveView(
       return (
         <MobileChatHost
           projectId={props.projectId}
-          activeThreadId={props.activeThreadId}
+          threadId={props.activeThreadId}
           activeWork={props.activeWork}
           onSelectThread={props.onSelectThread}
           onSelectContextPath={props.onSelectContextPath}
