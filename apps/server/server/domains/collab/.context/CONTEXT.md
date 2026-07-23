@@ -263,10 +263,11 @@ history is preserved for attribution, echo, and undo dependency checking.
   `awareness_degraded` notice. They do not create process-local reporting authority.
 - **Report-only agent commits**: direct writes and reversals always merge through
   Yjs. `materializeDestructiveProvenance` reconstructs exact durable writer/agent
-  lineage for the shared destructive-effect classifier, including checkpoint-only
-  compacted authority. Thread-peer roots absent from live authority are
-  agent-owned branch content. Only writer-lineage loss produces captured bodies,
-  trail data, and Restore; agent-only loss is silent.
+  lineage for the shared destructive-effect classifier. Checkpoint manifests
+  carry prior attribution across repeated compaction and floor-null authority
+  replacement. Thread-peer roots absent from live authority are agent-owned
+  branch content. Only writer-lineage loss produces captured bodies, trail data,
+  and Restore; agent-only loss is silent.
 - **Observation-scoped reporting**: an agent write or reversal carries its
   successful authoring response ID. Exact covered renderings receive reporting
   credit; missing evidence never blocks the write.

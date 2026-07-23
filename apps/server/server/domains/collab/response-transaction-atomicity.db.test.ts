@@ -75,12 +75,14 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("positive-response");
   });
 
-  it("retains agent provenance after full journal compaction", async () => {
+  it("retains mixed provenance across repeated compaction and generation replacement", async () => {
     const harness = createHarness();
 
-    await expect(harness.compactAgentOnlyProvenance()).resolves.toEqual({
+    await expect(harness.compactMixedProvenanceTwice()).resolves.toEqual({
       retainedUpdateCount: 0,
-      provenance: ["agent"],
+      warmProvenance: ["agent", "writer_protected"],
+      coldProvenance: ["agent", "writer_protected"],
+      rebasedBranchProvenance: ["agent", "writer_protected"],
     });
   });
 

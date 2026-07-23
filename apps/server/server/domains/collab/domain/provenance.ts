@@ -85,9 +85,13 @@ export function insertionAttributions(
     AttributedJournalRow,
     "admissionSequence" | "batchOrdinal" | "journalRowId" | "originType" | "actorUserId" | "update"
   >[],
+  retained: readonly AttributionRunV1[] = [],
 ): AttributionRunV1[] {
   const index = new RangeIndex<AttributionRunV1>("insertion attribution");
-  const result: AttributionRunV1[] = [];
+  const result: AttributionRunV1[] = [...retained];
+  for (const attribution of retained) {
+    index.add(attribution.range, attribution, sameAttribution);
+  }
   for (const row of rows) {
     for (const range of insertionRanges(row.update)) {
       const attribution = {
