@@ -11,7 +11,7 @@ import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
 export type MobileChatHostProps = {
   projectId: string;
-  activeThreadId: string | null;
+  threadId: string | null;
   activeWork: Work | null;
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
@@ -19,7 +19,7 @@ export type MobileChatHostProps = {
 
 export function MobileChatHost({
   projectId,
-  activeThreadId,
+  threadId,
   activeWork,
   onSelectThread,
   onSelectContextPath,
@@ -28,7 +28,7 @@ export function MobileChatHost({
     <MobileKeyboardAware>
       <ChatScreen
         projectId={projectId}
-        threadId={activeThreadId}
+        threadId={threadId}
         activeWork={activeWork}
         onSelectThread={onSelectThread}
         onSelectContextPath={onSelectContextPath}

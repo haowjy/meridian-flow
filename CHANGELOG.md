@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: project chat resolves one thread and Work for context hydration,
+  Draft Review, headers, and the conversation body (#334).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

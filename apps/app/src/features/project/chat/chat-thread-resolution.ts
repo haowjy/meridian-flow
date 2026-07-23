@@ -5,11 +5,9 @@
  * Pure precedence function: explicit `?thread=` → pending optimistic thread →
  * remembered synced thread → first non-subagent (else first) loaded project
  * thread → null. Explicit and remembered ids must resolve in the loaded list.
- * `useResolvedChatThread` hook is the ONE resolution source shared by the
- * chat body (`ChatScreen`) and every header that names the thread
- * (`ChatSurface`'s dock title, `ChatPaneController`) — headers must never
- * re-derive the thread independently or they can title a different chat than
- * the body renders.
+ * `ProjectView` calls `useResolvedChatThread` once and passes that result to
+ * context hydration, review, and every chat surface. Descendants must never
+ * re-derive the thread or their Work and conversation can diverge.
  */
 import type { Thread } from "@meridian/contracts/protocol";
 
