@@ -247,38 +247,69 @@ export function createDrizzleBranchStore(
 
   async function persistLiveManifestUpdate(
     documentId: DocumentId,
+    authorityDoc: Y.Doc,
+    liveDoc: Y.Doc,
     update: Uint8Array,
   ): Promise<void> {
     if (!live) {
       throw new Error("DrizzleBranchStore manifest persistence requires the collab live journal");
     }
-    await live.coordinator.withDocument(documentId, async (doc) => {
-      const unsupported = async (): Promise<never> => {
-        throw new Error("Document authority strategy is unavailable for manifest seeding");
-      };
-      await createDocumentAuthority({
-        readMutableAuthority: () => ({ documentId, generation: 0n, doc }),
-        admitImmediate: async ({ update: admittedUpdate }) => {
-          const sequence = await live.journal.append(documentId, admittedUpdate, {
-            origin: "system",
-            seq: 0,
-          });
-          Y.applyUpdate(doc, admittedUpdate);
-          return { sequence: BigInt(sequence), joined: 0 };
-        },
-        readFrozenCut: unsupported,
-        readCurrentRevision: unsupported,
-        lowerCertifiedMutation: unsupported,
-        loadCheckpoint: unsupported,
-        unresolvedSettlements: unsupported,
-        replaceGeneration: unsupported,
-        disconnectGeneration: unsupported,
-        stagePush: unsupported,
-        completePush: unsupported,
-      }).mutate({
-        kind: "attributedFreshAuthorship",
-        source: { kind: "seed", policy: "agent" },
-        update,
+    const unsupported = async (): Promise<never> => {
+      throw new Error("Document authority strategy is unavailable for manifest seeding");
+    };
+    await createDocumentAuthority({
+      readMutableAuthority: () => ({ documentId, generation: 0n, doc: authorityDoc }),
+      admitImmediate: async ({ update: admittedUpdate }) => {
+        const sequence = await live.journal.append(documentId, admittedUpdate, {
+          origin: "system",
+          seq: 0,
+        });
+        Y.applyUpdate(liveDoc, admittedUpdate);
+        return { sequence: BigInt(sequence), joined: 0 };
+      },
+      readFrozenCut: unsupported,
+      readCurrentRevision: unsupported,
+      lowerCertifiedMutation: unsupported,
+      loadCheckpoint: unsupported,
+      unresolvedSettlements: unsupported,
+      replaceGeneration: unsupported,
+      disconnectGeneration: unsupported,
+      stagePush: unsupported,
+      completePush: unsupported,
+    }).mutate({
+      kind: "attributedFreshAuthorship",
+      source: { kind: "seed", policy: "agent" },
+      update,
+    });
+  }
+
+  async function mutateLiveManifestDocument(
+    documentId: DocumentId,
+    mutate: (doc: Y.Doc) => Promise<void> | void,
+  ): Promise<void> {
+    if (!live) {
+      throw new Error("DrizzleBranchStore manifest mutations require the collab live lifecycle");
+    }
+    await live.coordinator.withDocument(documentId, async (liveDoc) => {
+      await runInDrizzleTransaction(db, async () => {
+        await lockDocumentMutation(currentDrizzleDb(db), documentId);
+        // Another replica may have committed while this process waited for the DB lock.
+        // Reconstruct inside both locks so the computed delta is against durable authority.
+        const authorityDoc = await ensureLiveManifestDocument(documentId);
+        const validationDoc = createCollabYDoc({ gc: false });
+        try {
+          const beforeState = Y.encodeStateAsUpdate(authorityDoc);
+          Y.applyUpdate(validationDoc, beforeState);
+          const before = Y.encodeStateVector(authorityDoc);
+          await mutate(authorityDoc);
+          const update = Y.encodeStateAsUpdate(authorityDoc, before);
+          if (updateChangesState(beforeState, update)) {
+            await persistLiveManifestUpdate(documentId, validationDoc, liveDoc, update);
+          }
+        } finally {
+          authorityDoc.destroy();
+          validationDoc.destroy();
+        }
       });
     });
   }
@@ -299,33 +330,19 @@ export function createDrizzleBranchStore(
     documentId: DocumentId,
     projectId: ProjectId,
     excludeDocumentIds: ReadonlySet<DocumentId> = new Set(),
-  ): Promise<Y.Doc> {
-    const doc = await ensureLiveManifestDocument(documentId);
-    const map = doc.getMap<{ present: true }>("documents");
-    const beforeState = Y.encodeStateAsUpdate(doc);
-    const before = Y.encodeStateVector(doc);
-    for (const row of await listProjectContentDocumentIds(projectId)) {
-      if (excludeDocumentIds.has(row)) continue;
-      if (map.has(row)) continue;
-      map.set(row, { present: true });
-    }
-    const update = Y.encodeStateAsUpdate(doc, before);
-    if (updateChangesState(beforeState, update))
-      await persistLiveManifestUpdate(documentId, update);
-    return doc;
+  ): Promise<void> {
+    await mutateLiveManifestDocument(documentId, async (doc) => {
+      const map = doc.getMap<{ present: true }>("documents");
+      for (const row of await listProjectContentDocumentIds(projectId)) {
+        if (!excludeDocumentIds.has(row) && !map.has(row)) map.set(row, { present: true });
+      }
+    });
   }
 
   async function reconcileProjectManifest(projectId: ProjectId): Promise<void> {
-    const { documentId } = await ensureProjectManifest({ projectId });
-    await runInDrizzleTransaction(db, async () => {
-      await lockDocumentMutation(currentDrizzleDb(db), documentId);
-      const doc = await reconcileLiveManifest(
-        documentId,
-        projectId,
-        await draftSeedExclusions(projectId),
-      );
-      doc.destroy();
-    });
+    const { documentId, doc } = await ensureProjectManifest({ projectId });
+    doc.destroy();
+    await reconcileLiveManifest(documentId, projectId, await draftSeedExclusions(projectId));
   }
 
   async function ensureWorkDraftBranch(input: {
@@ -822,21 +839,13 @@ export function createDrizzleBranchStore(
   ): Promise<ManifestMutationResult> {
     const projectId = await projectForDocument(documentId);
     if (!projectId) return {};
-    const manifest = await ensureProjectManifest({ projectId });
-    const map = manifest.doc.getMap<{ present: true }>("documents");
-    const beforeState = Y.encodeStateAsUpdate(manifest.doc);
-    const before = Y.encodeStateVector(manifest.doc);
-    if (present) {
-      if (map.has(documentId)) return {};
-      map.set(documentId, { present: true });
-    } else {
-      if (!map.has(documentId)) return {};
-      map.delete(documentId);
-    }
-    const update = Y.encodeStateAsUpdate(manifest.doc, before);
-    if (updateChangesState(beforeState, update)) {
-      await persistLiveManifestUpdate(manifest.documentId, update);
-    }
+    const { documentId: manifestDocumentId, doc } = await ensureProjectManifest({ projectId });
+    doc.destroy();
+    await mutateLiveManifestDocument(manifestDocumentId, (manifestDoc) => {
+      const map = manifestDoc.getMap<{ present: true }>("documents");
+      if (present && !map.has(documentId)) map.set(documentId, { present: true });
+      else if (!present && map.has(documentId)) map.delete(documentId);
+    });
     return {};
   }
 

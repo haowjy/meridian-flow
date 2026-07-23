@@ -14,10 +14,11 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { hasLiveManifestMembership } from "../../../routes/ws/yjs.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
+import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -26,20 +27,18 @@ describe("Drizzle manifest persistence", () => {
   const db = createDb(DATABASE_URL, { max: 8 });
   const livePersistence = createDrizzleCollabPersistence(db);
   const liveDocs = new Map<string, Y.Doc>();
-  const liveCoordinator = {
-    async withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+  const liveCoordinator = createHocuspocusCoordinatorForTest({
+    journal: livePersistence.journal,
+    hocuspocus: () => ({ documents: liveDocs }) as never,
+    async openLiveDoc(documentId) {
       let doc = liveDocs.get(documentId);
       if (!doc) {
         doc = createCollabYDoc({ gc: false });
-        const snapshot = await livePersistence.journal.read(documentId);
-        if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-        for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
         liveDocs.set(documentId, doc);
       }
-      return fn(doc);
+      return { doc, async release() {} };
     },
-    async recover() {},
-  };
+  });
   const store = createDrizzleBranchStore(db, {
     journal: livePersistence.journal,
     lifecycle: livePersistence.lifecycle,
@@ -141,6 +140,30 @@ describe("Drizzle manifest persistence", () => {
       updates: 1,
       checkpoints: 1,
     });
+  });
+
+  it("completes mixed reconciliation and live membership mutation under the production mutex", async () => {
+    const { projectId, contentDocumentId } = await createProjectFixture("mixed-lock-order");
+    await store.reconcileProjectManifest(projectId as never);
+
+    const operations = Promise.all([
+      ...Array.from({ length: 4 }, () => store.reconcileProjectManifest(projectId as never)),
+      store.recordManifestDocumentDeleted(contentDocumentId as never),
+      store.recordManifestDocumentCreated(contentDocumentId as never),
+    ]);
+    await expect(
+      Promise.race([
+        operations,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("manifest critical section timed out")), 2_000),
+        ),
+      ]),
+    ).resolves.toBeDefined();
+
+    await store.reconcileProjectManifest(projectId as never);
+    await expect(
+      store.resolveManifestMembership({ projectId: projectId as never }),
+    ).resolves.toEqual(expect.objectContaining({ members: [contentDocumentId] }));
   });
 
   it("keeps resolved membership reads pure after explicit reconciliation", async () => {
