@@ -175,10 +175,48 @@ export function buildContext(input: BuildContextInput): {
   }
 
   return {
-    messages,
+    messages: completeToolResultGroups(messages),
     tools: input.tools?.length ? input.tools : undefined,
     observationEvidence,
   };
+}
+
+function completeToolResultGroups(messages: readonly Message[]): Message[] {
+  const completed: Message[] = [];
+
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    completed.push(message);
+    if (message.role !== "assistant") continue;
+
+    const missingResultIds = new Set(
+      message.content.flatMap((part) => (part.type === "tool_use" ? [part.toolCallId] : [])),
+    );
+    if (missingResultIds.size === 0) continue;
+
+    let nextIndex = index + 1;
+    while (messages[nextIndex]?.role === "tool") {
+      const toolMessage = messages[nextIndex];
+      completed.push(toolMessage);
+      for (const part of toolMessage.content) {
+        if (part.type === "tool_result") missingResultIds.delete(part.toolCallId);
+      }
+      nextIndex++;
+    }
+    index = nextIndex - 1;
+
+    for (const toolCallId of missingResultIds) {
+      completed.push(
+        toolResult(
+          toolCallId,
+          "No result was recorded for this tool call because the run was interrupted. Its execution outcome and side effects are unknown. Re-read relevant state before relying on its outcome.",
+          true,
+        ),
+      );
+    }
+  }
+
+  return completed;
 }
 
 function evidenceProvenByOutput(
