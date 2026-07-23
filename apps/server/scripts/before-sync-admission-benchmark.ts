@@ -3,8 +3,8 @@
 import { performance } from "node:perf_hooks";
 import type { UpdateJournal } from "@meridian/agent-edit";
 import * as Y from "yjs";
-import { createDocumentAuthority } from "../server/domains/collab/domain/document-authority.js";
 import { createDocumentContainment } from "../server/domains/collab/domain/document-containment.js";
+import { createDocumentMutationPolicy } from "../server/domains/collab/domain/document-mutation-policy.js";
 import { validateClientUpdateAdmission } from "../server/domains/collab/domain/provenance.js";
 import { createHocuspocusPersistenceService } from "../server/domains/collab/hocuspocus-persistence.js";
 
@@ -103,10 +103,10 @@ async function oldAdmission(update: Uint8Array): Promise<void> {
   const unsupported = async (): Promise<never> => {
     throw new Error("unsupported");
   };
-  const authority = createDocumentAuthority({
-    readMutableAuthority: () => ({ documentId: DOCUMENT_ID, generation: 0n, doc: document }),
+  const mutationPolicy = createDocumentMutationPolicy({
+    readMutationTarget: () => ({ documentId: DOCUMENT_ID, generation: 0n, doc: document }),
     admitImmediate: async () => ({ sequence: BigInt(++sequence), joined: 0 }),
-    readFrozenCut: unsupported,
+    readFrozenReplicationSource: unsupported,
     readCurrentRevision: unsupported,
     lowerCertifiedMutation: unsupported,
     loadCheckpoint: unsupported,
@@ -116,7 +116,7 @@ async function oldAdmission(update: Uint8Array): Promise<void> {
     stagePush: unsupported,
     completePush: unsupported,
   });
-  await authority.mutate({
+  await mutationPolicy.mutate({
     kind: "attributedFreshAuthorship",
     source: { kind: "writer" },
     update,

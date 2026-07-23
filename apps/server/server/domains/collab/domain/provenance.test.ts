@@ -274,32 +274,35 @@ describe("hostile reserved namespace guard", () => {
     ],
     ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_ROOTS_TYPE).set("x", 1)],
   ])("rejects %s", (_name, mutate) => {
-    const authority = authorityWithNestedReservedType();
-    const update = hostileDelta(authority, mutate);
-    expect(() => assertClientUpdateOutsideReservedNamespace(authority, update)).toThrow(
+    const referenceDocument = documentWithNestedReservedType();
+    const update = hostileDelta(referenceDocument, mutate);
+    expect(() => assertClientUpdateOutsideReservedNamespace(referenceDocument, update)).toThrow(
       ReservedNamespaceAdmissionError,
     );
   });
 
   it("rejects a delete-only reserved change", () => {
-    const authority = authorityWithNestedReservedType();
-    const update = hostileDelta(authority, (client) => {
+    const referenceDocument = documentWithNestedReservedType();
+    const update = hostileDelta(referenceDocument, (client) => {
       client.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1);
     });
     expect(Y.decodeUpdate(update).structs).toHaveLength(0);
-    expect(() => assertClientUpdateOutsideReservedNamespace(authority, update)).toThrow(
+    expect(() => assertClientUpdateOutsideReservedNamespace(referenceDocument, update)).toThrow(
       /deletes reserved provenance state/,
     );
   });
 
   it("allows ordinary prose updates without scratch-applying them", () => {
-    const authority = authorityWithNestedReservedType();
+    const referenceDocument = documentWithNestedReservedType();
     const client = createCollabYDoc({ gc: false });
-    Y.applyUpdate(client, Y.encodeStateAsUpdate(authority));
+    Y.applyUpdate(client, Y.encodeStateAsUpdate(referenceDocument));
     const vector = Y.encodeStateVector(client);
     client.getXmlFragment("prosemirror").push([new Y.XmlElement("paragraph")]);
     expect(() =>
-      assertClientUpdateOutsideReservedNamespace(authority, Y.encodeStateAsUpdate(client, vector)),
+      assertClientUpdateOutsideReservedNamespace(
+        referenceDocument,
+        Y.encodeStateAsUpdate(client, vector),
+      ),
     ).not.toThrow();
   });
 });
@@ -386,7 +389,7 @@ function textRange(doc: Y.Doc) {
   return { clientID: item.id.client, clock: item.id.clock, length: item.length };
 }
 
-function authorityWithNestedReservedType(): Y.Doc {
+function documentWithNestedReservedType(): Y.Doc {
   const doc = proseDoc("safe prose");
   const nested = new Y.Array<unknown>();
   doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
@@ -394,9 +397,9 @@ function authorityWithNestedReservedType(): Y.Doc {
   return doc;
 }
 
-function hostileDelta(authority: Y.Doc, mutate: (client: Y.Doc) => void): Uint8Array {
+function hostileDelta(referenceDocument: Y.Doc, mutate: (client: Y.Doc) => void): Uint8Array {
   const client = createCollabYDoc({ gc: false });
-  Y.applyUpdate(client, Y.encodeStateAsUpdate(authority));
+  Y.applyUpdate(client, Y.encodeStateAsUpdate(referenceDocument));
   const vector = Y.encodeStateVector(client);
   mutate(client);
   return Y.encodeStateAsUpdate(client, vector);

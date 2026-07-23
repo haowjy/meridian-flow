@@ -398,7 +398,7 @@ export function createBranchAgentEditJournal(input: {
           materializeDestructiveProvenance: (request) =>
             materializeDestructiveProvenance({
               ...request,
-              // Roots absent from live authority were born on this agent-owned branch.
+              // Roots absent from the live document were born on this agent-owned branch.
               fallbackProvenance: "agent",
             }),
         }

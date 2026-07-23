@@ -12,8 +12,11 @@ import type {
   BranchSnapshot,
   BranchStore,
 } from "./domain/branch-coordinator.js";
-import { admitWriterUpdate, ReservedWriterClientIdError } from "./domain/document-authority.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
+import {
+  admitWriterUpdate,
+  ReservedWriterClientIdError,
+} from "./domain/document-mutation-policy.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
@@ -33,7 +36,7 @@ type HocuspocusPersistenceDeps = {
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
-  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
+  readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
   offlineReconciliation?: OfflineReconciliation;
@@ -236,7 +239,9 @@ export function createHocuspocusPersistenceService(
     writerIngressBarrier,
     async currentLiveGeneration(documentId) {
       const generation =
-        liveGenerations.get(documentId) ?? (await deps.readAuthorityGeneration?.(documentId)) ?? 1n;
+        liveGenerations.get(documentId) ??
+        (await deps.readAuthorityHeadGeneration?.(documentId)) ??
+        1n;
       liveGenerations.set(documentId, generation);
       return generation;
     },
@@ -280,28 +285,30 @@ export function createHocuspocusPersistenceService(
       const trackedGeneration = liveGenerations.get(input.documentId);
       const currentGeneration =
         trackedGeneration ??
-        (deps.readAuthorityGeneration ? await deps.readAuthorityGeneration(input.documentId) : 1n);
+        (deps.readAuthorityHeadGeneration
+          ? await deps.readAuthorityHeadGeneration(input.documentId)
+          : 1n);
       liveGenerations.set(input.documentId, currentGeneration);
-      const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
+      const liveDocument = deps.hocuspocus()?.documents.get(input.documentId);
       const retiredStateVector = retiredStateVectors.get(input.documentId);
       try {
         const admission = await admitWriterUpdate({
-          authority: input.document,
+          targetDocument: input.document,
           update: input.update,
-          validateAuthority() {
+          validateTarget() {
             if (currentGeneration !== input.expectedGeneration) {
               recordDroppedConnectionUpdate(input.documentId);
-              throw new Error("stale-authority-generation");
+              throw new Error("stale-durable-authority-generation");
             }
-            if (!authoritativeDoc || authoritativeDoc !== input.document) {
-              throw new Error("authority-document-mismatch");
+            if (!liveDocument || liveDocument !== input.document) {
+              throw new Error("live-document-room-mismatch");
             }
             if (
               retiredStateVector &&
-              replaysRetiredGeneration(input.update, authoritativeDoc, retiredStateVector)
+              replaysRetiredGeneration(input.update, liveDocument, retiredStateVector)
             ) {
               recordDroppedConnectionUpdate(input.documentId);
-              throw new Error("stale-authority-generation");
+              throw new Error("retired-durable-authority-generation");
             }
           },
           // Reconnects replay cached state and delete sets that Yjs would discard
@@ -351,7 +358,7 @@ export function createHocuspocusPersistenceService(
     },
 
     persistConnectionUpdate(input) {
-      // Durability authority is the awaited pre-apply admission hook. This queue
+      // The durability boundary is the awaited pre-apply admission hook. This queue
       // retains only post-apply reconciliation work and may lag acknowledgements.
       if (input.origin.type !== "user" || !input.reconcileOffline) return;
       const convergedState = Y.encodeStateAsUpdate(input.document);

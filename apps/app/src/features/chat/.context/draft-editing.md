@@ -30,7 +30,7 @@ Yjs reversal engine, different scope and interaction pattern:
 
 Turn edits line behavior in auto-apply mode:
 
-- **Document authority** — `AssistantTurn` calls `useTurnLiveLineage(threadId,
+- **Document list source** — `AssistantTurn` calls `useTurnLiveLineage(threadId,
   turnId)`, backed by `GET /api/threads/:threadId/turns/:turnId/live-lineage`.
   The server derives documents from live `agent_edit_mutations` filtered to
   `scope_id = 'live'`; tool blocks, `turn_document_touches`, and

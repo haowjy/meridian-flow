@@ -14,11 +14,11 @@ propagation between them.
   work-draft Y.Doc with live and pushes/discards selected journal rows.
 - **Journal is the durable record.** Runtime state is memory-only; restarts cold
   reconstruct from the live journal plus branch state/journal rows.
-- **Document authority is fenced.** Each live document has a durable authority
-  identity, generation, and contiguous admission sequence.
-- Checkpoint restore replaces the authority generation. It never applies checkpoint
-  bytes to the current Y.Doc; the transport fences each connection to its opened
-  generation and rejects retired-identity insertion or delete-set replay.
+- **The durable authority head is fenced.** Each live document has one durable
+  authority identity, generation, and contiguous admission sequence.
+- Checkpoint restore replaces the durable authority generation. It never applies
+  checkpoint bytes to the current Y.Doc; the transport fences each connection to
+  its opened generation and rejects retired-identity insertion or delete-set replay.
 - **Safety provenance is journal-derived.** Ordinary prose birth class comes
   from authenticated journal attribution. Certified semantic mutations may add
   sparse continuation/restoration facts in the reserved Yjs provenance types,
@@ -28,7 +28,7 @@ propagation between them.
 
 ## What lives here
 
-- `domain/document-authority.ts` is the sole content-admission policy capability:
+- `domain/document-mutation-policy.ts` is the sole content-admission policy capability:
   it validates fresh authorship, certified semantic edits, frozen-cut identity
   replication, and fenced snapshot replacement before persistence; push planning
   and settlement remain owned by their transition modules.
