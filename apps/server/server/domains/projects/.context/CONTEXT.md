@@ -34,6 +34,10 @@ This domain is not the full project CRUD surface; that lives in
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, chapter document, or editing
   thread.
+- Chapter seeding is initialize-only and is decided from canonical journal state,
+  never from `markdown_projection`. Any admission or checkpoint means initialized.
+- Auth provisioning and home routing re-enter bootstrap even when the personal
+  project exists, so a crash after row commit but before the initial seed repairs.
 
 ## Relationship to `domains/projects`
 

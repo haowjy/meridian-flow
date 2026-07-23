@@ -20,6 +20,10 @@
   trace ring, filters, and exports.
 - Server debugging guidance now distinguishes authoritative stdout from the
   best-effort bounded JSONL mirror and documents query, SSE, and `jq` workflows.
+- `apps/server`: fresh-project documents are now initialized exactly once in
+  canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
+  warm collaboration rooms reconcile with the seed, and AI causal-cut capture
+  initializes missing authority heads without requiring an editor open (#317).
 - `apps/app`: universal document identity bar — every open document shows a
   quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
   match the suggestion dropdown, with a permanent chip whose label graduates
@@ -44,6 +48,18 @@
   Move targets now have exact collision semantics, return a canonical collision
   locator for Open-existing recovery, and share reason-coded path normalization
   with client create/rename validation.
+- `apps/server`: project-manifest reconciliation is now an explicit,
+  cross-replica-serialized command; ordinary membership reads never reconcile
+  or append membership history,
+  concurrent cold starts create one seed update and one initial checkpoint,
+  and the WebSocket membership gate heals legacy omissions on demand (#279).
+- `apps/app`: collaborative document transport now waits for IndexedDB replay
+  before connecting, avoiding redundant full-state uploads on reopen while a
+  one-second fallback keeps connectivity available when local storage stalls.
+- `apps/server`: live writer sync admission now uses Hocuspocus's single decoded
+  `beforeSync` payload, a mutation-aware exact containment cache with a
+  state-vector novelty fast path, and a narrow reusable writer-ingress
+  capability instead of rebuilding a full document-authority facade per frame.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening

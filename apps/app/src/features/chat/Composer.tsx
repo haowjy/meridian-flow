@@ -43,11 +43,6 @@ export type ComposerProps = {
   variant?: "hero" | "pinned";
   /** Footer toolbar slot for caller-owned controls such as the agent selector. */
   toolbarLeft?: ReactNode;
-  /**
-   * Drop the composer's own border/rounding/shadow so it can sit flush inside a
-   * shared outer container (the DraftDock composer-unit box). Pinned only.
-   */
-  flush?: boolean;
 };
 
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
@@ -80,7 +75,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     autoFocus = false,
     variant = "hero",
     toolbarLeft,
-    flush = false,
   },
   ref,
 ) {
@@ -139,14 +133,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   }
 
-  const containerClassName = flush
-    ? "bg-composer-surface"
-    : cn(
-        "border transition-[border-color] focus-within:border-border-focus",
-        variant === "hero"
-          ? "rounded-composer border-border bg-card shadow-hero"
-          : "rounded-composer-pinned border-composer-border bg-composer-surface",
-      );
+  const containerClassName = cn(
+    "border transition-[border-color] focus-within:border-border-focus",
+    variant === "hero"
+      ? "rounded-composer border-border bg-card shadow-hero"
+      : "rounded-composer-pinned border-composer-border bg-composer-surface",
+  );
 
   return (
     <div className={cn("px-4 pt-4 pb-3", containerClassName)}>
@@ -167,7 +159,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           // border above) is the field — the inner textarea must not add a
           // second indicator.
           "composer-input field-sizing-fixed resize-none border-0 bg-transparent px-1.5 py-1 outline-none",
-          "dark:bg-transparent",
           "max-h-60 overflow-y-auto placeholder:text-muted-foreground",
           variant === "hero" ? "min-h-[52px]" : "min-h-[40px]",
         )}

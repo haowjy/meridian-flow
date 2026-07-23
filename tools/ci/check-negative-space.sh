@@ -76,9 +76,9 @@ done < <(
     2>/dev/null || true
 )
 
-authority_exports="$(git grep -n -E 'export function createDocumentAuthority' -- \
+authority_exports="$(git grep -l -E 'export function createDocumentAuthority' -- \
   'apps/server/server/domains/collab/**/*.ts' ':!**/*.test.ts' 2>/dev/null || true)"
-expected_authority_export='apps/server/server/domains/collab/domain/document-authority.ts:107:export function createDocumentAuthority(port: DocumentAuthorityPort) {'
+expected_authority_export='apps/server/server/domains/collab/domain/document-authority.ts'
 if [[ "$authority_exports" != "$expected_authority_export" ]]; then
   authority_violations+=("DocumentAuthority must have one canonical production export: $authority_exports")
 fi

@@ -47,7 +47,12 @@ client mounts for its filetype. Issue #196 exposed the historical failure mode:
 markdown-only seeding produced schema-invalid content that ProseMirror silently
 deleted on first open, then persisted that deletion. The current engine is
 schema-aware; all new seed and write paths must go through it rather than
-hand-building fragment content. The context caller contract is documented in
+hand-building fragment content. A new document's first seed is installed as its
+generation-1 checkpoint (with no admitted journal mutations, so its initial
+causal cut is `admittedThrough: 0`). Seeding is strictly initialize-only: any
+existing admission or checkpoint makes later attempts successful no-ops. A seed
+is reconciled into an already-open live room before success returns, and a stale
+room checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
 [the context domain](../../context/.context/CONTEXT.md).
 
 ## Branch model
@@ -66,11 +71,16 @@ attribution authority.
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the
-live-room gate. `reconcileLiveManifest` is additive-only and idempotent: it seeds
-missing database content rows, but never rewrites an existing key or removes an
-entry. Creation and deletion flow through `recordManifestDocument{Created,Deleted}`.
-Preserve every no-op guard: setting an equal Y.Map value still creates Yjs
-history. See
+live-room gate. Ordinary `resolveManifestMembership` calls never reconcile or
+append membership history. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
+self-heal command: it seeds missing active database content rows, but never
+rewrites an existing key or removes an entry. The WebSocket gate invokes it once
+after a membership miss. Manifest write-intent paths do not run this broad SQL
+reconciliation; draft-scoped creation (`workId` or `threadId`) must not allow
+unstaged document rows to enter live membership. Creation and deletion flow
+through `recordManifestDocument{Created,Deleted}`, with SQL
+soft-delete committed before the deletion notification. Preserve every no-op guard:
+setting an equal Y.Map value still creates Yjs history. See
 [KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
 for the cross-domain port decision and self-healing rationale.
 
@@ -145,11 +155,18 @@ history is preserved for attribution, echo, and undo dependency checking.
   kernel seals canonical swept-block identities and captured bodies into the
   branch journal row's update metadata before persistence; push projection
   consumes that evidence independently of the row's Apply-only draft base.
-- **Writer ingress barrier**: after fencing and provenance validation, updates
-  already contained by the live authority are acknowledged without admission.
-  Novel live updates are journaled and joined to unresolved settlements before
-  Hocuspocus apply/broadcast/ack. The domain seam drains started admissions and
-  detects later admission generations.
+- **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
+  type/payload once. After fencing and provenance validation, a cached,
+  mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
+  struct novelty takes the state-vector fast path without constructing a
+  history-sized snapshot. Already-contained updates are acknowledged without
+  admission. Novel live updates are journaled through the narrow writer-ingress
+  capability and joined to unresolved settlements before Hocuspocus
+  apply/broadcast/ack. The domain seam drains started admissions and detects
+  later admission generations.
+  `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
+  gate; cached containment must retain at least a 10x p50 advantage over rebuilding
+  a history-sized Yjs snapshot.
 - **Push settlement authority**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the

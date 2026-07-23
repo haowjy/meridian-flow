@@ -27,6 +27,14 @@ function setup(filetype = "typescript") {
     journal,
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
+    initialDocumentSeeds: {
+      async seedInitialDocument(documentId, state) {
+        const snapshot = await journal.read(documentId);
+        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
+        await journal.checkpoint(documentId, state, 0);
+        return true;
+      },
+    },
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     resolveFiletype: async () => filetype,
   });
