@@ -4,11 +4,36 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
+import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { PROVENANCE_ROOTS_TYPE, PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 const BRANCH_ID = "branch-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
+
+describe("createHocuspocusPersistenceService branch room storage", () => {
+  it("does not re-enter the coordinator lock after a durable room publication", async () => {
+    const criticalSections = createBranchCriticalSections();
+    const checkpointBranch = vi.fn(() =>
+      criticalSections.withBranches([BRANCH_ID], async () => undefined),
+    );
+    const persistence = createHocuspocusPersistenceService({
+      journal: fakeJournal(),
+      branchCoordinator: { checkpointBranch } as never,
+      hocuspocus: () => null,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+
+    await expect(
+      criticalSections.withBranches([BRANCH_ID], () =>
+        persistence.storeHocuspocusBranch(BRANCH_ID, new Y.Doc({ gc: false })),
+      ),
+    ).resolves.toBeUndefined();
+    expect(checkpointBranch).not.toHaveBeenCalled();
+  });
+});
 
 describe("createHocuspocusPersistenceService branch stale gate", () => {
   it("rejects reserved namespace smuggling before the branch journal commit", async () => {
