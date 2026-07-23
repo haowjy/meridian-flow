@@ -6,6 +6,8 @@ export interface EventQueryFilter {
   source?: string;
   /** Event-name prefix match. */
   name?: string;
+  /** Exact event-name exclusion, applied before the result limit. */
+  excludeName?: string;
   /** Inclusive severity floor. */
   level?: EventLevel;
   /** Equality on every provided correlation field. */
@@ -42,6 +44,7 @@ const LEVEL_RANK: Record<EventLevel, number> = {
 export function eventMatchesQueryFilter(event: EventRecord, filter: EventQueryFilter): boolean {
   if (filter.source !== undefined && event.source !== filter.source) return false;
   if (filter.name !== undefined && !event.name.startsWith(filter.name)) return false;
+  if (filter.excludeName !== undefined && event.name === filter.excludeName) return false;
   if (filter.level !== undefined && LEVEL_RANK[event.level] < LEVEL_RANK[filter.level])
     return false;
   if (filter.sinceTimestamp !== undefined && event.timestamp < filter.sinceTimestamp) return false;

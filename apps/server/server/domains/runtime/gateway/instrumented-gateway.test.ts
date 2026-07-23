@@ -131,6 +131,11 @@ describe("createInstrumentedGateway stream", () => {
         durationMs: 75,
         firstOutputMs: 25,
         chunkCount: 3,
+        chunkCounts: {
+          start: 1,
+          "text.delta": 1,
+          end: 1,
+        },
         toolCallCount: 1,
         inputTokens: 11,
         outputTokens: 7,

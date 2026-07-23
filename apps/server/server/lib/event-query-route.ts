@@ -56,6 +56,7 @@ function singleValue(query: EventQueryParameters, key: string): string | undefin
 export function parseEventQueryFilter(query: EventQueryParameters): EventQueryFilter {
   const source = singleValue(query, "source");
   const name = singleValue(query, "name");
+  const excludeName = singleValue(query, "excludeName");
   const rawLevel = singleValue(query, "level");
   const sinceEventId = singleValue(query, "sinceEventId");
   const rawSinceTimestamp = singleValue(query, "sinceTimestamp");
@@ -89,6 +90,7 @@ export function parseEventQueryFilter(query: EventQueryParameters): EventQueryFi
   return {
     ...(source !== undefined && { source }),
     ...(name !== undefined && { name }),
+    ...(excludeName !== undefined && { excludeName }),
     ...(rawLevel !== undefined && { level: rawLevel as EventLevel }),
     ...(correlationEntries.length > 0 && { correlation }),
     ...(sinceEventId !== undefined && { sinceEventId }),

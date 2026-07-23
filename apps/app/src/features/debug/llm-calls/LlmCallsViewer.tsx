@@ -12,7 +12,7 @@ import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../D
 import { JsonTree } from "../JsonTree";
 import { deriveLlmCalls, type LlmCallOutcome, type LlmCallSummary } from "./derive-llm-calls";
 
-const EVENTS_PATH = "/api/debug/events?source=gateway&limit=500";
+const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
 const POLL_INTERVAL_MS = 3_000;
 
 type EventQueryResponse = {
@@ -251,7 +251,7 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
 
         {call.chunkCount > 0 ? (
           <section>
-            <h2 className="mb-2 text-xs font-medium">Verbose chunks ({call.chunkCount})</h2>
+            <h2 className="mb-2 text-xs font-medium">Stream events ({call.chunkCount})</h2>
             <dl className="grid grid-cols-2 gap-1.5">
               {call.chunks.map((chunk) => (
                 <div

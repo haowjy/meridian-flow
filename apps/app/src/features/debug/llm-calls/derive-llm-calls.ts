@@ -187,6 +187,19 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function terminalChunkCounts(record: EventRecord | undefined): Map<string, number> | undefined {
+  const value = record?.payload.chunkCounts;
+  if (!isRecord(value)) return undefined;
+
+  const counts = new Map<string, number>();
+  for (const [messageClass, count] of Object.entries(value)) {
+    if (typeof count === "number" && Number.isInteger(count) && count > 0) {
+      counts.set(messageClass, count);
+    }
+  }
+  return counts.size > 0 ? counts : undefined;
+}
+
 function terminalOutcome(record: EventRecord): Exclude<LlmCallOutcome, "in-flight"> | undefined {
   if (record.name !== "stream.close") return undefined;
   const outcome = record.payload.outcome;
@@ -224,12 +237,14 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
   const terminal = terminalRecords[0];
   const outcome = terminal ? (terminalOutcome(terminal) ?? "in-flight") : "in-flight";
   const firstOutputRecord = events.find((record) => record.name === "stream.first_output");
-  const chunksByClass = new Map<string, number>();
+  const chunksByClass = terminalChunkCounts(terminal) ?? new Map<string, number>();
 
-  for (const record of events) {
-    if (record.name !== "stream.chunk") continue;
-    const messageClass = record.stream?.messageClass ?? "unknown";
-    chunksByClass.set(messageClass, (chunksByClass.get(messageClass) ?? 0) + 1);
+  if (chunksByClass.size === 0) {
+    for (const record of events) {
+      if (record.name !== "stream.chunk") continue;
+      const messageClass = record.stream?.messageClass ?? "unknown";
+      chunksByClass.set(messageClass, (chunksByClass.get(messageClass) ?? 0) + 1);
+    }
   }
 
   const chunks = [...chunksByClass.entries()]
@@ -260,7 +275,9 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
     agentSlug: valueFromLastCorrelation(events, "agentSlug"),
     lifecycleEvents,
     chunks,
-    chunkCount: chunks.reduce((total, chunk) => total + chunk.count, 0),
+    chunkCount:
+      optionalNumber(terminal?.payload.chunkCount) ??
+      chunks.reduce((total, chunk) => total + chunk.count, 0),
   };
 }
 

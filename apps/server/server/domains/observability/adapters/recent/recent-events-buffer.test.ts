@@ -43,6 +43,24 @@ describe("RecentEventsBuffer", () => {
     expect(buffer.query({ limit: 2 }).events.map(({ eventId }) => eventId)).toEqual(["249", "248"]);
   });
 
+  it("applies record-kind exclusions before the result limit", () => {
+    const buffer = new RecentEventsBuffer();
+    buffer.emit(event("older-open", { source: "gateway", name: "stream.open" }));
+    buffer.emit(event("older-close", { source: "gateway", name: "stream.close" }));
+    buffer.emit(event("noisy-open", { source: "gateway", name: "stream.open" }));
+    for (let index = 0; index < 501; index += 1) {
+      buffer.emit(event(`chunk-${index}`, { source: "gateway", name: "stream.chunk" }));
+    }
+    buffer.emit(event("noisy-close", { source: "gateway", name: "stream.close" }));
+
+    expect(buffer.query({ source: "gateway", limit: 500 }).events).toHaveLength(500);
+    expect(
+      buffer
+        .query({ source: "gateway", excludeName: "stream.chunk", limit: 500 })
+        .events.map(({ eventId }) => eventId),
+    ).toEqual(["noisy-close", "noisy-open", "older-close", "older-open"]);
+  });
+
   it("filters source exactly, name by prefix, and level by severity floor", () => {
     const buffer = new RecentEventsBuffer();
     const levels: EventLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];

@@ -8,6 +8,7 @@ describe("parseEventQueryFilter", () => {
       parseEventQueryFilter({
         source: "wire.yjs",
         name: "socket.",
+        excludeName: "socket.chunk",
         level: "warn",
         documentId: "doc-1",
         threadId: "thread-1",
@@ -19,6 +20,7 @@ describe("parseEventQueryFilter", () => {
     ).toEqual({
       source: "wire.yjs",
       name: "socket.",
+      excludeName: "socket.chunk",
       level: "warn",
       correlation: { documentId: "doc-1", threadId: "thread-1", branchGeneration: 4 },
       sinceEventId: "cursor",

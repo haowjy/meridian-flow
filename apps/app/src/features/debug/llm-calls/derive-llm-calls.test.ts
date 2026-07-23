@@ -149,6 +149,30 @@ describe("deriveLlmCalls", () => {
     expect(call?.lifecycleEvents.map(({ name }) => name)).toEqual(["stream.open", "stream.close"]);
   });
 
+  it("derives stream-event details from the terminal aggregate without verbose records", () => {
+    const call = deriveLlmCalls([
+      event("call", 1, "stream.open"),
+      event("call", 5, "stream.close", {
+        payload: {
+          outcome: "ok",
+          chunkCount: 4,
+          chunkCounts: {
+            start: 1,
+            "text.delta": 2,
+            end: 1,
+          },
+        },
+      }),
+    ])[0];
+
+    expect(call?.chunkCount).toBe(4);
+    expect(call?.chunks).toEqual([
+      { messageClass: "text.delta", count: 2 },
+      { messageClass: "end", count: 1 },
+      { messageClass: "start", count: 1 },
+    ]);
+  });
+
   it("ignores non-gateway records and gateway records without call correlation", () => {
     const wrongSource = event("call", 1, "stream.open", { source: "runtime" });
     const missingCall = event("call", 2, "stream.open", { correlation: {} });

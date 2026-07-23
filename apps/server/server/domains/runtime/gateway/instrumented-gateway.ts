@@ -74,6 +74,7 @@ function streamClosePayload(input: {
   durationMs: number;
   firstOutputMs?: number;
   chunkCount: number;
+  chunkCounts?: ReadonlyMap<StreamEvent["type"], number>;
   result?: GenerateResult;
   outcome: Outcome;
   errorCode?: string;
@@ -82,6 +83,7 @@ function streamClosePayload(input: {
     durationMs: input.durationMs,
     ...(input.firstOutputMs === undefined ? {} : { firstOutputMs: input.firstOutputMs }),
     chunkCount: input.chunkCount,
+    ...(input.chunkCounts ? { chunkCounts: Object.fromEntries(input.chunkCounts.entries()) } : {}),
     toolCallCount: input.result?.toolCalls.length ?? 0,
     ...(input.result
       ? {
@@ -111,6 +113,7 @@ function createStreamObservation(input: {
   let route = { provider: input.request.provider, model: input.request.model };
   let startCount = 0;
   let chunkCount = 0;
+  const chunkCounts = new Map<StreamEvent["type"], number>();
   let firstOutputMs: number | undefined;
   let terminal: StreamTerminal | undefined;
   let closed = false;
@@ -134,6 +137,7 @@ function createStreamObservation(input: {
         durationMs: terminalAt - input.startedAt,
         firstOutputMs,
         chunkCount,
+        chunkCounts,
         result: terminal?.type === "end" ? terminal.result : undefined,
         outcome,
         errorCode: terminal?.type === "error" ? terminal.errorCode : undefined,
@@ -146,6 +150,7 @@ function createStreamObservation(input: {
     try {
       for await (const event of source) {
         chunkCount++;
+        chunkCounts.set(event.type, (chunkCounts.get(event.type) ?? 0) + 1);
 
         if (event.type === "start") {
           route = { provider: event.provider, model: event.model };
