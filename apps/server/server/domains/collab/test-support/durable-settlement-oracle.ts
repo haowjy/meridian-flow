@@ -21,6 +21,7 @@ export type SettlementOracleOutput = {
   eligibleRanges: readonly LineageRange[];
   applyResult: unknown;
   completionState: unknown;
+  aggregateState?: unknown;
   forwardActions: readonly unknown[];
 };
 
@@ -91,6 +92,9 @@ export function normalizeSettlementOutput(output: SettlementOracleOutput): Settl
     eligibleRanges: normalizeRanges(output.eligibleRanges),
     applyResult: normalizeStructuredValue(output.applyResult),
     completionState: normalizeStructuredValue(output.completionState),
+    ...(output.aggregateState === undefined
+      ? {}
+      : { aggregateState: normalizeStructuredValue(output.aggregateState) }),
     forwardActions: output.forwardActions.map(normalizeStructuredValue),
   };
 }

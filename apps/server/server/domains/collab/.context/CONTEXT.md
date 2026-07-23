@@ -171,9 +171,10 @@ history is preserved for attribution, echo, and undo dependency checking.
   inclusion and exact rendering coverage.
   Swept trail details retain the normalized final-pre-push target ranges and exact
   final-pre-push body. Settlement refines a complete provisional push trail in its
-  existing aggregate version, retaining only changes that remove writer-protected
-  roots plus explicit sweep/resurrection safety rows. Generative and agent-only
-  rows are discarded; only journal or staged-push authority joined after the
+  existing aggregate version, retaining only changes that remove or change the
+  target, parent rendering, or order of writer-protected roots, plus explicit
+  sweep/resurrection safety rows. Generative and agent-only rows are discarded;
+  only journal or staged-push authority joined after the
   durable commit publishes another trail version. A complete empty classification
   removes that push's provisional changes and document occurrences in the same version.
 - **Settlement verification stack**: the shared killed-process oracle in

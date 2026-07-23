@@ -184,6 +184,9 @@ export type ChangeTrailHarnessOptions = {
 export type MatrixDraftStep = {
   source: "writer" | "agent";
   markdown: string;
+  targetBlockIndex?: number;
+  deleteTargetBlock?: boolean;
+  append?: boolean;
   remint?: boolean;
   /** Certifies a length-preserving structural re-mint as one preserved root run. */
   certifiedCarry?: boolean;
@@ -765,7 +768,26 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         const inputRevision = [...Y.encodeStateVector(branch.doc)]
           .map((byte) => byte.toString(16).padStart(2, "0"))
           .join("");
-        if (step.transientInsertDelete !== undefined) {
+        if (step.append) {
+          const blocks = model.getBlocks(toDocHandle(branch.doc));
+          model.insertBlocks(
+            toDocHandle(branch.doc),
+            blocks.at(-1) ?? null,
+            markupCodec.parse(step.markdown),
+          );
+        } else if (step.targetBlockIndex !== undefined) {
+          const target = model.getBlocks(toDocHandle(branch.doc))[step.targetBlockIndex];
+          if (!target) throw new Error(`matrix target block ${step.targetBlockIndex} is missing`);
+          if (step.deleteTargetBlock) model.deleteBlock(toDocHandle(branch.doc), target);
+          else {
+            model.applyTextEdit(
+              toDocHandle(branch.doc),
+              target,
+              { from: 0, to: model.getText(target).length },
+              step.markdown,
+            );
+          }
+        } else if (step.transientInsertDelete !== undefined) {
           branch.doc.transact(() => {
             const fragment = branch.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
             const paragraph = new Y.XmlElement("paragraph");

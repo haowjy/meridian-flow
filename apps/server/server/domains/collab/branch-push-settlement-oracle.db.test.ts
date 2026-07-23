@@ -525,7 +525,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.applyResult).toMatchObject({ markdown: "#\n" });
   });
 
-  it("item 4: a same-root candidate re-mint is silent", async () => {
+  it("item 4: a certified same-root candidate re-mint remains writer-visible", async () => {
     const result = await runMatrixOracle("candidate-certified-carry", (harness) =>
       harness.seedMatrixPush({
         responseId: "oracle-candidate-carry",
@@ -541,7 +541,100 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       }),
     );
 
-    expect(result.cold.exactBodies).toEqual([]);
+    expect(result.cold.trailChanges).toEqual([
+      expect.objectContaining({
+        beforeText: expect.stringContaining("Carried writer root."),
+      }),
+    ]);
+  });
+
+  it.each([
+    {
+      name: "modify",
+      initialMarkdown: "Writer root.",
+      markdown: "Writer root changed.",
+      expectedBefore: "Writer root.",
+    },
+    {
+      name: "delete",
+      initialMarkdown: "Writer root.\n\nSurvivor.",
+      markdown: "Survivor.",
+      expectedBefore: "Writer root.",
+    },
+  ])("final settlement retains a writer-root $name row", async ({
+    name,
+    initialMarkdown,
+    markdown,
+    expectedBefore,
+  }) => {
+    const result = await runMatrixOracle(`writer-${name}`, (harness) =>
+      harness.seedMatrixPush({
+        responseId: `oracle-writer-${name}`,
+        initialMarkdown,
+        steps: [{ source: "agent", markdown }],
+      }),
+    );
+
+    expect(result.cold.trailChanges).toEqual([
+      expect.objectContaining({ kind: name, beforeText: expect.stringContaining(expectedBefore) }),
+    ]);
+  });
+
+  it.each([
+    { name: "modify", markdown: "Agent changed.", deleteTargetBlock: false },
+    { name: "delete", markdown: "", deleteTargetBlock: true },
+  ])("final settlement removes an agent-only $name row", async ({
+    name,
+    markdown,
+    deleteTargetBlock,
+  }) => {
+    const result = await runMatrixOracle(`agent-only-${name}`, (harness) =>
+      harness.seedMatrixPush({
+        responseId: `oracle-agent-only-${name}`,
+        initialMarkdown: "Writer root.",
+        steps: [
+          { source: "agent", markdown: "Agent addition.", append: true },
+          { source: "agent", markdown, targetBlockIndex: 1, deleteTargetBlock },
+        ],
+      }),
+    );
+
+    expect(result.cold.trailChanges).toEqual([]);
+  });
+
+  it("final settlement keeps the writer row and cleans the suppressed occurrence", async () => {
+    const result = await runMatrixOracle("mixed-retained-and-removed", (harness) =>
+      harness.seedMatrixPush({
+        responseId: "oracle-mixed-retained-and-removed",
+        initialMarkdown: "Writer one.\n\nWriter two.",
+        steps: [
+          { source: "agent", markdown: "Agent addition.", append: true },
+          {
+            source: "agent",
+            markdown: "Writer one changed.",
+            targetBlockIndex: 0,
+          },
+          {
+            source: "agent",
+            markdown: "Agent changed.",
+            targetBlockIndex: 2,
+          },
+        ],
+      }),
+    );
+
+    expect(result.cold.trailChanges).toEqual([
+      expect.objectContaining({
+        kind: "modify",
+        beforeText: expect.stringContaining("Writer one."),
+      }),
+    ]);
+    expect(result.cold.aggregateState).toEqual({
+      shellCount: 1,
+      detailCount: 1,
+      occurrenceCount: 1,
+      changeCount: 1,
+    });
   });
 
   it("item 5 F2b: carried writer units report while adjacent fresh agent units stay silent", async () => {
@@ -1116,6 +1209,7 @@ async function observeSettlement(
   };
   const changes = trail.details.flatMap((detail) => detail.changes as unknown as SweptChange[]);
   const swept = changes.filter((change) => change.writerProtection?.kind === "sweep");
+  const occurrences = await db.select().from(schema.changeTrailDocumentOccurrences);
   const [outbox] = await db.select().from(schema.branchPushSettlementOutbox);
   const [push] = await db.select().from(schema.pushLineage);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
@@ -1131,11 +1225,10 @@ async function observeSettlement(
   const cuts = await db.select().from(schema.modelResponseCausalCuts);
   const cutsById = new Map(cuts.map((cut) => [cut.id, cut]));
   return {
-    trailChanges: swept.map((change) => ({
+    trailChanges: changes.map((change) => ({
       kind: change.kind,
       beforeText: change.beforeText,
-      beforeBlockIdentity: change.beforeBlockIdentity,
-      writerProtection: change.writerProtection,
+      writerProtection: change.writerProtection?.kind,
     })),
     exactBodies: swept.map((change) => change.writerProtection.body.markdown as string),
     canonicalIdentities: swept.map((change) => change.beforeBlockIdentity),
@@ -1155,6 +1248,12 @@ async function observeSettlement(
       state: outbox.state,
       joinVersion: outbox.joinVersion,
       settledJoinVersion: outbox.settledJoinVersion,
+    },
+    aggregateState: {
+      shellCount: trail.shells.length,
+      detailCount: trail.details.length,
+      occurrenceCount: occurrences.length,
+      changeCount: changes.length,
     },
     forwardActions: swept.flatMap((change) =>
       change.forwardAction === undefined ? [] : [change.forwardAction],
