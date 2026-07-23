@@ -345,6 +345,25 @@ describe("createInstrumentedGateway stream", () => {
         },
       },
       {
+        name: "gives an independent source failure precedence over abort",
+        arrange() {
+          const controller = new AbortController();
+          controller.abort();
+          const error = Object.assign(new Error("provider failed independently"), {
+            code: "provider_error",
+          });
+          return {
+            request: { ...request, signal: controller.signal },
+            steps: [start, { throws: error }] satisfies TrackedStep[],
+            yielded: [start],
+            outcome: "error",
+            errorCode: "provider_error",
+            thrown: error,
+            nextCalls: 2,
+          };
+        },
+      },
+      {
         name: "classifies an abort during iteration as cancelled",
         arrange() {
           const controller = new AbortController();
@@ -423,8 +442,12 @@ describe("createInstrumentedGateway stream", () => {
       ).toEqual(["stream.close"]);
     });
 
-    it("closes and rethrows when stream construction fails synchronously", () => {
-      const error = new Error("stream construction failed");
+    it("closes with failure evidence when stream construction fails synchronously", () => {
+      const controller = new AbortController();
+      controller.abort();
+      const error = Object.assign(new Error("stream construction failed"), {
+        code: "provider_error",
+      });
       const sink = createInMemoryEventSink();
       const gateway = createInstrumentedGateway(
         {
@@ -436,9 +459,12 @@ describe("createInstrumentedGateway stream", () => {
         { sink, verbose: new Set() },
       );
 
-      expect(() => gateway.stream(request)).toThrow(error);
+      expect(() => gateway.stream({ ...request, signal: controller.signal })).toThrow(error);
       expect(sink.events.filter((event) => event.name === "stream.close")).toHaveLength(1);
-      expect(sink.events.at(-1)?.payload.outcome).toBe("error");
+      expect(sink.events.at(-1)).toMatchObject({
+        correlation: { errorCode: "provider_error" },
+        payload: { outcome: "error", errorCode: "provider_error" },
+      });
     });
 
     it("delegates consumer cleanup to the source iterator", async () => {
@@ -544,6 +570,31 @@ describe("createInstrumentedGateway generate", () => {
     expect(sink.events.at(-1)).toMatchObject({
       name: "stream.close",
       payload: { outcome: "cancelled" },
+    });
+  });
+
+  it("never replaces a provider rejection while inspecting its error code", async () => {
+    const providerFailure = new Error("provider failed");
+    Object.defineProperty(providerFailure, "code", {
+      get() {
+        throw new Error("code getter exploded");
+      },
+    });
+    const sink = createInMemoryEventSink();
+    const gateway = createInstrumentedGateway(
+      {
+        ...scriptedGateway([]),
+        async generate() {
+          throw providerFailure;
+        },
+      },
+      { sink, verbose: new Set() },
+    );
+
+    await expect(gateway.generate(request)).rejects.toBe(providerFailure);
+    expect(sink.events.at(-1)).toMatchObject({
+      name: "stream.close",
+      payload: { outcome: "error" },
     });
   });
 

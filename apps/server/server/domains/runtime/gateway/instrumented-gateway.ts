@@ -16,9 +16,18 @@ type Outcome = "ok" | "error" | "cancelled";
 type TerminalEvidence = { type: "end" } | { type: "error"; cause?: unknown } | { type: "none" };
 
 function isAbortFailure(error: unknown, signal: AbortSignal | undefined): boolean {
-  if (!signal?.aborted) return false;
-  if (error === signal.reason) return true;
-  return error instanceof Error && error.name === "AbortError";
+  try {
+    if (!signal?.aborted) return false;
+    if (error === signal.reason) return true;
+    return (
+      error instanceof Error &&
+      (error.name === "AbortError" ||
+        error.message === "Aborted" ||
+        error.message === "Request aborted")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function classifyTerminalOutcome(
@@ -33,8 +42,12 @@ function classifyTerminalOutcome(
 }
 
 function errorCodeFrom(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
-  return typeof error.code === "string" ? error.code : undefined;
+  try {
+    if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+    return typeof error.code === "string" ? error.code : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 interface CallEventMetadata {
@@ -130,7 +143,7 @@ function streamClosePayload(input: {
 
 type StreamTerminal =
   | { type: "end"; at: number; result: GenerateResult }
-  | { type: "error"; at: number; errorCode: string };
+  | { type: "error"; at: number; errorCode?: string; cause?: unknown };
 
 function createStreamObservation(input: {
   request: GenerateRequest;
@@ -139,7 +152,7 @@ function createStreamObservation(input: {
   startedAt: number;
 }): {
   observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent>;
-  close(): void;
+  fail(error: unknown): void;
 } {
   let route = { provider: input.request.provider, model: input.request.model };
   let startCount = 0;
@@ -148,6 +161,17 @@ function createStreamObservation(input: {
   let firstOutputMs: number | undefined;
   let terminal: StreamTerminal | undefined;
   let closed = false;
+
+  function recordFailure(error: unknown): void {
+    if (terminal !== undefined) return;
+    const errorCode = errorCodeFrom(error);
+    terminal = {
+      type: "error",
+      at: Date.now(),
+      cause: error,
+      ...(errorCode ? { errorCode } : {}),
+    };
+  }
 
   function close(): void {
     if (closed) return;
@@ -222,12 +246,21 @@ function createStreamObservation(input: {
 
         yield event;
       }
+    } catch (error) {
+      recordFailure(error);
+      throw error;
     } finally {
       close();
     }
   }
 
-  return { observe, close };
+  return {
+    observe,
+    fail(error) {
+      recordFailure(error);
+      close();
+    },
+  };
 }
 
 /** Adds fixed-cost lifecycle events and optional metadata-only chunk events to a Gateway. */
@@ -249,7 +282,7 @@ export function createInstrumentedGateway(
       try {
         return observation.observe(gateway.stream(request));
       } catch (error) {
-        observation.close();
+        observation.fail(error);
         throw error;
       }
     },
