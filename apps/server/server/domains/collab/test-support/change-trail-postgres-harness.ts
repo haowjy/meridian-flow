@@ -11,7 +11,7 @@ import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contrac
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -39,6 +39,7 @@ const {
   readDocumentAuthority,
   replaceDocumentAuthorityGeneration,
 } = await import("../adapters/drizzle-document-authority.js");
+const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
 const { createFacade } = await import("../composition.js");
@@ -1001,12 +1002,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
   }
 
-  async function compactAfterAuthorityReplacement(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
+  async function seedAuthorityReplacementProbe(): Promise<number> {
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    const checkpointId = await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Restored base.");
       const baseSeq = await persistence.journal.append(
@@ -1037,16 +1035,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
       return checkpoint.id;
     });
+  }
 
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityGeneration(db, {
-      documentId: ALPHA_ID,
-      checkpointId,
-      expectedGeneration: authority.generation,
-    });
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
+  async function authorityReplacementProbeResult(generation: bigint): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
     const snapshot = await persistence.journal.read(ALPHA_ID);
     const coldDoc = new Y.Doc({ gc: false });
     if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
@@ -1060,11 +1054,83 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .where(
           and(
             eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
-            eq(schema.documentYjsUpdates.authorityGeneration, replaced.generation),
+            eq(schema.documentYjsUpdates.authorityGeneration, generation),
           ),
         )
     ).length;
     return { coldMarkdown, currentGenerationUpdateCount };
+  }
+
+  async function compactAfterAuthorityReplacement(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const checkpointId = await seedAuthorityReplacementProbe();
+    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityGeneration(db, {
+      documentId: ALPHA_ID,
+      checkpointId,
+      expectedGeneration: authority.generation,
+    });
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+    return authorityReplacementProbeResult(replaced.generation);
+  }
+
+  async function compactWhileAuthorityReplacementWaits(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const checkpointId = await seedAuthorityReplacementProbe();
+    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    let releaseBlocker!: () => void;
+    let blockerReady!: () => void;
+    const blockerRelease = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+    const blockerAcquired = new Promise<void>((resolve) => {
+      blockerReady = resolve;
+    });
+    const blocker = db.transaction(async (tx) => {
+      await lockDocumentMutation(tx, ALPHA_ID);
+      blockerReady();
+      await blockerRelease;
+    });
+    await blockerAcquired;
+
+    async function waitForAdvisoryLockWaiters(expected: number): Promise<void> {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [row] = await db.execute<{ waiting: number }>(sql`
+          SELECT count(*)::int AS waiting
+          FROM pg_locks
+          WHERE locktype = 'advisory'
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND NOT granted
+        `);
+        if ((row?.waiting ?? 0) >= expected) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`expected ${expected} waiting document mutation locks`);
+    }
+
+    const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+    let replacement: ReturnType<typeof replaceDocumentAuthorityGeneration> | undefined;
+    try {
+      await waitForAdvisoryLockWaiters(1);
+      replacement = replaceDocumentAuthorityGeneration(db, {
+        documentId: ALPHA_ID,
+        checkpointId,
+        expectedGeneration: authority.generation,
+      });
+      await waitForAdvisoryLockWaiters(2);
+    } finally {
+      releaseBlocker();
+      await blocker;
+    }
+    if (!replacement) throw new Error("authority replacement did not enter the lock queue");
+    const [, replaced] = await Promise.all([compact, replacement]);
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    return authorityReplacementProbeResult(replaced.generation);
   }
 
   async function seedLiveCertifiedCarry(input: {
@@ -1570,6 +1636,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedWriterDocument,
     compactMixedProvenanceTwice,
     compactAfterAuthorityReplacement,
+    compactWhileAuthorityReplacementWaits,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
     seedObservedCertifiedDelete,
