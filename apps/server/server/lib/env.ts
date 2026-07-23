@@ -29,11 +29,6 @@ export const recentEventsEnabled = resolveRecentEventsEnabled({
   rawNodeEnv: process.env.NODE_ENV,
 });
 
-export const obsVerbose = resolveObsVerbose({
-  rawNodeEnv: process.env.NODE_ENV,
-  obsVerbose: process.env.OBS_VERBOSE,
-});
-
 /**
  * Fail-safe model-request debug capture gate.
  *

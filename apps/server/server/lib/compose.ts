@@ -131,7 +131,7 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
-import { obsVerbose } from "./env.js";
+import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
   createAgentEditResponseWriteLifecycle,
@@ -283,7 +283,10 @@ export async function createProductionAppPorts(input: {
   });
   const gateway = createInstrumentedGateway(rawGateway, {
     sink: eventSink,
-    verbose: obsVerbose,
+    verbose: resolveObsVerbose({
+      rawNodeEnv: environment.NODE_ENV,
+      obsVerbose: environment.OBS_VERBOSE,
+    }),
   });
   const db = input.db;
   const threadRepos = createDrizzleRepositories(db);
