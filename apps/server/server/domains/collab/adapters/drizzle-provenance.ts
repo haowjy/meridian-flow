@@ -59,7 +59,7 @@ export function createDrizzleProvenanceReader(db: ProvenanceDb): ProvenanceReade
           asc(documentYjsUpdates.id),
         );
       const manifest = checkpoint
-        ? parseManifest(checkpoint.attributionManifest, {
+        ? parseAttributionManifest(checkpoint.attributionManifest, {
             authorityId: input.authorityId,
             generation: input.generation,
             checkpointId: String(checkpoint.id),
@@ -93,7 +93,7 @@ export function createDrizzleProvenanceReader(db: ProvenanceDb): ProvenanceReade
   };
 }
 
-function parseManifest(
+export function parseAttributionManifest(
   value: unknown,
   identity: Pick<AttributionManifestV1, "authorityId" | "generation" | "checkpointId">,
 ): AttributionManifestV1 {
