@@ -191,6 +191,26 @@ describe("BranchCoordinator", () => {
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("seed!");
   });
 
+  it("acknowledges already-contained branch writer updates without another journal row", async () => {
+    const store = new MemoryBranchStore();
+    const branchDoc = docWithText("seed");
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: branchDoc }));
+    const coordinator = createBranchCoordinator({ store });
+
+    await expect(
+      coordinator.commitWriterUpdate({
+        branchId: "work",
+        expectedGeneration: 1,
+        updateData: Y.encodeStateAsUpdate(branchDoc),
+        actorUserId: "user-1",
+        roomDocument: materialize(storedBranch(store, "work")),
+      }),
+    ).resolves.toEqual({ admitted: false });
+
+    expect(store.journal).toHaveLength(0);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("seed");
+  });
+
   it("rejects reserved namespace deletion against the snapshot it would commit", async () => {
     const store = new MemoryBranchStore();
     const branchDoc = reservedAuthorityDoc();

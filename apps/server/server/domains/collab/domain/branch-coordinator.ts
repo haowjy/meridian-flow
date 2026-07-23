@@ -152,7 +152,7 @@ export type BranchCoordinator = {
     updateData: Uint8Array;
     actorUserId?: string;
     roomDocument: Y.Doc;
-  }): Promise<void>;
+  }): Promise<{ admitted: boolean }>;
   commitSyncFromDoc(
     input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
       sourceDoc: Y.Doc;
@@ -410,8 +410,12 @@ export function createBranchCoordinator(input: {
     snapshot: BranchSnapshot,
     inputJournal: Omit<AppendBranchJournalInput, "generation">,
     validate?: (authoritative: Y.Doc) => void,
-  ): Promise<void> {
+    acknowledgeContained = false,
+  ): Promise<boolean> {
     const { doc: cachedDoc } = await materialize(snapshot);
+    if (acknowledgeContained && documentContainment.contains(cachedDoc, inputJournal.updateData)) {
+      return false;
+    }
     validate?.(cachedDoc);
     // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
     // failed CAS/rollback must never mutate the cached branch doc.
@@ -422,6 +426,7 @@ export function createBranchCoordinator(input: {
       throw new BranchStaleUpdateError(inputJournal.branchId);
     }
     await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
+    return true;
   }
 
   function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
@@ -693,7 +698,7 @@ export function createBranchCoordinator(input: {
             ) {
               throw new BranchStaleUpdateError(inputWriter.branchId);
             }
-            await persistJournaledUpdate(
+            const admitted = await persistJournaledUpdate(
               snapshot,
               {
                 branchId: inputWriter.branchId,
@@ -710,7 +715,9 @@ export function createBranchCoordinator(input: {
                   throw new ReservedWriterClientIdError(reservedClientId);
                 }
               },
+              true,
             );
+            return { admitted };
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
