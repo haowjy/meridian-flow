@@ -9,8 +9,38 @@ import type { GenerateRequest, GenerateResult, StreamEvent } from "./domain/inde
 import type { Gateway } from "./ports/gateway.js";
 
 const VERBOSE_CHUNKS = "gateway.chunks";
+const UTF8_ENCODER = new TextEncoder();
 
 type Outcome = "ok" | "error" | "cancelled";
+
+type TerminalEvidence = { type: "end" } | { type: "error"; cause?: unknown } | { type: "none" };
+
+function isAbortFailure(error: unknown, signal: AbortSignal | undefined): boolean {
+  if (!signal?.aborted) return false;
+  if (error === signal.reason) return true;
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function classifyTerminalOutcome(
+  terminal: TerminalEvidence,
+  signal: AbortSignal | undefined,
+): Outcome {
+  if (terminal.type === "error") {
+    return "cause" in terminal && isAbortFailure(terminal.cause, signal) ? "cancelled" : "error";
+  }
+  if (signal?.aborted) return "cancelled";
+  return terminal.type === "end" ? "ok" : "error";
+}
+
+function errorCodeFrom(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  return typeof error.code === "string" ? error.code : undefined;
+}
+
+interface CallEventMetadata {
+  errorCode?: string;
+  chunk?: { messageClass: StreamEvent["type"]; bytes?: number };
+}
 
 interface CallEmitter {
   emit(
@@ -18,7 +48,7 @@ interface CallEmitter {
     name: string,
     payload: Record<string, unknown>,
     route: { provider?: string; model?: string },
-    chunk?: { messageClass: StreamEvent["type"]; bytes?: number },
+    metadata?: CallEventMetadata,
   ): void;
 }
 
@@ -29,13 +59,14 @@ function createCallEmitter(
 ): CallEmitter {
   let observerSeq = 0;
   return {
-    emit(level, name, payload, route, chunk) {
+    emit(level, name, payload, route, metadata) {
       try {
         const correlation: EventCorrelation = {
           ...request.correlation,
           gatewayCallId,
           ...(route.provider ? { provider: route.provider } : {}),
           ...(route.model ? { model: route.model } : {}),
+          ...(metadata?.errorCode ? { errorCode: metadata.errorCode } : {}),
         };
         emitEvent(deps.sink, {
           level,
@@ -47,10 +78,10 @@ function createCallEmitter(
             transport: "gateway",
             observedAt: "server",
             observerSeq: ++observerSeq,
-            ...(chunk
+            ...(metadata?.chunk
               ? {
-                  messageClass: chunk.messageClass,
-                  ...(chunk.bytes === undefined ? {} : { bytes: chunk.bytes }),
+                  messageClass: metadata.chunk.messageClass,
+                  ...(metadata.chunk.bytes === undefined ? {} : { bytes: metadata.chunk.bytes }),
                 }
               : {}),
           },
@@ -122,14 +153,8 @@ function createStreamObservation(input: {
     if (closed) return;
     closed = true;
     const terminalAt = terminal?.at ?? Date.now();
-    const outcome: Outcome =
-      terminal?.type === "error"
-        ? "error"
-        : input.request.signal?.aborted
-          ? "cancelled"
-          : terminal?.type === "end"
-            ? "ok"
-            : "error";
+    const outcome = classifyTerminalOutcome(terminal ?? { type: "none" }, input.request.signal);
+    const errorCode = terminal?.type === "error" ? terminal.errorCode : undefined;
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
@@ -140,9 +165,10 @@ function createStreamObservation(input: {
         chunkCounts,
         result: terminal?.type === "end" ? terminal.result : undefined,
         outcome,
-        errorCode: terminal?.type === "error" ? terminal.errorCode : undefined,
+        errorCode,
       }),
       route,
+      { errorCode },
     );
   }
 
@@ -184,17 +210,14 @@ function createStreamObservation(input: {
         if (input.verboseChunks) {
           const bytes =
             event.type === "text.delta" || event.type === "reasoning.delta"
-              ? event.text.length
+              ? UTF8_ENCODER.encode(event.text).byteLength
               : undefined;
-          input.emitter.emit(
-            "trace",
-            "stream.chunk",
-            {},
-            route,
-            bytes === undefined
-              ? { messageClass: event.type }
-              : { messageClass: event.type, bytes },
-          );
+          input.emitter.emit("trace", "stream.chunk", {}, route, {
+            chunk:
+              bytes === undefined
+                ? { messageClass: event.type }
+                : { messageClass: event.type, bytes },
+          });
         }
 
         yield event;
@@ -237,7 +260,7 @@ export function createInstrumentedGateway(
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       let route = {
         provider: request.provider,
-        model: request.model ?? gateway.getDefaultModel(),
+        model: request.model,
       };
       emitter.emit("debug", "stream.open", routePayload(route), route);
 
@@ -245,7 +268,7 @@ export function createInstrumentedGateway(
         const result = await gateway.generate(request);
         const terminalAt = Date.now();
         route = { provider: result.provider, model: result.model };
-        const outcome: Outcome = request.signal?.aborted ? "cancelled" : "ok";
+        const outcome = classifyTerminalOutcome({ type: "end" }, request.signal);
         emitter.emit(
           outcome === "ok" ? "info" : "warn",
           "stream.close",
@@ -261,14 +284,18 @@ export function createInstrumentedGateway(
         return result;
       } catch (error) {
         const terminalAt = Date.now();
+        const errorCode = errorCodeFrom(error);
+        const outcome = classifyTerminalOutcome({ type: "error", cause: error }, request.signal);
         emitter.emit(
           "warn",
           "stream.close",
           {
             durationMs: terminalAt - startedAt,
-            outcome: request.signal?.aborted ? "cancelled" : "error",
+            outcome,
+            ...(errorCode ? { errorCode } : {}),
           },
           route,
+          { errorCode },
         );
         throw error;
       }

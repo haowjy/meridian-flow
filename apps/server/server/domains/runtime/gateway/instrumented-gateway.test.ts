@@ -4,6 +4,7 @@ import {
   createInMemoryEventSink,
   type EventRecord,
   type EventSink,
+  RecentEventsBuffer,
 } from "../../observability/index.js";
 import type { GenerateRequest, GenerateResult, StreamEvent } from "./domain/index.js";
 import { createInstrumentedGateway } from "./instrumented-gateway.js";
@@ -209,7 +210,8 @@ describe("createInstrumentedGateway stream", () => {
   it("emits no chunks by default and metadata-only chunks when enabled", async () => {
     const scripted: StreamEvent[] = [
       { type: "start", provider: "test-provider", model: "test-model" },
-      { type: "text.delta", text: "secret delta" },
+      { type: "text.delta", text: "😀" },
+      { type: "reasoning.delta", text: "café" },
       { type: "end", result },
     ];
     const quietSink = createInMemoryEventSink();
@@ -233,12 +235,14 @@ describe("createInstrumentedGateway stream", () => {
     expect(chunks.map((event) => event.stream?.messageClass)).toEqual([
       "start",
       "text.delta",
+      "reasoning.delta",
       "end",
     ]);
-    expect(chunks.map((event) => event.stream?.bytes)).toEqual([undefined, 12, undefined]);
-    expect(JSON.stringify(chunks)).not.toContain("secret delta");
+    expect(chunks.map((event) => event.stream?.bytes)).toEqual([undefined, 4, 5, undefined]);
+    expect(JSON.stringify(chunks)).not.toContain("😀");
+    expect(JSON.stringify(chunks)).not.toContain("café");
     expect(verboseSink.events.map((event) => event.stream?.observerSeq)).toEqual([
-      1, 2, 3, 4, 5, 6,
+      1, 2, 3, 4, 5, 6, 7,
     ]);
   });
 
@@ -398,6 +402,25 @@ describe("createInstrumentedGateway stream", () => {
         outcome: shape.outcome,
         ...(shape.errorCode ? { errorCode: shape.errorCode } : {}),
       });
+      if (shape.errorCode) {
+        expect(closes[0]?.correlation?.errorCode).toBe(shape.errorCode);
+      }
+    });
+
+    it("makes terminal error codes queryable as correlation pivots", async () => {
+      const events = new RecentEventsBuffer();
+      const gateway = createInstrumentedGateway(scriptedGateway([start, yieldedError]), {
+        sink: events,
+        verbose: new Set(),
+      });
+
+      await collect(gateway.stream(request));
+
+      expect(
+        events
+          .query({ correlation: { errorCode: "provider_error" } })
+          .events.map(({ name }) => name),
+      ).toEqual(["stream.close"]);
     });
 
     it("closes and rethrows when stream construction fails synchronously", () => {
@@ -475,5 +498,66 @@ describe("createInstrumentedGateway generate", () => {
       });
     }
     expect(sink.events.map((event) => event.stream?.observerSeq)).toEqual([1, 2]);
+  });
+
+  it("classifies an independent rejection after abort as an error", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const providerFailure = new Error("provider failed independently");
+    const sink = createInMemoryEventSink();
+    const gateway = createInstrumentedGateway(
+      {
+        ...scriptedGateway([]),
+        async generate() {
+          throw providerFailure;
+        },
+      },
+      { sink, verbose: new Set() },
+    );
+
+    await expect(gateway.generate({ ...request, signal: controller.signal })).rejects.toBe(
+      providerFailure,
+    );
+    expect(sink.events.at(-1)).toMatchObject({
+      name: "stream.close",
+      payload: { outcome: "error" },
+    });
+  });
+
+  it("classifies the signal's abort failure as cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const sink = createInMemoryEventSink();
+    const gateway = createInstrumentedGateway(
+      {
+        ...scriptedGateway([]),
+        async generate() {
+          throw controller.signal.reason;
+        },
+      },
+      { sink, verbose: new Set() },
+    );
+
+    await expect(gateway.generate({ ...request, signal: controller.signal })).rejects.toBe(
+      controller.signal.reason,
+    );
+    expect(sink.events.at(-1)).toMatchObject({
+      name: "stream.close",
+      payload: { outcome: "cancelled" },
+    });
+  });
+
+  it("does not resolve the default model before delegating generate", async () => {
+    const rawGateway = scriptedGateway([]);
+    const getDefaultModel = vi.spyOn(rawGateway, "getDefaultModel");
+    const sink = createInMemoryEventSink();
+    const gateway = createInstrumentedGateway(rawGateway, {
+      sink,
+      verbose: new Set(),
+    });
+
+    await gateway.generate({ ...request, model: undefined });
+
+    expect(getDefaultModel).not.toHaveBeenCalled();
   });
 });

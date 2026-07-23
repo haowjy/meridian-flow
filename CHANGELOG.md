@@ -4,8 +4,9 @@
 
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
-  and close lifecycle events; development/test processes can opt into
-  metadata-only chunk events with `OBS_VERBOSE=gateway.chunks`.
+  and close lifecycle events with queryable terminal error codes;
+  development/test processes can opt into metadata-only chunk events with
+  UTF-8 byte counts through `OBS_VERBOSE=gateway.chunks`.
 - `apps/server`: local JSONL diagnostics now bound pending writes to 5,000
   events, drop oldest under filesystem backpressure, and report loss through
   `observability.sink.dropped`.
