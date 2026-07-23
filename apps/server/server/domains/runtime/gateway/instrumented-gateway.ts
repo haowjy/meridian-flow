@@ -19,12 +19,7 @@ function isAbortFailure(error: unknown, signal: AbortSignal | undefined): boolea
   try {
     if (!signal?.aborted) return false;
     if (error === signal.reason) return true;
-    return (
-      error instanceof Error &&
-      (error.name === "AbortError" ||
-        error.message === "Aborted" ||
-        error.message === "Request aborted")
-    );
+    return error instanceof Error && error.name === "AbortError";
   } catch {
     return false;
   }

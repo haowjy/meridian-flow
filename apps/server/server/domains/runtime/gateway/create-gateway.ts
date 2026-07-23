@@ -70,17 +70,23 @@ const DEFAULT_ATTEMPT_TIMEOUT_MS = 120_000;
 /** Wall-clock bound for post-output cancel drain — providers that ignore abort must not hang forever. */
 const CANCEL_DRAIN_TIMEOUT_MS = 5_000;
 
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason !== undefined
+    ? signal.reason
+    : new DOMException("Request aborted", "AbortError");
+}
+
 /** Abort-aware sleep used for exponential backoff between retry attempts. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(new Error("Aborted"));
+      reject(abortReason(signal));
       return;
     }
     const timer = setTimeout(resolve, ms);
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new Error("Aborted"));
+      if (signal) reject(abortReason(signal));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
   });

@@ -349,7 +349,7 @@ describe("createInstrumentedGateway stream", () => {
         arrange() {
           const controller = new AbortController();
           controller.abort();
-          const error = Object.assign(new Error("provider failed independently"), {
+          const error = Object.assign(new Error("Aborted"), {
             code: "provider_error",
           });
           return {
@@ -548,6 +548,30 @@ describe("createInstrumentedGateway generate", () => {
       name: "stream.close",
       payload: { outcome: "error" },
     });
+  });
+
+  it.each([
+    "Aborted",
+    "Request aborted",
+  ])("does not infer cancellation from the error message %j", async (message) => {
+    const controller = new AbortController();
+    controller.abort();
+    const providerFailure = new Error(message);
+    const sink = createInMemoryEventSink();
+    const gateway = createInstrumentedGateway(
+      {
+        ...scriptedGateway([]),
+        async generate() {
+          throw providerFailure;
+        },
+      },
+      { sink, verbose: new Set() },
+    );
+
+    await expect(gateway.generate({ ...request, signal: controller.signal })).rejects.toBe(
+      providerFailure,
+    );
+    expect(sink.events.at(-1)?.payload.outcome).toBe("error");
   });
 
   it("classifies the signal's abort failure as cancelled", async () => {
