@@ -1826,13 +1826,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
 
-    validateBranchWriterUpdate: hocuspocusPersistence.validateBranchWriterUpdate,
+    admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
 
     writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
 
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
-
-    persistBranchConnectionUpdate: hocuspocusPersistence.persistBranchConnectionUpdate,
 
     storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
 

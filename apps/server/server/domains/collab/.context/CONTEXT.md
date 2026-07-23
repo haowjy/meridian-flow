@@ -76,7 +76,10 @@ persistence-only.
 
 **Branch mutations are durable before they reach a Hocuspocus room.** No branch-room
 `onStore` path may re-persist or re-checkpoint to make a mutation durable — it already
-is. `storeHocuspocusBranch` only drains pending branch appends; calling
+is. Client branch updates validate and commit through the branch coordinator in
+the awaited `beforeSync` admission hook, before Hocuspocus apply/broadcast/ack;
+`onChange` does not own branch persistence. `storeHocuspocusBranch` only drains
+pending branch admissions; calling
 `checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
 `AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`
 rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regression

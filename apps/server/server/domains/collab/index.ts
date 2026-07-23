@@ -113,10 +113,12 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
-  validateBranchWriterUpdate(input: {
+  admitBranchWriterUpdate(input: {
     branchId: string;
-    expectedGeneration: number;
     update: Uint8Array;
+    origin: UpdateOrigin;
+    document: Y.Doc;
+    expectedGeneration: number;
   }): Promise<void>;
   writerIngressBarrier: WriterIngressBarrier;
   persistConnectionUpdate(input: {
@@ -127,13 +129,6 @@ export type CollabTransport = {
     /** True only for the client's initial sync-step-2 integration. */
     reconcileOffline?: boolean;
   }): void;
-  persistBranchConnectionUpdate(input: {
-    branchId: string;
-    update: Uint8Array;
-    origin: UpdateOrigin;
-    document: Y.Doc;
-    expectedGeneration: number;
-  }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
