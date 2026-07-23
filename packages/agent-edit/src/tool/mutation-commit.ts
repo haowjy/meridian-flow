@@ -193,6 +193,7 @@ export interface MutationCommit {
   recheckCommittedUpdate(
     liveDoc: Y.Doc,
     input: CommitPreflightInput,
+    beforeRecoverySnapshot: Uint8Array,
   ): Promise<ApplyWithRecheckResult>;
   lookupObservation(responseId: string, key: ObservationKey): Promise<ObservationValue | null>;
 }
@@ -494,28 +495,18 @@ export function createMutationCommit(deps: {
   async function recheckCommittedUpdate(
     liveDoc: Y.Doc,
     input: CommitPreflightInput,
+    beforeRecoverySnapshot: Uint8Array,
   ): Promise<ApplyWithRecheckResult> {
     const concurrent = await captureConcurrentDetection(liveDoc, input);
-    const affectedBlockHashes = intersectHashes(
-      input.deletedHashes,
-      concurrent.detection.humanTouchedHashes,
-    );
-    return {
-      concurrent,
-      ...(affectedBlockHashes.length > 0
-        ? {
-            lateSweep: {
-              affectedBlockHashes,
-              capturedDeletedBodies: captureSnapshotBodies(
-                snapshotFromUpdate(concurrent.detectionSnapshot),
-                affectedBlockHashes,
-              ),
-              sweptContent: true as const,
-              beforeContentRef: input.interactionContext?.afterJournalId ?? null,
-            },
-          }
-        : {}),
-    };
+    const beforeRecovery = docFromSnapshot(beforeRecoverySnapshot);
+    const afterRecovery = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
+    try {
+      const lateSweep = await destructiveReport(input, concurrent, beforeRecovery, afterRecovery);
+      return { concurrent, ...(lateSweep ? { lateSweep } : {}) };
+    } finally {
+      beforeRecovery.destroy();
+      afterRecovery.destroy();
+    }
   }
 
   async function lookupObservation(
@@ -758,10 +749,6 @@ function journalEntries(input: LiveUpdateCommitInput): JournalBatchAppendEntry[]
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
-}
-
-function intersectHashes(left: ReadonlySet<string>, right: ReadonlySet<string>): string[] {
-  return [...left].filter((hash) => right.has(hash)).sort();
 }
 
 function mergeConcurrentDetection(

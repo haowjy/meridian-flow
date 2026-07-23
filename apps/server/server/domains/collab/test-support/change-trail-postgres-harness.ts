@@ -921,6 +921,38 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       );
   }
 
+  async function compactAgentOnlyProvenance(): Promise<{
+    retainedUpdateCount: number;
+    provenance: string[];
+  }> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, "Agent-only passage.");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
+      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+      const provenance = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(doc),
+        afterCandidate: toDocHandle(doc),
+      });
+      const retainedUpdateCount = (
+        await db
+          .select()
+          .from(schema.documentYjsUpdates)
+          .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+      ).length;
+      return {
+        retainedUpdateCount,
+        provenance: [...new Set(provenance?.before.map((run) => run.provenance) ?? [])],
+      };
+    });
+  }
+
   async function seedLiveCertifiedCarry(input: {
     initialMarkdown: string;
     carriedMarkdown: string | readonly string[];
@@ -1422,6 +1454,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedMatrixPush,
     seedPendingDependencyPush,
     seedWriterDocument,
+    compactAgentOnlyProvenance,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
     seedObservedCertifiedDelete,

@@ -124,6 +124,8 @@ export interface UpdateJournal {
     docId: string;
     before: DocHandle;
     afterCandidate: DocHandle;
+    /** Branch adapters classify roots absent from live authority as agent-authored. */
+    fallbackProvenance?: "writer_protected" | "agent";
   }): Promise<{
     before: DestructiveProvenanceRun[];
     afterCandidate: DestructiveProvenanceRun[];

@@ -602,8 +602,8 @@ export function createResponseCommitter(deps: {
         // Persistent failures retain the existing last-resort journal recovery.
       }
 
-      const recoveryBodies = recoveryRecheckInputs
-        ? await captureRecoveryBodies(docBuffers, recoveryRecheckInputs).catch(() => null)
+      const recoverySnapshots = recoveryRecheckInputs
+        ? await captureRecoverySnapshots(docBuffers, recoveryRecheckInputs).catch(() => null)
         : null;
       const recoveryFailure = await runtimeStore
         .recoverCommittedResponseProjection(docBuffers)
@@ -618,7 +618,7 @@ export function createResponseCommitter(deps: {
               docBuffers,
               documents,
               recoveryRecheckInputs,
-              recoveryBodies,
+              recoverySnapshots,
             ).catch(() => null)
           : null;
         // A positive recheck can report the concrete sweep. A negative result
@@ -659,21 +659,25 @@ export function createResponseCommitter(deps: {
     docBuffers: readonly ResponseDocumentBuffer[],
     knownDocuments: readonly ResponseCommitDocumentResult[],
     inputs: ReadonlyMap<string, CommitPreflightInput>,
-    recoveryBodies: ReadonlyMap<string, readonly { hash: string; body: string }[]> | null,
+    recoverySnapshots: ReadonlyMap<string, Uint8Array> | null,
   ): Promise<ResponseCommitDocumentResult[]> {
-    if (!recoveryBodies) throw new Error("Recovery body capture was unavailable.");
+    if (!recoverySnapshots) throw new Error("Recovery snapshot capture was unavailable.");
     const documentsById = new Map(
       knownDocuments.map((document) => [document.documentId, document]),
     );
     for (const docBuffer of docBuffers) {
       const input = inputs.get(docBuffer.docId);
       if (!input) throw new Error(`Recovery recheck input missing for ${docBuffer.docId}.`);
+      const beforeRecoverySnapshot = recoverySnapshots.get(docBuffer.docId);
+      if (!beforeRecoverySnapshot) {
+        throw new Error(`Recovery snapshot missing for ${docBuffer.docId}.`);
+      }
       const rechecked = await withLiveDocument(
         coordinator,
         docBuffer.docId,
         docBuffer.commandName,
         docBuffer.docId,
-        (liveDoc) => mutationCommit.recheckCommittedUpdate(liveDoc, input),
+        (liveDoc) => mutationCommit.recheckCommittedUpdate(liveDoc, input, beforeRecoverySnapshot),
       );
       if (isInternalWriteResult(rechecked) || !rechecked) {
         throw new Error(`Recovery recheck unavailable for ${docBuffer.docId}.`);
@@ -687,17 +691,7 @@ export function createResponseCommitter(deps: {
         ...(rechecked.concurrent.detection.info
           ? { concurrentEdits: rechecked.concurrent.detection.info }
           : {}),
-        ...(rechecked.lateSweep
-          ? {
-              lateSweep: {
-                ...rechecked.lateSweep,
-                capturedDeletedBodies: bodiesForAffectedHashes(
-                  recoveryBodies.get(docBuffer.docId) ?? [],
-                  rechecked.lateSweep.affectedBlockHashes,
-                ),
-              },
-            }
-          : {}),
+        ...(rechecked.lateSweep ? { lateSweep: rechecked.lateSweep } : {}),
       });
     }
     return docBuffers.map((docBuffer) => {
@@ -707,39 +701,27 @@ export function createResponseCommitter(deps: {
     });
   }
 
-  async function captureRecoveryBodies(
+  async function captureRecoverySnapshots(
     docBuffers: readonly ResponseDocumentBuffer[],
     inputs: ReadonlyMap<string, CommitPreflightInput>,
-  ): Promise<ReadonlyMap<string, readonly { hash: string; body: string }[]>> {
-    const bodies = new Map<string, readonly { hash: string; body: string }[]>();
+  ): Promise<ReadonlyMap<string, Uint8Array>> {
+    const snapshots = new Map<string, Uint8Array>();
     for (const docBuffer of docBuffers) {
       const input = inputs.get(docBuffer.docId);
       if (!input) throw new Error(`Recovery recheck input missing for ${docBuffer.docId}.`);
-      const captured = await withLiveDocument(
+      const snapshot = await withLiveDocument(
         coordinator,
         docBuffer.docId,
         docBuffer.commandName,
         docBuffer.docId,
-        (liveDoc) =>
-          captureDeletedBodies(
-            Y.encodeStateAsUpdate(liveDoc),
-            [...input.deletedHashes],
-            deps.model,
-            deps.codec,
-          ),
+        (liveDoc) => Y.encodeStateAsUpdate(liveDoc),
       );
-      if (isInternalWriteResult(captured) || !captured) {
-        throw new Error(`Recovery body capture unavailable for ${docBuffer.docId}.`);
+      if (isInternalWriteResult(snapshot) || !snapshot) {
+        throw new Error(`Recovery snapshot capture unavailable for ${docBuffer.docId}.`);
       }
-      const fallback = captureDeletedBodies(
-        input.preOwnSnapshot,
-        [...input.deletedHashes],
-        deps.model,
-        deps.codec,
-      );
-      bodies.set(docBuffer.docId, mergeCapturedBodies(captured, fallback));
+      snapshots.set(docBuffer.docId, snapshot);
     }
-    return bodies;
+    return snapshots;
   }
 
   async function transitionJournal(

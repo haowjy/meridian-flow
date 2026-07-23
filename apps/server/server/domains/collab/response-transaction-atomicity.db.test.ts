@@ -75,6 +75,15 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("positive-response");
   });
 
+  it("retains agent provenance after full journal compaction", async () => {
+    const harness = createHarness();
+
+    await expect(harness.compactAgentOnlyProvenance()).resolves.toEqual({
+      retainedUpdateCount: 0,
+      provenance: ["agent"],
+    });
+  });
+
   it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
     const harness = createHarness();
     await harness.seedAndStage("outer-rollback-response");

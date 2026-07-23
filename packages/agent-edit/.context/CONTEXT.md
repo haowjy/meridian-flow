@@ -180,12 +180,12 @@ captured before the host pulls concurrent upstream changes. When present,
 snapshot) and prepends it to the own-write echo, so the agent sees pulled-in
 sibling content as concurrent edits.
 
-Reversal application snapshots the live Y.Doc synchronously before persistence,
-then diffs it after persistence and combines that result with the mutation
-committer's final synchronous recheck. This LOCK-WS pairing catches both edits
-inside the durable-write window and edits inside the final concurrent-detection
-window; the committed update still applies, then the host receives a late-sweep
-report (durable-then-report).
+Reversal application captures commit preflight before persistence, then the
+mutation committer's final recheck resumes from that immutable detection after
+persistence. This catches both edits inside the durable-write window and edits
+inside the final concurrent-detection window; the shared classifier alone
+decides whether the committed update produces a late-sweep report
+(durable-then-report).
 
 Every normal live projection also returns an immutable atomic observation cut:
 block snapshots immediately before and immediately after the synchronous Yjs
@@ -507,10 +507,12 @@ be undone by lifecycle rollback: projection failure triggers journal recovery an
 runtime reconstruction. Successful recovery is reported as a successful commit;
 failed recovery evicts runtimes, marks live state stale, closes the durable
 response as committed, and still reports the projection failure to the caller.
-When last-resort durable recovery succeeds, the committer rechecks the captured
-destructive hashes before reporting success. A detected loss is returned as a
-late sweep; an unavailable recheck returns `awarenessDegraded`, grants no
-observation credit, and can never be laundered into plain committed.
+When last-resort durable recovery succeeds, the committer compares its immutable
+pre-recovery snapshot with the recovered document through the same provenance
+classifier used by normal projection. A detected writer-lineage loss is returned
+with captured bodies as a late sweep; an unavailable recheck returns
+`awarenessDegraded`, grants no observation credit, and can never be laundered
+into plain committed.
 
 Phase-C apply snapshots the coordinated Y.Doc before its awaited concurrent
 detection and diffs it again immediately before apply. The final snapshot check

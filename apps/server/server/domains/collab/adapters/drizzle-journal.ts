@@ -500,6 +500,30 @@ function replayKeyJson(row: { admissionSequence: bigint; batchOrdinal: number; i
   };
 }
 
+function attributionManifestFloor(value: unknown): {
+  admissionSequence: bigint;
+  batchOrdinal: number;
+  journalRowId: bigint;
+} | null {
+  if (!value || typeof value !== "object") return null;
+  const floor = (value as { floor?: unknown }).floor;
+  if (!floor || typeof floor !== "object") return null;
+  const candidate = floor as Record<string, unknown>;
+  if (
+    (typeof candidate.admissionSequence !== "string" &&
+      typeof candidate.admissionSequence !== "bigint") ||
+    !Number.isSafeInteger(candidate.batchOrdinal) ||
+    (typeof candidate.journalRowId !== "string" && typeof candidate.journalRowId !== "bigint")
+  ) {
+    return null;
+  }
+  return {
+    admissionSequence: BigInt(candidate.admissionSequence),
+    batchOrdinal: candidate.batchOrdinal as number,
+    journalRowId: BigInt(candidate.journalRowId),
+  };
+}
+
 async function capturePendingSettlementAuthorityUpdate(
   db: JournalDb,
   documentId: string,
@@ -935,17 +959,32 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           documentYjsUpdates.batchOrdinal,
           documentYjsUpdates.id,
         );
+      const [checkpoint] = await readDb
+        .select({ attributionManifest: documentYjsCheckpoints.attributionManifest })
+        .from(documentYjsCheckpoints)
+        .where(
+          and(
+            eq(documentYjsCheckpoints.documentId, asDocumentId(input.docId)),
+            eq(documentYjsCheckpoints.authorityId, authority.authorityId),
+            eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+          ),
+        )
+        .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+        .limit(1);
       const last = rows.at(-1);
-      const retained = last
+      const watermark = last
+        ? {
+            admissionSequence: last.admissionSequence,
+            batchOrdinal: last.batchOrdinal,
+            journalRowId: BigInt(last.journalRowId),
+          }
+        : attributionManifestFloor(checkpoint?.attributionManifest);
+      const retained = watermark
         ? await createDrizzleProvenanceReader(readDb).materialize({
             documentId: asDocumentId(input.docId),
             authorityId: authority.authorityId,
             generation: authority.generation,
-            watermark: {
-              admissionSequence: last.admissionSequence,
-              batchOrdinal: last.batchOrdinal,
-              journalRowId: BigInt(last.journalRowId),
-            },
+            watermark,
           })
         : null;
       try {
@@ -957,7 +996,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             update: new Uint8Array(row.update),
           })),
           retainedAttributions: retained?.attributionManifest.attributions,
-          fallbackBirthClass: "writer_protected",
+          fallbackBirthClass: input.fallbackProvenance ?? "writer_protected",
         });
         const afterCandidate = materializeCandidateProvenance(
           unwrapDoc(input.afterCandidate),

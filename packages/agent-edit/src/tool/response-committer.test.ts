@@ -518,7 +518,58 @@ describe("response committer", () => {
     });
   });
 
-  it("reports degraded awareness and fences every document when recovery recheck fails", async () => {
+  it("classifies a blind writer sweep after journal recovery", async () => {
+    let remainingPhaseCFailures = 0;
+    const responseId = "response-blind-recovery-sweep";
+    const ctx = harness(
+      { "chapter.md": "Writer body." },
+      {
+        observationSnapshots: emptyObservationStore(),
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId === responseId) remainingPhaseCFailures = 2;
+        },
+      },
+    );
+    const originalWithDocument = ctx.coordinator.withDocument.bind(ctx.coordinator);
+    ctx.coordinator.withDocument = async <T>(docId: string, fn: (doc: Y.Doc) => Promise<T>) => {
+      if (remainingPhaseCFailures > 0) {
+        remainingPhaseCFailures -= 1;
+        throw new Error("phase C unavailable");
+      }
+      return originalWithDocument(docId, fn);
+    };
+    const writerHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Agent replacement.",
+        overwrite: true,
+      },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-blind-recovery",
+        createdDocument: false,
+      },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          lateSweep: {
+            affectedBlockHashes: [writerHash],
+            capturedDeletedBodies: [{ hash: writerHash, body: "Writer body." }],
+            sweptContent: true,
+          },
+        },
+      ],
+    });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
+  });
+
+  it("reports degraded awareness and invalidates every runtime when recovery recheck fails", async () => {
     let remainingPhaseCFailures = 0;
     let failConcurrentRecheck = false;
     let ctx!: ReturnType<typeof harness>;
