@@ -86,6 +86,7 @@ export function buildContext(input: BuildContextInput): {
   observationEvidence: RequestObservationEvidence[];
 } {
   const messages: Message[] = [];
+  const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
   const observationEvidence: RequestObservationEvidence[] = [];
 
   const composed = input.thread.composedSystemPrompt;
@@ -146,7 +147,9 @@ export function buildContext(input: BuildContextInput): {
         // as a separate tool-role message.
         if (block.blockType === "tool_result") {
           if (assistantParts.length > 0) {
-            messages.push(assistant(assistantParts.slice()));
+            const message = assistant(assistantParts.slice());
+            messages.push(message);
+            sourceTurnStatusByMessage.set(message, turn.status);
             assistantParts.length = 0;
           }
           const content = block.content as {
@@ -169,19 +172,24 @@ export function buildContext(input: BuildContextInput): {
         if (part) assistantParts.push(part);
       }
       if (assistantParts.length > 0) {
-        messages.push(assistant(assistantParts.slice()));
+        const message = assistant(assistantParts.slice());
+        messages.push(message);
+        sourceTurnStatusByMessage.set(message, turn.status);
       }
     }
   }
 
   return {
-    messages: completeToolResultGroups(messages),
+    messages: completeToolResultGroups(messages, sourceTurnStatusByMessage),
     tools: input.tools?.length ? input.tools : undefined,
     observationEvidence,
   };
 }
 
-function completeToolResultGroups(messages: readonly Message[]): Message[] {
+function completeToolResultGroups(
+  messages: readonly Message[],
+  sourceTurnStatusByMessage: ReadonlyMap<Message, Turn["status"]>,
+): Message[] {
   const completed: Message[] = [];
 
   for (let index = 0; index < messages.length; index++) {
@@ -205,14 +213,12 @@ function completeToolResultGroups(messages: readonly Message[]): Message[] {
     }
     index = nextIndex - 1;
 
+    const missingResultMessage =
+      sourceTurnStatusByMessage.get(message) === "cancelled"
+        ? "Cancelled before a result was recorded; outcome unknown."
+        : "Run failed before a result was recorded; outcome unknown.";
     for (const toolCallId of missingResultIds) {
-      completed.push(
-        toolResult(
-          toolCallId,
-          "No result was recorded for this tool call because the run was interrupted. Its execution outcome and side effects are unknown. Re-read relevant state before relying on its outcome.",
-          true,
-        ),
-      );
+      completed.push(toolResult(toolCallId, missingResultMessage, true));
     }
   }
 

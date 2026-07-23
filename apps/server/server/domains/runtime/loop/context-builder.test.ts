@@ -30,12 +30,12 @@ const thread: Thread = {
   deletedAt: null,
 };
 
-function assistantTurn(id: string): Turn {
+function assistantTurn(id: string, status: Turn["status"]): Turn {
   return {
     id,
     threadId: thread.id,
     role: "assistant",
-    status: "complete",
+    status,
     finishReason: "tool_use",
     inputTokens: 0,
     outputTokens: 0,
@@ -92,15 +92,16 @@ function danglingToolUseIds(messages: readonly Message[]): string[] {
 }
 
 describe("buildContext tool-call history", () => {
-  it("synthesizes error results for dangling calls in single- and multi-tool turns", () => {
+  it("synthesizes status-aware error results for dangling calls", () => {
     const scenarios = [
       {
-        turn: assistantTurn("single-turn"),
+        turn: assistantTurn("single-turn", "cancelled"),
         blocks: [toolUse("single-turn", 0, "call-dangling")],
         danglingId: "call-dangling",
+        provenance: /cancelled/i,
       },
       {
-        turn: assistantTurn("multi-turn"),
+        turn: assistantTurn("multi-turn", "error"),
         blocks: [
           toolUse("multi-turn", 0, "call-1"),
           toolResultBlock("multi-turn", 1, "call-1"),
@@ -109,6 +110,7 @@ describe("buildContext tool-call history", () => {
           toolUse("multi-turn", 4, "call-3"),
         ],
         danglingId: "call-3",
+        provenance: /failed/i,
       },
     ];
 
@@ -127,6 +129,7 @@ describe("buildContext tool-call history", () => {
             part.type === "tool_result" && part.toolCallId === scenario.danglingId,
         );
       expect(synthesizedResult?.isError).toBe(true);
+      expect(synthesizedResult?.output).toEqual(expect.stringMatching(scenario.provenance));
     }
   });
 });
