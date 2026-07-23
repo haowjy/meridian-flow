@@ -23,11 +23,10 @@ journal do).
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
 `ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
 use the same store to plan against retained update rows and mutation metadata.
-Scope reversal is operation-atomic: every selected group is reconstructed and
-safety-preflighted before persistence. Multi-group redo is consumed by
+Scope reversal is operation-atomic: every selected group is reconstructed
+before persistence. Multi-group redo is consumed by
 `persistRedoBatch` in one store transaction, then the prepared updates are
-projected together. A policy rejection therefore leaves every selected group,
-the journal, and the live document untouched.
+projected together.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
@@ -46,7 +45,7 @@ Optional host callback for reversal delivery. Agent-edit passes
 `threadId`, `docId`, a representative `turnId`, write handles, direction, and
 `writeHandleTurns` (the per-handle turn mapping) after a successful user-actor
 undo/redo persist; hosts resolve `docId` to any product URI outside the package.
-When a writer WebSocket edit lands after the safety gate but before a durable
+When a writer WebSocket edit lands after commit preflight but before a durable
 reversal applies, `recordLateSweep` reports the affected hashes, captured bodies,
 and before-content reference for both user and agent actors. Hosts without the
 port still apply the durable reversal but cannot deliver that receipt.
@@ -151,9 +150,9 @@ document sections: changed blocks receive one full anchor on each side, nearby
 runs gap-merge with `DEFAULT_CONCURRENT_RUN_GAP`, and rewrite-density coverage
 expands to the whole document. Deletions always carry captured bodies. The
 runtime applies one provider-registry-derived aggregate byte budget to the
-indivisible runs; omitted runs emit `sync_overflow`, earn no observation entry,
-and therefore make a later destructive write fail closed until a bounded read
-credits the exact target rendering. There is no parallel session-side fence.
+indivisible runs; omitted runs emit `sync_overflow` and earn no reporting
+credit. A later destructive write still merges, and writer-lineage loss is
+captured in the sweep trail.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
@@ -171,14 +170,10 @@ eligibility check. `invalidateThread` evicts cached runtime state and drops buff
 response updates for a document/thread so the next access rebuilds runtime state
 from the live document and journal.
 
-Agent reversals require a trustworthy pre-sync baseline: either an explicit
-`InteractionContext.baselineSnapshot` or a session runtime acknowledged by a
-prior read/write. Cold/restart/hosted agent calls without one fail closed with
-`rejected_response_requires_reread`; they never sync live state and then call it
-the baseline. User reversals remain ungated and capture a best-effort pre-sync
-baseline. `InteractionContext.liveJournalSeq` is the live-journal watermark
-paired with that baseline; `afterJournalId` remains a host attribution floor and
-must not be used as a reconstruction reference.
+Cold/restart/hosted reversals derive their live-journal watermark from durable
+reconstruction when the host does not supply an `InteractionContext`.
+`InteractionContext.liveJournalSeq` remains the reconstruction reference;
+`afterJournalId` remains a host attribution floor and must not be used as one.
 `InteractionContext.attributionBaseline` is the thread peer's CRDT state
 captured before the host pulls concurrent upstream changes. When present,
 `summarizeMutationEcho` computes a pulled-content echo (baseline vs pre-own
@@ -196,11 +191,11 @@ Every normal live projection also returns an immutable atomic observation cut:
 block snapshots immediately before and immediately after the synchronous Yjs
 apply. The final recheck, apply, and after capture have no await between them.
 The shared lifecycle-neutral classifier consumes before/after visible
-occurrences, the writer-protection scope, response cut, and observation credit.
-It returns eligible ranges plus final-rendering projections. The tool-time gate
-denies an uninformed destructive write before the journal boundary; the same
-classifier output remains available to later settlement without a second
-interval implementation.
+occurrences, durable provenance, the writer-protection scope, response cut, and
+observation credit. It returns eligible ranges plus final-rendering projections.
+Agent writes always commit through Yjs merge; classification controls only
+writer-facing sweep capture and trails. The echo informs the agent, the trail
+informs the writer, and agent-only destruction stays silent.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
@@ -221,8 +216,7 @@ its concern. Production modules (excluding colocated tests) are:
 | `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
 | `response-lifecycle.ts` | Defines response transition values used by the committer and observability. |
 | `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
-| `response-format.ts` | Formats shared write/reversal/rejection statuses and public outcomes. |
-| `safety-rejection.ts` | Shared agent-facing rendering for safety-gate refusals; unifies direct write, undo/redo, and buffered-flush rejection echo through `formatApplyRejection`. |
+| `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
 | `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
 | `types.ts` | Public command, context, outcome, lifecycle event, and response result types. |
 | `write-commands.ts` | Implements read/create/insert/replace handlers. |
@@ -429,13 +423,10 @@ going blind to a concurrent human edit.
   changed from `v_pre` to `v_post` → full `hash|content`; identical context →
   first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
   structural changes are not separate modes.
-- **Tool results use two content blocks.** Successful writes, undo/redo, and
-  safety-gate rejections return metadata in block 1 (`status`, write id or
-  reversal count, concurrent edits) and echo `hash|content` lines in block 2
-  when there are echo lines. Rejections carry the same current-state echo as
-  successes via `safety-rejection.ts`, so the agent sees the live document
-  state it must replan from. Hosts should prefer structured `content` over the
-  joined `text`.
+- **Tool results use two content blocks.** Successful writes and undo/redo
+  return metadata in block 1 (`status`, write id or reversal count, concurrent
+  edits) and echo `hash|content` lines in block 2 when there are echo lines.
+  Hosts should prefer structured `content` over the joined `text`.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
   Whole-document overwrite preserves this behavior for positional same-type

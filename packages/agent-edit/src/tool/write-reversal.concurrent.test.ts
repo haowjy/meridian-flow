@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import type { DestructiveSweepReport } from "./mutation-commit.js";
 import { blockTexts } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
 import { cloneDoc, context, model, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -95,10 +96,21 @@ describe("write reversal under concurrent edits", () => {
     ]);
   });
 
-  it("denies a blind multi-group redo before persisting any selected group", async () => {
-    const scenario = await ReversalScenario.read({
-      "chapter.md": "Base.\n\nFirst target.\n\nSecond target.",
-    });
+  it("commits a blind multi-group redo and reports the writer sweep", async () => {
+    const lateSweeps: DestructiveSweepReport[] = [];
+    const scenario = await ReversalScenario.read(
+      {
+        "chapter.md": "Base.\n\nFirst target.\n\nSecond target.",
+      },
+      {
+        reversalNoticePort: {
+          async record() {},
+          async recordLateSweep(input) {
+            lateSweeps.push(input.report);
+          },
+        },
+      },
+    );
     await scenario.ctx.core.write(
       { command: "replace", file: "chapter.md", in: 2, content: "" },
       { ...context, turnId: "turn-delete-first" },
@@ -123,7 +135,6 @@ describe("write reversal under concurrent edits", () => {
       if (!block) throw new Error("expected first restored target");
       model.applyTextEdit(remote, block, { from: 0, to: 0 }, "Writer: ");
     });
-    const beforeBlocks = scenario.blockTexts();
     const beforeJournalLength = (await scenario.ctx.journal.read("chapter.md")).updates.length;
 
     const redo = await scenario.ctx.core.write(
@@ -139,25 +150,21 @@ describe("write reversal under concurrent edits", () => {
       },
     );
 
-    expect(redo.status).toBe("rejected_response_requires_reread");
-    expect(redo.text).toContain("Writer: First target.");
-    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(
+    expect(redo.status).toBe("reconciled");
+    expect(lateSweeps).toEqual([
+      expect.objectContaining({
+        capturedDeletedBodies: expect.arrayContaining([
+          expect.objectContaining({ body: "Writer: First target." }),
+          expect.objectContaining({ body: "Second target." }),
+        ]),
+      }),
+    ]);
+    expect((await scenario.ctx.journal.read("chapter.md")).updates.length).toBeGreaterThan(
       beforeJournalLength,
     );
-    expect(scenario.blockTexts()).toEqual(beforeBlocks);
-    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "reversed" }]);
-    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
-
-    const userRedo = await scenario.ctx.core.reverse({
-      docId: "chapter.md",
-      threadId: THREAD_ID,
-      direction: "redo",
-      selection: { kind: "all" },
-      actor,
-      interactionContext: { mode: "live", liveJournalSeq },
-    });
-    expect(userRedo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base."]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "active" }]);
   });
 
   it("reports an unobserved human edit using the authoring response snapshot", async () => {
@@ -332,7 +339,7 @@ describe("write reversal under concurrent edits", () => {
       { ...context, interactionContext: { mode: "live" } },
     );
 
-    expect(undo.status).not.toBe("destructive_write_rejected");
+    expect(undo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base."]);
   });
 

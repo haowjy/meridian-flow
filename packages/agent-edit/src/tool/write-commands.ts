@@ -274,7 +274,6 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
-          toolCallId: command.tool_use_id ?? context.tool_use_id,
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
           touchedHashes,
@@ -340,7 +339,6 @@ export function createWriteCommands(deps: {
             },
           },
         ],
-        afterOwnVector: Y.encodeStateVector(runtime.doc),
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         touchedHashes,
@@ -468,7 +466,6 @@ export function createWriteCommands(deps: {
       beforeVector,
     );
 
-    const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
 
@@ -514,7 +511,6 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
-          toolCallId: command.tool_use_id ?? context.tool_use_id,
           createdDocumentBeforeCommit: false,
           touchedHashes: new Set(applied.changedBlocks ?? []),
           deletedHashes: new Set(applied.deletedBlocks ?? []),
@@ -556,7 +552,6 @@ export function createWriteCommands(deps: {
           wId: writeIdentity.ordinal,
           ...mutationMode(interactionContext),
         },
-        afterOwnVector,
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         before,

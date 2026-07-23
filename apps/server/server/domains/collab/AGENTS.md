@@ -88,13 +88,14 @@ propagation between them.
   live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
   resurrection after that base. Auto-apply never gates and trails only effects
   represented by response-sealed, document-scoped Yjs writer-lineage ranges.
-- **Destructive-write gate is human-only**: the safety gate intersects
-  `deletedHashes` against concurrent HUMAN-origin touched hashes only.
-  Agent-origin concurrent edits do not trigger rejection.
-- **Reversal safety has two axes**: canonical dependency checks govern availability;
-  agent reversals independently require their authoring response observation snapshot.
+- **Agent destruction is report-only**: ordinary Yjs merge always commits.
+  Echo informs the agent; writer-lineage sweeps are captured for the trail and
+  Restore; agent-only destruction is silent.
+- **Reversal availability is dependency-based**: canonical dependency checks may
+  refuse a lossy undo. Destructive effects from an allowed agent reversal are
+  reported, never rejected for lacking an observation snapshot.
 - **The coordinator lock does not exclude WebSocket mutations.** A
-  safety-relevant live apply after an `await` must snapshot-diff the live Y.Doc
+  reporting-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push
   enforce this; reversal `executePrepared` snapshots around persistence and uses
   the same final synchronous recheck-and-apply seam.

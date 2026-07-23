@@ -1,3 +1,5 @@
+import type { DocHandle } from "../handles.js";
+import type { LineageRange } from "../lineage/range-set.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type {
   CompactionResult,
@@ -113,8 +115,25 @@ export interface UpdateJournal {
     token: import("../lineage/range-set.js").SealedWriterLineageV3;
   }): Promise<void>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
+  /** Durable attributed base used when reporting destructive effects. */
+  readAttribution?(docId: string): Promise<JournalSnapshot>;
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
   compact(docId: string, before: Date): Promise<CompactionResult>;
+  /** Optional host authority for exact destructive-report provenance. */
+  materializeDestructiveProvenance?(input: {
+    docId: string;
+    before: DocHandle;
+    afterCandidate: DocHandle;
+  }): Promise<{
+    before: DestructiveProvenanceRun[];
+    afterCandidate: DestructiveProvenanceRun[];
+  }>;
+}
+
+export interface DestructiveProvenanceRun {
+  target: LineageRange;
+  root: LineageRange;
+  provenance: "writer_protected" | "agent";
 }
 
 /** Write-level reversal store: write ordinals, mutation metadata, and undo/redo rows. */

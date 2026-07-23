@@ -186,15 +186,6 @@ type ResponseWriteCommitOutcome =
       status: "committed";
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
-  | {
-      status: "rejected";
-      responseId: string;
-      rejections: Array<
-        import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
-          documentName?: string;
-        }
-      >;
-    }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
 function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
@@ -363,27 +354,6 @@ function createLocalTurn(input: {
     siblingIds: [],
     responses: [],
   };
-}
-
-function formatRejectionNotice(
-  rejections: readonly (import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
-    documentName?: string;
-  })[],
-): string {
-  const affectedDocuments = rejections.map((rejection) => {
-    const hashes = rejection.conflictedBlockHashes.join(", ") || "none reported";
-    return `- ${rejection.documentName ?? rejection.documentId} (conflicted block hashes: ${hashes})`;
-  });
-  const affectedWriteIds = [
-    ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
-  ];
-
-  return [
-    "Your edits to the following documents were rejected because they would delete blocks the writer changed:",
-    ...affectedDocuments,
-    `The following staged write results are superseded and void: ${affectedWriteIds.join(", ") || "none reported"}.`,
-    "Re-read the affected files and replan.",
-  ].join("\n");
 }
 
 // ── Emit helper ──
@@ -754,20 +724,6 @@ async function persistPermissionDenial(input: {
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
 }
 
-async function persistRejectedWriteResult(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  block: Block;
-  rejection: import("@meridian/agent-edit").ResponseCommitDocumentRejection;
-}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
-  return persistUncommittedWriteResult({
-    deps: input.deps,
-    threadId: input.threadId,
-    block: input.block,
-    text: `No sealed observation covered the destructive change in ${input.rejection.documentId}. Re-read and retry.`,
-  });
-}
-
 async function persistUncommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -779,9 +735,7 @@ async function persistUncommittedWriteResult(input: {
   const output = [
     {
       type: "text" as const,
-      text: ["status: rejected_response_requires_reread", "Write did not land.", input.text].join(
-        "\n\n",
-      ),
+      text: ["status: internal_error", "Write did not land.", input.text].join("\n\n"),
     },
   ];
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -1298,10 +1252,6 @@ async function* generateEvents(
           },
           async (result) => {
             for (const [documentId, blocks] of writeBlocksByDocument) {
-              const rejection =
-                result.status === "rejected"
-                  ? result.rejections.find((candidate) => candidate.documentId === documentId)
-                  : undefined;
               for (const [index, write] of blocks.entries()) {
                 const finalized =
                   result.status === "committed"
@@ -1311,19 +1261,12 @@ async function* generateEvents(
                         block: write.block,
                         committedOutput: write.committedOutput,
                       })
-                    : rejection
-                      ? await persistRejectedWriteResult({
-                          deps,
-                          threadId: input.threadId,
-                          block: write.block,
-                          rejection,
-                        })
-                      : await persistUncommittedWriteResult({
-                          deps,
-                          threadId: input.threadId,
-                          block: write.block,
-                          text: "The response closed before its staged write could commit. Re-read and retry.",
-                        });
+                    : await persistUncommittedWriteResult({
+                        deps,
+                        threadId: input.threadId,
+                        block: write.block,
+                        text: "The response closed before its staged write could commit. Re-read and retry.",
+                      });
                 finalizedWrites.push({ documentId, index, ...finalized });
               }
             }
@@ -1341,63 +1284,6 @@ async function* generateEvents(
         if (concurrentEdits.status === "draft_closed") {
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
-        }
-        if (concurrentEdits.status === "rejected") {
-          eventSink.emit({
-            timestamp: new Date().toISOString(),
-            level: "warn",
-            source: "runtime.orchestrator",
-            name: "response.commit_rejected",
-            sensitivity: "safe",
-            correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-            payload: {
-              responseId: concurrentEdits.responseId,
-              documentCount: concurrentEdits.rejections.length,
-              affectedWriteCount: new Set(
-                concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
-              ).size,
-            },
-          });
-          try {
-            await deps.notices.record({
-              kind: "rejection",
-              scope: { kind: "thread", threadId: input.threadId },
-              message: formatRejectionNotice(concurrentEdits.rejections),
-              data: {
-                responseId: concurrentEdits.responseId,
-                rejections: concurrentEdits.rejections,
-                affectedWriteIds: [
-                  ...new Set(
-                    concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
-                  ),
-                ],
-                conflictedBlockHashes: [
-                  ...new Set(
-                    concurrentEdits.rejections.flatMap(
-                      (rejection) => rejection.conflictedBlockHashes,
-                    ),
-                  ),
-                ],
-              },
-              writerVisible: false,
-            });
-          } catch (cause) {
-            eventSink.emit({
-              timestamp: new Date().toISOString(),
-              level: "error",
-              source: "runtime.orchestrator",
-              name: "safety_notice.record_failed_after_response_closed",
-              sensitivity: "safe",
-              correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-              payload: {
-                kind: "rejection",
-                responseId: concurrentEdits.responseId,
-                documentIds: concurrentEdits.rejections.map((rejection) => rejection.documentId),
-                error: cause instanceof Error ? cause.message : String(cause),
-              },
-            });
-          }
-          continue;
         }
 
         const renderBudget = {

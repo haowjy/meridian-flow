@@ -23,33 +23,6 @@ export interface ApplySuccessResponseInput {
   lateSweep?: DestructiveSweepReport;
 }
 
-export interface ApplyRejectionResponseInput {
-  status: "destructive_write_rejected" | "rejected_response_requires_reread";
-  message: string;
-  echo: ApplyEchoHunk[];
-  concurrentEdits?: ConcurrentEditInfo;
-}
-
-/** Formats a refused mutation with the same current-state echo contract as success. */
-export function formatApplyRejection(input: ApplyRejectionResponseInput): InternalWriteResult {
-  const metaLines = [`status: ${input.status}`, "", input.message];
-  const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-  if (input.concurrentEdits) {
-    metaLines.push(
-      ...formatConcurrent(input.concurrentEdits, {
-        excludeHashes: blockHashes(echoLines),
-      }),
-    );
-  }
-  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
-  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
-  return {
-    status: input.status,
-    text: content.map((block) => block.text).join("\n\n"),
-    content,
-  };
-}
-
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
   const metaLines = ["status: success"];
   if (input.writeId) metaLines.push(`write id: ${input.writeId}`);
@@ -182,8 +155,6 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
-    status === "destructive_write_rejected" ||
-    status === "rejected_response_requires_reread" ||
     status === "internal_error"
   );
 }

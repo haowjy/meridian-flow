@@ -260,16 +260,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   durability is logged, offered to `onCommitFailure`, and never rethrown as a
   rollback-shaped response error; later participants still settle.
 - **Post-durability notice failures** are structured-logged and may emit a best-effort
-  `awareness_degraded` notice. They do not create process-local safety authority;
-  subsequent agent reversals rely on sealed response observations and fail closed when absent.
-- **Human-only gate classification**: the destructive-write safety gate
-  intersects the candidate's `deletedHashes` against concurrent
-  HUMAN-origin touched hashes only (`humanTouchedHashes`). Other-agent
-  edits do not trigger rejection — the safety promise is to prevent an agent
-  from silently deleting a writer's work.
-- **Observation-scoped agent reversal**: an agent undo/redo carries its successful
-  authoring response ID. Missing document evidence is the blind empty-snapshot case;
-  user reversals remain explicit current intent and do not use observation provenance.
+  `awareness_degraded` notice. They do not create process-local reporting authority.
+- **Report-only agent commits**: direct writes and reversals always merge through
+  Yjs. `materializeDestructiveProvenance` reconstructs exact durable writer/agent
+  lineage for the shared destructive-effect classifier; only writer-lineage loss
+  produces captured bodies, trail data, and Restore. Agent-only loss is silent.
+- **Observation-scoped reporting**: an agent write or reversal carries its
+  successful authoring response ID. Exact covered renderings receive reporting
+  credit; missing evidence never blocks the write.
 
 
 ## LOCK-WS boundary

@@ -82,7 +82,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
-  it("denies a fresh-process destructive write without an authoring snapshot", async () => {
+  it("commits a fresh-process destructive write and reports the writer sweep", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const responseContext = {
       ...context,
@@ -109,10 +109,12 @@ describe("runtime store", () => {
       { ...context, turnId: "turn-fresh-process-no-read" },
     );
 
-    expect(outcomeText(edit)).toContain("status: rejected_response_requires_reread");
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(outcomeText(edit)).toContain("swept:");
+    expect(outcomeText(edit)).toContain("Alpha sword.");
     expect(outcomeText(edit)).toContain("Beta shield.");
     expect(edit.content?.[1]?.text).toContain("Beta shield.");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta shield."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
   });
 
   it("rejects stale unconfirmed scoped replacement without mutating", async () => {
@@ -206,11 +208,11 @@ describe("runtime store", () => {
     await reread.core.write({ command: "read", file: "chapter.md" }, context);
     const staleHash = hashAt(reread.liveDoc("chapter.md"), 0);
     await appendHumanPrefixAndInvalidate(reread, "chapter.md");
-    const rejected = await reread.core.write(
+    const staleAttempt = await reread.core.write(
       { command: "replace", file: "chapter.md", in: staleHash, content: "Agent replacement." },
       context,
     );
-    expect(rejected.status).toBe("not_found");
+    expect(staleAttempt.status).toBe("not_found");
     const freshRead = await reread.core.write({ command: "read", file: "chapter.md" }, context);
     expect(freshRead.status).toBe("success");
     const retried = await reread.core.write(

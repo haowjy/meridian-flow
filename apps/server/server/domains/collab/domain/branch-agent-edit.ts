@@ -296,6 +296,9 @@ export function createBranchAgentEditJournal(input: {
   pendingJournalEntries?: BranchPendingJournalEntries;
 }): UpdateJournal & ReversalStore {
   let syntheticSeq = 0;
+  const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
+    input.liveJournal,
+  );
   return {
     async append(_docId, _update, _meta) {
       syntheticSeq += 1;
@@ -327,6 +330,16 @@ export function createBranchAgentEditJournal(input: {
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
       return Promise.resolve({ checkpoint: null, updates: [] });
     },
+
+    readAttribution(docId: string): Promise<JournalSnapshot> {
+      return input.liveJournal.readAttribution?.(docId) ?? input.liveJournal.read(docId);
+    },
+
+    ...(materializeDestructiveProvenance
+      ? {
+          materializeDestructiveProvenance: (request) => materializeDestructiveProvenance(request),
+        }
+      : {}),
 
     checkpoint(_docId: string, _state: Uint8Array, _upToSeq: number): Promise<void> {
       return Promise.resolve();

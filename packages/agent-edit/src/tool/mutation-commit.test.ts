@@ -3,13 +3,10 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
-import { createObservationAuthority, digestRenderedContent } from "../observation-snapshot.js";
-import type {
-  ObservationSnapshot,
-  ObservationSnapshotStore,
-} from "../ports/observation-snapshot.js";
+import { digestRenderedContent } from "../observation-snapshot.js";
+import type { ObservationSnapshotStore } from "../ports/observation-snapshot.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
-import { createMutationCommit, type SafetyGateInput } from "./mutation-commit.js";
+import { type CommitPreflightInput, createMutationCommit } from "./mutation-commit.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
 import { MemoryJournal } from "./test-support/recording-journal.js";
 import {
@@ -21,59 +18,6 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("mutation commit", () => {
-  it("denies a destructive write after overflow until a bounded read re-credits the body", async () => {
-    const snapshots = new Map<string, ObservationSnapshot>();
-    const store: ObservationSnapshotStore = {
-      async seal(snapshot) {
-        snapshots.set(snapshot.responseId, snapshot);
-      },
-      async load(responseId) {
-        return snapshots.get(responseId) ?? null;
-      },
-    };
-    const authority = createObservationAuthority({ store });
-    const fixture = destructiveFixture(1, store);
-    const block = snapshotBlocks(
-      toDocHandle(fixture.coordinator.require("chapter.md")),
-      model,
-      codec,
-    )[0];
-    const key = {
-      documentId: "chapter.md",
-      clientID: block.clientID as number,
-      clock: block.clock as number,
-    };
-
-    const overflow = authority.beginRequest("overflow-request", [
-      causalCut("response-delete", "chapter.md"),
-    ]);
-    overflow.omit(key, "sync_overflow");
-    await authority.sealSuccessfulResponse("response-delete", overflow);
-    await expect(
-      fixture.mutationCommit.preflightSafetyGate(
-        fixture.coordinator.require("chapter.md"),
-        fixture.input,
-      ),
-    ).resolves.toMatchObject({ verdict: "reject", reason: "observation_required" });
-
-    const boundedRead = authority.beginRequest("bounded-read-request", [
-      causalCut("response-fresh", "chapter.md"),
-    ]);
-    boundedRead.observeRendered({ ...key, renderedContent: block.renderedContent as string });
-    await authority.sealSuccessfulResponse("response-fresh", boundedRead);
-    await expect(
-      fixture.mutationCommit.preflightSafetyGate(fixture.coordinator.require("chapter.md"), {
-        ...fixture.input,
-        actor: {
-          kind: "agent",
-          turnId: "turn-delete",
-          threadId: THREAD_ID,
-          responseId: "response-fresh",
-        },
-      }),
-    ).resolves.toMatchObject({ verdict: "pass" });
-  });
-
   it("looks up response observation by full document-scoped Yjs identity", async () => {
     const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
     const journal = new MemoryJournal();
@@ -158,7 +102,6 @@ describe("mutation commit", () => {
           },
         },
       ],
-      afterOwnVector: Y.encodeStateVector(runtimeDoc),
       liveOrigin: { type: "agent", actorTurnId: "turn-immediate" },
       touchedHashes: new Set(),
       deletedHashes: new Set(),
@@ -287,7 +230,6 @@ describe("mutation commit", () => {
       commandName: "replace",
       runtime: { doc: runtimeDoc },
       updates: [journalEntry(update)],
-      afterOwnVector: Y.encodeStateVector(runtimeDoc),
       liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
       touchedHashes: new Set([hashAt(runtimeDoc, 0)]),
       deletedHashes: new Set(),
@@ -347,12 +289,10 @@ describe("mutation commit", () => {
 
   it("reports a deterministic late destructive hit and still applies after journal commit", async () => {
     const fixture = destructiveFixture();
-    let preflight: Awaited<ReturnType<typeof fixture.mutationCommit.preflightSafetyGate>>;
+    let preflight: Awaited<ReturnType<typeof fixture.mutationCommit.captureCommitPreflight>>;
     preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
-      fixture.mutationCommit.preflightSafetyGate(liveDoc, fixture.input),
+      fixture.mutationCommit.captureCommitPreflight(liveDoc, fixture.input),
     );
-    expect(preflight.verdict).toBe("pass");
-    if (preflight.verdict !== "pass") throw new Error("preflight unexpectedly rejected");
 
     await fixture.journal.appendBatch([fixture.journalEntry]);
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
@@ -360,7 +300,7 @@ describe("mutation commit", () => {
       fixture.mutationCommit.applyCommittedUpdateWithRecheck(
         liveDoc,
         { ...fixture.input, update: fixture.input.update, liveOrigin: fixture.input.liveOrigin },
-        preflight.concurrent,
+        preflight,
       ),
     );
 
@@ -393,10 +333,8 @@ describe("mutation commit", () => {
   it("detects an unjournaled live edit that lands during the phase-C await", async () => {
     const fixture = destructiveFixture();
     const preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
-      fixture.mutationCommit.preflightSafetyGate(liveDoc, fixture.input),
+      fixture.mutationCommit.captureCommitPreflight(liveDoc, fixture.input),
     );
-    expect(preflight.verdict).toBe("pass");
-    if (preflight.verdict !== "pass") throw new Error("preflight unexpectedly rejected");
 
     fixture.coordinator.concurrentUpdatesSince = async () => {
       // A Hocuspocus update is already in the shared Y.Doc but has not reached
@@ -409,7 +347,7 @@ describe("mutation commit", () => {
       fixture.mutationCommit.applyCommittedUpdateWithRecheck(
         liveDoc,
         { ...fixture.input, update: fixture.input.update, liveOrigin: fixture.input.liveOrigin },
-        preflight.concurrent,
+        preflight,
       ),
     );
 
@@ -425,10 +363,8 @@ describe("mutation commit", () => {
   it("does not report a late sweep when another agent edits the deleted block", async () => {
     const fixture = destructiveFixture();
     const preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
-      fixture.mutationCommit.preflightSafetyGate(liveDoc, fixture.input),
+      fixture.mutationCommit.captureCommitPreflight(liveDoc, fixture.input),
     );
-    expect(preflight.verdict).toBe("pass");
-    if (preflight.verdict !== "pass") throw new Error("preflight unexpectedly rejected");
 
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
@@ -436,7 +372,7 @@ describe("mutation commit", () => {
       fixture.mutationCommit.applyCommittedUpdateWithRecheck(
         liveDoc,
         { ...fixture.input, update: fixture.input.update, liveOrigin: fixture.input.liveOrigin },
-        preflight.concurrent,
+        preflight,
       ),
     );
 
@@ -479,7 +415,6 @@ describe("mutation commit", () => {
       commandName: "replace",
       runtime: { doc: runtimeDoc },
       updates: [journalEntry(Y.encodeStateAsUpdate(runtimeDoc, beforeVector))],
-      afterOwnVector: Y.encodeStateVector(runtimeDoc),
       liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
       touchedHashes: new Set([hashAt(runtimeDoc, 0)]),
       deletedHashes: new Set(),
@@ -544,7 +479,7 @@ function destructiveFixture(deleteCount = 1, observationSnapshots?: ObservationS
   );
   const update = Y.encodeStateAsUpdate(runtimeDoc, beforeVector);
   const entry = journalEntry(update);
-  const input: SafetyGateInput & {
+  const input: CommitPreflightInput & {
     update: Uint8Array;
     liveOrigin: { type: "agent"; actorTurnId: string };
     meta: JournalBatchAppendEntry["meta"];
@@ -555,7 +490,6 @@ function destructiveFixture(deleteCount = 1, observationSnapshots?: ObservationS
     docId: "chapter.md",
     runtime: { doc: runtimeDoc },
     update,
-    afterOwnVector: Y.encodeStateVector(runtimeDoc),
     deletedHashes: new Set(deletedHashes),
     touchedHashes: new Set(deletedHashes),
     preOwnSnapshot,
