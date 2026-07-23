@@ -1251,6 +1251,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     async compact(docId, before) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
         const authority = await readDocumentAuthority(txDb, docId);
         const [checkpoint] = await txDb
           .select()

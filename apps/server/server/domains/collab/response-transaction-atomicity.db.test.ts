@@ -95,6 +95,15 @@ describe("change trail (postgres)", () => {
     });
   });
 
+  it("serializes compaction with concurrent authority replacement", async () => {
+    const harness = createHarness();
+
+    await expect(harness.compactWhileAuthorityReplacementWaits()).resolves.toEqual({
+      coldMarkdown: "Restored base.\n",
+      currentGenerationUpdateCount: 0,
+    });
+  });
+
   it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
     const harness = createHarness();
     await harness.seedAndStage("outer-rollback-response");
