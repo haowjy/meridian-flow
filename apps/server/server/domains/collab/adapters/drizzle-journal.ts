@@ -1103,6 +1103,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         // upToSeq must be ≤ the updates reflected in state; replaying extra
         // updates is idempotent, but skipping one loses durable document data.
         await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint");
+        if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
+          // ensureDocument's empty cut only bootstraps a room before its first
+          // journal admission. Once a real cut is stored it has no restore value;
+          // retaining it turns one cold open into two apparent checkpoints.
+          await txDb
+            .delete(documentYjsCheckpoints)
+            .where(eq(documentYjsCheckpoints.id, existing.id));
+        }
       });
     },
 

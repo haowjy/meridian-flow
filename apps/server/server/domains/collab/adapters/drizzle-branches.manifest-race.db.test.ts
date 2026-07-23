@@ -16,6 +16,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { hasLiveManifestMembership } from "../../../routes/ws/yjs.js";
+import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
@@ -27,6 +28,7 @@ describe("Drizzle manifest persistence", () => {
   const db = createDb(DATABASE_URL, { max: 8 });
   const livePersistence = createDrizzleCollabPersistence(db);
   const liveDocs = new Map<string, Y.Doc>();
+  let storeWarmDocument: (documentId: string, document: Y.Doc) => Promise<void> = async () => {};
   const liveCoordinator = createHocuspocusCoordinatorForTest({
     journal: livePersistence.journal,
     hocuspocus: () => ({ documents: liveDocs }) as never,
@@ -36,9 +38,20 @@ describe("Drizzle manifest persistence", () => {
         doc = createCollabYDoc({ gc: false });
         liveDocs.set(documentId, doc);
       }
-      return { doc, async release() {} };
+      return {
+        doc,
+        release: () => storeWarmDocument(documentId, doc),
+      };
     },
   });
+  const hocuspocusPersistence = createHocuspocusPersistenceService({
+    journal: livePersistence.journal,
+    hocuspocus: () => ({ documents: liveDocs }) as never,
+    metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    latestUpdateSeq: (documentId) => livePersistence.store.latestUpdateSeq(documentId),
+    emitAgentEditInvariantViolation() {},
+  });
+  storeWarmDocument = hocuspocusPersistence.storeHocuspocusDocument;
   const store = createDrizzleBranchStore(db, {
     journal: livePersistence.journal,
     lifecycle: livePersistence.lifecycle,
@@ -94,7 +107,7 @@ describe("Drizzle manifest persistence", () => {
     return { updates: updates?.count ?? 0, checkpoints: checkpoints?.count ?? 0 };
   }
 
-  it("serializes concurrent cold reconciliation without history growth on repeat", async () => {
+  it("keeps one checkpoint when concurrent cold reconciliation stores the warm room", async () => {
     const { projectId, contextSourceId } = await createProjectFixture("race");
 
     await Promise.all(
