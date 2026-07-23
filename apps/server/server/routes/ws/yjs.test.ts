@@ -151,7 +151,10 @@ describe("Yjs branch handshake route guard", () => {
       origin: { type: "user", userId: "user-1" },
       document,
     });
-    expect(closeTransport).toHaveBeenCalledOnce();
+    expect(closeTransport).toHaveBeenCalledWith({
+      code: 1008,
+      reason: "branch-update-admission-failed",
+    });
   });
 
   it("waits for branch durability before returning the update to Hocuspocus", async () => {
@@ -456,7 +459,10 @@ describe("Yjs live writer admission", () => {
       reason: "writer-journal-admission-failed",
       code: 1013,
     });
-    expect(closeTransport).toHaveBeenCalledOnce();
+    expect(closeTransport).toHaveBeenCalledWith({
+      code: 1013,
+      reason: "writer-journal-admission-failed",
+    });
     await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,
       joinedSettlement: false,
