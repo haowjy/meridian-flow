@@ -21,6 +21,9 @@
   trace ring, filters, and exports.
 - Server debugging guidance now distinguishes authoritative stdout from the
   best-effort bounded JSONL mirror and documents query, SSE, and `jq` workflows.
+- `apps/server`: interrupted tool calls no longer poison later model retries;
+  rebuilt histories carry an explicit unknown-outcome error result without
+  re-executing the tool.
 - `apps/server`: fresh-project documents are now initialized exactly once in
   canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
   warm collaboration rooms reconcile with the seed, and AI causal-cut capture
