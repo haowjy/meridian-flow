@@ -110,7 +110,7 @@ describe("buildContext tool-call history", () => {
           toolUse("multi-turn", 4, "call-3"),
         ],
         danglingId: "call-3",
-        provenance: /failed/i,
+        provenance: /error/i,
       },
     ];
 
