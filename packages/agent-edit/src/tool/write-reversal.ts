@@ -496,25 +496,8 @@ export function createWriteReversal(deps: {
           ownTurnId: first.plan.turnId ?? undefined,
         });
 
-        // INVARIANT (LOCK-WS): capture the live Y.Doc synchronously before the
-        // durable reversal write yields to persistence and WebSocket traffic.
-        const beforePersistSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
         const persisted = await persistPlans({ ...input, update });
         if (!persisted.ok) return persisted.response ?? null;
-
-        const afterPersistSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
-        const persistWindowDiff = diffSnapshots(beforePersistSnapshot, afterPersistSnapshot);
-        const persistWindowTouchedHashes = new Set([
-          ...persistWindowDiff.changed,
-          ...persistWindowDiff.deleted,
-        ]);
-        const persistWindowAffectedHashes = [...deletedHashes].filter((hash) =>
-          persistWindowTouchedHashes.has(hash),
-        );
-        const persistWindowBodies = bodiesForHashes(
-          afterPersistSnapshot,
-          persistWindowAffectedHashes,
-        );
 
         const applied = await mutationCommit.applyCommittedUpdateWithRecheck(
           liveDoc,
@@ -532,22 +515,7 @@ export function createWriteReversal(deps: {
           },
           capturedPreflight,
         );
-        const lateSweep = mergeLateSweepReports(
-          persistWindowAffectedHashes.length > 0
-            ? {
-                affectedBlockHashes: persistWindowAffectedHashes,
-                ...(persistWindowBodies.length > 0
-                  ? { capturedDeletedBodies: persistWindowBodies }
-                  : {}),
-                sweptContent: true,
-                beforeContentRef:
-                  input.interactionContext.liveJournalSeq ??
-                  input.interactionContext.afterJournalId ??
-                  null,
-              }
-            : undefined,
-          applied.lateSweep,
-        );
+        const lateSweep = applied.lateSweep;
         for (const concurrent of applied.concurrent.updates) {
           if (concurrent.update.length > 0) {
             Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
@@ -755,37 +723,6 @@ export function createWriteReversal(deps: {
   async function invalidateRuntimeThread(docId: string, threadId: string): Promise<void> {
     await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
   }
-}
-
-function bodiesForHashes(
-  snapshot: readonly { hash: string; serialized: string }[],
-  hashes: readonly string[],
-): { hash: string; body: string }[] {
-  const affected = new Set(hashes);
-  return snapshot.flatMap((block) =>
-    affected.has(block.hash) ? [{ hash: block.hash, body: block.serialized }] : [],
-  );
-}
-
-function mergeLateSweepReports(
-  first: DestructiveSweepReport | undefined,
-  second: DestructiveSweepReport | undefined,
-): DestructiveSweepReport | undefined {
-  if (!first) return second;
-  if (!second) return first;
-  const bodies = new Map(
-    [...(first.capturedDeletedBodies ?? []), ...(second.capturedDeletedBodies ?? [])].map(
-      (body) => [body.hash, body],
-    ),
-  );
-  return {
-    affectedBlockHashes: [
-      ...new Set([...first.affectedBlockHashes, ...second.affectedBlockHashes]),
-    ],
-    ...(bodies.size > 0 ? { capturedDeletedBodies: [...bodies.values()] } : {}),
-    sweptContent: true,
-    beforeContentRef: first.beforeContentRef ?? second.beforeContentRef,
-  };
 }
 
 function representativeTurnId(

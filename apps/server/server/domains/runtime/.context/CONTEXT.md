@@ -120,8 +120,8 @@ facet.
 - **Safety notices** — before every provider stream, `runTurn` drains the single
   notice port for the thread and its active documents, then injects notices as a
   transient system message. Notices never enter the turn graph. Undo/redo uses
-  `kind: "undo"`; rejections and late sweeps recorded mid-turn therefore reach
-  the next model call in the same agentic loop.
+  `kind: "undo"`; late sweeps and degraded-awareness reports recorded mid-turn
+  therefore reach the next model call in the same agentic loop.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results
@@ -133,9 +133,9 @@ facet.
   block identity plus the exact rendered source they exposed. Final context
   assembly derives the response candidate only from unpruned serialized tool
   results; omitted/pruned evidence earns no credit after restart or in-process.
-  A commit rejection rewrites the affected tool result as an explicit failure
-  before the next model call, so a discarded write cannot remain reported as
-  successful.
+  Agent response commits are report-only: ordinary Yjs merge always commits;
+  destructive effects are echoed to the model and writer-lineage sweeps are
+  recorded for the trail and Restore.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.

@@ -262,9 +262,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         runInDrizzleTransaction(db, async () => {
           await port.record({
-            kind: "rejection",
+            kind: "awareness_degraded",
             scope: { kind: "thread", threadId: THREAD_ID },
-            message: "Re-read the document",
+            message: "Document awareness degraded",
             data: { documentIds: [DOCUMENT_ID] },
             writerVisible: false,
           });

@@ -308,7 +308,6 @@ export function formatSafetyNotices(notices: readonly Notice[]): string {
 }
 
 function formatSafetyNotice(notice: Notice): string {
-  if (notice.kind === "rejection") return notice.message;
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
   if (

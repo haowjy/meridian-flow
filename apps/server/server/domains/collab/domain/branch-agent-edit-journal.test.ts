@@ -1,5 +1,7 @@
+import { toDocHandle } from "@meridian/agent-edit";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import {
   createBranchAgentEditJournal,
@@ -33,6 +35,32 @@ describe("branch agent-edit journal appendBatch", () => {
       },
     ]);
     expect(result.journalCommitKind).toBe("staged");
+  });
+
+  it("classifies roots absent from live authority as agent-owned branch content", async () => {
+    const liveJournal = createInMemoryJournal();
+    const materialize = vi.fn(async (input: { fallbackProvenance?: string }) => ({
+      before: [],
+      afterCandidate: [],
+      fallback: input.fallbackProvenance,
+    }));
+    liveJournal.materializeDestructiveProvenance = materialize;
+    const branchJournal = createBranchAgentEditJournal({
+      threadId: THREAD_ID,
+      liveJournal,
+    });
+    const doc = new Y.Doc({ gc: false });
+
+    await branchJournal.materializeDestructiveProvenance?.({
+      docId: "chapter.md",
+      before: toDocHandle(doc),
+      afterCandidate: toDocHandle(doc),
+    });
+
+    expect(materialize).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackProvenance: "agent" }),
+    );
+    doc.destroy();
   });
 
   it("seals v2 lineage only when response finalization succeeds", async () => {
