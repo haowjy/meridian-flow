@@ -8,11 +8,15 @@ const WriteHandleSelectorSchema = {
   all: z.boolean().optional(),
 } as const;
 
-const ScopeTargetSchema = z.union([
-  z.string(),
-  z.number(),
-  z.tuple([z.union([z.string(), z.number()]), z.union([z.string(), z.number()])]),
-]);
+const ScopeTargetSchema = z
+  .union([
+    z.string(),
+    z.number(),
+    z.tuple([z.union([z.string(), z.number()]), z.union([z.string(), z.number()])]),
+  ])
+  .describe(
+    "Block scope: one block hash or 1-based block number, or an inclusive [start, end] range using hashes or block numbers.",
+  );
 
 const BaseCommandSchema = z.object({
   file: z.string(),
@@ -23,7 +27,10 @@ const BaseCommandSchema = z.object({
 export const CreateCommandSchema = BaseCommandSchema.extend({
   command: z.literal("create"),
   content: z.string().optional(),
-  overwrite: z.boolean().optional(),
+  overwrite: z
+    .boolean()
+    .optional()
+    .describe("Set true to replace an entire existing document with content."),
 }).strict();
 
 export const ReadCommandSchema = BaseCommandSchema.extend({
@@ -36,8 +43,8 @@ export const ReadCommandSchema = BaseCommandSchema.extend({
 export const InsertCommandSchema = BaseCommandSchema.extend({
   command: z.literal("insert"),
   content: z.string(),
-  after: z.string().optional(),
-  before: z.string().optional(),
+  after: z.string().optional().describe("Block hash to insert after; not literal document text."),
+  before: z.string().optional().describe("Block hash to insert before; not literal document text."),
   find: z.string().optional(),
   in: ScopeTargetSchema.optional(),
   around: z.string().optional(),
@@ -48,7 +55,10 @@ export const ReplaceCommandSchema = BaseCommandSchema.extend({
   command: z.literal("replace"),
   content: z.string(),
   in: ScopeTargetSchema.optional(),
-  find: z.string().optional(),
+  find: z
+    .string()
+    .optional()
+    .describe("Exact text span to replace; following text and blocks are not included."),
   around: z.string().optional(),
   all: z.boolean().optional(),
 }).strict();
