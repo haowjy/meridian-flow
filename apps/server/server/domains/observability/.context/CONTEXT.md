@@ -10,7 +10,7 @@ records; adapters decide where safe records go.
   correlation types are canonical in `@meridian/contracts/observability`; the
   server port re-exports them so domain imports stay anchored on the port.
 - **`EventSink`** — `emit` / `emitBatch` / `flush`.
-- **`EventQuery`** — filtered newest-first recent history and live subscriptions.
+- **`EventQuery`** — filtered newest-first recent history and live subscriptions. `excludeName` (exact event-name exclusion) is applied **before** the result `limit`, so a high-volume excluded class (e.g. verbose `stream.chunk`) cannot crowd lifecycle records out of a bounded query. Consumers rely on this to keep polling independent of verbose capture.
 - **`emitEvent`** — timestamping helper for non-critical diagnostics.
 - **Safe-event helpers** — id stamping, key-pattern redaction, secret stripping,
   bounded envelopes, detachment, and freezing before records leave process memory.
