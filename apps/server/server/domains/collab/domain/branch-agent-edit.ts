@@ -177,6 +177,9 @@ export function createBranchAgentEditCoordinator(input: {
                 threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
                 turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,
+                ...(mutation.branchJournalWatermark !== undefined
+                  ? { expectedJournalWatermark: mutation.branchJournalWatermark }
+                  : {}),
                 updateMeta: pending?.meta ?? null,
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
@@ -310,13 +313,16 @@ export function createBranchAgentEditJournal(input: {
   };
 }): UpdateJournal & ReversalStore {
   let syntheticSeq = 0;
-  const groupedOrdinals = new Map<string, number>();
+  const groupedOrdinals = new Map<string, Promise<number>>();
   const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
     input.liveJournal,
   );
 
   const branchScope = async (docId: string): Promise<BranchReversalScope | null> => {
-    if (!input.branches?.getBranch || !input.branchRows) return null;
+    if (!input.branches) return null;
+    if (!input.branches.getBranch || !input.branchRows) {
+      throw new Error("Branch reversal history is unavailable");
+    }
     const peer = await input.branches.resolveThreadBranch(docId as DocumentId, input.threadId);
     peer.doc.destroy();
     const peerSnapshot = await input.branches.getBranch(peer.branchId);
@@ -413,9 +419,14 @@ export function createBranchAgentEditJournal(input: {
       const key = groupedOrdinalKey(documentId, threadId, groupId);
       const existing = groupedOrdinals.get(key);
       if (existing !== undefined) return existing;
-      const ordinal = await input.liveJournal.reserveWriteOrdinal(documentId, threadId);
-      groupedOrdinals.set(key, ordinal);
-      return ordinal;
+      const reservation = input.liveJournal.reserveWriteOrdinal(documentId, threadId);
+      groupedOrdinals.set(key, reservation);
+      try {
+        return await reservation;
+      } catch (cause) {
+        if (groupedOrdinals.get(key) === reservation) groupedOrdinals.delete(key);
+        throw cause;
+      }
     },
     async readForReconstruction(docId) {
       const scope = await branchScope(docId);
@@ -589,6 +600,7 @@ function stageBranchReversal(input: {
     mutation: {
       mode: "threadPeer",
       branchGeneration: input.scope.generation,
+      branchJournalWatermark: input.scope.rows.reduce((latest, row) => Math.max(latest, row.id), 0),
       actorKind: "system",
       threadId: input.threadId,
       turnId,
@@ -610,6 +622,50 @@ function serializeBranchReversalRecord(record: ReversalRecord): SerializedBranch
     ...(record.reversedAt ? { reversedAt: record.reversedAt.toISOString() } : {}),
     ...(record.expiresAt ? { expiresAt: record.expiresAt.toISOString() } : {}),
   };
+}
+
+/** Final live mutation rows after folding branch-local undo/redo operations at Apply. */
+export function activeBranchAgentWriteRows(
+  rows: readonly BranchJournalRow[],
+): Array<BranchJournalRow & { threadId: ThreadId; wId: number }> {
+  const forwardByHandle = new Map<string, BranchJournalRow & { threadId: ThreadId; wId: number }>();
+  const activeHandles = new Set<string>();
+  const undoneHandlesBySeq = new Map<number, string[]>();
+  const key = (threadId: string, handle: string) => `${threadId}:${handle}`;
+
+  for (const row of rows) {
+    if (row.source === "agent" && row.threadId !== null && row.wId !== null) {
+      const handleKey = key(row.threadId, writeHandle(row.wId));
+      forwardByHandle.set(handleKey, row as BranchJournalRow & { threadId: ThreadId; wId: number });
+      activeHandles.add(handleKey);
+    }
+    const operation = branchReversalOperation(row);
+    if (!operation) continue;
+    if (operation.direction === "undo") {
+      const undone: string[] = [];
+      for (const record of operation.records) {
+        for (const handle of record.writeIds) {
+          const handleKey = key(record.threadId, handle);
+          activeHandles.delete(handleKey);
+          undone.push(handleKey);
+        }
+      }
+      undoneHandlesBySeq.set(row.id, undone);
+      continue;
+    }
+    for (const ref of operation.refs) {
+      for (const handleKey of undoneHandlesBySeq.get(ref.undoUpdateSeq) ?? []) {
+        if (handleKey.startsWith(`${ref.threadId}:`)) activeHandles.add(handleKey);
+      }
+    }
+  }
+
+  return [...activeHandles]
+    .flatMap((handleKey) => {
+      const row = forwardByHandle.get(handleKey);
+      return row ? [row] : [];
+    })
+    .sort((left, right) => left.id - right.id);
 }
 
 function buildBranchReversalState(

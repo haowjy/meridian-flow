@@ -32,6 +32,7 @@ import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
+import { activeBranchAgentWriteRows } from "../domain/branch-agent-edit.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -989,10 +990,10 @@ async function writeMutationRows(
   rows: BranchJournalRow[],
   updateSeq: number,
 ): Promise<void> {
-  const mutationRows = rows.filter(
-    (row): row is BranchJournalRow & { threadId: ThreadId; wId: number } =>
-      row.threadId !== null && row.wId !== null,
-  );
+  // Apply materializes only handles whose final branch state is active. Handles
+  // eliminated by Draft undo are deliberately squashed instead of being
+  // recreated as active live mutations with content that no longer exists.
+  const mutationRows = activeBranchAgentWriteRows(rows);
   if (mutationRows.length === 0) return;
   await db
     .insert(agentEditMutations)

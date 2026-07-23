@@ -868,6 +868,20 @@ export function createDrizzleBranchStore(
         if (input.journal && input.journal.generation !== input.expectedGeneration) {
           throw new BranchMutationRollback();
         }
+        if (input.journal?.expectedJournalWatermark !== undefined) {
+          const [head] = await currentDrizzleDb(db)
+            .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+            .from(branchWriteJournal)
+            .where(
+              and(
+                eq(branchWriteJournal.branchId, input.journal.branchId),
+                eq(branchWriteJournal.generation, input.journal.generation),
+              ),
+            );
+          if ((head?.id ?? 0) > input.journal.expectedJournalWatermark) {
+            throw new BranchMutationRollback();
+          }
+        }
         const ok = await updateBranchSnapshot(input);
         if (!ok) throw new BranchMutationRollback();
         if (input.journal) {

@@ -76,9 +76,9 @@ propagation between them.
   the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
   reads go through `readEffectiveMarkdown` / `readEffectiveHashlines`.
-- **Undo is intrinsically guarded**: `persistUndo` runs the dependency check
-  in-transaction under `lockDocumentMutation`. There is no separate guard to
-  bypass — every undo path passes through the same gate.
+- **Undo is intrinsically guarded**: live `persistUndo` runs the dependency
+  check under `lockDocumentMutation`; Draft reversal commits reject any branch
+  journal advance after planning under the branch snapshot CAS.
 - **Draft write undo is generation-local**: a response/document folds to one
   durable handle; undo/redo stages a typed-generation system row and projects it
   in the same Work-draft commit. Never delegate an active Draft generation to
