@@ -67,12 +67,9 @@ workarounds. Don't explain what the code does; explain why it's surprising.
 
 **Debugging.** Temporary console probes must use the marked convention in
 [docs/debugging.md](docs/debugging.md) and be deleted before push. Server
-diagnostics go through `EventSink` and are queryable in dev: filtered recent
-events at `GET /api/debug/events`, live SSE at `/api/debug/events/stream`,
-gateway calls in the DebugOverlay → LLM Calls panel, and a best-effort JSONL
-mirror in `logs/events/*.jsonl` — consumption workflows (curl auth bootstrap,
-filters, `jq`) are in the same file. Browser probe sessions have additional
-tooling documented there too.
+diagnostics go through `EventSink` and are queryable in dev — endpoints,
+filters, and `jq`/curl workflows are documented in the same file, along with
+browser probe tooling.
 
 
 ## Documentation

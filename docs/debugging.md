@@ -4,6 +4,65 @@ Use temporary console probes when they help you understand a live bug quickly.
 Keep them disposable: delete them before pushing, or convert useful signals into
 durable observability through the server `EventSink`.
 
+## Toolbox
+
+| Tool | Reach for it when | Detail |
+| --- | --- | --- |
+| Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
+| `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
+| `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
+| `GET /api/debug/events/stream` | Live SSE tail while reproducing | [Consume Server Events](#consume-server-events) |
+| DebugOverlay → **LLM Calls** | Inspect gateway calls: latency, tokens, outcomes, retries | debug pill in dev builds |
+| DebugOverlay → **Streams** | Client Yjs / thread-socket traces; toggle in the server feed | [Durable Logs](#durable-logs) |
+| `logs/events/*.jsonl` + `jq` | Post-restart forensics; best-effort mirror | [Consume Server Events](#consume-server-events) |
+| `logs/portless.log` | Authoritative interleaved stdout | [Durable Logs](#durable-logs) |
+
+## Strategies
+
+- **An agent run failed.** Query `?threadId=<id>&level=error` — `turn.error`
+  records carry the gateway error and correlation. Pivot to
+  `?gatewayCallId=<id>` for the call's full lifecycle, then expand the call in
+  the LLM Calls panel if you need request-level detail.
+- **Something is slow or chatty.** LLM Calls panel first (latency, retries,
+  token counts per call). For per-chunk granularity, opt into
+  `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
+- **It broke and the server restarted.** The in-memory ring is gone; fall back
+  to the JSONL mirror with `jq`, remembering it is best-effort and bounded.
+- **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
+  are stable at emit time, so incremental polls never re-read history.
+
+## Adding Observability
+
+To make something new observable, emit an `EventRecord` through the composed
+sink — everything downstream (query API, SSE, dashboard, JSONL mirror) picks it
+up automatically:
+
+```ts
+import { emitEvent, unknownToEventPayload } from "../observability/index.js";
+
+emitEvent(sink, {
+  level: "info",                       // debug | info | warn | error
+  source: "collab",                    // stable area name — a query filter
+  name: "collab.checkpoint.collapsed", // dot-namespaced — name-prefix queryable
+  correlation: { documentId },         // every key becomes a query parameter
+  sensitivity: "safe",
+  payload: { reason, cutSeq },         // compact metadata, never raw content
+});
+```
+
+Conventions:
+
+- `source` and a `name` prefix are your query handles — pick them like API
+  names, not log strings.
+- Put anything you'll want to filter by in `correlation` (ids, `errorCode`);
+  `payload` is opaque to queries.
+- For errors, `unknownToEventPayload(err)` produces a JSON-natural payload with
+  stack/cause (and Postgres wire diagnostics when pg-shaped).
+- No secrets, raw prompts, model output, or tool arguments — events are
+  sanitized structurally, not content-inspected.
+- High-frequency per-item events (per chunk, per frame) should be gated behind
+  an `OBS_VERBOSE` category so they never compete with lifecycle records.
+
 ## Temporary Probes
 
 Use this exact shape:
