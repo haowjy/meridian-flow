@@ -2,16 +2,14 @@
 
 import * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import { type DocHandle, toDocHandle } from "../handles.js";
+import type { DocHandle } from "../handles.js";
 import {
   intersectLineageRanges,
   type LineageRange,
-  lineageRangesContain,
   normalizeLineageRanges,
   type ResponseCausalCutV1,
   subtractLineageRanges,
 } from "../lineage/range-set.js";
-import { digestRenderedContent, observationCoversRendering } from "../observation-snapshot.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
 import type { ObservationSnapshot } from "../ports/observation-snapshot.js";
 import type { DestructiveProvenanceRun, UpdateJournal } from "../ports/update-journal.js";
@@ -59,14 +57,11 @@ export function classifyDestructiveEffect(input: DestructiveEffectInput): Destru
   validateOccurrences(input.responseCut.visible);
 
   const survivingRoots = input.afterCandidate.map((occurrence) => occurrence.root);
-  const cutTargets = input.responseCut.visible.map((occurrence) => occurrence.target);
-  const lateProtectedRoots = input.before.flatMap((occurrence) => {
-    if (occurrence.provenance !== "writer_protected") return [];
-    const outsideCutTargets = subtractLineageRanges([occurrence.target], cutTargets);
-    return outsideCutTargets.map((target) => targetSliceToRoot(occurrence, target));
-  });
-  const protectedRoots = normalizeLineageRanges([...input.protectionScope, ...lateProtectedRoots]);
-  const coveredRenderings = new Set(input.observation.coveredFinalRenderings);
+  const protectedRoots = normalizeLineageRanges(
+    input.before
+      .filter((occurrence) => occurrence.provenance === "writer_protected")
+      .map((occurrence) => occurrence.root),
+  );
   const eligibleByRendering = new Map<string, LineageRange[]>();
 
   for (const occurrence of input.before) {
@@ -75,8 +70,6 @@ export function classifyDestructiveEffect(input: DestructiveEffectInput): Destru
       const deletedRoot = subtractLineageRanges([protectedRoot], survivingRoots);
       for (const deleted of deletedRoot) {
         const target = rootSliceToTarget(occurrence, deleted);
-        const wasInCut = lineageRangesContain(cutTargets, target);
-        if (wasInCut && coveredRenderings.has(occurrence.finalRendering)) continue;
         const group = eligibleByRendering.get(occurrence.finalRendering) ?? [];
         group.push(target);
         eligibleByRendering.set(occurrence.finalRendering, group);
@@ -103,14 +96,6 @@ function validateOccurrences(occurrences: readonly VisibleProseOccurrence[]): vo
     normalizeLineageRanges([occurrence.target]);
     normalizeLineageRanges([occurrence.root]);
   }
-}
-
-function targetSliceToRoot(occurrence: VisibleProseOccurrence, target: LineageRange): LineageRange {
-  return {
-    clientID: occurrence.root.clientID,
-    clock: occurrence.root.clock + target.clock - occurrence.target.clock,
-    length: target.length,
-  };
 }
 
 function rootSliceToTarget(occurrence: VisibleProseOccurrence, root: LineageRange): LineageRange {
@@ -164,18 +149,11 @@ export async function classifyDestructiveDocumentEffect(
     afterBlocks,
     applyAttributedLineage(provenance.afterCandidate, input.attributedLineage ?? []),
   );
-  const observedLineage = (input.observedBlocks ?? [])
-    .filter((block) => wasObserved(input.observationSnapshot, input.documentId, block))
-    .flatMap((block) => block.lineage ?? []);
   const effect = classifyDestructiveEffect({
     before,
     afterCandidate,
     protectionScope: before
-      .filter(
-        (occurrence) =>
-          occurrence.provenance === "writer_protected" &&
-          !lineageRangesContain(observedLineage, occurrence.target),
-      )
+      .filter((occurrence) => occurrence.provenance === "writer_protected")
       .map((occurrence) => occurrence.root),
     responseCut: {
       id: "live-commit-current-rendering",
@@ -186,13 +164,7 @@ export async function classifyDestructiveDocumentEffect(
       admittedThrough: 0n,
       visible: before,
     },
-    observation: {
-      coveredFinalRenderings: beforeBlocks.flatMap((block) =>
-        wasObserved(input.observationSnapshot, input.documentId, block)
-          ? [finalRenderingKey(block)]
-          : [],
-      ),
-    },
+    observation: { coveredFinalRenderings: [] },
   });
   const affected = new Set(
     effect.finalRenderingProjections.map((projection) => projection.finalRendering),
@@ -245,31 +217,6 @@ function finalRenderingKey(block: BlockSnapshot): string {
   return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
 }
 
-function wasObserved(
-  snapshot: ObservationSnapshot | null,
-  documentId: string,
-  block: BlockSnapshot,
-): boolean {
-  if (
-    block.clientID === undefined ||
-    block.clock === undefined ||
-    block.renderedContent === undefined
-  ) {
-    return false;
-  }
-  const observation = snapshot?.entries.find(
-    (entry) =>
-      entry.documentId === documentId &&
-      entry.clientID === block.clientID &&
-      entry.clock === block.clock,
-  );
-  return observationCoversRendering({
-    observation: observation?.value ?? null,
-    renderedContent: block.renderedContent,
-    digestRenderedContent,
-  });
-}
-
 async function reconstructConservativeProvenance(input: {
   journal: UpdateJournal;
   model: AgentEditModel;
@@ -284,25 +231,22 @@ async function reconstructConservativeProvenance(input: {
   const snapshot = input.journal.readAttribution
     ? await input.journal.readAttribution(input.documentId)
     : await input.journal.read(input.documentId);
-  const replay = new Y.Doc({ gc: false });
-  try {
-    if (snapshot.checkpoint) Y.applyUpdate(replay, snapshot.checkpoint);
-    const agentRoots: LineageRange[] = [];
-    for (const row of snapshot.updates) {
-      const before = visibleLineage(snapshotBlocks(toDocHandle(replay), input.model, input.codec));
-      Y.applyUpdate(replay, row.update);
-      if (!row.meta.origin.startsWith("agent:")) continue;
-      const after = visibleLineage(snapshotBlocks(toDocHandle(replay), input.model, input.codec));
-      agentRoots.push(...subtractLineageRanges(after, before));
-    }
-    const before = provenanceForKnownRoots(input.beforeBlocks, agentRoots);
-    return {
-      before,
-      afterCandidate: candidateProvenance(input.afterBlocks, before),
-    };
-  } finally {
-    replay.destroy();
+  const agentRoots: LineageRange[] = [];
+  for (const row of snapshot.updates) {
+    if (!row.meta.origin.startsWith("agent:")) continue;
+    agentRoots.push(
+      ...Y.decodeUpdate(row.update).structs.map((struct) => ({
+        clientID: struct.id.client,
+        clock: struct.id.clock,
+        length: struct.length,
+      })),
+    );
   }
+  const before = provenanceForKnownRoots(input.beforeBlocks, agentRoots);
+  return {
+    before,
+    afterCandidate: candidateProvenance(input.afterBlocks, before),
+  };
 }
 
 function visibleLineage(blocks: readonly BlockSnapshot[]): LineageRange[] {

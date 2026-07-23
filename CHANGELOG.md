@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: destructive agent writes now always report
+  recoverable writer-lineage loss; observation no longer suppresses live,
+  offline, or auto-push reports (#333).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

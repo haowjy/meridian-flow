@@ -59,24 +59,23 @@ describe("offline reconciliation", () => {
     ).not.toBeNull();
   });
 
-  it("stays silent when the authoring response observed the exact removed form", async () => {
-    const scenario = await setup({
-      origin: "human:writer",
-      observe: true,
-      editDeletedBlock: false,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toEqual([]);
-  });
-
-  it("compares observations with the canonical type-and-body rendering", async () => {
+  it("reports observed writer content using the ordinary recoverable trail", async () => {
     const scenario = await setup({
       origin: "human:writer",
       observe: true,
       editDeletedBlock: true,
     });
     await scenario.reconcile();
-    expect(scenario.changes).toEqual([]);
+    expect(scenario.changes).toHaveLength(1);
+    expect(
+      planTrailForwardAction({
+        liveDoc: scenario.liveDoc,
+        change: scenario.changes[0] as TrailChangeV1,
+        action: "restore",
+        model,
+        codec: agentCodec,
+      }),
+    ).not.toBeNull();
   });
 
   it("reports an offline writer revision even when the block was agent-origin", async () => {

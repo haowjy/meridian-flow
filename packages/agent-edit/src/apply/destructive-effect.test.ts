@@ -51,7 +51,7 @@ describe("classifyDestructiveEffect", () => {
     });
   });
 
-  it("credits exact observed cut prose but never post-cut writer prose in the same rendering", () => {
+  it("reports every removed writer root regardless of observation", () => {
     const observed = occurrence({ targetClock: 0, length: 2, rendering: "mixed" });
     const postCut = occurrence({ targetClock: 2, rootClock: 2, length: 2, rendering: "mixed" });
     const result = classifyDestructiveEffect({
@@ -61,7 +61,7 @@ describe("classifyDestructiveEffect", () => {
       responseCut: cut([observed]),
       observation: { coveredFinalRenderings: ["mixed"] },
     });
-    expect(result.eligibleRanges).toEqual([{ clientID: 1, clock: 2, length: 2 }]);
+    expect(result.eligibleRanges).toEqual([{ clientID: 1, clock: 0, length: 4 }]);
   });
 
   it("rejects non-length-preserving continuation input", () => {
