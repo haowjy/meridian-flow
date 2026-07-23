@@ -230,14 +230,37 @@ export function createBranchPushTransition(input: {
       const beforeOccurrences = occurrencesFor(before, preProvenance);
       const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
       const afterOccurrences = occurrencesFor(after, afterProvenance);
-      const survivingRoots = afterOccurrences.map((occurrence) => occurrence.root);
+      const beforeWriterOccurrences = beforeOccurrences.filter(
+        (occurrence) => occurrence.provenance === "writer_protected",
+      );
+      const afterWriterOccurrences = afterOccurrences.filter(
+        (occurrence) => occurrence.provenance === "writer_protected",
+      );
+      const afterWriterOrder = new Map(
+        afterWriterOccurrences.map((occurrence, index) => [
+          occurrenceMappingKey(occurrence),
+          index,
+        ]),
+      );
       const writerTouchedRenderings = new Set(
-        beforeOccurrences.flatMap((occurrence) =>
-          occurrence.provenance === "writer_protected" &&
-          subtractLineageRanges([occurrence.root], survivingRoots).length > 0
-            ? [occurrence.finalRendering]
-            : [],
-        ),
+        beforeWriterOccurrences.flatMap((occurrence, beforeIndex) => {
+          const unchangedRootRanges = afterWriterOccurrences.flatMap((candidate) => {
+            if (
+              candidate.target.clientID !== occurrence.target.clientID ||
+              candidate.target.clock - candidate.root.clock !==
+                occurrence.target.clock - occurrence.root.clock ||
+              candidate.finalRendering !== occurrence.finalRendering
+            ) {
+              return [];
+            }
+            return intersectLineageRanges([occurrence.root], [candidate.root]);
+          });
+          const mappingChanged =
+            subtractLineageRanges([occurrence.root], unchangedRootRanges).length > 0;
+          const orderChanged =
+            afterWriterOrder.get(occurrenceMappingKey(occurrence)) !== beforeIndex;
+          return mappingChanged || orderChanged ? [occurrence.finalRendering] : [];
+        }),
       );
       const writerTouchedIdentities = new Set(
         before.flatMap((block) =>
@@ -424,6 +447,18 @@ export function createBranchPushTransition(input: {
     } finally {
       afterDoc.destroy();
     }
+  }
+
+  function occurrenceMappingKey(occurrence: VisibleProseOccurrence): string {
+    return [
+      occurrence.root.clientID,
+      occurrence.root.clock,
+      occurrence.root.length,
+      occurrence.target.clientID,
+      occurrence.target.clock,
+      occurrence.target.length,
+      occurrence.finalRendering,
+    ].join(":");
   }
 
   async function settle(inputSettlement: {
