@@ -18,22 +18,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { createCollabDomain } = await import("../../../../../../domains/collab/composition.js");
+    const { createCollabDomain } = await import("../../domains/collab/composition.js");
     const { createProductionUnifiedContextPortFactory } = await import(
-      "../../../../../../domains/context/unified-context-port-factory.js"
+      "../../domains/context/unified-context-port-factory.js"
     );
     const { createDrizzleProjectBootstrapRepository } = await import(
-      "../../../../../../domains/projects/index.js"
+      "../../domains/projects/index.js"
     );
-    const { truncateDrizzleTables } = await import(
-      "../../../../../../test-support/drizzle-reset.js"
+    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { createUntitledContextDocument } = await import(
+      "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
-    const { createUntitledContextDocument } = await import("./create-untitled.post.js");
-    const { commitContextMove, parseContextMove } = await import(
-      "../../../../../../lib/context-move-route.js"
-    );
+    const { commitContextMove, parseContextMove } = await import("../context-move-route.js");
     const moveContextEntry = (input: {
-      port: import("../../../../../../domains/context/index.js").ContextPort;
+      port: import("../../domains/context/index.js").ContextPort;
       userId: string;
       sourceScheme: string;
       body: unknown;

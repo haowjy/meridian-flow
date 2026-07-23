@@ -67,9 +67,9 @@ workarounds. Don't explain what the code does; explain why it's surprising.
 
 **Debugging.** Temporary console probes must use the marked convention in
 [docs/debugging.md](docs/debugging.md) and be deleted before push. Server
-diagnostics go through `EventSink`; structured JSONL lands in
-`logs/events/*.jsonl` in dev. Browser probe sessions have additional tooling
-documented in the same file.
+diagnostics go through `EventSink` and are queryable in dev — endpoints,
+filters, and `jq`/curl workflows are documented in the same file, along with
+browser probe tooling.
 
 
 ## Documentation

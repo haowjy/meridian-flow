@@ -17,7 +17,7 @@ vi.mock("nitro/h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
   getRouterParam: (_event: unknown, name: string) => (name === "threadId" ? "thread-1" : "trail-1"),
 }));
-vi.mock("../../../../../lib/auth-gate.js", () => ({
+vi.mock("../auth-gate.js", () => ({
   requireAppUser: async () => ({
     user: { userId: "user-1" },
     app: {
@@ -27,11 +27,10 @@ vi.mock("../../../../../lib/auth-gate.js", () => ({
     },
   }),
 }));
-vi.mock("../../../../../domains/threads/index.js", () => ({ requireThreadOwner: vi.fn() }));
+vi.mock("../../domains/threads/index.js", () => ({ requireThreadOwner: vi.fn() }));
 
-const handler = (await import("./[trailId].get.js")).default as (
-  event: unknown,
-) => Promise<unknown>;
+const handler = (await import("../../routes/api/threads/[threadId]/change-trails/[trailId].get.js"))
+  .default as (event: unknown) => Promise<unknown>;
 
 it("returns durable captured detail with the unavailable marker after hard deletion", async () => {
   await expect(handler({})).resolves.toEqual({

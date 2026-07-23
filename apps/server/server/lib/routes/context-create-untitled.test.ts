@@ -1,7 +1,10 @@
 /** Frozen HTTP meeting-point contract for client-first untitled materialization. */
 import { describe, expect, it, vi } from "vitest";
-import type { ContextPort } from "../../../../../../domains/context/index.js";
-import { createUntitledContextDocument, parseCreateUntitledBody } from "./create-untitled.post.js";
+import type { ContextPort } from "../../domains/context/index.js";
+import {
+  createUntitledContextDocument,
+  parseCreateUntitledBody,
+} from "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000101";
 
