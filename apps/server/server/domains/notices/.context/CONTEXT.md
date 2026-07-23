@@ -1,16 +1,13 @@
-# notices — durable safety-outcome delivery
+# notices — durable model-context delivery
 
-Safety notices are durable queue records with independent model and writer
-delivery state. They communicate safety outcomes without becoming conversation
-turns or changing the thread's logical head.
+Notices are durable queue records injected into model context. They communicate
+runtime outcomes without becoming conversation turns or changing the thread's
+logical head.
 
 ## Port contract
 
-`NoticePort` records a typed `NoticeInput`, destructively drains model delivery
-for a thread plus its active documents, destructively drains writer delivery for
-a document, and publishes writer-visible events to live transport subscribers.
-Model and writer consumption are independent: delivering to one audience does
-not consume the other's pending row.
+`NoticePort` records a typed `NoticeInput` and destructively drains model
+delivery for a thread plus its active documents.
 
 Document-scoped model notices create per-thread delivery rows when a thread
 drains with that document active. Results are ordered by creation time and
@@ -19,17 +16,10 @@ notice ID. The orchestrator drains immediately before every
 assembly. No notice is stored as a turn or block, rendered by `buildContext`, or
 allowed to own `activeLeafTurnId`.
 
-Writer consumption cannot close a document-scoped notice while an active
-thread still lacks a model-delivery row. The retention check uses the threads
-domain's canonical active-document resolver, so explicit attachments and tool
-touches have identical fan-out semantics. Document notices without a writer
-channel remain retained for threads that attach after earlier model drains;
-expiry, if introduced, is a separate policy.
-
-Writer-visible notices are broadcast as stateless `safety_notice` WebSocket
-messages. The transport drains writer delivery only after broadcasting to an
-active Hocuspocus document. With no connected document, the durable row remains
-pending for later delivery.
+The retention check uses the threads domain's canonical active-document
+resolver, so explicit attachments and tool touches have identical fan-out
+semantics. Document notices remain retained for threads that attach after
+earlier model drains; expiry, if introduced, is a separate policy.
 
 ## Hash/body invariant
 

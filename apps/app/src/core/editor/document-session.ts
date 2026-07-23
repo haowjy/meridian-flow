@@ -24,11 +24,7 @@
  *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  */
-import {
-  parseYjsRoomName,
-  type SafetyNoticeWsMessage,
-  type YjsRoomName,
-} from "@meridian/contracts/protocol";
+import { parseYjsRoomName, type YjsRoomName } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
@@ -87,7 +83,6 @@ export type DocumentSessionSnapshot = {
   status: DocumentSessionStatus;
   connectionState: ConnectionState | null;
   localPersistenceSynced: boolean;
-  safetyNotice: SafetyNoticeWsMessage | null;
 };
 
 /**
@@ -118,7 +113,6 @@ export type DocumentSessionTransportProvider = {
    * and on every subsequent change. Returns an unsubscribe function.
    */
   subscribeStatus?: (listener: (state: ConnectionState) => void) => () => void;
-  subscribeSafetyNotices?: (listener: (notice: SafetyNoticeWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
 };
 
@@ -160,7 +154,6 @@ export class DocumentSession {
   private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
-  private unsubscribeSafetyNotices: (() => void) | null = null;
   private destroyed = false;
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
@@ -173,7 +166,6 @@ export class DocumentSession {
    * distinguish "connected & synced" from "disconnected" after that.
    */
   private transportState: ConnectionState | null = null;
-  private safetyNotice: SafetyNoticeWsMessage | null = null;
   private presenceSuspendDepth = 0;
   private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
   private readonly localPersistenceSyncedPromise: Promise<void>;
@@ -247,12 +239,6 @@ export class DocumentSession {
         this.transportState = state;
         this.recomputeStatus();
       }) ?? null;
-    this.unsubscribeSafetyNotices =
-      this.transportProvider.subscribeSafetyNotices?.((notice) => {
-        if (notice.documentId !== this.documentId) return;
-        this.safetyNotice = notice;
-        this.emit();
-      }) ?? null;
     void this.watchTransportSync(this.transportProvider);
     void this.watchTransportDurableSync(this.transportProvider);
     this.recomputeStatus();
@@ -266,9 +252,7 @@ export class DocumentSession {
     }
     const previous = this.transportProvider;
     this.unsubscribeTransportStatus?.();
-    this.unsubscribeSafetyNotices?.();
     this.unsubscribeTransportStatus = null;
-    this.unsubscribeSafetyNotices = null;
     this.transportProvider = null;
     this.transportState = null;
     this.transportInitialSyncComplete = false;
@@ -304,14 +288,7 @@ export class DocumentSession {
       status: this.status,
       connectionState: this.transportState,
       localPersistenceSynced: this.localPersistenceSynced,
-      safetyNotice: this.safetyNotice,
     };
-  }
-
-  dismissSafetyNotice(): void {
-    if (!this.safetyNotice) return;
-    this.safetyNotice = null;
-    this.emit();
   }
 
   subscribe(listener: Listener): () => void {
@@ -447,7 +424,6 @@ export class DocumentSession {
     removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
 
     this.unsubscribeTransportStatus?.();
-    this.unsubscribeSafetyNotices?.();
     await this.transportProvider?.destroy();
     if (options.clearPersistence) {
       await this.persistence?.clearData();

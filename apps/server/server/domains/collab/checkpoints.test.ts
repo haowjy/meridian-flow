@@ -115,12 +115,6 @@ describe("checkpoint restore notices", () => {
         async drainForModelContext() {
           return [];
         },
-        async drainForWriter() {
-          return [];
-        },
-        subscribeWriterVisible() {
-          return () => {};
-        },
       },
       model,
       codec,
@@ -131,7 +125,6 @@ describe("checkpoint restore notices", () => {
       expect.objectContaining({
         kind: "checkpoint_sweep",
         scope: { kind: "document", documentId: DOC_ID },
-        writerVisible: true,
         data: expect.objectContaining({
           beforeContentRef: 42,
           sweptBlockHashes: expect.any(Array),

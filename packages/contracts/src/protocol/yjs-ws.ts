@@ -12,18 +12,6 @@ export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }
   | { kind: "branch"; branchId: string; generation: number };
 
-export interface SafetyNoticeWsMessage {
-  type: "safety_notice";
-  documentId: DocumentId;
-  kind: string;
-  message: string;
-  data: Record<string, unknown>;
-}
-
-export function encodeSafetyNoticeWsMessage(message: Omit<SafetyNoticeWsMessage, "type">): string {
-  return JSON.stringify({ type: "safety_notice", ...message } satisfies SafetyNoticeWsMessage);
-}
-
 export function yjsWsPath(): string {
   return YJS_WS_PATH_PREFIX;
 }

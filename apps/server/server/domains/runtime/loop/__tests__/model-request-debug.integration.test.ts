@@ -74,16 +74,9 @@ describe("orchestrator model-request debug capture", () => {
                 scope: { kind: "thread" as const, threadId: thread.id },
                 message: "",
                 data: { documentNames: ["chapter-debug"] },
-                writerVisible: false,
                 createdAt: new Date("2026-07-10T00:00:00.000Z"),
               },
             ];
-          },
-          async drainForWriter() {
-            return [];
-          },
-          subscribeWriterVisible() {
-            return () => {};
           },
         },
         projectPreferences: {

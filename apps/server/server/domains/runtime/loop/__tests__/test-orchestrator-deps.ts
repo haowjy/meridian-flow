@@ -103,22 +103,12 @@ export function createTestOrchestratorDeps(
 
 export function createTestNoticePort(initial: Notice[] = []): NoticePort & { rows: Notice[] } {
   const rows = [...initial];
-  const listeners = new Set<Parameters<NoticePort["subscribeWriterVisible"]>[0]>();
   let nextId = Math.max(0, ...rows.map(({ id }) => id)) + 1;
   return {
     rows,
     async record(input) {
       const notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
-      if (!input.writerVisible || typeof input.data.documentId !== "string") return;
-      for (const listener of listeners) {
-        listener({
-          documentId: input.data.documentId,
-          kind: input.kind,
-          message: input.message,
-          data: input.data,
-        });
-      }
     },
     async drainForModelContext(threadId, activeDocumentIds) {
       const consumed = rows.filter((notice) =>
@@ -128,17 +118,6 @@ export function createTestNoticePort(initial: Notice[] = []): NoticePort & { row
       );
       for (const notice of consumed) rows.splice(rows.indexOf(notice), 1);
       return consumed;
-    },
-    async drainForWriter(documentId) {
-      const consumed = rows.filter(
-        (notice) => notice.writerVisible && notice.data.documentId === documentId,
-      );
-      for (const notice of consumed) rows.splice(rows.indexOf(notice), 1);
-      return consumed;
-    },
-    subscribeWriterVisible(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
     },
   };
 }

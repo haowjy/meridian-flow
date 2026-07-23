@@ -747,7 +747,6 @@ describe("runtime orchestrator behavior", () => {
           uri: "manuscript://chapter-1.md",
           direction: "undo",
         },
-        writerVisible: false,
         createdAt: new Date("2026-06-27T00:00:00.000Z"),
       },
     ]);
@@ -779,7 +778,6 @@ describe("runtime orchestrator behavior", () => {
               capturedDeletedBodies: [{ hash: "hash-swept", body: "Writer body." }],
               beforeContentRef: 42,
             },
-            writerVisible: true,
           });
           return { status: "committed", concurrentEdits: [] };
         },

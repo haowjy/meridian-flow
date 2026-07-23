@@ -17,12 +17,6 @@ describe("collab safety notices", () => {
         async drainForModelContext() {
           return [];
         },
-        async drainForWriter() {
-          return [];
-        },
-        subscribeWriterVisible() {
-          return () => {};
-        },
       },
       documentUriResolver: async () => "manuscript://chapter-one.md",
     });
@@ -54,12 +48,6 @@ describe("collab safety notices", () => {
         async drainForModelContext() {
           return [];
         },
-        async drainForWriter() {
-          return [];
-        },
-        subscribeWriterVisible() {
-          return () => {};
-        },
       },
       resolveDocumentUri: async () => "manuscript://arc/chapter-one.md",
       threadId: "thread-1",
@@ -84,7 +72,6 @@ describe("collab safety notices", () => {
         capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
         beforeContentRef: 42,
       },
-      writerVisible: true,
     });
   });
 
@@ -95,12 +82,6 @@ describe("collab safety notices", () => {
         record,
         async drainForModelContext() {
           return [];
-        },
-        async drainForWriter() {
-          return [];
-        },
-        subscribeWriterVisible() {
-          return () => {};
         },
       },
       resolveDocumentUri: async (documentId) =>
@@ -120,7 +101,6 @@ describe("collab safety notices", () => {
         documentIds: ["document-1", "document-2"],
         documentNames: ["chapter-one", "chapter-two"],
       },
-      writerVisible: false,
     });
   });
 
@@ -149,12 +129,6 @@ function noticePort(record: NoticePort["record"]): NoticePort {
     record,
     async drainForModelContext() {
       return [];
-    },
-    async drainForWriter() {
-      return [];
-    },
-    subscribeWriterVisible() {
-      return () => {};
     },
   };
 }

@@ -948,7 +948,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
                 kind: "document",
                 documentId: inputRecord.prepared.prepared.branch.documentId,
               },
-              writerVisible: true,
               message:
                 "AI applied changes that removed words not yet synced to the agent — View change",
               data: {

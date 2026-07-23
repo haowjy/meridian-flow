@@ -177,7 +177,6 @@ export async function recordLateSweepNotice(input: {
       capturedDeletedBodies: input.lateSweep.capturedDeletedBodies ?? [],
       beforeContentRef: input.lateSweep.beforeContentRef,
     },
-    writerVisible: true,
   });
 }
 
@@ -199,7 +198,6 @@ export async function recordAwarenessDegradedNotice(input: {
     message:
       "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
     data: { documentIds: [...input.documentIds], documentNames },
-    writerVisible: false,
   });
 }
 
@@ -390,7 +388,6 @@ export function createReversalNoticePort(deps: {
           sweptContent: input.sweptContent,
           beforeContentRef: input.beforeContentRef,
         },
-        writerVisible: false,
       });
     },
     async recordLateSweep(input) {
