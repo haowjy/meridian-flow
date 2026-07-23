@@ -117,6 +117,10 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
+- **Provider-history completeness** — canonical history projection preserves
+  persisted `tool_use` intent and synthesizes transient error results for calls
+  missing results in the immediately following tool-role group. Repairs are
+  never persisted and never rerun tools.
 - **Safety notices** — before every provider stream, `runTurn` drains the single
   notice port for the thread and its active documents, then injects notices as a
   transient system message. Notices never enter the turn graph. Undo/redo uses
