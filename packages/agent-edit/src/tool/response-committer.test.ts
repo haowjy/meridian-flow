@@ -130,7 +130,7 @@ describe("response committer", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Writer replacement."]);
   });
 
-  it("S1: stays silent when the authoring response observed the current passage", async () => {
+  it("reports and captures destroyed writer content even when the response observed it", async () => {
     const ctx = harness({ "chapter.md": "Observed passage.\n\nKeep." });
     const responseId = "response-s1-observed";
     await ctx.core.write(
@@ -142,7 +142,13 @@ describe("response committer", () => {
 
     expect(result).toMatchObject({ status: "committed" });
     if (result.status !== "committed") throw new Error("expected committed response");
-    expect(result.documents[0]?.lateSweep).toBeUndefined();
+    expect(result.documents[0]?.lateSweep).toMatchObject({
+      capturedDeletedBodies: [
+        expect.objectContaining({
+          body: "Observed passage.",
+        }),
+      ],
+    });
     expect(blockTexts(ctx.liveDoc("chapter.md"))).not.toContain("Observed passage.");
   });
 
@@ -176,7 +182,7 @@ describe("response committer", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["", "Keep."]);
   });
 
-  it("stays silent when a later response observed a prior response echo", async () => {
+  it("keeps agent-only destruction silent even when a later response observed it", async () => {
     const snapshots = new Map<string, ObservationSnapshot>();
     const ctx = harness(
       { "chapter.md": "Opening." },
@@ -301,6 +307,7 @@ describe("response committer", () => {
       },
     );
     const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const secondDeletedHash = hashAt(ctx.liveDoc("chapter.md"), 1);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent note." },
@@ -327,8 +334,11 @@ describe("response committer", () => {
     if (result.status !== "committed") throw new Error("expected committed response");
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect(result.documents[0]?.lateSweep).toEqual({
-      affectedBlockHashes: [deletedHash],
-      capturedDeletedBodies: [{ hash: deletedHash, body: "Writer: Alpha." }],
+      affectedBlockHashes: [secondDeletedHash, deletedHash],
+      capturedDeletedBodies: [
+        { hash: secondDeletedHash, body: "Beta." },
+        { hash: deletedHash, body: "Writer: Alpha." },
+      ],
       sweptContent: true,
       beforeContentRef: null,
     });
@@ -395,6 +405,7 @@ describe("response committer", () => {
       },
     );
     const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const secondDeletedHash = hashAt(ctx.liveDoc("chapter.md"), 1);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
@@ -414,8 +425,11 @@ describe("response committer", () => {
         {
           documentId: "chapter.md",
           lateSweep: {
-            affectedBlockHashes: expect.arrayContaining([deletedHash]),
-            capturedDeletedBodies: [{ hash: deletedHash, body: "Writer: Alpha." }],
+            affectedBlockHashes: expect.arrayContaining([deletedHash, secondDeletedHash]),
+            capturedDeletedBodies: expect.arrayContaining([
+              { hash: deletedHash, body: "Writer: Alpha." },
+              { hash: secondDeletedHash, body: "Beta." },
+            ]),
             sweptContent: true,
           },
         },

@@ -3,7 +3,6 @@ import {
   type AgentEditCodec,
   getBlockItemId,
   type ObservationSnapshotStore,
-  observationCoversRendering,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -98,21 +97,6 @@ export function createOfflineReconciliation(deps: {
             }
             const mergedBlock = findIdentity(convergedBlocks, affected);
             if (mergedBlock?.renderedContent === writerBlock.renderedContent) continue;
-            const observation = await lookupObservation(
-              deps.observations,
-              row.meta.authoringResponseId,
-              input.documentId,
-              writerBlock,
-            );
-            if (
-              observationCoversRendering({
-                observation,
-                renderedContent: writerBlock.renderedContent,
-                digestRenderedContent: deps.digestRenderedContent,
-              })
-            ) {
-              continue;
-            }
             const turnId = row.meta.actorTurnId;
             const threadId = turnId ? await deps.resolveThreadId(turnId) : null;
             if (!turnId || !threadId) {
@@ -252,23 +236,6 @@ function findIdentity(
 ): SnapshotBlock | undefined {
   const key = identityKey(target);
   return blocks.find((block) => identityKey(block) === key);
-}
-
-async function lookupObservation(
-  store: ObservationSnapshotStore,
-  responseId: string,
-  documentId: string,
-  block: SnapshotBlock,
-) {
-  const snapshot = await store.load(responseId);
-  return (
-    snapshot?.entries.find(
-      (entry) =>
-        entry.documentId === documentId &&
-        entry.clientID === block.clientID &&
-        entry.clock === block.clock,
-    )?.value ?? null
-  );
 }
 
 function navigation(input: {

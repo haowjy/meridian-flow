@@ -4,11 +4,9 @@ import {
   createAgentEditCodec,
   type DocumentCoordinator,
   diffSnapshots,
-  digestRenderedContent,
   lineageCovered,
   type ObservationEntry,
   type ObservationSnapshotStore,
-  observationCoversRendering,
   parseSealedWriterLineageV3,
   type ResponseCausalCutV1,
   type SettlementLineageEvidenceV2,
@@ -740,18 +738,11 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               : "Apply would delete or overwrite live content changed by the writer after this draft began.",
         };
       });
-      const observationBlindConflicts = await unobservedConflictBlocks({
-        documentId: phase.branch.documentId,
-        conflicts,
-        authoringResponseIdsByBlock: attribution.authoringResponseIdsByBlock,
-        beforeByHash,
-        resurrectionBodies,
-      });
-      // Draft bases govern Apply refusal only. Commit-sealed sweep evidence is an
-      // observation fact and remains trail-worthy even when the pulled writer row
-      // is at or before every selected draft row's base.
       const blindConflictedBlocks = [
-        ...new Set([...observationBlindConflicts, ...sealedSweptBlocks.map((block) => block.hash)]),
+        ...new Set([
+          ...conflicts.map((conflict) => conflict.blockId),
+          ...sealedSweptBlocks.map((block) => block.hash),
+        ]),
       ].sort();
       const conflictedBlocks = allConflicts;
       const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
@@ -843,54 +834,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       afterDoc.destroy();
       lockCutDoc.destroy();
     }
-  }
-
-  async function unobservedConflictBlocks(inputConflict: {
-    documentId: DocumentId;
-    conflicts: readonly DraftApplyConflict[];
-    authoringResponseIdsByBlock: ReadonlyMap<string, readonly string[]>;
-    beforeByHash: ReadonlyMap<string, ReturnType<typeof snapshotBlocks>[number]>;
-    resurrectionBodies: ReadonlyMap<string, ReturnType<typeof snapshotBlocks>[number]>;
-  }): Promise<string[]> {
-    if (!input.observations) return inputConflict.conflicts.map((conflict) => conflict.blockId);
-    const responseIds = [
-      ...new Set([...inputConflict.authoringResponseIdsByBlock.values()].flat()),
-    ];
-    const snapshots = await Promise.all(responseIds.map((id) => input.observations?.load(id)));
-    const blind: string[] = [];
-    for (const conflict of inputConflict.conflicts) {
-      const conflictResponseIds = new Set(
-        inputConflict.authoringResponseIdsByBlock.get(conflict.blockId) ?? [],
-      );
-      const block =
-        inputConflict.resurrectionBodies.get(conflict.blockId) ??
-        inputConflict.beforeByHash.get(conflict.blockId);
-      if (
-        !block ||
-        block.clientID === undefined ||
-        block.clock === undefined ||
-        block.renderedContent === undefined
-      ) {
-        blind.push(conflict.blockId);
-        continue;
-      }
-      const observed = snapshots.some((snapshot) => {
-        if (!snapshot || !conflictResponseIds.has(snapshot.responseId)) return false;
-        const value = snapshot?.entries.find(
-          (entry) =>
-            entry.documentId === inputConflict.documentId &&
-            entry.clientID === block.clientID &&
-            entry.clock === block.clock,
-        )?.value;
-        return observationCoversRendering({
-          observation: value ?? null,
-          renderedContent: block.renderedContent as string,
-          digestRenderedContent,
-        });
-      });
-      if (!observed) blind.push(conflict.blockId);
-    }
-    return blind;
   }
 
   async function pushSweptTrail(

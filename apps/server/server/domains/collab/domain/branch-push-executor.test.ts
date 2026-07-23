@@ -950,7 +950,7 @@ describe("createBranchPushService", () => {
     } else {
       expect(commitPush).toHaveBeenCalledOnce();
       expect(row.status).toBe("pushed");
-      if (pushKind === "auto" && !observed) {
+      if (pushKind === "auto") {
         expect(result).toMatchObject({
           status: "pushed",
           swept: {
@@ -972,10 +972,6 @@ describe("createBranchPushService", () => {
             }),
           }),
         );
-      } else if (pushKind === "auto") {
-        expect(result).toMatchObject({ status: "pushed" });
-        expect(result.status === "pushed" ? result.swept : undefined).toBeUndefined();
-        expect(notices.record).not.toHaveBeenCalled();
       }
     }
     branchDoc.destroy();

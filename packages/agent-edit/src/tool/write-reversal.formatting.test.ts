@@ -44,7 +44,7 @@ const noInternalIdCases: NoInternalIdCase[] = [
     },
     run: ({ ctx }) => ctx.core.write({ command: "redo", file: "chapter.md" }, context),
     assertExtra: (_state, text) => {
-      expect(text.split("\n").slice(0, 3)).toEqual(["status: reversed", "redo: 1 edit(s)", ""]);
+      expect(text.split("\n").slice(0, 3)).toEqual(["status: reconciled", "redo: 1 edit(s)", ""]);
     },
   },
   {

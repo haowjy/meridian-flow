@@ -131,7 +131,7 @@ describe("mutation commit", () => {
     expect(Object.isFrozen(committed.observationCut.liveBefore)).toBe(true);
   });
 
-  it("S9: does not report a destructive mutation over another agent's block", async () => {
+  it("reports writer roots when an unjournaled peer edit claims agent origin", async () => {
     const fixture = destructiveFixture();
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
@@ -145,7 +145,9 @@ describe("mutation commit", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected commit success");
-    expect(result.lateSweep).toBeUndefined();
+    expect(result.lateSweep).toMatchObject({
+      capturedDeletedBodies: [{ body: "Peer: Alpha." }],
+    });
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
@@ -360,7 +362,7 @@ describe("mutation commit", () => {
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
-  it("does not report a late sweep when another agent edits the deleted block", async () => {
+  it("reports an unjournaled peer edit conservatively despite its claimed agent origin", async () => {
     const fixture = destructiveFixture();
     const preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
       fixture.mutationCommit.captureCommitPreflight(liveDoc, fixture.input),
@@ -376,7 +378,9 @@ describe("mutation commit", () => {
       ),
     );
 
-    expect(applied.lateSweep).toBeUndefined();
+    expect(applied.lateSweep).toMatchObject({
+      capturedDeletedBodies: [{ body: "Peer: Alpha." }],
+    });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(fixture.journal.recordedSealedLineage()).toEqual([
       expect.objectContaining({
