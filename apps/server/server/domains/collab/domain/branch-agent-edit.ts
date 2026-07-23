@@ -328,7 +328,11 @@ export function createBranchAgentEditJournal(input: {
       generation: workDraft.generation,
     });
     const ownsHistory = rows.some(
-      (row) => row.source === "agent" && row.threadId === input.threadId && row.wId !== null,
+      (row) =>
+        row.status === "active" &&
+        row.source === "agent" &&
+        row.threadId === input.threadId &&
+        row.wId !== null,
     );
     return ownsHistory
       ? {
