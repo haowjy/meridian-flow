@@ -7,3 +7,10 @@
   + branch -D. Teach the resolver to use the PR's merge status via `gh`
   (or detect squash-merge content equivalence) instead of relying on git
   merge ancestry.
+
+- tools/dev/prune-worktrees.ts: `--auto` also misses closed-not-merged PRs
+  and integration-lane branches that were squash-merged into a parent feature
+  branch (not main). Hit 2026-07-23: ~176 stale test databases and 5
+  merged-lane worktrees required manual cleanup. The resolver should query
+  PR merge status via `gh` for the general case, not just `git branch
+  --merged main`.
