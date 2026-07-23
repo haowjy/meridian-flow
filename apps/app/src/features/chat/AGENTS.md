@@ -81,7 +81,8 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
+| `useDraftReviewController.ts` | One client review-session owner for UI state, editor coordination, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
+| `draft-apply-disposition.ts` | Shared revision acquisition and response policy for whole-draft and per-card Apply |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |

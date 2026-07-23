@@ -80,6 +80,9 @@ The composer-attached `DraftDock`, dock `Changes` view, and editor
 `DraftReviewHeader` share one server-backed draft state through
 `DraftReviewProvider`. Client review-session state has one owner:
 `useDraftReviewController` plus `draft-review-controller-transitions.ts`.
+Whole-draft and per-card Apply share revision acquisition and response policy
+through `draft-apply-disposition.ts`; the controller only coordinates that
+disposition with UI state and editor tabs.
 
 That session owns active inline selection, stale-draft handling,
 closure/discard confirmations, inline messages, discard timers, and the inline
