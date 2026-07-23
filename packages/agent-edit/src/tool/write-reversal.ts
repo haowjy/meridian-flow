@@ -21,14 +21,12 @@ import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type {
-  CapturedConcurrentDetection,
   DestructiveSweepReport,
   MutationCommit,
   SyncedMutationSummary,
 } from "./mutation-commit.js";
 import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import { formatSafetyRejection } from "./safety-rejection.js";
 import type {
   InteractionContext,
   MutationActor,
@@ -485,49 +483,18 @@ export function createWriteReversal(deps: {
       input.commandName,
       input.docId,
       async (liveDoc) => {
-        let preflightRejected = false;
-        let capturedPreflight: CapturedConcurrentDetection | undefined;
-        for (const prepared of input.plans) {
-          const safetyInput = {
-            docId: input.docId,
-            runtime: input.runtime,
-            actor: reversalMutationActor(input.actor, input.session, prepared.plan),
-            afterOwnVector: Y.encodeStateVector(input.runtime.doc),
-            deletedHashes: prepared.ownDiff.deleted,
-            touchedHashes: new Set([...prepared.ownDiff.changed, ...prepared.ownDiff.inserted]),
-            interactionContext: input.interactionContext,
-            preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
-            ownTurnId: prepared.plan.turnId ?? undefined,
-          };
-          const gate = await mutationCommit.preflightSafetyGate(liveDoc, safetyInput);
-          if (gate.verdict === "reject") {
-            if (input.actor.type === "agent") {
-              const concurrentSnapshot = snapshotFromYUpdate(gate.concurrent.detectionSnapshot);
-              try {
-                return formatSafetyRejection({
-                  docId: input.docId,
-                  action: input.direction,
-                  gate,
-                  summary: mutationCommit.summarizeMutationEcho(
-                    {
-                      runtime: input.runtime,
-                      before,
-                      touchedHashes: safetyInput.touchedHashes,
-                      deletedHashes: safetyInput.deletedHashes,
-                      afterSnapshot: snapshotBlocks(toDocHandle(concurrentSnapshot), model, codec),
-                    },
-                    gate.concurrent.detection,
-                  ),
-                });
-              } finally {
-                concurrentSnapshot.destroy();
-              }
-            }
-            preflightRejected = true;
-          } else {
-            capturedPreflight ??= gate.concurrent;
-          }
-        }
+        const first = input.plans[0];
+        if (!first) throw new Error("Prepared reversal group must not be empty");
+        const capturedPreflight = await mutationCommit.captureCommitPreflight(liveDoc, {
+          docId: input.docId,
+          runtime: input.runtime,
+          actor: reversalMutationActor(input.actor, input.session, first.plan),
+          deletedHashes: first.ownDiff.deleted,
+          touchedHashes: new Set([...first.ownDiff.changed, ...first.ownDiff.inserted]),
+          interactionContext: input.interactionContext,
+          preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
+          ownTurnId: first.plan.turnId ?? undefined,
+        });
 
         // INVARIANT (LOCK-WS): capture the live Y.Doc synchronously before the
         // durable reversal write yields to persistence and WebSocket traffic.
@@ -554,17 +521,16 @@ export function createWriteReversal(deps: {
           {
             docId: input.docId,
             runtime: input.runtime,
-            actor: reversalMutationActor(input.actor, input.session, input.plans[0]?.plan),
-            afterOwnVector: Y.encodeStateVector(input.runtime.doc),
+            actor: reversalMutationActor(input.actor, input.session, first.plan),
             deletedHashes,
             touchedHashes,
             interactionContext: input.interactionContext,
             preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
-            ownTurnId: input.plans[0]?.plan.turnId ?? undefined,
+            ownTurnId: first.plan.turnId ?? undefined,
             update,
-            liveOrigin: reversalOrigin(input.actor, input.plans[0]?.plan),
+            liveOrigin: reversalOrigin(input.actor, first.plan),
           },
-          preflightRejected ? undefined : capturedPreflight,
+          capturedPreflight,
         );
         const lateSweep = mergeLateSweepReports(
           persistWindowAffectedHashes.length > 0
@@ -587,9 +553,9 @@ export function createWriteReversal(deps: {
             Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
           }
         }
-        Y.applyUpdate(input.runtime.doc, update, reversalOrigin(input.actor, input.plans[0]?.plan));
+        Y.applyUpdate(input.runtime.doc, update, reversalOrigin(input.actor, first.plan));
 
-        const sweptContent = preflightRejected || lateSweep !== undefined;
+        const sweptContent = lateSweep !== undefined;
         if (lateSweep) {
           await recordLateSweep({
             threadId: input.session.threadId,
@@ -1019,12 +985,6 @@ function docFromSnapshot(
 function cloneDoc(source: Y.Doc): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
-  return doc;
-}
-
-function snapshotFromYUpdate(update: Uint8Array): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  Y.applyUpdate(doc, update);
   return doc;
 }
 

@@ -1,8 +1,4 @@
-import type {
-  AgentEditCore,
-  ResponseCommitResult,
-  ResponseCommitSuccessResult,
-} from "@meridian/agent-edit";
+import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
@@ -16,7 +12,7 @@ import {
 
 type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unknown>;
 
-function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditCore {
+function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): AgentEditCore {
   return {
     write: async () => ({
       command: "read",
@@ -98,53 +94,9 @@ function noopResponseFinalizer() {
 }
 
 describe("agent-edit response write lifecycle", () => {
-  it("transports commit rejection", async () => {
-    const lifecycle = createAgentEditResponseWriteLifecycle({
-      documentSync: {
-        agentEdit: () =>
-          asThreadPeerAgentEditCore(
-            agentEditCoreWithCommit({
-              status: "rejected",
-              responseId: "response-rejected",
-              rejections: [
-                {
-                  documentId: "doc-1",
-                  conflictedBlockHashes: ["hash-1"],
-                  affectedWriteIds: ["write-1"],
-                },
-              ],
-            }),
-          ),
-        refreshDocumentProjection: async () => {},
-        finalizeResponseCommit: async () => ({
-          status: "rejected",
-          responseId: "response-rejected",
-          rejections: [
-            {
-              documentId: "doc-1",
-              conflictedBlockHashes: ["hash-1"],
-              affectedWriteIds: ["write-1"],
-            },
-          ],
-          stagedCreates: { committed: [], discarded: [] },
-        }),
-        finalizeResponseRollback: async () => ({
-          stagedCreates: { committed: [], discarded: [] },
-        }),
-      },
-    });
-
-    await expect(
-      lifecycle.commitResponse("response-rejected", {
-        threadId: "thread-1",
-        turnId: "turn-1",
-      }),
-    ).resolves.toMatchObject({ status: "rejected", responseId: "response-rejected" });
-  });
-
   it("commits response through the collab finalizer and maps concurrent edits", async () => {
     const finalized: string[] = [];
-    const commitResult: ResponseCommitResult = {
+    const commitResult: ResponseCommitSuccessResult = {
       status: "committed",
       responseId: "response-1",
       documentCount: 1,

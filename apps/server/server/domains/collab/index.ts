@@ -1,6 +1,6 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { ConcurrentEditInfo, ResponseCommitDocumentRejection } from "@meridian/agent-edit";
+import type { ConcurrentEditInfo } from "@meridian/agent-edit";
 import type { TrailForwardActionResult } from "@meridian/contracts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type {
@@ -211,12 +211,6 @@ export type ResponseWriteCommitFinalizeResult =
       documents: ResponseWriteCommitDocument[];
       stagedCreates: ResponseWriteStagedCreates;
       awarenessDegraded?: boolean;
-    }
-  | {
-      status: "rejected";
-      responseId: string;
-      rejections: Array<ResponseCommitDocumentRejection & { documentName?: string }>;
-      stagedCreates: ResponseWriteStagedCreates;
     }
   | DraftClosedFinalizeResult;
 

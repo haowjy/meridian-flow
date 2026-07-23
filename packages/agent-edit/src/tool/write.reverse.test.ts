@@ -8,7 +8,7 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
-  it("denies destructive agent reversals without a sealed observation snapshot", async () => {
+  it("commits a cold destructive agent reversal without an observation snapshot", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent block." },
@@ -30,29 +30,15 @@ describe("write host reverse", () => {
         },
       ),
     ).resolves.toMatchObject({
-      status: "rejected_response_requires_reread",
-      isError: true,
-      text: expect.stringContaining("Agent block."),
-    });
-    await expect(
-      scenario.ctx.core.reverse({
-        docId: "chapter.md",
-        threadId: THREAD_ID,
-        direction: "undo",
-        selection: { kind: "latest" },
-        actor: { type: "agent", responseId: undefined },
-      }),
-    ).resolves.toMatchObject({
-      status: "rejected_response_requires_reread",
-      isError: true,
-      text: expect.stringContaining("Agent block."),
+      status: "reversed",
+      isError: false,
     });
 
-    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength);
-    expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength + 1);
+    expect(scenario.blockTexts()).toEqual(["Base."]);
   });
 
-  it("returns the buffered pre-undo safety echo instead of a blind reread refusal", async () => {
+  it("flushes and reverses a blind buffered destructive write", async () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Writer passage.\n\nKeep." },
       {
@@ -76,7 +62,7 @@ describe("write host reverse", () => {
     );
 
     expect(result).toMatchObject({
-      status: "rejected_response_requires_reread",
+      status: "reconciled",
       text: expect.stringContaining("Writer passage."),
     });
     expect(scenario.blockTexts()).toEqual(["Writer passage.", "Keep."]);

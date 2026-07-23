@@ -11,7 +11,7 @@ import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   RedoResult,
-  ResponseCommitResult,
+  ResponseCommitSuccessResult,
   ResponseRollbackResult,
   TurnRedoResult,
   TurnUndoResult,
@@ -52,7 +52,7 @@ export interface WriteTool {
   commitResponse(
     responseId: string,
     options?: import("./response-committer.js").ResponseCommitOptions,
-  ): Promise<ResponseCommitResult>;
+  ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
     responseId: string,
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,

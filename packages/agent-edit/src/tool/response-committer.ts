@@ -14,7 +14,7 @@ import { withLiveDocument } from "./coordinator.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
-import type { JournaledUpdate, MutationCommit, SafetyGateInput } from "./mutation-commit.js";
+import type { CommitPreflightInput, JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import {
   bufferedLifecycle,
   closedLifecycle,
@@ -28,14 +28,11 @@ import {
   type MutationLifecycle,
 } from "./response-lifecycle.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import { formatSafetyRejection } from "./safety-rejection.js";
 import type {
   InteractionContext,
   MutationActor,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
-  ResponseCommitRejectedResult,
-  ResponseCommitResult,
   ResponseCommitSuccessResult,
   ResponseCommitterTransition,
   ResponseCommitterTransitionDetail,
@@ -53,7 +50,7 @@ export interface ResponseCommitter {
   commitResponse(
     responseId: string,
     options?: ResponseCommitOptions,
-  ): Promise<ResponseCommitResult>;
+  ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
     responseId: string,
     options?: Pick<ResponseCommitOptions, "deferFinalization">,
@@ -73,7 +70,7 @@ export interface ResponseCommitOptions {
     abort(): void | Promise<void>;
   }): void;
   /** Host hook executed inside its response transaction after the outcome is known. */
-  beforeTransactionCommit?(result: ResponseCommitResult): void | Promise<void>;
+  beforeTransactionCommit?(result: ResponseCommitSuccessResult): void | Promise<void>;
 }
 
 export interface ResponseStagePreflightInput {
@@ -98,8 +95,6 @@ export interface ResponseStageUpdateInput {
   writeId?: string;
   writeOrdinal?: number;
   durableWriteId?: string;
-  /** Provider-visible tool call id, used when a rejected response voids staged results. */
-  toolCallId?: string;
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   touchedHashes: ReadonlySet<string>;
@@ -117,7 +112,6 @@ interface StagedResponseUpdate extends JournaledUpdate {
   writeId: string;
   writeOrdinal: number;
   durableWriteId: string;
-  toolCallId: string;
   stageSeq: number;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
@@ -157,7 +151,7 @@ interface CommittingResponseState {
   /** Immutable snapshot exclusively owned by this commit attempt. */
   buffer: ResponseBuffer;
   documents: ResponseCommitDocumentResult[];
-  promise: Promise<ResponseCommitResult>;
+  promise: Promise<ResponseCommitSuccessResult>;
 }
 
 type ResponseState =
@@ -315,7 +309,7 @@ export function createResponseCommitter(deps: {
   async function commitResponse(
     responseId: string,
     options: ResponseCommitOptions = {},
-  ): Promise<ResponseCommitResult> {
+  ): Promise<ResponseCommitSuccessResult> {
     const state = responses.get(responseId);
     if (!state) return emptyResponseCommit(responseId);
     if (state.ownership === "closed") {
@@ -328,7 +322,7 @@ export function createResponseCommitter(deps: {
       lifecycle: bufferedLifecycle(),
       buffer: snapshotResponseBuffer(state.buffer),
       documents: [],
-      promise: undefined as unknown as Promise<ResponseCommitResult>,
+      promise: undefined as unknown as Promise<ResponseCommitSuccessResult>,
     };
     owner.promise = Promise.resolve().then(() => runCommitResponse(responseId, owner, options));
     responses.set(responseId, owner);
@@ -339,7 +333,7 @@ export function createResponseCommitter(deps: {
     responseId: string,
     owner: CommittingResponseState,
     options: ResponseCommitOptions,
-  ): Promise<ResponseCommitResult> {
+  ): Promise<ResponseCommitSuccessResult> {
     const { buffer } = owner;
     const docBuffers = [...buffer.docs.values()]
       .filter((docBuffer) => docBuffer.updates.length > 0)
@@ -363,28 +357,25 @@ export function createResponseCommitter(deps: {
     let retryApplyDocument:
       | ((docBuffer: ResponseDocumentBuffer) => Promise<ResponseCommitDocumentResult>)
       | undefined;
-    let recoveryRecheckInputs: ReadonlyMap<string, SafetyGateInput> | null = null;
+    let recoveryRecheckInputs: ReadonlyMap<string, CommitPreflightInput> | null = null;
 
     try {
       const preflights = new Map<
         string,
         import("./mutation-commit.js").CapturedConcurrentDetection | undefined
       >();
-      const rejections: ResponseCommitRejectedResult["rejections"] = [];
       for (const docBuffer of docBuffers) {
         const hashes = responseHashes(docBuffer);
-        const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
-        const gate = await withLiveDocument(
+        const preflight = await withLiveDocument(
           coordinator,
           docBuffer.docId,
           docBuffer.commandName,
           docBuffer.docId,
           (liveDoc) =>
-            mutationCommit.preflightSafetyGate(liveDoc, {
+            mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
-              afterOwnVector,
               deletedHashes: hashes.deletedHashes,
               touchedHashes: hashes.touchedHashes,
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -394,66 +385,15 @@ export function createResponseCommitter(deps: {
             }),
           { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
         );
-        if (isInternalWriteResult(gate)) {
-          if (gate.status === "document_not_found" && docBuffer.createdDocumentBeforeCommit) {
+        if (isInternalWriteResult(preflight)) {
+          if (preflight.status === "document_not_found" && docBuffer.createdDocumentBeforeCommit) {
             preflights.set(docBuffer.docId, undefined);
             continue;
           }
-          throw new Error(gate.text);
+          throw new Error(preflight.text);
         }
-        if (!gate) throw new Error(`Preflight returned no result for ${docBuffer.docId}.`);
-        if (gate.verdict === "reject") {
-          const hashes = responseHashes(docBuffer);
-          rejections.push({
-            documentId: docBuffer.docId,
-            conflictedBlockHashes: gate.conflictedBlockHashes,
-            affectedWriteIds: affectedWriteIds(docBuffer, gate.conflictedBlockHashes),
-            agentResponse: formatSafetyRejection({
-              docId: docBuffer.docId,
-              action: "buffered response",
-              gate,
-              summary: mutationCommit.summarizeMutationEcho(
-                {
-                  runtime: docBuffer.runtime,
-                  before: snapshotsFromUpdate(
-                    docBuffer.updates[0]?.preOwnSnapshot ??
-                      Y.encodeStateAsUpdate(docBuffer.runtime.doc),
-                    deps.model,
-                    deps.codec,
-                  ),
-                  touchedHashes: hashes.touchedHashes,
-                  deletedHashes: hashes.deletedHashes,
-                  afterSnapshot: snapshotsFromUpdate(
-                    gate.concurrent.detectionSnapshot,
-                    deps.model,
-                    deps.codec,
-                  ),
-                },
-                gate.concurrent.detection,
-              ),
-            }),
-          });
-        } else {
-          preflights.set(docBuffer.docId, gate.concurrent);
-        }
-      }
-
-      if (rejections.length > 0) {
-        const rejectionByDocument = new Map(
-          rejections.map((rejection) => [rejection.documentId, rejection] as const),
-        );
-        const responseRejections = docBuffers.map(
-          (docBuffer): ResponseCommitRejectedResult["rejections"][number] =>
-            rejectionByDocument.get(docBuffer.docId) ?? {
-              documentId: docBuffer.docId,
-              conflictedBlockHashes: [],
-              affectedWriteIds: [],
-            },
-        );
-        await runtimeStore.evictResponseRuntimes(docBuffers);
-        emit("evicted", responseId, bufferedLifecycle(), { ...(threadId ? { threadId } : {}) });
-        finalizeClosed(responseId, owner, "rejected", null, threadId, options);
-        return { status: "rejected", responseId, rejections: responseRejections };
+        if (!preflight) throw new Error(`Preflight returned no result for ${docBuffer.docId}.`);
+        preflights.set(docBuffer.docId, preflight);
       }
 
       await deps.afterPreflight?.(responseId);
@@ -475,7 +415,6 @@ export function createResponseCommitter(deps: {
             {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
-              afterOwnVector: Y.encodeStateVector(docBuffer.runtime.doc),
               deletedHashes: new Set(hashes.deletedHashes),
               touchedHashes: new Set(hashes.touchedHashes),
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -483,7 +422,7 @@ export function createResponseCommitter(deps: {
               ownTurnId: docBuffer.updates.at(-1)?.turnId,
               actor: lastStagedUpdate(docBuffer).actor,
             },
-          ] satisfies [string, SafetyGateInput];
+          ] satisfies [string, CommitPreflightInput];
         }),
       );
       const applyDocument = async (
@@ -493,7 +432,6 @@ export function createResponseCommitter(deps: {
         if (docBuffer.ensureDocumentBeforeCommit) {
           await ensureDocument?.(docBuffer.docId);
         }
-        const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
         const hashes = responseHashes(docBuffer);
         const applied = await withLiveDocument(
@@ -507,7 +445,6 @@ export function createResponseCommitter(deps: {
               {
                 docId: docBuffer.docId,
                 runtime: docBuffer.runtime,
-                afterOwnVector,
                 deletedHashes: hashes.deletedHashes,
                 touchedHashes: hashes.touchedHashes,
                 preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -721,7 +658,7 @@ export function createResponseCommitter(deps: {
   async function recheckRecoveredDocuments(
     docBuffers: readonly ResponseDocumentBuffer[],
     knownDocuments: readonly ResponseCommitDocumentResult[],
-    inputs: ReadonlyMap<string, SafetyGateInput>,
+    inputs: ReadonlyMap<string, CommitPreflightInput>,
     recoveryBodies: ReadonlyMap<string, readonly { hash: string; body: string }[]> | null,
   ): Promise<ResponseCommitDocumentResult[]> {
     if (!recoveryBodies) throw new Error("Recovery body capture was unavailable.");
@@ -772,7 +709,7 @@ export function createResponseCommitter(deps: {
 
   async function captureRecoveryBodies(
     docBuffers: readonly ResponseDocumentBuffer[],
-    inputs: ReadonlyMap<string, SafetyGateInput>,
+    inputs: ReadonlyMap<string, CommitPreflightInput>,
   ): Promise<ReadonlyMap<string, readonly { hash: string; body: string }[]>> {
     const bodies = new Map<string, readonly { hash: string; body: string }[]>();
     for (const docBuffer of docBuffers) {
@@ -1030,7 +967,6 @@ export function createResponseCommitter(deps: {
       writeOrdinal: input.writeOrdinal ?? 0,
       durableWriteId:
         input.durableWriteId ?? `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
-      toolCallId: input.toolCallId ?? input.writeId ?? input.durableWriteId ?? "unknown-tool-call",
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
       actor: input.actor,
@@ -1228,16 +1164,6 @@ export function createResponseCommitter(deps: {
   }
 }
 
-function snapshotsFromUpdate(update: Uint8Array, model: AgentEditModel, codec: AgentEditCodec) {
-  const doc = new Y.Doc({ gc: false });
-  try {
-    Y.applyUpdate(doc, update);
-    return snapshotBlocks(toDocHandle(doc), model, codec);
-  } finally {
-    doc.destroy();
-  }
-}
-
 function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string {
   const state = detail.state === "rolledBack" ? "rolled back" : detail.state;
   const operation =
@@ -1405,18 +1331,6 @@ function responseHashes(docBuffer: ResponseDocumentBuffer): {
     for (const hash of update.deletedHashes) deletedHashes.add(hash);
   }
   return { touchedHashes, deletedHashes };
-}
-
-function affectedWriteIds(
-  docBuffer: ResponseDocumentBuffer,
-  conflictedBlockHashes: readonly string[],
-): string[] {
-  const conflicts = new Set(conflictedBlockHashes);
-  return docBuffer.updates
-    .filter((update) =>
-      [...update.touchedHashes, ...update.deletedHashes].some((hash) => conflicts.has(hash)),
-    )
-    .map((update) => update.toolCallId);
 }
 
 function mergeStagedUpdates(docBuffer: ResponseDocumentBuffer): Uint8Array {

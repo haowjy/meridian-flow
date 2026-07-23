@@ -1469,41 +1469,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
-      const stagedCreateIds = agentEditCore.stagedCreatedDocumentIds(responseId, ctx.threadId);
-      const mapResult = async (
-        result: import("@meridian/agent-edit").ResponseCommitResult,
-      ): Promise<ResponseWriteCommitFinalizeResult> => {
-        if (result.status !== "rejected") {
-          return {
-            status: "committed",
-            documents: result.documents,
-            stagedCreates: result.stagedCreates,
-            ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
-          };
-        }
-        const rejections = await Promise.all(
-          result.rejections.map(async (rejection) => {
-            const uri = await (deps.documentUriResolver ?? (async () => null))(
-              rejection.documentId,
-            );
-            return {
-              ...rejection,
-              documentName: documentTitleFromUri(uri) ?? rejection.documentId,
-            };
-          }),
-        );
-        return {
-          ...result,
-          rejections,
-          stagedCreates: { committed: [], discarded: [...stagedCreateIds] },
-        };
-      };
+      const mapResult = (
+        result: import("@meridian/agent-edit").ResponseCommitSuccessResult,
+      ): ResponseWriteCommitFinalizeResult => ({
+        status: "committed",
+        documents: result.documents,
+        stagedCreates: result.stagedCreates,
+        ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
+      });
       const result = await agentEditCore.commitResponse(responseId, {
         beforeTransactionCommit: async (commitResult) => {
-          await beforeTransactionCommit?.(await mapResult(commitResult));
+          await beforeTransactionCommit?.(mapResult(commitResult));
         },
       });
-      if (result.status === "rejected") return mapResult(result);
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
         if (deps.notices)

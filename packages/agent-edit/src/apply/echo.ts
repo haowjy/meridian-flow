@@ -42,7 +42,7 @@ export interface ConcurrentUpdateInput {
 
 export interface ConcurrentDetectionResult {
   info?: ConcurrentEditInfo;
-  /** Human-origin hashes used by destructive-write safety checks. */
+  /** Human-origin hashes retained for conservative recovery reporting. */
   humanTouchedHashes: Set<string>;
   /** Human + agent hashes used by concurrent-edit reporting. */
   touchedHashes: Set<string>;

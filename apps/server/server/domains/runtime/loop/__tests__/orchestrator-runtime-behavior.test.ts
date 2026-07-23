@@ -109,100 +109,6 @@ async function collectEvents(
 }
 
 describe("runtime orchestrator behavior", () => {
-  it("surfaces an unobserved destructive-write rejection in the tool result", async () => {
-    const requests: GenerateRequest[] = [];
-    const gateway: Gateway = {
-      ...gatewayStubDefaults,
-      async *stream(request) {
-        requests.push(request);
-        yield {
-          type: "end",
-          result: {
-            content:
-              requests.length === 1
-                ? [
-                    {
-                      type: "tool_use",
-                      toolCallId: "call-blind-write",
-                      toolName: "write",
-                      input: { command: "replace" },
-                    },
-                  ]
-                : [{ type: "text", text: "I will re-read." }],
-            toolCalls: [],
-            finishReason: requests.length === 1 ? "tool_use" : "end_turn",
-            usage: { inputTokens: 1, outputTokens: 1 },
-            model: "stub-model",
-            provider: "stub",
-          },
-        };
-      },
-      async generate() {
-        throw new Error("not used");
-      },
-    };
-    const { repos, eventWriter, projectId } = await setupOrchestrator(undefined, gateway);
-    const thread = await repos.threads.create({ userId: "user-1", projectId });
-    const creditLedger = createInMemoryCreditLedger();
-    await creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "1000000000",
-      reason: "test",
-    });
-    const deps = createTestOrchestratorDeps({
-      gateway,
-      repos,
-      eventWriter,
-      creditLedger,
-      interruptRegistry: createInterruptRegistry(),
-      toolExecutor: {
-        async executeTool(call) {
-          return {
-            toolCallId: call.id,
-            output: [{ type: "text", text: "status: success" }],
-            metadata: { documentId: "doc-1", stagedWrite: true },
-          };
-        },
-      },
-      responseWrites: {
-        async commitResponse(responseId, _context, beforeTransactionCommit) {
-          const result = {
-            status: "rejected" as const,
-            responseId,
-            rejections: [
-              {
-                documentId: "doc-1",
-                reason: "observation_required" as const,
-                affectedWriteIds: ["write-1"],
-                conflictedBlockHashes: ["abcd"],
-              },
-            ],
-          };
-          await beforeTransactionCommit(result);
-          return result;
-        },
-        async rollbackResponse() {},
-      },
-    });
-    const events = await collectEvents(
-      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "replace it" }),
-    );
-
-    expect(JSON.stringify(requests[1]?.messages)).toContain(
-      "status: rejected_response_requires_reread",
-    );
-    expect(JSON.stringify(requests[1]?.messages)).toContain("Write did not land");
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "tool.result",
-        toolCallId: "call-blind-write",
-        isError: true,
-      }),
-    );
-    expect(JSON.stringify(events)).not.toContain('"text":"status: success"');
-  });
-
   it("credits a real persisted read when the next response destructively writes", async () => {
     const documentId = crypto.randomUUID();
     const snapshots = new Map<string, ObservationSnapshot>();
@@ -323,10 +229,6 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId, _context, beforeTransactionCommit) {
           const result = await harness.core.commitResponse(responseId);
-          if (result.status === "rejected") {
-            await beforeTransactionCommit(result);
-            return result;
-          }
           const mapped = {
             status: "committed" as const,
             concurrentEdits: result.documents.flatMap((document) =>
@@ -493,7 +395,7 @@ describe("runtime orchestrator behavior", () => {
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
     const resumedContext = JSON.stringify(resumedRequests[0]?.messages);
-    expect(resumedContext).toContain("status: rejected_response_requires_reread");
+    expect(resumedContext).toContain("status: internal_error");
     expect(resumedContext).toContain("Write did not land");
     expect(resumedContext).not.toContain("pending_commit");
     expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).not.toContain(
@@ -1151,150 +1053,6 @@ describe("runtime orchestrator behavior", () => {
     expect(events.some((event) => event.type === "tool.result")).toBe(true);
     expect(events.some((event) => event.type === "turn.error")).toBe(false);
     await expect(repos.threads.findById(thread.id)).resolves.toMatchObject({ status: "idle" });
-  });
-
-  it("delivers a rejected commit notice without persisting a turn or changing logical head", async () => {
-    const requests: GenerateRequest[] = [];
-    const gateway = gatewayFromResults([
-      {
-        content: [
-          { type: "tool_use", toolCallId: "write-a", toolName: "write", input: {} },
-          { type: "tool_use", toolCallId: "write-b", toolName: "write", input: {} },
-        ],
-        toolCalls: [],
-        finishReason: "tool_use",
-        usage: { inputTokens: 1, outputTokens: 1 },
-        model: "stub-model",
-        provider: "stub",
-      },
-      {
-        content: [
-          { type: "tool_use", toolCallId: "read-after-reject", toolName: "read", input: {} },
-        ],
-        toolCalls: [],
-        finishReason: "tool_use",
-        usage: { inputTokens: 1, outputTokens: 1 },
-        model: "stub-model",
-        provider: "stub",
-      },
-      {
-        content: [
-          { type: "tool_use", toolCallId: "write-after-read", toolName: "write", input: {} },
-        ],
-        toolCalls: [],
-        finishReason: "tool_use",
-        usage: { inputTokens: 1, outputTokens: 1 },
-        model: "stub-model",
-        provider: "stub",
-      },
-      {
-        content: [{ type: "text", text: "retry committed" }],
-        toolCalls: [],
-        finishReason: "end_turn",
-        usage: { inputTokens: 1, outputTokens: 1 },
-        model: "stub-model",
-        provider: "stub",
-      },
-    ]);
-    const recordingGateway: Gateway = {
-      ...gateway,
-      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
-        requests.push(request);
-        yield* gateway.stream(request);
-      },
-    };
-    const projectRepo = createInMemoryProjectRepository();
-    const repos = createInMemoryRepositories({ projects: projectRepo });
-    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
-    let commitCount = 0;
-    let headAtRejection: string | null | undefined;
-    const deps = createTestOrchestratorDeps({
-      gateway: recordingGateway,
-      repos,
-      eventWriter: createInMemoryEventJournalWriter(),
-      creditLedger: createInMemoryCreditLedger(),
-      interruptRegistry: createInterruptRegistry(),
-      toolExecutor: {
-        async executeTool(call) {
-          if (call.name === "read") {
-            return { toolCallId: call.id, output: "current document" };
-          }
-          return { toolCallId: call.id, output: "staged write" };
-        },
-      },
-      responseWrites: {
-        async commitResponse(responseId) {
-          commitCount += 1;
-          if (commitCount === 1) {
-            headAtRejection = (await repos.threads.findById(thread.id))?.activeLeafTurnId;
-            return {
-              status: "rejected",
-              responseId,
-              rejections: [
-                {
-                  documentId: "chapter-one.md",
-                  conflictedBlockHashes: ["hash-a", "hash-b"],
-                  affectedWriteIds: ["write-a", "write-b"],
-                },
-                {
-                  documentId: "chapter-two.md",
-                  conflictedBlockHashes: [],
-                  affectedWriteIds: [],
-                },
-              ],
-            };
-          }
-          return { status: "committed", concurrentEdits: [] };
-        },
-        async rollbackResponse() {},
-      },
-    });
-    await deps.creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "1000000000",
-      reason: "test",
-    });
-    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-
-    const events = await collectEvents(
-      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
-    );
-
-    const postRejectionMessages = requests[1]?.messages ?? [];
-    const stagedResults = postRejectionMessages.filter((message) => message.role === "tool");
-    const noticeIndex = postRejectionMessages.findIndex(
-      (message) =>
-        message.role === "system" &&
-        JSON.stringify(message.content).includes("superseded and void"),
-    );
-    expect(stagedResults).toHaveLength(2);
-    expect(
-      stagedResults.every((message) => !JSON.stringify(message.content).includes('"isError":true')),
-    ).toBe(true);
-    expect(noticeIndex).toBeGreaterThanOrEqual(0);
-    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-one.md");
-    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-two.md");
-    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-a");
-    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-b");
-    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("hash-a");
-    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("hash-b");
-
-    const turns = await repos.turns.listByThread(thread.id);
-    const rejectionTurn = turns.find((turn) => turn.role === "system");
-    expect(rejectionTurn).toBeUndefined();
-    const updatedThread = await repos.threads.findById(thread.id);
-    expect(updatedThread?.activeLeafTurnId).toBe(headAtRejection);
-    expect(turns.find((turn) => turn.id === updatedThread?.activeLeafTurnId)?.role).toBe(
-      "assistant",
-    );
-    expect(
-      requests[2]?.messages.some((message) =>
-        JSON.stringify(message).includes("read-after-reject"),
-      ),
-    ).toBe(true);
-    expect(events.some((event) => event.type === "turn.error")).toBe(false);
-    expect(commitCount).toBe(3);
   });
 
   it("rolls back the active response when tool dispatch throws", async () => {

@@ -1,5 +1,8 @@
 // Lifecycle-neutral destructive-effect classification over canonical provenance ranges.
 
+import * as Y from "yjs";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import { type DocHandle, toDocHandle } from "../handles.js";
 import {
   intersectLineageRanges,
   type LineageRange,
@@ -8,8 +11,11 @@ import {
   type ResponseCausalCutV1,
   subtractLineageRanges,
 } from "../lineage/range-set.js";
-import type { ContentLineage } from "../ports/model.js";
-import type { BlockSnapshot } from "./echo.js";
+import { digestRenderedContent, observationCoversRendering } from "../observation-snapshot.js";
+import type { AgentEditModel, ContentLineage } from "../ports/model.js";
+import type { ObservationSnapshot } from "../ports/observation-snapshot.js";
+import type { DestructiveProvenanceRun, UpdateJournal } from "../ports/update-journal.js";
+import { type BlockSnapshot, snapshotBlocks } from "./echo.js";
 
 export type SafetyProvenance = "writer_protected" | "agent";
 
@@ -46,10 +52,7 @@ export interface DestructiveEffect {
   finalRenderingProjections: FinalRenderingProjection[];
 }
 
-/**
- * Compute the shared pointwise destructive effect. Enforcement is intentionally absent:
- * tool-time callers deny this result, while settlement callers apply and trail it.
- */
+/** Compute the shared pointwise destructive effect without imposing lifecycle policy. */
 export function classifyDestructiveEffect(input: DestructiveEffectInput): DestructiveEffect {
   validateOccurrences(input.before);
   validateOccurrences(input.afterCandidate);
@@ -118,60 +121,239 @@ function rootSliceToTarget(occurrence: VisibleProseOccurrence, root: LineageRang
   };
 }
 
-// Compatibility adapter for the current block snapshot safety gate. It routes through the
-// shared classifier; provenance materialization will replace this adapter at the merge seam.
-export interface DestructiveClassificationInput {
-  before: readonly BlockSnapshot[];
-  after: readonly BlockSnapshot[];
-  protectedLineage: readonly ContentLineage[];
-  lineageOrigins: readonly (ContentLineage & { origin: "human" | "agent" })[];
+export interface DestructiveDocumentEffectInput {
+  documentId: string;
+  before: DocHandle;
+  afterCandidate: DocHandle;
+  observationSnapshot: ObservationSnapshot | null;
+  observedBlocks?: readonly BlockSnapshot[];
+  attributedLineage?: readonly (ContentLineage & { origin: "human" | "agent" })[];
 }
 
-export function classifyDestructiveBlocks(input: DestructiveClassificationInput): BlockSnapshot[] {
-  const before = legacyOccurrences(input.before, input.lineageOrigins);
-  const afterCandidate = legacyOccurrences(input.after, input.lineageOrigins);
-  const result = classifyDestructiveEffect({
+/**
+ * Materializes durable provenance, then delegates destructive policy to
+ * classifyDestructiveEffect. This is the reporting boundary for live commits.
+ */
+export async function classifyDestructiveDocumentEffect(
+  deps: {
+    journal: UpdateJournal;
+    model: AgentEditModel;
+    codec: AgentEditCodec;
+  },
+  input: DestructiveDocumentEffectInput,
+): Promise<BlockSnapshot[]> {
+  const beforeBlocks = snapshotBlocks(input.before, deps.model, deps.codec);
+  const afterBlocks = snapshotBlocks(input.afterCandidate, deps.model, deps.codec);
+  const provenance = deps.journal.materializeDestructiveProvenance
+    ? await deps.journal.materializeDestructiveProvenance({
+        docId: input.documentId,
+        before: input.before,
+        afterCandidate: input.afterCandidate,
+      })
+    : await reconstructConservativeProvenance({
+        ...deps,
+        documentId: input.documentId,
+        beforeBlocks,
+        afterBlocks,
+      });
+  const before = occurrencesFor(
+    beforeBlocks,
+    applyAttributedLineage(provenance.before, input.attributedLineage ?? []),
+  );
+  const afterCandidate = occurrencesFor(
+    afterBlocks,
+    applyAttributedLineage(provenance.afterCandidate, input.attributedLineage ?? []),
+  );
+  const observedLineage = (input.observedBlocks ?? [])
+    .filter((block) => wasObserved(input.observationSnapshot, input.documentId, block))
+    .flatMap((block) => block.lineage ?? []);
+  const effect = classifyDestructiveEffect({
     before,
     afterCandidate,
-    // The legacy argument describes the observed/baseline set, so its complement is protected.
     protectionScope: before
       .filter(
         (occurrence) =>
           occurrence.provenance === "writer_protected" &&
-          !lineageRangesContain(input.protectedLineage, occurrence.target),
+          !lineageRangesContain(observedLineage, occurrence.target),
       )
       .map((occurrence) => occurrence.root),
     responseCut: {
-      id: "legacy-snapshot-adapter",
+      id: "live-commit-current-rendering",
       version: 1,
-      documentId: "legacy-snapshot-adapter",
-      authorityId: "legacy-snapshot-adapter",
+      documentId: input.documentId,
+      authorityId: "live-commit-current-rendering",
       generation: 0n,
       admittedThrough: 0n,
       visible: before,
     },
-    observation: { coveredFinalRenderings: [] },
+    observation: {
+      coveredFinalRenderings: beforeBlocks.flatMap((block) =>
+        wasObserved(input.observationSnapshot, input.documentId, block)
+          ? [finalRenderingKey(block)]
+          : [],
+      ),
+    },
   });
   const affected = new Set(
-    result.finalRenderingProjections.map((projection) => projection.finalRendering),
+    effect.finalRenderingProjections.map((projection) => projection.finalRendering),
   );
-  return input.before.filter((block) => affected.has(block.hash));
+  return beforeBlocks.filter((block) => affected.has(finalRenderingKey(block)));
 }
 
-function legacyOccurrences(
+function applyAttributedLineage(
+  runs: readonly DestructiveProvenanceRun[],
+  attributions: readonly (ContentLineage & { origin: "human" | "agent" })[],
+): DestructiveProvenanceRun[] {
+  return runs.flatMap((run) => {
+    const attributed = attributions.flatMap((attribution) =>
+      intersectLineageRanges([run.target], [attribution]).map((target) => ({
+        target,
+        root: provenanceTargetSliceToRoot(run, target),
+        provenance:
+          attribution.origin === "agent" ? ("agent" as const) : ("writer_protected" as const),
+      })),
+    );
+    const unexplained = subtractLineageRanges(
+      [run.target],
+      attributed.map((item) => item.target),
+    ).map((target) => ({
+      target,
+      root: provenanceTargetSliceToRoot(run, target),
+      provenance: run.provenance,
+    }));
+    return [...attributed, ...unexplained];
+  });
+}
+
+function occurrencesFor(
   blocks: readonly BlockSnapshot[],
-  origins: readonly (ContentLineage & { origin: "human" | "agent" })[],
+  provenance: readonly DestructiveProvenanceRun[],
 ): VisibleProseOccurrence[] {
   return blocks.flatMap((block) =>
-    (block.lineage ?? []).map((lineage) => ({
-      target: lineage,
-      root: lineage,
-      provenance: origins.some(
-        (origin) => origin.origin === "agent" && lineageRangesContain([origin], lineage),
-      )
-        ? ("agent" as const)
-        : ("writer_protected" as const),
-      finalRendering: block.hash,
-    })),
+    provenance.flatMap((run) =>
+      intersectLineageRanges(block.lineage ?? [], [run.target]).map((target) => ({
+        target,
+        root: provenanceTargetSliceToRoot(run, target),
+        provenance: run.provenance,
+        finalRendering: finalRenderingKey(block),
+      })),
+    ),
   );
+}
+
+function finalRenderingKey(block: BlockSnapshot): string {
+  return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
+}
+
+function wasObserved(
+  snapshot: ObservationSnapshot | null,
+  documentId: string,
+  block: BlockSnapshot,
+): boolean {
+  if (
+    block.clientID === undefined ||
+    block.clock === undefined ||
+    block.renderedContent === undefined
+  ) {
+    return false;
+  }
+  const observation = snapshot?.entries.find(
+    (entry) =>
+      entry.documentId === documentId &&
+      entry.clientID === block.clientID &&
+      entry.clock === block.clock,
+  );
+  return observationCoversRendering({
+    observation: observation?.value ?? null,
+    renderedContent: block.renderedContent,
+    digestRenderedContent,
+  });
+}
+
+async function reconstructConservativeProvenance(input: {
+  journal: UpdateJournal;
+  model: AgentEditModel;
+  codec: AgentEditCodec;
+  documentId: string;
+  beforeBlocks: readonly BlockSnapshot[];
+  afterBlocks: readonly BlockSnapshot[];
+}): Promise<{
+  before: DestructiveProvenanceRun[];
+  afterCandidate: DestructiveProvenanceRun[];
+}> {
+  const snapshot = input.journal.readAttribution
+    ? await input.journal.readAttribution(input.documentId)
+    : await input.journal.read(input.documentId);
+  const replay = new Y.Doc({ gc: false });
+  try {
+    if (snapshot.checkpoint) Y.applyUpdate(replay, snapshot.checkpoint);
+    const agentRoots: LineageRange[] = [];
+    for (const row of snapshot.updates) {
+      const before = visibleLineage(snapshotBlocks(toDocHandle(replay), input.model, input.codec));
+      Y.applyUpdate(replay, row.update);
+      if (!row.meta.origin.startsWith("agent:")) continue;
+      const after = visibleLineage(snapshotBlocks(toDocHandle(replay), input.model, input.codec));
+      agentRoots.push(...subtractLineageRanges(after, before));
+    }
+    const before = provenanceForKnownRoots(input.beforeBlocks, agentRoots);
+    return {
+      before,
+      afterCandidate: candidateProvenance(input.afterBlocks, before),
+    };
+  } finally {
+    replay.destroy();
+  }
+}
+
+function visibleLineage(blocks: readonly BlockSnapshot[]): LineageRange[] {
+  return blocks.flatMap((block) => block.lineage ?? []);
+}
+
+function provenanceForKnownRoots(
+  blocks: readonly BlockSnapshot[],
+  agentRoots: readonly LineageRange[],
+): DestructiveProvenanceRun[] {
+  return visibleLineage(blocks).flatMap((target) => {
+    const agent = intersectLineageRanges([target], agentRoots);
+    const writer = subtractLineageRanges([target], agent);
+    return [
+      ...agent.map((range) => ({ target: range, root: range, provenance: "agent" as const })),
+      ...writer.map((range) => ({
+        target: range,
+        root: range,
+        provenance: "writer_protected" as const,
+      })),
+    ];
+  });
+}
+
+function candidateProvenance(
+  blocks: readonly BlockSnapshot[],
+  retained: readonly DestructiveProvenanceRun[],
+): DestructiveProvenanceRun[] {
+  return visibleLineage(blocks).flatMap((target) => {
+    const retainedRuns = retained.flatMap((run) =>
+      intersectLineageRanges([target], [run.target]).map((intersection) => ({
+        target: intersection,
+        root: provenanceTargetSliceToRoot(run, intersection),
+        provenance: run.provenance,
+      })),
+    );
+    const fresh = subtractLineageRanges(
+      [target],
+      retainedRuns.map((run) => run.target),
+    ).map((range) => ({ target: range, root: range, provenance: "agent" as const }));
+    return [...retainedRuns, ...fresh];
+  });
+}
+
+function provenanceTargetSliceToRoot(
+  run: Pick<DestructiveProvenanceRun, "target" | "root">,
+  target: LineageRange,
+): LineageRange {
+  return {
+    clientID: run.root.clientID,
+    clock: run.root.clock + target.clock - run.target.clock,
+    length: target.length,
+  };
 }

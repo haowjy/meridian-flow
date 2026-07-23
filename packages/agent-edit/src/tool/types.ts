@@ -13,8 +13,6 @@ export type WriteErrorStatus =
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
-  | "destructive_write_rejected"
-  | "rejected_response_requires_reread"
   | "internal_error";
 
 export type UndoRedoOutcome =
@@ -78,7 +76,7 @@ interface WriteOutcomeBase {
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
-export type ResponseLifecycleClosedState = "committed" | "rolledBack" | "rejected";
+export type ResponseLifecycleClosedState = "committed" | "rolledBack";
 
 export interface ResponseLifecycleErrorDetail {
   type: "response_lifecycle";
@@ -255,22 +253,6 @@ export interface ResponseCommitSuccessResult {
    */
   discardedClaims?: readonly ResponseClaimDiscardedEntry[];
 }
-
-export interface ResponseCommitDocumentRejection {
-  documentId: string;
-  conflictedBlockHashes: readonly string[];
-  affectedWriteIds: readonly string[];
-  /** Agent-visible refusal retaining the safety gate's concurrent echo. */
-  agentResponse?: import("./internal-result.js").InternalWriteResult;
-}
-
-export interface ResponseCommitRejectedResult {
-  status: "rejected";
-  responseId: string;
-  rejections: ResponseCommitDocumentRejection[];
-}
-
-export type ResponseCommitResult = ResponseCommitSuccessResult | ResponseCommitRejectedResult;
 
 export interface ResponseRollbackResult {
   status: "rolledBack" | "rolledBackDegraded";

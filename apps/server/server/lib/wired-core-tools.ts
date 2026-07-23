@@ -5,7 +5,6 @@
 
 import type {
   ConcurrentEditInfo,
-  ResponseCommitDocumentRejection,
   ResponseStagedCreateOutcome,
   WriteCommand,
 } from "@meridian/agent-edit";
@@ -98,11 +97,6 @@ export type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
-    }
-  | {
-      status: "rejected";
-      responseId: string;
-      rejections: ResponseCommitDocumentRejection[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -327,13 +321,6 @@ export function createAgentEditResponseWriteLifecycle(
       ): ResponseWriteLifecycleCommitResult => {
         if (result.status === "draft_closed") {
           return { status: result.status, responseId: result.responseId, mode: result.mode };
-        }
-        if (result.status === "rejected") {
-          return {
-            status: "rejected",
-            responseId: result.responseId,
-            rejections: result.rejections,
-          };
         }
         return {
           status: "committed",

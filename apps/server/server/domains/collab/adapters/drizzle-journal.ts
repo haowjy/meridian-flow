@@ -19,6 +19,7 @@ import {
   isLaterNonSystemUpdateAfterWatermark,
   parseWriteHandle,
   persistUndoPlanWatermark,
+  unwrapDoc,
   writeHandle,
 } from "@meridian/agent-edit";
 import type { ModelResponseId } from "@meridian/contracts";
@@ -39,11 +40,16 @@ import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-s
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { insertionAttributions } from "../domain/provenance.js";
+import {
+  insertionAttributions,
+  materializeCandidateProvenance,
+  materializeProvenanceForDoc,
+} from "../domain/provenance.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
+import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
 
 type JournalDb = Pick<
   Database,
@@ -900,6 +906,78 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         }
         return results;
       });
+    },
+
+    async materializeDestructiveProvenance(input) {
+      const readDb = currentDrizzleDb(db as Database) as JournalDb;
+      const authority = await readDocumentAuthority(readDb, input.docId);
+      const rows = await readDb
+        .select({
+          authorityId: documentYjsUpdates.authorityId,
+          generation: documentYjsUpdates.authorityGeneration,
+          admissionSequence: documentYjsUpdates.admissionSequence,
+          batchOrdinal: documentYjsUpdates.batchOrdinal,
+          journalRowId: documentYjsUpdates.id,
+          originType: documentYjsUpdates.originType,
+          actorUserId: documentYjsUpdates.actorUserId,
+          update: documentYjsUpdates.updateData,
+        })
+        .from(documentYjsUpdates)
+        .where(
+          and(
+            eq(documentYjsUpdates.documentId, asDocumentId(input.docId)),
+            eq(documentYjsUpdates.authorityId, authority.authorityId),
+            eq(documentYjsUpdates.authorityGeneration, authority.generation),
+          ),
+        )
+        .orderBy(
+          documentYjsUpdates.admissionSequence,
+          documentYjsUpdates.batchOrdinal,
+          documentYjsUpdates.id,
+        );
+      const last = rows.at(-1);
+      const retained = last
+        ? await createDrizzleProvenanceReader(readDb).materialize({
+            documentId: asDocumentId(input.docId),
+            authorityId: authority.authorityId,
+            generation: authority.generation,
+            watermark: {
+              admissionSequence: last.admissionSequence,
+              batchOrdinal: last.batchOrdinal,
+              journalRowId: BigInt(last.journalRowId),
+            },
+          })
+        : null;
+      try {
+        const before = materializeProvenanceForDoc({
+          doc: unwrapDoc(input.before),
+          rows: rows.map((row) => ({
+            ...row,
+            journalRowId: BigInt(row.journalRowId),
+            update: new Uint8Array(row.update),
+          })),
+          retainedAttributions: retained?.attributionManifest.attributions,
+          fallbackBirthClass: "writer_protected",
+        });
+        const afterCandidate = materializeCandidateProvenance(
+          unwrapDoc(input.afterCandidate),
+          before,
+        );
+        return {
+          before: before.map((run) => ({
+            target: run.target,
+            root: run.root,
+            provenance: run.birthClass,
+          })),
+          afterCandidate: afterCandidate.map((run) => ({
+            target: run.target,
+            root: run.root,
+            provenance: run.birthClass,
+          })),
+        };
+      } finally {
+        retained?.doc.destroy();
+      }
     },
 
     async reserveWriteOrdinal(documentId, threadId) {
