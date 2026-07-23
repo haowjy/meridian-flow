@@ -216,7 +216,7 @@ export async function admitWriterSync(input: {
   syncType: number;
   payload: Uint8Array;
   userId: UserId;
-  closeTransport?(): void;
+  closeTransport?(input: { code: number; reason: string }): void;
   expectedGeneration?: bigint;
   context?: {
     branchSyncState?: Map<string, BranchHandshakeState>;
@@ -258,7 +258,7 @@ async function admitBranchSync(
     });
     return;
   } catch {
-    input.closeTransport?.();
+    input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
     throw permissionDenied("branch-update-admission-failed", 1008);
   }
 }
@@ -281,7 +281,7 @@ async function admitLiveSync(
     }
     return admission;
   } catch {
-    input.closeTransport?.();
+    input.closeTransport?.({ code: 1013, reason: "writer-journal-admission-failed" });
     throw permissionDenied("writer-journal-admission-failed", 1013);
   }
 }
@@ -385,7 +385,9 @@ export function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         syncType: type,
         payload,
         userId,
-        closeTransport: context.closeWriterTransport as (() => void) | undefined,
+        closeTransport: context.closeWriterTransport as
+          | ((input: { code: number; reason: string }) => void)
+          | undefined,
         expectedGeneration: context.liveGenerations?.get(documentName),
         context,
       });
@@ -496,7 +498,8 @@ export function createYjsWebSocketHooks() {
         offlineSyncUpdates:
           context?.kind === "authenticated" ? context.offlineSyncUpdates : undefined,
         liveGenerations: context?.kind === "authenticated" ? context.liveGenerations : undefined,
-        closeWriterTransport: () => wsPeer.close(1013, "writer-journal-admission-failed"),
+        closeWriterTransport: ({ code, reason }: { code: number; reason: string }) =>
+          wsPeer.close(code, reason),
       });
     },
 
