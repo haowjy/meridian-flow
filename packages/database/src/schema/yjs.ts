@@ -436,6 +436,9 @@ export const documentYjsCheckpoints = pgTable(
   },
   (table) => [
     index("document_yjs_checkpoints_document_id_desc").on(table.documentId, table.id.desc()),
+    uniqueIndex("document_yjs_checkpoints_initial")
+      .on(table.documentId)
+      .where(sql`${table.upToSeq} = 0`),
   ],
 );
 

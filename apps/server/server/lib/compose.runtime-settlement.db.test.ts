@@ -172,6 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const repeatedFullSync = Y.encodeStateAsUpdate(writerReplica);
         await ports.documentSync.admitLiveWriterUpdate({
           documentId: DOC_ID,
+          document: room.document,
           update: repeatedFullSync,
           origin: { type: "user", userId: USER_ID },
           // B2 generation fence (R6b): this test admits against the freshly
@@ -265,6 +266,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const update = Y.encodeStateAsUpdate(intervening, before);
         await ports.documentSync.admitLiveWriterUpdate({
           documentId: DOC_ID,
+          document: coldRoom.document,
           update,
           origin: { type: "user", userId: USER_ID },
           expectedGeneration: 1n,

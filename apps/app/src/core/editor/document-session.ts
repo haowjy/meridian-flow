@@ -44,6 +44,8 @@ export function documentSessionPersistenceKey(roomKey: string): string {
 }
 
 const PERSISTENCE_KEY_PREFIX = "meridian:document:v";
+/** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
+const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
 
 /** Best-effort delete of pre-version-bump IndexedDB entries for one document. */
 function deleteStaleVersionedIndexedDb(roomKey: string): void {
@@ -155,6 +157,7 @@ export class DocumentSession {
 
   private readonly persistence: IndexeddbPersistence | null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
+  private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeSafetyNotices: (() => void) | null = null;
@@ -209,14 +212,26 @@ export class DocumentSession {
     this.emit();
   }
 
-  /** Attach the session's only server transport without replacing its Y.Doc. */
+  /** Attach the session's only server transport after local replay, without replacing its Y.Doc. */
   attachTransport(transportFactory: DocumentSessionTransportFactory): void {
     if (this.destroyed)
       throw new Error(`Cannot attach transport to destroyed room: ${this.roomKey}`);
-    if (this.transportProvider) {
+    if (this.transportProvider || this.transportAttachmentPending) {
       throw new Error(`Transport already attached to room: ${this.roomKey}`);
     }
 
+    this.transportAttachmentPending = true;
+    this.recomputeStatus();
+    if (this.persistence && !this.localPersistenceSynced) {
+      void this.waitForLocalPersistenceTransportGate().then(() => {
+        if (!this.destroyed) this.connectTransport(transportFactory);
+      });
+      return;
+    }
+    this.connectTransport(transportFactory);
+  }
+
+  private connectTransport(transportFactory: DocumentSessionTransportFactory): void {
     this.transportProvider = transportFactory({
       roomKey: this.roomKey,
       room: this.room,
@@ -224,6 +239,7 @@ export class DocumentSession {
       awareness: this.awareness,
       fragmentName: this.fragmentName,
     });
+    this.transportAttachmentPending = false;
     this.resolveTransportAttached();
     this.status = "syncing";
     this.unsubscribeTransportStatus =
@@ -260,6 +276,20 @@ export class DocumentSession {
     this.status = "detached";
     await previous?.destroy();
     this.attachTransport(transportFactory);
+  }
+
+  private waitForLocalPersistenceTransportGate(): Promise<void> {
+    return new Promise((resolve) => {
+      let complete = false;
+      const finish = () => {
+        if (complete) return;
+        complete = true;
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(finish, LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS);
+      void this.localPersistenceSyncedPromise.then(finish, finish);
+    });
   }
 
   get cursorProvider(): { awareness: Awareness } {
@@ -470,7 +500,7 @@ export class DocumentSession {
   }
 
   private deriveStatus(): DocumentSessionStatus {
-    if (!this.transportProvider) return "detached";
+    if (!this.transportProvider) return this.transportAttachmentPending ? "syncing" : "detached";
     if (!this.localPersistenceSynced) return "syncing";
 
     const state = this.transportState;

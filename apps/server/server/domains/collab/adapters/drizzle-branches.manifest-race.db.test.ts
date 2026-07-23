@@ -14,10 +14,12 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import * as Y from "yjs";
-
+import type * as Y from "yjs";
+import { hasLiveManifestMembership } from "../../../routes/ws/yjs.js";
+import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
+import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -26,20 +28,30 @@ describe("Drizzle manifest persistence", () => {
   const db = createDb(DATABASE_URL, { max: 8 });
   const livePersistence = createDrizzleCollabPersistence(db);
   const liveDocs = new Map<string, Y.Doc>();
-  const liveCoordinator = {
-    async withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+  let storeWarmDocument: (documentId: string, document: Y.Doc) => Promise<void> = async () => {};
+  const liveCoordinator = createHocuspocusCoordinatorForTest({
+    journal: livePersistence.journal,
+    hocuspocus: () => ({ documents: liveDocs }) as never,
+    async openLiveDoc(documentId) {
       let doc = liveDocs.get(documentId);
       if (!doc) {
         doc = createCollabYDoc({ gc: false });
-        const snapshot = await livePersistence.journal.read(documentId);
-        if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-        for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
         liveDocs.set(documentId, doc);
       }
-      return fn(doc);
+      return {
+        doc,
+        release: () => storeWarmDocument(documentId, doc),
+      };
     },
-    async recover() {},
-  };
+  });
+  const hocuspocusPersistence = createHocuspocusPersistenceService({
+    journal: livePersistence.journal,
+    hocuspocus: () => ({ documents: liveDocs }) as never,
+    metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    latestUpdateSeq: (documentId) => livePersistence.store.latestUpdateSeq(documentId),
+    emitAgentEditInvariantViolation() {},
+  });
+  storeWarmDocument = hocuspocusPersistence.storeHocuspocusDocument;
   const store = createDrizzleBranchStore(db, {
     journal: livePersistence.journal,
     lifecycle: livePersistence.lifecycle,
@@ -95,9 +107,12 @@ describe("Drizzle manifest persistence", () => {
     return { updates: updates?.count ?? 0, checkpoints: checkpoints?.count ?? 0 };
   }
 
-  it("adopts one manifest identity across concurrent cold resolutions", async () => {
+  it("keeps one checkpoint when concurrent cold reconciliation stores the warm room", async () => {
     const { projectId, contextSourceId } = await createProjectFixture("race");
 
+    await Promise.all(
+      Array.from({ length: 8 }, () => store.reconcileProjectManifest(projectId as never)),
+    );
     const resolutions = await Promise.all(
       Array.from({ length: 8 }, () =>
         store.resolveManifestMembership({ projectId: projectId as never }),
@@ -121,11 +136,53 @@ describe("Drizzle manifest persistence", () => {
         ),
       );
     expect(activeManifests).toEqual([{ id: documentId }]);
+    await expect(manifestHistoryCounts(documentId as string)).resolves.toEqual({
+      updates: 1,
+      checkpoints: 1,
+    });
+
+    await Promise.all(
+      Array.from({ length: 8 }, () => store.reconcileProjectManifest(projectId as never)),
+    );
+    await Promise.all(
+      Array.from({ length: 8 }, () =>
+        store.resolveManifestMembership({ projectId: projectId as never }),
+      ),
+    );
+    await expect(manifestHistoryCounts(documentId as string)).resolves.toEqual({
+      updates: 1,
+      checkpoints: 1,
+    });
   });
 
-  it("does not journal an unchanged live manifest reconciliation", async () => {
+  it("completes mixed reconciliation and live membership mutation under the production mutex", async () => {
+    const { projectId, contentDocumentId } = await createProjectFixture("mixed-lock-order");
+    await store.reconcileProjectManifest(projectId as never);
+
+    const operations = Promise.all([
+      ...Array.from({ length: 4 }, () => store.reconcileProjectManifest(projectId as never)),
+      store.recordManifestDocumentDeleted(contentDocumentId as never),
+      store.recordManifestDocumentCreated(contentDocumentId as never),
+    ]);
+    await expect(
+      Promise.race([
+        operations,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("manifest critical section timed out")), 2_000),
+        ),
+      ]),
+    ).resolves.toBeDefined();
+
+    await store.reconcileProjectManifest(projectId as never);
+    await expect(
+      store.resolveManifestMembership({ projectId: projectId as never }),
+    ).resolves.toEqual(expect.objectContaining({ members: [contentDocumentId] }));
+  });
+
+  it("keeps resolved membership reads pure after explicit reconciliation", async () => {
     const { projectId, contentDocumentId } = await createProjectFixture("idempotence");
 
+    await store.reconcileProjectManifest(projectId as never);
     const first = await store.resolveManifestMembership({ projectId: projectId as never });
     const firstHistory = await manifestHistoryCounts(first.documentId);
     const second = await store.resolveManifestMembership({ projectId: projectId as never });
@@ -134,5 +191,23 @@ describe("Drizzle manifest persistence", () => {
     expect(second).toEqual(first);
     expect(firstHistory).toEqual({ updates: 1, checkpoints: 1 });
     await expect(manifestHistoryCounts(first.documentId)).resolves.toEqual(firstHistory);
+  });
+
+  it("heals a live-room gate miss with exactly one seed update", async () => {
+    const { projectId, contentDocumentId } = await createProjectFixture("gate-heal");
+    const manifest = await store.ensureProjectManifest({ projectId: projectId as never });
+    manifest.doc.destroy();
+
+    await expect(manifestHistoryCounts(manifest.documentId)).resolves.toEqual({
+      updates: 0,
+      checkpoints: 1,
+    });
+    await expect(hasLiveManifestMembership(store, projectId, contentDocumentId)).resolves.toBe(
+      true,
+    );
+    await expect(manifestHistoryCounts(manifest.documentId)).resolves.toEqual({
+      updates: 1,
+      checkpoints: 1,
+    });
   });
 });

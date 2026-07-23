@@ -10,6 +10,7 @@
     "preview": "nitro preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "perf:writer-admission": "tsx scripts/before-sync-admission-benchmark.ts",
     "smoke:thread-runtime": "tsx scripts/thread-runtime-smoke.ts",
     "smoke:phase4": "tsx scripts/phase4-smoke.ts"
   },

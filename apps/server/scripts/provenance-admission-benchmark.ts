@@ -137,6 +137,7 @@ async function runCurrentDay(): Promise<DayResult> {
   return runDay(async (update) => {
     await port.admitLiveWriterUpdate({
       documentId: DOCUMENT_ID,
+      document: authority,
       update,
       origin: { type: "user", userId: "benchmark-user" },
       expectedGeneration: 1n,

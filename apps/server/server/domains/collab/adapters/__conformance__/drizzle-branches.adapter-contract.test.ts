@@ -158,6 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db
         .insert(threadWorks)
         .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
+      await store.reconcileProjectManifest(PROJECT_ID as never);
     });
 
     afterAll(async () => {
