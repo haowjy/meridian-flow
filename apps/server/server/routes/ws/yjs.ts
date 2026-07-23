@@ -2,13 +2,11 @@
 import {
   Hocuspocus,
   isTransactionOrigin,
-  MessageType,
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
 import { encodeSafetyNoticeWsMessage, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
-import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
@@ -53,6 +51,21 @@ type YjsRouteServices = {
   eventSink: AppServices["eventSink"];
   notices: AppServices["notices"];
 };
+
+export async function hasLiveManifestMembership(
+  documentSync: Pick<
+    AppServices["documentSync"],
+    "reconcileProjectManifest" | "resolveManifestMembership"
+  >,
+  projectId: string,
+  documentId: string,
+): Promise<boolean> {
+  let membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
+  if (membership.members.includes(documentId)) return true;
+  await documentSync.reconcileProjectManifest(projectId as never);
+  membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
+  return membership.members.includes(documentId);
+}
 
 type WriterNoticeDocument = {
   getConnectionsCount(): number;
@@ -165,37 +178,19 @@ async function resolveRoomDocumentId(
   return branch.documentId;
 }
 
-function syncMessage(
-  input: Uint8Array,
-  documentName: string,
-): { syncType: number; payload: Uint8Array } | null {
-  const decoder = createDecoder(input);
-  const rawKey = readVarString(decoder);
-  const sepIdx = rawKey.indexOf("\0");
-  const addressedDocument = sepIdx === -1 ? rawKey : rawKey.substring(0, sepIdx);
-  if (addressedDocument !== documentName) return null;
-  const messageType = readVarUint(decoder);
-  if (messageType !== MessageType.Sync && messageType !== MessageType.SyncReply) return null;
-  const syncType = readVarUint(decoder);
-  return { syncType, payload: readVarUint8Array(decoder) };
-}
-
-export async function enforceBranchHandshake(input: {
+async function enforceBranchHandshake(input: {
   services: YjsRouteServices;
-  documentName: string;
-  update: Uint8Array;
+  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>;
+  syncType: number;
+  payload: Uint8Array;
   context?: { branchSyncState?: Map<string, BranchHandshakeState> };
 }): Promise<void> {
-  const room = parseRoomOrDeny(input.documentName);
-  if (room.kind !== "branch") return;
-  const message = syncMessage(input.update, input.documentName);
-  if (!message) return;
-  const key = `${room.branchId}:${room.generation}`;
-  if (message.syncType === messageYjsSyncStep1) {
+  const key = `${input.room.branchId}:${input.room.generation}`;
+  if (input.syncType === messageYjsSyncStep1) {
     const stale = await input.services.documentSync.rejectStaleBranchSyncStep1({
-      branchId: room.branchId,
-      generation: room.generation,
-      clientStateVector: message.payload,
+      branchId: input.room.branchId,
+      generation: input.room.generation,
+      clientStateVector: input.payload,
     });
     if (input.context?.branchSyncState?.get(key) === "rejected") {
       throw permissionDenied("branch-stale-doc", 4205);
@@ -207,80 +202,85 @@ export async function enforceBranchHandshake(input: {
     input.context?.branchSyncState?.set(key, "passed");
     return;
   }
-  if (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) return;
+  if (input.syncType !== messageYjsSyncStep2 && input.syncType !== messageYjsUpdate) return;
   const state = input.context?.branchSyncState?.get(key) ?? "pending";
   if (state === "passed") return;
   input.context?.branchSyncState?.set(key, "rejected");
   throw permissionDenied("branch-stale-doc", 4205);
 }
 
-function rememberOfflineLiveSync(input: {
-  documentName: string;
-  update: Uint8Array;
-  context?: { offlineSyncUpdates?: Set<string> };
-}): void {
-  const room = parseRoomOrDeny(input.documentName);
-  if (room.kind !== "live") return;
-  const message = syncMessage(input.update, input.documentName);
-  if (message?.syncType !== messageYjsSyncStep2 || message.payload.length === 0) return;
-  input.context?.offlineSyncUpdates?.add(updateIdentity(message.payload));
-}
-
-export async function admitLiveWriterMessage(input: {
+export async function admitWriterSync(input: {
   services: YjsRouteServices;
   documentName: string;
-  update: Uint8Array;
+  document: Y.Doc;
+  syncType: number;
+  payload: Uint8Array;
   userId: UserId;
   closeTransport?(): void;
   expectedGeneration?: bigint;
+  context?: {
+    branchSyncState?: Map<string, BranchHandshakeState>;
+    offlineSyncUpdates?: Set<string>;
+  };
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
-  if (room.kind !== "live") return;
-  const message = syncMessage(input.update, input.documentName);
-  if (
-    !message ||
-    (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) ||
-    message.payload.length === 0
-  ) {
-    return;
+  if (room.kind === "branch") {
+    return admitBranchSync(input, room);
   }
-  try {
-    return await input.services.documentSync.admitLiveWriterUpdate({
-      documentId: room.documentId,
-      update: message.payload,
-      origin: { type: "user", userId: input.userId },
-      expectedGeneration: input.expectedGeneration ?? 1n,
-    });
-  } catch {
-    input.closeTransport?.();
-    throw permissionDenied("writer-journal-admission-failed", 1013);
-  }
+  return admitLiveSync(input, room);
 }
 
-export async function admitBranchWriterMessage(input: {
-  services: YjsRouteServices;
-  documentName: string;
-  update: Uint8Array;
-  closeTransport?(): void;
-}): Promise<void> {
-  const room = parseRoomOrDeny(input.documentName);
-  if (room.kind !== "branch") return;
-  const message = syncMessage(input.update, input.documentName);
-  if (
-    !message ||
-    (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) ||
-    message.payload.length === 0
-  )
-    return;
+type WriterSyncInput = Parameters<typeof admitWriterSync>[0];
+
+function carriesUpdate(syncType: number, payload: Uint8Array): boolean {
+  return (syncType === messageYjsSyncStep2 || syncType === messageYjsUpdate) && payload.length > 0;
+}
+
+async function admitBranchSync(
+  input: WriterSyncInput,
+  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>,
+): Promise<undefined> {
+  await enforceBranchHandshake({
+    services: input.services,
+    room,
+    syncType: input.syncType,
+    payload: input.payload,
+    context: input.context,
+  });
+  if (!carriesUpdate(input.syncType, input.payload)) return;
   try {
     await input.services.documentSync.validateBranchWriterUpdate({
       branchId: room.branchId,
       expectedGeneration: room.generation,
-      update: message.payload,
+      update: input.payload,
     });
+    return;
   } catch {
     input.closeTransport?.();
     throw permissionDenied("branch-update-admission-failed", 1008);
+  }
+}
+
+async function admitLiveSync(
+  input: WriterSyncInput,
+  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "live" }>,
+): Promise<AdmitLiveWriterUpdateResult | undefined> {
+  if (!carriesUpdate(input.syncType, input.payload)) return;
+  try {
+    const admission = await input.services.documentSync.admitLiveWriterUpdate({
+      documentId: room.documentId,
+      document: input.document,
+      update: input.payload,
+      origin: { type: "user", userId: input.userId },
+      expectedGeneration: input.expectedGeneration ?? 1n,
+    });
+    if (admission.admitted && input.syncType === messageYjsSyncStep2) {
+      input.context?.offlineSyncUpdates?.add(updateIdentity(input.payload));
+    }
+    return admission;
+  } catch {
+    input.closeTransport?.();
+    throw permissionDenied("writer-journal-admission-failed", 1013);
   }
 }
 
@@ -339,8 +339,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (room.kind === "live") {
         const projectId = await services.documentAccess.projectIdForDocument(documentId);
         if (!projectId) throw permissionDenied("permission-denied");
-        const membership = await services.documentSync.resolveManifestMembership({ projectId });
-        if (!membership.members.includes(documentId)) throw permissionDenied("permission-denied");
+        if (!(await hasLiveManifestMembership(services.documentSync, projectId, documentId))) {
+          throw permissionDenied("permission-denied");
+        }
         context.liveGenerations?.set(
           documentId,
           await services.documentSync.currentLiveGeneration(documentId),
@@ -357,27 +358,24 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         });
       }, 0);
     },
-    async beforeHandleMessage({ documentName, update, context }) {
-      await enforceBranchHandshake({ services, documentName, update, context });
+    async beforeHandleMessage({ context }) {
       const userId = context.userId as UserId | undefined;
       if (!userId) throw permissionDenied("permission-denied");
-      await admitBranchWriterMessage({
+    },
+    async beforeSync({ documentName, document, type, payload, context }) {
+      const userId = context.userId as UserId | undefined;
+      if (!userId) throw permissionDenied("permission-denied");
+      await admitWriterSync({
         services,
         documentName,
-        update,
-        closeTransport: context.closeWriterTransport as (() => void) | undefined,
-      });
-      const liveAdmission = await admitLiveWriterMessage({
-        services,
-        documentName,
-        update,
+        document,
+        syncType: type,
+        payload,
         userId,
         closeTransport: context.closeWriterTransport as (() => void) | undefined,
         expectedGeneration: context.liveGenerations?.get(documentName),
+        context,
       });
-      if (liveAdmission?.admitted) {
-        rememberOfflineLiveSync({ documentName, update, context });
-      }
     },
     async onLoadDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);

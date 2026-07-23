@@ -329,6 +329,7 @@ export type CollabFacadeDeps = {
   offlineReconciliation?: OfflineReconciliation;
   trailForwardActions?: ReturnType<typeof createDrizzleTrailForwardActions>;
   manifestMembership?: {
+    reconcileProjectManifest(projectId: ProjectId): Promise<void>;
     resolveManifestMembership(input: {
       projectId: ProjectId;
       workId?: WorkId | null;
@@ -1800,6 +1801,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           ]),
         ],
       };
+    },
+
+    async reconcileProjectManifest(projectId) {
+      await deps.manifestMembership?.reconcileProjectManifest(projectId);
     },
 
     async recordManifestDocumentCreated(documentId, view) {

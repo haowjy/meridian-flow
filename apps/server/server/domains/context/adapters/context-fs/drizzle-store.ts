@@ -66,6 +66,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
 
 export interface ContextDocumentMembershipObserver {
   documentCreated(documentId: string): void | Promise<void>;
+  /** Called only after the transaction that soft-deleted the document commits. */
   documentDeleted(documentId: string): void | Promise<void>;
 }
 

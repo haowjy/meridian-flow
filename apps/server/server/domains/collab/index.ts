@@ -107,6 +107,7 @@ export type CollabTransport = {
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   admitLiveWriterUpdate(input: {
     documentId: DocumentId;
+    document: Y.Doc;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" }>;
     expectedGeneration: bigint;
@@ -363,10 +364,12 @@ export type BranchPeerShadowAccess = {
     threadId?: ThreadId | null;
     responseId?: string | null;
   }): Promise<{ documentId: DocumentId; members: string[] }>;
+  reconcileProjectManifest(projectId: ProjectId): Promise<void>;
   recordManifestDocumentCreated(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
   ): Promise<void>;
+  /** The documents.deleted_at transaction must commit before this notification. */
   recordManifestDocumentDeleted(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
