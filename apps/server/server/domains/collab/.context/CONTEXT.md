@@ -74,6 +74,15 @@ durable, pull deltas use the branch coordinator's existing update publisher so l
 Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
 persistence-only.
 
+**Branch mutations are durable before they reach a Hocuspocus room.** No branch-room
+`onStore` path may re-persist or re-checkpoint to make a mutation durable — it already
+is. `storeHocuspocusBranch` only drains pending branch appends; calling
+`checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
+`AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`
+rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regression
+test; the prior redundant checkpoint surfaced only in a live loaded-room probe, not
+`pnpm check`.
+
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the
