@@ -71,8 +71,8 @@ attribution authority.
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the
-live-room gate. Ordinary `resolveManifestMembership` calls only reconstruct and
-read it. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
+live-room gate. Ordinary `resolveManifestMembership` calls never reconcile or
+append membership history. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
 self-heal command: it seeds missing active database content rows, but never
 rewrites an existing key or removes an entry. The WebSocket gate invokes it once
 after a membership miss. Manifest write-intent paths do not run this broad SQL
@@ -164,6 +164,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   capability and joined to unresolved settlements before Hocuspocus
   apply/broadcast/ack. The domain seam drains started admissions and detects
   later admission generations.
+  `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
+  gate; cached containment must retain at least a 10x p50 advantage over rebuilding
+  a history-sized Yjs snapshot.
 - **Push settlement authority**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the

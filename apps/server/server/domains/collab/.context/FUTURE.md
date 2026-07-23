@@ -5,7 +5,7 @@
 Manifest lifecycle is currently split across `composition.ts` (facade calls)
 and `adapters/drizzle-branches.ts` (reconciliation + mutation). Caller ordering
 can alter domain semantics: the draft-scoped creation regression (commit
-`ab9c6225`) demonstrated that exposing `reconcile` and `record` as
+`326a5463`) demonstrated that exposing `reconcile` and `record` as
 independently sequenced facade calls lets incidental ordering promote
 unstaged rows.
 

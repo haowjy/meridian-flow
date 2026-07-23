@@ -43,7 +43,7 @@ const journal = {
 } as unknown as UpdateJournal;
 const currentAdmission = createHocuspocusPersistenceService({
   journal,
-  hocuspocus: () => null,
+  hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, document]]) }) as never,
   metaForOrigin: () => ({ origin: "human:benchmark", seq: 0 }),
   latestUpdateSeq: async () => 0,
   emitAgentEditInvariantViolation: () => undefined,
@@ -86,6 +86,13 @@ const result = {
 };
 
 console.log(JSON.stringify(result, null, 2));
+const containmentSpeedup = result.containedUpdateMs.before.p50 / result.containedUpdateMs.after.p50;
+if (containmentSpeedup < 10) {
+  console.error(
+    `Writer admission performance regression: cached containment was only ${containmentSpeedup.toFixed(1)}x faster than snapshot reconstruction (minimum 10x)`,
+  );
+  process.exitCode = 1;
+}
 document.destroy();
 
 async function oldAdmission(update: Uint8Array): Promise<void> {

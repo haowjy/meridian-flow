@@ -31,7 +31,8 @@
   locator for Open-existing recovery, and share reason-coded path normalization
   with client create/rename validation.
 - `apps/server`: project-manifest reconciliation is now an explicit,
-  cross-replica-serialized command; ordinary membership reads are pure,
+  cross-replica-serialized command; ordinary membership reads never reconcile
+  or append membership history,
   concurrent cold starts create one seed update and one initial checkpoint,
   and the WebSocket membership gate heals legacy omissions on demand (#279).
 - `apps/app`: collaborative document transport now waits for IndexedDB replay
