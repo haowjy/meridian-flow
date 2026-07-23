@@ -1,8 +1,8 @@
 # Debugging
 
-Use temporary console probes when they help you understand a live bug quickly.
-Keep them disposable: delete them before pushing, or convert useful signals into
-durable observability through the server `EventSink`.
+Start from your symptom in [Strategies](#strategies), or scan the
+[Toolbox](#toolbox) for what each surface gives you. Detail sections follow;
+[Adding Observability](#adding-observability) covers emitting new signals.
 
 ## Toolbox
 
@@ -31,41 +31,11 @@ durable observability through the server `EventSink`.
 - **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
   are stable at emit time, so incremental polls never re-read history.
 
-## Adding Observability
-
-To make something new observable, emit an `EventRecord` through the composed
-sink — everything downstream (query API, SSE, dashboard, JSONL mirror) picks it
-up automatically:
-
-```ts
-import { emitEvent, unknownToEventPayload } from "../observability/index.js";
-
-emitEvent(sink, {
-  level: "info",                       // debug | info | warn | error
-  source: "collab",                    // stable area name — a query filter
-  name: "collab.checkpoint.collapsed", // dot-namespaced — name-prefix queryable
-  correlation: { documentId },         // every key becomes a query parameter
-  sensitivity: "safe",
-  payload: { reason, cutSeq },         // compact metadata, never raw content
-});
-```
-
-Conventions:
-
-- `source` and a `name` prefix are your query handles — pick them like API
-  names, not log strings.
-- Put anything you'll want to filter by in `correlation` (ids, `errorCode`);
-  `payload` is opaque to queries.
-- For errors, `unknownToEventPayload(err)` produces a JSON-natural payload with
-  stack/cause (and Postgres wire diagnostics when pg-shaped).
-- No secrets, raw prompts, model output, or tool arguments — events are
-  sanitized structurally, not content-inspected.
-- High-frequency per-item events (per chunk, per frame) should be gated behind
-  an `OBS_VERBOSE` category so they never compete with lifecycle records.
-
 ## Temporary Probes
 
-Use this exact shape:
+Disposable console probes for understanding a live bug quickly: delete them
+before pushing, or convert the signal into durable observability. Use this
+exact shape:
 
 ```ts
 // TEMP-DEBUG: remove before push
@@ -147,6 +117,38 @@ After a restart, use the JSONL mirror for best-effort forensics:
 jq -c 'select(.source == "wire.yjs" and .correlation.documentId == "X")' \
   logs/events/*.jsonl | tail -n 50
 ```
+
+## Adding Observability
+
+To make something new observable, emit an `EventRecord` through the composed
+sink — everything downstream (query API, SSE, dashboard, JSONL mirror) picks it
+up automatically:
+
+```ts
+import { emitEvent, unknownToEventPayload } from "../observability/index.js";
+
+emitEvent(sink, {
+  level: "info",                       // debug | info | warn | error
+  source: "collab",                    // stable area name — a query filter
+  name: "collab.checkpoint.collapsed", // dot-namespaced — name-prefix queryable
+  correlation: { documentId },         // every key becomes a query parameter
+  sensitivity: "safe",
+  payload: { reason, cutSeq },         // compact metadata, never raw content
+});
+```
+
+Conventions:
+
+- `source` and a `name` prefix are your query handles — pick them like API
+  names, not log strings.
+- Put anything you'll want to filter by in `correlation` (ids, `errorCode`);
+  `payload` is opaque to queries.
+- For errors, `unknownToEventPayload(err)` produces a JSON-natural payload with
+  stack/cause (and Postgres wire diagnostics when pg-shaped).
+- No secrets, raw prompts, model output, or tool arguments — events are
+  sanitized structurally, not content-inspected.
+- High-frequency per-item events (per chunk, per frame) should be gated behind
+  an `OBS_VERBOSE` category so they never compete with lifecycle records.
 
 ## Cleanup
 
