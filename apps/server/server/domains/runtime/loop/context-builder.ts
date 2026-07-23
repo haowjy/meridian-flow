@@ -215,8 +215,8 @@ function completeToolResultGroups(
 
     const missingResultMessage =
       sourceTurnStatusByMessage.get(message) === "cancelled"
-        ? "Tool call cancelled; no result recorded; outcome unknown."
-        : "Tool call interrupted by an error; no result recorded; outcome unknown.";
+        ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
+        : "Tool call interrupted by an error; no result recorded. Side effects unknown — re-read state before retrying.";
     for (const toolCallId of missingResultIds) {
       completed.push(toolResult(toolCallId, missingResultMessage, true));
     }

@@ -102,12 +102,14 @@ describe("buildContext tool-call history", () => {
       },
       {
         turn: assistantTurn("multi-turn", "error"),
+        // The live incident shape: one assistant group with several tool uses,
+        // results recorded for only some of them.
         blocks: [
           toolUse("multi-turn", 0, "call-1"),
-          toolResultBlock("multi-turn", 1, "call-1"),
-          toolUse("multi-turn", 2, "call-2"),
-          toolResultBlock("multi-turn", 3, "call-2"),
-          toolUse("multi-turn", 4, "call-3"),
+          toolUse("multi-turn", 1, "call-2"),
+          toolUse("multi-turn", 2, "call-3"),
+          toolResultBlock("multi-turn", 3, "call-1"),
+          toolResultBlock("multi-turn", 4, "call-2"),
         ],
         danglingId: "call-3",
         provenance: /error/i,
@@ -130,6 +132,17 @@ describe("buildContext tool-call history", () => {
         );
       expect(synthesizedResult?.isError).toBe(true);
       expect(synthesizedResult?.output).toEqual(expect.stringMatching(scenario.provenance));
+
+      const recordedResults = messages
+        .flatMap((message) => message.content)
+        .filter(
+          (part): part is ToolResultPart =>
+            part.type === "tool_result" && part.toolCallId !== scenario.danglingId,
+        );
+      for (const recorded of recordedResults) {
+        expect(recorded.output).toBe("recorded result");
+        expect(recorded.isError).not.toBe(true);
+      }
     }
   });
 });
