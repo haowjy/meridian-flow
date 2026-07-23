@@ -3333,6 +3333,232 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(docFromUpdate(harness.work.state))).toContain("Second staged response.");
   });
 
+  it("reverses a grouped draft response without touching older live writes", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const liveBefore = cloneDoc(harness.liveDoc);
+    appendParagraph(harness.liveDoc, "Older live write.");
+    const liveUpdate = Y.encodeStateAsUpdate(harness.liveDoc, Y.encodeStateVector(liveBefore));
+    liveBefore.destroy();
+    const liveOrdinal = await harness.journal.reserveWriteOrdinal(DOCUMENT_ID, THREAD_ID);
+    await harness.journal.appendBatch([
+      {
+        docId: DOCUMENT_ID,
+        update: liveUpdate,
+        meta: { origin: `agent:${TURN_ID}`, actorTurnId: TURN_ID, seq: 0 },
+        mutation: {
+          mode: "live",
+          actorKind: "agent",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          writeId: "older-live-write",
+          wId: liveOrdinal,
+        },
+      },
+    ]);
+    harness.work.state = Y.encodeStateAsUpdate(harness.liveDoc);
+    harness.work.stateVector = Y.encodeStateVector(harness.liveDoc);
+    harness.thread.state = Y.encodeStateAsUpdate(harness.liveDoc);
+    harness.thread.stateVector = Y.encodeStateVector(harness.liveDoc);
+    const liveRowsBeforeDraft = (await harness.journal.read(DOCUMENT_ID)).updates.length;
+    const core = harness.createThreadPeerCore();
+    const responseId = "response-grouped-draft";
+    const handles: string[] = [];
+
+    for (let index = 0; index < 15; index += 1) {
+      const write = await core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: `Draft write ${index + 1}.`,
+        },
+        {
+          sessionId: "session-grouped-draft",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+          tool_use_id: `draft-tool-${index + 1}`,
+        },
+      );
+      if (write.status !== "success" || !write.writeId) throw new Error("expected draft handle");
+      handles.push(write.writeId);
+    }
+    await core.commitResponse(responseId);
+
+    expect(new Set(handles)).toEqual(new Set(["w2"]));
+    expect(harness.rows).toHaveLength(1);
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Draft write 15.");
+
+    const undo = await core.write(
+      { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID, all: true },
+      {
+        sessionId: "session-grouped-draft",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-grouped-draft-undo",
+      },
+    );
+
+    expect(["reversed", "reconciled"]).toContain(undo.status);
+    expect(markdown(docFromUpdate(harness.work.state))).not.toContain("Draft write 1.");
+    expect(markdown(harness.liveDoc)).toContain("Older live write.");
+    expect((await harness.journal.read(DOCUMENT_ID)).updates).toHaveLength(liveRowsBeforeDraft);
+    expect(await harness.journal.latestActiveWrite(DOCUMENT_ID, THREAD_ID)).toMatchObject({
+      handle: "w1",
+    });
+
+    const redo = await core.write(
+      { command: "redo", file: "chapter.md", documentId: DOCUMENT_ID },
+      {
+        sessionId: "session-grouped-draft",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-grouped-draft-redo",
+      },
+    );
+
+    expect(["reversed", "reconciled"]).toContain(redo.status);
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Draft write 15.");
+    expect((await harness.journal.read(DOCUMENT_ID)).updates).toHaveLength(liveRowsBeforeDraft);
+  });
+
+  it("supports draft last, range, single-handle, and redo selectors before Apply", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Alpha.\n\nBeta.\n\nGamma.\n\nDelta.");
+    const core = harness.createThreadPeerCore();
+    const stageReplace = async (responseId: string, find: string, content: string) => {
+      const write = await core.write(
+        {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          find,
+          content,
+        },
+        {
+          sessionId: "session-draft-selectors",
+          threadId: THREAD_ID,
+          turnId: responseId,
+          responseId,
+        },
+      );
+      await core.commitResponse(responseId);
+      return write;
+    };
+    const reversalContext = (responseId: string) => ({
+      sessionId: "session-draft-selectors",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+    });
+
+    await expect(stageReplace("response-selector-1", "Alpha.", "One.")).resolves.toMatchObject({
+      writeId: "w1",
+    });
+    await expect(stageReplace("response-selector-2", "Beta.", "Two.")).resolves.toMatchObject({
+      writeId: "w2",
+    });
+    await expect(stageReplace("response-selector-3", "Gamma.", "Three.")).resolves.toMatchObject({
+      writeId: "w3",
+    });
+
+    await expect(
+      core.write(
+        { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID, last: 2 },
+        reversalContext("response-selector-undo-last"),
+      ),
+    ).resolves.toMatchObject({ status: expect.stringMatching(/^(reversed|reconciled)$/) });
+    expect(markdown(docFromUpdate(harness.work.state))).toBe("One.\n\nBeta.\n\nGamma.\n\nDelta.\n");
+
+    await core.write(
+      { command: "redo", file: "chapter.md", documentId: DOCUMENT_ID, all: true },
+      reversalContext("response-selector-redo-last"),
+    );
+    expect(markdown(docFromUpdate(harness.work.state))).toBe("One.\n\nTwo.\n\nThree.\n\nDelta.\n");
+
+    await core.write(
+      {
+        command: "undo",
+        file: "chapter.md",
+        documentId: DOCUMENT_ID,
+        from: "w1",
+        to: "w2",
+      },
+      reversalContext("response-selector-undo-range"),
+    );
+    expect(markdown(docFromUpdate(harness.work.state))).toBe(
+      "Alpha.\n\nBeta.\n\nGamma.\n\nDelta.\n",
+    );
+
+    await core.write(
+      { command: "redo", file: "chapter.md", documentId: DOCUMENT_ID, all: true },
+      reversalContext("response-selector-redo-range"),
+    );
+    await expect(stageReplace("response-selector-4", "Delta.", "Four.")).resolves.toMatchObject({
+      writeId: "w4",
+    });
+    await core.write(
+      { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID, to: "w4" },
+      reversalContext("response-selector-undo-single"),
+    );
+
+    expect(markdown(docFromUpdate(harness.work.state))).toBe("One.\n\nTwo.\n\nThree.\n\nDelta.\n");
+    expect(markdown(harness.liveDoc)).toBe("Alpha.\n\nBeta.\n\nGamma.\n\nDelta.\n");
+    expect((await harness.journal.read(DOCUMENT_ID)).updates).toHaveLength(1);
+  });
+
+  it("leaves draft and live state unchanged when reversal persistence fails", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+    await core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        documentId: DOCUMENT_ID,
+        content: "Draft content.",
+      },
+      {
+        sessionId: "session-draft-failure",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-draft-failure-write",
+      },
+    );
+    await core.commitResponse("response-draft-failure-write");
+    const workBefore = markdown(docFromUpdate(harness.work.state));
+    const branchRowsBefore = harness.rows.length;
+    const liveRowsBefore = (await harness.journal.read(DOCUMENT_ID)).updates.length;
+    vi.mocked(harness.branchCoordinator.commitSyncFromDoc).mockRejectedValueOnce(
+      new Error("branch persistence unavailable"),
+    );
+
+    const failed = await core.write(
+      { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID },
+      {
+        sessionId: "session-draft-failure",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-draft-failure-undo",
+      },
+    );
+
+    expect(failed.status).toBe("internal_error");
+    expect(markdown(docFromUpdate(harness.work.state))).toBe(workBefore);
+    expect(harness.rows).toHaveLength(branchRowsBefore);
+    expect((await harness.journal.read(DOCUMENT_ID)).updates).toHaveLength(liveRowsBefore);
+
+    await expect(
+      core.write(
+        { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID },
+        {
+          sessionId: "session-draft-failure",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-draft-failure-retry",
+        },
+      ),
+    ).resolves.toMatchObject({ status: expect.stringMatching(/^(reversed|reconciled)$/) });
+  });
+
   it("rejects reuse of a response id by a different thread core", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();
@@ -3704,6 +3930,7 @@ class ThreadPeerPushHarness {
         threadId?: ThreadId | null;
         turnId?: TurnId | null;
         expectedGeneration: number;
+        updateMeta?: unknown;
       }) => {
         if (this.failNextCommitSync) {
           this.failNextCommitSync = false;
@@ -3730,6 +3957,7 @@ class ThreadPeerPushHarness {
           updateData,
           draftBaseUpdateSeq: 1,
           status: "active",
+          updateMeta: input.updateMeta,
         });
         return true;
       },
@@ -3955,6 +4183,23 @@ class ThreadPeerPushHarness {
           threadId: THREAD_ID,
           liveJournal: this.journal,
           pendingJournalEntries: pending,
+          branches: {
+            resolveThreadBranch: async () => ({
+              branchId: this.thread.branchId,
+              doc: docFromUpdate(this.thread.state),
+              generation: this.thread.generation,
+            }),
+            ensureThreadPeerBranch: async () => this.thread,
+            ensureWorkDraftBranch: async () => this.work,
+            listActiveWorkDraftBranchIds: async () => [this.work.branchId],
+            getBranch: async (branchId: string) => this.branchStore.getBranch(branchId),
+          },
+          branchRows: {
+            listJournalRowsForBranch: async (input) =>
+              this.rows.filter(
+                (row) => row.branchId === input.branchId && row.generation === input.generation,
+              ),
+          },
         }),
         coordinator,
         lifecycle: {

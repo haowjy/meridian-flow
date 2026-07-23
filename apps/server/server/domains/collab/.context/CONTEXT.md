@@ -141,6 +141,20 @@ evidence emits degradation telemetry rather than guessing from update bytes.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
+- **Draft write-command reversal is branch-scoped**: while the current Work-draft
+  generation has agent rows for the thread, `write(command="undo"|"redo")`
+  reconstructs and stages reversals exclusively from those rows. The staged
+  system row carries the Work-draft generation and becomes durable in the same
+  branch commit that projects its Yjs update; it never writes the live journal.
+  After Apply advances to an empty generation, reversal lookup falls back to the
+  live store so pushed writes retain their normal undo path.
+- **Draft handles name durable response groups**: response buffering and branch
+  projection fold all same-document mutations in one response into one
+  `branch_write_journal` row. Every write in that group therefore receives the
+  same `w<N>` handle. Selectors operate on durable rows, not transient tool-call
+  boundaries; redo may further group handles that share one atomic reversal
+  update. This matches the folded, turn-scoped diff contract rather than
+  advertising per-write identity the journal does not retain.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
 the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
 inside the same transaction, under `lockDocumentMutation` advisory lock. There is

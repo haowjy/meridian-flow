@@ -8,7 +8,11 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalActor, ReversalRecord } from "../ports/types.js";
-import { parseWriteHandle, type ReversalStore } from "../ports/update-journal.js";
+import {
+  type JournalCommitKind,
+  parseWriteHandle,
+  type ReversalStore,
+} from "../ports/update-journal.js";
 import { resolveUndoAvailability, type UndoAvailability } from "../undo/availability.js";
 import { reconstructUndoUpdateFromSnapshot } from "../undo/reconstruction.js";
 import {
@@ -477,89 +481,116 @@ export function createWriteReversal(deps: {
       input.plans.flatMap(({ ownDiff }) => [...ownDiff.changed, ...ownDiff.inserted]),
     );
 
-    const mutation = await withLiveDocument(
-      deps.coordinator,
-      input.docId,
-      input.commandName,
-      input.docId,
-      async (liveDoc) => {
-        const first = input.plans[0];
-        if (!first) throw new Error("Prepared reversal group must not be empty");
-        const capturedPreflight = await mutationCommit.captureCommitPreflight(liveDoc, {
-          docId: input.docId,
-          runtime: input.runtime,
-          actor: reversalMutationActor(input.actor, input.session, first.plan),
-          deletedHashes: first.ownDiff.deleted,
-          touchedHashes: new Set([...first.ownDiff.changed, ...first.ownDiff.inserted]),
-          interactionContext: input.interactionContext,
-          preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
-          ownTurnId: first.plan.turnId ?? undefined,
-        });
-
-        const persisted = await persistPlans({ ...input, update });
-        if (!persisted.ok) return persisted.response ?? null;
-
-        const applied = await mutationCommit.applyCommittedUpdateWithRecheck(
-          liveDoc,
-          {
+    let journalCommitKind: JournalCommitKind | undefined;
+    let mutation: SyncedMutationSummary | InternalWriteResult | null;
+    try {
+      mutation = await withLiveDocument(
+        deps.coordinator,
+        input.docId,
+        input.commandName,
+        input.docId,
+        async (liveDoc) => {
+          const first = input.plans[0];
+          if (!first) throw new Error("Prepared reversal group must not be empty");
+          const capturedPreflight = await mutationCommit.captureCommitPreflight(liveDoc, {
             docId: input.docId,
             runtime: input.runtime,
             actor: reversalMutationActor(input.actor, input.session, first.plan),
-            deletedHashes,
-            touchedHashes,
+            deletedHashes: first.ownDiff.deleted,
+            touchedHashes: new Set([...first.ownDiff.changed, ...first.ownDiff.inserted]),
             interactionContext: input.interactionContext,
             preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
             ownTurnId: first.plan.turnId ?? undefined,
-            update,
-            liveOrigin: reversalOrigin(input.actor, first.plan),
-          },
-          capturedPreflight,
-        );
-        const lateSweep = applied.lateSweep;
-        for (const concurrent of applied.concurrent.updates) {
-          if (concurrent.update.length > 0) {
-            Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
-          }
-        }
-        Y.applyUpdate(input.runtime.doc, update, reversalOrigin(input.actor, first.plan));
-
-        const sweptContent = lateSweep !== undefined;
-        if (lateSweep) {
-          await recordLateSweep({
-            threadId: input.session.threadId,
-            docId: input.docId,
-            direction: input.direction,
-            report: lateSweep,
           });
-        }
-        if (input.actor.type === "user") {
-          for (const prepared of input.plans) {
-            await recordReversalNotice({
+
+          const persisted = await persistPlans({ ...input, update });
+          if (!persisted.ok) return persisted.response ?? null;
+          journalCommitKind = persisted.journalCommitKind;
+
+          let applied: Awaited<ReturnType<MutationCommit["applyCommittedUpdateWithRecheck"]>>;
+          try {
+            applied = await mutationCommit.applyCommittedUpdateWithRecheck(
+              liveDoc,
+              {
+                docId: input.docId,
+                runtime: input.runtime,
+                actor: reversalMutationActor(input.actor, input.session, first.plan),
+                deletedHashes,
+                touchedHashes,
+                interactionContext: input.interactionContext,
+                preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
+                ownTurnId: first.plan.turnId ?? undefined,
+                update,
+                liveOrigin: reversalOrigin(input.actor, first.plan),
+              },
+              capturedPreflight,
+            );
+          } catch (cause) {
+            if (persisted.journalCommitKind !== "durable") throw cause;
+            await recoverDurableReversal(input, cause);
+            return { echo: [], reconciled: false };
+          }
+          const lateSweep = applied.lateSweep;
+          for (const concurrent of applied.concurrent.updates) {
+            if (concurrent.update.length > 0) {
+              Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
+            }
+          }
+          Y.applyUpdate(input.runtime.doc, update, reversalOrigin(input.actor, first.plan));
+
+          const sweptContent = lateSweep !== undefined;
+          if (lateSweep) {
+            await recordLateSweep({
               threadId: input.session.threadId,
-              writeHandles: [...prepared.plan.writeIds],
-              writeHandleTurns: prepared.plan.writeTurnIds,
               docId: input.docId,
               direction: input.direction,
-              sweptContent,
-              beforeContentRef: sweptContent
-                ? (input.interactionContext.liveJournalSeq ?? null)
-                : null,
+              report: lateSweep,
             });
           }
-        }
+          if (input.actor.type === "user") {
+            for (const prepared of input.plans) {
+              await recordReversalNotice({
+                threadId: input.session.threadId,
+                writeHandles: [...prepared.plan.writeIds],
+                writeHandleTurns: prepared.plan.writeTurnIds,
+                docId: input.docId,
+                direction: input.direction,
+                sweptContent,
+                beforeContentRef: sweptContent
+                  ? (input.interactionContext.liveJournalSeq ?? null)
+                  : null,
+              });
+            }
+          }
 
-        const summary = mutationCommit.summarizeMutationEcho(
-          {
-            runtime: input.runtime,
-            before,
-            touchedHashes,
-            deletedHashes,
-          },
-          applied.concurrent.detection,
-        );
-        return sweptContent ? { ...summary, reconciled: true } : summary;
-      },
-    );
+          const summary = mutationCommit.summarizeMutationEcho(
+            {
+              runtime: input.runtime,
+              before,
+              touchedHashes,
+              deletedHashes,
+            },
+            applied.concurrent.detection,
+          );
+          return sweptContent ? { ...summary, reconciled: true } : summary;
+        },
+      );
+    } catch (cause) {
+      if (journalCommitKind === "durable") {
+        await recoverDurableReversal(input, cause);
+        return {
+          ok: true,
+          status: "reversed",
+          sync: { echo: [], reconciled: false },
+          targetCount: input.plans.reduce(
+            (count, prepared) => count + prepared.plan.writeIds.length,
+            0,
+          ),
+        };
+      }
+      if (journalCommitKind === "staged") await restoreAfterRejectedStagedReversal(input);
+      throw cause;
+    }
     if (mutation && "status" in mutation) return { ok: false, response: mutation };
     if (!mutation) {
       return {
@@ -609,7 +640,10 @@ export function createWriteReversal(deps: {
     plans: PreparedReversal[];
     update: Uint8Array;
     actor: ReversalActor;
-  }): Promise<{ ok: true } | { ok: false; response?: InternalWriteResult }> {
+  }): Promise<
+    | { ok: true; journalCommitKind: JournalCommitKind }
+    | { ok: false; response?: InternalWriteResult }
+  > {
     if (input.direction === "undo") {
       const first = input.plans[0];
       if (!first) return { ok: false };
@@ -651,7 +685,10 @@ export function createWriteReversal(deps: {
           response: status(persisted.status, persisted.message),
         };
       }
-      return { ok: true };
+      return {
+        ok: true,
+        journalCommitKind: persisted.journalCommitKind ?? "durable",
+      };
     }
     const entries = input.plans.flatMap((prepared) => {
       const undoUpdateSeq = prepared.plan.redoGroup?.undoUpdateSeq;
@@ -675,7 +712,70 @@ export function createWriteReversal(deps: {
     if (entries.length !== input.plans.length) return { ok: false };
     const consumed = await reversalStore.persistRedoBatch(input.docId, entries);
     if (!consumed.consumed) return { ok: false };
-    return { ok: true };
+    return {
+      ok: true,
+      journalCommitKind: consumed.journalCommitKind ?? "durable",
+    };
+  }
+
+  async function recoverDurableReversal(
+    input: {
+      docId: string;
+      session: ActorSession;
+      runtime: RuntimeDocumentState;
+      commandName: WriteCommand["command"];
+    },
+    cause: unknown,
+  ): Promise<void> {
+    reportRecoveredInvariant(
+      `Durable reversal projection failed for ${input.docId}; recovering committed journal state: ${formatCause(cause)}`,
+    );
+    try {
+      await runtimeStore.recoverCommittedResponseProjection([
+        {
+          docId: input.docId,
+          session: input.session,
+          runtime: input.runtime,
+          commandName: input.commandName,
+        },
+      ]);
+    } catch (recoveryCause) {
+      reportRecoveredInvariant(
+        `Durable reversal recovery failed for ${input.docId}; committed effect will be replayed on next access: ${formatCause(recoveryCause)}`,
+      );
+      await runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId, {
+        markLiveDocStale: true,
+      });
+    }
+  }
+
+  async function restoreAfterRejectedStagedReversal(input: {
+    docId: string;
+    session: ActorSession;
+    runtime: RuntimeDocumentState;
+    commandName: WriteCommand["command"];
+  }): Promise<void> {
+    try {
+      const response = await runtimeStore.restoreRuntimeFromLive(
+        input.session,
+        input.docId,
+        input.runtime,
+        input.commandName,
+      );
+      if (!response) return;
+    } catch {
+      // Eviction below makes the next attempt rebuild from the unchanged branch.
+    }
+    await runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
+  }
+
+  function reportRecoveredInvariant(message: string): void {
+    try {
+      onInvariantViolation(message);
+    } catch {
+      // The reversal is already durable. Diagnostics must not turn its honest
+      // committed outcome back into a retryable-looking failure.
+    }
   }
 
   async function recordReversalNotice(input: Parameters<ReversalNoticePort["record"]>[0]) {

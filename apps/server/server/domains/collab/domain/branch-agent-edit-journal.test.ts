@@ -63,6 +63,54 @@ describe("branch agent-edit journal appendBatch", () => {
     doc.destroy();
   });
 
+  it("falls back to live reversal history after Apply advances to an empty branch generation", async () => {
+    const liveJournal = createInMemoryJournal();
+    await liveJournal.appendBatch([
+      {
+        docId: "chapter.md",
+        update: new Uint8Array([1, 2]),
+        meta: { origin: "agent:turn-1", seq: 0 },
+        mutation: {
+          actorKind: "agent",
+          mode: "live",
+          threadId: THREAD_ID,
+          turnId: "turn-1",
+          writeId: "applied-write",
+          wId: 1,
+        },
+      },
+    ]);
+    const branchJournal = createBranchAgentEditJournal({
+      threadId: THREAD_ID,
+      liveJournal,
+      branches: {
+        resolveThreadBranch: async () => ({
+          branchId: "peer",
+          doc: new Y.Doc({ gc: false }),
+          generation: 2,
+        }),
+        ensureThreadPeerBranch: async () => {
+          throw new Error("not used");
+        },
+        ensureWorkDraftBranch: async () => {
+          throw new Error("not used");
+        },
+        listActiveWorkDraftBranchIds: async () => ["work"],
+        getBranch: async (branchId) =>
+          branchId === "peer"
+            ? { upstreamBranchId: "work", generation: 2 }
+            : { upstreamBranchId: null, generation: 2 },
+      },
+      branchRows: {
+        listJournalRowsForBranch: async () => [],
+      },
+    });
+
+    await expect(branchJournal.latestActiveWrite("chapter.md", THREAD_ID)).resolves.toMatchObject({
+      handle: "w1",
+    });
+  });
+
   it("seals v2 lineage only when response finalization succeeds", async () => {
     const pending = createBranchPendingJournalEntries();
     const journal = createBranchAgentEditJournal({
