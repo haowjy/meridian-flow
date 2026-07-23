@@ -7,17 +7,16 @@ import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
-import {
-  type BranchCoordinator,
-  type BranchSnapshot,
-  BranchStaleUpdateError,
-  type BranchStore,
+import type {
+  BranchCoordinator,
+  BranchSnapshot,
+  BranchStore,
 } from "./domain/branch-coordinator.js";
 import { createWriterIngress, ReservedWriterClientIdError } from "./domain/document-authority.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
-import { validateClientUpdateAdmission } from "./domain/provenance.js";
+import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -250,29 +249,6 @@ export function createHocuspocusPersistenceService(
     return deps.branchCoordinator;
   }
 
-  async function validateBranchWriterUpdate(input: {
-    branchId: string;
-    expectedGeneration: number;
-    update: Uint8Array;
-  }): Promise<void> {
-    const branch = await requireBranchStore().getBranch(input.branchId);
-    if (
-      branch?.status !== "active" ||
-      branch.kind !== "work_draft" ||
-      branch.generation !== input.expectedGeneration
-    ) {
-      throw new BranchStaleUpdateError(input.branchId);
-    }
-    const authoritative = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(authoritative, branch.state);
-      const { reservedClientId } = validateClientUpdateAdmission(authoritative, input.update);
-      if (reservedClientId !== null) throw new Error("reserved-writer-client-id");
-    } finally {
-      authoritative.destroy();
-    }
-  }
-
   return {
     writerIngressBarrier,
     async currentLiveGeneration(documentId) {
@@ -409,31 +385,26 @@ export function createHocuspocusPersistenceService(
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
       const admission = (async () => {
         try {
-          await validateBranchWriterUpdate(input);
-        } catch (cause) {
-          deps.emitAgentEditInvariantViolation({
-            message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
+          await requireBranchCoordinator().commitWriterUpdate({
             branchId: input.branchId,
-            originType: input.origin.type,
+            expectedGeneration: input.expectedGeneration,
+            updateData: input.update,
+            actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
+            roomDocument: input.document,
           });
+        } catch (cause) {
+          if (
+            cause instanceof ReservedNamespaceAdmissionError ||
+            cause instanceof ReservedWriterClientIdError
+          ) {
+            deps.emitAgentEditInvariantViolation({
+              message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
+              branchId: input.branchId,
+              originType: input.origin.type,
+            });
+          }
           throw cause;
         }
-        const current = await requireBranchStore().getBranch(input.branchId);
-        if (
-          current?.status !== "active" ||
-          current.kind !== "work_draft" ||
-          current.generation !== input.expectedGeneration ||
-          !documentContainment.contains(input.document, current.state)
-        ) {
-          throw new BranchStaleUpdateError(input.branchId);
-        }
-        await requireBranchCoordinator().commitUpdate({
-          branchId: input.branchId,
-          updateData: input.update,
-          source: "writer",
-          actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
-          expectedGeneration: input.expectedGeneration,
-        });
       })();
       // Register before validation's first await so shutdown cannot miss an
       // admission that Hocuspocus is already processing.

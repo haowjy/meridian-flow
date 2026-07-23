@@ -12,7 +12,9 @@ import {
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import { BranchCorruptError } from "./branch-resolver.js";
-import { createDocumentAuthority } from "./document-authority.js";
+import { createDocumentAuthority, ReservedWriterClientIdError } from "./document-authority.js";
+import { createDocumentContainment } from "./document-containment.js";
+import { validateClientUpdateAdmission } from "./provenance.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
@@ -144,6 +146,13 @@ export type BranchCoordinator = {
   commitUpdate(
     input: Omit<AppendBranchJournalInput, "generation"> & { expectedGeneration?: number },
   ): Promise<void>;
+  commitWriterUpdate(input: {
+    branchId: string;
+    expectedGeneration: number;
+    updateData: Uint8Array;
+    actorUserId?: string;
+    roomDocument: Y.Doc;
+  }): Promise<void>;
   commitSyncFromDoc(
     input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
       sourceDoc: Y.Doc;
@@ -162,6 +171,7 @@ export function createBranchCoordinator(input: {
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
 }): BranchCoordinator {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
+  const documentContainment = createDocumentContainment();
   const cached = new Map<string, CachedBranchDoc>();
   const pendingTransients = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
@@ -394,6 +404,24 @@ export function createBranchCoordinator(input: {
     } finally {
       frozenSource.destroy();
     }
+  }
+
+  async function persistJournaledUpdate(
+    snapshot: BranchSnapshot,
+    inputJournal: Omit<AppendBranchJournalInput, "generation">,
+    validate?: (authoritative: Y.Doc) => void,
+  ): Promise<void> {
+    const { doc: cachedDoc } = await materialize(snapshot);
+    validate?.(cachedDoc);
+    // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
+    // failed CAS/rollback must never mutate the cached branch doc.
+    const doc = cloneDoc(cachedDoc);
+    const beforeState = Y.encodeStateAsUpdate(doc);
+    Y.applyUpdate(doc, inputJournal.updateData);
+    if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
+      throw new BranchStaleUpdateError(inputJournal.branchId);
+    }
+    await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
   }
 
   function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
@@ -643,16 +671,46 @@ export function createBranchCoordinator(input: {
             ) {
               throw new BranchStaleUpdateError(inputJournal.branchId);
             }
-            const { doc: cachedDoc } = await materialize(snapshot);
-            // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
-            // failed CAS/rollback must never mutate the cached branch doc.
-            const doc = cloneDoc(cachedDoc);
-            const beforeState = Y.encodeStateAsUpdate(doc);
-            Y.applyUpdate(doc, inputJournal.updateData);
-            if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
-              throw new BranchStaleUpdateError(inputJournal.branchId);
+            await persistJournaledUpdate(snapshot, inputJournal);
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        }
+      }
+    },
+
+    async commitWriterUpdate(inputWriter) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await criticalSections.withBranches([inputWriter.branchId], async () => {
+            const snapshot = await loadSnapshot(inputWriter.branchId);
+            if (
+              snapshot.kind !== "work_draft" ||
+              snapshot.status !== "active" ||
+              snapshot.generation !== inputWriter.expectedGeneration ||
+              !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
+            ) {
+              throw new BranchStaleUpdateError(inputWriter.branchId);
             }
-            await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
+            await persistJournaledUpdate(
+              snapshot,
+              {
+                branchId: inputWriter.branchId,
+                updateData: inputWriter.updateData,
+                source: "writer",
+                actorUserId: inputWriter.actorUserId,
+              },
+              (authoritative) => {
+                const { reservedClientId } = validateClientUpdateAdmission(
+                  authoritative,
+                  inputWriter.updateData,
+                );
+                if (reservedClientId !== null) {
+                  throw new ReservedWriterClientIdError(reservedClientId);
+                }
+              },
+            );
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;

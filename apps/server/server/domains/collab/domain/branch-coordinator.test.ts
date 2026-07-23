@@ -8,6 +8,7 @@ import {
   type BranchStore,
   createBranchCoordinator,
 } from "./branch-coordinator.js";
+import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 import { runResponseTransaction } from "./response-transaction.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
@@ -17,6 +18,14 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000503" as ThreadId;
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   doc.getText("content").insert(0, value);
+  return doc;
+}
+
+function reservedAuthorityDoc(): Y.Doc {
+  const doc = docWithText("seed");
+  const nested = new Y.Array<unknown>();
+  doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
+  nested.push(["authority fact"]);
   return doc;
 }
 
@@ -159,6 +168,56 @@ function materialize(snapshot: BranchSnapshot): Y.Doc {
 }
 
 describe("BranchCoordinator", () => {
+  it("validates and journals branch writer updates against one locked snapshot", async () => {
+    const store = new MemoryBranchStore();
+    const branchDoc = docWithText("seed");
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: branchDoc }));
+    const roomDocument = materialize(storedBranch(store, "work"));
+    const client = materialize(storedBranch(store, "work"));
+    const before = Y.encodeStateVector(client);
+    client.getText("content").insert(4, "!");
+    const updateData = Y.encodeStateAsUpdate(client, before);
+
+    const coordinator = createBranchCoordinator({ store });
+    await coordinator.commitWriterUpdate({
+      branchId: "work",
+      expectedGeneration: 1,
+      updateData,
+      actorUserId: "user-1",
+      roomDocument,
+    });
+
+    expect(store.journal).toEqual([updateData]);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("seed!");
+  });
+
+  it("rejects reserved namespace deletion against the snapshot it would commit", async () => {
+    const store = new MemoryBranchStore();
+    const branchDoc = reservedAuthorityDoc();
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: branchDoc }));
+    const roomDocument = materialize(storedBranch(store, "work"));
+    const hostileClient = materialize(storedBranch(store, "work"));
+    const before = Y.encodeStateVector(hostileClient);
+    hostileClient.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1);
+    const updateData = Y.encodeStateAsUpdate(hostileClient, before);
+
+    const coordinator = createBranchCoordinator({ store });
+    await expect(
+      coordinator.commitWriterUpdate({
+        branchId: "work",
+        expectedGeneration: 1,
+        updateData,
+        actorUserId: "user-1",
+        roomDocument,
+      }),
+    ).rejects.toThrow("reserved provenance");
+
+    expect(store.journal).toHaveLength(0);
+    expect(materialize(storedBranch(store, "work")).getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(
+      1,
+    );
+  });
+
   it("publishes transient cache state only when the response transaction commits", async () => {
     const store = new MemoryBranchStore();
     store.branches.set(
