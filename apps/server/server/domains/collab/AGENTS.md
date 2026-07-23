@@ -57,11 +57,11 @@ propagation between them.
   `scope_id`, accept/reactivation lifecycle, or draft Hocuspocus rooms.
 - Keep package imports one-way: server adapters import `@meridian/agent-edit`;
   the package must not import server code.
-- Novel live Hocuspocus writer updates append to the journal in
-  `beforeHandleMessage`, before Yjs apply/broadcast/ack; already-contained
-  reconnect frames are acknowledged without admission. Branch updates persist
-  through the branch coordinator. Connection updates do not fire document
-  activity/projection hooks.
+- Novel live Hocuspocus writer updates append to the journal in `beforeSync`,
+  using Hocuspocus's already-decoded sync type and payload, before Yjs
+  apply/broadcast/ack; already-contained reconnect frames are acknowledged
+  without admission. Branch updates persist through the branch coordinator.
+  Connection updates do not fire document activity/projection hooks.
 - Client admission must reject reserved client IDs and any insertion/deletion in
   the reserved provenance namespace before journal/apply/broadcast/ack.
 - Settlement changes require all three verification layers: the durable-only

@@ -27,7 +27,6 @@ import { announceError, useThreadActions, useThreadStore } from "@/client/stores
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
 
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
@@ -123,17 +122,19 @@ export function ChatView({
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
 
-    // The PRIOR assistant turn may have errored and the projector clears it
-    // off `status:error` when the next user turn arrives — a side-effect with
-    // no journal/WS event. Pull the refreshed snapshot now so the error
-    // banner disappears without a reload. (Fix A2.)
-    void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
-
     try {
       await controller.submit(threadId, text, { optimisticUserTurnId: optimisticUserTurn.id });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit message";
       announceError(message);
+    } finally {
+      // The PRIOR assistant turn may have errored and the projector clears it
+      // off `status:error` when the next user turn arrives — a side-effect with
+      // no journal/WS event. Refresh only after submit settles so this fetch
+      // cannot race ahead of a persisted user turn. Definitive API rejections
+      // roll back the optimistic row; ambiguous transport failures retain it
+      // until a later acknowledgement or reload can reconcile the write.
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     }
   }
 
@@ -151,22 +152,14 @@ export function ChatView({
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
       footer={
-        <div
-          data-debug-composer={threadId}
-          // The dock is chrome on top of the composer: when mounted, the two
-          // share ONE bordered, rounded, container-query box (radius/border here,
-          // Composer runs flush). Empty → the composer keeps its own box.
-          className={cn(
-            "@container",
-            dock.mounted &&
-              "overflow-hidden rounded-composer-pinned border border-composer-border transition-[border-color] focus-within:border-border-focus",
-          )}
-        >
+        <div data-debug-composer={threadId} className="@container">
+          {/* The dock strip sits BEHIND (below) the composer — narrower via
+              mx-2, top corners rounded, jade-tinted background. The composer
+              always keeps its own border and overlaps the strip's edge. */}
           <DraftDock dock={dock} />
           <Composer
             ref={composerRef}
             variant="pinned"
-            flush={dock.mounted}
             placeholder={t`Reply to the agent, or steer the analysis…`}
             streaming={isStreaming}
             onSubmit={handleSubmit}

@@ -11,6 +11,11 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: ReactNode }) => children,
 }));
+// The chip resolves draft state from DraftReviewProvider; identity-bar tests
+// exercise the bar's own chrome, so the chip renders nothing here.
+vi.mock("@/features/editor/DraftReviewChip", () => ({
+  DraftReviewChip: () => null,
+}));
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipTrigger: ({ children }: { children: ReactNode }) => children,

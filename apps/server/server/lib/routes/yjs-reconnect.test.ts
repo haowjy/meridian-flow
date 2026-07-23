@@ -1,14 +1,13 @@
 /** Real-provider regression coverage for reconnect writer admission. */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
-import { MessageType, Server } from "@hocuspocus/server";
+import { Server } from "@hocuspocus/server";
 import type { UpdateJournal } from "@meridian/agent-edit";
-import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
-import { admitLiveWriterMessage } from "../../routes/ws/yjs.js";
+import { admitWriterSync } from "../../routes/ws/yjs.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
@@ -38,16 +37,19 @@ describe("Yjs reconnect writer admission", () => {
         quiet: true,
         stopOnSignals: false,
         onLoadDocument: async () => Y.encodeStateAsUpdate(authority),
-        beforeHandleMessage: async ({ documentName, update }) => {
-          const result = await admitLiveWriterMessage({
+        beforeSync: async ({ documentName, document, type, payload }) => {
+          const result = await admitWriterSync({
             services: { documentSync: persistence } as never,
             documentName,
-            update,
+            document,
+            syncType: type,
+            payload,
             userId: "user-1" as never,
           });
           if (result) {
             writerFrames.push({
-              ...readWriterSyncFrame(update, documentName),
+              syncType: type,
+              update: payload,
               admitted: result.admitted,
             });
           }
@@ -99,16 +101,6 @@ describe("Yjs reconnect writer admission", () => {
     }
   });
 });
-
-function readWriterSyncFrame(
-  frame: Uint8Array,
-  documentName: string,
-): { syncType: number; update: Uint8Array } {
-  const decoder = createDecoder(frame);
-  expect(readVarString(decoder)).toBe(documentName);
-  expect([MessageType.Sync, MessageType.SyncReply]).toContain(readVarUint(decoder));
-  return { syncType: readVarUint(decoder), update: readVarUint8Array(decoder) };
-}
 
 function tombstoneBearingDoc(): Y.Doc {
   const doc = new Y.Doc({ gc: false });

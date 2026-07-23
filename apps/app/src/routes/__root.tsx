@@ -15,6 +15,7 @@ import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activateLocale, DEFAULT_LOCALE, i18n, resolveLocale } from "@/lib/i18n";
 import { TEXT_SIZE_BOOT_SCRIPT } from "@/lib/text-size";
+import { UI_THEME_BOOT_SCRIPT } from "@/lib/ui-theme";
 import globalCssUrl from "@/styles/globals.css?url";
 
 export const Route = createRootRoute({
@@ -80,6 +81,7 @@ function RootDocument({ children, lang }: Readonly<{ children: ReactNode; lang: 
     <html lang={lang} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT }} />
         <HeadContent />
       </head>
       <body className="paper-grain">

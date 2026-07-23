@@ -185,12 +185,8 @@ describe("cancel billing", () => {
           status: "idle",
           runningTurnId: runner.getRunningTurnId(thread.id),
           currentAgent: null,
-          nextSeq: "1",
           resumeAfterSeq: "0",
         };
-      },
-      async sendMessage() {
-        throw new Error("not used");
       },
       async journalEvents() {
         return [];
@@ -268,12 +264,8 @@ describe("cancel billing", () => {
           status: "idle",
           runningTurnId: runner.getRunningTurnId(thread.id),
           currentAgent: null,
-          nextSeq: "1",
           resumeAfterSeq: "0",
         };
-      },
-      async sendMessage() {
-        throw new Error("not used");
       },
       async journalEvents() {
         return [];
@@ -350,12 +342,8 @@ describe("cancel billing", () => {
           status: "idle",
           runningTurnId: runner.getRunningTurnId(thread.id),
           currentAgent: null,
-          nextSeq: "1",
           resumeAfterSeq: "0",
         };
-      },
-      async sendMessage() {
-        throw new Error("not used");
       },
       async journalEvents() {
         return [];

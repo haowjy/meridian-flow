@@ -13,12 +13,6 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#. placeholder {0}: dock.reviewedCount
-#. placeholder {1}: dock.totalCount
-#: src/features/chat/DraftDock.tsx
-msgid "· {0} of {1} reviewed"
-msgstr "· {0} of {1} reviewed"
-
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
@@ -40,6 +34,16 @@ msgstr "{0} additional balance"
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr "{0} documents"
+
+#. placeholder {0}: dock.reviewedCount
+#. placeholder {1}: dock.totalCount
+#: src/features/chat/DraftDock.tsx
+msgid "{0} of {1} reviewed"
+msgstr "{0} of {1} reviewed"
+
+#: src/features/editor/DraftReviewChip.tsx
+msgid "{count, plural, one {Review draft} other {Review # drafts}}"
+msgstr "{count, plural, one {Review draft} other {Review # drafts}}"
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -75,12 +79,7 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
-#: src/features/chat/DraftDock.tsx
-msgid "✓ All changes reviewed"
-msgstr "✓ All changes reviewed"
-
-#. placeholder {0}: conflictName ?? ""
-#. placeholder {0}: noteValue.trim()
+#. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "A file named {0} already exists in this location."
 msgstr "A file named {0} already exists in this location."
@@ -88,6 +87,15 @@ msgstr "A file named {0} already exists in this location."
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {trimmed} already exists in this location."
 msgstr "A file named {trimmed} already exists in this location."
+
+#. placeholder {0}: identityNote.name
+#: src/features/project/context/IdentityPlacementField.tsx
+msgid "A folder named {0} already exists in this location."
+msgstr "A folder named {0} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {trimmed} already exists in this location."
+msgstr "A folder named {trimmed} already exists in this location."
 
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
@@ -132,10 +140,6 @@ msgstr "Agent Packages"
 msgid "Agent: {0}"
 msgstr "Agent: {0}"
 
-#: src/features/editor/DraftEntryBanner.tsx
-msgid "AI changes ready for review"
-msgstr "AI changes ready for review"
-
 #: src/features/project/dock/DockChangesView.tsx
 msgid "AI edits wait here for your review."
 msgstr "AI edits wait here for your review."
@@ -159,6 +163,10 @@ msgstr "Another chat needs attention"
 #: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
 msgstr "Answer the question"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Appearance and behavior settings."
+msgstr "Appearance and behavior settings."
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -343,6 +351,10 @@ msgstr "Collapse dock"
 msgid "Collapse sidebar  ["
 msgstr "Collapse sidebar  ["
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Color theme"
+msgstr "Color theme"
+
 #. placeholder {0}: proposal.contributingTurnIds.length
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Combines {0} AI turns"
@@ -364,10 +376,6 @@ msgstr "Confirm"
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr "Connection lost. Retrying… attempt {0}"
-
-#: src/features/editor/SafetyNoticeReceipt.tsx
-msgid "Content was modified, including the writer's edits."
-msgstr "Content was modified, including the writer's edits."
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"
@@ -492,6 +500,10 @@ msgstr "Create project"
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
 msgstr "Custom amount (USD)"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Dark"
+msgstr "Dark"
 
 #: src/features/home/first-party-packages.ts
 msgid "Data Analysis"
@@ -749,10 +761,6 @@ msgid "Home"
 msgstr "Home"
 
 #: src/features/account/SettingsDialog.tsx
-msgid "How Meridian looks and reads for you, on every device."
-msgstr "How Meridian looks and reads for you, on every device."
-
-#: src/features/account/SettingsDialog.tsx
 msgid "How much of your plan you have used this month."
 msgstr "How much of your plan you have used this month."
 
@@ -830,6 +838,10 @@ msgstr "Last name"
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr "Leading or trailing whitespace detected in file or folder name."
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Light"
+msgstr "Light"
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
 msgstr "Link"
@@ -853,6 +865,15 @@ msgstr "Live artifact view"
 #: src/features/chat/FormBlock.tsx
 msgid "Live view"
 msgstr "Live view"
+
+#. placeholder {0}: tab.name
+#: src/features/project/context/ContextTabBar.tsx
+msgid "Loading {0}"
+msgstr "Loading {0}"
+
+#: src/features/project/context/ContextViewer.tsx
+msgid "Loading {name}"
+msgstr "Loading {name}"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Loading agents…"
@@ -1006,11 +1027,13 @@ msgstr "New chat"
 msgid "New document"
 msgstr "New document"
 
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New file"
 msgstr "New file"
 
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New folder"
@@ -1309,7 +1332,7 @@ msgid "Removed a passage that included words the agent hadn't seen."
 msgstr "Removed a passage that included words the agent hadn't seen."
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
@@ -1328,6 +1351,10 @@ msgstr "Rename this document or move it somewhere else in your project."
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
 msgstr "Renamed to {trimmed}"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Reopens your last document and chat when you switch devices"
+msgstr "Reopens your last document and chat when you switch devices"
 
 #: src/features/chat/ChatView.tsx
 msgid "Reply to the agent, or steer the analysis…"
@@ -1367,8 +1394,13 @@ msgstr "Results"
 msgid "Resume {resumeDocumentName}"
 msgstr "Resume {resumeDocumentName}"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Resume where I left off on any device"
+msgstr "Resume where I left off on any device"
+
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
+#: src/features/account/SettingsDialog.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Retry"
@@ -1378,15 +1410,13 @@ msgstr "Retry"
 msgid "Retry sign-in"
 msgstr "Retry sign-in"
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftEntryBanner.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr "Review"
 
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Reviewing changes"
-msgstr "Reviewing changes"
+#: src/features/chat/DraftDock.tsx
+msgid "Review draft"
+msgstr "Review draft"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
@@ -1609,6 +1639,10 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr "The figure uploaded, but the editor could not insert it."
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Theme"
+msgstr "Theme"
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
@@ -1634,6 +1668,18 @@ msgstr "This change builds on earlier AI changes. Apply those first, or use Appl
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "This device"
+msgstr "This device"
+
+#: src/features/project/context/use-identity-commit.ts
+msgid "This document changed elsewhere. Reopen it and try again."
+msgstr "This document changed elsewhere. Reopen it and try again."
+
+#: src/features/project/context/use-identity-commit.ts
+msgid "This document keeps changing elsewhere. Reopen it and try again."
+msgstr "This document keeps changing elsewhere. Reopen it and try again."
 
 #: src/features/chat/DraftDock.tsx
 msgid "This draft changed. Review the latest version before applying."
@@ -1685,7 +1731,7 @@ msgid "Today"
 msgstr "Today"
 
 #. placeholder {0}: dir.name
-#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/context/ContextTreeRows.tsx
 msgid "Toggle folder {0}"
 msgstr "Toggle folder {0}"
 
@@ -1839,6 +1885,10 @@ msgstr "Your message"
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
+msgstr "Your saved preference is unavailable. Sync is paused until retry succeeds."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."

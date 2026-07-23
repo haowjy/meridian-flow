@@ -13,6 +13,7 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000404";
 const USER_TURN_ID = "00000000-0000-4000-8000-000000000405";
 const ASSISTANT_TURN_ID = "00000000-0000-4000-8000-000000000406";
 const INACTIVE_USER_TURN_ID = "00000000-0000-4000-8000-000000000407";
+const INTERLEAVED_USER_TURN_ID = "00000000-0000-4000-8000-000000000408";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("thread head projection (postgres)", () => {
@@ -141,6 +142,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(row?.attention).toBe("none");
       expect(snapshot.attention).toBe("none");
+    });
+
+    it("never advertises a sequence newer than its durable turn payload", async () => {
+      let committed = false;
+      const interleavingHub = {
+        ...emptyHub,
+        headSeq: async () => {
+          await repos.turns.create({
+            id: INTERLEAVED_USER_TURN_ID,
+            threadId: THREAD_ID,
+            prevTurnId: ASSISTANT_TURN_ID,
+            role: "user",
+            status: "complete",
+            createdAt: "2026-07-10T00:00:01.000Z",
+          });
+          committed = true;
+          return 7n;
+        },
+      } satisfies ThreadEventHub;
+
+      const snapshot = await buildThreadSnapshot(
+        repos,
+        interleavingHub,
+        { getRunningTurnId: () => null },
+        THREAD_ID,
+        USER_ID,
+      );
+
+      expect(committed).toBe(true);
+      expect(snapshot.nextSeq).toBe("8");
+      expect(snapshot.turns.map((turn) => turn.id)).toContain(INTERLEAVED_USER_TURN_ID);
     });
   });
 }

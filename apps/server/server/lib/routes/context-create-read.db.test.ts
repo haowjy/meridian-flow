@@ -345,7 +345,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(membershipAfterDelete.members).not.toContain(created.documentId);
     });
 
-    it("backfills observer-less scratch documents into an existing live manifest", async () => {
+    it("only backfills observer-less scratch documents during explicit reconciliation", async () => {
       const projectSourceId = "00000000-0000-4000-8000-000000000925";
       const workSourceId = "00000000-0000-4000-8000-000000000926";
       const scratchDocumentId = "00000000-0000-4000-8000-000000000924";
@@ -382,6 +382,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
+
+      await expect(
+        collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+      ).resolves.toMatchObject({ members: [] });
+
+      await collab.reconcileProjectManifest(PROJECT_ID as never);
 
       await expect(
         collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
