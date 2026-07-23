@@ -154,6 +154,8 @@ describe("ComposerWriteModeControl", () => {
 
     await act(async () => settle({ aiWriteMode: "direct", status: "updated" }));
     expect(document.body.querySelector('[data-slot="popover-content"]')).toBeNull();
-    expect(document.activeElement).toBe(autoApplyOption());
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(autoApplyOption());
+    });
   });
 });
