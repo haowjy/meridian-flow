@@ -1,41 +1,17 @@
-import { MessageType } from "@hocuspocus/server";
-import {
-  createEncoder,
-  toUint8Array,
-  writeVarString,
-  writeVarUint,
-  writeVarUint8Array,
-} from "lib0/encoding";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
-  admitBranchWriterMessage,
-  admitLiveWriterMessage,
+  admitWriterSync,
   type BranchHandshakeState,
   createYjsWebSocketHooks,
-  enforceBranchHandshake,
   subscribeWriterNoticeTransport,
 } from "../../routes/ws/yjs.js";
 
 const documentName = "branch:branch_1:gen:3";
 
-function syncMessage(syncType: number): Uint8Array {
-  const encoder = createEncoder();
-  writeVarString(encoder, documentName);
-  writeVarUint(encoder, MessageType.Sync);
-  writeVarUint(encoder, syncType);
-  writeVarUint8Array(encoder, new Uint8Array([1, 2, 3]));
-  return toUint8Array(encoder);
-}
-
-function awarenessMessage(): Uint8Array {
-  const encoder = createEncoder();
-  writeVarString(encoder, documentName);
-  writeVarUint(encoder, MessageType.Awareness);
-  return toUint8Array(encoder);
-}
+const payload = new Uint8Array([1, 2, 3]);
 
 function services(stale: boolean) {
   return {
@@ -44,6 +20,7 @@ function services(stale: boolean) {
     notices: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
+      validateBranchWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
 }
@@ -56,14 +33,20 @@ describe("Yjs branch handshake route guard", () => {
     const closeTransport = vi.fn();
 
     await expect(
-      admitBranchWriterMessage({
+      admitWriterSync({
         services: {
           ...services(false),
           documentSync: { validateBranchWriterUpdate } as never,
         },
         documentName,
-        update: syncMessage(messageYjsUpdate),
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload,
+        userId: "user-1" as never,
         closeTransport,
+        context: {
+          branchSyncState: new Map([["branch_1:3", "passed"]]),
+        },
       }),
     ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
     expect(validateBranchWriterUpdate).toHaveBeenCalledWith({
@@ -114,44 +97,40 @@ describe("Yjs branch handshake route guard", () => {
   it("rejects update-first sync messages", async () => {
     const state = new Map<string, BranchHandshakeState>();
     await expect(
-      enforceBranchHandshake({
+      admitWriterSync({
         services: services(false),
         documentName,
-        update: syncMessage(messageYjsUpdate),
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload,
+        userId: "user-1" as never,
         context: { branchSyncState: state },
       }),
     ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
     expect(state.get("branch_1:3")).toBe("rejected");
   });
 
-  it("passes awareness messages through without a branch sync state", async () => {
-    const state = new Map<string, BranchHandshakeState>();
-    await expect(
-      enforceBranchHandshake({
-        services: services(true),
-        documentName,
-        update: awarenessMessage(),
-        context: { branchSyncState: state },
-      }),
-    ).resolves.toBeUndefined();
-    expect(state.size).toBe(0);
-  });
-
   it("keeps a rejected room rejected when a later step1 would pass", async () => {
     const state = new Map<string, BranchHandshakeState>();
     await expect(
-      enforceBranchHandshake({
+      admitWriterSync({
         services: services(false),
         documentName,
-        update: syncMessage(messageYjsUpdate),
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload,
+        userId: "user-1" as never,
         context: { branchSyncState: state },
       }),
     ).rejects.toMatchObject({ reason: "branch-stale-doc" });
     await expect(
-      enforceBranchHandshake({
+      admitWriterSync({
         services: services(false),
         documentName,
-        update: syncMessage(messageYjsSyncStep1),
+        document: new Y.Doc(),
+        syncType: messageYjsSyncStep1,
+        payload,
+        userId: "user-1" as never,
         context: { branchSyncState: state },
       }),
     ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
@@ -160,17 +139,23 @@ describe("Yjs branch handshake route guard", () => {
 
   it("allows a fresh client to pass step1 then send updates", async () => {
     const state = new Map<string, BranchHandshakeState>();
-    await enforceBranchHandshake({
+    await admitWriterSync({
       services: services(false),
       documentName,
-      update: syncMessage(messageYjsSyncStep1),
+      document: new Y.Doc(),
+      syncType: messageYjsSyncStep1,
+      payload,
+      userId: "user-1" as never,
       context: { branchSyncState: state },
     });
     await expect(
-      enforceBranchHandshake({
+      admitWriterSync({
         services: services(false),
         documentName,
-        update: syncMessage(messageYjsUpdate),
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload,
+        userId: "user-1" as never,
         context: { branchSyncState: state },
       }),
     ).resolves.toBeUndefined();
@@ -236,19 +221,22 @@ describe("Yjs live writer admission", () => {
           };
         }),
     );
-    const admission = admitLiveWriterMessage({
+    const admission = admitWriterSync({
       services: {
         ...services(false),
         documentSync: { admitLiveWriterUpdate } as never,
       },
       documentName: "document-1",
-      update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
+      document: server,
+      syncType: messageYjsUpdate,
+      payload,
       userId: "user-1" as never,
     });
 
     await Promise.resolve();
     expect(admitLiveWriterUpdate).toHaveBeenCalledWith({
       documentId: "document-1",
+      document: server,
       update: payload,
       origin: { type: "user", userId: "user-1" },
       expectedGeneration: 1n,
@@ -271,13 +259,15 @@ describe("Yjs live writer admission", () => {
   it("does not send an empty update to PostgreSQL bytea admission", async () => {
     const admitLiveWriterUpdate = vi.fn();
     await expect(
-      admitLiveWriterMessage({
+      admitWriterSync({
         services: {
           ...services(false),
           documentSync: { admitLiveWriterUpdate } as never,
         },
         documentName: "document-1",
-        update: addressedSyncMessage("document-1", messageYjsUpdate, new Uint8Array()),
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload: new Uint8Array(),
         userId: "user-1" as never,
       }),
     ).resolves.toBeUndefined();
@@ -293,13 +283,15 @@ describe("Yjs live writer admission", () => {
     const closeTransport = vi.fn();
 
     await expect(
-      admitLiveWriterMessage({
+      admitWriterSync({
         services: {
           ...services(false),
           documentSync: { admitLiveWriterUpdate } as never,
         },
         documentName: "document-1",
-        update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload,
         userId: "user-1" as never,
         closeTransport,
       }),
@@ -320,29 +312,22 @@ describe("Yjs live writer admission", () => {
         documentSync: { admitLiveWriterUpdate } as never,
       },
       documentName: "document-1",
-      update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
+      document: new Y.Doc(),
+      syncType: messageYjsUpdate,
+      payload,
       userId: "user-1" as never,
       closeTransport,
     };
 
-    await expect(admitLiveWriterMessage(input)).rejects.toMatchObject({
+    await expect(admitWriterSync(input)).rejects.toMatchObject({
       reason: "writer-journal-admission-failed",
       code: 1013,
     });
     expect(closeTransport).toHaveBeenCalledOnce();
-    await expect(admitLiveWriterMessage(input)).resolves.toEqual({
+    await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,
       joinedSettlement: false,
     });
     expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
   });
 });
-
-function addressedSyncMessage(room: string, syncType: number, payload: Uint8Array): Uint8Array {
-  const encoder = createEncoder();
-  writeVarString(encoder, room);
-  writeVarUint(encoder, MessageType.Sync);
-  writeVarUint(encoder, syncType);
-  writeVarUint8Array(encoder, payload);
-  return toUint8Array(encoder);
-}

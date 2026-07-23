@@ -34,6 +34,7 @@ import type {
   UpdateOrigin,
 } from "../index.js";
 import { type AuthorshipSource, createDocumentAuthority } from "./document-authority.js";
+import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -60,6 +61,7 @@ type MarkdownDocumentEngineDeps = {
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  initialDocumentSeeds: InitialDocumentSeeds;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   afterWrite?: MarkdownWriteHook;
   identityPreservingWrite?(input: {
@@ -326,8 +328,27 @@ export function createMarkdownDocumentEngine(
     editMarkdown,
 
     async seedFromMarkdown(documentId, markdown, origin) {
-      const result = await setMarkdown({ documentId: documentId as DocumentId, markdown, origin });
-      return result.ok ? Ok(persistedUpdate(result.value)) : result;
+      const typedDocumentId = documentId as DocumentId;
+      const format = await documentFormat(typedDocumentId);
+      if (!format.ok) return format;
+      const parsed = parseMarkdown(typedDocumentId, markdown, format.value);
+      if (!parsed.ok) return parsed;
+      const seededDoc = createCollabYDoc({ gc: false });
+      seededDoc.transact(() => {
+        deps.model.insertBlocks(toDocHandle(seededDoc), null, parsed.value);
+      }, yjsTransactionOrigin(origin));
+      const canonicalMarkdown = serializeForSchema(seededDoc, format.value.schemaType);
+      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
+        typedDocumentId,
+        Y.encodeStateAsUpdate(seededDoc),
+      );
+      // Both the winning initializer and concurrent no-op callers must wait for
+      // a room opened during bootstrap to converge with the durable journal.
+      await deps.coordinator.recover(typedDocumentId);
+      if (seeded) {
+        await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
+      }
+      return Ok(null);
     },
 
     async writeDocument(input) {
@@ -445,10 +466,6 @@ export function syncErrorMessage(error: SyncError): string {
 
 function throwSyncError(error: SyncError): never {
   throw new Error(syncErrorMessage(error));
-}
-
-function persistedUpdate(result: MarkdownSetResult): PersistedUpdate {
-  return { updateSeq: result.updateSeq, updateData: result.updateData };
 }
 
 function documentWriteResult(

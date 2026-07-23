@@ -22,6 +22,7 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
@@ -106,6 +107,7 @@ export type CollabTransport = {
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   admitLiveWriterUpdate(input: {
     documentId: DocumentId;
+    document: Y.Doc;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" }>;
     expectedGeneration: bigint;
@@ -362,10 +364,12 @@ export type BranchPeerShadowAccess = {
     threadId?: ThreadId | null;
     responseId?: string | null;
   }): Promise<{ documentId: DocumentId; members: string[] }>;
+  reconcileProjectManifest(projectId: ProjectId): Promise<void>;
   recordManifestDocumentCreated(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
   ): Promise<void>;
+  /** The documents.deleted_at transaction must commit before this notification. */
   recordManifestDocumentDeleted(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
@@ -392,6 +396,7 @@ export type TrailForwardActionAccess = {
 };
 
 export type CollabDomain = CollabTransport &
+  DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &
   MarkdownDocumentStore &
@@ -406,6 +411,10 @@ export type CollabDomain = CollabTransport &
   CollabDrafts;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";
+export type {
+  DocumentAuthorityHead,
+  DocumentAuthorityHeads,
+} from "./domain/ports/document-authority-heads.js";
 export {
   isStaleDocumentSchemaError,
   isStaleSchema,

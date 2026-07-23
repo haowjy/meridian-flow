@@ -149,6 +149,8 @@ facet.
   authorization.
 - **Depends on `domains/billing` and `@meridian/contracts/spawn`** — credit ledger
   and tree budgets.
+- **Depends on `domains/collab`** — `DocumentAuthorityHeads` port for
+  `freezeCausalCuts` (idempotent ensure + bulk read of authority heads).
 - **Consumed by `lib/` routes** — WS/HTTP handlers call
   `turnRunner.startTurn` / `turnRunner.cancel`; composition wires adapters.
 - **No direct dependency on `domains/context`** — context-using tools receive

@@ -1,6 +1,6 @@
 /**
  * pendingReviewDraft — THE per-document pending-changes signal shared by the
- * dock's pending rows and the editor's DraftEntryBanner. It resolves to the
+ * dock's pending rows and the identity bar's DraftReviewChip. It resolves to the
  * newest active draft that actually carries review content, or null.
  */
 

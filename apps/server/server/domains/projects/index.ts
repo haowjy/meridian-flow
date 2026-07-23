@@ -20,6 +20,7 @@ import {
   works,
 } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import type { MarkdownDocumentStore } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
@@ -58,7 +59,11 @@ export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepo
   };
 }
 
-export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBootstrapRepository {
+export function createDrizzleProjectBootstrapRepository(deps: {
+  db: Database;
+  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown">;
+}): ProjectBootstrapRepository {
+  const { db } = deps;
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select">;
 
   async function lockBootstrap(tx: BootstrapDb, userId: UserId): Promise<void> {
@@ -223,7 +228,6 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
         extension: "md",
         fileType: "markdown",
         mimeType: "text/markdown",
-        markdownProjection: "# Chapter 1\n\n",
       })
       .returning({ id: documents.id });
     if (!document) throw new Error("Failed to create chapter document");
@@ -302,7 +306,7 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
   return {
     findPersonalProjectId,
     async ensureDefaultBootstrap(userId) {
-      return db.transaction(async (tx): Promise<DefaultBootstrap> => {
+      const bootstrap = await db.transaction(async (tx) => {
         await lockBootstrap(tx, userId);
         const projectId = await ensureProject(tx, userId);
         const agentDefinitionId = await ensureAgent(tx, projectId);
@@ -326,8 +330,17 @@ export function createDrizzleProjectBootstrapRepository(db: Database): ProjectBo
           contextSourceId,
           agentDefinitionId,
           uri: DEFAULT_BOOTSTRAP_URI,
-        };
+        } satisfies DefaultBootstrap;
       });
+      const seeded = await deps.documents.seedFromMarkdown(
+        bootstrap.documentId,
+        "# Chapter 1\n\n",
+        { type: "system" },
+      );
+      if (!seeded.ok) {
+        throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
+      }
+      return bootstrap;
     },
   };
 }

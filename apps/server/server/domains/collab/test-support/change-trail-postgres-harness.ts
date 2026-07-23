@@ -34,9 +34,11 @@ const { createDrizzleChangeTrailPersistence } = await import(
   "../adapters/drizzle-change-trails.js"
 );
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
-const { readDocumentAuthority, replaceDocumentAuthorityGeneration } = await import(
-  "../adapters/drizzle-document-authority.js"
-);
+const {
+  createDrizzleDocumentAuthorityHeads,
+  readDocumentAuthority,
+  replaceDocumentAuthorityGeneration,
+} = await import("../adapters/drizzle-document-authority.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
 const { createFacade } = await import("../composition.js");
@@ -400,6 +402,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
   const collab = createFacade({
     ...persistence,
+    initialDocumentSeeds: persistence.lifecycle,
+    documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(db),
     observationSnapshots,
     coordinator: liveCoordinator,
     hocuspocus: () => hocuspocus as never,

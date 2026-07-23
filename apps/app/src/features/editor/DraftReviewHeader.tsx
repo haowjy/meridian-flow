@@ -1,17 +1,12 @@
 /**
- * DraftReviewHeader — the full-width editor's chrome while a document is under
- * inline review.
- *
- * Review mode is a full-width manuscript with the dock's Changes view; this
- * strip carries the whole-draft controls that used to hang off the deleted
- * in-editor split: LEFT an exit back to the live document, RIGHT Apply all /
- * Discard all. The verbs delegate straight to the shared review controller —
- * the controls moved here, the accept/reject logic did not change.
+ * DraftReviewHeader — the editor's chrome while a document is under inline
+ * review. A thin strip above the identity bar: "Back to live" exit on the
+ * left, whole-draft Apply all / Discard all on the right. Matches the dock
+ * strip's geometry (min-h-7, bg-dock-surface, text-caption).
  */
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, Loader2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 
 export type DraftReviewHeaderProps = {
@@ -21,61 +16,51 @@ export type DraftReviewHeaderProps = {
 
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
   const { controller } = useDraftReview();
-  // Apply all / Discard all join the global disposition lock — no whole-draft
-  // action while a per-card Apply/Discard is mid-flight.
   const busy = controller.isDisposing;
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
 
   return (
     <section
-      className="surface-card flex shrink-0 flex-wrap items-center gap-3 border-border-subtle border-b px-4 py-2"
+      // px-4 matches the identity bar's band padding so Apply all and the
+      // Rename chip share one right edge.
+      className="flex min-h-7 shrink-0 flex-wrap items-center gap-1.5 border-border border-b bg-dock-surface px-4 text-caption"
+      role="status"
+      aria-live="polite"
       data-draft-review-header
     >
-      <Button
+      <button
         type="button"
-        size="sm"
-        variant="ghost"
         onClick={() => controller.exitInlineReview()}
         disabled={busy}
-        className="-ml-2 text-muted-foreground hover:text-foreground"
+        className="text-button -ml-1 inline-flex items-center gap-0.5 text-xs"
       >
-        <ChevronLeft className="size-3.5" aria-hidden />
+        <ChevronLeft className="size-3" aria-hidden />
         <Trans>Back to live</Trans>
-      </Button>
-      <span
-        className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground"
-        data-draft-review-status
-      >
-        <span aria-hidden className="size-2 rounded-full bg-primary" />
-        <Trans>Reviewing changes</Trans>
-      </span>
+      </button>
       {staleMessage ? (
         <p className="text-destructive text-xs" role="alert">
           {staleMessage}
         </p>
       ) : null}
-      <div className="ml-auto flex items-center gap-2">
-        <Button
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <button
           type="button"
-          size="sm"
-          variant="ghost"
           onClick={() => controller.reject(documentId, draftId)}
           disabled={busy}
-          className="text-muted-foreground hover:text-foreground"
+          className="text-button"
         >
           <Trans>Discard all</Trans>
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
-          size="sm"
-          variant="default"
           onClick={() => controller.accept(documentId, draftId)}
           disabled={busy}
+          className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
         >
           {controller.isAccepting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
           <Trans>Apply all</Trans>
-        </Button>
+        </button>
       </div>
     </section>
   );

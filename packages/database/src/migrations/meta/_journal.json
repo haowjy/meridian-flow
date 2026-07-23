@@ -393,6 +393,13 @@
       "when": 1784298991756,
       "tag": "0055_loud_xorn",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784347578092,
+      "tag": "0056_aspiring_hercules",
+      "breakpoints": true
     }
   ]
 }

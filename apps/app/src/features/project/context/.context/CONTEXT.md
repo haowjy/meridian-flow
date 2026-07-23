@@ -21,11 +21,11 @@ ContextPaneController
        ├─ route ↔ server-tab reconciliation
        ├─ in-memory ContextTab[] (tracked, viewer, and new)
        └─ ContextViewer
-              ├─ ContextTabBar
-              ├─ DocumentIdentityBar (active tab's breadcrumb + chip slot)
+              ├─ ContextTabBar (reviewing tab surfaces dock tone)
+              ├─ DraftReviewHeader (review strip, above the identity bar)
+              ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
               ├─ ContextEditorMountHost (warm tracked + untitled Yjs editors)
-              ├─ ContextViewerHost (active binary viewer)
-              └─ EditorBannerSlot (draft chrome only)
+              └─ ContextViewerHost (active binary viewer)
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.

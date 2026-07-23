@@ -356,9 +356,7 @@ describe("buildThreadSnapshot", () => {
 
     expect(snapshot.turns.find((turn) => turn.id === assistantTurn.id)?.blocks).toEqual([]);
     expect(snapshot.liveState.resumeAfterSeq).toBe(`${projectedWatermark * 1000n + 999n}`);
-    expect(snapshot.liveState.resumeAfterSeq).not.toBe(
-      (BigInt(snapshot.liveState.nextSeq) - 1n).toString(),
-    );
+    expect(snapshot.liveState.resumeAfterSeq).not.toBe((BigInt(snapshot.nextSeq) - 1n).toString());
   });
 
   it("keeps the resume watermark at materialized blocks when later deltas are still streaming", async () => {
@@ -420,8 +418,6 @@ describe("buildThreadSnapshot", () => {
 
     expect(snapshot.turns.find((turn) => turn.id === assistantTurn.id)?.blocks).toHaveLength(1);
     expect(snapshot.liveState.resumeAfterSeq).toBe(`${blockWatermark * 1000n + 999n}`);
-    expect(BigInt(snapshot.liveState.resumeAfterSeq)).toBeLessThan(
-      BigInt(snapshot.liveState.nextSeq) - 1n,
-    );
+    expect(BigInt(snapshot.liveState.resumeAfterSeq)).toBeLessThan(BigInt(snapshot.nextSeq) - 1n);
   });
 });

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "document_yjs_checkpoints_initial" ON "document_yjs_checkpoints" USING btree ("document_id") WHERE "document_yjs_checkpoints"."up_to_seq" = 0; -- migration-lint: skip INDEX_NOT_CONCURRENTLY -- v3 has no production data or users

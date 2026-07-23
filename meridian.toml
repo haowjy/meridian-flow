@@ -110,3 +110,7 @@ remote = "git@github.com:haowjy/meridian-flow-docs.git"
 
 [workspace.siblings]
 path = "../"
+
+# managed by meridian — do not edit
+[project]
+id = "orange-channel-vale"

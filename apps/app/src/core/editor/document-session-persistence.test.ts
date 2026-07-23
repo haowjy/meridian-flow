@@ -75,4 +75,48 @@ describe("DocumentSession persistence cleanup", () => {
 
     await expect(synced).resolves.toBeUndefined();
   });
+
+  it("attaches transport after IndexedDB has replayed local updates", async () => {
+    let resolveLocalSync!: () => void;
+    persistence.createWhenSynced.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLocalSync = resolve;
+      }),
+    );
+    const transportFactory = vi.fn(() => ({ destroy: vi.fn() }));
+
+    const session = new DocumentSession({
+      roomKey: "doc-local-replay",
+      enableIndexedDb: true,
+      transportFactory,
+    });
+
+    expect(transportFactory).not.toHaveBeenCalled();
+    resolveLocalSync();
+    await session.whenLocalPersistenceSynced();
+    await Promise.resolve();
+
+    expect(transportFactory).toHaveBeenCalledOnce();
+    await session.destroy();
+  });
+
+  it("attaches transport after one second when IndexedDB never becomes ready", async () => {
+    vi.useFakeTimers();
+    persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));
+    const transportFactory = vi.fn(() => ({ destroy: vi.fn() }));
+    const session = new DocumentSession({
+      roomKey: "doc-local-blocked",
+      enableIndexedDb: true,
+      transportFactory,
+    });
+
+    expect(transportFactory).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(transportFactory).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transportFactory).toHaveBeenCalledOnce();
+
+    await session.destroy();
+    vi.useRealTimers();
+  });
 });
