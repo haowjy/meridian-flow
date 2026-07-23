@@ -1,70 +1,23 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
 import type {
+  ChangeTrailShellV1,
+  TrailChangeV1,
   TrailForwardAction,
   TrailForwardActionResult,
   TrailForwardActionStateV1,
 } from "@meridian/contracts";
 import { getJson, postJson } from "./api/http-client";
 
-export type { TrailForwardAction, TrailForwardActionResult, TrailForwardActionStateV1 };
-
-export type ChangeTrailShell = {
-  trailId: string;
-  owner:
-    | { kind: "turn"; threadId: string; turnId: string }
-    | { kind: "shared"; threadId: string; turnId: null };
-  state: "building" | "settling" | "settled";
-  version: number;
-  changeCount: number;
-  sweptChangeCount: number;
-  documentCount: number;
-  updatedAt: string;
-  settledAt: string | null;
+export type {
+  ChangeTrailShellV1,
+  TrailChangeV1,
+  TrailForwardAction,
+  TrailForwardActionResult,
+  TrailForwardActionStateV1,
 };
 
-export type TrailChange = {
-  changeId: string;
-  ordinal: number;
-  documentId: string | null;
-  pushId?: string | null;
-  receiptId?: string | null;
-  kind: "insert" | "modify" | "delete";
-  beforeBlockId?: string | null;
-  afterBlockId?: string | null;
-  beforeBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
-  beforeText: string | null;
-  afterTextAtReceipt: string | null;
-  /** Canonical live block retained for server-side Restore fallback planning. */
-  afterBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
-  navigation:
-    | {
-        kind: "live_block_range";
-        relStart: string;
-        relEnd: string;
-        targetBlockId: { clientID: number; clock: number };
-      }
-    | {
-        kind: "deletion_boundary";
-        position: string;
-        affinity: "before_next" | "after_previous" | "document_start";
-      }
-    | { kind: "unavailable"; reason: string };
-  swept: null | {
-    removed: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
-  };
-  /** Writer-protection evidence; absent on ordinary historical rows. */
-  writerProtection?:
-    | {
-        kind: "sweep";
-        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
-      }
-    | {
-        kind: "resurrection";
-        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
-      };
-  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
-  reversible: boolean;
-};
+export type ChangeTrailShell = ChangeTrailShellV1;
+export type TrailChange = TrailChangeV1;
 
 export type ChangeTrailDocument =
   | {

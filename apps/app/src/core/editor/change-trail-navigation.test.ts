@@ -10,7 +10,11 @@ function deletionChange(doc: Y.Doc): TrailChange {
     changeId: "change-1",
     ordinal: 1,
     documentId: "doc-1",
+    pushId: null,
+    receiptId: null,
     kind: "delete",
+    beforeBlockId: null,
+    afterBlockId: null,
     beforeText: "gone",
     afterTextAtReceipt: null,
     navigation: {

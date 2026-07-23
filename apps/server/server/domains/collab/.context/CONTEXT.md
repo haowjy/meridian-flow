@@ -25,7 +25,7 @@ and WebSocket callers.
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
 | Offline late reconciliation | `domain/offline-reconciliation.ts` |
-| Safety-notice production + writer delivery | `composition.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
+| Model-context notice production + delivery | `composition.ts`, `domains/notices/` |
 
 ## Write codec and schema coherence
 
