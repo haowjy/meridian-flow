@@ -5,7 +5,11 @@ import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
-import { PROVENANCE_ROOTS_TYPE, PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
+import {
+  PROVENANCE_ROOTS_TYPE,
+  PROVENANCE_TARGETS_TYPE,
+  ReservedNamespaceAdmissionError,
+} from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 const BRANCH_ID = "branch-1";
@@ -35,30 +39,14 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
   });
 
   it("registers branch admission before validation so store and shutdown drains wait", async () => {
-    const branchDoc = docWithText("seed");
-    const roomDoc = cloneDoc(branchDoc);
-    const before = Y.encodeStateVector(roomDoc);
-    roomDoc.getText("content").insert(4, "!");
-    const update = Y.encodeStateAsUpdate(roomDoc, before);
-    let releaseRead: (() => void) | undefined;
-    const readBlocked = new Promise<void>((resolve) => {
-      releaseRead = resolve;
+    let releaseAdmission: (() => void) | undefined;
+    const admissionBlocked = new Promise<void>((resolve) => {
+      releaseAdmission = resolve;
     });
-    const commitUpdate = vi.fn(async () => undefined);
+    const commitWriterUpdate = vi.fn(async () => admissionBlocked);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: {
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-        getBranch: async () => {
-          await readBlocked;
-          return branchSnapshot(branchDoc);
-        },
-        updateBranchSnapshot: async () => true,
-      },
-      branchCoordinator: { commitUpdate } as never,
+      branchCoordinator: { commitWriterUpdate } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
@@ -68,9 +56,9 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     const admission = persistence.admitBranchWriterUpdate({
       branchId: BRANCH_ID,
       expectedGeneration: 2,
-      update,
+      update: writerUpdate(),
       origin: { type: "user", userId: "user-1" as never },
-      document: cloneDoc(branchDoc),
+      document: new Y.Doc({ gc: false }),
     });
     const store = persistence.storeHocuspocusBranch(BRANCH_ID, new Y.Doc({ gc: false }));
     const shutdownDrain = persistence.drainHocuspocusPersistence();
@@ -81,9 +69,9 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     await Promise.resolve();
     expect(drained).toBe(false);
 
-    releaseRead?.();
+    releaseAdmission?.();
     await expect(Promise.all([admission, store, shutdownDrain])).resolves.toBeDefined();
-    expect(commitUpdate).toHaveBeenCalledOnce();
+    expect(commitWriterUpdate).toHaveBeenCalledOnce();
     expect(drained).toBe(true);
   });
 });
@@ -94,7 +82,9 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const client = cloneDoc(authority);
     const before = Y.encodeStateVector(client);
     client.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1);
-    const commitUpdate = vi.fn(async () => undefined);
+    const commitWriterUpdate = vi.fn(async () => {
+      throw new ReservedNamespaceAdmissionError();
+    });
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
@@ -105,7 +95,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         getBranch: async () => branchSnapshot(authority),
         updateBranchSnapshot: async () => true,
       },
-      branchCoordinator: { commitUpdate } as never,
+      branchCoordinator: { commitWriterUpdate } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
@@ -120,8 +110,8 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         origin: { type: "user", userId: "user-1" as never },
         document: client,
       }),
-    ).rejects.toThrow("reserved provenance");
-    expect(commitUpdate).not.toHaveBeenCalled();
+    ).rejects.toBeInstanceOf(ReservedNamespaceAdmissionError);
+    expect(commitWriterUpdate).toHaveBeenCalledOnce();
   });
 
   it("accepts a first writer update when the branch state carries tombstones already present in the room doc", async () => {
@@ -131,7 +121,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const before = Y.encodeStateVector(roomDoc);
     roomDoc.getText("content").insert(roomDoc.getText("content").length, "!");
     const humanUpdate = Y.encodeStateAsUpdate(roomDoc, before);
-    const commitUpdate = vi.fn(async () => undefined);
+    const commitWriterUpdate = vi.fn(async () => undefined);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
@@ -143,7 +133,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         updateBranchSnapshot: async () => true,
       },
       branchCoordinator: {
-        commitUpdate,
+        commitWriterUpdate,
       } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
@@ -161,7 +151,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(commitUpdate).toHaveBeenCalledWith(
+    expect(commitWriterUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ branchId: BRANCH_ID, updateData: humanUpdate }),
     );
   });
@@ -183,7 +173,9 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         updateBranchSnapshot: async () => true,
       },
       branchCoordinator: {
-        commitUpdate: vi.fn(async () => undefined),
+        commitWriterUpdate: vi.fn(async () => {
+          throw new BranchStaleUpdateError(BRANCH_ID);
+        }),
       } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
@@ -221,7 +213,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         getBranch: async () => snapshot,
         updateBranchSnapshot: async () => true,
       },
-      branchCoordinator: { commitUpdate: vi.fn(async () => undefined) } as never,
+      branchCoordinator: { commitWriterUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
@@ -249,7 +241,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const before = Y.encodeStateVector(roomDoc);
     roomDoc.getText("content").insert(roomDoc.getText("content").length, " fresh");
     const freshUpdate = Y.encodeStateAsUpdate(roomDoc, before);
-    const commitUpdate = vi.fn(async () => undefined);
+    const commitWriterUpdate = vi.fn(async () => undefined);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
@@ -260,7 +252,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         getBranch: async () => snapshot,
         updateBranchSnapshot: async () => true,
       },
-      branchCoordinator: { commitUpdate } as never,
+      branchCoordinator: { commitWriterUpdate } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
@@ -277,7 +269,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(commitUpdate).toHaveBeenCalledWith(
+    expect(commitWriterUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ branchId: BRANCH_ID, updateData: freshUpdate }),
     );
   });
@@ -297,7 +289,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         getBranch: async () => snapshot,
         updateBranchSnapshot: async () => true,
       },
-      branchCoordinator: { commitUpdate: vi.fn(async () => undefined) } as never,
+      branchCoordinator: { commitWriterUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,

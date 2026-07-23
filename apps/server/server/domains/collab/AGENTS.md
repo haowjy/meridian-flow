@@ -63,8 +63,8 @@ propagation between them.
   without admission. Branch updates persist through the branch coordinator.
   Connection updates do not fire document activity/projection hooks.
 - Branch-room writer updates validate and commit through the branch coordinator
-  in `beforeSync`, before Hocuspocus apply/broadcast/ack. `onChange` is not a
-  branch durability seam.
+  against one locked branch snapshot in `beforeSync`, before Hocuspocus
+  apply/broadcast/ack. `onChange` is not a branch durability seam.
 - Client admission must reject reserved client IDs and any insertion/deletion in
   the reserved provenance namespace before journal/apply/broadcast/ack.
 - Settlement changes require all three verification layers: the durable-only
