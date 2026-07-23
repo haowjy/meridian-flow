@@ -3,32 +3,15 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { pendingNoticeDeliveries, pendingNotices } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
-import type { ActiveDocumentResolver } from "../../threads/index.js";
-import type {
-  Notice,
-  NoticeInput,
-  NoticePort,
-  WriterNoticeEvent,
-  WriterNoticeListener,
-} from "../index.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { Notice, NoticeInput, NoticePort } from "../index.js";
 
 type NoticeDb = Pick<Database, "insert" | "select" | "update" | "delete" | "transaction">;
 
-export function createDrizzleNoticePort(
-  db: Database,
-  activeDocuments: ActiveDocumentResolver,
-): NoticePort {
-  const listeners = new Set<WriterNoticeListener>();
-
+export function createDrizzleNoticePort(db: Database): NoticePort {
   return {
     async record(input) {
       validateNotice(input);
-      const writerDocumentId = input.writerVisible ? requireWriterDocumentId(input) : null;
       await runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
         const [row] = await tx
@@ -37,10 +20,8 @@ export function createDrizzleNoticePort(
             kind: input.kind,
             scopeKind: input.scope.kind,
             scopeId: scopeId(input),
-            writerDocumentId: writerDocumentId as DocumentId | null,
             message: input.message,
             data: input.data,
-            writerVisible: input.writerVisible,
           })
           .returning({ id: pendingNotices.id });
         if (!row) throw new Error("Failed to record safety notice");
@@ -53,19 +34,6 @@ export function createDrizzleNoticePort(
           await tx.insert(pendingNoticeDeliveries).values(deliveries).onConflictDoNothing();
         }
       });
-
-      if (input.writerVisible && writerDocumentId) {
-        const event: WriterNoticeEvent = {
-          documentId: writerDocumentId,
-          kind: input.kind,
-          message: input.message,
-          data: input.data,
-        };
-        const emit = () => {
-          for (const listener of listeners) listener(event);
-        };
-        if (!deferUntilDrizzleCommit(emit)) emit();
-      }
     },
 
     async drainForModelContext(threadId, activeDocumentIds) {
@@ -118,7 +86,7 @@ export function createDrizzleNoticePort(
                 inArray(pendingNoticeDeliveries.noticeId, threadIds),
               ),
             );
-          await deleteFullyConsumed(tx as NoticeDb, threadIds, activeDocuments);
+          await deleteFullyConsumed(tx as NoticeDb, threadIds);
         }
         if (pendingDocumentRows.length > 0) {
           await tx
@@ -134,77 +102,29 @@ export function createDrizzleNoticePort(
           await deleteFullyConsumed(
             tx as NoticeDb,
             pendingDocumentRows.map(({ id }) => id),
-            activeDocuments,
           );
         }
         return notices;
       });
     },
-
-    async drainForWriter(documentId) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db);
-        const rows = await tx
-          .select()
-          .from(pendingNotices)
-          .where(
-            and(
-              eq(pendingNotices.writerDocumentId, documentId as DocumentId),
-              eq(pendingNotices.writerVisible, true),
-              eq(pendingNotices.writerConsumed, false),
-            ),
-          )
-          .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
-        if (rows.length === 0) return [];
-        const ids = rows.map(({ id }) => id);
-        await tx
-          .update(pendingNotices)
-          .set({ writerConsumed: true })
-          .where(inArray(pendingNotices.id, ids));
-        await deleteFullyConsumed(tx as NoticeDb, ids, activeDocuments);
-        return rows.map(mapNotice);
-      });
-    },
-
-    subscribeWriterVisible(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
   };
 }
 
-async function deleteFullyConsumed(
-  db: NoticeDb,
-  ids: readonly number[],
-  activeDocuments: ActiveDocumentResolver,
-): Promise<void> {
+async function deleteFullyConsumed(db: NoticeDb, ids: readonly number[]): Promise<void> {
   for (const id of ids) {
     const [notice] = await db
       .select({
         scopeKind: pendingNotices.scopeKind,
         scopeId: pendingNotices.scopeId,
-        writerVisible: pendingNotices.writerVisible,
-        writerConsumed: pendingNotices.writerConsumed,
       })
       .from(pendingNotices)
       .where(eq(pendingNotices.id, id));
     if (!notice) continue;
     if (notice.scopeKind === "document") {
-      // Document fan-out is resolved at drain time. A non-writer notice has no
-      // event that can close the writer side, so it remains available to threads
-      // that attach later (expiry is intentionally a separate policy).
-      if (!notice.writerConsumed) continue;
-      const activeThreadIds = await activeDocuments.listThreadIds(notice.scopeId);
-      const deliveries = await db
-        .select({ threadId: pendingNoticeDeliveries.threadId })
-        .from(pendingNoticeDeliveries)
-        .where(eq(pendingNoticeDeliveries.noticeId, id));
-      const deliveredThreadIds = new Set(deliveries.map(({ threadId }) => threadId));
-      if (activeThreadIds.some((threadId) => !deliveredThreadIds.has(threadId))) continue;
-      await db.delete(pendingNotices).where(eq(pendingNotices.id, id));
+      // Document fan-out is resolved at drain time, so the notice remains
+      // available to threads that attach later (expiry is separate policy).
       continue;
     }
-    if (notice.writerVisible && !notice.writerConsumed) continue;
     const [delivery] = await db
       .select({ noticeId: pendingNoticeDeliveries.noticeId })
       .from(pendingNoticeDeliveries)
@@ -215,14 +135,6 @@ async function deleteFullyConsumed(
 
 function scopeId(input: NoticeInput): string {
   return input.scope.kind === "thread" ? input.scope.threadId : input.scope.documentId;
-}
-
-function requireWriterDocumentId(input: NoticeInput): string {
-  const documentId = input.data.documentId;
-  if (typeof documentId !== "string" || documentId.length === 0) {
-    throw new Error("Writer-visible safety notices require data.documentId");
-  }
-  return documentId;
 }
 
 function validateNotice(input: NoticeInput): void {
@@ -265,7 +177,6 @@ function mapNotice(row: PendingNoticeRow): Notice {
         : { kind: "document", documentId: row.scopeId },
     message: row.message,
     data: row.data,
-    writerVisible: row.writerVisible,
     createdAt: row.createdAt,
   };
 }

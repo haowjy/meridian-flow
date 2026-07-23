@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `@meridian/contracts`: delete the dead, lossy
+  writer safety-notice transport and session state; model-context notices remain
+  durable while Trail/Restore is the writer-facing report (part of #333).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

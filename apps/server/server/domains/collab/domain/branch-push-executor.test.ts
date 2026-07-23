@@ -499,8 +499,6 @@ describe("createBranchPushService", () => {
     const notices = {
       record: vi.fn(async () => {}),
       drainForModelContext: vi.fn(async () => []),
-      drainForWriter: vi.fn(async () => []),
-      subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const record = vi.fn(async () => {});
     const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
@@ -872,8 +870,6 @@ describe("createBranchPushService", () => {
     const notices = {
       record: vi.fn(async () => {}),
       drainForModelContext: vi.fn(async () => []),
-      drainForWriter: vi.fn(async () => []),
-      subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const service = createBranchPushService({
       branchStore: {
@@ -964,7 +960,6 @@ describe("createBranchPushService", () => {
         expect(notices.record).toHaveBeenCalledWith(
           expect.objectContaining({
             kind: "push_swept",
-            writerVisible: true,
             data: expect.objectContaining({
               documentName: "The Ninefold Furnace",
               threadId: THREAD_ID,
@@ -1017,8 +1012,6 @@ describe("createBranchPushService", () => {
     const notices = {
       record: vi.fn(async () => {}),
       drainForModelContext: vi.fn(async () => []),
-      drainForWriter: vi.fn(async () => []),
-      subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
     let durableSettlement: PendingLiveSettlement | null = null;

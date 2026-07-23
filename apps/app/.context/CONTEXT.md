@@ -23,13 +23,9 @@ false in production and requires `WORKOS_DEV_AUTOLOGIN=1` plus
 
 ## State + transport seams
 
-Hocuspocus stateless `safety_notice` messages enter through the existing
-document transport and are retained on `DocumentSession`. Live editor surfaces
-render `late_sweep` and `checkpoint_sweep` as a quiet, dismissible receipt below
-the toolbar; no parallel toast/notification store exists. `beforeContentRef` is
-retained in the notice payload, but the client currently has no reconstruction
-endpoint keyed by that reference, so the receipt intentionally has no
-`View change` action yet.
+Writer-facing AI change reporting uses the durable Trail/Restore surface and
+session change marks. `DocumentSession` owns collaboration state only; it does
+not retain a parallel safety-notice presentation model.
 
 Two interfaces are the only paths between the visual layer and the substrate:
 

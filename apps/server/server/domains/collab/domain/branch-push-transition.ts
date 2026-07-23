@@ -362,7 +362,6 @@ export function createBranchPushTransition(input: {
           transactionalNotice: {
             kind: "push_swept",
             scope: { kind: "document", documentId: pending.push.documentId },
-            writerVisible: true,
             message:
               "AI applied changes that removed words not yet synced to the agent — View change",
             data: {

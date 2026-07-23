@@ -12,7 +12,6 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
-  boolean,
   check,
   index,
   integer,
@@ -617,17 +616,11 @@ export const pendingNotices = pgTable(
     kind: text("kind").notNull(),
     scopeKind: text("scope_kind").$type<"thread" | "document">().notNull(),
     scopeId: uuid("scope_id").notNull(),
-    writerDocumentId: uuid("writer_document_id")
-      .$type<DocumentId>()
-      .references(() => documents.id, { onDelete: "cascade" }),
     message: text("message").notNull(),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
-    writerVisible: boolean("writer_visible").notNull().default(false),
-    writerConsumed: boolean("writer_consumed").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [
-    index("pending_notices_writer").on(table.writerDocumentId, table.writerConsumed),
     check("pending_notices_scope_valid", sql`${table.scopeKind} IN ('thread', 'document')`),
   ],
 );

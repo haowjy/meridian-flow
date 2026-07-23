@@ -11,13 +11,12 @@ import {
   HocuspocusProviderWebsocket,
   type onAuthenticationFailedParameters,
   type onCloseParameters,
-  type onStatelessParameters,
   type onStatusParameters,
   type onSyncedParameters,
   type onUnsyncedChangesParameters,
   WebSocketStatus,
 } from "@hocuspocus/provider";
-import { type SafetyNoticeWsMessage, yjsWsPath } from "@meridian/contracts/protocol";
+import { yjsWsPath } from "@meridian/contracts/protocol";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { DocumentSessionTransportProvider } from "@/core/editor/document-session";
@@ -97,7 +96,6 @@ export function createHocuspocusDocumentTransport({
   awareness,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: ConnectionState) => void>();
-  const safetyNoticeListeners = new Set<(notice: SafetyNoticeWsMessage) => void>();
   let currentState = mapStatus(getSharedWebsocket().status);
   let terminal = false;
   let destroyed = false;
@@ -152,12 +150,6 @@ export function createHocuspocusDocumentTransport({
     }
   }
 
-  function handleStateless({ payload }: onStatelessParameters): void {
-    const notice = parseSafetyNotice(payload);
-    if (!notice) return;
-    for (const listener of safetyNoticeListeners) listener(notice);
-  }
-
   const provider = new HocuspocusProvider({
     name: roomName,
     document,
@@ -168,7 +160,6 @@ export function createHocuspocusDocumentTransport({
     onUnsyncedChanges: handleUnsyncedChanges,
     onAuthenticationFailed: handleAuthenticationFailed,
     onClose: handleClose,
-    onStateless: handleStateless,
   });
   if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
     notifyYjsRoomAttached(roomName, document.clientID);
@@ -196,39 +187,11 @@ export function createHocuspocusDocumentTransport({
         listeners.delete(listener);
       };
     },
-    subscribeSafetyNotices(listener) {
-      safetyNoticeListeners.add(listener);
-      return () => safetyNoticeListeners.delete(listener);
-    },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       provider.destroy();
       listeners.clear();
-      safetyNoticeListeners.clear();
     },
   };
-}
-
-export function parseSafetyNotice(payload: string): SafetyNoticeWsMessage | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(payload);
-  } catch {
-    return null;
-  }
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Record<string, unknown>;
-  if (
-    candidate.type !== "safety_notice" ||
-    typeof candidate.documentId !== "string" ||
-    typeof candidate.kind !== "string" ||
-    typeof candidate.message !== "string" ||
-    !candidate.data ||
-    typeof candidate.data !== "object" ||
-    Array.isArray(candidate.data)
-  ) {
-    return null;
-  }
-  return candidate as unknown as SafetyNoticeWsMessage;
 }

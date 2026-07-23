@@ -1,7 +1,7 @@
-/** Postgres coverage for safety-notice fan-out and destructive drains. */
+/** Postgres coverage for model-context notice fan-out and destructive drains. */
 
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -12,8 +12,6 @@ const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000303";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000304";
 const THREAD_ID = "00000000-0000-4000-8000-000000000305";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000306";
-const TURN_ID = "00000000-0000-4000-8000-000000000307";
-const OTHER_TURN_ID = "00000000-0000-4000-8000-000000000308";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle notice port (postgres)", () => {
@@ -28,16 +26,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleNoticePort } = await import("./drizzle-notice-port.js");
-    const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
-    const { createActiveDocumentResolver } = await import(
-      "../../threads/domain/active-document-resolver.js"
-    );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 1 });
-    const threadRepos = createDrizzleRepositories(db);
-    const activeDocuments = createActiveDocumentResolver(threadRepos);
-
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
         schema.pendingNoticeDeliveries,
@@ -97,9 +88,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("fans a document-scoped notice out to both active threads", async () => {
-      const port = createDrizzleNoticePort(db, activeDocuments);
-      const writerListener = vi.fn();
-      port.subscribeWriterVisible(writerListener);
+      const port = createDrizzleNoticePort(db);
       await port.record({
         kind: "checkpoint_sweep",
         scope: { kind: "document", documentId: DOCUMENT_ID },
@@ -110,7 +99,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
           beforeContentRef: 42,
         },
-        writerVisible: true,
       });
 
       await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toMatchObject([
@@ -120,19 +108,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         port.drainForModelContext(OTHER_THREAD_ID, [DOCUMENT_ID]),
       ).resolves.toMatchObject([{ kind: "checkpoint_sweep" }]);
       await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toEqual([]);
-      expect(writerListener).toHaveBeenCalledWith(
-        expect.objectContaining({ documentId: DOCUMENT_ID, kind: "checkpoint_sweep" }),
-      );
-      await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toMatchObject([
-        { kind: "checkpoint_sweep" },
-      ]);
     });
 
     it("delivers an existing document notice to a thread attached after recording", async () => {
       await db
         .delete(schema.threadDocuments)
         .where(eq(schema.threadDocuments.threadId, OTHER_THREAD_ID));
-      const port = createDrizzleNoticePort(db, activeDocuments);
+      const port = createDrizzleNoticePort(db);
       await port.record({
         kind: "checkpoint_sweep",
         scope: { kind: "document", documentId: DOCUMENT_ID },
@@ -142,7 +124,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           affectedBlockHashes: ["hash-a"],
           capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
         },
-        writerVisible: false,
       });
       await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toHaveLength(1);
 
@@ -156,109 +137,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    it("emits a display-ready writer event and drains it independently", async () => {
-      const port = createDrizzleNoticePort(db, activeDocuments);
-      const listener = vi.fn();
-      port.subscribeWriterVisible(listener);
-
-      await port.record({
-        kind: "late_sweep",
-        scope: { kind: "thread", threadId: THREAD_ID },
-        message: "Content was modified — View change",
-        data: {
-          documentId: DOCUMENT_ID,
-          affectedBlockHashes: ["hash-a"],
-          capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-          beforeContentRef: 42,
-        },
-        writerVisible: true,
-      });
-
-      expect(listener).toHaveBeenCalledWith(
-        expect.objectContaining({
-          documentId: DOCUMENT_ID,
-          kind: "late_sweep",
-          message: "Content was modified — View change",
-        }),
-      );
-      await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toMatchObject([
-        { kind: "late_sweep" },
-      ]);
-      await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toEqual([]);
-    });
-
-    it("retains a document notice when the writer drains before its active model thread", async () => {
-      await db.delete(schema.threadDocuments);
-      await threadRepos.turns.create({ id: TURN_ID, threadId: THREAD_ID, role: "assistant" });
-      await threadRepos.documentTouches.recordTouch(TURN_ID, DOCUMENT_ID);
-      const port = createDrizzleNoticePort(db, activeDocuments);
-      await port.record({
-        kind: "late_sweep",
-        scope: { kind: "document", documentId: DOCUMENT_ID },
-        message: "Content was modified — View change",
-        data: {
-          documentId: DOCUMENT_ID,
-          affectedBlockHashes: ["hash-a"],
-          capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-        },
-        writerVisible: true,
-      });
-
-      await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toHaveLength(1);
-      const activeDocumentIds = await activeDocuments.listDocumentIds(THREAD_ID);
-      await expect(port.drainForModelContext(THREAD_ID, activeDocumentIds)).resolves.toMatchObject([
-        {
-          kind: "late_sweep",
-          data: { capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }] },
-        },
-      ]);
-      await expect(port.drainForModelContext(THREAD_ID, activeDocumentIds)).resolves.toEqual([]);
-      await expect(db.select().from(schema.pendingNotices)).resolves.toEqual([]);
-    });
-
-    it("retains a writer-first document notice for a second thread that touches it later", async () => {
-      await db.delete(schema.threadDocuments);
-      await threadRepos.turns.create({ id: TURN_ID, threadId: THREAD_ID, role: "assistant" });
-      await threadRepos.documentTouches.recordTouch(TURN_ID, DOCUMENT_ID);
-      const port = createDrizzleNoticePort(db, activeDocuments);
-      await port.record({
-        kind: "late_sweep",
-        scope: { kind: "document", documentId: DOCUMENT_ID },
-        message: "Content was modified — View change",
-        data: {
-          documentId: DOCUMENT_ID,
-          affectedBlockHashes: ["hash-a"],
-          capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-        },
-        writerVisible: true,
-      });
-      await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toHaveLength(1);
-
-      await threadRepos.turns.create({
-        id: OTHER_TURN_ID,
-        threadId: OTHER_THREAD_ID,
-        role: "assistant",
-      });
-      await threadRepos.documentTouches.recordTouch(OTHER_TURN_ID, DOCUMENT_ID);
-
-      for (const threadId of [THREAD_ID, OTHER_THREAD_ID]) {
-        const activeDocumentIds = await activeDocuments.listDocumentIds(threadId);
-        await expect(port.drainForModelContext(threadId, activeDocumentIds)).resolves.toMatchObject(
-          [
-            {
-              kind: "late_sweep",
-              data: { capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }] },
-            },
-          ],
-        );
-        await expect(port.drainForModelContext(threadId, activeDocumentIds)).resolves.toEqual([]);
-      }
-      await expect(db.select().from(schema.pendingNotices)).resolves.toEqual([]);
-    });
-
     it("records inside an ambient Drizzle transaction", async () => {
       const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
-      const port = createDrizzleNoticePort(db, activeDocuments);
+      const port = createDrizzleNoticePort(db);
       await expect(
         runInDrizzleTransaction(db, async () => {
           await port.record({
@@ -266,7 +147,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             scope: { kind: "thread", threadId: THREAD_ID },
             message: "Document awareness degraded",
             data: { documentIds: [DOCUMENT_ID] },
-            writerVisible: false,
           });
           throw new Error("roll back response transaction");
         }),

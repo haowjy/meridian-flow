@@ -4,13 +4,11 @@ import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
-import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
   createHocuspocus,
   createYjsWebSocketHooks,
-  subscribeWriterNoticeTransport,
 } from "./yjs";
 
 const documentName = "branch:branch_1:gen:3";
@@ -95,10 +93,6 @@ describe("Yjs branch handshake route guard", () => {
         flushBranchLivePull,
       } as never,
       eventSink: { emit() {} } as never,
-      notices: {
-        subscribeWriterVisible: () => () => {},
-        drainForWriter: async () => [],
-      } as never,
     });
 
     await expect(
@@ -191,43 +185,6 @@ describe("Yjs branch handshake route guard", () => {
     commit?.();
     await expect(admission).resolves.toBeUndefined();
     expect(returned).toBe(true);
-  });
-
-  it("forwards writer-visible notice events as stateless WebSocket messages", async () => {
-    let listener: WriterNoticeListener | undefined;
-    const drainForWriter = vi.fn(async () => []);
-    const broadcastStateless = vi.fn();
-    subscribeWriterNoticeTransport({
-      notices: {
-        async record() {},
-        async drainForModelContext() {
-          return [];
-        },
-        drainForWriter,
-        subscribeWriterVisible(next) {
-          listener = next;
-          return () => {};
-        },
-      },
-      documentsForId: async () => [{ getConnectionsCount: () => 1, broadcastStateless }],
-      eventSink: { emit() {} } as never,
-    });
-
-    listener?.({
-      documentId: "00000000-0000-4000-8000-000000000001",
-      kind: "late_sweep",
-      message: "Content was modified — View change",
-      data: { beforeContentRef: 42 },
-    });
-    await Promise.resolve();
-
-    expect(JSON.parse(broadcastStateless.mock.calls[0]?.[0] as string)).toMatchObject({
-      type: "safety_notice",
-      documentId: "00000000-0000-4000-8000-000000000001",
-      kind: "late_sweep",
-      message: "Content was modified — View change",
-    });
-    expect(drainForWriter).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001");
   });
 
   it("rejects update-first sync messages", async () => {

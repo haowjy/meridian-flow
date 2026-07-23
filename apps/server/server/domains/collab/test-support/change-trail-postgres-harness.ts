@@ -22,8 +22,6 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
   "@meridian/database/__test-support__/db-fixtures"
 );
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
-const { createActiveDocumentResolver } = await import("../../threads/index.js");
-const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
 export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await import(
   "../../../shared/drizzle-transaction.js"
 );
@@ -263,10 +261,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     concurrentJournalWatermarks: watermarks,
   });
-  const realNotices = createDrizzleNoticePort(
-    db,
-    createActiveDocumentResolver(createDrizzleRepositories(db)),
-  );
+  const realNotices = createDrizzleNoticePort(db);
   const noticeState = { fail: false };
   let noticeRecordAttempts = 0;
   const notices = {

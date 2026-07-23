@@ -110,7 +110,6 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
           await deps.notices?.record({
             kind: "checkpoint_sweep",
             scope: { kind: "document", documentId },
-            writerVisible: true,
             message:
               discarded.length > 0
                 ? `Checkpoint restore discarded ${discarded.length} block${discarded.length === 1 ? "" : "s"}.`

@@ -278,7 +278,7 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const notices = createDrizzleNoticePort(db, activeDocuments);
+  const notices = createDrizzleNoticePort(db);
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const documentSync = createCollabDomain({
@@ -895,20 +895,12 @@ export function createInMemoryAppServices(): AppServices {
 
 function createInMemoryNoticePort(): NoticePort {
   const rows: Notice[] = [];
-  const listeners = new Set<Parameters<NoticePort["subscribeWriterVisible"]>[0]>();
   const deliveredDocumentScopes = new Map<number, Set<string>>();
   let nextId = 1;
   return {
     async record(input) {
       const notice: Notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
-      if (!input.writerVisible) return;
-      const documentId = input.data.documentId;
-      if (typeof documentId !== "string")
-        throw new Error("Writer-visible notice requires data.documentId");
-      for (const listener of listeners) {
-        listener({ documentId, kind: input.kind, message: input.message, data: input.data });
-      }
     },
     async drainForModelContext(threadId, activeDocumentIds) {
       const consumed: Notice[] = [];
@@ -918,7 +910,7 @@ function createInMemoryNoticePort(): NoticePort {
         if (notice.scope.kind === "thread") {
           if (notice.scope.threadId !== threadId) continue;
           consumed.unshift(notice);
-          if (!notice.writerVisible) rows.splice(index, 1);
+          rows.splice(index, 1);
           continue;
         }
         if (!activeDocumentIds.includes(notice.scope.documentId)) continue;
@@ -929,20 +921,6 @@ function createInMemoryNoticePort(): NoticePort {
         consumed.unshift(notice);
       }
       return consumed;
-    },
-    async drainForWriter(documentId) {
-      const consumed: Notice[] = [];
-      for (let index = rows.length - 1; index >= 0; index -= 1) {
-        const notice = rows[index];
-        if (!notice?.writerVisible || notice.data.documentId !== documentId) continue;
-        consumed.unshift(notice);
-        rows.splice(index, 1);
-      }
-      return consumed;
-    },
-    subscribeWriterVisible(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
     },
   };
 }
