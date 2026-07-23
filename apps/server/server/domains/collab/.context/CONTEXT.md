@@ -78,8 +78,11 @@ persistence-only.
 `onStore` path may re-persist or re-checkpoint to make a mutation durable — it already
 is. Client branch updates validate and commit through the branch coordinator in
 the awaited `beforeSync` admission hook, before Hocuspocus apply/broadcast/ack;
-`onChange` does not own branch persistence. `storeHocuspocusBranch` only drains
-pending branch admissions; calling
+`onChange` does not own branch persistence. `admitBranchWriterUpdate` registers the
+whole admission with `trackAppend` before validation's first `await`, so a
+`storeHocuspocusBranch` or graceful-shutdown drain cannot miss an admission
+Hocuspocus is already processing — do not move registration after an `await`.
+`storeHocuspocusBranch` only drains pending branch admissions; calling
 `checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
 `AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`
 rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regression
