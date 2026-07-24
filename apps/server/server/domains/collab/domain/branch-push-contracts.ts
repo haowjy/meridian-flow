@@ -1,4 +1,5 @@
 /** Neutral branch journal and auto-push contracts shared across collab domain services. */
+import type { LineageRange } from "@meridian/agent-edit";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 
 export type BranchJournalRow = {
@@ -26,9 +27,47 @@ export function branchJournalRevision(
     .join(",");
 }
 
+export function branchUpdateMetaWithReplacementScopes(
+  updateMeta: unknown,
+  replacementScopes: readonly (readonly LineageRange[])[],
+): unknown {
+  if (replacementScopes.length === 0) return updateMeta;
+  return {
+    ...(isRecord(updateMeta) ? updateMeta : {}),
+    replacementScopes: replacementScopes.map((scope) => scope.map((range) => ({ ...range }))),
+  };
+}
+
+export function replacementScopesFromBranchRow(
+  row: Pick<BranchJournalRow, "updateMeta">,
+): LineageRange[][] {
+  if (!isRecord(row.updateMeta) || !Array.isArray(row.updateMeta.replacementScopes)) return [];
+  return row.updateMeta.replacementScopes.flatMap((scope) =>
+    Array.isArray(scope) && scope.length > 0 && scope.every(isLineageRange)
+      ? [scope.map((range) => ({ ...range }))]
+      : [],
+  );
+}
+
 export type AutoBranchPushPort = {
   pushAutoBranchAfterThreadPeerWrite(input: {
     workDraftBranchId: string;
     pushedByUserId?: UserId;
   }): Promise<{ status: string; [key: string]: unknown }>;
 };
+
+function isLineageRange(value: unknown): value is LineageRange {
+  if (!isRecord(value)) return false;
+  return (
+    Number.isSafeInteger(value.clientID) &&
+    Number.isSafeInteger(value.clock) &&
+    Number.isSafeInteger(value.length) &&
+    (value.clientID as number) >= 0 &&
+    (value.clock as number) >= 0 &&
+    (value.length as number) > 0
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}

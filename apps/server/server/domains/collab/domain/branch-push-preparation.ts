@@ -3,6 +3,7 @@ import {
   type AgentEditCodec,
   type BlockSnapshot,
   diffSnapshots,
+  intersectLineageRanges,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -13,7 +14,7 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchJournalRow } from "./branch-push-contracts.js";
+import { type BranchJournalRow, replacementScopesFromBranchRow } from "./branch-push-contracts.js";
 import type { PreparedPushCommit, PushReceiptPayload } from "./branch-push-executor.js";
 import { buildReceipt, markdownFromDoc } from "./branch-push-plan.js";
 import {
@@ -128,18 +129,21 @@ export async function preparePushUnderLiveLock(
       );
       baselineDoc.destroy();
       const baselineByHash = new Map(baselineBlocks.map((block) => [block.hash, block]));
-      const rowBaselineAfterDoc = createCollabYDoc({ gc: false });
-      Y.applyUpdate(rowBaselineAfterDoc, baselineState);
-      Y.applyUpdate(rowBaselineAfterDoc, row.updateData);
-      const rowBaselineEffects = diffSnapshots(
-        baselineBlocks,
-        snapshotBlocks(toDocHandle(rowBaselineAfterDoc), input.model, input.attributionCodec),
-      );
-      rowBaselineAfterDoc.destroy();
-      const replacedBaselineHashes = new Set([
-        ...rowBaselineEffects.changed,
-        ...rowBaselineEffects.deleted,
-      ]);
+      const persistedReplacementScopes = replacementScopesFromBranchRow(row);
+      const replacedBaselineHashScopes =
+        persistedReplacementScopes.length > 0
+          ? persistedReplacementScopes.map(
+              (scope) =>
+                new Set(
+                  baselineBlocks
+                    .filter(
+                      (block) =>
+                        block.lineage && intersectLineageRanges(scope, block.lineage).length > 0,
+                    )
+                    .map((block) => block.hash),
+                ),
+            )
+          : [replacementHashesFromRowUpdate(baselineState, baselineBlocks, row, input)];
       const baselineIdentities = new Set(
         baselineBlocks.flatMap((block) => {
           const identity = blockIdentity(block);
@@ -164,12 +168,14 @@ export async function preparePushUnderLiveLock(
         const inserted = beforeByHash.get(hash);
         if (
           inserted &&
-          replacedScopeEnclosesInsertion({
-            baseline: baselineBlocks,
-            live: before,
-            replacedBaselineHashes,
-            insertedHash: hash,
-          })
+          replacedBaselineHashScopes.some((replacedBaselineHashes) =>
+            replacedScopeEnclosesInsertion({
+              baseline: baselineBlocks,
+              live: before,
+              replacedBaselineHashes,
+              insertedHash: hash,
+            }),
+          )
         ) {
           conflictEvidence.set(hash, {
             row,
@@ -371,6 +377,26 @@ export async function preparePushUnderLiveLock(
 }
 
 export type PreparedPush = Awaited<ReturnType<typeof preparePushUnderLiveLock>>;
+
+function replacementHashesFromRowUpdate(
+  baselineState: Uint8Array,
+  baselineBlocks: readonly BlockSnapshot[],
+  row: BranchJournalRow,
+  input: PushPreparationInput,
+): Set<string> {
+  const afterDoc = createCollabYDoc({ gc: false });
+  try {
+    Y.applyUpdate(afterDoc, baselineState);
+    Y.applyUpdate(afterDoc, row.updateData);
+    const effects = diffSnapshots(
+      baselineBlocks,
+      snapshotBlocks(toDocHandle(afterDoc), input.model, input.attributionCodec),
+    );
+    return new Set([...effects.changed, ...effects.deleted]);
+  } finally {
+    afterDoc.destroy();
+  }
+}
 
 function replacedScopeEnclosesInsertion(input: {
   baseline: readonly BlockSnapshot[];
