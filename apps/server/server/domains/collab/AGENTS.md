@@ -34,8 +34,11 @@ propagation between them.
   persistence; push planning and settlement remain owned by their transition modules.
 - Branch pulls and certified thread-peer commits enter that capability through the
   branch coordinator adapter; response-transaction persistence remains one durable unit.
-- `composition.ts` wires package core, live journal/coordinator, branch stores,
-  branch pull/push, Hocuspocus, checkpoints, and route-facing facades.
+- `composition.ts` is a wiring-only production root. Application behavior lives
+  in the required review, effective-read, response-finalization, reversal,
+  projection, and thread-peer services under `domain/`; `collab-facade.ts` only
+  assembles those services into the public surface. In-memory assembly and
+  declared unsupported behavior live under `adapters/in-memory/`.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
   immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
