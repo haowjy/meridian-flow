@@ -15,7 +15,7 @@ import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
-import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
+import type { NavigationTargetV1, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
   constructor(readonly branchId: string) {
@@ -203,6 +203,10 @@ export type SettlementClaim = {
 };
 
 export type CompletionFenceResult = "applied" | "already_applied" | "retry";
+
+export type TrailContributionReplacement =
+  | { kind: "refine"; classifications: TrailChangeV1[] }
+  | { kind: "empty" };
 
 export type PreparedDiscardCommit = {
   branch: BranchSnapshot;
