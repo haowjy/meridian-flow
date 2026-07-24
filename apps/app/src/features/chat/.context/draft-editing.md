@@ -8,7 +8,7 @@ mode, and draft-review state. Turn rendering is documented separately in
 
 The existing per-turn Changes view below each assistant turn that edited
 documents: a default-collapsed card
-whose header carries only the count — `✎ Edited N documents` — expanding to
+whose header carries the edit icon and chapter count — `✎ AI edited N chapter(s)` — expanding to
 the per-document list and authorized durable change-trail rows. Trail detail is
 writer-touching iff `writerProtection` is present: pure-generative changes render
 no detail rows, and mixed turns show only their writer-touching changes. The
