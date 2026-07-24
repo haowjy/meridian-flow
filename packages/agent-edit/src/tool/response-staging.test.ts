@@ -14,6 +14,52 @@ import { responseStagingHarness } from "./test-support/response-staging-harness.
 import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("returns an overwrite receipt with the post-write document exactly once after a pull", async () => {
+    const ctx = harness({ "chapter.md": "# Chapter\n\nShe held the key.\n\nShe let go." });
+    const attributionBaseline = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: "She".length, to: "She".length }, " still");
+
+    const receipt = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "# Chapter\n\nI held the key.\n\nI let go.",
+        overwrite: true,
+      },
+      {
+        ...context,
+        responseId: "response-overwrite-after-pull",
+        turnId: "turn-overwrite-after-pull",
+        createdDocument: false,
+        interactionContext: {
+          mode: "threadPeer",
+          afterJournalId: 0,
+          branchGeneration: 1,
+          attributionBaseline,
+        },
+      },
+    );
+
+    expectOutcome(receipt, "success");
+    const text = outcomeText(receipt);
+    expect(text).not.toContain("She still held the key.");
+    expect(text.match(/# Chapter/g)).toHaveLength(1);
+    expect(text.match(/I held the key\./g)).toHaveLength(1);
+    expect(text.match(/I let go\./g)).toHaveLength(1);
+
+    const commit = await ctx.core.commitResponse("response-overwrite-after-pull");
+    const settledText = commit.documents[0]?.receipts[0]?.content
+      .map((block) => block.text)
+      .join("\n\n");
+    expect(settledText).not.toContain("She still held the key.");
+    expect(settledText?.match(/# Chapter/g)).toHaveLength(1);
+    expect(settledText?.match(/I held the key\./g)).toHaveLength(1);
+    expect(settledText?.match(/I let go\./g)).toHaveLength(1);
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "read", file: "chapter.md" }, context)),
+    ).toEqual(["# Chapter", "I held the key.", "I let go."]);
+  });
+
   it("reports a phase-C sweep for staged create overwrite from its pre-own baseline", async () => {
     let ctx!: ReturnType<typeof harness>;
     const responseId = "response-staged-create-overwrite-late-sweep";
@@ -605,7 +651,7 @@ describe("response staging", () => {
     );
   });
 
-  it("reports staged commit concurrent edits without post-commit echo recomputation", async () => {
+  it("reports staged commit concurrent edits with settled write receipts", async () => {
     const ctx = harness({
       "chapter.md":
         "sword zero.\n\nGap one.\n\nBefore overlap.\n\nsword overlap.\n\nAfter overlap.\n\nGap two.\n\nsword far.",

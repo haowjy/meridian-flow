@@ -162,6 +162,7 @@ export type {
   ResponseCommitDocumentResult,
   ResponseCommitSuccessResult,
   ResponseCommitterTransitionDetail,
+  ResponseCommitWriteReceipt,
   ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,
   ResponseLifecycleEvent,

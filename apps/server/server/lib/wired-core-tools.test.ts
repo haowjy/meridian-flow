@@ -105,6 +105,12 @@ describe("agent-edit response write lifecycle", () => {
         {
           documentId: "doc-1",
           updateCount: 1,
+          receipts: [
+            {
+              writeId: "w1",
+              content: [{ type: "text", text: "status: success\nwrite id: w1" }],
+            },
+          ],
           concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
           lateSweep: {
             affectedBlockHashes: ["abcd"],
@@ -144,6 +150,15 @@ describe("agent-edit response write lifecycle", () => {
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
     ).resolves.toEqual({
       status: "committed",
+      receipts: [
+        {
+          documentId: "doc-1",
+          receipt: {
+            writeId: "w1",
+            content: [{ type: "text", text: "status: success\nwrite id: w1" }],
+          },
+        },
+      ],
       concurrentEdits: [
         { documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [], runs: [] } },
       ],
@@ -162,7 +177,7 @@ describe("agent-edit response write lifecycle", () => {
               responseId: "response-1",
               documentCount: 1,
               updateCount: 1,
-              documents: [{ documentId: "doc-1", updateCount: 1 }],
+              documents: [{ documentId: "doc-1", updateCount: 1, receipts: [] }],
               stagedCreates: { committed: [], discarded: [] },
             }),
           ),
@@ -172,7 +187,7 @@ describe("agent-edit response write lifecycle", () => {
           responseId: "response-1",
           documentCount: 1,
           updateCount: 1,
-          documents: [{ documentId: "doc-1", updateCount: 1 }],
+          documents: [{ documentId: "doc-1", updateCount: 1, receipts: [] }],
           stagedCreates: { committed: [], discarded: [] },
         }),
       },
@@ -180,7 +195,7 @@ describe("agent-edit response write lifecycle", () => {
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
+    ).resolves.toEqual({ status: "committed", receipts: [], concurrentEdits: [] });
   });
 
   it("surfaces draft_closed as an explicit response commit result", async () => {

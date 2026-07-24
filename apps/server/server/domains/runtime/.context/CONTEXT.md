@@ -130,10 +130,11 @@ facet.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results
-  finalize in the same database transaction as that commit; a pending result
-  left by a pre-commit process failure is rejected before a later turn assembles
-  model context. Cancellation paths roll the response buffer back before
-  finalizing the turn as cancelled.
+  finalize in the same database transaction as that commit using the settled
+  receipts returned by agent-edit, never the speculative staged output. A
+  pending result left by a pre-commit process failure is rejected before a later
+  turn assembles model context. Cancellation paths roll the response buffer back
+  before finalizing the turn as cancelled.
 - **Response write settlement is report-only** — ordinary Yjs merge always
   commits. Destructive effects are echoed to the model and writer-lineage
   sweeps are recorded for the trail and Restore.

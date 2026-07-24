@@ -92,7 +92,7 @@ export function createTestOrchestratorDeps(
     activeDocuments,
     responseWrites: {
       async commitResponse() {
-        return { status: "committed", concurrentEdits: [] };
+        return { status: "committed", receipts: [], concurrentEdits: [] };
       },
       async rollbackResponse() {},
     },
