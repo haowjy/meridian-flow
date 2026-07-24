@@ -52,30 +52,40 @@ const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChang
   .pick({ changeId: true, kind: true, navigation: true })
   .extend({
     swept: z.boolean(),
-    excerpt: z.string().nullable(),
+    excerpt: z.string().max(500).nullable(),
   });
 
-const changeEventWsMessageSchema: z.ZodType<ChangeEventWsMessage> = z.object({
-  type: z.literal("change_event"),
-  documentId: z.string() as z.ZodType<DocumentId>,
-  threadId: z.string(),
-  trailId: z.string(),
-  projectionRevision: z.number().int().nonnegative(),
-  author: z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("agent"),
-      threadId: z.string(),
-      turnId: z.string().nullable(),
-    }),
-    z.object({ kind: z.literal("writer"), userId: z.string() }),
-  ]),
-  admittedByUserId: z.string().nullable(),
-  changes: z.array(changeEventProjectionSchema),
-  truncated: z.boolean(),
-});
+const changeEventWsMessageSchema: z.ZodType<ChangeEventWsMessage> = z
+  .object({
+    type: z.literal("change_event"),
+    documentId: z.string() as z.ZodType<DocumentId>,
+    threadId: z.string(),
+    trailId: z.string(),
+    projectionRevision: z.number().int().nonnegative(),
+    author: z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("agent"),
+        threadId: z.string(),
+        turnId: z.string().nullable(),
+      }),
+      z.object({ kind: z.literal("writer"), userId: z.string() }),
+    ]),
+    admittedByUserId: z.string().nullable(),
+    changes: z.array(changeEventProjectionSchema),
+    truncated: z.boolean(),
+  })
+  .superRefine((message, context) => {
+    if (message.author.kind === "agent" && message.author.threadId !== message.threadId) {
+      context.addIssue({
+        code: "custom",
+        path: ["author", "threadId"],
+        message: "Agent author threadId must match the owning threadId",
+      });
+    }
+  });
 
 export function encodeChangeEventWsMessage(message: Omit<ChangeEventWsMessage, "type">): string {
-  return JSON.stringify({ type: "change_event", ...message } satisfies ChangeEventWsMessage);
+  return JSON.stringify(changeEventWsMessageSchema.parse({ type: "change_event", ...message }));
 }
 
 /** Parses the extensible stateless Yjs channel and rejects malformed payloads. */
