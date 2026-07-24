@@ -51,6 +51,18 @@ verbatim (`language` = filetype), read back without fences. Checkpoint restore,
 branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
 
+**Durable whole-document projections route through this engine.** Push
+completion (`completeStagedPush` → `deriveDurableProjection`) and trail forward
+actions inject `DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
+a `Pick<MarkdownDocumentEngine, "serializeDocument">` narrow port), never a
+schema-blind `{model, codec}` bag. The old bag serialized code documents through
+the markdown codec, emitting fenced output into `documents.markdown_projection`;
+code pushes now project raw verbatim text (the single `code_block` `textContent`).
+`PreparedPushCommit` no longer carries `markdownProjection`/`liveState`/
+`liveStateVector` — projection is derived at settlement, not prepared. Re-adding
+prepared projection fields or a `{model, codec}` bag re-opens the fence-corruption
+class for the projection column.
+
 Filetype resolution uses the contracts disposition registry. Missing or
 unregistered persisted values deliberately use the document schema; a registered
 binary/custom value on a tracked journal returns `corrupt_state` from
@@ -190,6 +202,11 @@ history is preserved for attribution, echo, and undo dependency checking.
   `branch-push-preparation.ts`, trail and notice projection live in
   `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders
   capture through fenced completion. A durable commit requires its trail bundle.
+  Projection failure is classified: only the canonical `DocumentSyncError` with
+  `code: "corrupt_state"` (a registered non-tracked filetype on a tracked
+  journal) permanently blocks live settlement via `blockLiveSettlement`;
+  transient serializer failures propagate but leave the settlement retryable.
+  Do not block on every projection throw.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
@@ -213,6 +230,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   commit, live apply, and journal finalization without bypassing the guard. After
   durable ownership authorization, captured bodies remain readable when the live
   document is unavailable; both terminal outcomes degrade to the client Copy fallback.
+  The markdown projection is serialized from a scratch `Y.Doc` the action applies
+  the committed update to, before mutating the shared live document — never from the
+  live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and
