@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Authenticated editor sessions now use the canonical internal Meridian user id,
+  so a writer's own manually applied Draft changes stay self-suppressed while
+  remaining visible to peers.
 - AI change marks now keep the writer's caret when opened, survive typing at
   range edges, suppress the applying writer's own Draft changes, and render
   whole-paragraph and single-splice deletions at their actual seams.

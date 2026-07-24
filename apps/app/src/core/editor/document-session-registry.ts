@@ -17,6 +17,7 @@
  * per-room sessions on the same process-wide plane.
  */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import type { UserId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
@@ -37,7 +38,7 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 // (before-prod); watch server liveDocumentCount metric
 
 export class DocumentSessionRegistry {
-  private ownUserId: string | null = null;
+  private ownUserId: UserId | null = null;
   private readonly sessions = new Map<string, DocumentSession>();
   /** opener id → Yjs room keys plus whether first acquisition must stay detached. */
   private readonly retainedByOwner = new Map<
@@ -144,7 +145,7 @@ export class DocumentSessionRegistry {
     return session;
   }
 
-  setOwnUserId(userId: string): void {
+  setOwnUserId(userId: UserId): void {
     if (this.ownUserId === userId) return;
     // Sessions are process-local authenticated state; never retain a prior
     // account's marker suppression identity across an account switch.
@@ -331,6 +332,6 @@ export function getDocumentSessionRegistry(): DocumentSessionRegistry {
   return sharedRegistry;
 }
 
-export function configureDocumentSessionUser(userId: string): void {
+export function configureDocumentSessionUser(userId: UserId): void {
   getDocumentSessionRegistry().setOwnUserId(userId);
 }

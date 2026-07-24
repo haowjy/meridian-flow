@@ -27,6 +27,10 @@ Writer-facing AI change reporting uses the durable Trail/Restore surface and
 session change marks. `DocumentSession` owns collaboration state only; it does
 not retain a parallel safety-notice presentation model.
 
+Session change-mark self-suppression uses the canonical internal Meridian
+`UserId` from `/api/auth/me`, matching `change_event.admittedByUserId`. WorkOS
+external ids authenticate the shell but never identify collaboration records.
+
 Two interfaces are the only paths between the visual layer and the substrate:
 
 - **`ThreadStoreState` / `ThreadStoreActions`** (`src/client/stores/thread-store/types.ts`) —

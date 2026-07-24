@@ -4,6 +4,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
+import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
@@ -80,8 +81,8 @@ export const Route = createFileRoute("/_authenticated")({
     settings: isSettingsSection(search.settings) ? search.settings : undefined,
   }),
   loader: async ({ location }) => {
-    const { user } = await getAuth();
-    if (!user) {
+    const { user: workosUser } = await getAuth();
+    if (!workosUser) {
       const path = `${location.pathname}${location.searchStr}`;
       const target = await resolveUnauthRedirect({ data: { returnPathname: path } });
       throw redirect(target);
@@ -92,29 +93,28 @@ export const Route = createFileRoute("/_authenticated")({
     const settingsPromise = loadAccountSettingsWithDeadline((signal) =>
       getAccountSettings({ ...requestInit, signal }),
     );
+    const authMePromise = getAuthMe(requestInit);
 
     // `/` immediately redirects to the default project, so skip its list fetch;
     // every other authenticated route mounts the same shell and wants the list.
     if (location.pathname === "/") {
-      const settings = await settingsPromise;
+      const [authMe, settings] = await Promise.all([authMePromise, settingsPromise]);
       const currentUser = {
-        userId: user.id,
-        email: user.email ?? null,
+        ...authMe.user,
         workingSetSyncEnabled: settings?.workingSetSyncEnabled ?? null,
       };
       return { user: currentUser, projects: null, now };
     }
 
-    const [settingsResult, projectsResult] = await Promise.allSettled([
-      settingsPromise,
-      loadProjectList(),
+    const [authMe, [settingsResult, projectsResult]] = await Promise.all([
+      authMePromise,
+      Promise.allSettled([settingsPromise, loadProjectList()]),
     ]);
     if (projectsResult.status === "rejected") {
       console.error("Failed to load project list during SSR:", projectsResult.reason);
     }
     const currentUser = {
-      userId: user.id,
-      email: user.email ?? null,
+      ...authMe.user,
       workingSetSyncEnabled:
         settingsResult.status === "fulfilled"
           ? (settingsResult.value?.workingSetSyncEnabled ?? null)
