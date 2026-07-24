@@ -12,6 +12,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -47,6 +48,7 @@ import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
+import type { TrailChangeV1 } from "./trail-read-kernel.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -500,7 +502,7 @@ describe("createBranchPushService", () => {
       record: vi.fn(async () => {}),
       drainForModelContext: vi.fn(async () => []),
     } satisfies NoticePort;
-    const record = vi.fn(async () => {});
+    const record = vi.fn(async () => []);
     const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
 
     const result =
@@ -833,7 +835,7 @@ describe("createBranchPushService", () => {
       await persistDurableTrailRecord(
         prepared.trail,
         result.push,
-        { record: async () => {} },
+        { record: async () => [] },
         notices,
       );
       row.status = "pushed";
@@ -1014,6 +1016,7 @@ describe("createBranchPushService", () => {
       drainForModelContext: vi.fn(async () => []),
     } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
+    const delivered: Array<Omit<ChangeEventWsMessage, "type">> = [];
     let durableSettlement: PendingLiveSettlement | null = null;
     const commitPush = vi.fn(async (prepared) => {
       const push = {
@@ -1025,6 +1028,7 @@ describe("createBranchPushService", () => {
         upstreamUpdateSeq: 2,
         receiptPayload: prepared.receiptPayload,
         idempotencyKey: prepared.idempotencyKey,
+        pushedByUserId: prepared.pushedByUserId ?? null,
       };
       durableSettlement = { ...prepared.pendingLiveSettlement, push };
       return {
@@ -1056,7 +1060,16 @@ describe("createBranchPushService", () => {
           // not have happened yet when settlement commits.
           expect(markdown(liveDoc)).toContain("Unjournaled WS body.");
           settlements.push(trail);
-          return true;
+          return [
+            {
+              trailId: "trail-1",
+              owner: { kind: "turn" as const, threadId: THREAD_ID, turnId: TURN_ID },
+              documentId: DOCUMENT_ID,
+              projectionRevision: 2,
+              // The fake persistence seam returns its authoritative post-fold set.
+              changes: trail?.changes as TrailChangeV1[],
+            },
+          ];
         }),
         commitPushBatch: vi.fn(),
         countUnpushedRowsForWork: vi.fn(async () => 1),
@@ -1072,6 +1085,13 @@ describe("createBranchPushService", () => {
       model,
       codec,
       notices,
+      changeEventDelivery: {
+        deliver(message) {
+          // Delivery is downstream of the fenced live apply, not merely trail persistence.
+          expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
+          delivered.push(message);
+        },
+      },
       hooks: {
         afterDurableCommit: async () => {
           const beforeWriter = Y.encodeStateVector(liveDoc);
@@ -1094,7 +1114,7 @@ describe("createBranchPushService", () => {
 
     const result =
       path === "whole"
-        ? await service.pushToLive({ branchId: branch.branchId })
+        ? await service.pushToLive({ branchId: branch.branchId, pushedByUserId: USER_ID })
         : path === "selected"
           ? await service.pushSelectedToLive({ branchId: branch.branchId, journalIds: [row.id] })
           : await service.pushToLiveWithManifestEntry({
@@ -1106,6 +1126,25 @@ describe("createBranchPushService", () => {
     expect(result.status).toBe("pushed");
     expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
     expect(settlements).toHaveLength(1);
+    expect(delivered).toEqual([
+      expect.objectContaining({
+        documentId: DOCUMENT_ID,
+        threadId: THREAD_ID,
+        trailId: "trail-1",
+        projectionRevision: 2,
+        author: { kind: "agent", threadId: THREAD_ID, turnId: TURN_ID },
+        admittedByUserId: path === "whole" ? USER_ID : null,
+        truncated: false,
+        changes: [
+          expect.objectContaining({
+            changeId: expect.any(String),
+            kind: "delete",
+            swept: true,
+            excerpt: "Unjournaled WS body.",
+          }),
+        ],
+      }),
+    ]);
     expect(settlements[0]).toMatchObject(
       expect.objectContaining({
         changes: [

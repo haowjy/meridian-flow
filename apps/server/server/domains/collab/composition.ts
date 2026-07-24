@@ -64,6 +64,7 @@ import { createDrizzleObservationSnapshotStore } from "./adapters/drizzle-observ
 import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
+import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -155,29 +156,6 @@ function documentTitleFromUri(uri: string | null): string | null {
   const segment = uri.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   return segment.replace(/\.[^.]+$/, "");
-}
-
-export async function recordLateSweepNotice(input: {
-  notices: NoticePort;
-  resolveDocumentUri: DocumentUriResolver;
-  threadId: string;
-  documentId: string;
-  lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
-}): Promise<void> {
-  const uri = await input.resolveDocumentUri(input.documentId);
-  await input.notices.record({
-    kind: "late_sweep",
-    scope: { kind: "thread", threadId: input.threadId },
-    message: "Content was modified — View change",
-    data: {
-      documentId: input.documentId,
-      documentName: documentTitleFromUri(uri) ?? input.documentId,
-      uri,
-      affectedBlockHashes: input.lateSweep.affectedBlockHashes,
-      capturedDeletedBodies: input.lateSweep.capturedDeletedBodies ?? [],
-      beforeContentRef: input.lateSweep.beforeContentRef,
-    },
-  });
 }
 
 export async function recordAwarenessDegradedNotice(input: {
@@ -390,14 +368,11 @@ export function createReversalNoticePort(deps: {
         },
       });
     },
-    async recordLateSweep(input) {
-      await recordLateSweepNotice({
-        notices: deps.notices,
-        resolveDocumentUri: deps.documentUriResolver,
-        threadId: input.threadId,
-        documentId: input.docId,
-        lateSweep: input.report,
-      });
+    recordLateSweep() {
+      // The mutation echo and durable trail already report this effect. Runtime
+      // context deliberately suppresses late_sweep notices, so recording one
+      // here would create an unconsumed duplicate.
+      return Promise.resolve();
     },
   };
 }
@@ -504,6 +479,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     observations: observationSnapshots,
     notices: deps.notices,
     writerIngressBarrier: branchPushIngressBarrier,
+    changeEventDelivery: createHocuspocusChangeEventDelivery({
+      hocuspocus,
+      eventSink: deps.eventSink,
+    }),
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });
@@ -1501,36 +1480,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           );
       }
       for (const document of result.documents) {
-        const { lateSweep } = document;
-        if (lateSweep) {
-          if (deps.notices)
-            await recordNoticeAfterDurability(
-              {
-                notices: deps.notices,
-                eventSink: deps.eventSink,
-                threadId: ctx.threadId,
-                documentIds: [document.documentId],
-                kind: "late_sweep",
-                responseId,
-                affectedBlockHashes: lateSweep.affectedBlockHashes,
-                recordDegraded: () =>
-                  recordAwarenessDegradedNotice({
-                    notices: deps.notices as NoticePort,
-                    resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
-                    threadId: ctx.threadId,
-                    documentIds: [document.documentId],
-                  }),
-              },
-              () =>
-                recordLateSweepNotice({
-                  notices: deps.notices as NoticePort,
-                  resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
-                  threadId: ctx.threadId,
-                  documentId: document.documentId,
-                  lateSweep,
-                }),
-            );
-        }
         if (deps.branchStore && deps.branchCoordinator) {
           const peer = await deps.branchStore.resolveThreadBranch(
             document.documentId as DocumentId,

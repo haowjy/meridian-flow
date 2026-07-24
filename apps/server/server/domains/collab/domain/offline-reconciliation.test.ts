@@ -162,6 +162,7 @@ async function setup(input: { origin: string; observe: boolean; editDeletedBlock
       async record(record) {
         const incoming = record.trails.flatMap((trail: NormalizedTrail) => trail.changes);
         changes = mergeTrailChanges(changes, incoming);
+        return [];
       },
     },
     model,

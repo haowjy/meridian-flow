@@ -45,7 +45,11 @@ import {
   preparedTrailChanges,
 } from "./branch-trail-projection.js";
 import { partitionByBlockCoverage } from "./branch-update-attribution.js";
-import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
+import type {
+  CommittedChangeTrailProjection,
+  DurableTrailRecord,
+} from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
 import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
@@ -84,6 +88,7 @@ export type PushLineageRow = {
   receiptPayload: PushReceiptPayload | null;
   idempotencyKey: string;
   receiptId?: string | null;
+  pushedByUserId?: UserId | null;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
 };
@@ -211,7 +216,7 @@ export type BranchPushStore = {
     refineToEmpty?: boolean;
     claim: SettlementClaim;
     joinVersion: number;
-  }): Promise<boolean | undefined>;
+  }): Promise<boolean | readonly CommittedChangeTrailProjection[] | undefined>;
   listRecoverableSettlementIds?(): Promise<number[]>;
   loadLiveSettlement?(pushId: number): Promise<PendingLiveSettlement>;
   withCompletionFence?(
@@ -382,6 +387,7 @@ export type BranchPushExecutorInput = {
   /** Sealed authoring-response evidence used only to attribute automatic push reports. */
   observations?: ObservationSnapshotStore;
   writerIngressBarrier?: WriterIngressBarrier;
+  changeEventDelivery?: ChangeEventDelivery;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };
 
@@ -395,6 +401,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     model: input.model,
     codec: attributionCodec,
     writerIngressBarrier: input.writerIngressBarrier,
+    changeEventDelivery: input.changeEventDelivery,
   });
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {

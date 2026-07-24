@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Broadcast committed, post-fold AI change projections to connected live document
+  rooms after fenced branch-push apply, with durable replace-set revisions.
+
 - `@meridian/contracts`, `apps/server`, `apps/app`: single-source the complete
   change-trail wire model and parsers, and add the validated Yjs `change_event`
   stateless contract for session change marks.

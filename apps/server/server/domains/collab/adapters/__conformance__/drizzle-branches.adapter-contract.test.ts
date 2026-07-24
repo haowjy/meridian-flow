@@ -696,7 +696,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           if (failSecondTrailRecord && trailRecordCalls === 2) {
             throw new Error("injected companion trail failure");
           }
-          await realChangeTrails.record(input);
+          return realChangeTrails.record(input);
         },
         reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
           realChangeTrails.reopenOwners(owners),

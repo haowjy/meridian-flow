@@ -312,13 +312,13 @@ export function createDrizzleBranchPushStore(
           .for("update")
           .limit(1);
         if (!owned) return false;
-        if (input.trail) {
-          await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
-            refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
-            replacePushContribution: true,
-            ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
-          });
-        }
+        const committed = input.trail
+          ? await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
+              refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
+              replacePushContribution: true,
+              ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
+            })
+          : [];
         const [settled] = await txDb
           .update(branchPushSettlementOutbox)
           .set({
@@ -328,7 +328,7 @@ export function createDrizzleBranchPushStore(
           })
           .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
           .returning({ pushId: branchPushSettlementOutbox.pushId });
-        return Boolean(settled);
+        return settled ? committed : false;
       });
     },
 
@@ -1080,6 +1080,7 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
     receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
     receiptId: row.receiptId,
+    pushedByUserId: row.pushedByUserId,
     threadId: row.threadId,
     turnId: row.turnId,
   };
