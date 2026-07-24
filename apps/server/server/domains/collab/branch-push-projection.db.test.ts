@@ -24,7 +24,10 @@ import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js"
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
-import { createDrizzlePendingSettlementStore } from "./adapters/drizzle-pending-settlement.js";
+import {
+  createDrizzlePendingSettlementStore,
+  stagePendingSettlementWithinTx,
+} from "./adapters/drizzle-pending-settlement.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
@@ -156,7 +159,7 @@ describe("branch-push durable projection", () => {
     const changeTrails = createDrizzleChangeTrailPersistence(db);
     const branchPush = createBranchPushService({
       branchStore,
-      pushStore: createDrizzleBranchPushStore(db, changeTrails),
+      pushStore: createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx, changeTrails),
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         durableProjectionSerializer,
@@ -310,7 +313,11 @@ describe("branch-push durable projection", () => {
       },
     };
     const changeTrails = createDrizzleChangeTrailPersistence(db);
-    const pushStore = createDrizzleBranchPushStore(db, changeTrails);
+    const pushStore = createDrizzleBranchPushStore(
+      db,
+      stagePendingSettlementWithinTx,
+      changeTrails,
+    );
     const settlementStore = createDrizzlePendingSettlementStore(db, serializer, changeTrails);
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });

@@ -23,7 +23,7 @@ import {
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
-import { persistPendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
+import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -46,6 +46,7 @@ async function persistRequiredTrail(
 
 export function createDrizzleBranchPushStore(
   db: Database,
+  stagePendingSettlementWithinTx: StagePendingSettlementWithinTx,
   changeTrails?: ChangeTrailPersistence,
   notices?: NoticePort,
 ): BranchPushStore {
@@ -206,7 +207,7 @@ export function createDrizzleBranchPushStore(
         const lineage = await commitPreparedPush(txDb, input, now);
         const push = mapLineage(lineage);
         await persistRequiredTrail(changeTrails, input, push, notices);
-        await persistPendingSettlementWithinTx(txDb, input, push);
+        await stagePendingSettlementWithinTx(txDb, input, push);
         return {
           status: "inserted" as const,
           push,
@@ -244,7 +245,7 @@ export function createDrizzleBranchPushStore(
           rows.push(lineage);
           const mapped = mapLineage(lineage);
           await persistRequiredTrail(changeTrails, push, mapped, notices);
-          await persistPendingSettlementWithinTx(txDb, push, mapped);
+          await stagePendingSettlementWithinTx(txDb, push, mapped);
         }
         const mappedPushes = rows.map(mapLineage);
         return {

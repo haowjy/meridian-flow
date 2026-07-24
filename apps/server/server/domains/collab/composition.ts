@@ -70,7 +70,10 @@ import {
   createDrizzleLiveTurnDependencyStore,
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
-import { createDrizzlePendingSettlementStore } from "./adapters/drizzle-pending-settlement.js";
+import {
+  createDrizzlePendingSettlementStore,
+  stagePendingSettlementWithinTx,
+} from "./adapters/drizzle-pending-settlement.js";
 import {
   createDrizzleTrailForwardActions,
   type TrailDocumentAccess,
@@ -639,7 +642,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     changeTrails,
     deps.notices,
   );
-  const branchPushStore = createDrizzleBranchPushStore(deps.db, changeTrails, deps.notices);
+  const branchPushStore = createDrizzleBranchPushStore(
+    deps.db,
+    stagePendingSettlementWithinTx,
+    changeTrails,
+    deps.notices,
+  );
   let writerIngressBarrier: WriterIngressBarrier | undefined;
   const branchPushIngressBarrier: WriterIngressBarrier = {
     drain: (documentId) => writerIngressBarrier?.drain(documentId) ?? Promise.resolve(0),

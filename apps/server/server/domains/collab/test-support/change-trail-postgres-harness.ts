@@ -25,7 +25,7 @@ export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await im
 );
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
 const { createDrizzleBranchPushStore } = await import("../adapters/drizzle-branch-push.js");
-const { createDrizzlePendingSettlementStore } = await import(
+const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
@@ -293,7 +293,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return row?.filetype ?? null;
     },
   });
-  const durableBranchPushStore = createDrizzleBranchPushStore(db, changeTrails, notices);
+  const durableBranchPushStore = createDrizzleBranchPushStore(
+    db,
+    stagePendingSettlementWithinTx,
+    changeTrails,
+    notices,
+  );
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
