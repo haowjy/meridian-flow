@@ -65,6 +65,9 @@ propagation between them.
   against one locked branch snapshot in `beforeSync`, before Hocuspocus
   apply/broadcast/ack; already-contained reconnect frames are acknowledged
   without another journal row. `onChange` is not a branch durability seam.
+- Live and branch writer frames share one admission order: validate authority
+  and generation, acknowledge exact containment, validate fresh authorship,
+  then append durably.
 - Client admission must reject reserved client IDs and any insertion/deletion in
   the reserved provenance namespace before journal/apply/broadcast/ack.
 - Settlement changes require all three verification layers: the durable-only

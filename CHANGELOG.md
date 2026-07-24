@@ -8,6 +8,9 @@
 - `packages/agent-edit`, `apps/server`, `packages/database`: removed the
   response-observation/causal-cut hierarchy; durable provenance and current
   settlement state are now the sole destructive-reporting authority (#333).
+- `apps/server`: live and branch writer frames now share one admission order:
+  authority/generation validation, containment acknowledgement, fresh-authorship
+  validation, then durable append (#334).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

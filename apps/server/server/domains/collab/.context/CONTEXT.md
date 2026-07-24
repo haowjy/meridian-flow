@@ -74,11 +74,11 @@ persistence-only.
 
 **Branch mutations are durable before they reach a Hocuspocus room.** No branch-room
 `onStore` path may re-persist or re-checkpoint to make a mutation durable — it already
-is. Client branch updates validate provenance and commit against one locked
-branch snapshot through the awaited `beforeSync` admission hook, before
-Hocuspocus apply/broadcast/ack. Already-contained reconnect frames are
-acknowledged without another branch journal row; `onChange` does not own branch
-persistence.
+   is. Live and branch writer frames use the same sequence: authority/generation
+   validation, exact-containment acknowledgement, fresh-authorship validation,
+   then durable append. Branch admission runs that sequence against one locked
+   branch snapshot through the awaited `beforeSync` hook, before Hocuspocus
+   apply/broadcast/ack. `onChange` does not own branch persistence.
 `admitBranchWriterUpdate` registers the
 whole admission with `trackAppend` before validation's first `await`, so a
 `storeHocuspocusBranch` or graceful-shutdown drain cannot miss an admission

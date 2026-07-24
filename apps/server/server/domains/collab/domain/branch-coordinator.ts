@@ -12,9 +12,8 @@ import {
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import { BranchCorruptError } from "./branch-resolver.js";
-import { createDocumentAuthority, ReservedWriterClientIdError } from "./document-authority.js";
+import { admitWriterUpdate, createDocumentAuthority } from "./document-authority.js";
 import { createDocumentContainment } from "./document-containment.js";
-import { validateClientUpdateAdmission } from "./provenance.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
@@ -409,14 +408,9 @@ export function createBranchCoordinator(input: {
   async function persistJournaledUpdate(
     snapshot: BranchSnapshot,
     inputJournal: Omit<AppendBranchJournalInput, "generation">,
-    validate?: (authoritative: Y.Doc) => void,
-    acknowledgeContained = false,
+    authoritative?: Y.Doc,
   ): Promise<boolean> {
-    const { doc: cachedDoc } = await materialize(snapshot);
-    if (acknowledgeContained && documentContainment.contains(cachedDoc, inputJournal.updateData)) {
-      return false;
-    }
-    validate?.(cachedDoc);
+    const cachedDoc = authoritative ?? (await materialize(snapshot)).doc;
     // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
     // failed CAS/rollback must never mutate the cached branch doc.
     const doc = cloneDoc(cachedDoc);
@@ -690,34 +684,35 @@ export function createBranchCoordinator(input: {
         try {
           return await criticalSections.withBranches([inputWriter.branchId], async () => {
             const snapshot = await loadSnapshot(inputWriter.branchId);
-            if (
-              snapshot.kind !== "work_draft" ||
-              snapshot.status !== "active" ||
-              snapshot.generation !== inputWriter.expectedGeneration ||
-              !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
-            ) {
-              throw new BranchStaleUpdateError(inputWriter.branchId);
-            }
-            const admitted = await persistJournaledUpdate(
-              snapshot,
-              {
-                branchId: inputWriter.branchId,
-                updateData: inputWriter.updateData,
-                source: "writer",
-                actorUserId: inputWriter.actorUserId,
-              },
-              (authoritative) => {
-                const { reservedClientId } = validateClientUpdateAdmission(
-                  authoritative,
-                  inputWriter.updateData,
-                );
-                if (reservedClientId !== null) {
-                  throw new ReservedWriterClientIdError(reservedClientId);
+            const { doc: authoritative } = await materialize(snapshot);
+            const admission = await admitWriterUpdate({
+              authority: authoritative,
+              update: inputWriter.updateData,
+              validateAuthority() {
+                if (
+                  snapshot.kind !== "work_draft" ||
+                  snapshot.status !== "active" ||
+                  snapshot.generation !== inputWriter.expectedGeneration ||
+                  !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
+                ) {
+                  throw new BranchStaleUpdateError(inputWriter.branchId);
                 }
               },
-              true,
-            );
-            return { admitted };
+              isContained: () =>
+                documentContainment.contains(authoritative, inputWriter.updateData),
+              append: () =>
+                persistJournaledUpdate(
+                  snapshot,
+                  {
+                    branchId: inputWriter.branchId,
+                    updateData: inputWriter.updateData,
+                    source: "writer",
+                    actorUserId: inputWriter.actorUserId,
+                  },
+                  authoritative,
+                ),
+            });
+            return { admitted: admission.admitted };
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
