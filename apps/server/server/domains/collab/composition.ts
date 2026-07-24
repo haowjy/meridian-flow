@@ -96,8 +96,8 @@ import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js"
 import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
-  createDocumentMutationPolicy,
   DocumentMutationPolicyError,
+  replaceAuthorityGeneration,
 } from "./domain/document-mutation-policy.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
@@ -1108,39 +1108,36 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     codec,
     ...(authorityHeadCallbacks
       ? {
-          mutationPolicy: (documentId: DocumentId) =>
-            createDocumentMutationPolicy({
-              readMutationTarget: async () => ({
-                documentId,
-                generation: await authorityHeadCallbacks.readGeneration(documentId),
-                doc: await deps.coordinator.withDocument(documentId, async (doc) => doc),
-              }),
-              loadCheckpoint: async (checkpointId) => {
-                const checkpoint = await deps.store.getCheckpoint(checkpointId);
-                return checkpoint
-                  ? {
-                      checkpointId,
-                      state: checkpoint.state,
-                      attributionManifest: checkpoint.attributionManifest,
-                    }
-                  : null;
-              },
-              unresolvedSettlements: async () => 0,
-              replaceGeneration: async (_checkpoint, expectedGeneration) =>
-                authorityHeadCallbacks.replace({
+          replaceAuthorityGeneration: (documentId: DocumentId, checkpointId: string) =>
+            replaceAuthorityGeneration(
+              {
+                readMutationTarget: async () => ({
                   documentId,
-                  checkpointId: _checkpoint.checkpointId,
-                  expectedGeneration,
+                  generation: await authorityHeadCallbacks.readGeneration(documentId),
+                  doc: await deps.coordinator.withDocument(documentId, async (doc) => doc),
                 }),
-              disconnectGeneration: (generation) =>
-                hocuspocusPersistence.disconnectLiveGeneration(documentId, generation),
-              admitImmediate: unsupportedMutationPolicyOperation,
-              readFrozenReplicationSource: unsupportedMutationPolicyOperation,
-              readCurrentRevision: unsupportedMutationPolicyOperation,
-              lowerCertifiedMutation: unsupportedMutationPolicyOperation,
-              stagePush: unsupportedMutationPolicyOperation,
-              completePush: unsupportedMutationPolicyOperation,
-            }),
+                loadCheckpoint: async (id) => {
+                  const checkpoint = await deps.store.getCheckpoint(id);
+                  return checkpoint
+                    ? {
+                        checkpointId: id,
+                        state: checkpoint.state,
+                        attributionManifest: checkpoint.attributionManifest,
+                      }
+                    : null;
+                },
+                unresolvedSettlements: async () => 0,
+                replaceGeneration: async (checkpoint, expectedGeneration) =>
+                  authorityHeadCallbacks.replace({
+                    documentId,
+                    checkpointId: checkpoint.checkpointId,
+                    expectedGeneration,
+                  }),
+                disconnectGeneration: (generation) =>
+                  hocuspocusPersistence.disconnectLiveGeneration(documentId, generation),
+              },
+              checkpointId,
+            ),
         }
       : {}),
   });
@@ -2233,10 +2230,6 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
-}
-
-async function unsupportedMutationPolicyOperation(): Promise<never> {
-  throw new Error("Document mutation policy dependency is unavailable in this production adapter");
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

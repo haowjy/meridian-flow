@@ -13,7 +13,11 @@ import {
 } from "./branch-critical-sections.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import { createDocumentContainment } from "./document-containment.js";
-import { admitWriterUpdate, createDocumentMutationPolicy } from "./document-mutation-policy.js";
+import {
+  admitCertifiedMutation,
+  admitWriterUpdate,
+  replicateFrozenIdentity,
+} from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
@@ -309,7 +313,7 @@ export function createBranchCoordinator(input: {
       throw new Error("Branch store does not support branch reset");
     }
     const resetDoc = createCollabYDoc({ gc: false });
-    await replicateFrozenCut(upstream, resetDoc);
+    await replicateFrozenSource(upstream, resetDoc);
     const state = Y.encodeStateAsUpdate(resetDoc);
     const stateVector = Y.encodeStateVector(resetDoc);
     const ok = await input.store.resetBranchSnapshot({
@@ -362,47 +366,21 @@ export function createBranchCoordinator(input: {
     }
   }
 
-  async function replicateFrozenCut(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
+  async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
     let admittedUpdate: Uint8Array | undefined;
-    const cutState = Y.encodeStateAsUpdate(source);
     const frozenSource = cloneDoc(source);
     try {
-      const mutationPolicy = createDocumentMutationPolicy({
-        readMutationTarget: () => ({ documentId: "branch", generation: 0n, doc: target }),
-        readFrozenReplicationSource: async (cutId) =>
-          cutId === "captured-upstream"
-            ? {
-                cutId,
-                documentId: "branch",
-                sourceId: "captured-upstream",
-                version: 0n,
-                doc: frozenSource,
-              }
-            : null,
-        admitImmediate: async ({ update }) => {
+      await replicateFrozenIdentity({
+        source: { documentId: "branch", doc: frozenSource },
+        target: { documentId: "branch", generation: 0n, doc: target },
+        plan: { kind: "wholeDocument" },
+        admit: async ({ update }) => {
           admittedUpdate = update;
           Y.applyUpdate(target, update);
           return { sequence: 0n, joined: 0 };
         },
-        readCurrentRevision: unsupportedMutationPolicyOperation,
-        lowerCertifiedMutation: unsupportedMutationPolicyOperation,
-        loadCheckpoint: unsupportedMutationPolicyOperation,
-        unresolvedSettlements: unsupportedMutationPolicyOperation,
-        replaceGeneration: unsupportedMutationPolicyOperation,
-        disconnectGeneration: unsupportedMutationPolicyOperation,
-        stagePush: unsupportedMutationPolicyOperation,
-        completePush: unsupportedMutationPolicyOperation,
-      });
-      await mutationPolicy.mutate({
-        kind: "identityReplication",
-        sourceCutId: "captured-upstream",
-        plan: { kind: "wholeDocument" },
       });
       if (!admittedUpdate) throw new Error("Identity replication produced no branch update");
-      // Prove the aggregate used the immutable cut rather than rereading its mutable caller.
-      if (!bytesEqual(cutState, Y.encodeStateAsUpdate(frozenSource))) {
-        throw new Error("Captured frozen replication source changed during replication");
-      }
       return admittedUpdate;
     } finally {
       frozenSource.destroy();
@@ -505,7 +483,7 @@ export function createBranchCoordinator(input: {
     pullFromDoc(branchId, upstream) {
       return runWithRetry(
         branchId,
-        async (_snapshot, doc) => replicateFrozenCut(upstream, doc),
+        async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
         (update) => update,
       );
     },
@@ -612,40 +590,31 @@ export function createBranchCoordinator(input: {
             if (!updateData) return false;
             const semanticIr = inputJournal.semanticEditIr;
             if (inputJournal.source === "agent" && semanticIr) {
-              const mutationPolicy = createDocumentMutationPolicy({
-                readMutationTarget: () => ({
-                  documentId: snapshot.documentId,
-                  generation: BigInt(snapshot.generation),
-                  doc,
-                }),
-                // A response may lower several certified IRs into one atomic branch delta.
-                // The package validated each IR against its chained runtime revision before
-                // the ambient response transaction began; rereading the pre-batch target here
-                // would reject every IR after the first and force the durable unit to split.
-                readCurrentRevision: async () => semanticIr.inputRevision,
-                lowerCertifiedMutation: async () => updateData,
-                admitImmediate: async ({ update }) => {
-                  Y.applyUpdate(doc, update);
-                  await persist(snapshot, doc, {
-                    ...inputJournal,
-                    updateData: update,
-                    generation: snapshot.generation,
-                  });
-                  return { sequence: 0n, joined: 0 };
+              await admitCertifiedMutation(
+                {
+                  readMutationTarget: () => ({
+                    documentId: snapshot.documentId,
+                    generation: BigInt(snapshot.generation),
+                    doc,
+                  }),
+                  // A response may lower several certified IRs into one atomic branch delta.
+                  // The package validated each IR against its chained runtime revision before
+                  // the ambient response transaction began; rereading the pre-batch target here
+                  // would reject every IR after the first and force the durable unit to split.
+                  readCurrentRevision: async () => semanticIr.inputRevision,
+                  lowerCertifiedMutation: async () => updateData,
+                  admitImmediate: async ({ update }) => {
+                    Y.applyUpdate(doc, update);
+                    await persist(snapshot, doc, {
+                      ...inputJournal,
+                      updateData: update,
+                      generation: snapshot.generation,
+                    });
+                    return { sequence: 0n, joined: 0 };
+                  },
                 },
-                readFrozenReplicationSource: unsupportedMutationPolicyOperation,
-                loadCheckpoint: unsupportedMutationPolicyOperation,
-                unresolvedSettlements: unsupportedMutationPolicyOperation,
-                replaceGeneration: unsupportedMutationPolicyOperation,
-                disconnectGeneration: unsupportedMutationPolicyOperation,
-                stagePush: unsupportedMutationPolicyOperation,
-                completePush: unsupportedMutationPolicyOperation,
-              });
-              await mutationPolicy.mutate({
-                kind: "certifiedSemanticMutation",
-                actor: "agent",
-                ir: semanticIr,
-              });
+                { ir: semanticIr },
+              );
             } else {
               Y.applyUpdate(doc, updateData);
               await persist(snapshot, doc, {
@@ -763,8 +732,4 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
 
 function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
   return yjsDeltaUpdate(from, to);
-}
-
-async function unsupportedMutationPolicyOperation(): Promise<never> {
-  throw new Error("Document mutation policy dependency is unavailable for this branch operation");
 }

@@ -40,7 +40,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
-const { createDocumentMutationPolicy } = await import("../domain/document-mutation-policy.js");
+const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
   await import("../domain/provenance.js");
 
@@ -1555,32 +1555,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       const before = Y.encodeStateAsUpdate(target);
       let journaled = false;
       try {
-        await createDocumentMutationPolicy({
-          readMutationTarget: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
-          readFrozenReplicationSource: async () => ({
-            cutId: "injectivity-cut",
-            documentId: ALPHA_ID,
-            sourceId: "00000000-0000-4000-8000-000000000899",
-            version: 1n,
-            doc: source,
-          }),
-          admitImmediate: async ({ update }) => {
+        await replicateFrozenIdentity({
+          source: { documentId: ALPHA_ID, doc: source },
+          target: { documentId: ALPHA_ID, generation: 1n, doc: target },
+          plan: { kind: "wholeDocument" },
+          admit: async ({ update }) => {
             journaled = true;
             Y.applyUpdate(target, update);
             return { sequence: 1n, joined: 0 };
           },
-          readCurrentRevision: async () => "unused" as never,
-          lowerCertifiedMutation: async () => new Uint8Array(),
-          loadCheckpoint: async () => null,
-          unresolvedSettlements: async () => 0,
-          replaceGeneration: async () => 2n,
-          disconnectGeneration: async () => undefined,
-          stagePush: async () => "unused",
-          completePush: async () => undefined,
-        }).mutate({
-          kind: "identityReplication",
-          sourceCutId: "injectivity-cut",
-          plan: { kind: "wholeDocument" },
         });
         return { rejected: false, journaled, applied: true };
       } catch (cause) {

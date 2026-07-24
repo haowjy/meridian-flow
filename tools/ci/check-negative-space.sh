@@ -43,48 +43,21 @@ if (( ${#found[@]} > 0 )); then
   exit 1
 fi
 
-# DocumentMutationPolicy is a capability, not a convention. Check its narrow
-# export/import/call boundary rather than exempting every line in large files.
-mutation_policy_callers=(
-  "apps/server/server/domains/collab/adapters/drizzle-branches.ts"
-  "apps/server/server/domains/collab/composition.ts"
-  "apps/server/server/domains/collab/domain/branch-coordinator.ts"
-  "apps/server/server/domains/collab/domain/markdown-document.ts"
-  "apps/server/server/domains/collab/hocuspocus-persistence.ts"
-)
-
-is_mutation_policy_caller() {
-  local candidate="$1"
-  local allowed
-  for allowed in "${mutation_policy_callers[@]}"; do
-    [[ "$candidate" == "$allowed" ]] && return 0
-  done
-  return 1
-}
-
+# Content mutation operations are explicit capabilities. The old sum-interface,
+# fake source-cut lookup, and unsupported arms must not return.
 mutation_policy_violations=()
-while IFS= read -r file; do
-  [[ -z "$file" ]] && continue
-  if ! is_mutation_policy_caller "$file"; then
-    mutation_policy_violations+=("$file")
-  fi
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && mutation_policy_violations+=("$hit")
 done < <(
-  git grep -l -F 'createDocumentMutationPolicy' \
-    -- 'apps/server/server/domains/collab/*.ts' \
+  git grep -n -E \
+    'createDocumentMutationPolicy|DocumentMutationPolicyPort|sourceCutId|unsupportedMutationPolicyOperation|stagePush|completePush' \
+    -- \
+    'apps/server/server/domains/collab/*.ts' \
     'apps/server/server/domains/collab/**/*.ts' \
-    ':!apps/server/server/domains/collab/domain/document-mutation-policy.ts' \
+    'apps/server/scripts/*.ts' \
     ':!**/*.test.ts' ':!**/*.db.test.ts' ':!**/test-support/**' ':!**/__conformance__/**' \
     2>/dev/null || true
 )
-
-mutation_policy_exports="$(git grep -l -E 'export function createDocumentMutationPolicy' -- \
-  'apps/server/server/domains/collab/*.ts' \
-  'apps/server/server/domains/collab/**/*.ts' \
-  ':!**/*.test.ts' 2>/dev/null || true)"
-expected_mutation_policy_export='apps/server/server/domains/collab/domain/document-mutation-policy.ts'
-if [[ "$mutation_policy_exports" != "$expected_mutation_policy_export" ]]; then
-  mutation_policy_violations+=("DocumentMutationPolicy must have one canonical production export: $mutation_policy_exports")
-fi
 
 # These permissive historical heuristics are forbidden specifically in the
 # settlement/provenance safety core. Presentation and navigation code may still
@@ -104,7 +77,7 @@ done < <(
 )
 
 if (( ${#mutation_policy_violations[@]} > 0 )); then
-  echo "ERROR: content mutation bypasses DocumentMutationPolicy capability:"
+  echo "ERROR: obsolete document-mutation capability sediment returned:"
   printf '  %s\n' "${mutation_policy_violations[@]}"
   exit 1
 fi

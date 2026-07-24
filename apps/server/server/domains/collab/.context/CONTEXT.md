@@ -9,7 +9,7 @@ and WebSocket callers.
 | Concept | Canonical name | Code surface |
 |---|---|---|
 | Durable `document_yjs_heads` row and its fenced journal prefix | **document authority head** | `DocumentAuthorityHead`, `DocumentAuthorityId`, `document_yjs_heads` |
-| Capability that validates and admits content-bearing mutations | **document mutation policy** | `DocumentMutationPolicy`, `createDocumentMutationPolicy`, `domain/document-mutation-policy.ts` |
+| Operation-specific capabilities that validate and admit content-bearing mutations | **document mutation policy** | `admitFreshAuthorship`, `admitCertifiedMutation`, `replicateFrozenIdentity`, `replaceAuthorityGeneration` |
 | Mutable `Y.Doc` held by a loaded Hocuspocus room | **live document** | `liveDocument` / `liveDoc` in room and Hocuspocus surfaces |
 
 “Document authority” is reserved for the durable head and its identity/generation.

@@ -50,7 +50,10 @@ import {
   type BranchState,
 } from "../domain/branch-resolver.js";
 import { sync } from "../domain/branch-sync.js";
-import { createDocumentMutationPolicy } from "../domain/document-mutation-policy.js";
+import {
+  admitFreshAuthorship,
+  replicateFrozenIdentity,
+} from "../domain/document-mutation-policy.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
@@ -197,38 +200,15 @@ export function createDrizzleBranchStore(
     const target = createCollabYDoc({ gc: false });
     const frozenSource = createCollabYDoc({ gc: false });
     Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
-    const unsupported = async (): Promise<never> => {
-      throw new Error("Document mutation policy dependency is unavailable for branch cloning");
-    };
     try {
-      await createDocumentMutationPolicy({
-        readMutationTarget: () => ({ documentId: "new-branch", generation: 1n, doc: target }),
-        readFrozenReplicationSource: async (cutId) =>
-          cutId === "branch-clone"
-            ? {
-                cutId,
-                documentId: "new-branch",
-                sourceId: "branch-clone",
-                version: 1n,
-                doc: frozenSource,
-              }
-            : null,
-        admitImmediate: async ({ update }) => {
+      await replicateFrozenIdentity({
+        source: { documentId: "new-branch", doc: frozenSource },
+        target: { documentId: "new-branch", generation: 1n, doc: target },
+        plan: { kind: "wholeDocument" },
+        admit: async ({ update }) => {
           Y.applyUpdate(target, update);
           return { sequence: 1n, joined: 0 };
         },
-        readCurrentRevision: unsupported,
-        lowerCertifiedMutation: unsupported,
-        loadCheckpoint: unsupported,
-        unresolvedSettlements: unsupported,
-        replaceGeneration: unsupported,
-        disconnectGeneration: unsupported,
-        stagePush: unsupported,
-        completePush: unsupported,
-      }).mutate({
-        kind: "identityReplication",
-        sourceCutId: "branch-clone",
-        plan: { kind: "wholeDocument" },
       });
       return snapshotFromDoc(target);
     } finally {
@@ -255,33 +235,20 @@ export function createDrizzleBranchStore(
     if (!live) {
       throw new Error("DrizzleBranchStore manifest persistence requires the collab live journal");
     }
-    const unsupported = async (): Promise<never> => {
-      throw new Error("Document mutation policy dependency is unavailable for manifest seeding");
-    };
-    await createDocumentMutationPolicy({
-      readMutationTarget: () => ({ documentId, generation: 0n, doc: validationDoc }),
-      admitImmediate: async ({ update: admittedUpdate }) => {
-        const sequence = await live.journal.append(documentId, admittedUpdate, {
-          origin: "system",
-          seq: 0,
-        });
-        Y.applyUpdate(liveDoc, admittedUpdate);
-        return { sequence: BigInt(sequence), joined: 0 };
+    await admitFreshAuthorship(
+      {
+        readMutationTarget: () => ({ documentId, generation: 0n, doc: validationDoc }),
+        admitImmediate: async ({ update: admittedUpdate }) => {
+          const sequence = await live.journal.append(documentId, admittedUpdate, {
+            origin: "system",
+            seq: 0,
+          });
+          Y.applyUpdate(liveDoc, admittedUpdate);
+          return { sequence: BigInt(sequence), joined: 0 };
+        },
       },
-      readFrozenReplicationSource: unsupported,
-      readCurrentRevision: unsupported,
-      lowerCertifiedMutation: unsupported,
-      loadCheckpoint: unsupported,
-      unresolvedSettlements: unsupported,
-      replaceGeneration: unsupported,
-      disconnectGeneration: unsupported,
-      stagePush: unsupported,
-      completePush: unsupported,
-    }).mutate({
-      kind: "attributedFreshAuthorship",
-      source: { kind: "seed", policy: "agent" },
-      update,
-    });
+      { source: { kind: "seed", policy: "agent" }, update },
+    );
   }
 
   async function mutateLiveManifestDocument(

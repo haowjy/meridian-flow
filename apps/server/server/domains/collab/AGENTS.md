@@ -28,10 +28,10 @@ propagation between them.
 
 ## What lives here
 
-- `domain/document-mutation-policy.ts` is the sole content-admission policy capability:
-  it validates fresh authorship, certified semantic edits, frozen-cut identity
-  replication, and fenced snapshot replacement before persistence; push planning
-  and settlement remain owned by their transition modules.
+- `domain/document-mutation-policy.ts` is the sole content-admission policy module:
+  its operation-specific capabilities validate fresh authorship, certified semantic
+  edits, caller-frozen identity replication, and fenced snapshot replacement before
+  persistence; push planning and settlement remain owned by their transition modules.
 - Branch pulls and certified thread-peer commits enter that capability through the
   branch coordinator adapter; response-transaction persistence remains one durable unit.
 - `composition.ts` wires package core, live journal/coordinator, branch stores,

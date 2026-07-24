@@ -11,8 +11,7 @@ import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/pro
 import * as Y from "yjs";
 
 export const PROVENANCE_TARGETS_TYPE = "__meridian_provenance_targets_v1";
-export const PROVENANCE_ROOTS_TYPE = "__meridian_provenance_roots_v1";
-export const PROVENANCE_RESERVED_TYPES = [PROVENANCE_TARGETS_TYPE, PROVENANCE_ROOTS_TYPE] as const;
+export const PROVENANCE_RESERVED_TYPES = [PROVENANCE_TARGETS_TYPE] as const;
 const RESERVED_TYPE_NAMES = new Set<string>(PROVENANCE_RESERVED_TYPES);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
@@ -28,12 +27,6 @@ export type ProvenanceTargetFactV1 = {
   version: 1;
   target: WriterLineageRange;
   root: WriterLineageRange;
-};
-
-export type ProvenanceRootFactV1 = {
-  version: 1;
-  root: WriterLineageRange;
-  birthClass: SafetyBirthClass;
 };
 
 export type JournalReplayKey = {
@@ -199,7 +192,6 @@ function provenanceRunsForDoc(
   fallbackBirthClass?: SafetyBirthClass,
 ): ProvenanceRun[] {
   const assignments = readTargetFacts(doc);
-  const policies = readRootFacts(doc);
   // Admission validates targets while they are visible. After deletion Yjs may
   // discard the parent ancestry needed to re-prove historical fragment membership,
   // but the immutable target clocks must remain valid for settlement replay.
@@ -220,14 +212,13 @@ function provenanceRunsForDoc(
         ? unit(assignment.root, targetUnit.clock - assignment.target.clock)
         : targetUnit;
       const attribution = attributions.valueAt(rootUnit);
-      const policy = policies.valueAt(rootUnit);
-      if (!attribution && !policy && !fallbackBirthClass) {
-        throw blocked("Provenance root has no retained attribution or explicit birth policy");
+      if (!attribution && !fallbackBirthClass) {
+        throw blocked("Provenance root has no retained journal attribution");
       }
       appendRun(visible, {
         target: targetUnit,
         root: rootUnit,
-        birthClass: policy?.birthClass ?? attribution?.birthClass ?? fallbackBirthClass ?? "agent",
+        birthClass: attribution?.birthClass ?? fallbackBirthClass ?? "agent",
       });
     }
   }
@@ -245,22 +236,15 @@ export function birthClassFromAttribution(
 /** Append-only provenance-fact writer. Facts are arrays, never last-writer-wins maps. */
 export function appendProvenanceFacts(
   doc: Y.Doc,
-  input: {
-    targets?: readonly ProvenanceTargetFactV1[];
-    roots?: readonly ProvenanceRootFactV1[];
-  },
+  input: { targets?: readonly ProvenanceTargetFactV1[] },
 ): Uint8Array {
   const before = Y.encodeStateVector(doc);
   const targets = readTargetFacts(doc);
-  const roots = readRootFacts(doc);
   const newTargets = (input.targets ?? []).map(parseTargetFact);
-  const newRoots = (input.roots ?? []).map(parseRootFact);
   for (const fact of newTargets) targets.add(fact.target, fact, sameTargetFact);
-  for (const fact of newRoots) roots.add(fact.root, fact, sameRootFact);
   assertRootUnitInjectivity(doc, targets);
   doc.transact(() => {
     if (newTargets.length > 0) doc.getArray(PROVENANCE_TARGETS_TYPE).push(newTargets);
-    if (newRoots.length > 0) doc.getArray(PROVENANCE_ROOTS_TYPE).push(newRoots);
   }, "meridian-provenance-write");
   primeReservedNamespaceIndex(doc);
   return Y.encodeStateAsUpdate(doc, before);
@@ -292,7 +276,6 @@ function assertRootUnitInjectivity(
 /** Validates every reserved provenance fact against the complete visible prose graph. */
 export function validateProvenanceGraph(doc: Y.Doc): void {
   const assignments = readTargetFacts(doc);
-  readRootFacts(doc);
   const prose = allStringRanges(doc);
   for (const range of visibleProseStringRanges(doc)) prose.add(range, true, () => true);
   for (const fact of assignments.values()) {
@@ -640,15 +623,6 @@ function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
   return index;
 }
 
-function readRootFacts(doc: Y.Doc): RangeIndex<ProvenanceRootFactV1> {
-  const index = new RangeIndex<ProvenanceRootFactV1>("root birth policy");
-  for (const value of doc.getArray(PROVENANCE_ROOTS_TYPE).toArray()) {
-    const fact = parseRootFact(value);
-    index.add(fact.root, fact, sameRootFact);
-  }
-  return index;
-}
-
 class RangeIndex<T> {
   readonly #byClient = new Map<number, Array<{ range: WriterLineageRange; value: T }>>();
   constructor(private readonly label: string) {}
@@ -818,14 +792,6 @@ function parseTargetFact(value: unknown): ProvenanceTargetFactV1 {
   return { version: 1, target, root };
 }
 
-function parseRootFact(value: unknown): ProvenanceRootFactV1 {
-  if (!isRecord(value) || value.version !== 1) throw blocked("Invalid root policy fact");
-  if (value.birthClass !== "writer_protected" && value.birthClass !== "agent") {
-    throw blocked("Invalid binary root birth policy");
-  }
-  return { version: 1, root: parseRange(value.root), birthClass: value.birthClass };
-}
-
 function parseRange(value: unknown): WriterLineageRange {
   if (!isRecord(value)) throw blocked("Invalid lineage range");
   const { clientID, clock, length } = value;
@@ -896,9 +862,6 @@ function sameAttribution(left: AttributionRunV1, right: AttributionRunV1): boole
 }
 function sameTargetFact(left: ProvenanceTargetFactV1, right: ProvenanceTargetFactV1): boolean {
   return sameRange(left.target, right.target) && sameRange(left.root, right.root);
-}
-function sameRootFact(left: ProvenanceRootFactV1, right: ProvenanceRootFactV1): boolean {
-  return sameRange(left.root, right.root) && left.birthClass === right.birthClass;
 }
 function sameRange(left: WriterLineageRange, right: WriterLineageRange): boolean {
   return (

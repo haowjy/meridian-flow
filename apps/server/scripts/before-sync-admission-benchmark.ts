@@ -4,7 +4,7 @@ import { performance } from "node:perf_hooks";
 import type { UpdateJournal } from "@meridian/agent-edit";
 import * as Y from "yjs";
 import { createDocumentContainment } from "../server/domains/collab/domain/document-containment.js";
-import { createDocumentMutationPolicy } from "../server/domains/collab/domain/document-mutation-policy.js";
+import { admitFreshAuthorship } from "../server/domains/collab/domain/document-mutation-policy.js";
 import { validateClientUpdateAdmission } from "../server/domains/collab/domain/provenance.js";
 import { createHocuspocusPersistenceService } from "../server/domains/collab/hocuspocus-persistence.js";
 
@@ -100,27 +100,13 @@ async function oldAdmission(update: Uint8Array): Promise<void> {
   if (admission.reservedClientId !== null) throw new Error("reserved-writer-client-id");
   if (Y.snapshotContainsUpdate(Y.snapshot(document), update)) return;
 
-  const unsupported = async (): Promise<never> => {
-    throw new Error("unsupported");
-  };
-  const mutationPolicy = createDocumentMutationPolicy({
-    readMutationTarget: () => ({ documentId: DOCUMENT_ID, generation: 0n, doc: document }),
-    admitImmediate: async () => ({ sequence: BigInt(++sequence), joined: 0 }),
-    readFrozenReplicationSource: unsupported,
-    readCurrentRevision: unsupported,
-    lowerCertifiedMutation: unsupported,
-    loadCheckpoint: unsupported,
-    unresolvedSettlements: unsupported,
-    replaceGeneration: unsupported,
-    disconnectGeneration: unsupported,
-    stagePush: unsupported,
-    completePush: unsupported,
-  });
-  await mutationPolicy.mutate({
-    kind: "attributedFreshAuthorship",
-    source: { kind: "writer" },
-    update,
-  });
+  await admitFreshAuthorship(
+    {
+      readMutationTarget: () => ({ documentId: DOCUMENT_ID, generation: 0n, doc: document }),
+      admitImmediate: async () => ({ sequence: BigInt(++sequence), joined: 0 }),
+    },
+    { source: { kind: "writer" }, update },
+  );
 }
 
 async function measureAsync(operation: () => Promise<unknown>) {

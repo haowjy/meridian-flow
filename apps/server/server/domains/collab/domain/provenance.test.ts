@@ -11,7 +11,6 @@ import {
   type DocumentAuthorityId,
   materializeCandidateProvenance,
   materializeProvenanceView,
-  PROVENANCE_ROOTS_TYPE,
   PROVENANCE_TARGETS_TYPE,
   ProvenanceMaterializationError,
   ReservedNamespaceAdmissionError,
@@ -272,7 +271,7 @@ describe("hostile reserved namespace guard", () => {
         nested.push(["hostile"]);
       },
     ],
-    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_ROOTS_TYPE).set("x", 1)],
+    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_TARGETS_TYPE).set("x", 1)],
   ])("rejects %s", (_name, mutate) => {
     const referenceDocument = documentWithNestedReservedType();
     const update = hostileDelta(referenceDocument, mutate);

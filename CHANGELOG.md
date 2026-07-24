@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: collab mutation admission now exposes only supported operations;
+  journal attribution is the sole provenance birth-class authority (#345).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).
