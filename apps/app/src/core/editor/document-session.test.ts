@@ -9,6 +9,8 @@
  * disconnected, `access-lost` on permanent auth denial, `syncing` while in flight, and live transitions on
  * every connection-state change — never a frozen startup value.
  */
+
+import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import type { Awareness } from "y-protocols/awareness";
@@ -27,6 +29,7 @@ type FakeTransport = DocumentSessionTransportProvider & {
   resolveFirstSync: () => void;
   resolveDurableSync: () => void;
   setSynced: (synced: boolean) => void;
+  emitChange: (message: ChangeEventWsMessage) => void;
   destroyed: boolean;
 };
 
@@ -46,6 +49,7 @@ function makeFakeTransport(initial: ConnectionState = { kind: "connecting", atte
         resolveDurableSynced = resolve;
       });
       const listeners = new Set<(state: ConnectionState) => void>();
+      const changeListeners = new Set<(message: ChangeEventWsMessage) => void>();
       let latest = initial;
       let synced = false;
       const transport: FakeTransport = {
@@ -59,6 +63,10 @@ function makeFakeTransport(initial: ConnectionState = { kind: "connecting", atte
           listeners.add(listener);
           listener(latest);
           return () => listeners.delete(listener);
+        },
+        subscribeChangeEvents(listener) {
+          changeListeners.add(listener);
+          return () => changeListeners.delete(listener);
         },
         destroy() {
           this.destroyed = true;
@@ -76,6 +84,9 @@ function makeFakeTransport(initial: ConnectionState = { kind: "connecting", atte
         },
         setSynced(next) {
           synced = next;
+        },
+        emitChange(message) {
+          for (const listener of changeListeners) listener(message);
         },
         destroyed: false,
       };
@@ -104,7 +115,55 @@ function track(session: DocumentSession): {
   return { snapshots, unsubscribe };
 }
 
+function changeEvent(documentId: string, admittedByUserId: string | null): ChangeEventWsMessage {
+  return {
+    type: "change_event",
+    documentId,
+    threadId: "thread-1",
+    trailId: "trail-1",
+    projectionRevision: 1,
+    author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+    admittedByUserId,
+    changes: [
+      {
+        changeId: "change-1",
+        kind: "delete",
+        navigation: { kind: "unavailable", reason: "test" },
+        swept: false,
+        excerpt: null,
+      },
+    ],
+    truncated: false,
+  };
+}
+
 describe("DocumentSession status derivation", () => {
+  it("routes live-room change events into the session sidecar with self-suppression", async () => {
+    const liveTransport = makeFakeTransport();
+    const live = new DocumentSession({
+      roomKey: "doc-markers",
+      enableIndexedDb: false,
+      ownUserId: "me",
+      transportFactory: liveTransport.factory,
+    });
+    liveTransport.current().emitChange(changeEvent("doc-markers", "me"));
+    expect(live.markerStore.getSnapshot()).toHaveLength(0);
+    liveTransport.current().emitChange(changeEvent("doc-markers", null));
+    expect(live.markerStore.getSnapshot().map((marker) => marker.changeId)).toEqual(["change-1"]);
+    await live.destroy();
+
+    const branchTransport = makeFakeTransport();
+    const branch = new DocumentSession({
+      roomKey: "branch:branch-1:gen:1",
+      enableIndexedDb: false,
+      ownUserId: "me",
+      transportFactory: branchTransport.factory,
+    });
+    branchTransport.current().emitChange(changeEvent("branch-1", null));
+    expect(branch.markerStore.getSnapshot()).toHaveLength(0);
+    await branch.destroy();
+  });
+
   it("starts detached and attaches transport once without replacing its Y.Doc", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({ roomKey: "doc-detached", enableIndexedDb: false });

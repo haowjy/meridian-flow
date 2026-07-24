@@ -18,6 +18,7 @@ import {
 import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+import { configureDocumentSessionUser } from "@/core/editor/document-session-registry";
 import {
   isSettingsSection,
   SettingsDialog,
@@ -132,6 +133,7 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
+  configureDocumentSessionUser(user.userId);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // One unconditional provider tree for every authenticated route — the settings

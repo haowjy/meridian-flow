@@ -1,5 +1,12 @@
 # Client transport seams
 
+## Stateless document messages
+
+`HocuspocusDocumentTransport` parses the extensible stateless payload once with
+the contracts parser, ignores unknown message types, and exposes typed,
+per-message subscriptions. Live `DocumentSession`s subscribe to
+`change_event`; branch sessions deliberately do not.
+
 ## Dev-only wire observation
 
 The two client sockets use their canonical transport seams. `TappedWebSocket`

@@ -38,9 +38,11 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import type { SessionMarkerStore } from "./session-marker-store";
 
 export type EditorUser = {
   name: string;
@@ -70,6 +72,8 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
+  /** Live-session sidecar; omitted for branch/draft rooms. */
+  markerStore?: SessionMarkerStore;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -225,6 +229,7 @@ export function createEditorExtensions({
   figureRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
+  markerStore,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -237,6 +242,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
     ...collaboration,
+    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
 }
@@ -289,6 +295,7 @@ export function createEditorConfig({
   figureRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
+  markerStore,
   editable = true,
   autofocus = false,
   placeholder,
@@ -311,6 +318,7 @@ export function createEditorConfig({
         figureRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
+        markerStore,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
