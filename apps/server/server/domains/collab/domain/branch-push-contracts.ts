@@ -13,6 +13,7 @@ import type { NoticePort } from "../../notices/index.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
 import type { NavigationTargetV1, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -231,53 +232,12 @@ export type BranchPushStore = {
   commitPush(
     input: PreparedPushCommit,
   ): Promise<
-    | { status: "inserted"; push: PushLineageRow; settlement?: PendingLiveSettlement }
-    | { status: "conflict"; push: PushLineageRow }
+    { status: "inserted"; push: PushLineageRow } | { status: "conflict"; push: PushLineageRow }
   >;
   commitDiscard?(input: PreparedDiscardCommit): Promise<void>;
   commitPushBatch?(input: { pushes: PreparedPushCommit[] }): Promise<{
     pushes: PushLineageRow[];
-    settlements?: PendingLiveSettlement[];
   }>;
-  /** Adds a frozen post-commit cut through the same trail aggregate/outbox. */
-  settlePushTrail?(input: {
-    push: PushLineageRow;
-    trail?: DurableTrailRecord;
-    refineToEmpty?: boolean;
-    claim: SettlementClaim;
-    joinVersion: number;
-  }): Promise<boolean | undefined>;
-  listRecoverableSettlementIds?(): Promise<number[]>;
-  loadLiveSettlement?(pushId: number): Promise<PendingLiveSettlement>;
-  withCompletionFence?(
-    input: {
-      pushId: number;
-      documentId: DocumentId;
-      claim: SettlementClaim;
-      settledJoinVersion: number;
-    },
-    complete: () => CompletionFenceResult,
-  ): Promise<CompletionFenceResult>;
-  renewSettlementClaim?(input: {
-    pushId: number;
-    claim: SettlementClaim;
-  }): Promise<SettlementClaim | null>;
-  handoffSettlementClaim?(input: { pushId: number; claim: SettlementClaim }): Promise<boolean>;
-  claimRecoverable?(input: {
-    pushId: number;
-    token: string;
-  }): Promise<PendingLiveSettlement | null>;
-  recordLiveSettlementFailure?(input: {
-    pushId: number;
-    claim: SettlementClaim;
-    error: string;
-  }): Promise<boolean>;
-  blockLiveSettlement?(input: {
-    pushId: number;
-    claim: SettlementClaim;
-    code: string;
-    error: string;
-  }): Promise<boolean>;
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
@@ -402,6 +362,7 @@ export interface PushSweptTrail {
 export type BranchPushExecutorInput = {
   branchStore: BranchStore;
   pushStore: BranchPushStore;
+  settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   journal: UpdateJournal & {

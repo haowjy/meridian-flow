@@ -39,6 +39,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
   const attributionCodec = createAgentEditCodec(input.codec);
   const transition = createBranchPushTransition({
     pushStore: input.pushStore,
+    settlementStore: input.settlementStore,
     liveCoordinator: input.liveCoordinator,
     model: input.model,
     codec: attributionCodec,

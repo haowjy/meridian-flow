@@ -31,13 +31,15 @@ import {
 } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
-import { createBranchPushService } from "./branch-push.js";
+import { createBranchPushService as createBranchPushServiceCore } from "./branch-push.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
+  type BranchPushExecutorInput,
   type BranchPushStore,
   branchJournalRevision,
   type PendingLiveSettlement,
+  type PreparedPushCommit,
   type PushLineageRow,
 } from "./branch-push-contracts.js";
 import { BranchPushRetryExhaustedError } from "./branch-push-executor.js";
@@ -48,6 +50,7 @@ import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
+import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -59,6 +62,82 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
+
+type LegacySettlementCapabilities = {
+  loadLiveSettlement(pushId: number): Promise<PendingLiveSettlement>;
+  settlePushTrail: PendingSettlementStore["settlePushTrail"];
+  listRecoverableSettlementIds: PendingSettlementStore["listRecoverableSettlementIds"];
+  withCompletionFence: PendingSettlementStore["withCompletionFence"];
+  renewSettlementClaim: PendingSettlementStore["renewClaim"];
+  handoffSettlementClaim: PendingSettlementStore["handoffClaim"];
+  claimRecoverable: PendingSettlementStore["claimRecoverable"];
+  recordLiveSettlementFailure: PendingSettlementStore["recordFailure"];
+  blockLiveSettlement: PendingSettlementStore["block"];
+};
+
+function createBranchPushService(
+  input: Omit<BranchPushExecutorInput, "pushStore" | "settlementStore"> & {
+    pushStore: BranchPushStore & Partial<LegacySettlementCapabilities>;
+    settlementStore?: PendingSettlementStore;
+  },
+) {
+  const committedSettlements = new Map<number, PendingLiveSettlement>();
+  const pushStore: BranchPushStore = {
+    ...input.pushStore,
+    async commitPush(prepared) {
+      const result = await input.pushStore.commitPush(prepared);
+      if (result.status === "inserted") {
+        committedSettlements.set(result.push.id, {
+          ...prepared.pendingLiveSettlement,
+          push: result.push,
+        });
+      }
+      return result;
+    },
+    ...(input.pushStore.commitPushBatch
+      ? {
+          async commitPushBatch(prepared: { pushes: PreparedPushCommit[] }) {
+            const result = await input.pushStore.commitPushBatch?.(prepared);
+            if (!result) throw new Error("missing batch push result");
+            for (const [index, push] of result.pushes.entries()) {
+              const candidate = prepared.pushes[index];
+              if (!candidate) throw new Error("missing prepared batch settlement");
+              committedSettlements.set(push.id, {
+                ...candidate.pendingLiveSettlement,
+                push,
+              });
+            }
+            return result;
+          },
+        }
+      : {}),
+  };
+  const legacy = input.pushStore;
+  const settlementStore: PendingSettlementStore = input.settlementStore ?? {
+    async joinAdmission() {},
+    async loadLiveSettlement(pushId) {
+      if (legacy.loadLiveSettlement) return legacy.loadLiveSettlement(pushId);
+      const committedSettlement = committedSettlements.get(pushId);
+      if (!committedSettlement) {
+        throw new Error(`missing settlement ${pushId}`);
+      }
+      return committedSettlement;
+    },
+    async claimRecoverable(claimInput) {
+      const claimed = await legacy.claimRecoverable?.(claimInput);
+      if (claimed) committedSettlements.set(claimed.push.id, claimed);
+      return claimed ?? null;
+    },
+    renewClaim: legacy.renewSettlementClaim ?? (async ({ claim }) => claim),
+    handoffClaim: legacy.handoffSettlementClaim ?? (async () => true),
+    recordFailure: legacy.recordLiveSettlementFailure ?? (async () => true),
+    block: legacy.blockLiveSettlement ?? (async () => true),
+    settlePushTrail: legacy.settlePushTrail ?? (async () => true),
+    withCompletionFence: legacy.withCompletionFence ?? (async (_input, complete) => complete()),
+    listRecoverableSettlementIds: legacy.listRecoverableSettlementIds ?? (async () => []),
+  };
+  return createBranchPushServiceCore({ ...input, pushStore, settlementStore });
+}
 
 function docFromMarkdown(markdown: string): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
@@ -1262,7 +1341,7 @@ describe("createBranchPushService", () => {
     const settlements: DurableTrailRecord[] = [];
     const completed: number[] = [];
     let activeDoc = liveDoc;
-    const pushStore: BranchPushStore = {
+    const pushStore: BranchPushStore & Partial<LegacySettlementCapabilities> = {
       listActiveJournalRows: vi.fn(async () => [row]),
       listConcurrentJournalRows: vi.fn(async () => []),
       latestPushForBranch: vi.fn(async () => null),

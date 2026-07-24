@@ -25,6 +25,9 @@ export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await im
 );
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
 const { createDrizzleBranchPushStore } = await import("../adapters/drizzle-branch-push.js");
+const { createDrizzlePendingSettlementStore } = await import(
+  "../adapters/drizzle-pending-settlement.js"
+);
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
 const { createDrizzleChangeTrailPersistence } = await import(
   "../adapters/drizzle-change-trails.js"
@@ -290,7 +293,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return row?.filetype ?? null;
     },
   });
-  const durableBranchPushStore = createDrizzleBranchPushStore(
+  const durableBranchPushStore = createDrizzleBranchPushStore(db, changeTrails, notices);
+  const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
     changeTrails,
@@ -320,12 +324,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       seq: 0,
     });
   };
-  const branchPushStore = {
-    ...durableBranchPushStore,
-    async settlePushTrail(
-      input: Parameters<NonNullable<typeof durableBranchPushStore.settlePushTrail>>[0],
-    ) {
-      const settled = await durableBranchPushStore.settlePushTrail?.(input);
+  const settlementStore = {
+    ...durableSettlementStore,
+    async settlePushTrail(input: Parameters<typeof durableSettlementStore.settlePushTrail>[0]) {
+      const settled = await durableSettlementStore.settlePushTrail(input);
       if (settled !== false) {
         await options.afterSettlement?.({
           documentId: input.push.documentId,
@@ -340,13 +342,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return settled;
     },
     async withCompletionFence(
-      input: Parameters<NonNullable<typeof durableBranchPushStore.withCompletionFence>>[0],
-      complete: Parameters<NonNullable<typeof durableBranchPushStore.withCompletionFence>>[1],
+      input: Parameters<typeof durableSettlementStore.withCompletionFence>[0],
+      complete: Parameters<typeof durableSettlementStore.withCompletionFence>[1],
     ) {
-      if (!durableBranchPushStore.withCompletionFence) {
-        throw new Error("PostgreSQL branch push store has no completion fence");
-      }
-      return durableBranchPushStore.withCompletionFence(input, () => {
+      return durableSettlementStore.withCompletionFence(input, () => {
         const result = complete();
         options.afterLiveApply?.();
         return result;
@@ -357,7 +356,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const realBranchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
-    pushStore: branchPushStore,
+    pushStore: durableBranchPushStore,
+    settlementStore,
     branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
@@ -441,7 +441,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchCoordinator,
     branchPulls,
     branchPush,
-    branchPushStore,
+    branchPushStore: durableBranchPushStore,
     concurrentJournalWatermarks: watermarks,
     documentUriResolver: async (documentId) =>
       documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md",
@@ -1488,16 +1488,16 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       const [row] = await db.select().from(schema.branchPushSettlementOutbox);
       if (!row) throw new Error("settlement row is unavailable");
       let completionCallbackRan = false;
-      const renewed = await durableBranchPushStore.renewSettlementClaim?.({
+      const renewed = await durableSettlementStore.renewClaim({
         pushId: row.pushId,
         claim,
       });
-      const failureRecorded = await durableBranchPushStore.recordLiveSettlementFailure?.({
+      const failureRecorded = await durableSettlementStore.recordFailure({
         pushId: row.pushId,
         claim,
         error: "stale actor A failure",
       });
-      const completion = await durableBranchPushStore.withCompletionFence?.(
+      const completion = await durableSettlementStore.withCompletionFence(
         {
           pushId: row.pushId,
           documentId: row.documentId,
@@ -1516,7 +1516,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       if (!row?.claimToken || !row.claimKind || !row.claimedAt || !row.leaseExpiresAt) {
         throw new Error("owned settlement claim is unavailable for handoff");
       }
-      return branchPushStore.handoffSettlementClaim?.({
+      return settlementStore.handoffClaim({
         pushId: row.pushId,
         claim: {
           token: row.claimToken,
