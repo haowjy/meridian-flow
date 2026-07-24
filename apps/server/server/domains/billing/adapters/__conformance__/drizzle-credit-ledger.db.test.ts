@@ -57,6 +57,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         amountMillicredits: "75",
         reason: "newer",
       });
+      await db
+        .update(creditLots)
+        .set({ createdAt: new Date("2025-01-01T00:00:00.000Z") })
+        .where(sql`${creditLots.grantReason} = 'older'`);
+      await db
+        .update(creditLots)
+        .set({ createdAt: new Date("2025-01-02T00:00:00.000Z") })
+        .where(sql`${creditLots.grantReason} = 'newer'`);
 
       await ledger.debit({
         userId,
@@ -76,12 +84,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((lotTotal?.total ?? 0n).toString()).toBe("50");
 
       const debitRows = await db
-        .select({ amount: creditTransactions.amountMillicredits, lotId: creditTransactions.lotId })
+        .select({
+          amount: creditTransactions.amountMillicredits,
+          lotId: creditTransactions.lotId,
+          lotReason: creditLots.grantReason,
+        })
         .from(creditTransactions)
+        .leftJoin(creditLots, sql`${creditTransactions.lotId} = ${creditLots.id}`)
         .where(sql`${creditTransactions.transactionType} = 'consumption'`)
-        .orderBy(creditTransactions.createdAt);
+        .orderBy(creditLots.createdAt);
       expect(debitRows).toHaveLength(2);
       expect(debitRows.map((row) => row.amount.toString())).toEqual(["-100", "-25"]);
+      expect(debitRows.map((row) => row.lotReason)).toEqual(["older", "newer"]);
       expect(debitRows.every((row) => row.lotId)).toBe(true);
     });
 
