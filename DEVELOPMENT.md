@@ -91,7 +91,7 @@ prefixes are reserved from worktree slugs.
 Merged or finished work leaves several linked resources behind. `pnpm dev:prune-worktrees` tears them down safely:
 
 ```bash
-pnpm dev:prune-worktrees -- --auto             # plan cleanup for all merged worktrees
+pnpm dev:prune-worktrees -- --auto             # plan cleanup for eligible stale merged worktrees
 pnpm dev:prune-worktrees -- --target <value>   # target by work id, path, branch, or PR number
 pnpm dev:prune-worktrees -- --auto --dry-run   # print plan without executing
 pnpm dev:prune-worktrees -- --auto --yes       # execute without confirmation
@@ -103,6 +103,9 @@ bound to the planned branch commit and revalidated before every action; exact
 merged-PR evidence must match the detected base, head commit, and repository
 owner. The resolver refuses primary/current worktrees, the detected base branch,
 unmerged commits, ambiguous evidence, and refs that move after planning.
+Automatic cleanup additionally requires a clean, inactive, unowned worktree;
+it skips any worktree with an active Meridian work item, live dev session, live
+process beneath it, or unreadable same-user process cwd.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 

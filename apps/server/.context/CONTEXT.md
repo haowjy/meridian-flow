@@ -144,6 +144,8 @@ and surfaces as a retryable provider error when no output has been emitted.
 
 `server/lib/observability.ts` owns the process-scoped deferred sink used by startup, request observability, crash policy, and app composition. `server/lib/event-sink-factory.ts` keeps the upstream composition seam but only selects Meridian-local sinks: `EVENT_PROVIDER=local` writes structured JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set, while `none`/`noop` returns the no-op sink. External provider policy is deliberately not wired into production composition yet; inject another `EventSink` later without changing route or domain code.
 
+In dev, the repository `logs/` tree is generated observability output, not source input. `nitro.config.ts` excludes it through Rolldown's active `watch.exclude` seam so JSONL mirror writes cannot rebuild Nitro and orphan in-flight work. Keep the exclusion rooted at the repository log directory; do not restore the inert legacy Nitro watcher option.
+
 ## Route conventions
 
 ### Request IDs
