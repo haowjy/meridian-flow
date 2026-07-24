@@ -175,9 +175,14 @@ describe("peer marker writer self-clear", () => {
   });
 
   it("projects a pure deletion as an inline tick instead of a range", () => {
-    addMarker("range", 1, 6, "-deletion", 2);
+    editor.commands.setContent("<p>Beyond the seawall, three boats waited for morning.</p>");
+    addMarker("range", 0, editor.state.doc.content.size, "-deletion", 26);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
-    expect(editor.view.dom.querySelector(".meridian-peer-mark--tick")).not.toBeNull();
+    const tick = editor.view.dom.querySelector(".meridian-peer-mark--tick");
+    expect(tick).not.toBeNull();
+    expect(tick?.parentElement?.tagName).toBe("P");
+    expect(tick?.previousSibling?.textContent).toBe("Beyond the seawall, three ");
+    expect(tick?.nextSibling?.textContent).toBe("boats waited for morning.");
     expect(editor.view.dom.querySelector(".meridian-peer-mark--range")).toBeNull();
   });
 });

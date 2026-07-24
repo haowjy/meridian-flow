@@ -88,11 +88,19 @@ function resolvedMarkerPosition(
 /** Count text from the resolved block start, clamping against concurrent edits. */
 function pureDeletionPosition(state: EditorState, rangeStart: number, offset: number): number {
   const $start = state.doc.resolve(rangeStart);
-  let depth = $start.depth;
-  while (depth > 0 && !$start.node(depth).isTextblock) depth--;
-  if (!$start.node(depth).isTextblock) return rangeStart;
-  const blockStart = $start.start(depth);
-  const blockEnd = $start.end(depth);
+  const blockAfter = $start.nodeAfter;
+  let blockStart: number;
+  let blockEnd: number;
+  if (blockAfter?.isTextblock) {
+    blockStart = rangeStart + 1;
+    blockEnd = rangeStart + blockAfter.nodeSize - 1;
+  } else {
+    let depth = $start.depth;
+    while (depth > 0 && !$start.node(depth).isTextblock) depth--;
+    if (!$start.node(depth).isTextblock) return rangeStart;
+    blockStart = $start.start(depth);
+    blockEnd = $start.end(depth);
+  }
   let remaining = Math.max(0, offset);
   let resolved = blockStart;
   state.doc.nodesBetween(blockStart, blockEnd, (node, pos) => {
