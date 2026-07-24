@@ -115,6 +115,8 @@ Bulk Apply/Discard is one controller command over a captured target list; the
 dock does not infer command completion from busy/idle render edges. Direct
 inline Apply uses the exact preview the writer reviewed; bulk Apply acquires
 each captured draft's current preview while retaining the batch reservation.
+A batch stops at its first refusal/failure so later targets cannot erase the
+explanation; transport failures surface through the dock's typed error state.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns

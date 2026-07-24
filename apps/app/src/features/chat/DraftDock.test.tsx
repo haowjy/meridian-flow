@@ -43,6 +43,7 @@ type ControllerStub = {
   accept: ReturnType<typeof vi.fn>;
   reject: ReturnType<typeof vi.fn>;
   disposeDrafts: ReturnType<typeof vi.fn>;
+  dockDispositionError: "apply-failed" | "discard-offline" | null;
   needsRereview: boolean;
   applyRefusal: null;
 };
@@ -60,6 +61,7 @@ const harnessRef: {
     accept: vi.fn(),
     reject: vi.fn(),
     disposeDrafts: vi.fn(),
+    dockDispositionError: null,
     needsRereview: false,
     applyRefusal: null,
   },
@@ -80,7 +82,7 @@ vi.mock("./DraftReviewProvider", async (importOriginal) => {
   };
 });
 
-const { DraftApplyRefusalNotice, useDraftDock } = await import("./DraftDock");
+const { DraftApplyRefusalNotice, DraftDock, useDraftDock } = await import("./DraftDock");
 
 function DockHarness() {
   const dock = useDraftDock({ generating: false });
@@ -88,6 +90,11 @@ function DockHarness() {
     harnessRef.dock = dock;
   });
   return null;
+}
+
+function DockViewHarness() {
+  const dock = useDraftDock({ generating: false });
+  return <DraftDock dock={dock} />;
 }
 
 beforeEach(() => {
@@ -99,6 +106,7 @@ beforeEach(() => {
     accept: vi.fn(),
     reject: vi.fn(),
     disposeDrafts: vi.fn(async () => []),
+    dockDispositionError: null,
     needsRereview: false,
     applyRefusal: null,
   };
@@ -213,6 +221,17 @@ describe("useDraftDock bulk disposition", () => {
         { documentId: "doc-a", draftId: "draft-a" },
         { documentId: "doc-b", draftId: "draft-b" },
       ]);
+    });
+  });
+
+  it("shows a typed dock disposition failure", async () => {
+    harnessRef.groups = [draftGroup("doc-a", "draft-a")];
+    harnessRef.controller.dockDispositionError = "apply-failed";
+
+    await withReactRoot(<DockViewHarness />, () => {
+      expect(document.body.textContent).toContain(
+        "Couldn't apply. Check your connection and try again.",
+      );
     });
   });
 });
