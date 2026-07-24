@@ -649,8 +649,8 @@ msgid "Earlier content could not be recovered"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Edited"
-msgstr ""
+#~ msgid "Edited"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx
 msgid "Edited {count} documents"
@@ -661,8 +661,8 @@ msgid "Edited 1 document"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Edited file"
-msgstr ""
+#~ msgid "Edited file"
+#~ msgstr ""
 
 #: src/features/editor/useInlineReviewSync.ts
 #: src/features/project/dock/DockChangesView.tsx
@@ -670,8 +670,8 @@ msgid "edited since this draft was written"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Editing…"
-msgstr ""
+#~ msgid "Editing…"
+#~ msgstr ""
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -727,6 +727,22 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 msgid "expires {0}"
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Explored"
+msgstr "已浏览"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Explored folders"
+msgstr "已浏览文件夹"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Exploring folders…"
+msgstr "正在浏览文件夹…"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Exploring…"
+msgstr "正在浏览…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -891,16 +907,16 @@ msgid "Link"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Listed"
-msgstr ""
+#~ msgid "Listed"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Listed directory"
-msgstr ""
+#~ msgid "Listed directory"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Listing…"
-msgstr ""
+#~ msgid "Listing…"
+#~ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
@@ -972,6 +988,22 @@ msgstr ""
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looked through"
+#~ msgstr "已浏览"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looked through project files"
+#~ msgstr "已浏览项目文件"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looking through project files…"
+#~ msgstr "正在浏览项目文件…"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looking through…"
+#~ msgstr "正在浏览…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
@@ -1303,8 +1335,8 @@ msgid "Ran"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Ran command"
-msgstr ""
+#~ msgid "Ran command"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Ran skill"
@@ -1492,8 +1524,8 @@ msgid "Running skill…"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Running…"
-msgstr ""
+#~ msgid "Running…"
+#~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
@@ -1517,7 +1549,7 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched"
-msgstr ""
+msgstr "已搜索"
 
 #. placeholder {0}: truncate(query, 60)
 #: src/features/chat/tool-renderers.tsx
@@ -1526,11 +1558,11 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
-msgstr ""
+msgstr "已搜索上下文"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searching…"
-msgstr ""
+msgstr "正在搜索…"
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Select a document."

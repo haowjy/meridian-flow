@@ -3,10 +3,10 @@
  * timeline's tier-2 rows.
  *
  * Each registered tool contributes: an icon, a single-line title that reads
- * the tool's input (e.g. `Read foo.md`, `$ wc -l src/...`, `Ran segment skill`),
+ * the tool's input (e.g. `Read foo.md`, `Searched "dragon"`, `Ran segment skill`),
  * an optional inline expansion (curated — search result rows, stream tail, skill
  * output), and an optional
- * external destination handler (`read` opens the file in the context sidebar).
+ * external destination handler.
  *
  * Three-tier contract from `kb/wiki/runtime/.../activity-thinking-model`:
  *   - **Tier 1 (default fallback)** — unknown tool. Static one-line row
@@ -25,18 +25,9 @@ import {
   type JsonValue,
   meridianErrorFromStructuredToolOutput,
 } from "@meridian/contracts/protocol";
-import {
-  FilePen,
-  FileText,
-  FolderTree,
-  type LucideIcon,
-  Search,
-  Sparkles,
-  Wrench,
-} from "lucide-react";
+import { FilePen, FolderTree, type LucideIcon, Search, Sparkles, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ToolView } from "./group-delivery-segments";
-import { ReadPreviewExpand } from "./ReadPreviewExpand";
 import { normalizeToolResultRows, truncate } from "./tool-result-preview";
 
 export type ToolRenderContext = {
@@ -54,10 +45,9 @@ export type ToolRenderer = {
    */
   expand?: (tool: ToolView) => ReactNode | null;
   /**
-   * External destination — e.g. `read` jumps to the file in the context
-   * sidebar. When set, the click target uses this instead of toggling
-   * inline expand. Today these are stubs; the destinations are not yet
-   * wired through the project shell.
+   * External destination. When set, the click target uses this instead of
+   * toggling inline expand. Today these are stubs; the destinations are not
+   * yet wired through the project shell.
    */
   onClick?: (tool: ToolView) => void;
 };
@@ -94,7 +84,7 @@ function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): React
 }
 
 /**
- * Title slot for path-bearing tools (`read`, `edit`, `write`, `list`).
+ * Title slot for path-bearing tools (`write`, `ls`).
  *
  * Shows the **full path** rather than a stripped basename. When the row is
  * narrower than the path, the path left-truncates so the informative tail
@@ -302,14 +292,12 @@ function resultRowsOrNothing(tool: ToolView): ReactNode | null {
   return <ResultRows tool={tool} />;
 }
 
-function readExpand(tool: ToolView): ReactNode | null {
-  if (tool.status !== "complete" || typeof tool.output !== "string" || tool.output.length === 0) {
-    return null;
-  }
-  return <ReadPreviewExpand content={tool.output} />;
-}
-
 /* ── registry ──────────────────────────────────────────────────────────── */
+
+function humanizeToolName(toolName: string): string {
+  const words = toolName.replaceAll("_", " ");
+  return words.length > 0 ? words[0].toUpperCase() + words.slice(1) : words;
+}
 
 /**
  * Tier-1 default — unknown tool. Static one-liner; no expand affordance,
@@ -320,72 +308,43 @@ const DEFAULT_RENDERER: ToolRenderer = {
   Icon: Wrench,
   title: (tool) => {
     const path = asString(inputObject(tool).path);
-    return path ? <PathTitle verb={tool.toolName} path={path} /> : tool.toolName;
+    const name = humanizeToolName(tool.toolName);
+    return path ? <PathTitle verb={name} path={path} /> : name;
   },
 };
 
 const RENDERERS: Record<string, ToolRenderer> = {
-  read: {
-    Icon: FileText,
-    title: (tool) => {
-      const path = asString(inputObject(tool).path);
-      const verb = toolVerb(tool, t`Read`, t`Reading…`);
-      return path ? <PathTitle verb={verb} path={path} /> : toolVerb(tool, t`Read file`, verb);
-    },
-    expand: readExpand,
-  },
-  edit: {
-    Icon: FilePen,
-    title: (tool) => {
-      const path = asString(inputObject(tool).path);
-      const verb = toolVerb(tool, t`Edited`, t`Editing…`);
-      return path ? <PathTitle verb={verb} path={path} /> : toolVerb(tool, t`Edited file`, verb);
-    },
-    // TODO(ux): wire onClick to a diff destination.
-  },
   write: {
     Icon: FilePen,
     title: (tool, context) => <WriteToolTitle tool={tool} context={context} />,
     expand: writeExpand,
     // TODO(ux): wire onClick to open the written file.
   },
-  list: {
+  ls: {
     Icon: FolderTree,
     title: (tool) => {
       const path = asString(inputObject(tool).path);
-      const verb = toolVerb(tool, t`Listed`, t`Listing…`);
+      // `ls` walks folder structure — "exploring", not reading content.
+      const verb = toolVerb(tool, t`Explored`, t`Exploring…`);
       return path ? (
         <PathTitle verb={verb} path={path} />
       ) : (
-        toolVerb(tool, t`Listed directory`, verb)
+        toolVerb(tool, t`Explored folders`, t`Exploring folders…`)
       );
     },
   },
-  search: {
+  grep: {
     Icon: Search,
     title: (tool) => {
-      const query = asString(inputObject(tool).query);
+      const pattern = asString(inputObject(tool).pattern);
       const verb = toolVerb(tool, t`Searched`, t`Searching…`);
-      return query ? (
-        <PathTitle verb={verb} path={`"${truncate(query, 60)}"`} />
+      return pattern ? (
+        <PathTitle verb={verb} path={`"${truncate(pattern, 60)}"`} />
       ) : (
         toolVerb(tool, t`Searched context`, verb)
       );
     },
     expand: resultRowsOrNothing,
-  },
-  bash: {
-    Icon: Wrench,
-    title: (tool) => {
-      const command = asString(inputObject(tool).command);
-      const verb = toolVerb(tool, t`Ran`, t`Running…`);
-      return command ? (
-        <PathTitle verb={verb} path={command} />
-      ) : (
-        toolVerb(tool, t`Ran command`, verb)
-      );
-    },
-    expand: streamOrOutput,
   },
   invoke: {
     Icon: Sparkles,

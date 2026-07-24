@@ -172,12 +172,18 @@ AssistantTurn.tsx
               → CustomBlockRenderer (interrupts)
 ```
 
-`tool-renderers.tsx` is the registry for tool-name-specific presentation.
+`tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
+keys must be real runtime tool names from
+`apps/server/server/domains/runtime/tools/`. The current runtime surface is
+`write`, `ls`, `grep`, `invoke`, `ask_user`, `spawn`, and `return_result`;
+`ask_user` renders through component cards, while `spawn` and `return_result`
+intentionally use the humanized default renderer.
 Three conventions govern all renderers:
 
-- **Unknown tools show name only.** The default renderer displays the tool name
-  and, when present, a path — never raw arguments. Tool arguments are developer
-  detail that should not appear in the writer's chat surface.
+- **Unknown tools show a humanized name only.** The default renderer displays
+  the tool name with underscores replaced by spaces and its first letter
+  capitalized, plus a path when present — never raw arguments. Tool arguments
+  are developer detail that should not appear in the writer's chat surface.
 - **`toolVerb()` for status-aware tense.** Every registered renderer uses
   `toolVerb(tool, completedNode, activeNode)` to conjugate the action label
   by `tool.status` (`complete` vs `partial`). This keeps verb presentation
@@ -186,10 +192,10 @@ Three conventions govern all renderers:
   or plain output — never raw JSON. If raw JSON is needed for debugging, it goes
   behind a dev-only setting.
 
-Neutral tools (`read`, `write`, `edit`, `search`, `bash`, `invoke`) get
-explicit titles/icons and may expose `streamOrOutput` or result rows without
-implying any external execution substrate. Adding a renderer is a presentation
-change only: append to the `RENDERERS` map and keep protocol pairing in
+Neutral tools (`write`, `ls`, `grep`, `invoke`) get explicit titles/icons and
+may expose `streamOrOutput` or result rows without implying any external
+execution substrate. Adding a renderer is a presentation change only: append
+the real runtime tool name to the `RENDERERS` map and keep protocol pairing in
 `group-delivery-segments.ts`.
 
 Key files:

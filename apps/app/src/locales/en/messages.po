@@ -649,8 +649,8 @@ msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Edited"
-msgstr "Edited"
+#~ msgid "Edited"
+#~ msgstr "Edited"
 
 #: src/features/chat/TurnEditsCard.tsx
 msgid "Edited {count} documents"
@@ -661,8 +661,8 @@ msgid "Edited 1 document"
 msgstr "Edited 1 document"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Edited file"
-msgstr "Edited file"
+#~ msgid "Edited file"
+#~ msgstr "Edited file"
 
 #: src/features/editor/useInlineReviewSync.ts
 #: src/features/project/dock/DockChangesView.tsx
@@ -670,8 +670,8 @@ msgid "edited since this draft was written"
 msgstr "edited since this draft was written"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Editing…"
-msgstr "Editing…"
+#~ msgid "Editing…"
+#~ msgstr "Editing…"
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -727,6 +727,22 @@ msgstr "Expand sidebar"
 #: src/features/chat/FormBlock.tsx
 msgid "expires {0}"
 msgstr "expires {0}"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Explored"
+msgstr "Explored"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Explored folders"
+msgstr "Explored folders"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Exploring folders…"
+msgstr "Exploring folders…"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Exploring…"
+msgstr "Exploring…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -891,16 +907,16 @@ msgid "Link"
 msgstr "Link"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Listed"
-msgstr "Listed"
+#~ msgid "Listed"
+#~ msgstr "Listed"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Listed directory"
-msgstr "Listed directory"
+#~ msgid "Listed directory"
+#~ msgstr "Listed directory"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Listing…"
-msgstr "Listing…"
+#~ msgid "Listing…"
+#~ msgstr "Listing…"
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
@@ -972,6 +988,22 @@ msgstr "Loading…"
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr "Log out"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looked through"
+#~ msgstr "Looked through"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looked through project files"
+#~ msgstr "Looked through project files"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looking through project files…"
+#~ msgstr "Looking through project files…"
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Looking through…"
+#~ msgstr "Looking through…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
@@ -1303,8 +1335,8 @@ msgid "Ran"
 msgstr "Ran"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Ran command"
-msgstr "Ran command"
+#~ msgid "Ran command"
+#~ msgstr "Ran command"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Ran skill"
@@ -1492,8 +1524,8 @@ msgid "Running skill…"
 msgstr "Running skill…"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Running…"
-msgstr "Running…"
+#~ msgid "Running…"
+#~ msgstr "Running…"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"

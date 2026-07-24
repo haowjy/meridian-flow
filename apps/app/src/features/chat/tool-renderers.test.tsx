@@ -76,9 +76,9 @@ describe("write tool renderer", () => {
 });
 
 describe("unknown tool renderer", () => {
-  it("shows a path without exposing other arguments", () => {
+  it("humanizes the tool name and shows a path without exposing other arguments", () => {
     const tool = writeToolView({
-      toolName: "inspect",
+      toolName: "return_result",
       input: {
         path: "manuscript://chapter-1.md",
         query: "a long developer-facing argument",
@@ -86,29 +86,26 @@ describe("unknown tool renderer", () => {
     });
     const html = renderToStaticMarkup(rendererFor(tool.toolName).title(tool));
 
-    expect(html).toContain("inspect");
+    expect(html).toContain("Return result");
     expect(html).toContain("manuscript://chapter-1.md");
     expect(html).not.toContain("query");
     expect(html).not.toContain("developer-facing");
   });
 
-  it("shows only the tool name when no path is present", () => {
+  it("shows only the humanized tool name when no path is present", () => {
     const tool = writeToolView({
-      toolName: "inspect",
+      toolName: "return_result",
       input: { query: "a long developer-facing argument" },
     });
 
-    expect(rendererFor(tool.toolName).title(tool)).toBe("inspect");
+    expect(rendererFor(tool.toolName).title(tool)).toBe("Return result");
   });
 });
 
 describe("streaming tool labels", () => {
   it.each([
-    ["read", { path: "manuscript://chapter-1.md" }, "Reading"],
-    ["list", { path: "manuscript://" }, "Listing"],
-    ["edit", { path: "manuscript://chapter-1.md" }, "Editing"],
-    ["search", { query: "dragon" }, "Searching"],
-    ["bash", { command: "wc -w chapter-1.md" }, "Running"],
+    ["ls", { path: "manuscript://" }, "Exploring"],
+    ["grep", { pattern: "dragon" }, "Searching"],
   ])("uses present tense for a partial %s call", (toolName, input, expected) => {
     const tool = writeToolView({ toolName, input, status: "partial" });
     const html = renderToStaticMarkup(rendererFor(toolName).title(tool));
@@ -124,5 +121,28 @@ describe("streaming tool labels", () => {
     const html = renderToStaticMarkup(rendererFor("write").title(tool, { writeMode }));
 
     expect(html).toContain(expected);
+  });
+});
+
+describe("runtime tool registry", () => {
+  it.each(["ls", "grep"])("registers the %s runtime tool", (toolName) => {
+    expect(rendererFor(toolName)).not.toBe(rendererFor("unknown_tool"));
+  });
+
+  it("uses writer-friendly copy when ls has no path", () => {
+    const tool = writeToolView({ toolName: "ls", input: {} });
+
+    expect(rendererFor("ls").title(tool)).toBe("Explored folders");
+  });
+
+  it("reads grep's pattern input", () => {
+    const tool = writeToolView({
+      toolName: "grep",
+      input: { pattern: "dragon", query: "wrong field" },
+    });
+    const html = renderToStaticMarkup(rendererFor("grep").title(tool));
+
+    expect(html).toContain("dragon");
+    expect(html).not.toContain("wrong field");
   });
 });
