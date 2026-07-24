@@ -16,6 +16,9 @@ try {
 
 export default defineConfig({
   scanDirs: ["server"],
+  watchOptions: {
+    ignored: ["**/logs/**"],
+  },
   // Interrupt envelope handler runs before Nitro's built-in JSON wrapper so HTTP bodies
   // match WS error frames for `throwHttpInterrupt*` failures.
   errorHandler: ["./server/lib/interrupt-error-handler.ts"],

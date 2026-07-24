@@ -23,6 +23,8 @@
 - `tools/dev`: automatic worktree pruning now requires exact merged-PR evidence,
   skips dirty or active worktrees, rechecks readiness before teardown, deletes
   refs atomically, and batches discovery instead of pausing silently per lane.
+- `apps/server`: structured event writes under `logs/` no longer trigger Nitro
+  dev rebuilds or restart in-flight turns.
 - `tools/dev`: restart now terminates only its owned tmux session, waits for
   fixed ports to become bindable, and refuses non-owned or uninspectable
   listeners instead of killing processes discovered by port.
