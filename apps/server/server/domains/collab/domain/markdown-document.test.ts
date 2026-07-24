@@ -53,6 +53,7 @@ async function seedCode(setupResult: ReturnType<typeof setup>, source = "const a
 describe("code document serialization", () => {
   it("returns corrupt_state when tracked metadata names a registered non-tracked filetype", async () => {
     const subject = setup("png");
+    const projection = createCollabYDoc({ gc: false });
 
     await expect(
       subject.engine.setMarkdown({
@@ -68,6 +69,10 @@ describe("code document serialization", () => {
         message: "Tracked document has registered binary filetype: png",
       },
     });
+    await expect(subject.engine.serializeDocument(DOCUMENT_ID, projection)).rejects.toMatchObject({
+      code: "corrupt_state",
+    });
+    projection.destroy();
   });
 
   it("reads a code-schema document without markdown fences", async () => {

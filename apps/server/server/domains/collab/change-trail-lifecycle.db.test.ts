@@ -38,6 +38,17 @@ if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
 }
 
+function durableProjectionSerializer(
+  model: ReturnType<typeof yProsemirrorModel>,
+  codec: ReturnType<typeof createAgentEditCodec>,
+) {
+  return {
+    async serializeDocument(_documentId: string, doc: Y.Doc) {
+      return codec.serialize(model.projectBlocks(toDocHandle(doc)));
+    },
+  };
+}
+
 describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
@@ -168,6 +179,7 @@ describe("change trail (postgres)", () => {
       coordinator,
       model,
       codec,
+      durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
     const request = {
       threadId: THREAD_ID,
@@ -176,7 +188,28 @@ describe("change trail (postgres)", () => {
       action: "restore" as const,
       userId: USER_ID,
     };
+    const liveBeforeProjectionFailure = Y.encodeStateAsUpdate(liveDoc);
+    const projectionFailure = createDrizzleTrailForwardActions({
+      db,
+      documentAccess: createDrizzleDocumentAccess(db),
+      coordinator,
+      model,
+      codec,
+      durableProjectionSerializer: {
+        async serializeDocument() {
+          throw new Error("injected projection failure");
+        },
+      },
+    });
 
+    await expect(projectionFailure.apply(request)).rejects.toThrow("injected projection failure");
+    expect(Y.encodeStateAsUpdate(liveDoc)).toEqual(liveBeforeProjectionFailure);
+    await expect(
+      db
+        .select()
+        .from(schema.documentYjsUpdates)
+        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID)),
+    ).resolves.toHaveLength(0);
     await expect(actions.apply(request)).resolves.toEqual({ status: "applied" });
     await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
     expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc)))).toContain("Restored prose.");
@@ -250,6 +283,7 @@ describe("change trail (postgres)", () => {
       coordinator,
       model,
       codec,
+      durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
 
     await expect(
@@ -337,6 +371,7 @@ describe("change trail (postgres)", () => {
       coordinator,
       model,
       codec,
+      durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
     const request = {
       threadId: THREAD_ID,
@@ -420,6 +455,7 @@ describe("change trail (postgres)", () => {
       coordinator,
       model,
       codec,
+      durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
 
     await expect(
@@ -522,6 +558,7 @@ describe("change trail (postgres)", () => {
       coordinator,
       model,
       codec,
+      durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
 
     await expect(
@@ -672,6 +709,7 @@ describe("change trail (postgres)", () => {
       coordinator,
       model,
       codec,
+      durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
     await expect(
       actions.apply({

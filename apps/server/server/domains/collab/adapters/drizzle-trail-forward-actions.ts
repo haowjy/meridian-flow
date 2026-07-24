@@ -22,6 +22,7 @@ import type { Database } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
   changeTrailShells,
+  documents,
   documentYjsUpdates,
 } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -31,6 +32,7 @@ import {
   applyCommittedUpdateAtFingerprint,
   fullStateFingerprint,
 } from "../domain/branch-push-transition.js";
+import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
@@ -51,6 +53,7 @@ export function createDrizzleTrailForwardActions(input: {
   coordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
+  durableProjectionSerializer: DurableProjectionSerializer;
 }) {
   return {
     async apply(actionInput: {
@@ -171,6 +174,45 @@ export function createDrizzleTrailForwardActions(input: {
                 return "retry" as const;
               }
               const alreadyApplied = updateAlreadyApplied(liveDoc, committed.update);
+              let projectedDoc: Y.Doc = liveDoc;
+              let scratch: Y.Doc | undefined;
+              if (!alreadyApplied) {
+                scratch = new Y.Doc({ gc: false });
+                Y.applyUpdate(scratch, Y.encodeStateAsUpdate(liveDoc));
+                const projected = applyCommittedTrailForwardAction({
+                  liveDoc: scratch,
+                  update: committed.update,
+                  expectedLiveStateHash: committed.expectedLiveStateHash,
+                  liveOrigin: {
+                    type: "user",
+                    userId: actionInput.userId,
+                    reason: `trail-${actionInput.action}`,
+                  },
+                });
+                if (projected === "live_changed") {
+                  scratch.destroy();
+                  if (attempt === 2) {
+                    await updateActionState(tx, {
+                      ...actionInput,
+                      documentId: detail.documentId,
+                      changes: locked.changes,
+                      state: { status: "settled", outcome: "retry_exhausted" },
+                    });
+                    return "retry_exhausted" as const;
+                  }
+                  return "retry" as const;
+                }
+                projectedDoc = scratch;
+              }
+              let markdownProjection: string;
+              try {
+                markdownProjection = await input.durableProjectionSerializer.serializeDocument(
+                  detail.documentId as never,
+                  projectedDoc,
+                );
+              } finally {
+                scratch?.destroy();
+              }
               if (!alreadyApplied) {
                 const applied = applyCommittedTrailForwardAction({
                   liveDoc,
@@ -210,6 +252,10 @@ export function createDrizzleTrailForwardActions(input: {
                 })
                 .returning({ id: documentYjsUpdates.id });
               if (!journalRow) throw new Error("Failed to persist trail forward action");
+              await tx
+                .update(documents)
+                .set({ markdownProjection, updatedAt: new Date() })
+                .where(eq(documents.id, detail.documentId as never));
               await updateActionState(tx, {
                 ...actionInput,
                 documentId: detail.documentId,

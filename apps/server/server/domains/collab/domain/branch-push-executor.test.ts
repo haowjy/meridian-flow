@@ -18,9 +18,12 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createBranchAgentEditDiagnostics } from "../adapters/branch-agent-edit-observability.js";
+import { createBranchAgentEditDiagnostics } from "../adapters/agent-edit-observability.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
-import { createThreadPeerAgentEditCore } from "../composition.js";
+import {
+  createInMemoryPendingSettlementStore,
+  type InMemoryPendingSettlementStore,
+} from "../test-support/in-memory-pending-settlement-store.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import {
   createBranchAgentEditCoordinator,
@@ -31,34 +34,251 @@ import {
 } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
+import { createBranchPushService as createBranchPushServiceCore } from "./branch-push.js";
 import {
+  type BranchJournalReadStore,
   type BranchJournalRow,
-  BranchPeerIntegrationError,
   BranchPushCommitConflictError,
   BranchPushRetryExhaustedError,
-  type BranchPushStore,
-  createBranchPushService,
+  type BranchPushServiceInput,
+  branchJournalRevision,
   type PendingLiveSettlement,
+  type PreparedPushCommit,
+  type PushCommitStore,
   type PushLineageRow,
-} from "./branch-push.js";
-import { branchJournalRevision } from "./branch-push-contracts.js";
+  type WorkPushPolicyStore,
+} from "./branch-push-contracts.js";
+import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
+import { createBranchReviewOperations } from "./branch-review-operations.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
+import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
+import { enlistResponseParticipant, runResponseTransaction } from "./response-transaction.js";
+import { createThreadPeerAgentEditCore } from "./thread-peer-core-pool.js";
+
+type SettlementObserver = {
+  /** Observes the durable boundary; the stateful store always performs the settlement. */
+  settlePushTrail?: PendingSettlementStore["settlePushTrail"];
+};
+
+type TestPushStores = Pick<
+  BranchJournalReadStore,
+  "listActiveJournalRows" | "listConcurrentJournalRows"
+> &
+  Pick<PushCommitStore, "commitPush" | "markRollbackPending"> &
+  WorkPushPolicyStore &
+  SettlementObserver & {
+    listReviewableJournalRows?: BranchJournalReadStore["listReviewableJournalRows"];
+    latestPushForBranch?: BranchJournalReadStore["latestPushForBranch"];
+    listPushesForDocument?: BranchJournalReadStore["listPushesForDocument"];
+    listJournalRowsForTurn?: BranchJournalReadStore["listJournalRowsForTurn"];
+    listJournalRowsForBranch?: BranchJournalReadStore["listJournalRowsForBranch"];
+    listPushLineageForTurn?: BranchJournalReadStore["listPushLineageForTurn"];
+    commitPushBatch?: PushCommitStore["commitPushBatch"];
+    commitDiscard?: PushCommitStore["commitDiscard"];
+    commitTurnRedo?: PushCommitStore["commitTurnRedo"];
+  };
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000004" as TurnId;
 const USER_ID = "00000000-0000-4000-8000-000000000005" as UserId;
+const threadPeerPoolDefaults = {
+  shouldUseLiveReversal: async () => false,
+  discardThreadPeerBranches: async () => {},
+  pullThreadPeer: async () => undefined,
+  responseTransactionSettlement: {
+    deferUntilCommit: () => false,
+    deferUntilRollback: () => false,
+  },
+  responseTransactions: {
+    enlist: enlistResponseParticipant,
+    run: runResponseTransaction,
+  },
+};
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
+
+function createBranchPushService(
+  input: Omit<
+    BranchPushServiceInput,
+    "commitStore" | "journalReadStore" | "settlementStore" | "workPushPolicyStore"
+  > & {
+    pushStore: TestPushStores;
+    settlementStore?: InMemoryPendingSettlementStore;
+  },
+) {
+  const settlementStore = input.settlementStore ?? createInMemoryPendingSettlementStore();
+  const rows = new Map<string, BranchJournalRow>();
+  const pushes = new Map<number, PushLineageRow>();
+  const rememberRows = (observed: readonly BranchJournalRow[]) => {
+    for (const row of observed) {
+      rows.set(`${row.branchId}:${row.generation}:${row.id}`, row);
+    }
+    return [...observed];
+  };
+  const rememberPushes = (observed: readonly PushLineageRow[]) => {
+    for (const push of observed) pushes.set(push.id, push);
+    return [...observed];
+  };
+  const storedRows = (branchId: string, generation: number) =>
+    [...rows.values()].filter((row) => row.branchId === branchId && row.generation === generation);
+  const journalReadStore: BranchJournalReadStore = {
+    async listActiveJournalRows(branchId, generation) {
+      rememberRows(await input.pushStore.listActiveJournalRows(branchId, generation));
+      return storedRows(branchId, generation).filter((row) => row.status === "active");
+    },
+    async listReviewableJournalRows(branchId, generation) {
+      if (input.pushStore.listReviewableJournalRows) {
+        rememberRows(await input.pushStore.listReviewableJournalRows(branchId, generation));
+      } else {
+        rememberRows(await input.pushStore.listActiveJournalRows(branchId, generation));
+      }
+      return storedRows(branchId, generation).filter(
+        (row) => row.status === "active" || row.status === "rollback_pending",
+      );
+    },
+    async listConcurrentJournalRows(branchId, generation, options) {
+      return rememberRows(
+        await input.pushStore.listConcurrentJournalRows(branchId, generation, options),
+      );
+    },
+    async latestPushForBranch(branchId, generation) {
+      if (input.pushStore.latestPushForBranch) {
+        const push = await input.pushStore.latestPushForBranch(branchId, generation);
+        if (push) rememberPushes([push]);
+        return push;
+      }
+      return (
+        [...pushes.values()]
+          .reverse()
+          .find(
+            (push) =>
+              push.branchId === branchId && push.receiptPayload?.branchGeneration === generation,
+          ) ?? null
+      );
+    },
+    async listPushesForDocument(documentId) {
+      if (input.pushStore.listPushesForDocument) {
+        return rememberPushes(await input.pushStore.listPushesForDocument(documentId));
+      }
+      return [...pushes.values()].filter((push) => push.documentId === documentId);
+    },
+    async listJournalRowsForTurn(turnInput) {
+      if (!input.pushStore.listJournalRowsForTurn) {
+        throw new Error("test journal read store does not implement listJournalRowsForTurn");
+      }
+      return rememberRows(await input.pushStore.listJournalRowsForTurn(turnInput));
+    },
+    async listJournalRowsForBranch(branchInput) {
+      if (!input.pushStore.listJournalRowsForBranch) {
+        throw new Error("test journal read store does not implement listJournalRowsForBranch");
+      }
+      return rememberRows(await input.pushStore.listJournalRowsForBranch(branchInput));
+    },
+    async listPushLineageForTurn(turnInput) {
+      if (input.pushStore.listPushLineageForTurn) {
+        return rememberPushes(await input.pushStore.listPushLineageForTurn(turnInput));
+      }
+      return [...pushes.values()].filter(
+        (push) => push.threadId === turnInput.threadId && push.turnId === turnInput.turnId,
+      );
+    },
+  };
+  const commitStore: PushCommitStore = {
+    async commitPush(prepared) {
+      const result = await input.pushStore.commitPush(prepared);
+      rememberRows(prepared.journalRows);
+      rememberPushes([result.push]);
+      if (result.status === "inserted") {
+        settlementStore.stage({
+          ...prepared.pendingLiveSettlement,
+          push: result.push,
+        });
+      }
+      return result;
+    },
+    async commitPushBatch(prepared: { pushes: PreparedPushCommit[] }) {
+      if (!input.pushStore.commitPushBatch) {
+        throw new Error("test push commit store does not implement commitPushBatch");
+      }
+      const result = await input.pushStore.commitPushBatch(prepared);
+      rememberRows(prepared.pushes.flatMap((push) => push.journalRows));
+      rememberPushes(result.pushes);
+      for (const [index, push] of result.pushes.entries()) {
+        const candidate = prepared.pushes[index];
+        if (!candidate) throw new Error("missing prepared batch settlement");
+        settlementStore.stage({
+          ...candidate.pendingLiveSettlement,
+          push,
+        });
+      }
+      return result;
+    },
+    commitDiscard:
+      input.pushStore.commitDiscard ??
+      (async () => {
+        throw new Error("test push commit store does not implement commitDiscard");
+      }),
+    commitTurnRedo:
+      input.pushStore.commitTurnRedo ??
+      (async () => {
+        throw new Error("test push commit store does not implement commitTurnRedo");
+      }),
+    markRollbackPending: input.pushStore.markRollbackPending,
+  };
+  const workPushPolicyStore: WorkPushPolicyStore = input.pushStore;
+  const observedSettlementStore: PendingSettlementStore = input.pushStore.settlePushTrail
+    ? {
+        ...settlementStore,
+        async settlePushTrail(settleInput) {
+          await input.pushStore.settlePushTrail?.(settleInput);
+          return settlementStore.settlePushTrail(settleInput);
+        },
+      }
+    : settlementStore;
+  const { pushStore: _pushStore, settlementStore: _settlementStore, ...serviceInput } = input;
+  const branchPush = createBranchPushServiceCore({
+    ...serviceInput,
+    journalReadStore,
+    commitStore,
+    workPushPolicyStore,
+    settlementStore: observedSettlementStore,
+  });
+  const branchReview = createBranchReviewOperations({
+    branchStore: input.branchStore,
+    journalReadStore,
+    commitStore,
+    branchCoordinator: input.branchCoordinator,
+    journal: input.journal,
+    criticalSections: input.criticalSections,
+  });
+  return {
+    ...branchPush,
+    ...branchReview,
+    async markFailedResponseRollbackPending(rollbackInput: {
+      branchId: string;
+      threadId: ThreadId;
+      turnId: TurnId;
+    }) {
+      const branch = await input.branchStore.getBranch(rollbackInput.branchId);
+      if (!branch) throw new Error(`Branch ${rollbackInput.branchId} does not exist`);
+      const rowsMarked = await commitStore.markRollbackPending({
+        ...rollbackInput,
+        generation: branch.generation,
+      });
+      return { status: "rollback_pending" as const, rowsMarked };
+    },
+  };
+}
 
 function docFromMarkdown(markdown: string): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
@@ -124,7 +344,7 @@ function makeBranch(branchDoc: Y.Doc): BranchSnapshot {
 function listConcurrentJournalRowsInMemory(
   rows: readonly BranchJournalRow[],
   branchForRow: (branchId: string) => BranchSnapshot | null | undefined,
-): BranchPushStore["listConcurrentJournalRows"] {
+): BranchJournalReadStore["listConcurrentJournalRows"] {
   return async (branchId, generation, options) =>
     rows.filter((row) => {
       if (row.id <= (options.afterJournalId ?? 0)) return false;
@@ -193,9 +413,7 @@ function prefixWideningFixture(): {
   };
 }
 
-type ListJournalRowsForTurnInput = Parameters<
-  NonNullable<BranchPushStore["listJournalRowsForTurn"]>
->[0];
+type ListJournalRowsForTurnInput = Parameters<BranchJournalReadStore["listJournalRowsForTurn"]>[0];
 
 /**
  * One copy of the store's listJournalRowsForTurn filter contract. Per-test
@@ -259,9 +477,10 @@ class Harness {
   readonly lineage: PushLineageRow[] = [];
   policy: "manual" | "auto" = "manual";
   failApply = false;
-  readonly pushStore: BranchPushStore = {
+  readonly pushStore: TestPushStores = {
     listActiveJournalRows: vi.fn(async () => (this.row.status === "active" ? [this.row] : [])),
     listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn([this.row], input)),
+    listJournalRowsForBranch: vi.fn(async () => [this.row]),
     listConcurrentJournalRows: vi.fn(
       listConcurrentJournalRowsInMemory([this.row], (branchId) =>
         branchId === this.branch.branchId ? this.branch : null,
@@ -500,7 +719,10 @@ describe("createBranchPushService", () => {
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const record = vi.fn(async () => {});
-    const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
+    const service = harness.service(
+      { record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() },
+      { notices },
+    );
 
     const result =
       policy === "auto"
@@ -555,7 +777,7 @@ describe("createBranchPushService", () => {
       return { status: "inserted" as const, push };
     });
     await harness
-      .service({ record, reopenOwners: vi.fn() })
+      .service({ record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() })
       .pushToLive({ branchId: harness.branch.branchId });
 
     const trails = record.mock.calls[0]?.[0].trails;
@@ -608,7 +830,7 @@ describe("createBranchPushService", () => {
       return { status: "inserted" as const, push };
     });
     await harness
-      .service({ record, reopenOwners: vi.fn() })
+      .service({ record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() })
       .pushToLive({ branchId: harness.branch.branchId });
 
     expect(
@@ -638,10 +860,12 @@ describe("createBranchPushService", () => {
       await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    await harness.service({ record, reopenOwners: vi.fn() }).pushSelectedToLive({
-      branchId: harness.branch.branchId,
-      journalIds: [harness.row.id],
-    });
+    await harness
+      .service({ record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() })
+      .pushSelectedToLive({
+        branchId: harness.branch.branchId,
+        journalIds: [harness.row.id],
+      });
 
     expect(record).toHaveBeenCalledOnce();
   });
@@ -988,7 +1212,9 @@ describe("createBranchPushService", () => {
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
-    let durableSettlement: PendingLiveSettlement | null = null;
+    const settlementStore = createInMemoryPendingSettlementStore({
+      materialize: withDurableWriterProvenance,
+    });
     const commitPush = vi.fn(async (prepared) => {
       const push = {
         id: 1,
@@ -1000,11 +1226,9 @@ describe("createBranchPushService", () => {
         receiptPayload: prepared.receiptPayload,
         idempotencyKey: prepared.idempotencyKey,
       };
-      durableSettlement = { ...prepared.pendingLiveSettlement, push };
       return {
         status: "inserted" as const,
         push,
-        settlement: durableSettlement as PendingLiveSettlement,
       };
     });
     const service = createBranchPushService({
@@ -1021,10 +1245,6 @@ describe("createBranchPushService", () => {
         listConcurrentJournalRows: vi.fn(async () => []),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
-        loadLiveSettlement: vi.fn(async () => {
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          return withDurableWriterProvenance(durableSettlement);
-        }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           // This is the durable aggregate/outbox boundary. The live delete must
           // not have happened yet when settlement commits.
@@ -1038,6 +1258,7 @@ describe("createBranchPushService", () => {
         updateWorkDraftPushPolicy: vi.fn(),
         markRollbackPending: vi.fn(async () => 0),
       },
+      settlementStore,
       journal,
       liveCoordinator: {
         withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
@@ -1057,11 +1278,11 @@ describe("createBranchPushService", () => {
             { from: 0, to: model.getText(liveDoomed).length },
             "Unjournaled WS body.",
           );
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          durableSettlement = {
-            ...durableSettlement,
-            postCutUpdates: [Y.encodeStateAsUpdate(liveDoc, beforeWriter)],
-          };
+          await settlementStore.joinAdmission({
+            documentId: DOCUMENT_ID,
+            source: { kind: "journal", id: "3" },
+            update: Y.encodeStateAsUpdate(liveDoc, beforeWriter),
+          });
         },
       },
     });
@@ -1136,7 +1357,9 @@ describe("createBranchPushService", () => {
       seq: 0,
     });
     const settlements: DurableTrailRecord[] = [];
-    let durableSettlement: PendingLiveSettlement | null = null;
+    const settlementStore = createInMemoryPendingSettlementStore({
+      materialize: withDurableWriterProvenance,
+    });
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -1161,16 +1384,10 @@ describe("createBranchPushService", () => {
             receiptPayload: prepared.receiptPayload,
             idempotencyKey: prepared.idempotencyKey,
           };
-          durableSettlement = { ...prepared.pendingLiveSettlement, push };
           return {
             status: "inserted" as const,
             push,
-            settlement: durableSettlement as PendingLiveSettlement,
           };
-        }),
-        loadLiveSettlement: vi.fn(async () => {
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          return withDurableWriterProvenance(durableSettlement);
         }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           settlements.push(trail);
@@ -1181,6 +1398,7 @@ describe("createBranchPushService", () => {
         updateWorkDraftPushPolicy: vi.fn(),
         markRollbackPending: vi.fn(async () => 0),
       },
+      settlementStore,
       journal,
       liveCoordinator: {
         withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
@@ -1201,11 +1419,11 @@ describe("createBranchPushService", () => {
           );
           Y.applyUpdate(liveDoc, collisionUpdate);
           expect(model.getBlockId(liveDoomed)).not.toBe(initialTargetHash);
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          durableSettlement = {
-            ...durableSettlement,
-            postCutUpdates: [Y.encodeStateAsUpdate(liveDoc, beforeWriter)],
-          };
+          await settlementStore.joinAdmission({
+            documentId: DOCUMENT_ID,
+            source: { kind: "journal", id: "3" },
+            update: Y.encodeStateAsUpdate(liveDoc, beforeWriter),
+          });
         },
       },
     });
@@ -1253,11 +1471,16 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
-    let pending: import("./branch-push.js").PendingLiveSettlement | null = null;
+    let committedSettlement: PendingLiveSettlement | null = null;
+    let crashWindowUpdate: Uint8Array | null = null;
     const settlements: DurableTrailRecord[] = [];
     const completed: number[] = [];
+    const settlementStore = createInMemoryPendingSettlementStore({
+      materialize: withDurableWriterProvenance,
+      onCompleted: (pushId) => completed.push(pushId),
+    });
     let activeDoc = liveDoc;
-    const pushStore: BranchPushStore = {
+    const pushStore: TestPushStores & SettlementObserver = {
       listActiveJournalRows: vi.fn(async () => [row]),
       listConcurrentJournalRows: vi.fn(async () => []),
       latestPushForBranch: vi.fn(async () => null),
@@ -1272,22 +1495,12 @@ describe("createBranchPushService", () => {
           receiptPayload: prepared.receiptPayload,
           idempotencyKey: prepared.idempotencyKey,
         };
-        pending = { ...prepared.pendingLiveSettlement, push };
+        committedSettlement = { ...prepared.pendingLiveSettlement, push };
         return { status: "inserted" as const, push };
       }),
       settlePushTrail: vi.fn(async ({ trail }) => {
         settlements.push(trail);
         return true;
-      }),
-      listRecoverableSettlementIds: vi.fn(async () => (pending ? [pending.push.id] : [])),
-      claimRecoverable: vi.fn(async () => (pending ? withDurableWriterProvenance(pending) : null)),
-      withCompletionFence: vi.fn(async ({ pushId }, complete) => {
-        const result = complete();
-        if (result !== "retry") {
-          completed.push(pushId);
-          pending = null;
-        }
-        return result;
       }),
       countUnpushedRowsForWork: vi.fn(async () => 1),
       listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),
@@ -1304,6 +1517,7 @@ describe("createBranchPushService", () => {
         updateBranchSnapshot: vi.fn(),
       },
       pushStore,
+      settlementStore,
       journal,
       liveCoordinator: {
         withDocument: vi.fn(async (_documentId, fn) => fn(activeDoc)),
@@ -1322,9 +1536,14 @@ describe("createBranchPushService", () => {
             { from: 0, to: model.getText(liveDoomed).length },
             "Writer body in crash window.",
           );
-          const writerUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
-          if (!pending) throw new Error("push did not create settlement state");
-          pending = { ...pending, postCutUpdates: [writerUpdate] };
+          crashWindowUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
+          await settlementStore.joinAdmission({
+            documentId: DOCUMENT_ID,
+            source: { kind: "journal", id: "3" },
+            update: crashWindowUpdate,
+          });
+          const staged = await settlementStore.loadLiveSettlement(1);
+          await settlementStore.handoffClaim({ pushId: 1, claim: staged.claim });
           throw new Error("injected process crash");
         },
       },
@@ -1333,7 +1552,15 @@ describe("createBranchPushService", () => {
     await expect(service.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
       "injected process crash",
     );
-    const durable = pending as unknown as import("./branch-push.js").PendingLiveSettlement;
+    const durableBase = committedSettlement as PendingLiveSettlement | null;
+    const durableWriterUpdate = crashWindowUpdate as Uint8Array | null;
+    if (!durableBase || !durableWriterUpdate) {
+      throw new Error("push did not create settlement state");
+    }
+    const durable: PendingLiveSettlement = {
+      ...durableBase,
+      postCutUpdates: [durableWriterUpdate],
+    };
     const coldDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(coldDoc, durable.lockCutUpdate);
     Y.applyUpdate(coldDoc, durable.pushUpdate);
@@ -2912,7 +3139,10 @@ describe("thread-peer auto-push wiring", () => {
 
   it("warns and drops mutation-less pending entries instead of retaining an undrainable batch", () => {
     const eventSink = createInMemoryEventSink();
-    const pending = createBranchPendingJournalEntries(createBranchAgentEditDiagnostics(eventSink));
+    const pending = createBranchPendingJournalEntries(
+      enlistResponseParticipant,
+      createBranchAgentEditDiagnostics(eventSink),
+    );
 
     pending.push({
       docId: DOCUMENT_ID,
@@ -2964,7 +3194,7 @@ describe("thread-peer auto-push wiring", () => {
   it("promotes the captured watermark for a committed non-staged thread-peer write", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const watermarks = createBranchConcurrentJournalWatermarks();
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -3013,7 +3243,7 @@ describe("thread-peer auto-push wiring", () => {
   it("drains a staged document batch as one commit and promotes the last captured attempt", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const watermarks = createBranchConcurrentJournalWatermarks();
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -3093,7 +3323,7 @@ describe("thread-peer auto-push wiring", () => {
       status: "active",
     });
     harness.failNextCommitSync = true;
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     const pushPending = (writeId: string) =>
       pending.push({
         docId: DOCUMENT_ID,
@@ -3155,7 +3385,7 @@ describe("thread-peer auto-push wiring", () => {
 
   it("rejects an in-flight thread-peer write after a no-change pull generation is reset", async () => {
     const harness = new ThreadPeerPushHarness("manual");
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -3742,6 +3972,7 @@ describe("thread-peer auto-push wiring", () => {
     };
     const threadB = "00000000-0000-4000-8000-000000000099" as ThreadId;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(fakeCore()),
       createThreadCore: fakeCore,
@@ -3778,6 +4009,7 @@ describe("thread-peer auto-push wiring", () => {
         invalidateThread: vi.fn(async () => undefined),
       }) as unknown as AgentEditCore;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(baseCore(liveReverse)),
       createThreadCore: () => baseCore(threadReverse as typeof liveReverse),
       commitThreadResponseAtomically: (operation) => operation(),
@@ -3918,7 +4150,10 @@ describe("thread-peer auto-push wiring", () => {
   it("fails loudly when a staged response commit produces no branch journal row", async () => {
     const events = createInMemoryEventSink();
     const harness = new ThreadPeerPushHarness("manual", "Base.");
-    const pending = createBranchPendingJournalEntries(createBranchAgentEditDiagnostics(events));
+    const pending = createBranchPendingJournalEntries(
+      enlistResponseParticipant,
+      createBranchAgentEditDiagnostics(events),
+    );
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array([1]),
@@ -4295,7 +4530,7 @@ class ThreadPeerPushHarness {
   }
 
   async writeFromThreadPeer(text: string): Promise<void> {
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -4345,6 +4580,7 @@ class ThreadPeerPushHarness {
       afterCommit(callback) {
         void callback();
       },
+      enlistResponseParticipant,
       model,
       codec: agentCodec,
       ...(watermarks ? { concurrentJournalWatermarks: watermarks } : {}),
@@ -4363,7 +4599,7 @@ class ThreadPeerPushHarness {
   }
 
   createThreadPeerCore() {
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     const watermarks = createBranchConcurrentJournalWatermarks();
     const createCoreForCoordinator = (
       coordinator: DocumentCoordinator,
@@ -4404,6 +4640,7 @@ class ThreadPeerPushHarness {
     });
 
     return createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(
         createCoreForCoordinator(

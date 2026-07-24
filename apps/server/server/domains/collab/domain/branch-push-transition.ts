@@ -12,12 +12,15 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
-  BranchPushStore,
   CompletionFenceResult,
   PendingLiveSettlement,
   PreparedPushCommit,
+  PushCommitStore,
   PushSweptTrail,
-} from "./branch-push-executor.js";
+} from "./branch-push-contracts.js";
+import { trailContributionReplacement } from "./branch-trail-projection.js";
+import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
+import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";
@@ -32,7 +35,8 @@ export class PendingLiveSettlementError extends Error {
 }
 
 export function createBranchPushTransition(input: {
-  pushStore: BranchPushStore;
+  commitStore: PushCommitStore;
+  settlementStore: PendingSettlementStore;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
@@ -75,24 +79,19 @@ export function createBranchPushTransition(input: {
           return prepared.onConflict(committed.push);
         }
         const pushes = "status" in committed ? [committed.push] : committed.pushes;
-        const settlements = "status" in committed ? [committed.settlement] : committed.settlements;
         await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
         const swept: Array<PushSweptTrail | undefined> = [];
         for (const [index, push] of pushes.entries()) {
-          const fallback = {
-            ...(prepared.pushes[index] as PreparedPushCommit).pendingLiveSettlement,
-            push,
-          };
           let durable: PendingLiveSettlement;
           try {
-            durable = input.pushStore.loadLiveSettlement
-              ? await input.pushStore.loadLiveSettlement(push.id)
-              : (settlements?.[index] ?? fallback);
+            durable = await input.settlementStore.loadLiveSettlement(push.id);
           } catch (cause) {
             if (cause instanceof ProvenanceMaterializationError) {
-              await input.pushStore.blockLiveSettlement?.({
+              const preparedPush = prepared.pushes[index];
+              if (!preparedPush) throw new Error("Branch push transition lost its prepared push");
+              await input.settlementStore.block({
                 pushId: push.id,
-                claim: fallback.claim,
+                claim: preparedPush.pendingLiveSettlement.claim,
                 code: "corrupt_settlement_authority",
                 error: cause.message,
               });
@@ -172,12 +171,9 @@ export function createBranchPushTransition(input: {
     };
   }
 
-  const commit = (prepared: PreparedPushCommit) => input.pushStore.commitPush(prepared);
-  const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) => {
-    if (!input.pushStore.commitPushBatch)
-      throw new Error("Branch push store does not support atomic companion pushes");
-    return input.pushStore.commitPushBatch(prepared);
-  };
+  const commit = (prepared: PreparedPushCommit) => input.commitStore.commitPush(prepared);
+  const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) =>
+    input.commitStore.commitPushBatch(prepared);
 
   /** Classifies destructive effects from durable provenance and the current before/after state. */
   function classify(
@@ -301,45 +297,60 @@ export function createBranchPushTransition(input: {
     let latest: PushSweptTrail | undefined;
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
       inputSettlement.signal?.throwIfAborted();
-      if (input.pushStore.renewSettlementClaim) {
-        const renewed = await input.pushStore.renewSettlementClaim({
-          pushId: pending.push.id,
-          claim: pending.claim,
-        });
-        if (!renewed) throw new PendingLiveSettlementError(pending.push.id);
-        pending = { ...pending, claim: renewed };
-      }
+      const renewed = await input.settlementStore.renewClaim({
+        pushId: pending.push.id,
+        claim: pending.claim,
+      });
+      if (!renewed) throw new PendingLiveSettlementError(pending.push.id);
+      pending = { ...pending, claim: renewed };
       const ingressGeneration = await input.writerIngressBarrier?.drain(pending.push.documentId);
-      pending = input.pushStore.loadLiveSettlement
-        ? await input.pushStore.loadLiveSettlement(pending.push.id)
-        : pending;
+      pending = await input.settlementStore.loadLiveSettlement(pending.push.id);
       const materialized = materializeFinalPrePush(pending);
       try {
         const cut = classify(pending, materialized.doc);
-        const settled = input.pushStore.settlePushTrail
-          ? await input.pushStore.settlePushTrail({
-              push: pending.push,
-              ...(cut ? { trail: cut.trail } : {}),
-              ...(cut?.refineToEmpty ? { refineToEmpty: true } : {}),
-              claim: pending.claim,
-              joinVersion: pending.joinVersion,
-            })
-          : true;
+        const settled = await input.settlementStore.settlePushTrail({
+          push: pending.push,
+          ...(cut
+            ? {
+                trail: cut.trail,
+                replacement: trailContributionReplacement(
+                  cut.trail,
+                  pending.push,
+                  cut.refineToEmpty ? "empty" : "refine",
+                ),
+              }
+            : {}),
+          claim: pending.claim,
+          joinVersion: pending.joinVersion,
+        });
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
         if (cut?.swept) latest = cut.swept;
 
-        const completion = await completeUnderFence({
-          pending,
-          liveDoc: inputSettlement.liveDoc,
-          finalPrePush: materialized.doc,
-          ingressGeneration,
-        });
+        let completion: CompletionFenceResult;
+        try {
+          completion = await completeUnderFence({
+            pending,
+            liveDoc: inputSettlement.liveDoc,
+            finalPrePush: materialized.doc,
+            ingressGeneration,
+          });
+        } catch (cause) {
+          if (isCorruptDurableProjectionError(cause)) {
+            await input.settlementStore.block({
+              pushId: pending.push.id,
+              claim: pending.claim,
+              code: cause.code,
+              error: cause.message,
+            });
+          }
+          throw cause;
+        }
         if (completion === "applied" || completion === "already_applied") return latest;
       } finally {
         materialized.doc.destroy();
       }
     }
-    await input.pushStore.recordLiveSettlementFailure?.({
+    await input.settlementStore.recordFailure({
       pushId: pending.push.id,
       claim: pending.claim,
       error: "live document changed during settlement",
@@ -378,8 +389,7 @@ export function createBranchPushTransition(input: {
         pushed.destroy();
       }
     };
-    if (!input.pushStore.withCompletionFence) return complete();
-    return input.pushStore.withCompletionFence(
+    return input.settlementStore.withCompletionFence(
       {
         pushId: inputFence.pending.push.id,
         documentId: inputFence.pending.push.documentId,
@@ -391,17 +401,13 @@ export function createBranchPushTransition(input: {
   }
 
   async function recover(recoveryInput?: { signal?: AbortSignal }): Promise<number> {
-    const recoverableIds = await input.pushStore.listRecoverableSettlementIds?.();
-    if (!recoverableIds) throw new Error("Branch push store cannot recover durable settlements");
+    const recoverableIds = await input.settlementStore.listRecoverableSettlementIds();
     let recovered = 0;
     for (const pushId of recoverableIds) {
       recoveryInput?.signal?.throwIfAborted();
       let row: PendingLiveSettlement | null = null;
       try {
-        if (!input.pushStore.claimRecoverable) {
-          throw new Error("Branch push store cannot claim a durable settlement");
-        }
-        row = await input.pushStore.claimRecoverable({ pushId, token: randomUUID() });
+        row = await input.settlementStore.claimRecoverable({ pushId, token: randomUUID() });
         if (!row) continue;
         await input.liveCoordinator.withDocument(
           row.push.documentId,
@@ -417,7 +423,7 @@ export function createBranchPushTransition(input: {
         recovered += 1;
       } catch (cause) {
         if (!row || cause instanceof PendingLiveSettlementError) continue;
-        await input.pushStore.recordLiveSettlementFailure?.({
+        await input.settlementStore.recordFailure({
           pushId: row.push.id,
           claim: row.claim,
           error: cause instanceof Error ? cause.message : String(cause),

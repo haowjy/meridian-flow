@@ -69,7 +69,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => null },
       });
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({

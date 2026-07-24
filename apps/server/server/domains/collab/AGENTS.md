@@ -34,22 +34,34 @@ propagation between them.
   persistence; push planning and settlement remain owned by their transition modules.
 - Branch pulls and certified thread-peer commits enter that capability through the
   branch coordinator adapter; response-transaction persistence remains one durable unit.
-- `composition.ts` wires package core, live journal/coordinator, branch stores,
-  branch pull/push, Hocuspocus, checkpoints, and route-facing facades.
+- `composition.ts` is a wiring-only production root. Application behavior lives
+  in the required review, effective-read, response-finalization, reversal,
+  projection, and thread-peer services under `domain/`; `collab-facade.ts` only
+  assembles those services into the public surface. `adapters/declared-stubs.ts`
+  owns explicit unsupported behavior; production and in-memory compositions use it
+  rather than leaving optional runtime dependencies.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
   immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
-  trail/notice projection. `branch-push-executor.ts` owns orchestration;
-  `branch-push-transition.ts` is the sole ordering owner for capture, prepare,
-  born-owned commit, settlement, fenced apply/completion, and recovery across
-  every push mode. `branch-review*.ts` owns discard/undo/redo.
+  trail/notice projection. `branch-push-candidates.ts` builds whole, selective,
+  and companion candidate outcomes; `branch-push.ts` runs ready batches through
+  their one shared pipeline;
+  `branch-push-transition.ts` is the sole ordering owner for settlement
+  drain/reload/materialization/classification/refinement/fenced completion and
+  delivery across every push mode. `branch-review*.ts` is a separately composed
+  service for discard/undo/redo.
+- `domain/ports/pending-settlement-store.ts` is the required settlement
+  persistence boundary. `adapters/drizzle-pending-settlement.ts` owns the
+  settlement outbox, recovery claims, completion fence, and the one admission
+  join writer shared by journal and staged-push transactions.
 - `domain/ports/change-trail-persistence.ts` is the persistence boundary.
   `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
   dispatcher, work processor, and reconciler remain separate lifecycle owners.
 - `domain/draft-review-*` is the review diff/presentation pipeline over branch
   docs. The name is UI vocabulary; it is not the old persisted draft subsystem.
 - `adapters/drizzle-*` are production persistence adapters for live journal,
-  branches, branch pushes, turn lineage, receipts, and Hocuspocus coordination.
+  branches, the required journal-read/push-commit/work-policy ports, pending
+  settlement, turn lineage, receipts, and Hocuspocus coordination.
 
 ## Rules
 

@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+- `apps/server`: Yjs WebSocket routes now delegate collaboration lifecycle,
+  writer admission, reconnect reconciliation, and graceful drain to one gateway.
+- `apps/server`: thread context reversal routes now validate and delegate one
+  facade command across live-turn lineage and context-document undo/redo.
+
+- `apps/server`: collab composition now assembles required review, response,
+  reversal, effective-read, projection, and thread-peer services from explicit
+  production or in-memory adapters instead of hiding feature fallbacks in one
+  facade closure.
+- `apps/server`: ordinary collab writes retain independent activity/projection
+  settlement, while completed branch pushes keep projection and activity inside
+  the fenced settlement transaction.
+- `apps/server`: whole, selective, and companion branch pushes now share one
+  candidate-batch pipeline and required persistence ports without changing
+  selective error identity, empty companion results, or whole-only notice
+  requirements.
+- `apps/server`: final branch-push classification now restores trail
+  contributions that provisional aggregate folding had cancelled away.
+- `apps/server`: branch pushes and trail actions now use the filetype-aware
+  document projection engine; code files persist raw text and unsupported
+  filetypes block settlement instead of storing markdown-shaped projections.
 - `apps/server`: collab domain policy no longer imports Drizzle or observability
   adapters; composition supplies transaction and diagnostic capabilities (#345).
 - `apps/server`: removed draft review endpoints that could only return not found,

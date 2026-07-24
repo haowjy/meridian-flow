@@ -1,6 +1,7 @@
 /** Domain port for atomically recording normalized change trails. */
 
 import type { NoticeInput } from "../../../notices/index.js";
+import type { TrailContributionReplacement } from "../branch-push-contracts.js";
 import type { NormalizedTrail, RawTrailChange, TrailOwner } from "../trail-read-kernel.js";
 import { parseTrailChangesV1 } from "../trail-read-kernel.js";
 
@@ -104,5 +105,10 @@ export type ChangeTrailPersistence = {
     /** Replaces this push's prior aggregate contribution with the supplied classification. */
     replacePushId?: string;
   }): Promise<void>;
+  replacePushContribution(
+    pushId: string,
+    replacement: TrailContributionReplacement,
+    context: { refineCurrentVersion: boolean },
+  ): Promise<void>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
 };

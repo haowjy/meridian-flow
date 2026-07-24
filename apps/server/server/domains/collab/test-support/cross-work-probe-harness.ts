@@ -366,6 +366,11 @@ export async function runCrossWorkProbe(
         coordinator: liveCoordinator,
         model,
         codec: agentEditCodec,
+        durableProjectionSerializer: {
+          async serializeDocument(_documentId, doc) {
+            return agentEditCodec.serialize(model.projectBlocks(toDocHandle(doc)));
+          },
+        },
       }).apply({
         threadId: THREAD_B_ID,
         trailId: restorable.row.trailId,

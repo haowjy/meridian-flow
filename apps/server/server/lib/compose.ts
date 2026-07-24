@@ -111,6 +111,7 @@ import { createInMemoryRepositories } from "../domains/threads/adapters/in-memor
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
   EventJournalReader,
@@ -131,6 +132,7 @@ import {
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { readThreadContextDocument } from "./thread-context-route.js";
 import {
   createAgentEditResponseWriteLifecycle,
   createWiredCoreToolRegistrations,
@@ -294,6 +296,8 @@ export async function createProductionAppPorts(input: {
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db, activeDocuments);
+  const projectRepo = createDrizzleProjectRepository({ db });
+  let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const documentSync = createCollabDomain({
@@ -301,7 +305,25 @@ export async function createProductionAppPorts(input: {
     documentAccess,
     eventSink,
     notices,
-    threads: threadRepos.threads,
+    threadContext: {
+      async requireThreadOwner(input) {
+        const thread = await requireThreadOwner(
+          { threads: threadRepos.threads, projects: projectRepo },
+          input.threadId,
+          input.userId as never,
+        );
+        return { projectId: thread.projectId };
+      },
+      resolveContextDocument: (input) =>
+        readThreadContextDocument(
+          {
+            contextPorts,
+            threads: threadRepos.threads,
+            threadWorks: threadRepos.threadWorks,
+          },
+          input as never,
+        ),
+    },
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
@@ -319,7 +341,7 @@ export async function createProductionAppPorts(input: {
   });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
-  const contextPorts = createProductionUnifiedContextPortFactory({
+  contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
@@ -339,7 +361,6 @@ export async function createProductionAppPorts(input: {
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(environment),
   });
-  const projectRepo = createDrizzleProjectRepository({ db });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({ db, documents: documentSync });
   const workRepo = createDrizzleProjectWorkRepository({ db });

@@ -96,7 +96,7 @@ function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
-  return {
+  const writer: ChangeTrailAggregateWriter = {
     async record(input) {
       const tx = currentDrizzleDb(db);
       const trails = [...input.trails].sort((left, right) =>
@@ -257,6 +257,26 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         }
       }
     },
+    async replacePushContribution(pushId, replacement, context) {
+      const trails = replacement.targets.map(({ owner, classifications }) => {
+        const changes = replacement.kind === "refine" ? [...classifications] : [];
+        return {
+          owner,
+          changes,
+          counts: {
+            changes: changes.length,
+            swept: changes.filter((change) => change.swept !== null).length,
+            documents: new Set(changes.map((change) => change.documentId)).size,
+          },
+        };
+      });
+      await writer.record({
+        trails,
+        documentTitles: replacement.documentTitles,
+        refineCurrentVersion: context.refineCurrentVersion,
+        replacePushId: pushId,
+      });
+    },
     async reopenOwners(owners) {
       const tx = currentDrizzleDb(db);
       const sortedOwners = [
@@ -301,6 +321,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       await reconcileTerminalOwners(db);
     },
   };
+  return writer;
 }
 
 /** Advances turn trails only after the terminal turn policy has covered every owned row. */

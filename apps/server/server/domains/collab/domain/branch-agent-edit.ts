@@ -43,7 +43,7 @@ import {
   partitionByBlockCoverage,
   touchedHashesForCoverage,
 } from "./branch-update-attribution.js";
-import { enlistResponseParticipant } from "./response-transaction.js";
+import type { ResponseCommitParticipant } from "./response-transaction.js";
 
 export { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
 
@@ -73,6 +73,7 @@ export type BranchAgentEditDiagnostics = {
 };
 
 export type AfterCommit = (callback: () => void | Promise<void>) => void;
+export type EnlistResponseParticipant = (participant: ResponseCommitParticipant) => boolean;
 
 export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJournalWatermarks {
   const currentByThreadDocument = new Map<string, number>();
@@ -148,6 +149,7 @@ export function createBranchAgentEditCoordinator(input: {
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
+  enlistResponseParticipant: EnlistResponseParticipant;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
@@ -229,6 +231,7 @@ export function createBranchAgentEditCoordinator(input: {
                 input.threadId,
                 docId as DocumentId,
                 input.afterCommit,
+                input.enlistResponseParticipant,
                 pending?.mutation?.writeId,
               );
             } else if (pendingBatch.length > 0) {
@@ -312,7 +315,7 @@ export function createBranchAgentEditCoordinator(input: {
           );
           // Capture itself is provisional: failures before branch persistence must
           // clear the candidate even though no watermark-advance participant exists yet.
-          enlistResponseParticipant({
+          input.enlistResponseParticipant({
             commit() {},
             abort() {
               concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
@@ -615,6 +618,7 @@ type BranchPendingJournalEntries = {
 };
 
 export function createBranchPendingJournalEntries(
+  enlistResponseParticipant: EnlistResponseParticipant,
   diagnostics?: Pick<BranchAgentEditDiagnostics, "mutationLessPendingEntry">,
 ): BranchPendingJournalEntries {
   const byDocument = new Map<string, JournalBatchAppendEntry[]>();
@@ -913,6 +917,7 @@ function advanceConcurrentJournalWatermark(
   threadId: ThreadId,
   documentId: DocumentId,
   afterCommit: AfterCommit,
+  enlistResponseParticipant: EnlistResponseParticipant,
   attemptId?: string,
 ): void {
   if (
