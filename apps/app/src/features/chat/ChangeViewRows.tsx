@@ -31,6 +31,8 @@ export function ChangeViewRows({
   copyText?: (text: string) => Promise<void>;
   anchorUnavailable?: boolean;
 }) {
+  if (changes.every((change) => change.kind === "insert" && !change.writerProtection)) return null;
+
   return (
     <ol className="space-y-2 px-3 pb-2 pl-9">
       {[...changes]
