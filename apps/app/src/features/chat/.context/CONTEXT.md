@@ -321,8 +321,9 @@ so hydration shape is descriptor identity (stable) rather than resolved string
 (locale-dependent).
 
 Rotation is Composer-internal. The `placeholder` prop overrides the rotating
-default when set (the hero variant uses this path). The dormant `@ for
-reference` hint is gated off and tracked in [`.context/TODO.md`](TODO.md).
+default when set (the hero variant uses this path). The deferred mention-hint
+intent is tracked in [`.context/TODO.md`](TODO.md), with no dormant production
+machinery.
 
 ## Composer field-sizing pitfall
 

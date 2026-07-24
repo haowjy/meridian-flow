@@ -65,10 +65,6 @@ msgstr "{name} · reviewed"
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
 
-#: src/features/chat/placeholders.ts
-msgid "@ for reference"
-msgstr "@ for reference"
-
 #: src/features/chat/ChangeViewRows.tsx
 msgid "↻ This edit brought back text you had deleted"
 msgstr "↻ This edit brought back text you had deleted"
@@ -197,10 +193,6 @@ msgstr "Applying…"
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
-
-#: src/features/chat/Composer.tsx
-#~ msgid "Ask anything…"
-#~ msgstr "Ask anything…"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -383,10 +375,6 @@ msgstr "Combines {0} AI turns"
 #: src/features/project/lifecycle.ts
 msgid "Completed"
 msgstr "Completed"
-
-#: src/features/chat/tool-result-preview.ts
-msgid "Completed."
-msgstr "Completed."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
@@ -648,10 +636,6 @@ msgstr "Drop image to upload a figure"
 msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Edited"
-#~ msgstr "Edited"
-
 #: src/features/chat/TurnEditsCard.tsx
 msgid "Edited {count} documents"
 msgstr "Edited {count} documents"
@@ -660,18 +644,10 @@ msgstr "Edited {count} documents"
 msgid "Edited 1 document"
 msgstr "Edited 1 document"
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Edited file"
-#~ msgstr "Edited file"
-
 #: src/features/editor/useInlineReviewSync.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "edited since this draft was written"
 msgstr "edited since this draft was written"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Editing…"
-#~ msgstr "Editing…"
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -902,21 +878,14 @@ msgstr "Let's work on it"
 msgid "Light"
 msgstr "Light"
 
+#. placeholder {0}: row.line
+#: src/features/chat/tool-result-preview.ts
+msgid "Line {0}"
+msgstr "Line {0}"
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
 msgstr "Link"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listed"
-#~ msgstr "Listed"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listed directory"
-#~ msgstr "Listed directory"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listing…"
-#~ msgstr "Listing…"
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
@@ -988,22 +957,6 @@ msgstr "Loading…"
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr "Log out"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looked through"
-#~ msgstr "Looked through"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looked through project files"
-#~ msgstr "Looked through project files"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looking through project files…"
-#~ msgstr "Looking through project files…"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looking through…"
-#~ msgstr "Looking through…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
@@ -1335,10 +1288,6 @@ msgid "Ran"
 msgstr "Ran"
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "Ran command"
-#~ msgstr "Ran command"
-
-#: src/features/chat/tool-renderers.tsx
 msgid "Ran skill"
 msgstr "Ran skill"
 
@@ -1444,10 +1393,6 @@ msgstr "Renamed to {trimmed}"
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
-#: src/features/chat/ChatView.tsx
-#~ msgid "Reply to the agent, or steer the analysis…"
-#~ msgstr "Reply to the agent, or steer the analysis…"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr "Required"
@@ -1523,10 +1468,6 @@ msgstr "Running {toolName}"
 msgid "Running skill…"
 msgstr "Running skill…"
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Running…"
-#~ msgstr "Running…"
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
@@ -1550,11 +1491,6 @@ msgstr "Search papers, extract findings, and synthesize a summary across sources
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched"
 msgstr "Searched"
-
-#. placeholder {0}: truncate(query, 60)
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Searched \"{0}\""
-#~ msgstr "Searched \"{0}\""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"

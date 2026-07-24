@@ -5,7 +5,6 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 
 import {
-  appendAtReferenceHint,
   COMPOSE_PLACEHOLDERS,
   INTERJECT_PLACEHOLDERS,
   selectNextPlaceholder,
@@ -46,39 +45,5 @@ describe("selectNextPlaceholder", () => {
   it("uses typographic ellipses for interjection prompts", () => {
     expect(INTERJECT_PLACEHOLDERS[2].message).toBe("Actually…");
     expect(INTERJECT_PLACEHOLDERS[3].message).toBe("Hold on…");
-  });
-});
-
-describe("appendAtReferenceHint", () => {
-  const now = Date.UTC(2026, 6, 24);
-
-  it("keeps the dormant mention hint gated off", () => {
-    expect(appendAtReferenceHint("Write away", "@ for reference", null, false, now)).toBe(
-      "Write away",
-    );
-  });
-
-  it("can append the hint for a missing or stale last-use timestamp", () => {
-    expect(appendAtReferenceHint("Write away", "@ for reference", null, true, now)).toBe(
-      "Write away, @ for reference",
-    );
-    expect(
-      appendAtReferenceHint(
-        "Write away",
-        "@ for reference",
-        now - 8 * 24 * 60 * 60 * 1000,
-        true,
-        now,
-      ),
-    ).toBe("Write away, @ for reference");
-    expect(
-      appendAtReferenceHint(
-        "Write away",
-        "@ for reference",
-        now - 6 * 24 * 60 * 60 * 1000,
-        true,
-        now,
-      ),
-    ).toBe("Write away");
   });
 });

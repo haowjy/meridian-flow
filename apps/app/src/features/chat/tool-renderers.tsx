@@ -4,16 +4,15 @@
  *
  * Each registered tool contributes: an icon, a single-line title that reads
  * the tool's input (e.g. `Read foo.md`, `Searched "dragon"`, `Ran segment skill`),
- * an optional inline expansion (curated — search result rows, stream tail, skill
- * output), and an optional
- * external destination handler.
+ * an optional inline expansion (curated — search result rows, stream tail, or
+ * skill output).
  *
- * Three-tier contract from `kb/wiki/runtime/.../activity-thinking-model`:
+ * Three-tier contract documented in `.context/CONTEXT.md`:
  *   - **Tier 1 (default fallback)** — unknown tool. Static one-line row
  *     showing the tool name and, when present, its path. No expand or
- *     destination.
+ *     interaction.
  *   - **Tier 2 (registered)** — the entries in this file. Per-tool one-liner
- *     plus per-tool click behaviour.
+ *     plus optional curated expansion.
  *   - **Tier 3 (generative)** — model-authored React. Not implemented here.
  *
  * Hard rule: **never expose raw JSON in default UX**. Renderers produce
@@ -36,20 +35,10 @@ export type ToolRenderContext = {
 
 export type ToolRenderer = {
   Icon: LucideIcon;
-  iconTint?: "muted" | "primary";
   /** Single-line summary of the tool action. Already i18n'd. */
   title: (tool: ToolView, context?: ToolRenderContext) => ReactNode;
-  /**
-   * Inline expansion content. `null` = no expand affordance on this row
-   * (the row is a static announcement) or routes via `onClick` instead.
-   */
+  /** Inline expansion content. `null` = no expand affordance on this row. */
   expand?: (tool: ToolView) => ReactNode | null;
-  /**
-   * External destination. When set, the click target uses this instead of
-   * toggling inline expand. Today these are stubs; the destinations are not
-   * yet wired through the project shell.
-   */
-  onClick?: (tool: ToolView) => void;
 };
 
 /* ── input helpers ─────────────────────────────────────────────────────── */
@@ -84,7 +73,7 @@ function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): React
 }
 
 /**
- * Title slot for path-bearing tools (`write`, `ls`).
+ * Title slot for path-bearing tools (`write`, `ls`, `grep`, and the default).
  *
  * Shows the **full path** rather than a stripped basename. When the row is
  * narrower than the path, the path left-truncates so the informative tail
@@ -93,8 +82,8 @@ function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): React
  * span so it never gets eaten by the truncation.
  *
  * Why not basename: `basename(path)` looks clean for `foo.md` and `src`
- * but lies for everything else — `Listed work` could be any of three
- * different `work/`s, `Read foo.md` could be any of dozens. The full
+ * but lies for everything else — `Explored work` could be any of three
+ * different `work/`s, `Wrote foo.md` could be any of dozens. The full
  * path is the actual information; clipping is a display concern that
  * CSS handles.
  */
@@ -199,15 +188,14 @@ export function invokeSkillFailureCopy(
 
 function InvokeSkillTitle({ tool }: { tool: ToolView }) {
   const slug = invokeSkillSlug(tool);
-  const running = tool.status !== "complete";
   if (!slug) {
-    return running ? t`Running skill…` : t`Ran skill`;
+    return toolVerb(tool, t`Ran skill`, t`Running skill…`);
   }
   return (
     <span className="flex w-full min-w-0 items-baseline gap-1">
-      <span className="shrink-0">{running ? t`Running` : t`Ran`}</span>
+      <span className="shrink-0">{toolVerb(tool, t`Ran`, t`Running`)}</span>
       <span className="truncate-start min-w-0 flex-1 font-mono text-ink-subtle">{slug}</span>
-      <span className="shrink-0">{running ? t`skill…` : t`skill`}</span>
+      <span className="shrink-0">{toolVerb(tool, t`skill`, t`skill…`)}</span>
     </span>
   );
 }
@@ -316,7 +304,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
     Icon: FilePen,
     title: (tool, context) => <WriteToolTitle tool={tool} context={context} />,
     expand: writeExpand,
-    // TODO(ux): wire onClick to open the written file.
   },
   ls: {
     Icon: FolderTree,

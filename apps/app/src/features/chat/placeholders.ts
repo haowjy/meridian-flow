@@ -30,10 +30,8 @@ export const INTERJECT_PLACEHOLDERS = [
   msg`Quick thought`,
 ] as const;
 
-const AT_REFERENCE_HINT = msg`@ for reference`;
 const COMPOSE_LS_KEY = "meridian:placeholderIdx:compose";
 const INTERJECT_LS_KEY = "meridian:placeholderIdx:interject";
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const SERVER_PLACEHOLDERS = {
   compose: COMPOSE_PLACEHOLDERS[0],
   interject: INTERJECT_PLACEHOLDERS[0],
@@ -63,14 +61,20 @@ export function selectNextPlaceholder<T>(
 }
 
 function advancePool<T>(storage: Storage, key: string, pool: readonly T[]): T {
+  let storedIndex: string | null = null;
   try {
-    const selection = selectNextPlaceholder(pool, storage.getItem(key));
-    storage.setItem(key, String(selection.index));
-    return selection.value;
+    storedIndex = storage.getItem(key);
   } catch {
     // Storage can be unavailable in privacy-restricted browser contexts.
-    return pool[0] as T;
   }
+
+  const selection = selectNextPlaceholder(pool, storedIndex);
+  try {
+    storage.setItem(key, String(selection.index));
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+  return selection.value;
 }
 
 function selectPagePlaceholders(): {
@@ -81,55 +85,28 @@ function selectPagePlaceholders(): {
     return SERVER_PLACEHOLDERS;
   }
 
+  let storage: Storage;
   try {
-    return {
-      compose: advancePool(window.localStorage, COMPOSE_LS_KEY, COMPOSE_PLACEHOLDERS),
-      interject: advancePool(window.localStorage, INTERJECT_LS_KEY, INTERJECT_PLACEHOLDERS),
-    };
+    storage = window.localStorage;
   } catch {
     return SERVER_PLACEHOLDERS;
   }
+  return {
+    compose: advancePool(storage, COMPOSE_LS_KEY, COMPOSE_PLACEHOLDERS),
+    interject: advancePool(storage, INTERJECT_LS_KEY, INTERJECT_PLACEHOLDERS),
+  };
 }
 
 const PAGE_PLACEHOLDERS = selectPagePlaceholders();
-
-export function shouldShowAtReferenceHint(lastUsed: number | null, now = Date.now()): boolean {
-  return lastUsed === null || now - lastUsed > SEVEN_DAYS_MS;
-}
-
-export function appendAtReferenceHint(
-  placeholder: string,
-  hint: string,
-  lastUsed: number | null,
-  enabled: boolean,
-  now = Date.now(),
-): string {
-  return enabled && shouldShowAtReferenceHint(lastUsed, now)
-    ? `${placeholder}, ${hint}`
-    : placeholder;
-}
-
-export function getComposePlaceholder(): MessageDescriptor {
-  return PAGE_PLACEHOLDERS.compose;
-}
-
-export function getInterjectPlaceholder(): MessageDescriptor {
-  return PAGE_PLACEHOLDERS.interject;
-}
-
 const subscribeToNoChanges = () => () => {};
 
-export function useComposerPlaceholder(
-  streaming: boolean,
-  lastAtUsed: number | null = null,
-): string {
+export function useComposerPlaceholder(streaming: boolean): string {
   const { i18n } = useLingui();
   const placeholder = useSyncExternalStore(
     subscribeToNoChanges,
-    () => (streaming ? getInterjectPlaceholder() : getComposePlaceholder()),
+    () => (streaming ? PAGE_PLACEHOLDERS.interject : PAGE_PLACEHOLDERS.compose),
     () => (streaming ? SERVER_PLACEHOLDERS.interject : SERVER_PLACEHOLDERS.compose),
   );
 
-  // TODO: Enable and pass the last-use timestamp when v3 supports @ mentions.
-  return appendAtReferenceHint(i18n._(placeholder), i18n._(AT_REFERENCE_HINT), lastAtUsed, false);
+  return i18n._(placeholder);
 }

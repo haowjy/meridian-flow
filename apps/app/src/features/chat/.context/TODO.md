@@ -12,10 +12,10 @@ read as compact conversational receipts.
 
 Track with GitHub issue: #130.
 
-## Composer `@ for reference` placeholder hint (gated off)
+## Composer `@ for reference` rotation hint
 
-`placeholders.ts` ports the legacy conditional hint — append ", @ for
-reference" to the compose placeholder when the writer hasn't used `@` in
-7 days — but keeps it disabled because v3 has no @ mentions yet. When
-mentions land: enable in `getComposePlaceholder` / `useComposerPlaceholder`
-and pass the real last-use timestamp (see the TODO comment there).
+When mentions land, restore the legacy compose-placeholder hint: append
+", @ for reference" when the writer has not used `@` in seven days. Integrate
+it with rotating placeholder selection and the real mention last-use timestamp
+rather than carrying a disabled production path. The ported mechanism can be
+recovered from the parent of commit `adacbe63`.

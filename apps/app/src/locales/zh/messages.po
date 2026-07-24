@@ -65,10 +65,6 @@ msgstr ""
 msgid "{remainingPercent}% remaining"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
-msgid "@ for reference"
-msgstr "@ 引用内容"
-
 #: src/features/chat/ChangeViewRows.tsx
 msgid "↻ This edit brought back text you had deleted"
 msgstr ""
@@ -197,10 +193,6 @@ msgstr ""
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "用日常语言描述你的数据、方法或下一步即可。"
-
-#: src/features/chat/Composer.tsx
-#~ msgid "Ask anything…"
-#~ msgstr "随意提问…"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -383,10 +375,6 @@ msgstr ""
 #: src/features/project/lifecycle.ts
 msgid "Completed"
 msgstr ""
-
-#: src/features/chat/tool-result-preview.ts
-msgid "Completed."
-msgstr "已完成。"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
@@ -648,10 +636,6 @@ msgstr ""
 msgid "Earlier content could not be recovered"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Edited"
-#~ msgstr ""
-
 #: src/features/chat/TurnEditsCard.tsx
 msgid "Edited {count} documents"
 msgstr ""
@@ -660,18 +644,10 @@ msgstr ""
 msgid "Edited 1 document"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Edited file"
-#~ msgstr ""
-
 #: src/features/editor/useInlineReviewSync.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "edited since this draft was written"
 msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Editing…"
-#~ msgstr ""
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -902,21 +878,14 @@ msgstr "我们开始吧"
 msgid "Light"
 msgstr ""
 
+#. placeholder {0}: row.line
+#: src/features/chat/tool-result-preview.ts
+msgid "Line {0}"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
 msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listed"
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listed directory"
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listing…"
-#~ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
@@ -988,22 +957,6 @@ msgstr ""
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looked through"
-#~ msgstr "已浏览"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looked through project files"
-#~ msgstr "已浏览项目文件"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looking through project files…"
-#~ msgstr "正在浏览项目文件…"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Looking through…"
-#~ msgstr "正在浏览…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
@@ -1335,10 +1288,6 @@ msgid "Ran"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "Ran command"
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
 msgid "Ran skill"
 msgstr ""
 
@@ -1444,10 +1393,6 @@ msgstr ""
 msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
-#: src/features/chat/ChatView.tsx
-#~ msgid "Reply to the agent, or steer the analysis…"
-#~ msgstr "回复智能体，或引导分析方向…"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr ""
@@ -1523,10 +1468,6 @@ msgstr ""
 msgid "Running skill…"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Running…"
-#~ msgstr ""
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr ""
@@ -1550,11 +1491,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched"
 msgstr "已搜索"
-
-#. placeholder {0}: truncate(query, 60)
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Searched \"{0}\""
-#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
