@@ -39,10 +39,11 @@ state is a live document.
 | Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
+| Yjs WebSocket orchestration | `lib/yjs-ws-handler.ts` |
 | Offline late reconciliation | `domain/offline-reconciliation.ts` |
 | Review/effective-read/response/reversal application services | `domain/work-draft-review-service.ts`, `domain/effective-document-reader.ts`, `domain/response-write-finalizer.ts`, `domain/turn-reversal-service.ts` |
 | Thread-peer runtime ownership and LRU | `domain/thread-peer-core-pool.ts` |
-| Safety-notice production + writer delivery | `domain/reversal-notices.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
+| Safety-notice production + writer delivery | `domain/reversal-notices.ts`, `lib/yjs-ws-handler.ts`, `domains/notices/` |
 | Production/in-memory assembly | `composition.ts`, `collab-facade.ts`, `adapters/in-memory/composition.ts` |
 
 ## Write codec and schema coherence
@@ -129,6 +130,11 @@ rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regres
 test; the prior redundant checkpoint surfaced only in a live loaded-room probe, not
 `pnpm check`.
 
+The Yjs route owns only upgrade authentication, CrossWS peer adaptation, and
+gateway delegation. `lib/yjs-ws-handler.ts` owns connection state, admission,
+Hocuspocus lifecycle hooks, and graceful drain; transport changes must preserve
+the admission ordering above and keep `beforeSync` awaited.
+
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the
@@ -171,6 +177,11 @@ Reports use the ordinary swept change-trail shape; missing ancestry/body/owner
 evidence emits degradation telemetry rather than guessing from update bytes.
 
 ## Undo guard and push safety
+
+`reverseThreadContext` is the route-facing reversal command. It owns the choice
+between context-document and turn-lineage reversal, write-handle parsing,
+projection refresh, and aggregate result status; the HTTP route only authenticates,
+validates its transport body, invokes the command, and serializes the result.
 
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs

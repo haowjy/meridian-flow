@@ -1,4 +1,6 @@
 /** Production dependency graph for the server collab domain. */
+
+import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   deferUntilDrizzleCommit,
@@ -80,39 +82,40 @@ import {
 } from "./domain/reversal-notices.js";
 import { createBranchThreadPeerAgentEditCore } from "./domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
-import { createTurnReversalService } from "./domain/turn-reversal-service.js";
+import {
+  createTurnReversalService,
+  type ThreadContextReversalResolver,
+} from "./domain/turn-reversal-service.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
+type CollabDocumentAccess = TrailDocumentAccess & {
+  canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
+  canAccessProjectDocument(
+    userId: UserId,
+    documentId: string,
+    projectId: ProjectId,
+  ): Promise<boolean>;
+};
+
 type CollabDomainDeps = {
   db: Database;
-  documentAccess: TrailDocumentAccess & {
-    canAccessDocument(
-      userId: import("@meridian/contracts/runtime").UserId,
-      documentId: string,
-    ): Promise<boolean>;
-    canAccessProjectDocument(
-      userId: import("@meridian/contracts/runtime").UserId,
-      documentId: string,
-      projectId: import("@meridian/contracts/runtime").ProjectId,
-    ): Promise<boolean>;
-  };
-  threadContext?: import("./domain/turn-reversal-service.js").ThreadContextReversalResolver;
+  documentAccess: CollabDocumentAccess;
+  threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
 };
 
-const UNAVAILABLE_THREAD_CONTEXT_REVERSAL: import("./domain/turn-reversal-service.js").ThreadContextReversalResolver =
-  {
-    async requireThreadOwner() {
-      throw new Error("Thread context reversal is not configured");
-    },
-    async resolveContextDocument() {
-      throw new Error("Thread context reversal is not configured");
-    },
-  };
+const UNAVAILABLE_THREAD_CONTEXT_REVERSAL: ThreadContextReversalResolver = {
+  async requireThreadOwner() {
+    throw new Error("Thread context reversal is not configured");
+  },
+  async resolveContextDocument() {
+    throw new Error("Thread context reversal is not configured");
+  },
+};
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
