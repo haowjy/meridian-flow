@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `agent-edit`: find-all now replaces exact same-block ranges without re-authoring
+  untouched writer prose or normalizing whitespace around deletions, and adjacent
+  structural matches no longer fail on deleted predecessor anchors. Failed
+  multi-edit applies and provenance-writer failures restore the session's pre-write
+  document; retained roots bypass continuation-fact rematerialization.
 - `apps/server`: authentication now rejects cross-principal email collisions
   with a structured 409 instead of adopting the existing Meridian account.
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned

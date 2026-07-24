@@ -1404,13 +1404,11 @@ describe("write tool dispatch", () => {
   });
 
   it("applies unequal-length find-all replaces on a plain block without span drift", async () => {
-    // Regression for #126: multiple same-block matches were lowered to N
-    // independent tier-2 text edits carrying resolve-time absolute spans. Once
-    // the first unequal-length replacement shifted the block, later spans were
-    // stale and landed mid-word ("kitten akittencat"). Same-block matches must
-    // collapse into one reverse-spliced edit.
     const ctx = harness({ "chapter.md": "cat and cat" });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforeBlock = model.getBlocks(ctx.liveDoc("chapter.md"))[0];
+    if (!beforeBlock) throw new Error("missing source block");
+    const writerGapRoots = lineageUnits(model.getVisibleContentLineage(beforeBlock)).slice(3, 8);
 
     const replaced = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
@@ -1419,7 +1417,128 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(replaced)).toContain("status: success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["kitten and kitten"]);
+    const afterBlock = model.getBlocks(ctx.liveDoc("chapter.md"))[0];
+    if (!afterBlock) throw new Error("missing replaced block");
+    expect(lineageUnits(model.getVisibleContentLineage(afterBlock)).slice(6, 11)).toEqual(
+      writerGapRoots,
+    );
+    const semanticIr = ctx.journal.recordedBatchEntries()[0]?.[0]?.mutation?.semanticEditIr;
+    expect(
+      semanticIr?.intent.kind === "mappedEdits"
+        ? semanticIr.intent.edits.flatMap(({ outputRuns }) => outputRuns)
+        : [],
+    ).toContainEqual({
+      kind: "preserved",
+      source: { clientID: writerGapRoots[0]?.clientID, clock: writerGapRoots[0]?.clock, length: 5 },
+      output: { from: 6, to: 11 },
+      materialization: "retained",
+    });
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
+  it("does not rematerialize provenance for roots retained by a multi-range edit", async () => {
+    const writeCertifiedFacts = vi.fn();
+    const ctx = harness(
+      { "chapter.md": "cat and cat" },
+      { semanticProvenance: { writeCertifiedFacts } },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
+      context,
+    );
+
+    expectOutcome(replaced, "success");
+    expect(writeCertifiedFacts).not.toHaveBeenCalled();
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["kitten and kitten"]);
+  });
+
+  it("forwards semantic provenance and restores the runtime if its writer rejects", async () => {
+    const writeCertifiedFacts = vi.fn(() => {
+      throw new Error("forced provenance rejection");
+    });
+    const ctx = harness(
+      { "chapter.md": "cat one" },
+      { semanticProvenance: { writeCertifiedFacts } },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
+      context,
+    );
+    expectOutcome(failed, "internal_error", true);
+    expect(writeCertifiedFacts).toHaveBeenCalledOnce();
+
+    const reread = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    expectOutcome(reread, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
+  });
+
+  it.each([
+    ["block start", "cat middle cat tail", " middle  tail"],
+    ["block end", "head cat middle cat", "head  middle "],
+    ["both block ends", "cat middle cat", " middle "],
+    ["block interior", "head cat middle cat tail", "head  middle  tail"],
+  ])("deletes every find-all match at the %s without changing surrounding text", async (_position, source, expected) => {
+    const ctx = harness({ "chapter.md": source });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const deleted = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "", find: "cat", all: true },
+      context,
+    );
+
+    expectOutcome(deleted, "success");
+    const block = model.getBlocks(ctx.liveDoc("chapter.md"))[0];
+    expect(block ? model.getText(block) : undefined).toBe(expected);
+  });
+
+  it("replaces adjacent structural find-all groups without stale predecessor anchors", async () => {
+    const ctx = harness({ "chapter.md": "cat\n\ncat" });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "# kitten", find: "cat", all: true },
+      context,
+    );
+
+    expectOutcome(replaced, "success");
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe("# kitten\n\n# kitten\n");
+  });
+
+  it("restores the pre-write runtime snapshot after an apply failure", async () => {
+    let inlineApplications = 0;
+    const rejectingModel = {
+      ...model,
+      applyInlineReplacement(...args: Parameters<typeof model.applyInlineReplacement>) {
+        inlineApplications += 1;
+        if (inlineApplications === 2) {
+          return {
+            ok: false as const,
+            code: "invalid_write" as const,
+            message: "forced second-block rejection",
+          };
+        }
+        return model.applyInlineReplacement(...args);
+      },
+    };
+    const ctx = harness({ "chapter.md": "cat one\n\ncat two" }, { model: rejectingModel });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
+      context,
+    );
+    expectOutcome(failed, "invalid_write", true);
+
+    const retry = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "lynx", find: "cat one" },
+      context,
+    );
+    expectOutcome(retry, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["lynx", "cat two"]);
   });
 
   it("routes single-block find replacements that change block type through structural reconcile", async () => {
@@ -1682,5 +1801,16 @@ function clearLiveBlocks(doc: Y.Doc): void {
       fragment.delete(0, fragment.length);
     },
     { type: "human" },
+  );
+}
+
+function lineageUnits(
+  ranges: readonly { clientID: number; clock: number; length: number }[],
+): Array<{ clientID: number; clock: number }> {
+  return ranges.flatMap((range) =>
+    Array.from({ length: range.length }, (_, offset) => ({
+      clientID: range.clientID,
+      clock: range.clock + offset,
+    })),
   );
 }

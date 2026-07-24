@@ -248,13 +248,17 @@ restoration. A whole-scope zero-continuation edit uses the distinct
 out-of-scope sources, missing/overlapping output claims, restoration without a
 retained certificate, and UTF-16 surrogate splits before mutation.
 
-Find-based edits lower through one ProseMirror `Transform`. Continuation is
-derived only from `Mapping`/`StepMap`: ordinary unchanged positions and
-`ReplaceAroundStep` gaps survive, while deleted/unmapped positions and inserted
-slices do not. Mapping is length-preserving, split at gaps, and post-lowering
-visible targets must be partitioned exactly once. The optional semantic-fact
-writer port runs inside the same Yjs transaction so the collab adapter can add
-reserved continuation/restoration facts to the prose update.
+Plain same-block find-all emits one `textRanges` edit with exact, ordered match
+spans. The adapter adds those replacements back-to-front to one ProseMirror
+`Transform` and projects each exact step inside one Yjs transaction. Unmatched
+gaps therefore keep their CRDT items; the semantic IR partitions the replacement
+window into fresh payload and `materialization: "retained"` preserved runs.
+No run in such an IR needs a continuation/restoration fact — retained gaps
+keep their original roots visible, and the fresh payloads are agent-born by
+normal insertion attribution — so the write façade skips provenance
+materialization for the whole `textRanges` IR rather than filtering runs.
+Single-match output retains the existing `text` shape. Formatted
+and cross-block finds keep the serialized-markdown reconciliation path.
 
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
@@ -266,7 +270,7 @@ lowering is the certification seam; other eligible plain edits retain Tier 1.
 | Tier | Kind | Mechanism |
 |---|---|---|
 | 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary/formatting change, or a same-type complex block changes | Adapter-owned inline or whole-block replacement + per-block updateYFragment |
+| 2 | `text` crosses mark boundary/formatting change, `textRanges`, or a same-type complex block changes | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
@@ -447,13 +451,12 @@ going blind to a concurrent human edit.
   runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
   to live exactly once; `read`'s replay touches only the runtime and never
   double-commits.
-- **`find` reconciliation happens in serialized markdown space.** Matches resolve to
-  serialized block ranges. The resolver splices the requested replacement into the
-  markdown source, parses that affected range, and lowers through `replaceScope(...)`
-  so single-block and cross-block finds share the same parse+diff path. A narrow
-  Tier-1 fast path is allowed only when the matched block body is already identical
-  to flat editable text and the replacement is plain text; formatted/escaped/entity
-  cases must not use serialized-body→flat offset mapping.
+- **`find` matching happens in serialized markdown space.** When a matched block
+  body is identical to flat editable text and the payload is plain text, same-block
+  matches lower to exact text spans (`text` for one match, `textRanges` for several).
+  All formatted, escaped, entity, and cross-block cases splice and parse the
+  affected serialized range before `replaceScope(...)`; they must not use
+  serialized-body→flat offset mapping.
 
 ## Tool surface
 

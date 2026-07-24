@@ -7,7 +7,7 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
-import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { DocumentRenderer } from "./document-renderer.js";
@@ -242,11 +242,7 @@ export function createWriteCommands(deps: {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       }
-      options.semanticProvenance?.writeCertifiedFacts(
-        toDocHandle(runtime.doc),
-        resolved.ir,
-        beforeVector,
-      );
+      writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
       touchedHashes = new Set(applied.changedBlocks ?? []);
       deletedHashes = new Set(applied.deletedBlocks ?? []);
     } else {
@@ -441,13 +437,11 @@ export function createWriteCommands(deps: {
         syncStateVector: synced.stateVector,
       },
     );
-    if (!applied.ok)
+    if (!applied.ok) {
+      restorePreWriteSnapshot(runtime, preOwnSnapshot);
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
-    options.semanticProvenance?.writeCertifiedFacts(
-      toDocHandle(runtime.doc),
-      resolved.ir,
-      beforeVector,
-    );
+    }
+    writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
 
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
@@ -634,6 +628,34 @@ export function createWriteCommands(deps: {
       responseId: context.responseId ?? turnId,
     };
   }
+
+  function writeCertifiedProvenance(
+    runtime: { doc: Y.Doc },
+    ir: SemanticEditIRV1,
+    beforeStateVector: Uint8Array,
+    preWriteSnapshot: Uint8Array,
+  ): void {
+    if (!options.semanticProvenance || hasRetainedOutput(ir)) return;
+    try {
+      options.semanticProvenance.writeCertifiedFacts(
+        toDocHandle(runtime.doc),
+        ir,
+        beforeStateVector,
+      );
+    } catch (error) {
+      restorePreWriteSnapshot(runtime, preWriteSnapshot);
+      throw error;
+    }
+  }
+}
+
+function hasRetainedOutput(ir: SemanticEditIRV1): boolean {
+  return (
+    ir.intent.kind === "mappedEdits" &&
+    ir.intent.edits.some(({ outputRuns }) =>
+      outputRuns.some((run) => run.kind === "preserved" && run.materialization === "retained"),
+    )
+  );
 }
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
