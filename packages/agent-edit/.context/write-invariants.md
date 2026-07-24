@@ -127,4 +127,3 @@ going blind to a concurrent human edit.
   All formatted, escaped, entity, and cross-block cases splice and parse the
   affected serialized range before `replaceScope(...)`; they must not use
   serialized-body→flat offset mapping.
-

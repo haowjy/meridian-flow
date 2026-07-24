@@ -134,4 +134,3 @@ serialization. That does **not** mean the package is ProseMirror-neutral.
 the kernel, and resolver code still inspects PM block shape (`type.name`,
 `isTextblock`, heading attrs, body serialization). Full PM-out-of-kernel work is
 deferred in [TODO.md](TODO.md).
-
