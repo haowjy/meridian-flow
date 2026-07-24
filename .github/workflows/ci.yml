@@ -109,3 +109,22 @@ jobs:
         run: pnpm db:apply-functions
       - name: Run required DB suites
         run: pnpm test:db
+
+  app-boot:
+    name: app-boot
+    # Skip draft PRs; pushes and workflow_call always run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Boots the app dev server and asserts `/` and `/login` SSR-render without
+      # 5xx — catches transform/wiring-class runtime breaks `pnpm check` misses.
+      # No DB or WorkOS secrets needed: the smoke supplies dev-boot placeholders
+      # and never authenticates (see tools/dev/smoke-app-boot.ts).
+      - run: pnpm smoke:app-boot
