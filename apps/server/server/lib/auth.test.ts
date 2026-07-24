@@ -85,10 +85,29 @@ function requestWithCookie(cookie: string | null): Request {
 function createTestProjectBootstrap(): {
   projects: ProjectBootstrapRepository;
   bootstrapCalls: number;
+  readinessChecks: number;
   personalProjectId: ProjectId | null;
 } {
   let personalProjectId: ProjectId | null = null;
   let bootstrapCalls = 0;
+  let readinessChecks = 0;
+  let ready = false;
+
+  async function ensureDefaultBootstrap() {
+    bootstrapCalls += 1;
+    personalProjectId = randomUUID() as ProjectId;
+    ready = true;
+    return {
+      projectId: personalProjectId,
+      workId: randomUUID() as never,
+      threadId: randomUUID() as never,
+      documentId: randomUUID() as never,
+      contextSourceId: randomUUID() as never,
+      agentDefinitionId: randomUUID() as never,
+      uri: "manuscript://chapter-1.md" as never,
+    };
+  }
+
   return {
     get personalProjectId() {
       return personalProjectId;
@@ -96,23 +115,19 @@ function createTestProjectBootstrap(): {
     get bootstrapCalls() {
       return bootstrapCalls;
     },
+    get readinessChecks() {
+      return readinessChecks;
+    },
     projects: {
       async findPersonalProjectId() {
         return personalProjectId;
       },
-      async ensureDefaultBootstrap() {
-        bootstrapCalls += 1;
-        personalProjectId = randomUUID() as ProjectId;
-        return {
-          projectId: personalProjectId,
-          workId: randomUUID() as never,
-          threadId: randomUUID() as never,
-          documentId: randomUUID() as never,
-          contextSourceId: randomUUID() as never,
-          agentDefinitionId: randomUUID() as never,
-          uri: "manuscript://chapter-1.md" as never,
-        };
+      async ensureDefaultBootstrapReady() {
+        readinessChecks += 1;
+        if (!ready) await ensureDefaultBootstrap();
+        return true;
       },
+      ensureDefaultBootstrap,
     },
   };
 }
@@ -255,7 +270,8 @@ describe("WorkOS request auth", () => {
       projects: bootstrap.projects,
     });
     expect(second.userId).toBe(resolved.userId);
-    expect(bootstrap.bootstrapCalls).toBe(2);
+    expect(bootstrap.readinessChecks).toBe(2);
+    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 });
 
@@ -295,10 +311,11 @@ describe("auth principal provisioning", () => {
     );
 
     expect(secondUserId).toBe(firstUserId);
-    expect(bootstrap.bootstrapCalls).toBe(2);
+    expect(bootstrap.readinessChecks).toBe(2);
+    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 
-  it("rechecks bootstrap completion for an existing personal project", async () => {
+  it("skips deep bootstrap after durable readiness completes", async () => {
     const users = createInMemoryUserRepository();
     const bootstrap = createTestProjectBootstrap();
     const externalUser = {
@@ -312,6 +329,32 @@ describe("auth principal provisioning", () => {
     expect(bootstrap.bootstrapCalls).toBe(1);
 
     await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
-    expect(bootstrap.bootstrapCalls).toBe(2);
+    expect(bootstrap.readinessChecks).toBe(2);
+    expect(bootstrap.bootstrapCalls).toBe(1);
+  });
+
+  it("does not fail authentication while bootstrap seed repair remains pending", async () => {
+    const users = createInMemoryUserRepository();
+    const externalUser = {
+      externalId: "user_bootstrap_seed_failure",
+      email: "bootstrap-seed-failure@example.com",
+      name: "Bootstrap User",
+      avatarUrl: null,
+    };
+    const projects: ProjectBootstrapRepository = {
+      async findPersonalProjectId() {
+        return null;
+      },
+      async ensureDefaultBootstrapReady() {
+        return false;
+      },
+      async ensureDefaultBootstrap() {
+        throw new Error("deep bootstrap should remain behind the readiness port");
+      },
+    };
+
+    await expect(
+      provisionAuthenticatedUser(externalUser, { users, projects }),
+    ).resolves.toBeTruthy();
   });
 });

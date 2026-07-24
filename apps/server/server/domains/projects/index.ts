@@ -45,6 +45,12 @@ export type DefaultBootstrap = {
 export type ProjectBootstrapRepository = {
   /** Cheap existence check — no advisory lock or bootstrap side effects. */
   findPersonalProjectId(userId: UserId): Promise<ProjectId | null>;
+  /**
+   * Reads the durable completion flag and repairs an incomplete bootstrap.
+   * Seed failures leave readiness false for a later repair without failing the
+   * authenticated request that discovered them.
+   */
+  ensureDefaultBootstrapReady(userId: UserId): Promise<boolean>;
   ensureDefaultBootstrap(userId: UserId): Promise<DefaultBootstrap>;
 };
 
@@ -52,6 +58,9 @@ export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepo
   return {
     async findPersonalProjectId() {
       return null;
+    },
+    async ensureDefaultBootstrapReady() {
+      return false;
     },
     async ensureDefaultBootstrap() {
       throw new Error("in-memory project repository is not implemented");
@@ -303,44 +312,87 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return existing?.id ?? null;
   }
 
-  return {
-    findPersonalProjectId,
-    async ensureDefaultBootstrap(userId) {
-      const bootstrap = await db.transaction(async (tx) => {
-        await lockBootstrap(tx, userId);
-        const projectId = await ensureProject(tx, userId);
-        const agentDefinitionId = await ensureAgent(tx, projectId);
-        const workId = await ensureWork(tx, projectId, userId);
-        const contextSourceId = await ensureContextSource(tx, projectId);
-        const documentId = await ensureDocument(tx, contextSourceId);
-        const threadId = await ensureThread(tx, {
-          projectId,
-          workId,
-          userId,
-          documentId,
-          agentDefinitionId,
-          agentSlug: "writer",
-        });
+  async function isDefaultBootstrapReady(userId: UserId): Promise<boolean> {
+    const [project] = await db
+      .select({ ready: projects.defaultBootstrapReady })
+      .from(projects)
+      .where(
+        and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
+      )
+      .limit(1);
+    return project?.ready === true;
+  }
 
-        return {
-          projectId,
-          workId,
-          threadId,
-          documentId,
-          contextSourceId,
-          agentDefinitionId,
-          uri: DEFAULT_BOOTSTRAP_URI,
-        } satisfies DefaultBootstrap;
+  type BootstrapAttempt =
+    | { ready: true; bootstrap: DefaultBootstrap }
+    | { ready: false; bootstrap: DefaultBootstrap; seedError: unknown };
+
+  async function attemptDefaultBootstrap(userId: UserId): Promise<BootstrapAttempt> {
+    const bootstrap = await db.transaction(async (tx) => {
+      await lockBootstrap(tx, userId);
+      const projectId = await ensureProject(tx, userId);
+      const agentDefinitionId = await ensureAgent(tx, projectId);
+      const workId = await ensureWork(tx, projectId, userId);
+      const contextSourceId = await ensureContextSource(tx, projectId);
+      const documentId = await ensureDocument(tx, contextSourceId);
+      const threadId = await ensureThread(tx, {
+        projectId,
+        workId,
+        userId,
+        documentId,
+        agentDefinitionId,
+        agentSlug: "writer",
       });
+
+      return {
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        contextSourceId,
+        agentDefinitionId,
+        uri: DEFAULT_BOOTSTRAP_URI,
+      } satisfies DefaultBootstrap;
+    });
+
+    try {
       const seeded = await deps.documents.seedFromMarkdown(
         bootstrap.documentId,
         "# Chapter 1\n\n",
         { type: "system" },
       );
       if (!seeded.ok) {
-        throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
+        return {
+          ready: false,
+          bootstrap,
+          seedError: new Error(`Failed to seed chapter document: ${seeded.error.code}`),
+        };
       }
-      return bootstrap;
+    } catch (seedError) {
+      return { ready: false, bootstrap, seedError };
+    }
+
+    const [updated] = await db
+      .update(projects)
+      .set({ defaultBootstrapReady: true })
+      .where(eq(projects.id, bootstrap.projectId))
+      .returning({ id: projects.id });
+    if (!updated) throw new Error("Failed to mark default bootstrap ready");
+
+    return { ready: true, bootstrap };
+  }
+
+  return {
+    findPersonalProjectId,
+    async ensureDefaultBootstrapReady(userId) {
+      if (await isDefaultBootstrapReady(userId)) return true;
+      const attempt = await attemptDefaultBootstrap(userId);
+      return attempt.ready;
+    },
+    async ensureDefaultBootstrap(userId) {
+      const attempt = await attemptDefaultBootstrap(userId);
+      if (!attempt.ready) throw attempt.seedError;
+      return attempt.bootstrap;
     },
   };
 }

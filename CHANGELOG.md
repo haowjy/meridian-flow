@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: authenticated request fan-out now reads a durable bootstrap-ready
+  flag instead of re-locking and re-seeding completed default workspaces; seed
+  failures stay repairable without failing unrelated requests (#358).
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

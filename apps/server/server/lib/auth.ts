@@ -113,7 +113,7 @@ export async function provisionAuthenticatedUser(
     avatarUrl: user.avatarUrl,
   });
 
-  await deps.projects.ensureDefaultBootstrap(userId);
+  await deps.projects.ensureDefaultBootstrapReady(userId);
 
   return userId;
 }
