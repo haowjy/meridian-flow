@@ -7,6 +7,7 @@ import {
   branchPushSettlementOutbox,
   contextSources,
   documents,
+  documentYjsUpdates,
   projects,
   threads,
   threadWorks,
@@ -227,6 +228,166 @@ describe("branch-push durable projection", () => {
 
     nextBranchDoc.destroy();
     currentLive.destroy();
+    branchDoc.destroy();
+    liveDoc.destroy();
+  });
+
+  it("keeps a generic projection failure pending and completes it on recovery", async () => {
+    const userId = randomUUID();
+    const projectId = randomUUID();
+    const workId = randomUUID();
+    const sourceId = randomUUID();
+    const documentId = randomUUID();
+    const threadId = randomUUID();
+    const turnId = randomUUID();
+    await db.insert(users).values(conformanceUserValues(userId, "branch-push-recovery"));
+    await db.insert(projects).values({
+      id: projectId,
+      userId,
+      name: "Recovery project",
+      slug: `recovery-${projectId}`,
+    });
+    await db.insert(works).values({
+      id: workId,
+      projectId,
+      createdByUserId: userId,
+      title: "Recovery work",
+    });
+    await db.insert(contextSources).values({
+      id: sourceId,
+      projectId,
+      name: "Manuscript",
+      slug: "manuscript",
+      scope: "project",
+      isPrimary: true,
+    });
+    await db.insert(documents).values({
+      id: documentId,
+      contextSourceId: sourceId,
+      name: "chapter",
+      extension: "md",
+      fileType: "markdown",
+    });
+    await db.insert(threads).values({
+      id: threadId,
+      projectId,
+      createdByUserId: userId,
+      title: "Recovery thread",
+      kind: "primary",
+      status: "active",
+    });
+    await db.insert(turns).values({
+      id: turnId,
+      threadId,
+      role: "assistant",
+      status: "complete",
+    });
+    await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
+    await persistence.lifecycle.ensureDocument(documentId as never);
+
+    const schema = buildDocumentSchema();
+    const model = yProsemirrorModel(schema);
+    const codec = mdxCodec({ schema });
+    const engine = createMarkdownDocumentEngine({
+      schema,
+      model,
+      codec,
+      journal: persistence.journal,
+      coordinator: liveCoordinator,
+      lifecycle: persistence.lifecycle,
+      initialDocumentSeeds: persistence.lifecycle,
+      metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      resolveFiletype: async () => "markdown",
+    });
+    let failProjection = true;
+    const serializer = {
+      async serializeDocument(resolvedDocumentId: string, doc: Y.Doc) {
+        if (failProjection) throw new Error("injected generic projection failure");
+        return engine.serializeDocument(resolvedDocumentId as never, doc);
+      },
+    };
+    const pushStore = createDrizzleBranchPushStore(
+      db,
+      serializer,
+      createDrizzleChangeTrailPersistence(db),
+    );
+    const branchCoordinator = createBranchCoordinator({ store: branchStore });
+    const liveDoc = createCollabYDoc({ gc: false });
+    const branch = await branchStore.ensureWorkDraftBranch({
+      documentId: documentId as never,
+      workId: workId as never,
+      liveDoc,
+    });
+    const branchDoc = createCollabYDoc({ gc: false });
+    model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Recovered projection"));
+    await branchCoordinator.commitUpdate({
+      branchId: branch.branchId,
+      updateData: Y.encodeStateAsUpdate(branchDoc),
+      source: "agent",
+      threadId: threadId as never,
+      turnId: turnId as never,
+    });
+    const branchPush = createBranchPushService({
+      branchStore,
+      pushStore,
+      branchCoordinator,
+      journal: persistence.journal,
+      liveCoordinator,
+      model,
+      codec,
+    });
+
+    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
+      "injected generic projection failure",
+    );
+    const journalAfterFailure = await db
+      .select({ id: documentYjsUpdates.id })
+      .from(documentYjsUpdates)
+      .where(eq(documentYjsUpdates.documentId, documentId));
+    expect(journalAfterFailure).toEqual([]);
+    const [documentAfterFailure] = await db
+      .select({ markdownProjection: documents.markdownProjection })
+      .from(documents)
+      .where(eq(documents.id, documentId));
+    expect(documentAfterFailure?.markdownProjection).toBe("");
+    const [pending] = await db
+      .select({
+        pushId: branchPushSettlementOutbox.pushId,
+        state: branchPushSettlementOutbox.state,
+        lastErrorCode: branchPushSettlementOutbox.lastErrorCode,
+      })
+      .from(branchPushSettlementOutbox)
+      .where(eq(branchPushSettlementOutbox.documentId, documentId))
+      .limit(1);
+    expect(pending).toMatchObject({ state: "pending", lastErrorCode: null });
+    if (!pending) throw new Error("missing pending settlement");
+    const liveSettlement = await pushStore.loadLiveSettlement?.(pending.pushId);
+    if (!liveSettlement) throw new Error("missing live settlement");
+    await expect(
+      pushStore.handoffSettlementClaim?.({
+        pushId: pending.pushId,
+        claim: liveSettlement.claim,
+      }),
+    ).resolves.toBe(true);
+
+    failProjection = false;
+    await expect(branchPush.recoverPendingLiveSettlements()).resolves.toBe(1);
+    const [completed] = await db
+      .select({ state: branchPushSettlementOutbox.state })
+      .from(branchPushSettlementOutbox)
+      .where(eq(branchPushSettlementOutbox.pushId, pending.pushId));
+    expect(completed?.state).toBe("completed");
+    const journalAfterRecovery = await db
+      .select({ id: documentYjsUpdates.id })
+      .from(documentYjsUpdates)
+      .where(eq(documentYjsUpdates.documentId, documentId));
+    expect(journalAfterRecovery).toHaveLength(1);
+    const [documentAfterRecovery] = await db
+      .select({ markdownProjection: documents.markdownProjection })
+      .from(documents)
+      .where(eq(documents.id, documentId));
+    expect(documentAfterRecovery?.markdownProjection).toBe("Recovered projection\n");
+
     branchDoc.destroy();
     liveDoc.destroy();
   });
