@@ -72,11 +72,14 @@ export function useTrailForwardAction(input: {
   const [command, setCommand] = useState<RecoveryCommandState>({ kind: "idle" });
   const durableApplied = recovery.durableState?.status === "applied";
   const durableUnavailable = recovery.durableState?.status === "settled";
+  const durableTerminal = durableApplied || durableUnavailable;
   const applied =
     durableApplied || (command.kind === "settling" && command.outcome.kind === "applied");
   const anchorUnavailable =
     durableUnavailable ||
-    (command.kind === "settling" && command.outcome.kind === "anchor-unavailable");
+    (command.kind === "settling" &&
+      (command.outcome.kind === "anchor-unavailable" ||
+        command.outcome.kind === "retry-exhausted"));
 
   async function execute(): Promise<TrailRecoveryOutcome> {
     if (!input.change) return { kind: "failed" };
@@ -95,7 +98,7 @@ export function useTrailForwardAction(input: {
     } catch {
       outcome = { kind: "failed" };
     }
-    if (outcome.kind === "failed" || outcome.kind === "retry-exhausted") {
+    if (outcome.kind === "failed") {
       setCommand({ kind: "failed" });
       return outcome;
     }
@@ -116,7 +119,7 @@ export function useTrailForwardAction(input: {
     applied,
     anchorUnavailable,
     isPending: command.kind === "pending",
-    failed: command.kind === "failed",
+    failed: command.kind === "failed" && !durableTerminal,
     execute,
   };
 }

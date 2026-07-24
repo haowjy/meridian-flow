@@ -267,6 +267,30 @@ describe("ChangeViewRows", () => {
     );
   });
 
+  it("treats retry exhaustion as a durable Copy-only settlement", async () => {
+    const copyText = vi.fn(async () => {});
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[protectedChange("sweep")]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+        runAction={vi.fn(async () => ({ status: "retry_exhausted" as const }))}
+        copyText={copyText}
+      />,
+      async () => {
+        await click("Restore");
+        expect(document.body.textContent).not.toContain("Couldn't restore");
+        expect(
+          [...document.querySelectorAll("button")].some((item) => item.textContent === "Restore"),
+        ).toBe(false);
+        await click("Copy");
+        expect(copyText).toHaveBeenCalledWith("The writer's exact words.");
+      },
+    );
+  });
+
   it("keeps Restore available and explains a failed request", async () => {
     await withReactRoot(
       <ChangeViewRows
