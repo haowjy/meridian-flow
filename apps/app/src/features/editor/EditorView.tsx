@@ -321,6 +321,11 @@ function SessionEditorView({
                   from: view.state.selection.from,
                   to: view.state.selection.to,
                 };
+                // A peer mark is an explanatory decoration, not a new caret
+                // destination. Keep the editor focused until the click opens
+                // the pointer-mode popover.
+                event.preventDefault();
+                return true;
               }
               return false;
             },
