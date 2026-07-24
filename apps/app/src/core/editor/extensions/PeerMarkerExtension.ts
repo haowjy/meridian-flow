@@ -157,7 +157,12 @@ function buildMarkerDecorations(
           mark.append(label);
           return mark;
         },
-        { side: -1, key: marker.changeId },
+        {
+          side: -1,
+          // ProseMirror reuses keyed widget DOM. Include emphasis state so an
+          // addressed tick/seam is rebuilt with its emphasis attribute.
+          key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}`,
+        },
       ),
     );
   }
@@ -264,6 +269,7 @@ export const PeerMarkerExtension = Extension.create<{
           }
           dispatch?.(tr.setMeta(EMPHASIZE_META, changeId));
           requestAnimationFrame(() => {
+            if (editor.isDestroyed) return;
             editor.view.dom
               .querySelector<HTMLElement>(`[data-peer-mark="${CSS.escape(changeId)}"]`)
               ?.scrollIntoView({ block: "center", behavior: "smooth" });
