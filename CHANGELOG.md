@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`: remove dead checkpoint/push sweep notice producers and the
+  document fan-out queue; model-context notices are now thread-scoped and
+  checkpoint restore cannot fail after committing because of notice validation
+  (#336).
 - Broadcast committed, post-fold AI change projections to connected live document
   rooms after fenced branch-push apply, with durable replace-set revisions.
 - `apps/app`: add ephemeral live-session AI change markers with typed stateless

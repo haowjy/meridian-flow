@@ -74,7 +74,6 @@ export async function resetDatabase(): Promise<void> {
     schema.changeTrailDeliveryOutbox,
     schema.changeTrailDocumentDetails,
     schema.changeTrailShells,
-    schema.pendingNoticeDeliveries,
     schema.pendingNotices,
     schema.agentEditMutations,
     schema.branchWriteJournal,
@@ -261,23 +260,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     concurrentJournalWatermarks: watermarks,
   });
-  const realNotices = createDrizzleNoticePort(db);
-  const noticeState = { fail: false };
-  let noticeRecordAttempts = 0;
-  const notices = {
-    ...realNotices,
-    async record(input: Parameters<typeof realNotices.record>[0]) {
-      noticeRecordAttempts += 1;
-      if (noticeState.fail) throw new Error("injected notice failure");
-      return realNotices.record(input);
-    },
-  };
+  const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailPersistence(db);
   const durableBranchPushStore = createDrizzleBranchPushStore(
     db,
     { model, codec: markupCodec },
     changeTrails,
-    notices,
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -346,7 +334,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     liveCoordinator,
     model,
     codec: markupCodec,
-    notices,
     resolveDocumentTitle: async (documentId) => {
       await options.duringAwaitedPreparation?.();
       return documentId === ALPHA_ID ? "alpha" : "beta";
@@ -1621,10 +1608,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         true,
         true,
       ),
-    noticeRecordAttempts: () => noticeRecordAttempts,
-    set failNoticeRecording(value: boolean) {
-      noticeState.fail = value;
-    },
     seedDestructivePush,
     seedMatrixPush,
     seedPendingDependencyPush,

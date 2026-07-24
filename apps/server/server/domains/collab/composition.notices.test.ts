@@ -1,4 +1,4 @@
-/** Safety-notice producer coverage for collab response finalization. */
+/** Model-context notice producer coverage for collab response finalization. */
 import { describe, expect, it, vi } from "vitest";
 import type { NoticePort } from "../notices/index.js";
 import {
@@ -7,7 +7,7 @@ import {
   recordNoticeAfterDurability,
 } from "./composition.js";
 
-describe("collab safety notices", () => {
+describe("collab model-context notices", () => {
   it("maps user undo producer events onto kind undo", async () => {
     const record = vi.fn<NoticePort["record"]>(async () => {});
     const port = createReversalNoticePort({
@@ -76,7 +76,7 @@ describe("collab safety notices", () => {
           notices: noticePort(vi.fn()),
           threadId: "thread-1",
           documentIds: ["document-1"],
-          kind: "late_sweep",
+          kind: "awareness_degraded",
           recordDegraded,
         },
         async () => {

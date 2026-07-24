@@ -414,6 +414,13 @@
       "when": 1784851265435,
       "tag": "0058_mature_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784853755019,
+      "tag": "0059_milky_celestials",
+      "breakpoints": true
     }
   ]
 }

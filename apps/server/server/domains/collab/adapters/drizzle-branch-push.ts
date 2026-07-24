@@ -31,7 +31,6 @@ import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-or
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import type { NoticePort } from "../../notices/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -67,10 +66,9 @@ async function persistRequiredTrail(
   persistence: ChangeTrailPersistence | undefined,
   prepared: PreparedPushCommit,
   push: PushLineageRow,
-  notices?: NoticePort,
 ): Promise<void> {
   if (!persistence) throw new Error("Branch push committer requires change-trail persistence");
-  await persistDurableTrailRecord(prepared.trail, push, persistence, notices);
+  await persistDurableTrailRecord(prepared.trail, push, persistence);
 }
 
 async function persistPendingSettlement(
@@ -129,7 +127,6 @@ export function createDrizzleBranchPushStore(
   db: Database,
   projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
   changeTrails?: ChangeTrailPersistence,
-  notices?: NoticePort,
 ): BranchPushStore {
   return {
     async listActiveJournalRows(branchId, generation) {
@@ -287,7 +284,7 @@ export function createDrizzleBranchPushStore(
         const now = new Date();
         const lineage = await commitPreparedPush(txDb, input, now);
         const push = mapLineage(lineage);
-        await persistRequiredTrail(changeTrails, input, push, notices);
+        await persistRequiredTrail(changeTrails, input, push);
         await persistPendingSettlement(txDb, input, push);
         return {
           status: "inserted" as const,
@@ -313,7 +310,7 @@ export function createDrizzleBranchPushStore(
           .limit(1);
         if (!owned) return false;
         const committed = input.trail
-          ? await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
+          ? await persistDurableTrailRecord(input.trail, input.push, changeTrails, {
               refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
               replacePushContribution: true,
               ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
@@ -571,7 +568,7 @@ export function createDrizzleBranchPushStore(
           const lineage = await commitPreparedPush(txDb, push, now);
           rows.push(lineage);
           const mapped = mapLineage(lineage);
-          await persistRequiredTrail(changeTrails, push, mapped, notices);
+          await persistRequiredTrail(changeTrails, push, mapped);
           await persistPendingSettlement(txDb, push, mapped);
         }
         const mappedPushes = rows.map(mapLineage);

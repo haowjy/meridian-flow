@@ -3,7 +3,6 @@ import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edi
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { NoticePort } from "../../notices/index.js";
 import type { BranchJournalRow, PushReceiptPayload } from "./branch-push.js";
 import { blockTextMap } from "./branch-push-plan.js";
 import type {
@@ -253,7 +252,6 @@ export async function persistDurableTrailRecord(
   record: DurableTrailRecord,
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
-  notices?: NoticePort,
   options: {
     refineCurrentVersion?: boolean;
     refineToEmpty?: boolean;
@@ -283,16 +281,5 @@ export async function persistDurableTrailRecord(
     ...(options.refineCurrentVersion ? { refineCurrentVersion: true } : {}),
     ...(options.refineToEmpty || options.replacePushContribution ? { replacePushId: pushId } : {}),
   });
-  if (record.transactionalNotice && !options.refineCurrentVersion) {
-    await notices?.record({
-      ...record.transactionalNotice,
-      data: {
-        ...record.transactionalNotice.data,
-        pushId,
-        threadId: push.threadId ?? null,
-        turnId: push.turnId ?? null,
-      },
-    });
-  }
   return committed;
 }

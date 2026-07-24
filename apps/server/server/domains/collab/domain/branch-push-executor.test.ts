@@ -19,7 +19,6 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
@@ -320,7 +319,7 @@ class Harness {
 
   service(
     changeTrails?: ChangeTrailPersistence,
-    safety?: { notices?: NoticePort; observations?: ObservationSnapshotStore },
+    safety?: { observations?: ObservationSnapshotStore },
   ) {
     this.trailPersistence = changeTrails;
     return createBranchPushService({
@@ -331,7 +330,6 @@ class Harness {
       liveCoordinator: this.coordinator,
       model,
       codec,
-      notices: safety?.notices,
       observations: safety?.observations,
     });
   }
@@ -498,12 +496,8 @@ describe("createBranchPushService", () => {
     model.insertBlocks(toDocHandle(harness.branchDoc), null, codec.parse("Base."));
     harness.branch.state = Y.encodeStateAsUpdate(harness.branchDoc);
     harness.branch.stateVector = Y.encodeStateVector(harness.branchDoc);
-    const notices = {
-      record: vi.fn(async () => {}),
-      drainForModelContext: vi.fn(async () => []),
-    } satisfies NoticePort;
     const record = vi.fn(async () => []);
-    const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
+    const service = harness.service({ record, reopenOwners: vi.fn() });
 
     const result =
       policy === "auto"
@@ -832,12 +826,7 @@ describe("createBranchPushService", () => {
           turnId: row.turnId,
         },
       };
-      await persistDurableTrailRecord(
-        prepared.trail,
-        result.push,
-        { record: async () => [] },
-        notices,
-      );
+      await persistDurableTrailRecord(prepared.trail, result.push, { record: async () => [] });
       row.status = "pushed";
       return result;
     });
@@ -869,10 +858,6 @@ describe("createBranchPushService", () => {
     branch.state = Y.encodeStateAsUpdate(branchDoc);
     branch.stateVector = Y.encodeStateVector(branchDoc);
     if (pushKind === "auto") branch.pushPolicy = "auto";
-    const notices = {
-      record: vi.fn(async () => {}),
-      drainForModelContext: vi.fn(async () => []),
-    } satisfies NoticePort;
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -919,7 +904,6 @@ describe("createBranchPushService", () => {
               }),
             }
           : undefined,
-      notices,
       resolveDocumentTitle: async () => "The Ninefold Furnace",
     });
 
@@ -959,20 +943,9 @@ describe("createBranchPushService", () => {
           },
         });
         expect(markdown(liveDoc)).not.toContain("Edited since this draft was written.");
-        expect(notices.record).toHaveBeenCalledWith(
-          expect.objectContaining({
-            kind: "push_swept",
-            data: expect.objectContaining({
-              documentName: "The Ninefold Furnace",
-              threadId: THREAD_ID,
-              turnId: TURN_ID,
-            }),
-          }),
-        );
       } else if (pushKind === "auto") {
         expect(result).toMatchObject({ status: "pushed" });
         expect(result.status === "pushed" ? result.swept : undefined).toBeUndefined();
-        expect(notices.record).not.toHaveBeenCalled();
       }
     }
     branchDoc.destroy();
@@ -1011,10 +984,6 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
-    const notices = {
-      record: vi.fn(async () => {}),
-      drainForModelContext: vi.fn(async () => []),
-    } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
     const delivered: Array<Omit<ChangeEventWsMessage, "type">> = [];
     let durableSettlement: PendingLiveSettlement | null = null;
@@ -1084,7 +1053,6 @@ describe("createBranchPushService", () => {
       },
       model,
       codec,
-      notices,
       changeEventDelivery: {
         deliver(message) {
           // Delivery is downstream of the fenced live apply, not merely trail persistence.
@@ -1157,18 +1125,6 @@ describe("createBranchPushService", () => {
             }),
           }),
         ],
-        transactionalNotice: expect.objectContaining({
-          kind: "push_swept",
-          data: expect.objectContaining({
-            affectedBlockHashes: [deletedHash],
-            capturedDeletedBodies: [
-              expect.objectContaining({
-                hash: deletedHash,
-                body: "Unjournaled WS body.",
-              }),
-            ],
-          }),
-        }),
       }),
     );
   });

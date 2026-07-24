@@ -1,7 +1,5 @@
 /** Durable notices injected into model context before the next request. */
-export type NoticeScope =
-  | { kind: "thread"; threadId: string }
-  | { kind: "document"; documentId: string };
+export type NoticeScope = { kind: "thread"; threadId: string };
 
 export interface NoticeInput {
   kind: string;
@@ -17,7 +15,7 @@ export interface Notice extends NoticeInput {
 
 export interface NoticePort {
   record(input: NoticeInput): Promise<void>;
-  drainForModelContext(threadId: string, activeDocumentIds: readonly string[]): Promise<Notice[]>;
+  drainForModelContext(threadId: string): Promise<Notice[]>;
 }
 
 export { createDrizzleNoticePort } from "./adapters/drizzle-notice-port.js";
