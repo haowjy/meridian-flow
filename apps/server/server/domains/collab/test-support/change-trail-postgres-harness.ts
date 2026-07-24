@@ -38,13 +38,14 @@ const {
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
-const { createFacade } = await import("../composition.js");
+const { createFacade, createFacadeRuntime } = await import("../composition.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
+const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
   await import("../domain/provenance.js");
 
@@ -272,9 +273,26 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const changeTrails = createDrizzleChangeTrailPersistence(db);
+  const durableProjectionSerializer = createMarkdownDocumentEngine({
+    schema: documentSchema,
+    model,
+    codec: markupCodec,
+    journal: persistence.journal,
+    coordinator: liveCoordinator,
+    lifecycle: persistence.lifecycle,
+    initialDocumentSeeds: persistence.lifecycle,
+    metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    resolveFiletype: async (documentId) => {
+      const [row] = await db
+        .select({ filetype: schema.documents.fileType })
+        .from(schema.documents)
+        .where(eq(schema.documents.id, documentId));
+      return row?.filetype ?? null;
+    },
+  });
   const durableBranchPushStore = createDrizzleBranchPushStore(
     db,
-    { model, codec: markupCodec },
+    durableProjectionSerializer,
     changeTrails,
     notices,
   );
@@ -396,7 +414,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
-  const collab = createFacade({
+  const facadeDeps: Parameters<typeof createFacade>[0] = {
     ...persistence,
     initialDocumentSeeds: persistence.lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(db),
@@ -429,7 +447,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md",
     resolveWorkWriteMode: async () => "draft",
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
-  });
+  };
+  const collab = createFacade(facadeDeps, createFacadeRuntime(facadeDeps));
 
   async function seedAndStage(responseId: string) {
     await collab.writeDocument({

@@ -159,9 +159,6 @@ export type PreparedPushCommit = {
   receiptPayload: PushReceiptPayload;
   idempotencyKey: string;
   receiptId?: string;
-  markdownProjection: string;
-  liveStateVector: Uint8Array;
-  liveState: Uint8Array;
   pushedByUserId?: UserId;
   /** Required participant in the atomic branch-push commit bundle. */
   trail: DurableTrailRecord;

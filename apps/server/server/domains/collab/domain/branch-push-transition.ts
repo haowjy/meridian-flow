@@ -18,6 +18,7 @@ import type {
   PreparedPushCommit,
   PushSweptTrail,
 } from "./branch-push-contracts.js";
+import { DurableProjectionSerializationError } from "./ports/durable-projection.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";
@@ -328,12 +329,25 @@ export function createBranchPushTransition(input: {
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
         if (cut?.swept) latest = cut.swept;
 
-        const completion = await completeUnderFence({
-          pending,
-          liveDoc: inputSettlement.liveDoc,
-          finalPrePush: materialized.doc,
-          ingressGeneration,
-        });
+        let completion: CompletionFenceResult;
+        try {
+          completion = await completeUnderFence({
+            pending,
+            liveDoc: inputSettlement.liveDoc,
+            finalPrePush: materialized.doc,
+            ingressGeneration,
+          });
+        } catch (cause) {
+          if (cause instanceof DurableProjectionSerializationError) {
+            await input.pushStore.blockLiveSettlement?.({
+              pushId: pending.push.id,
+              claim: pending.claim,
+              code: cause.code,
+              error: cause.message,
+            });
+          }
+          throw cause;
+        }
         if (completion === "applied" || completion === "already_applied") return latest;
       } finally {
         materialized.doc.destroy();
