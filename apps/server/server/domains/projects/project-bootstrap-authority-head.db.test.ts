@@ -18,6 +18,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../collab/composition.js");
+    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
@@ -33,7 +34,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     function createBoundCollab() {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
         onStoreDocument: ({ documentName, document }) =>

@@ -28,6 +28,9 @@
   39-name core façade; host adapters use the explicit integration entry and
   staged response documents are lent without exposing raw Yjs update bytes
   (#344).
+- `apps/server`, `apps/app`: denied change-trail document access no longer
+  discloses retained titles/prose or permits forward actions; authorized deleted
+  anchors remain readable through an explicit state (#343).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).

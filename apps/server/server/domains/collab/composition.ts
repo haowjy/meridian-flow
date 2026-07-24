@@ -70,7 +70,10 @@ import {
   createDrizzleLiveTurnDependencyStore,
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
-import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
+import {
+  createDrizzleTrailForwardActions,
+  type TrailDocumentAccess,
+} from "./adapters/drizzle-trail-forward-actions.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -150,6 +153,7 @@ export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
+  documentAccess: TrailDocumentAccess;
   threads: {
     findById(threadId: ThreadId): Promise<unknown>;
   };
@@ -518,6 +522,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const trailForwardActions = createDrizzleTrailForwardActions({
     db: deps.db,
+    documentAccess: deps.documentAccess,
     coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),

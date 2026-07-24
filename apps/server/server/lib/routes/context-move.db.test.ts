@@ -19,6 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../../domains/collab/composition.js");
+    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
@@ -67,7 +68,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     function createBoundCollab() {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       collab.bindHocuspocus(
         new Hocuspocus({
           yDocOptions: { gc: false, gcFilter: () => true },

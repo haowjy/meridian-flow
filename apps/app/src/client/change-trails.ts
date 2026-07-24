@@ -70,16 +70,13 @@ export type ChangeTrailDocument =
   | {
       documentId: string;
       unavailable: true;
-      trailId?: string;
-      documentTitle?: string;
-      changes?: TrailChange[];
     }
   | {
       trailId: string;
       documentId: string;
       documentTitle: string;
       changes: TrailChange[];
-      unavailable?: false;
+      anchorState: "available" | "deleted";
     };
 export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPending: boolean };
 

@@ -188,7 +188,7 @@ function ChangeViewDetail({
     );
   }
   return detail.data?.map((document) => {
-    if (document.unavailable && !document.changes) {
+    if ("unavailable" in document) {
       return (
         <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
           <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
@@ -197,21 +197,21 @@ function ChangeViewDetail({
     }
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
-        {document.unavailable ? (
+        {document.anchorState === "deleted" ? (
           <p className="px-3 py-1 text-caption text-ink-muted">
             <Trans>
               This chapter is no longer available. Copy any saved text you want to keep.
             </Trans>
           </p>
         ) : null}
-        {document.changes && document.changes.length > 0 ? (
+        {document.changes.length > 0 ? (
           <ChangeViewRows
             threadId={threadId}
             trailId={shell.trailId}
             documentId={document.documentId}
             changes={document.changes}
             navigateToChange={navigateToChange}
-            anchorUnavailable={document.unavailable}
+            anchorUnavailable={document.anchorState === "deleted"}
           />
         ) : null}
       </section>
