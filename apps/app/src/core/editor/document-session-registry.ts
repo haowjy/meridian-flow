@@ -63,6 +63,14 @@ export class DocumentSessionRegistry {
   }
 
   /**
+   * Read an existing session without acquiring lifecycle ownership. Unlike
+   * {@link get}, this neither creates a session nor cancels deferred teardown.
+   */
+  peek(roomKey: string): DocumentSession | undefined {
+    return this.sessions.get(roomKey);
+  }
+
+  /**
    * Acquire a session for any Yjs room. The room key is the document identity:
    * after a branch generation reset the room name changes, so this map must
    * create exactly one Y.Doc per room name and never carry a Y.Doc across room

@@ -152,7 +152,7 @@ function ChangeViewRow({
         }
         setActionState("applied");
         const registry = getDocumentSessionRegistry();
-        if (registry.has(documentId)) registry.get(documentId).markerStore.dismiss(change.changeId);
+        registry.peek(documentId)?.markerStore.dismiss(change.changeId);
       })
       .catch(() => {
         setRestoreFailed(true);

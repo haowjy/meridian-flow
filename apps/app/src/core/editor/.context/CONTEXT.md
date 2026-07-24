@@ -26,6 +26,10 @@ Yjs document session. It must stay structurally aligned with
 - Live `DocumentSession`s own an ephemeral `SessionMarkerStore` sidecar.
   Change-event replace sets survive editor remounts during the registry's
   retention window but are never persisted or projected into branch rooms.
+  Every accepted replace set advances its group revision before changes admitted
+  by the current writer are filtered, so an all-self set still clears older
+  marks and fences delayed replays. Unresolved anchors expire on their own timer
+  even while the editor is idle; store teardown cancels that timer.
   The ProseMirror projection clears a whole mark only for a local writer edit
   through its range/seam; remote sync, selection, and boundary-adjacent typing
   never clear it.
