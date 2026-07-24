@@ -3,6 +3,7 @@
 import {
   type SemanticEditIRV1,
   type SemanticProvenanceWriter,
+  unwrapBlock,
   unwrapDoc,
   type WriterLineageRange,
 } from "@meridian/agent-edit";
@@ -317,11 +318,12 @@ function writeCertifiedProvenanceFacts(
   beforeStateVector: Uint8Array,
 ): void {
   if (ir.intent.kind === "fullScopeFreshReplacement") return;
-  const edits = ir.intent.edits.map(({ outputRuns }) => {
+  const edits = ir.intent.edits.map(({ edit, outputRuns }) => {
     const runs = [...outputRuns].sort(
       (left, right) => left.output.from - right.output.from || left.output.to - right.output.to,
     );
     return {
+      edit,
       runs,
       materializedRuns: runs.filter(
         (run) => run.kind !== "preserved" || run.materialization !== "retained",
@@ -335,30 +337,24 @@ function writeCertifiedProvenanceFacts(
   ) {
     return;
   }
-  const visibleProse = visibleProseStringRanges(doc);
   const allInserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
-  const insertedByAllocation = intersectRangesInOrder(allInserted, visibleProse);
-  const declaredLength = edits.reduce(
-    (sum, { materializedRuns }) =>
-      sum + materializedRuns.reduce((editSum, run) => editSum + run.output.to - run.output.from, 0),
-    0,
-  );
-  const insertedLength = insertedByAllocation.reduce((sum, range) => sum + range.length, 0);
-  if (insertedLength !== declaredLength) {
-    throw new ProvenanceMaterializationError(
-      `Certified semantic output length ${declaredLength} does not match lowered prose insertion length ${insertedLength}`,
-    );
-  }
   const targets: ProvenanceTargetFactV1[] = [];
   const existingAssignments = readTargetFacts(doc);
-  let allocationCursor = 0;
-  for (const { materializedRuns } of edits) {
-    const editLength = materializedRuns.reduce(
+  for (const { edit, runs, materializedRuns } of edits) {
+    if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) continue;
+    const declaredLength = materializedRuns.reduce(
       (sum, run) => sum + run.output.to - run.output.from,
       0,
     );
-    const allocated = sliceRanges(insertedByAllocation, allocationCursor, editLength);
-    const inserted = intersectRangesInOrder(visibleProse, allocated);
+    const outputLength = runs.at(-1)?.output.to ?? 0;
+    const outputWindow = visibleOutputWindow(edit, ir.intent.edits, outputLength);
+    const inserted = intersectRangesInOrder(outputWindow, allInserted);
+    const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
+    if (insertedLength !== declaredLength) {
+      throw new ProvenanceMaterializationError(
+        `Certified semantic output length ${declaredLength} does not match lowered prose insertion length ${insertedLength}`,
+      );
+    }
     let outputCursor = 0;
     for (const run of materializedRuns) {
       const length = run.output.to - run.output.from;
@@ -393,9 +389,58 @@ function writeCertifiedProvenanceFacts(
       }
       outputCursor += length;
     }
-    allocationCursor += editLength;
   }
   appendProvenanceFacts(doc, { targets });
+}
+
+type MappedEdit = Extract<SemanticEditIRV1["intent"], { kind: "mappedEdits" }>["edits"][number];
+
+function visibleOutputWindow(
+  edit: MappedEdit["edit"],
+  declarations: readonly MappedEdit[],
+  outputLength: number,
+): WriterLineageRange[] {
+  if (edit.kind === "insert" || edit.kind === "delete") {
+    throw new ProvenanceMaterializationError(
+      `Certified ${edit.kind} output cannot materialize continuation or restoration facts`,
+    );
+  }
+  const ranges = visibleStringRanges(unwrapBlock(edit.block));
+  if (edit.kind === "block") return sliceRanges(ranges, 0, outputLength);
+  const start = edit.kind === "text" ? edit.span.start : (edit.replacements[0]?.span.start ?? 0);
+  let finalStart = start;
+  for (const { edit: other } of declarations) {
+    if (other === edit || !("block" in other) || other.block !== edit.block) continue;
+    const span = textEditInputSpan(other);
+    if (!span) continue;
+    if (span.to <= start) {
+      finalStart += textEditOutputLength(other) - (span.to - span.from);
+    } else if (span.from < start + textEditInputLength(edit) && span.to > start) {
+      throw new ProvenanceMaterializationError(
+        "Certified text edits overlap while locating provenance output",
+      );
+    }
+  }
+  return sliceRanges(ranges, finalStart, outputLength);
+}
+
+function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number } | undefined {
+  if (edit.kind === "text") return { from: edit.span.start, to: edit.span.end };
+  if (edit.kind !== "textRanges") return undefined;
+  const first = edit.replacements[0];
+  const last = edit.replacements.at(-1);
+  return first && last ? { from: first.span.start, to: last.span.end } : undefined;
+}
+
+function textEditInputLength(edit: MappedEdit["edit"]): number {
+  const span = textEditInputSpan(edit);
+  return span ? span.to - span.from : 0;
+}
+
+function textEditOutputLength(edit: MappedEdit["edit"]): number {
+  if (edit.kind === "text") return edit.newText.length;
+  if (edit.kind === "textRanges") return edit.output.length;
+  return 0;
 }
 
 function resolvedRootUnits(
@@ -761,10 +806,14 @@ type YItemLike = {
 };
 
 function visibleProseStringRanges(doc: Y.Doc): WriterLineageRange[] {
+  return visibleStringRanges(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+}
+
+function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): WriterLineageRange[] {
   const ranges: WriterLineageRange[] = [];
-  const visit = (type: Y.XmlElement | Y.XmlText | Y.XmlFragment): void => {
-    if (type instanceof Y.XmlText) {
-      let item = (type as unknown as { _start: YItemLike | null })._start;
+  const visit = (current: Y.XmlElement | Y.XmlText | Y.XmlFragment): void => {
+    if (current instanceof Y.XmlText) {
+      let item = (current as unknown as { _start: YItemLike | null })._start;
       while (item) {
         if (!item.deleted && item.content.constructor?.name === "ContentString") {
           ranges.push({ clientID: item.id.client, clock: item.id.clock, length: item.length });
@@ -773,11 +822,11 @@ function visibleProseStringRanges(doc: Y.Doc): WriterLineageRange[] {
       }
       return;
     }
-    for (const child of type.toArray()) {
+    for (const child of current.toArray()) {
       if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
     }
   };
-  visit(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
+  visit(type);
   return ranges;
 }
 

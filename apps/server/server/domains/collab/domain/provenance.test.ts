@@ -43,7 +43,7 @@ describe("provenance materialization", () => {
     expect(() =>
       createSemanticProvenanceWriter().writeCertifiedFacts(
         doc as never,
-        mappedTextIr(source, "kitten and kitten", [
+        mappedTextIr(proseBlock(doc), source, "kitten and kitten", [
           { kind: "fresh", payload: "kitten", output: { from: 0, to: 6 } },
           {
             kind: "preserved",
@@ -81,7 +81,7 @@ describe("provenance materialization", () => {
 
     createSemanticProvenanceWriter().writeCertifiedFacts(
       doc as never,
-      mappedTextIr(source, "kit and cat", [
+      mappedTextIr(proseBlock(doc), source, "kit and cat", [
         { kind: "fresh", payload: "kit", output: { from: 0, to: 3 } },
         {
           kind: "preserved",
@@ -125,7 +125,7 @@ describe("provenance materialization", () => {
 
     createSemanticProvenanceWriter().writeCertifiedFacts(
       doc as never,
-      mappedTextIr(source, "catkit", [
+      mappedTextIr(proseBlock(doc), source, "catkit", [
         { kind: "fresh", payload: "kit", output: { from: 3, to: 6 } },
         { kind: "restoration", root: source, payload: "cat", output: { from: 0, to: 3 } },
       ]),
@@ -221,6 +221,48 @@ describe("provenance materialization", () => {
     expect(visible.map(({ root }) => root)).toEqual([firstRoot, secondRoot]);
   });
 
+  it("locates grouped same-block edits by their final output spans", () => {
+    const doc = proseDoc("one two");
+    const source = textRange(doc);
+    const firstRoot = { ...source, length: 3 };
+    const secondRoot = { ...source, clock: source.clock + 4, length: 3 };
+    const block = proseBlock(doc);
+    const text = proseText(doc);
+    const before = Y.encodeStateVector(doc);
+    text.delete(4, 3);
+    text.insert(4, "TWO");
+    text.delete(0, 3);
+    text.insert(0, "ONE");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [firstRoot, secondRoot],
+        deleted: [firstRoot, secondRoot],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            restorationTextEdit(block, firstRoot, 0, "ONE"),
+            restorationTextEdit(block, secondRoot, 4, "TWO"),
+          ],
+        },
+      },
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
+      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
+    ]);
+    expect(visible).toHaveLength(3);
+    expect(visible[0]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
+    expect(visible[1]).toMatchObject({ birthClass: "agent" });
+    expect(visible[2]).toMatchObject({ root: secondRoot, birthClass: "writer_protected" });
+  });
+
   it("encodes certified continuation facts in the same Yjs update as prose", () => {
     const doc = proseDoc("old");
     const initial = Y.encodeStateAsUpdate(doc);
@@ -252,7 +294,7 @@ describe("provenance materialization", () => {
                 kind: "text",
                 documentId: "document",
                 file: "document.md",
-                block: {} as never,
+                block: paragraph as never,
                 span: { start: 0, end: 3 },
                 newText: "new",
               },
@@ -519,11 +561,41 @@ function proseDoc(value: string): Y.Doc {
 }
 
 function proseText(doc: Y.Doc): Y.XmlText {
-  const paragraph = doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
-  return paragraph.get(0) as Y.XmlText;
+  return proseBlock(doc).get(0) as Y.XmlText;
+}
+
+function proseBlock(doc: Y.Doc): Y.XmlElement {
+  return doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
+}
+
+function restorationTextEdit(
+  block: Y.XmlElement,
+  root: { clientID: number; clock: number; length: number },
+  start: number,
+  payload: string,
+) {
+  return {
+    edit: {
+      kind: "text" as const,
+      documentId: "document",
+      file: "document.md",
+      block: block as never,
+      span: { start, end: start + root.length },
+      newText: payload,
+    },
+    outputRuns: [
+      {
+        kind: "restoration" as const,
+        root,
+        payload,
+        output: { from: 0, to: payload.length },
+      },
+    ],
+  };
 }
 
 function mappedTextIr(
+  block: Y.XmlElement,
   source: { clientID: number; clock: number; length: number },
   output: string,
   outputRuns: SemanticOutputRun[],
@@ -542,7 +614,7 @@ function mappedTextIr(
             kind: "text",
             documentId: "document",
             file: "document.md",
-            block: {} as never,
+            block: block as never,
             span: { start: 0, end: source.length },
             newText: output,
           },
@@ -581,7 +653,7 @@ function appendCertifiedCarry(
               kind: "text",
               documentId: "document",
               file: "document.md",
-              block: {} as never,
+              block: paragraph as never,
               span: { start: 0, end: source.length },
               newText: value,
             },
