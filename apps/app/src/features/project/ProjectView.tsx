@@ -23,7 +23,10 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
-import { registerConversationRevealNavigator } from "@/features/chat/conversation-reveal";
+import {
+  completeConversationReveal,
+  usePendingConversationReveal,
+} from "@/features/chat/conversation-reveal";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -108,13 +111,14 @@ export function ProjectView(props: ProjectViewProps) {
   const reconciledDeskRef = useRef<string | null>(null);
   const selectThreadRef = useRef(props.onSelectThread);
   selectThreadRef.current = props.onSelectThread;
-  useEffect(
-    () =>
-      registerConversationRevealNavigator((threadId) => {
-        selectThreadRef.current(threadId);
-      }),
-    [],
-  );
+  const pendingConversationReveal = usePendingConversationReveal();
+  useEffect(() => {
+    if (!pendingConversationReveal) return;
+    selectThreadRef.current(pendingConversationReveal.threadId);
+    if (pendingConversationReveal.turnId === null) {
+      completeConversationReveal(pendingConversationReveal);
+    }
+  }, [pendingConversationReveal]);
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
