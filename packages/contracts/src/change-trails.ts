@@ -91,6 +91,28 @@ export type ChangeTrailShellV1 = {
   settledAt: string | null;
 };
 
+export type ChangeTrailDocumentDetailV1 =
+  | {
+      documentId: string;
+      unavailable: true;
+      trailId?: string;
+      documentTitle?: string;
+      changes?: TrailChangeV1[];
+    }
+  | {
+      trailId: string;
+      documentId: string;
+      documentTitle: string;
+      changes: TrailChangeV1[];
+      unavailable?: false;
+    };
+
+export type ChangeTrailDetailResponseV1 = {
+  version: 1;
+  trailId: string;
+  documents: ChangeTrailDocumentDetailV1[];
+};
+
 export const historicalBodySchema: z.ZodType<HistoricalBody> = z.discriminatedUnion("status", [
   z.object({ status: z.literal("available"), markdown: z.string() }),
   z.object({ status: z.literal("unavailable"), reason: z.string() }),

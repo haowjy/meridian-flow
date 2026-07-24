@@ -7,6 +7,7 @@ import {
 } from "@meridian/agent-edit";
 import {
   type CanonicalBlockIdentityV1,
+  type ChangeTrailDocumentDetailV1,
   type ChangeTrailShellV1,
   type HistoricalBody,
   type NavigationTargetV1,
@@ -17,21 +18,13 @@ import * as Y from "yjs";
 
 export type {
   CanonicalBlockIdentityV1,
+  ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
   HistoricalBody,
   NavigationTargetV1,
   TrailChangeV1,
 };
 export { parseTrailChangesV1 };
-
-export type ChangeTrailDocumentDetailV1 = {
-  trailId: string;
-  documentId: string;
-  documentTitle: string;
-  changes: TrailChangeV1[];
-  /** The durable detail remains readable, but its live document cannot be opened. */
-  unavailable?: true;
-};
 
 const ROOT_NAME = "prosemirror";
 

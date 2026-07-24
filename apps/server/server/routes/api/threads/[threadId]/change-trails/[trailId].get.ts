@@ -1,4 +1,5 @@
 /** Reads a trail's protected document detail after thread and per-document gates. */
+import type { ChangeTrailDetailResponseV1 } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireThreadOwner } from "../../../../../domains/threads/index.js";
@@ -17,5 +18,5 @@ export default defineEventHandler(async (event) => {
     version: 1,
     trailId,
     documents: await app.changeTrails.readDetails({ threadId, trailId, userId: user.userId }),
-  };
+  } satisfies ChangeTrailDetailResponseV1;
 });
