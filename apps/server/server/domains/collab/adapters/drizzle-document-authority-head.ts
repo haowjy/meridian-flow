@@ -95,6 +95,11 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
   };
 }
 
+export function createDrizzleAuthorityGenerationReader(db: AuthorityHeadDb) {
+  return async (documentId: DocumentId): Promise<bigint> =>
+    (await readDocumentAuthorityHead(db, documentId)).generation;
+}
+
 async function readAuthorityHeads(db: AuthorityHeadDb, documentIds: DocumentId[]) {
   const rows = await db
     .select({

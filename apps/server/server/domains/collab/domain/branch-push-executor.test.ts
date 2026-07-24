@@ -18,9 +18,8 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createBranchAgentEditDiagnostics } from "../adapters/branch-agent-edit-observability.js";
+import { createBranchAgentEditDiagnostics } from "../adapters/agent-edit-observability.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
-import { createThreadPeerAgentEditCore } from "../composition.js";
 import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
@@ -58,6 +57,8 @@ import type {
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
+import { enlistResponseParticipant, runResponseTransaction } from "./response-transaction.js";
+import { createThreadPeerAgentEditCore } from "./thread-peer-core-pool.js";
 
 type SettlementObserver = {
   /** Observes the durable boundary; the stateful store always performs the settlement. */
@@ -87,6 +88,19 @@ const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000004" as TurnId;
 const USER_ID = "00000000-0000-4000-8000-000000000005" as UserId;
+const threadPeerPoolDefaults = {
+  shouldUseLiveReversal: async () => false,
+  discardThreadPeerBranches: async () => {},
+  pullThreadPeer: async () => undefined,
+  responseTransactionSettlement: {
+    deferUntilCommit: () => false,
+    deferUntilRollback: () => false,
+  },
+  responseTransactions: {
+    enlist: enlistResponseParticipant,
+    run: runResponseTransaction,
+  },
+};
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
@@ -3125,7 +3139,10 @@ describe("thread-peer auto-push wiring", () => {
 
   it("warns and drops mutation-less pending entries instead of retaining an undrainable batch", () => {
     const eventSink = createInMemoryEventSink();
-    const pending = createBranchPendingJournalEntries(createBranchAgentEditDiagnostics(eventSink));
+    const pending = createBranchPendingJournalEntries(
+      enlistResponseParticipant,
+      createBranchAgentEditDiagnostics(eventSink),
+    );
 
     pending.push({
       docId: DOCUMENT_ID,
@@ -3177,7 +3194,7 @@ describe("thread-peer auto-push wiring", () => {
   it("promotes the captured watermark for a committed non-staged thread-peer write", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const watermarks = createBranchConcurrentJournalWatermarks();
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -3226,7 +3243,7 @@ describe("thread-peer auto-push wiring", () => {
   it("drains a staged document batch as one commit and promotes the last captured attempt", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const watermarks = createBranchConcurrentJournalWatermarks();
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -3306,7 +3323,7 @@ describe("thread-peer auto-push wiring", () => {
       status: "active",
     });
     harness.failNextCommitSync = true;
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     const pushPending = (writeId: string) =>
       pending.push({
         docId: DOCUMENT_ID,
@@ -3368,7 +3385,7 @@ describe("thread-peer auto-push wiring", () => {
 
   it("rejects an in-flight thread-peer write after a no-change pull generation is reset", async () => {
     const harness = new ThreadPeerPushHarness("manual");
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -3955,6 +3972,7 @@ describe("thread-peer auto-push wiring", () => {
     };
     const threadB = "00000000-0000-4000-8000-000000000099" as ThreadId;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(fakeCore()),
       createThreadCore: fakeCore,
@@ -3991,6 +4009,7 @@ describe("thread-peer auto-push wiring", () => {
         invalidateThread: vi.fn(async () => undefined),
       }) as unknown as AgentEditCore;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(baseCore(liveReverse)),
       createThreadCore: () => baseCore(threadReverse as typeof liveReverse),
       commitThreadResponseAtomically: (operation) => operation(),
@@ -4131,7 +4150,10 @@ describe("thread-peer auto-push wiring", () => {
   it("fails loudly when a staged response commit produces no branch journal row", async () => {
     const events = createInMemoryEventSink();
     const harness = new ThreadPeerPushHarness("manual", "Base.");
-    const pending = createBranchPendingJournalEntries(createBranchAgentEditDiagnostics(events));
+    const pending = createBranchPendingJournalEntries(
+      enlistResponseParticipant,
+      createBranchAgentEditDiagnostics(events),
+    );
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array([1]),
@@ -4508,7 +4530,7 @@ class ThreadPeerPushHarness {
   }
 
   async writeFromThreadPeer(text: string): Promise<void> {
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
@@ -4558,6 +4580,7 @@ class ThreadPeerPushHarness {
       afterCommit(callback) {
         void callback();
       },
+      enlistResponseParticipant,
       model,
       codec: agentCodec,
       ...(watermarks ? { concurrentJournalWatermarks: watermarks } : {}),
@@ -4576,7 +4599,7 @@ class ThreadPeerPushHarness {
   }
 
   createThreadPeerCore() {
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     const watermarks = createBranchConcurrentJournalWatermarks();
     const createCoreForCoordinator = (
       coordinator: DocumentCoordinator,
@@ -4617,6 +4640,7 @@ class ThreadPeerPushHarness {
     });
 
     return createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(
         createCoreForCoordinator(

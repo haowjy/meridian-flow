@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`: collab composition now assembles required review, response,
+  reversal, effective-read, projection, and thread-peer services from explicit
+  production or in-memory adapters instead of hiding feature fallbacks in one
+  facade closure.
 - `apps/server`: ordinary collab writes and completed branch pushes now share one
   document projection/activity adapter with explicit thread, work, and project
   selection rules.

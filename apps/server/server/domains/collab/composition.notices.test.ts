@@ -6,7 +6,7 @@ import {
   recordAwarenessDegradedNotice,
   recordLateSweepNotice,
   recordNoticeAfterDurability,
-} from "./composition.js";
+} from "./domain/reversal-notices.js";
 
 describe("collab safety notices", () => {
   it("maps user undo producer events onto kind undo", async () => {

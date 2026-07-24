@@ -2,7 +2,7 @@
 
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
-import { createInMemoryCollabDomain } from "./composition.js";
+import { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 
 describe("in-memory document authority heads", () => {
   it("advances admittedThrough after an admission", async () => {
