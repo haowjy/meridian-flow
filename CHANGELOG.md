@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: ordinary collab writes and completed branch pushes now share one
+  document projection/activity adapter with explicit thread, work, and project
+  selection rules.
 - `apps/server`: whole, selective, and companion branch pushes now share one
   candidate-batch pipeline and required persistence ports without changing
   selective error identity, empty companion results, or whole-only notice

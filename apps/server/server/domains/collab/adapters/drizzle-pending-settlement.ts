@@ -6,16 +6,11 @@ import {
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   branchWriteJournal,
-  contextSources,
   documentBranches,
-  documents,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
-  projects,
   pushLineage,
-  threadDocuments,
-  works,
 } from "@meridian/database/schema";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
@@ -34,6 +29,7 @@ import type {
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
+import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import type {
   PendingSettlementStore,
@@ -100,6 +96,7 @@ export type StagePendingSettlementWithinTx = typeof stagePendingSettlementWithin
 export function createDrizzlePendingSettlementStore(
   db: Database,
   durableProjectionSerializer: DurableProjectionSerializer,
+  projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
   notices?: NoticePort,
 ): PendingSettlementStore {
@@ -200,6 +197,7 @@ export function createDrizzlePendingSettlementStore(
             input.pushId,
             input.documentId,
             durableProjectionSerializer,
+            projectionEffects,
           );
           const result = complete();
           if (result !== "applied" && result !== "already_applied" && result !== "retry") {
@@ -375,6 +373,7 @@ async function completeStagedPush(
   pushId: number,
   documentId: DocumentId,
   durableProjectionSerializer: DurableProjectionSerializer,
+  projectionEffects: DocumentProjectionEffects,
 ): Promise<void> {
   const [staged] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -459,7 +458,18 @@ async function completeStagedPush(
     await writeMutationRows(db, branch, journalRows.map(mapJournalRow), updateRow.id);
     const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
     await upsertHead(db, documentId, updateRow.id, durable.stateVector);
-    await refreshProjectionAndActivity(db, branch, durable.markdownProjection, new Date());
+    await projectionEffects.apply({
+      documentId: branch.documentId,
+      markdown: durable.markdownProjection,
+      at: new Date(),
+      threadDocuments: { kind: "all" },
+      work: branch.workId ? { kind: "work", workId: branch.workId } : { kind: "none" },
+      project: {
+        kind: "document_scope",
+        includeWorkProject: false,
+        activeDocumentsOnly: true,
+      },
+    });
   }
   await joinAdmissionWithinTx(db, {
     documentId,
@@ -520,36 +530,6 @@ async function writeMutationRows(
       })),
     )
     .onConflictDoNothing();
-}
-
-async function refreshProjectionAndActivity(
-  db: DrizzleDb,
-  branch: BranchSnapshot,
-  markdownProjection: string,
-  now: Date,
-): Promise<void> {
-  await db
-    .update(documents)
-    .set({ markdownProjection, updatedAt: now })
-    .where(eq(documents.id, branch.documentId));
-  await db
-    .update(threadDocuments)
-    .set({ lastTouchedAt: now })
-    .where(eq(threadDocuments.documentId, branch.documentId));
-  if (branch.workId)
-    await db.update(works).set({ updatedAt: now }).where(eq(works.id, branch.workId));
-  const [scope] = await db
-    .select({ projectId: contextSources.projectId })
-    .from(documents)
-    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-    .where(and(eq(documents.id, branch.documentId), isNull(documents.deletedAt)))
-    .limit(1);
-  if (scope?.projectId) {
-    await db
-      .update(projects)
-      .set({ updatedAt: now, lastActivityAt: now })
-      .where(eq(projects.id, scope.projectId));
-  }
 }
 
 function _representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {

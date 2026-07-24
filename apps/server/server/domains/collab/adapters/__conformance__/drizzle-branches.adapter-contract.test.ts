@@ -47,6 +47,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../drizzle-pending-settlement.js"
     );
     const { createDrizzleChangeTrailPersistence } = await import("../drizzle-change-trails.js");
+    const { createDrizzleDocumentProjectionEffects } = await import(
+      "../drizzle-document-activity.js"
+    );
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
     const { createBranchCoordinator, BranchStaleUpdateError } = await import(
@@ -128,7 +131,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journalReadStore,
         commitStore,
         workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
-        settlementStore: createDrizzlePendingSettlementStore(db, serializer, changeTrails),
+        settlementStore: createDrizzlePendingSettlementStore(
+          db,
+          serializer,
+          createDrizzleDocumentProjectionEffects(db),
+          changeTrails,
+        ),
       };
     };
 

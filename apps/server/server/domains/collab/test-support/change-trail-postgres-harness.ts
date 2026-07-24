@@ -36,6 +36,9 @@ const { createChangeTrailWorker } = await import("../adapters/change-trail-worke
 const { createDrizzleChangeTrailPersistence } = await import(
   "../adapters/drizzle-change-trails.js"
 );
+const { createDrizzleDocumentProjectionEffects } = await import(
+  "../adapters/drizzle-document-activity.js"
+);
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
 const {
   createDrizzleDocumentAuthorityHeads,
@@ -309,6 +312,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
+    createDrizzleDocumentProjectionEffects(db),
     changeTrails,
     notices,
   );

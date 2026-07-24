@@ -60,10 +60,7 @@ import {
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
-import {
-  touchDocumentActivity,
-  updateMarkdownProjection,
-} from "./adapters/drizzle-document-activity.js";
+import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import {
   createDrizzleDocumentAuthorityHeads,
   readDocumentAuthorityHead,
@@ -609,14 +606,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         eventSink: deps.eventSink,
       })
     : undefined;
-  const documentWriteHook: DocumentWriteHook = async ({ documentId, threadId, markdown, at }) => {
-    const results = await Promise.allSettled([
-      touchDocumentActivity(deps.db, documentId, threadId, at),
-      updateMarkdownProjection(deps.db, documentId, markdown, at),
-    ]);
-    const failed = results.find((result) => result.status === "rejected");
-    if (failed?.status === "rejected") throw failed.reason;
-  };
+  const projectionEffects = createDrizzleDocumentProjectionEffects(deps.db);
+  const documentWriteHook: DocumentWriteHook = ({ documentId, threadId, markdown, at }) =>
+    projectionEffects.apply({
+      documentId,
+      markdown,
+      at,
+      threadDocuments: threadId ? { kind: "thread", threadId } : { kind: "none" },
+      work: { kind: "document_scope" },
+      project: {
+        kind: "document_scope",
+        includeWorkProject: true,
+        activeDocumentsOnly: false,
+      },
+    });
   const runtime = createFacadeRuntime({
     journal,
     coordinator,
@@ -648,6 +651,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const pendingSettlementStore = createDrizzlePendingSettlementStore(
     deps.db,
     runtime.markdownDocuments,
+    projectionEffects,
     changeTrails,
     deps.notices,
   );
