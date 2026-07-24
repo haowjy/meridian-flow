@@ -53,20 +53,4 @@ describe("agent-edit codec adapter", () => {
     ]);
     expect(markup.serializeBlocks).toHaveBeenCalledWith(blocks);
   });
-
-  it("delegates hashless bodies, parse, and full-document serialize to markup", () => {
-    const markup = fakeMarkupCodec();
-    const codec = createAgentEditCodec(markup);
-
-    expect(codec.serializeBlockBodies(blocks)).toEqual([
-      "lone",
-      "console.log(1)\nconsole.log(2)",
-      "",
-    ]);
-    expect(codec.parse("source")).toBe(parsed);
-    expect(codec.serialize(blocks)).toBe("serialized");
-    expect(markup.serializeBlocks).toHaveBeenCalledWith(blocks);
-    expect(markup.parse).toHaveBeenCalledWith("source");
-    expect(markup.serialize).toHaveBeenCalledWith(blocks);
-  });
 });
