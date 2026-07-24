@@ -43,10 +43,12 @@ export function journalAttributionByChangedBlock(input: {
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
-  const operations: Array<{
+  const journalOperations: Array<{
     removedBlockHashes: string[];
     insertedBlockIds: string[];
     ambiguous?: boolean;
+    removedIndex: number | null;
+    insertedIndex: number | null;
   }> = [];
   const authoringResponseIdsByBlock = new Map<string, string[]>();
   try {
@@ -90,12 +92,40 @@ export function journalAttributionByChangedBlock(input: {
         }
       }
       if (deleted.length > 0 || inserted.length > 0) {
-        operations.push({
+        journalOperations.push({
           removedBlockHashes: deleted.map((block) => block.hash),
           insertedBlockIds: inserted.map((block) => block.hash),
           ambiguous: deleted.length !== 1 || inserted.length !== 1,
+          removedIndex:
+            deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
+          insertedIndex:
+            inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
         });
       }
+    }
+    const operations: typeof journalOperations = [];
+    for (let index = 0; index < journalOperations.length; index += 1) {
+      const deletion = journalOperations[index];
+      const insertion = journalOperations[index + 1];
+      if (
+        deletion?.removedBlockHashes.length === 1 &&
+        deletion.insertedBlockIds.length === 0 &&
+        insertion?.removedBlockHashes.length === 0 &&
+        insertion.insertedBlockIds.length === 1 &&
+        deletion.removedIndex !== null &&
+        deletion.removedIndex === insertion.insertedIndex
+      ) {
+        operations.push({
+          removedBlockHashes: deletion.removedBlockHashes,
+          insertedBlockIds: insertion.insertedBlockIds,
+          ambiguous: false,
+          removedIndex: deletion.removedIndex,
+          insertedIndex: insertion.insertedIndex,
+        });
+        index += 1;
+        continue;
+      }
+      operations.push(deletion as (typeof journalOperations)[number]);
     }
     return { ownersByBlock, operations, authoringResponseIdsByBlock };
   } finally {
@@ -185,25 +215,35 @@ export function preparedTrailChanges(input: {
             previousSurvivor: previousId ? input.afterById.get(previousId) : null,
           })
         : null;
-    const replacementId =
-      sweptNavigation?.outcome === "modify" ? provenReplacements.get(block.blockId) : undefined;
+    const replacementId = provenReplacements.get(block.blockId);
     const replacement = replacementId
       ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
       : undefined;
+    const replacementBlock = replacementId ? input.afterById.get(replacementId) : undefined;
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
     const beforeIdentity =
       block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
     const afterIdentity =
-      block.afterText === null
-        ? null
-        : (input.blockIdentities.get(replacementId ?? block.blockId) ?? null);
+      replacementId !== undefined
+        ? (input.blockIdentities.get(replacementId) ?? null)
+        : block.afterText === null
+          ? null
+          : (input.blockIdentities.get(block.blockId) ?? null);
     const location: TrailProjectionLocation = {
       kind:
-        sweptNavigation?.outcome ??
-        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
+        replacementId !== undefined
+          ? "modify"
+          : (sweptNavigation?.outcome ??
+            (block.beforeText === null
+              ? "insert"
+              : block.afterText === null
+                ? "delete"
+                : "modify")),
       beforeIdentity,
       afterIdentity,
-      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
+      navigation:
+        sweptNavigation?.navigation ??
+        (replacementBlock ? liveBlockTarget(input.afterDoc, replacementBlock) : ordinaryNavigation),
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];

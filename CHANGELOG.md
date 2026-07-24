@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Structurally associated whole-block replacements now project as one durable
+  modification with the removed body available to Restore and the replacement
+  block as its live highlight target.
 - Empty settlement refinements now clear the push's committed change-event
   replace-set while preserving its monotonic projection revision.
 - Change-event attribution now follows durable trail ownership and each folded

@@ -166,6 +166,11 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
+- **Replacement projection**: one journal row that replaces a block, or adjacent
+  delete/insert rows at the same block ordinal in one push, is one `modify`
+  change anchored to the inserted block. This is structural Yjs/journal
+  evidence, never text similarity; non-adjacent delete/insert effects remain
+  independent changes. The removed body remains the writer-protection payload.
 - **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.

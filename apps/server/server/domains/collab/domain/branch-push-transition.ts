@@ -482,10 +482,13 @@ export function createBranchPushTransition(input: {
       navigation: change.navigation,
       swept: change.writerProtection !== undefined,
       excerpt: text === null ? null : text.slice(0, 500),
-      pureDeletionOffset: detectPureDeletionOffset(
-        renderedBodyText(change.beforeText, input.codec),
-        renderedBodyText(change.afterTextAtReceipt, input.codec),
-      ),
+      pureDeletionOffset:
+        change.kind === "delete"
+          ? detectPureDeletionOffset(
+              renderedBodyText(change.beforeText, input.codec),
+              renderedBodyText(change.afterTextAtReceipt, input.codec),
+            )
+          : null,
     };
   }
 
