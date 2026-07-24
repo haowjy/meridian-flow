@@ -101,3 +101,28 @@ describe("unknown tool renderer", () => {
     expect(rendererFor(tool.toolName).title(tool)).toBe("inspect");
   });
 });
+
+describe("streaming tool labels", () => {
+  it.each([
+    ["read", { path: "manuscript://chapter-1.md" }, "Reading"],
+    ["list", { path: "manuscript://" }, "Listing"],
+    ["edit", { path: "manuscript://chapter-1.md" }, "Editing"],
+    ["search", { query: "dragon" }, "Searching"],
+    ["bash", { command: "wc -w chapter-1.md" }, "Running"],
+  ])("uses present tense for a partial %s call", (toolName, input, expected) => {
+    const tool = writeToolView({ toolName, input, status: "partial" });
+    const html = renderToStaticMarkup(rendererFor(toolName).title(tool));
+
+    expect(html).toContain(expected);
+  });
+
+  it.each([
+    ["direct" as const, "Writing"],
+    ["draft" as const, "Drafting"],
+  ])("reflects %s write mode while a write streams", (writeMode, expected) => {
+    const tool = writeToolView({ status: "partial" });
+    const html = renderToStaticMarkup(rendererFor("write").title(tool, { writeMode }));
+
+    expect(html).toContain(expected);
+  });
+});

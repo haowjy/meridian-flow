@@ -89,6 +89,10 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): ReactNode {
+  return tool.status === "complete" ? complete : active;
+}
+
 /**
  * Title slot for path-bearing tools (`read`, `edit`, `write`, `list`).
  *
@@ -207,7 +211,7 @@ export function invokeSkillFailureCopy(
 
 function InvokeSkillTitle({ tool }: { tool: ToolView }) {
   const slug = invokeSkillSlug(tool);
-  const running = tool.status === "partial";
+  const running = tool.status !== "complete";
   if (!slug) {
     return running ? t`Running skill…` : t`Ran skill`;
   }
@@ -240,17 +244,24 @@ function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRende
   const input = inputObject(tool);
   const path = asString(input.path);
   if (input.command === "read") {
-    if (path) return <PathTitle verb={t`Read`} path={path} />;
-    return t`Read file`;
+    const verb = toolVerb(tool, t`Read`, t`Reading…`);
+    if (path) return <PathTitle verb={verb} path={path} />;
+    return toolVerb(tool, t`Read file`, t`Reading…`);
   }
   if (tool.isError) {
     const verb = context?.writeMode === "draft" ? t`Draft write failed` : t`Write failed`;
     if (path) return <PathTitle verb={verb} path={path} />;
     return context?.writeMode === "draft" ? t`Draft write failed` : t`Write failed`;
   }
-  const verb = context?.writeMode === "draft" ? t`Drafted` : t`Wrote`;
+  const verb =
+    context?.writeMode === "draft"
+      ? toolVerb(tool, t`Drafted`, t`Drafting…`)
+      : toolVerb(tool, t`Wrote`, t`Writing…`);
   if (path) return <PathTitle verb={verb} path={path} />;
-  return context?.writeMode === "draft" ? t`Drafted file` : t`Wrote file`;
+  if (context?.writeMode === "draft") {
+    return toolVerb(tool, t`Drafted file`, t`Drafting…`);
+  }
+  return toolVerb(tool, t`Wrote file`, t`Writing…`);
 }
 
 function writeExpand(tool: ToolView): ReactNode | null {
@@ -318,7 +329,8 @@ const RENDERERS: Record<string, ToolRenderer> = {
     Icon: FileText,
     title: (tool) => {
       const path = asString(inputObject(tool).path);
-      return path ? <PathTitle verb={t`Read`} path={path} /> : t`Read file`;
+      const verb = toolVerb(tool, t`Read`, t`Reading…`);
+      return path ? <PathTitle verb={verb} path={path} /> : toolVerb(tool, t`Read file`, verb);
     },
     expand: readExpand,
   },
@@ -326,7 +338,8 @@ const RENDERERS: Record<string, ToolRenderer> = {
     Icon: FilePen,
     title: (tool) => {
       const path = asString(inputObject(tool).path);
-      return path ? <PathTitle verb={t`Edited`} path={path} /> : t`Edited file`;
+      const verb = toolVerb(tool, t`Edited`, t`Editing…`);
+      return path ? <PathTitle verb={verb} path={path} /> : toolVerb(tool, t`Edited file`, verb);
     },
     // TODO(ux): wire onClick to a diff destination.
   },
@@ -340,14 +353,24 @@ const RENDERERS: Record<string, ToolRenderer> = {
     Icon: FolderTree,
     title: (tool) => {
       const path = asString(inputObject(tool).path);
-      return path ? <PathTitle verb={t`Listed`} path={path} /> : t`Listed directory`;
+      const verb = toolVerb(tool, t`Listed`, t`Listing…`);
+      return path ? (
+        <PathTitle verb={verb} path={path} />
+      ) : (
+        toolVerb(tool, t`Listed directory`, verb)
+      );
     },
   },
   search: {
     Icon: Search,
     title: (tool) => {
       const query = asString(inputObject(tool).query);
-      return query ? t`Searched "${truncate(query, 60)}"` : t`Searched context`;
+      const verb = toolVerb(tool, t`Searched`, t`Searching…`);
+      return query ? (
+        <PathTitle verb={verb} path={`"${truncate(query, 60)}"`} />
+      ) : (
+        toolVerb(tool, t`Searched context`, verb)
+      );
     },
     expand: resultRowsOrNothing,
   },
@@ -355,7 +378,12 @@ const RENDERERS: Record<string, ToolRenderer> = {
     Icon: Wrench,
     title: (tool) => {
       const command = asString(inputObject(tool).command);
-      return command ? <PathTitle verb={t`Ran`} path={command} /> : t`Ran command`;
+      const verb = toolVerb(tool, t`Ran`, t`Running…`);
+      return command ? (
+        <PathTitle verb={verb} path={command} />
+      ) : (
+        toolVerb(tool, t`Ran command`, verb)
+      );
     },
     expand: streamOrOutput,
   },
