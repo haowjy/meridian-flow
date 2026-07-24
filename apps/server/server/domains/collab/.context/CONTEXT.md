@@ -133,7 +133,12 @@ test; the prior redundant checkpoint surfaced only in a live loaded-room probe, 
 The Yjs route owns only upgrade authentication, CrossWS peer adaptation, and
 gateway delegation. `lib/yjs-ws-handler.ts` owns connection state, admission,
 Hocuspocus lifecycle hooks, and graceful drain; transport changes must preserve
-the admission ordering above and keep `beforeSync` awaited.
+the admission ordering above and keep `beforeSync` awaited. The gateway is a
+synchronous process singleton: authenticated upgrade captures it in the peer
+context, and `open`/`message`/`close`/`error` must dispatch through that
+instance without a lookup `await`. Startup retains that same instance so
+shutdown calls `drain()` before its first await; `drain()` closes admission
+synchronously before waiting for persistence.
 
 ## Live manifest membership
 
@@ -182,6 +187,11 @@ evidence emits degradation telemetry rather than guessing from update bytes.
 between context-document and turn-lineage reversal, write-handle parsing,
 projection refresh, and aggregate result status; the HTTP route only authenticates,
 validates its transport body, invokes the command, and serializes the result.
+For compatibility, a top-level array, primitive, or `null` body is normalized
+to `{}` before validation and returns `400 direction must be undo or redo`.
+`TurnReversalServiceDeps` is total: each composition supplies its dependencies
+or the declared unsupported stubs; do not restore optional dependencies that
+fail only when a command reaches them.
 
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
