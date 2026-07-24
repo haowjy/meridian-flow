@@ -175,7 +175,7 @@ function ChangeViewRow({
               <Trans>Copy</Trans>
             </Button>
           ) : null}
-          {!anchorUnavailable && !recovery.applied ? (
+          {recovery.canExecute && !anchorUnavailable ? (
             <Button size="sm" disabled={recovery.isPending} onClick={() => void recovery.execute()}>
               {action === "delete-again" ? <Trans>Delete again</Trans> : <Trans>Restore</Trans>}
             </Button>
