@@ -54,6 +54,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(returnedIds).toEqual(new Set([rows[0]?.id]));
     });
 
+    it("concurrent provisioning across external ids rejects the email claimant", async () => {
+      const users = createDrizzleUserRepository({ db });
+      const inputs = [
+        {
+          externalId: "user_workos_a",
+          email: "race@example.com",
+          name: "A",
+          avatarUrl: null,
+        },
+        {
+          externalId: "user_workos_b",
+          email: "race@example.com",
+          name: "B",
+          avatarUrl: null,
+        },
+      ];
+      const results = await Promise.allSettled(inputs.map((input) => users.ensureUser(input)));
+
+      const [fulfilled] = results.filter((result) => result.status === "fulfilled");
+      const [rejected] = results.filter((result) => result.status === "rejected");
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      expect(rejected?.reason).toBeInstanceOf(AccountLinkConflictError);
+      expect(Object.getOwnPropertyNames(rejected?.reason).sort()).toEqual([
+        "message",
+        "name",
+        "stack",
+      ]);
+
+      const rows = await db
+        .select({
+          id: schema.users.id,
+          externalId: schema.users.externalId,
+          email: schema.users.email,
+          name: schema.users.name,
+        })
+        .from(schema.users);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.id).toBe(fulfilled?.value);
+      expect(rows[0]?.email).toBe("race@example.com");
+      expect(inputs).toContainEqual({
+        externalId: rows[0]?.externalId,
+        email: rows[0]?.email,
+        name: rows[0]?.name,
+        avatarUrl: null,
+      });
+    });
+
     it("rejects an email collision across external ids without exposing or mutating either row", async () => {
       const users = createDrizzleUserRepository({ db });
       const existingId = await users.ensureUser({
@@ -77,6 +125,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const error = await collision.catch((cause: unknown) => cause);
       expect(error).toBeInstanceOf(AccountLinkConflictError);
+      expect(Object.getOwnPropertyNames(error).sort()).toEqual(["message", "name", "stack"]);
       expect(String(error)).not.toContain(existingId);
       expect(String(error)).not.toContain(conflictingId);
       expect(String(error)).not.toContain("user_workos_a");

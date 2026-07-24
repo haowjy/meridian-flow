@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts/runtime";
+import { createApp, toWebHandler } from "nitro/h3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInMemoryUserRepository,
@@ -324,6 +325,61 @@ describe("auth principal provisioning", () => {
       message:
         "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
     });
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("serializes account-link conflicts without provider or internal identities", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    users.ensureUser = async () => {
+      throw new AccountLinkConflictError();
+    };
+    const app = createApp();
+    app.use(async () => {
+      await provisionAuthenticatedUser(
+        {
+          externalId: "user_conflict",
+          email: "conflict@example.com",
+          name: "Conflict User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      );
+    });
+
+    const response = await toWebHandler(app)(new Request("https://server.localhost/api/test"));
+    const body = await response.text();
+    expect(response.status).toBe(409);
+    expect(JSON.parse(body)).toEqual({
+      status: 409,
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+      data: { code: "account_link_conflict" },
+    });
+    expect(body).not.toContain("user_conflict");
+    expect(body).not.toContain("conflict@example.com");
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("preserves unrelated provisioning failures", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    const failure = new Error("database unavailable");
+    users.ensureUser = async () => {
+      throw failure;
+    };
+
+    await expect(
+      provisionAuthenticatedUser(
+        {
+          externalId: "user_failure",
+          email: "failure@example.com",
+          name: "Failure User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      ),
+    ).rejects.toBe(failure);
     expect(bootstrap.bootstrapCalls).toBe(0);
   });
 
