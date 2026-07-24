@@ -84,7 +84,7 @@ tools/dev/
   If any gate fails, the script exits with an actionable message and the log path — never prints URLs the app can't reach.
 - **Verified Tailscale external routes.** External URLs are only printed after `verifyTailscaleExternalRoutes` confirms the expected `serve`/`funnel` binding exists in `tailscale serve status --json`. An unverified route is treated as a startup failure.
 - **Shared service ports** are deterministic per worktree (`lib/dev-share-ports.ts`): app backend ports in `[37000, 45000)`, Tailscale HTTPS ports in `[47000, 55000)`, funnel ports are fixed (`443`, `8443`). Hash-based collision avoidance across worktrees.
-- `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` clean only this worktree's session and orphaned routes.
+- `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` terminate only this worktree's owned tmux session and routes. Restart waits for fixed backend ports to become bindable; a remaining listener is reported by PID/command as non-owned and aborts startup. Port discovery never authorizes signaling a process, and discovery failure is a hard refusal.
 - Before launching portless, dev start prunes stale Tailscale serve/funnel routes whose `127.0.0.1:<port>` target has no live listener. Cleanup is surgical per HTTPS port (`off`) only: never `tailscale serve reset`, and never prune a route with any live target.
 - Tailscale serve is the default (`--tailscale`); `--no-tailscale` opts out to local-only; funnel is explicit opt-in (`--funnel` / `PORTLESS_FUNNEL=1`).
 - Smoke/e2e should use portless/TLS routes unless intentionally in-process.
