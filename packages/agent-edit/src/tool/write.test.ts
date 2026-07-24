@@ -33,9 +33,9 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
-  it("recovers a durable write when destructive reporting fails after append", async () => {
+  it("reports degraded awareness when destructive reporting fails after append", async () => {
     const ctx = harness(
-      { "chapter.md": "Alpha." },
+      { "chapter.md": "Writer protected." },
       {
         journalOverride: (journal) => {
           const destructiveJournal: UpdateJournal = journal;
@@ -49,13 +49,19 @@ describe("write tool dispatch", () => {
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const result = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Beta." },
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Writer protected.",
+        content: "Agent replacement.",
+      },
       context,
     );
 
     expectOutcome(result, "success");
+    expect(outcomeText(result)).toContain("destructive awareness degraded");
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
   });
 
   it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {

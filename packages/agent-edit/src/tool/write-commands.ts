@@ -360,6 +360,7 @@ export function createWriteCommands(deps: {
         ? { concurrentEdits: committed.summary.concurrentEdits }
         : {}),
       ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
+      ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
     });
   }
 
@@ -549,9 +550,11 @@ export function createWriteCommands(deps: {
       if (syncedMutation.journalCommitKind !== "durable") {
         return syncedMutation.response;
       }
+      const awarenessDegraded = syncedMutation.awarenessDegraded;
       syncedMutation = {
         ok: true,
         journalCommitKind: "durable",
+        ...(awarenessDegraded ? { awarenessDegraded: true } : {}),
         summary: mutationCommit.summarizeMutationEcho({
           runtime,
           before,
@@ -569,6 +572,7 @@ export function createWriteCommands(deps: {
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
       ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
+      ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
     });
   }
 
@@ -605,7 +609,7 @@ export function createWriteCommands(deps: {
         commandName: input.commandName,
       },
     ]);
-    return result;
+    return { ...result, awarenessDegraded: true };
   }
 
   function validateResolvedIr(
