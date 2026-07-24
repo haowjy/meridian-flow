@@ -89,7 +89,7 @@ describe("turn diff query (postgres)", () => {
       },
     ]);
 
-    const query = createDrizzleTurnDiffQuery(db);
+    const query = createDrizzleTurnDiffQuery(db, async () => [ALPHA_ID, BETA_ID]);
     await expect(query.query(THREAD_ID, TURN_ID, ALPHA_ID)).resolves.toEqual({
       trailState: "settled",
       changes: [expect.objectContaining({ documentId: ALPHA_ID })],
@@ -118,5 +118,38 @@ describe("turn diff query (postgres)", () => {
     await expect(query.query(THREAD_ID, TURN_ID, ALPHA_ID)).resolves.toMatchObject({
       sharedEffects: false,
     });
+  });
+
+  it("reports shared effects when no turn-owned shell exists", async () => {
+    const sharedTrailId = "00000000-0000-4000-8000-000000000903";
+    await db.insert(schema.changeTrailShells).values({
+      id: sharedTrailId,
+      threadId: THREAD_ID,
+      turnId: null,
+      ownerKind: "shared",
+      state: "settled",
+      settledAt: new Date(),
+      changeCount: 1,
+      sweptChangeCount: 0,
+      documentCount: 1,
+    });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId: sharedTrailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Alpha",
+      changes: [change(ALPHA_ID, "shared-only")],
+    });
+    const query = createDrizzleTurnDiffQuery(db, async () => [ALPHA_ID]);
+
+    await expect(query.query(THREAD_ID, TURN_ID)).resolves.toEqual({
+      trailState: "settled",
+      changes: [],
+      sharedEffects: true,
+    });
+  });
+
+  it("keeps the provisional null result when neither trail shell exists", async () => {
+    const query = createDrizzleTurnDiffQuery(db, async () => [ALPHA_ID]);
+    await expect(query.query(THREAD_ID, TURN_ID)).resolves.toBeNull();
   });
 });

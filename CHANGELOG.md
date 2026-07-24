@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `write(command: "diff")` now reports thread-shared effects for a turn's
+  documents even when no turn-owned trail shell exists.
 - Structurally associated whole-block replacements now project as one durable
   modification with the removed body available to Restore and the replacement
   block as its live highlight target.

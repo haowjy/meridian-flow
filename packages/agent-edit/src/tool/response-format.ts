@@ -25,6 +25,17 @@ export interface ApplySuccessResponseInput {
 }
 
 export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult {
+  if (diff?.changes.length === 0 && diff.sharedEffects) {
+    const provisional =
+      diff.trailState !== "settled"
+        ? "\nResults are provisional until the thread-shared change trail settles."
+        : "";
+    return result(
+      "success",
+      `status: success\n\nNo turn-owned changes; thread-shared effects exist for this turn's documents.${provisional}`,
+      { phase: "committed" },
+    );
+  }
   if (!diff || diff.changes.length === 0) {
     const provisional =
       diff?.trailState !== "settled"
