@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: concurrent turn starts now serialize on the thread row and
+  return a 409 conflict instead of leaking PostgreSQL's single-root violation.
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

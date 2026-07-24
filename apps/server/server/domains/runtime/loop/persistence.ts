@@ -38,7 +38,7 @@ import {
 export type PersistenceDeps = {
   repos: Pick<
     ThreadRepositories,
-    "blocks" | "modelResponses" | "threads" | "transaction" | "turns"
+    "blocks" | "modelResponses" | "runTurnStartTransition" | "threads" | "transaction" | "turns"
   >;
   eventWriter: EventJournalWriter;
 };
@@ -53,15 +53,33 @@ export async function persistAndAppendEvents<T>(
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
   options?: { afterEvents?: (result: T) => Promise<void> },
 ): Promise<{ result: T; events: OrchestratorEvent[] }> {
-  return deps.repos.transaction(async () => {
-    const persisted = await operation();
-    for (const event of persisted.events) {
-      await projectReadModelEvent(deps.repos, event);
-      await deps.eventWriter.appendEvent(threadId, event);
-    }
-    await options?.afterEvents?.(persisted.result);
-    return persisted;
-  });
+  return deps.repos.transaction(() => projectAndAppendEvents(deps, threadId, operation, options));
+}
+
+export async function persistAndAppendTurnStartEvents<T>(
+  deps: PersistenceDeps,
+  threadId: ThreadId,
+  expectedActiveLeafTurnId: import("@meridian/contracts/runtime").TurnId | null,
+  operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
+): Promise<{ result: T; events: OrchestratorEvent[] }> {
+  return deps.repos.runTurnStartTransition(threadId, expectedActiveLeafTurnId, () =>
+    projectAndAppendEvents(deps, threadId, operation),
+  );
+}
+
+async function projectAndAppendEvents<T>(
+  deps: PersistenceDeps,
+  threadId: ThreadId,
+  operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
+  options?: { afterEvents?: (result: T) => Promise<void> },
+): Promise<{ result: T; events: OrchestratorEvent[] }> {
+  const persisted = await operation();
+  for (const event of persisted.events) {
+    await projectReadModelEvent(deps.repos, event);
+    await deps.eventWriter.appendEvent(threadId, event);
+  }
+  await options?.afterEvents?.(persisted.result);
+  return persisted;
 }
 
 // Non-transactional path: journal-only append for ephemeral transport

@@ -3,18 +3,33 @@
  * status updates, and model-response-derived usage rollup recomputation). The
  * projector can replay journal facts safely because rollups are aggregates, not deltas.
  */
-import type { TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { toDate } from "../../domain/contract-serialization.js";
+import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   CreateTurnInput,
   TurnRepository,
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
 import { mapTurn } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
+import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
+
+export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
+  const [thread] = await currentDrizzleDb(db)
+    .select({
+      id: schema.threads.id,
+      activeLeafTurnId: schema.threads.activeLeafTurnId,
+    })
+    .from(schema.threads)
+    .where(eq(schema.threads.id, threadId))
+    .for("update");
+  if (!thread) throw new Error(`Thread not found: ${threadId}`);
+  return thread;
+}
 
 export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
   const activeDb = currentDrizzleDb(db);
@@ -63,67 +78,96 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
   return mapTurn(row);
 }
 
-export function createDrizzleTurnRepository(db: DrizzleDb): TurnRepository {
+export function createDrizzleTurnRepository(db: DrizzleDatabase): TurnRepository {
   return {
     async create(input: CreateTurnInput) {
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.turns)
-        .values({
-          id: input.id,
-          threadId: input.threadId,
-          parentTurnId: input.prevTurnId ?? null,
-          role: input.role,
-          status: input.status ?? "pending",
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          totalCostUsd: "0",
-          responseCount: 0,
-          requestParams: input.requestParams ?? null,
-          metadata: input.metadata ?? null,
-          createdAt: input.createdAt === undefined ? undefined : toDate(input.createdAt),
-        })
-        .onConflictDoNothing({ target: schema.turns.id })
-        .returning();
-      if (!row) {
-        if (!input.id) throw new Error("Failed to create turn");
-        const existing = await this.findById(input.id);
-        if (!existing) throw new Error("Failed to create turn");
-        return existing;
-      }
-      const now = new Date();
-      await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          activeLeafTurnId: row.id,
-          updatedAt: now,
-        })
-        .where(eq(schema.threads.id, row.threadId));
-      const [thread] = await currentDrizzleDb(db)
-        .select({
-          projectId: schema.threads.projectId,
-          workId: schema.threadWorks.workId,
-        })
-        .from(schema.threads)
-        .leftJoin(
-          schema.threadWorks,
-          and(
-            eq(schema.threadWorks.threadId, schema.threads.id),
-            eq(schema.threadWorks.isPrimary, true),
-          ),
-        )
-        .where(eq(schema.threads.id, row.threadId))
-        .limit(1);
-      if (thread?.workId) {
-        await currentDrizzleDb(db)
-          .update(schema.works)
-          .set({ updatedAt: now })
-          .where(eq(schema.works.id, thread.workId));
-        await currentDrizzleDb(db)
-          .update(schema.projects)
-          .set({ updatedAt: now, lastActivityAt: now })
-          .where(eq(schema.projects.id, thread.projectId));
-      }
-      return mapTurn(row);
+      return runInDrizzleTransaction(db, async () => {
+        await lockThreadForTurnTransition(db, input.threadId);
+        const activeDb = currentDrizzleDb(db);
+
+        if (input.id) {
+          const [existingById] = await activeDb
+            .select()
+            .from(schema.turns)
+            .where(eq(schema.turns.id, input.id));
+          if (existingById) return mapTurn(existingById);
+        }
+
+        if (!input.prevTurnId) {
+          const [existingRoot] = await activeDb
+            .select({ id: schema.turns.id })
+            .from(schema.turns)
+            .where(
+              and(
+                eq(schema.turns.threadId, input.threadId),
+                sql`${schema.turns.parentTurnId} IS NULL`,
+              ),
+            )
+            .limit(1);
+          if (existingRoot) {
+            throw new TurnStartConflictError(input.threadId, "already_exists");
+          }
+        }
+
+        const [row] = await activeDb
+          .insert(schema.turns)
+          .values({
+            id: input.id,
+            threadId: input.threadId,
+            parentTurnId: input.prevTurnId ?? null,
+            role: input.role,
+            status: input.status ?? "pending",
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            totalCostUsd: "0",
+            responseCount: 0,
+            requestParams: input.requestParams ?? null,
+            metadata: input.metadata ?? null,
+            createdAt: input.createdAt === undefined ? undefined : toDate(input.createdAt),
+          })
+          .onConflictDoNothing({ target: schema.turns.id })
+          .returning();
+        if (!row) {
+          if (!input.id) throw new Error("Failed to create turn");
+          const existing = await this.findById(input.id);
+          if (!existing) throw new Error("Failed to create turn");
+          return existing;
+        }
+        const now = new Date();
+        await activeDb
+          .update(schema.threads)
+          .set({
+            activeLeafTurnId: row.id,
+            updatedAt: now,
+          })
+          .where(eq(schema.threads.id, row.threadId));
+        const [thread] = await activeDb
+          .select({
+            projectId: schema.threads.projectId,
+            workId: schema.threadWorks.workId,
+          })
+          .from(schema.threads)
+          .leftJoin(
+            schema.threadWorks,
+            and(
+              eq(schema.threadWorks.threadId, schema.threads.id),
+              eq(schema.threadWorks.isPrimary, true),
+            ),
+          )
+          .where(eq(schema.threads.id, row.threadId))
+          .limit(1);
+        if (thread?.workId) {
+          await activeDb
+            .update(schema.works)
+            .set({ updatedAt: now })
+            .where(eq(schema.works.id, thread.workId));
+          await activeDb
+            .update(schema.projects)
+            .set({ updatedAt: now, lastActivityAt: now })
+            .where(eq(schema.projects.id, thread.projectId));
+        }
+        return mapTurn(row);
+      });
     },
     async findById(id: TurnId) {
       const [row] = await currentDrizzleDb(db)
