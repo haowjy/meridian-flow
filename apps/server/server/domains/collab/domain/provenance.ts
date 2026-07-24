@@ -319,6 +319,9 @@ function writeCertifiedProvenanceFacts(
   if (ir.intent.kind === "fullScopeFreshReplacement") return;
   const runs = ir.intent.edits.flatMap(({ outputRuns }) => outputRuns);
   if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) return;
+  const materializedRuns = runs.filter(
+    (run) => run.kind !== "preserved" || run.materialization !== "retained",
+  );
   const visibleProse = visibleProseStringRanges(doc);
   const allInserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
   const inserted = allInserted.filter((range) =>
@@ -329,7 +332,10 @@ function writeCertifiedProvenanceFacts(
         end(visible) >= end(range),
     ),
   );
-  const declaredLength = runs.reduce((sum, run) => sum + run.output.to - run.output.from, 0);
+  const declaredLength = materializedRuns.reduce(
+    (sum, run) => sum + run.output.to - run.output.from,
+    0,
+  );
   const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
   if (insertedLength !== declaredLength) {
     throw new ProvenanceMaterializationError(
@@ -339,7 +345,7 @@ function writeCertifiedProvenanceFacts(
   const targets: ProvenanceTargetFactV1[] = [];
   const existingAssignments = readTargetFacts(doc);
   let cursor = 0;
-  for (const run of runs) {
+  for (const run of materializedRuns) {
     const length = run.output.to - run.output.from;
     const targetRuns = sliceRanges(inserted, cursor, length);
     if (run.kind === "preserved" || run.kind === "restoration") {

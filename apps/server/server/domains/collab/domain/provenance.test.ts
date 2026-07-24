@@ -1,5 +1,6 @@
 /** Contract tests for deterministic provenance replay and the reserved namespace. */
 
+import type { SemanticEditIRV1, SemanticOutputRun } from "@meridian/agent-edit";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -28,6 +29,86 @@ const emptyManifest = (): AttributionManifestV1 => ({
 });
 
 describe("provenance materialization", () => {
+  it("accepts retained output runs without rematerializing their visible roots", () => {
+    const doc = proseDoc("cat and cat");
+    const source = textRange(doc);
+    const retained = { ...source, clock: source.clock + 3, length: 5 };
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(8, 3);
+    text.insert(8, "kitten");
+    text.delete(0, 3);
+    text.insert(0, "kitten");
+
+    expect(() =>
+      createSemanticProvenanceWriter().writeCertifiedFacts(
+        doc as never,
+        mappedTextIr(source, "kitten and kitten", [
+          { kind: "fresh", payload: "kitten", output: { from: 0, to: 6 } },
+          {
+            kind: "preserved",
+            source: retained,
+            output: { from: 6, to: 11 },
+            materialization: "retained",
+          },
+          { kind: "fresh", payload: "kitten", output: { from: 11, to: 17 } },
+        ]),
+        before,
+      ),
+    ).not.toThrow();
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: source, root: source, birthClass: "writer_protected" },
+    ]);
+    expect(visible).toContainEqual({
+      target: retained,
+      root: retained,
+      birthClass: "writer_protected",
+    });
+  });
+
+  it("writes restoration facts alongside a retained output run", () => {
+    const doc = proseDoc("cat and cat");
+    const source = textRange(doc);
+    const retained = { ...source, clock: source.clock + 3, length: 5 };
+    const restoredRoot = { ...source, clock: source.clock + 8, length: 3 };
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(8, 3);
+    text.insert(8, "cat");
+    text.delete(0, 3);
+    text.insert(0, "kit");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      mappedTextIr(source, "kit and cat", [
+        { kind: "fresh", payload: "kit", output: { from: 0, to: 3 } },
+        {
+          kind: "preserved",
+          source: retained,
+          output: { from: 3, to: 8 },
+          materialization: "retained",
+        },
+        { kind: "restoration", root: restoredRoot, payload: "cat", output: { from: 8, to: 11 } },
+      ]),
+      before,
+    );
+
+    const restored = materializeCandidateProvenance(doc, [
+      { target: source, root: source, birthClass: "writer_protected" },
+    ]).find(
+      (run) =>
+        run.root.clientID === restoredRoot.clientID &&
+        run.root.clock === restoredRoot.clock &&
+        run.root.length === restoredRoot.length &&
+        run.target.clock !== run.root.clock,
+    );
+    expect(restored).toMatchObject({
+      root: restoredRoot,
+      birthClass: "writer_protected",
+    });
+  });
+
   it("encodes certified continuation facts in the same Yjs update as prose", () => {
     const doc = proseDoc("old");
     const initial = Y.encodeStateAsUpdate(doc);
@@ -323,6 +404,41 @@ function proseDoc(value: string): Y.Doc {
   paragraph.push([new Y.XmlText(value)]);
   doc.getXmlFragment("prosemirror").push([paragraph]);
   return doc;
+}
+
+function proseText(doc: Y.Doc): Y.XmlText {
+  const paragraph = doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
+  return paragraph.get(0) as Y.XmlText;
+}
+
+function mappedTextIr(
+  source: { clientID: number; clock: number; length: number },
+  output: string,
+  outputRuns: SemanticOutputRun[],
+): SemanticEditIRV1 {
+  return {
+    version: 1,
+    documentId: "document",
+    inputRevision: "revision" as never,
+    scope: [source],
+    deleted: [],
+    intent: {
+      kind: "mappedEdits",
+      edits: [
+        {
+          edit: {
+            kind: "text",
+            documentId: "document",
+            file: "document.md",
+            block: {} as never,
+            span: { start: 0, end: source.length },
+            newText: output,
+          },
+          outputRuns,
+        },
+      ],
+    },
+  };
 }
 
 function appendCertifiedCarry(

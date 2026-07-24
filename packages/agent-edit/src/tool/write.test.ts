@@ -1436,7 +1436,7 @@ describe("write tool dispatch", () => {
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
   });
 
-  it("does not rematerialize provenance for roots retained by a multi-range edit", async () => {
+  it("forwards retained-run provenance to the host writer", async () => {
     const writeCertifiedFacts = vi.fn();
     const ctx = harness(
       { "chapter.md": "cat and cat" },
@@ -1450,7 +1450,7 @@ describe("write tool dispatch", () => {
     );
 
     expectOutcome(replaced, "success");
-    expect(writeCertifiedFacts).not.toHaveBeenCalled();
+    expect(writeCertifiedFacts).toHaveBeenCalledOnce();
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["kitten and kitten"]);
   });
 
