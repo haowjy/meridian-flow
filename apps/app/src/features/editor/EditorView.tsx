@@ -240,6 +240,7 @@ function SessionEditorView({
         figureRenderContext: { projectId, documentId },
         showCollaborationDecorations,
         enableDraftInlineReview: inReview,
+        markerStore: inReview ? undefined : session.markerStore,
         editorProps: {
           attributes: {
             class: editorProseClass(showToolbar ? "docked" : "none"),

@@ -37,6 +37,7 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 // (before-prod); watch server liveDocumentCount metric
 
 export class DocumentSessionRegistry {
+  private ownUserId: string | null = null;
   private readonly sessions = new Map<string, DocumentSession>();
   /** opener id → Yjs room keys plus whether first acquisition must stay detached. */
   private readonly retainedByOwner = new Map<
@@ -117,6 +118,7 @@ export class DocumentSessionRegistry {
     const session = new DocumentSession({
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
+      ownUserId: this.ownUserId,
     });
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
@@ -132,6 +134,14 @@ export class DocumentSessionRegistry {
     }
     if (room.kind === "live") this.maybeWarnLiveDocCap();
     return session;
+  }
+
+  setOwnUserId(userId: string): void {
+    if (this.ownUserId === userId) return;
+    // Sessions are process-local authenticated state; never retain a prior
+    // account's marker suppression identity across an account switch.
+    if (this.ownUserId !== null) this.destroyAll();
+    this.ownUserId = userId;
   }
 
   /** Whether a session currently exists for a room key. */
@@ -304,4 +314,8 @@ export function getDocumentSessionRegistry(): DocumentSessionRegistry {
     sharedRegistry = new DocumentSessionRegistry();
   }
   return sharedRegistry;
+}
+
+export function configureDocumentSessionUser(userId: string): void {
+  getDocumentSessionRegistry().setOwnUserId(userId);
 }

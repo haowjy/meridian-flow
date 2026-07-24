@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import { applyTrailForwardAction, type TrailChange } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 /** The sweep label's wording veto lives here: changing this one key changes every sweep row. */
@@ -116,6 +117,8 @@ function ChangeViewRow({
           return;
         }
         setActionState("applied");
+        const registry = getDocumentSessionRegistry();
+        if (registry.has(documentId)) registry.get(documentId).markerStore.dismiss(change.changeId);
       })
       .catch(() => {
         setRestoreFailed(true);

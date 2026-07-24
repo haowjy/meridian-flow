@@ -24,7 +24,11 @@
  *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  */
-import { parseYjsRoomName, type YjsRoomName } from "@meridian/contracts/protocol";
+import {
+  type ChangeEventWsMessage,
+  parseYjsRoomName,
+  type YjsRoomName,
+} from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
@@ -33,6 +37,7 @@ import type * as Y from "yjs";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import { SessionMarkerStore } from "./session-marker-store";
 
 /** IndexedDB name for y-indexeddb; bumps with {@link COLLAB_SCHEMA_VERSION} invalidate stale caches. */
 export function documentSessionPersistenceKey(roomKey: string): string {
@@ -113,6 +118,7 @@ export type DocumentSessionTransportProvider = {
    * and on every subsequent change. Returns an unsubscribe function.
    */
   subscribeStatus?: (listener: (state: ConnectionState) => void) => () => void;
+  subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
 };
 
@@ -133,6 +139,7 @@ export type DocumentSessionOptions = {
   enableIndexedDb?: boolean;
   /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
+  ownUserId?: string | null;
 };
 
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
@@ -148,12 +155,14 @@ export class DocumentSession {
   readonly document: Y.Doc;
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
+  readonly markerStore: SessionMarkerStore;
 
   private readonly persistence: IndexeddbPersistence | null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
+  private unsubscribeChangeEvents: (() => void) | null = null;
   private destroyed = false;
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
@@ -179,6 +188,7 @@ export class DocumentSession {
     persistenceKey = documentSessionPersistenceKey(roomKey),
     enableIndexedDb = canUseIndexedDb(),
     transportFactory,
+    ownUserId = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
@@ -186,6 +196,7 @@ export class DocumentSession {
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.branchId;
     this.document = createCollabYDoc();
+    this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
     if (enableIndexedDb) {
       deleteStaleVersionedIndexedDb(roomKey);
@@ -239,6 +250,12 @@ export class DocumentSession {
         this.transportState = state;
         this.recomputeStatus();
       }) ?? null;
+    this.unsubscribeChangeEvents =
+      this.room.kind === "live"
+        ? (this.transportProvider.subscribeChangeEvents?.((message) => {
+            if (message.documentId === this.documentId) this.markerStore.replaceGroup(message);
+          }) ?? null)
+        : null;
     void this.watchTransportSync(this.transportProvider);
     void this.watchTransportDurableSync(this.transportProvider);
     this.recomputeStatus();
@@ -252,7 +269,9 @@ export class DocumentSession {
     }
     const previous = this.transportProvider;
     this.unsubscribeTransportStatus?.();
+    this.unsubscribeChangeEvents?.();
     this.unsubscribeTransportStatus = null;
+    this.unsubscribeChangeEvents = null;
     this.transportProvider = null;
     this.transportState = null;
     this.transportInitialSyncComplete = false;
@@ -418,12 +437,14 @@ export class DocumentSession {
     this.resolveLifecycleCompleted();
     this.status = "destroyed";
     this.emit();
+    this.markerStore.clear();
 
     this.presenceSuspendDepth = 0;
     this.suspendedLocalAwarenessState = null;
     removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
 
     this.unsubscribeTransportStatus?.();
+    this.unsubscribeChangeEvents?.();
     await this.transportProvider?.destroy();
     if (options.clearPersistence) {
       await this.persistence?.clearData();
