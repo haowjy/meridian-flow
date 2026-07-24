@@ -14,14 +14,14 @@ import type {
   UpdateJournal,
   UpdateMeta,
   WriteMutationRow,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import {
   isLaterNonSystemUpdateAfterWatermark,
   parseWriteHandle,
   persistUndoPlanWatermark,
   unwrapDoc,
   writeHandle,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

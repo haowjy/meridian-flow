@@ -8,13 +8,13 @@ import type {
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
   WriteCommand,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import {
   type DocumentAddress,
   formatDocumentFile,
   splitDocumentFile,
   WriteCommandSchema,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { interruptResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   askRequestFromAskUser,

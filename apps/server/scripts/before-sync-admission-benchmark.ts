@@ -1,7 +1,7 @@
 /** Before/after latency gate for the history-heavy writer admission path. */
 
 import { performance } from "node:perf_hooks";
-import type { UpdateJournal } from "@meridian/agent-edit";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { createDocumentContainment } from "../server/domains/collab/domain/document-containment.js";
 import { admitFreshAuthorship } from "../server/domains/collab/domain/document-mutation-policy.js";

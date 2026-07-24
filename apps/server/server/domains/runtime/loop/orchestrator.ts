@@ -66,7 +66,7 @@ import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
   type ResponseCommitWriteReceipt,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";

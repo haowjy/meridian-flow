@@ -16,9 +16,10 @@ import {
   toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
+  unwrapDoc,
   type WriteIdempotencyHitDetail,
   yProsemirrorModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -173,7 +174,7 @@ export async function recordLateSweepNotice(input: {
   resolveDocumentUri: DocumentUriResolver;
   threadId: string;
   documentId: string;
-  lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
+  lateSweep: import("@meridian/agent-edit/integration").DestructiveSweepReport;
 }): Promise<void> {
   const uri = await input.resolveDocumentUri(input.documentId);
   await input.notices.record({
@@ -1166,48 +1167,41 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   function readWithStagedResponseOverlay<T>(
     doc: Y.Doc,
     input: { documentId: DocumentId; responseId?: string | null },
-    read: (doc: Y.Doc) => Promise<T>,
+    read: (doc: import("@meridian/agent-edit/integration").DocHandle) => Promise<T>,
   ): Promise<T> {
-    if (!input.responseId) return read(doc);
-    const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
-    if (updates.length === 0) return read(doc);
-    const effective = createCollabYDoc({ gc: false });
-    try {
-      Y.applyUpdate(effective, Y.encodeStateAsUpdate(doc), { type: "system" });
-      for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
-      return read(effective);
-    } finally {
-      effective.destroy();
-    }
+    if (!input.responseId) return read(toDocHandle(doc));
+    return agentEditCore
+      .withResponseDocument(input.responseId, input.documentId, toDocHandle(doc), read)
+      .then((staged) => staged ?? read(toDocHandle(doc)));
   }
 
   function readStagedResponseOnly<T>(
     input: { documentId: DocumentId; responseId?: string | null },
-    read: (doc: Y.Doc) => Promise<T>,
+    read: (doc: import("@meridian/agent-edit/integration").DocHandle) => Promise<T>,
   ): Promise<T> | null {
     if (!input.responseId) return null;
-    const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
-    if (updates.length === 0) return null;
-    const doc = createCollabYDoc({ gc: false });
-    try {
-      for (const update of updates) Y.applyUpdate(doc, update, { type: "system" });
-      return read(doc);
-    } finally {
-      doc.destroy();
-    }
+    if (!agentEditCore.hasResponseDocument(input.responseId, input.documentId)) return null;
+    return agentEditCore
+      .withResponseDocument(input.responseId, input.documentId, null, read)
+      .then((result) => {
+        if (result === null) {
+          throw new Error(`Staged response document disappeared: ${input.documentId}`);
+        }
+        return result;
+      });
   }
 
   async function readEffective<T, E>(
     input: EffectiveReadInput,
-    read: (doc: Y.Doc) => Promise<T>,
+    read: (doc: import("@meridian/agent-edit/integration").DocHandle) => Promise<T>,
     fallback: () => Promise<Result<T, E>>,
   ): Promise<Result<T, E>> {
     if (input.threadId && deps.branchStore) {
       const isStagedOnlyCreatedDocument = Boolean(
         input.responseId &&
           agentEditCore
-            .stagedCreatedDocumentIds(input.responseId, input.threadId)
-            .includes(input.documentId),
+            .responseDocuments(input.responseId, input.threadId)
+            .created.includes(input.documentId),
       );
       if (isStagedOnlyCreatedDocument) {
         const stagedOnly = readStagedResponseOnly(input, read);
@@ -1252,7 +1246,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   async function readEffectiveBranch<T>(
     branch: { branchId: string; doc: Y.Doc },
     input: EffectiveReadInput,
-    read: (doc: Y.Doc) => Promise<T>,
+    read: (doc: import("@meridian/agent-edit/integration").DocHandle) => Promise<T>,
   ): Promise<T> {
     try {
       if (deps.branchCoordinator) {
@@ -1486,7 +1480,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
       const mapResult = (
-        result: import("@meridian/agent-edit").ResponseCommitSuccessResult,
+        result: import("@meridian/agent-edit/integration").ResponseCommitSuccessResult,
       ): ResponseWriteCommitFinalizeResult => ({
         status: "committed",
         documents: result.documents,
@@ -1720,7 +1714,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     async readEffectiveMarkdown(input) {
       return readEffective(
         input,
-        (doc) => markdownDocuments.serializeDocument(input.documentId, doc),
+        (doc) => markdownDocuments.serializeDocument(input.documentId, unwrapDoc(doc)),
         () => markdownDocuments.readAsMarkdown(input.documentId),
       );
     },
@@ -1728,7 +1722,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     async readEffectiveHashlines(input) {
       return readEffective(
         input,
-        async (doc) => model.serializeBlockLines(toDocHandle(doc), codec),
+        async (doc) => model.serializeBlockLines(doc, codec),
         () =>
           deps.coordinator.withDocument(input.documentId, async (doc) =>
             Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
@@ -1762,7 +1756,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         members: [
           ...new Set([
             ...membership.members,
-            ...agentEditCore.stagedCreatedDocumentIds(input.responseId, input.threadId),
+            ...agentEditCore.responseDocuments(input.responseId, input.threadId).created,
           ]),
         ],
       };
@@ -1979,7 +1973,7 @@ export function createThreadPeerAgentEditCore(input: {
       const responseAlreadyBufferedDocument = Boolean(
         context.responseId &&
           documentId &&
-          threadCore.bufferedUpdatesForDoc(context.responseId, documentId).length > 0,
+          threadCore.hasResponseDocument(context.responseId, documentId),
       );
       let pulled:
         | {
@@ -2062,13 +2056,21 @@ export function createThreadPeerAgentEditCore(input: {
         input.responseTransactionSettlement,
       );
     },
-    bufferedUpdatesForDoc(responseId, docId) {
-      return responseOwners.get(responseId)?.core.bufferedUpdatesForDoc(responseId, docId) ?? [];
+    hasResponseDocument(responseId, docId) {
+      return responseOwners.get(responseId)?.core.hasResponseDocument(responseId, docId) ?? false;
     },
-    stagedCreatedDocumentIds(responseId, threadId) {
+    withResponseDocument(responseId, docId, base, read) {
+      return (
+        responseOwners.get(responseId)?.core.withResponseDocument(responseId, docId, base, read) ??
+        Promise.resolve(null)
+      );
+    },
+    responseDocuments(responseId, threadId) {
       const owner = responseOwners.get(responseId);
-      if (owner) return owner.core.stagedCreatedDocumentIds(responseId, threadId);
-      return threadId ? coreForSync(threadId).stagedCreatedDocumentIds(responseId, threadId) : [];
+      if (owner) return owner.core.responseDocuments(responseId, threadId);
+      return threadId
+        ? coreForSync(threadId).responseDocuments(responseId, threadId)
+        : { staged: [], created: [] };
     },
     async rollbackResponse(responseId) {
       const owner = responseOwners.get(responseId);
@@ -2103,12 +2105,6 @@ export function createThreadPeerAgentEditCore(input: {
     },
     reverse(inputReverse) {
       return input.liveUtilityCore.reverse(inputReverse);
-    },
-    async undoTurn(docId, threadId) {
-      return (await reversalCoreFor(docId as DocumentId, threadId)).undoTurn(docId, threadId);
-    },
-    async redoTurn(docId, threadId) {
-      return (await reversalCoreFor(docId as DocumentId, threadId)).redoTurn(docId, threadId);
     },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];

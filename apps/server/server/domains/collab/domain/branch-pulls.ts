@@ -5,7 +5,7 @@ import {
   DocumentNotFoundError,
   type ReversalStore,
   yjsUpdateFromState,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";

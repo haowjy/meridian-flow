@@ -5,7 +5,7 @@ import {
   type DocumentCoordinator,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DraftApplyConflict } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";

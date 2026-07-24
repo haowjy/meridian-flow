@@ -2,15 +2,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   type AgentEditCodec,
-  classifyDestructiveEffect,
+  classifyDestructiveSnapshotEffect,
   type DocumentCoordinator,
-  intersectLineageRanges,
   normalizeLineageRanges,
   snapshotBlocks,
   toDocHandle,
-  type VisibleProseOccurrence,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
@@ -181,32 +179,6 @@ export function createBranchPushTransition(input: {
     return input.pushStore.commitPushBatch(prepared);
   };
 
-  function occurrencesFor(
-    blocks: ReturnType<typeof snapshotBlocks>,
-    provenance: PendingLiveSettlement["provenanceView"],
-  ): VisibleProseOccurrence[] {
-    return blocks.flatMap((block) =>
-      block.renderedContent === undefined
-        ? []
-        : provenance.flatMap((run) =>
-            intersectLineageRanges(block.lineage ?? [], [run.target]).map((target) => ({
-              target,
-              root: {
-                clientID: run.root.clientID,
-                clock: run.root.clock + target.clock - run.target.clock,
-                length: target.length,
-              },
-              provenance: run.birthClass,
-              finalRendering: renderingKey(block),
-            })),
-          ),
-    );
-  }
-
-  function renderingKey(block: ReturnType<typeof snapshotBlocks>[number]): string {
-    return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
-  }
-
   /** Classifies destructive effects from durable provenance and the current before/after state. */
   function classify(
     pending: PendingLiveSettlement,
@@ -223,48 +195,43 @@ export function createBranchPushTransition(input: {
       Y.applyUpdate(afterDoc, pending.pushUpdate);
       const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.codec);
       const preProvenance = pending.provenanceView;
-      const beforeOccurrences = occurrencesFor(before, preProvenance);
       const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
-      const afterOccurrences = occurrencesFor(after, afterProvenance);
-      const effect = classifyDestructiveEffect({
-        before: beforeOccurrences,
-        afterCandidate: afterOccurrences,
+      const { affectedBefore: affected } = classifyDestructiveSnapshotEffect({
+        before,
+        afterCandidate: after,
+        beforeProvenance: preProvenance.map((run) => ({
+          target: run.target,
+          root: run.root,
+          provenance: run.birthClass,
+        })),
+        afterCandidateProvenance: afterProvenance.map((run) => ({
+          target: run.target,
+          root: run.root,
+          provenance: run.birthClass,
+        })),
       });
-      const eligibleByRendering = new Map(
-        effect.finalRenderingProjections.map((projection) => [
-          projection.finalRendering,
-          projection.ranges,
-        ]),
-      );
-
-      if (eligibleByRendering.size === 0) {
+      if (affected.length === 0) {
         return { trail: pending.trail, refineToEmpty: true };
       }
-      const affected = before.filter((block) => {
-        return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
-      });
       const affectedByIdentity = new Map(
-        affected.flatMap((block) =>
-          block.clientID === undefined || block.clock === undefined
-            ? []
-            : [
-                [
-                  canonicalBlockKey({
-                    documentId: pending.push.documentId,
-                    clientID: block.clientID,
-                    clock: block.clock,
-                  }),
-                  block,
-                ] as const,
-              ],
+        affected.map(
+          (item) =>
+            [
+              canonicalBlockKey({
+                documentId: pending.push.documentId,
+                clientID: item.block.clientID,
+                clock: item.block.clock,
+              }),
+              item,
+            ] as const,
         ),
       );
       const lateChanges = pending.trail.changes.flatMap((change) => {
         if (!change.beforeBlockIdentity) return [];
-        const block = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
-        if (!block) return [];
-        const rendering = block.renderedContent as string;
-        const markdown = rendering.slice(rendering.indexOf("|") + 1);
+        const affectedItem = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
+        if (!affectedItem) return [];
+        const { block, ranges } = affectedItem;
+        const markdown = block.body;
         return [
           {
             ...change,
@@ -278,14 +245,14 @@ export function createBranchPushTransition(input: {
             writerProtection: {
               kind: "sweep" as const,
               body: { status: "available" as const, markdown },
-              ranges: normalizeLineageRanges(eligibleByRendering.get(renderingKey(block)) ?? []),
+              ranges: normalizeLineageRanges(ranges),
             },
           },
         ];
       });
       if (lateChanges.length === 0) return null;
       const swept: PushSweptTrail = {
-        affectedBlockHashes: affected.map((block) => block.hash).sort(),
+        affectedBlockHashes: affected.map(({ block }) => block.hash).sort(),
         capturedDeletedBodies: lateChanges.map((change) => ({
           hash: change.swept.affectedBlockHash,
           body: change.swept.removed.status === "available" ? change.swept.removed.markdown : "",

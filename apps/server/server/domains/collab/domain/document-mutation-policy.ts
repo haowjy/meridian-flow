@@ -4,7 +4,7 @@ import {
   type RestorationCertificatePort,
   type SemanticEditIRV1,
   validateSemanticEditIRV1,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentRevision } from "@meridian/contracts";
 import * as Y from "yjs";
 import {

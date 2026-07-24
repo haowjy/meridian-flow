@@ -8,6 +8,26 @@
   plus stale safety-era diagnostic naming (#345).
 - `apps/server`: collab mutation admission now exposes only supported operations;
   journal attribution is the sole provenance birth-class authority (#345).
+- `packages/agent-edit`, `apps/server`: removed the inert low-level response
+  transaction hook and duplicate undo/redo aliases; response transactions now
+  own their callback explicitly (#344).
+- `packages/agent-edit`, `apps/server`: live and branch destructive receipts now
+  share one typed snapshot/provenance projection with complete block identity
+  and hashless bodies (#344).
+- `packages/agent-edit`: immediate creates and edits now submit one prepared
+  mutation shape through one journal/apply/recovery wrapper (#344).
+- `packages/agent-edit`: response commit attempts now own one acceptance value
+  and one settled-receipt promise instead of mirroring durability across
+  lifecycle records and unreachable rollback branches; empty settlements close
+  the response, while post-append failures preserve the accepted boundary and
+  disclose degraded destructive awareness after recovery (#344).
+- `packages/agent-edit`: cold reversal reconstruction now owns its prose-order
+  repair instead of hiding a second update synthesizer in tool orchestration
+  (#344).
+- `packages/agent-edit`, `apps/server`: the default package entry is now a
+  39-name core façade; host adapters use the explicit integration entry and
+  staged response documents are lent without exposing raw Yjs update bytes
+  (#344).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).

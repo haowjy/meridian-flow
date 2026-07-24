@@ -1,6 +1,6 @@
 /** Journal-first forward Restore/Delete-again actions over retained trail evidence. */
 
-import type { AgentEditCodec } from "@meridian/agent-edit";
+import type { AgentEditCodec } from "@meridian/agent-edit/integration";
 import {
   type DocumentCoordinator,
   decodeNavigationPosition,
@@ -11,7 +11,7 @@ import {
   toRef,
   validateLiveBlockRange,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type {
   TrailForwardAction,
   TrailForwardActionResult,

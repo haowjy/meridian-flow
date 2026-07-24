@@ -14,13 +14,13 @@ import {
   type ReversalStore,
 } from "../ports/update-journal.js";
 import { resolveUndoAvailability, type UndoAvailability } from "../undo/availability.js";
-import { reconstructUndoUpdateFromSnapshot } from "../undo/reconstruction.js";
 import {
   planRedo,
   planUndo,
   type ReversalPlan,
   type ReversalSelection,
 } from "../undo/reversal-plan.js";
+import { reconstructReversalUpdate } from "../undo/reversal-reconstruction.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
@@ -392,31 +392,17 @@ export function createWriteReversal(deps: {
     const sourceDoc = cloneDocWithUpdates(input.runtime.doc, input.priorUpdates);
     const reconstructionPlan = withPriorReversalUpdates(plan, input.priorUpdates);
     const before = snapshotBlocks(toDocHandle(sourceDoc), model, codec);
-    let update: Uint8Array;
+    let update: Uint8Array | null;
     try {
-      if (input.direction === "undo") {
-        const cold = reconstructUndoUpdateFromSnapshot(reconstructionPlan.snapshot, {
-          docId: input.docId,
-          targetId: formatWriteSelection(plan.writeIds),
-          targetSeqs: plan.targetSeqs,
-          undoClientId,
-        });
-        update = repairUndoTextOrder({
-          source: sourceDoc,
-          undoUpdate: cold.undoUpdate,
-          plan: reconstructionPlan,
-          model,
-        });
-      } else {
-        const undoUpdateSeq = plan.redoGroup?.undoUpdateSeq;
-        if (undoUpdateSeq === undefined) return { ok: true };
-        update = reconstructUndoUpdateFromSnapshot(reconstructionPlan.snapshot, {
-          docId: input.docId,
-          targetId: `redo ${formatWriteSelection(plan.writeIds)}`,
-          targetSeqs: new Set([undoUpdateSeq]),
-          undoClientId,
-        }).undoUpdate;
-      }
+      update = reconstructReversalUpdate({
+        direction: input.direction,
+        docId: input.docId,
+        targetId: `${input.direction === "redo" ? "redo " : ""}${formatWriteSelection(plan.writeIds)}`,
+        source: sourceDoc,
+        plan: reconstructionPlan,
+        model,
+        undoClientId,
+      });
     } catch (cause) {
       sourceDoc.destroy();
       return surfaceColdReversalInvariant({
@@ -430,6 +416,10 @@ export function createWriteReversal(deps: {
         },
         cause,
       });
+    }
+    if (!update) {
+      sourceDoc.destroy();
+      return { ok: true };
     }
     if (!effectiveYjsUpdate(sourceDoc, update)) {
       sourceDoc.destroy();
@@ -938,108 +928,6 @@ function defaultInvariantViolation(message: string): never {
   throw new Error(message);
 }
 
-function repairUndoTextOrder(input: {
-  source: Y.Doc;
-  undoUpdate: Uint8Array;
-  plan: Extract<ReversalPlan, { ok: true }>;
-  model: AgentEditModel;
-}): Uint8Array {
-  const targetSeqs = [...input.plan.targetSeqs].sort((left, right) => left - right);
-  const firstTargetSeq = targetSeqs[0];
-  const lastTargetSeq = targetSeqs.at(-1);
-  if (firstTargetSeq === undefined || lastTargetSeq === undefined) return input.undoUpdate;
-
-  const base = docFromSnapshot(input.plan.snapshot, { untilSeqExclusive: firstTargetSeq });
-  const target = docFromSnapshot(input.plan.snapshot, { untilSeqInclusive: lastTargetSeq });
-  const repaired = cloneDoc(input.source);
-  Y.applyUpdate(repaired, input.undoUpdate, { type: "system" });
-  const beforeRepairState = Y.encodeStateVector(repaired);
-
-  let changed = false;
-  for (const repair of textOrderRepairs({
-    base,
-    target,
-    current: input.source,
-    repaired,
-    model: input.model,
-  })) {
-    input.model.transact(
-      toDocHandle(repaired),
-      () =>
-        input.model.applyTextEdit(toDocHandle(repaired), repair.block, repair.span, repair.text),
-      { type: "system" },
-    );
-    changed = true;
-  }
-
-  if (!changed) return input.undoUpdate;
-  return Y.mergeUpdates([input.undoUpdate, Y.encodeStateAsUpdate(repaired, beforeRepairState)]);
-}
-
-function textOrderRepairs(input: {
-  base: Y.Doc;
-  target: Y.Doc;
-  current: Y.Doc;
-  repaired: Y.Doc;
-  model: AgentEditModel;
-}): Array<{
-  block: ReturnType<AgentEditModel["getBlocks"]>[number];
-  span: { from: number; to: number };
-  text: string;
-}> {
-  const baseBlocks = blockTextMap(input.base, input.model);
-  const targetBlocks = blockTextMap(input.target, input.model);
-  const currentBlocks = blockTextMap(input.current, input.model);
-  const repairedBlocks = blockRefMap(input.repaired, input.model);
-  const repairs: Array<{
-    block: ReturnType<AgentEditModel["getBlocks"]>[number];
-    span: { from: number; to: number };
-    text: string;
-  }> = [];
-
-  for (const [hash, baseText] of baseBlocks) {
-    const targetText = targetBlocks.get(hash);
-    const currentText = currentBlocks.get(hash);
-    const repairedBlock = repairedBlocks.get(hash);
-    if (targetText === undefined || currentText === undefined || !repairedBlock) continue;
-    if (!hasSinglePlainRun(repairedBlock, input.model)) continue;
-
-    const edit = simpleReplacement(baseText, targetText);
-    if (!edit || edit.inserted.length === 0 || edit.deleted.length === 0) continue;
-    if (!currentText.startsWith(edit.prefix) || !currentText.endsWith(edit.suffix)) continue;
-
-    const middle = currentText.slice(edit.prefix.length, currentText.length - edit.suffix.length);
-    const insertedAt = middle.lastIndexOf(edit.inserted);
-    if (insertedAt < 0) continue;
-    const expectedText = `${edit.prefix}${middle.slice(0, insertedAt)}${edit.deleted}${middle.slice(
-      insertedAt + edit.inserted.length,
-    )}${edit.suffix}`;
-    const repairedText = input.model.getText(repairedBlock);
-    if (repairedText === expectedText) continue;
-    repairs.push({
-      block: repairedBlock,
-      span: { from: 0, to: repairedText.length },
-      text: expectedText,
-    });
-  }
-
-  return repairs;
-}
-
-function docFromSnapshot(
-  snapshot: Extract<ReversalPlan, { ok: true }>["snapshot"],
-  options: { untilSeqExclusive?: number; untilSeqInclusive?: number },
-): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-  for (const update of snapshot.updates) {
-    if (options.untilSeqExclusive !== undefined && update.seq >= options.untilSeqExclusive) break;
-    if (options.untilSeqInclusive !== undefined && update.seq > options.untilSeqInclusive) break;
-    Y.applyUpdate(doc, update.update);
-  }
-  return doc;
-}
-
 function cloneDoc(source: Y.Doc): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
@@ -1071,60 +959,5 @@ function withPriorReversalUpdates(
         })),
       ],
     },
-  };
-}
-
-function blockTextMap(doc: Y.Doc, model: AgentEditModel): Map<string, string> {
-  return new Map(
-    model
-      .getBlocks(toDocHandle(doc))
-      .map((block) => [model.getBlockId(block), model.getText(block)]),
-  );
-}
-
-function blockRefMap(
-  doc: Y.Doc,
-  model: AgentEditModel,
-): Map<string, ReturnType<AgentEditModel["getBlocks"]>[number]> {
-  return new Map(
-    model.getBlocks(toDocHandle(doc)).map((block) => [model.getBlockId(block), block]),
-  );
-}
-
-function hasSinglePlainRun(
-  block: ReturnType<AgentEditModel["getBlocks"]>[number],
-  model: AgentEditModel,
-): boolean {
-  return model.inlineRuns(block).length <= 1;
-}
-
-function simpleReplacement(
-  before: string,
-  after: string,
-): { prefix: string; deleted: string; inserted: string; suffix: string } | undefined {
-  if (before === after) return undefined;
-  let prefixLength = 0;
-  while (
-    prefixLength < before.length &&
-    prefixLength < after.length &&
-    before[prefixLength] === after[prefixLength]
-  ) {
-    prefixLength += 1;
-  }
-
-  let suffixLength = 0;
-  while (
-    suffixLength < before.length - prefixLength &&
-    suffixLength < after.length - prefixLength &&
-    before[before.length - 1 - suffixLength] === after[after.length - 1 - suffixLength]
-  ) {
-    suffixLength += 1;
-  }
-
-  return {
-    prefix: before.slice(0, prefixLength),
-    deleted: before.slice(prefixLength, before.length - suffixLength),
-    inserted: after.slice(prefixLength, after.length - suffixLength),
-    suffix: suffixLength === 0 ? "" : before.slice(before.length - suffixLength),
   };
 }
