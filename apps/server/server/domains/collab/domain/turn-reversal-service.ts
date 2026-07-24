@@ -30,18 +30,18 @@ export type ThreadContextReversalResolver = {
   }): Promise<{ documentId?: string | null }>;
 };
 
-export function createTurnReversalService(input: {
+export type TurnReversalServiceDeps = {
   live: Required<ReverseTurnDeps>;
-  agentEdit?: Pick<ThreadPeerAgentEditCore, "reverse">;
+  agentEdit: Pick<ThreadPeerAgentEditCore, "reverse">;
   branchReview: BranchReviewService;
   branchJournal: Pick<BranchJournalReadStore, "listJournalRowsForTurn">;
   branches: Pick<BranchStore, "getBranch">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
-  listEditedDocumentsForTurn?(
+  listEditedDocumentsForTurn(
     threadId: string,
     turnId: string,
   ): Promise<Array<{ documentId: string }>>;
-  documentAccess?: {
+  documentAccess: {
     canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
     canAccessProjectDocument(
       userId: UserId,
@@ -49,8 +49,10 @@ export function createTurnReversalService(input: {
       projectId: ProjectId,
     ): Promise<boolean>;
   };
-  threadContext?: ThreadContextReversalResolver;
-}): TurnReversalAccess {
+  threadContext: ThreadContextReversalResolver;
+};
+
+export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
   const reverseTurnAcrossScopes = async (
     command: Parameters<TurnReversalAccess["reverseTurn"]>[0],
   ): Promise<ReversalOutcome> => {
@@ -91,20 +93,15 @@ export function createTurnReversalService(input: {
     reverseTurn: reverseTurnAcrossScopes,
 
     async reverseThreadContext(command) {
-      const services = requireThreadContextServices(input);
       validateThreadContextSelection(command);
       if (!command.uri) {
-        const { projectId } = await services.threadContext.requireThreadOwner(command);
-        const lineage = await services.listEditedDocumentsForTurn(command.threadId, command.turnId);
+        const { projectId } = await input.threadContext.requireThreadOwner(command);
+        const lineage = await input.listEditedDocumentsForTurn(command.threadId, command.turnId);
         const access = await Promise.all(
           lineage.map(async ({ documentId }) => {
             const [hasDocumentAccess, isProjectDocument] = await Promise.all([
-              services.documentAccess.canAccessDocument(command.userId, documentId),
-              services.documentAccess.canAccessProjectDocument(
-                command.userId,
-                documentId,
-                projectId,
-              ),
+              input.documentAccess.canAccessDocument(command.userId, documentId),
+              input.documentAccess.canAccessProjectDocument(command.userId, documentId, projectId),
             ]);
             return { documentId, allowed: hasDocumentAccess && isProjectDocument };
           }),
@@ -122,7 +119,7 @@ export function createTurnReversalService(input: {
       }
 
       const selection = reversalSelection(command);
-      const document = await services.threadContext.resolveContextDocument({
+      const document = await input.threadContext.resolveContextDocument({
         threadId: command.threadId,
         userId: command.userId,
         uri: command.uri,
@@ -130,7 +127,7 @@ export function createTurnReversalService(input: {
       if (!document.documentId) {
         throw new ReverseThreadContextError("document_not_found", "Document not found");
       }
-      const outcome = await services.agentEdit.reverse({
+      const outcome = await input.agentEdit.reverse({
         docId: document.documentId,
         threadId: command.threadId,
         direction: command.direction,
@@ -152,38 +149,6 @@ export function createTurnReversalService(input: {
       ];
       return { status: aggregateStatus(command.direction, documents), documents };
     },
-  };
-}
-
-function requireThreadContextServices(input: {
-  agentEdit?: Pick<ThreadPeerAgentEditCore, "reverse">;
-  listEditedDocumentsForTurn?(
-    threadId: string,
-    turnId: string,
-  ): Promise<Array<{ documentId: string }>>;
-  documentAccess?: {
-    canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
-    canAccessProjectDocument(
-      userId: UserId,
-      documentId: string,
-      projectId: ProjectId,
-    ): Promise<boolean>;
-  };
-  threadContext?: ThreadContextReversalResolver;
-}) {
-  if (
-    !input.agentEdit ||
-    !input.listEditedDocumentsForTurn ||
-    !input.documentAccess ||
-    !input.threadContext
-  ) {
-    throw new Error("Thread context reversal is not configured");
-  }
-  return {
-    agentEdit: input.agentEdit,
-    listEditedDocumentsForTurn: input.listEditedDocumentsForTurn,
-    documentAccess: input.documentAccess,
-    threadContext: input.threadContext,
   };
 }
 

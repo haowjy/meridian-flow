@@ -35,6 +35,7 @@ import { createAgentEditObservabilityOptions } from "../agent-edit-observability
 import {
   SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   SILENT_POST_DURABILITY_NOTICES,
+  UNSUPPORTED_REVERSE_THREAD_CONTEXT,
 } from "../declared-stubs.js";
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
 import {
@@ -154,9 +155,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
           },
           input,
         ),
-      async reverseThreadContext() {
-        throw new Error("Thread context reversal is not configured");
-      },
+      reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
       ensureDocument: lifecycle.ensureDocument,
