@@ -24,12 +24,10 @@ false in production and requires `WORKOS_DEV_AUTOLOGIN=1` plus
 ## State + transport seams
 
 Hocuspocus stateless `safety_notice` messages enter through the existing
-document transport and are retained on `DocumentSession`. Live editor surfaces
-render `late_sweep` and `checkpoint_sweep` as a quiet, dismissible receipt below
-the toolbar; no parallel toast/notification store exists. `beforeContentRef` is
-retained in the notice payload, but the client currently has no reconstruction
-endpoint keyed by that reference, so the receipt intentionally has no
-`View change` action yet.
+document transport and are retained on `DocumentSession`. No production visual
+surface currently reads or dismisses that state. `beforeContentRef` is retained
+in the notice payload, but the client has no reconstruction endpoint keyed by
+that reference.
 
 Two interfaces are the only paths between the visual layer and the substrate:
 

@@ -1,12 +1,5 @@
 /** Behavioral coverage for offline journal reconciliation. */
-import {
-  createAgentEditCodec,
-  getBlockItemId,
-  type ObservationSnapshot,
-  toDocHandle,
-  unwrapBlock,
-  yProsemirrorModel,
-} from "@meridian/agent-edit";
+import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -25,13 +18,11 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
-const digest = (content: string) => `digest:${content}`;
 
 describe("offline reconciliation", () => {
   it("reports hidden writer content once using the ordinary swept trail shape", async () => {
     const scenario = await setup({
       origin: "human:writer",
-      observe: false,
       editDeletedBlock: true,
     });
     await scenario.reconcile();
@@ -59,10 +50,9 @@ describe("offline reconciliation", () => {
     ).not.toBeNull();
   });
 
-  it("reports observed writer content using the ordinary recoverable trail", async () => {
+  it("reports writer content using the ordinary recoverable trail", async () => {
     const scenario = await setup({
       origin: "human:writer",
-      observe: true,
       editDeletedBlock: true,
     });
     await scenario.reconcile();
@@ -81,7 +71,6 @@ describe("offline reconciliation", () => {
   it("reports an offline writer revision even when the block was agent-origin", async () => {
     const scenario = await setup({
       origin: "agent:earlier",
-      observe: false,
       editDeletedBlock: true,
     });
     await scenario.reconcile();
@@ -93,16 +82,11 @@ describe("offline reconciliation", () => {
   });
 });
 
-async function setup(input: { origin: string; observe: boolean; editDeletedBlock: boolean }) {
+async function setup(input: { origin: string; editDeletedBlock: boolean }) {
   const journal = createInMemoryJournal();
   const initial = docFromMarkdown("Writer original");
   const initialUpdate = Y.encodeStateAsUpdate(initial);
   await journal.append(DOCUMENT_ID, initialUpdate, { origin: input.origin, seq: 0 });
-
-  const initialBlock = model.getBlocks(toDocHandle(initial))[0];
-  if (!initialBlock) throw new Error("missing initial block");
-  const initialIdentity = getBlockItemId(unwrapBlock(initialBlock));
-  const initialRendering = model.serializeBlockLines(toDocHandle(initial), agentCodec)[0] as string;
 
   const agent = clone(initial);
   const agentVector = Y.encodeStateVector(agent);
@@ -135,28 +119,9 @@ async function setup(input: { origin: string; observe: boolean; editDeletedBlock
   const converged = clone(agent);
   Y.applyUpdate(converged, incomingUpdate);
 
-  const snapshots = new Map<string, ObservationSnapshot>();
-  snapshots.set(RESPONSE_ID, {
-    responseId: RESPONSE_ID,
-    entries: input.observe
-      ? [
-          {
-            documentId: DOCUMENT_ID,
-            ...initialIdentity,
-            value: {
-              kind: "rendered",
-              digest: digest(
-                input.editDeletedBlock ? "paragraph|Writer offline revision" : initialRendering,
-              ),
-            },
-          },
-        ]
-      : [],
-  });
   let changes: TrailChangeV1[] = [];
   const reconciler = createOfflineReconciliation({
     journal,
-    observations: { load: async (id) => snapshots.get(id) ?? null, seal: async () => {} },
     changeTrails: {
       async record(record) {
         const incoming = record.trails.flatMap((trail: NormalizedTrail) => trail.changes);
@@ -165,7 +130,6 @@ async function setup(input: { origin: string; observe: boolean; editDeletedBlock
     },
     model,
     codec: agentCodec,
-    digestRenderedContent: digest,
     identifyUpdate: () => "incoming-identity",
     resolveThreadId: async () => THREAD_ID,
     resolveDocumentTitle: async () => "Chapter",

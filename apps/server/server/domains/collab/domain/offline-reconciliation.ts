@@ -2,7 +2,6 @@
 import {
   type AgentEditCodec,
   getBlockItemId,
-  type ObservationSnapshotStore,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -40,11 +39,9 @@ export type OfflineReconciliation = {
 
 export function createOfflineReconciliation(deps: {
   journal: UpdateJournal;
-  observations: ObservationSnapshotStore;
   changeTrails: Pick<ChangeTrailPersistence, "record">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-  digestRenderedContent(content: string): string;
   identifyUpdate(update: Uint8Array): string;
   resolveThreadId(turnId: string): Promise<string | null>;
   resolveDocumentTitle(documentId: string): Promise<string>;

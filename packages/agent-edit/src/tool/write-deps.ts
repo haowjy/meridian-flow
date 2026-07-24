@@ -6,7 +6,6 @@ import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { ObservationSnapshotStore } from "../ports/observation-snapshot.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import type {
@@ -24,7 +23,6 @@ export interface CreateWriteToolOptions {
   codec: AgentEditCodec;
   model: AgentEditModel;
   /** Durable lookup authority for the response that authored a mutation. */
-  observationSnapshots?: ObservationSnapshotStore;
   semanticProvenance?: SemanticProvenanceWriter;
   actorSessionStore?: ActorSessionStore;
   idempotency?: {

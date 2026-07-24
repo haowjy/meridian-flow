@@ -912,8 +912,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             pushUpdate: update,
             postCutUpdates: [],
             provenanceView: [],
-            lineageEvidence: { version: 2, items: [] },
-            responseEvidence: [],
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
@@ -980,8 +978,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             pushUpdate: update,
             postCutUpdates: [],
             provenanceView: [],
-            lineageEvidence: { version: 2, items: [] },
-            responseEvidence: [],
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {

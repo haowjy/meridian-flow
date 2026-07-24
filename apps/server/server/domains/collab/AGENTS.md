@@ -15,8 +15,7 @@ propagation between them.
 - **Journal is the durable record.** Runtime state is memory-only; restarts cold
   reconstruct from the live journal plus branch state/journal rows.
 - **Document authority is fenced.** Each live document has a durable authority
-  identity, generation, and contiguous admission sequence; response causal cuts
-  name that exact prefix rather than treating the document ID as authority.
+  identity, generation, and contiguous admission sequence.
 - Checkpoint restore replaces the authority generation. It never applies checkpoint
   bytes to the current Y.Doc; the transport fences each connection to its opened
   generation and rejects retired-identity insertion or delete-set replay.
@@ -87,13 +86,13 @@ propagation between them.
 - **Draft Apply safety is row-based**: each draft journal row owns an immutable
   live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
   resurrection after that base. Auto-apply never gates and trails only effects
-  represented by response-sealed, document-scoped Yjs writer-lineage ranges.
+  that destroy writer-owned roots according to durable provenance.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; writer-lineage sweeps are captured for the trail and
   Restore; agent-only destruction is silent.
 - **Reversal availability is dependency-based**: canonical dependency checks may
   refuse a lossy undo. Destructive effects from an allowed agent reversal are
-  reported, never rejected for lacking an observation snapshot.
+  reported without changing the reversal outcome.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   reporting-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push

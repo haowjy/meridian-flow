@@ -1,6 +1,6 @@
 /**
  * Shared JSON-natural observability vocabulary for client and server event producers.
- * This is distinct from `observation.ts`, which models durable authority causal cuts.
+ * These contracts describe diagnostic events, not document provenance authority.
  */
 
 /** Severity for filtering and routing; mirrors common log levels. */

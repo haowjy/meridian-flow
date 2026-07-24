@@ -62,12 +62,7 @@
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
-import {
-  applyConcurrentRenderBudget,
-  type ConcurrentEditInfo,
-  type ObservationAuthority,
-  type WriteObservationEvidence,
-} from "@meridian/agent-edit";
+import { applyConcurrentRenderBudget, type ConcurrentEditInfo } from "@meridian/agent-edit";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -99,7 +94,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { observationDocumentIds, safetyNoticeSystemMessage } from "./context-builder.js";
+import { safetyNoticeSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -159,15 +154,8 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
-  observationRendering?: {
-    authority: ObservationAuthority;
-    /** Aggregate exact-body allowance derived from the selected registry model. */
-    budgetBytes(request: GenerateRequest): number;
-    /** Freeze each branch-local authority prefix before request serialization begins. */
-    freezeCausalCuts?(
-      documentIds: readonly string[],
-    ): Promise<readonly import("@meridian/contracts").ResponseCausalCutV1[]>;
-  };
+  /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
+  concurrentRenderBudgetBytes?(request: GenerateRequest): number;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -495,7 +483,6 @@ async function persistModelResponse(input: {
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
-  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
 }): Promise<{
   responseId: string;
   updatedTurn: Turn;
@@ -509,112 +496,96 @@ async function persistModelResponse(input: {
   let blockSeq = input.blockSeq;
   const responseSeq = currentAssistantTurn.responseCount;
   const toolCalls = collectToolCalls(result);
-  const persistedResponse = await persistAndAppendEvents(
-    deps,
-    runInput.threadId,
-    async () => {
-      const responseId = crypto.randomUUID();
-      const computedCost = await turnAccounting.computeAndDebit(
-        result,
-        thread,
-        runInput.threadId,
-        currentAssistantTurn.id,
-        treeBudget,
-        responseId,
+  const persistedResponse = await persistAndAppendEvents(deps, runInput.threadId, async () => {
+    const responseId = crypto.randomUUID();
+    const computedCost = await turnAccounting.computeAndDebit(
+      result,
+      thread,
+      runInput.threadId,
+      currentAssistantTurn.id,
+      treeBudget,
+      responseId,
+    );
+    const costUsd = computedCost.costUsd;
+    const response: ModelResponseReceivedRow = {
+      id: responseId,
+      turnId: currentAssistantTurn.id,
+      sequence: responseSeq,
+      provider: result.provider,
+      model: result.model,
+      providerRequestId: result.providerRequestId ?? null,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      reasoningTokens: result.usage.reasoningTokens ?? null,
+      cacheReadTokens: result.usage.cacheReadTokens ?? null,
+      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+      costUsd,
+      millicredits: computedCost.millicredits,
+      priceSource: computedCost.priceSource,
+      pricingSnapshot: computedCost.pricingSnapshot,
+      finishReason: result.finishReason,
+      rawUsage: toJsonValue(result.usage),
+    };
+    const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+
+    const createdBlocks: Block[] = [];
+    const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
+    for (const part of result.content) {
+      const blockInput = contentPartToBlockInput(
+        part,
+        updatedTurn.id,
+        blockSeq++,
+        response.id,
+        result.provider,
       );
-      const costUsd = computedCost.costUsd;
-      const response: ModelResponseReceivedRow = {
-        id: responseId,
-        turnId: currentAssistantTurn.id,
-        sequence: responseSeq,
-        provider: result.provider,
-        model: result.model,
-        providerRequestId: result.providerRequestId ?? null,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        reasoningTokens: result.usage.reasoningTokens ?? null,
-        cacheReadTokens: result.usage.cacheReadTokens ?? null,
-        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-        costUsd,
-        millicredits: computedCost.millicredits,
-        priceSource: computedCost.priceSource,
-        pricingSnapshot: computedCost.pricingSnapshot,
-        finishReason: result.finishReason,
-        rawUsage: toJsonValue(result.usage),
-      };
-      const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
-
-      const createdBlocks: Block[] = [];
-      const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
-      for (const part of result.content) {
-        const blockInput = contentPartToBlockInput(
-          part,
-          updatedTurn.id,
-          blockSeq++,
-          response.id,
-          result.provider,
-        );
-        if (blockInput) {
-          const block = contentForBlockInput(blockInput);
-          createdBlocks.push(localBlockFromEvent(block));
-          events.push({ type: "block.upserted", block });
-        }
-      }
-
-      for (const call of toolCalls) {
-        if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
-          continue;
-        }
-        const block = contentForBlockInput({
-          turnId: updatedTurn.id,
-          blockType: "tool_use",
-          sequence: blockSeq++,
-          responseId: response.id,
-          content: {
-            toolCallId: call.id,
-            toolName: call.name,
-            input: toJsonValue(call.arguments),
-          },
-          provider: result.provider,
-          status: "complete",
-        });
+      if (blockInput) {
+        const block = contentForBlockInput(blockInput);
         createdBlocks.push(localBlockFromEvent(block));
         events.push({ type: "block.upserted", block });
       }
+    }
 
-      events.push({
-        type: "usage",
+    for (const call of toolCalls) {
+      if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
+        continue;
+      }
+      const block = contentForBlockInput({
+        turnId: updatedTurn.id,
+        blockType: "tool_use",
+        sequence: blockSeq++,
         responseId: response.id,
-        turnId: updatedTurn.id as string,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        reasoningTokens: result.usage.reasoningTokens ?? null,
-        cacheReadTokens: result.usage.cacheReadTokens ?? null,
-        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-        costUsd,
-        turnCostUsd: updatedTurn.totalCostUsd,
-        model: result.model,
+        content: {
+          toolCallId: call.id,
+          toolName: call.name,
+          input: toJsonValue(call.arguments),
+        },
         provider: result.provider,
+        status: "complete",
       });
+      createdBlocks.push(localBlockFromEvent(block));
+      events.push({ type: "block.upserted", block });
+    }
 
-      return {
-        result: { responseId, updatedTurn, createdBlocks },
-        events,
-      };
-    },
-    {
-      ...(input.observationCandidate && deps.observationRendering
-        ? {
-            afterEvents: async (persisted) => {
-              await deps.observationRendering?.authority.sealSuccessfulResponse(
-                persisted.responseId,
-                input.observationCandidate as import("@meridian/agent-edit").ObservationCandidate,
-              );
-            },
-          }
-        : {}),
-    },
-  );
+    events.push({
+      type: "usage",
+      responseId: response.id,
+      turnId: updatedTurn.id as string,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      reasoningTokens: result.usage.reasoningTokens ?? null,
+      cacheReadTokens: result.usage.cacheReadTokens ?? null,
+      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+      costUsd,
+      turnCostUsd: updatedTurn.totalCostUsd,
+      model: result.model,
+      provider: result.provider,
+    });
+
+    return {
+      result: { responseId, updatedTurn, createdBlocks },
+      events,
+    };
+  });
 
   return {
     responseId: persistedResponse.result.responseId,
@@ -829,19 +800,9 @@ async function buildGenerateRequest(input: {
   gatewaySignal?: AbortSignal;
 }): Promise<{
   request: GenerateRequest;
-  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
   thread: Thread;
   resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
-  const activeDocumentIds = await input.deps.activeDocuments.listDocumentIds(
-    input.runInput.threadId,
-  );
-  const cutDocumentIds = [
-    ...new Set([...activeDocumentIds, ...observationDocumentIds(input.blocks)]),
-  ].sort();
-  const responseCausalCuts = input.deps.observationRendering?.freezeCausalCuts
-    ? await input.deps.observationRendering.freezeCausalCuts(cutDocumentIds)
-    : cutDocumentIds.map(initialInMemoryCausalCut);
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
     turns: input.turns,
@@ -853,9 +814,6 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
-    observationAuthority: input.deps.observationRendering?.authority,
-    requestId: `${input.turns.at(-1)?.id ?? input.thread.id}:${input.blocks.length}`,
-    responseCausalCuts,
   });
 
   return {
@@ -865,22 +823,6 @@ async function buildGenerateRequest(input: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
     },
-    ...(assembled.observationCandidate
-      ? { observationCandidate: assembled.observationCandidate }
-      : {}),
-  };
-}
-
-function initialInMemoryCausalCut(
-  documentId: string,
-): import("@meridian/contracts").ResponseCausalCutV1 {
-  return {
-    id: crypto.randomUUID(),
-    version: 1,
-    documentId,
-    authorityId: documentId,
-    generation: 1n,
-    admittedThrough: 0n,
   };
 }
 
@@ -978,7 +920,6 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
-      const observationCandidate = built.observationCandidate;
 
       {
         const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
@@ -1105,7 +1046,6 @@ async function* generateEvents(
         treeBudget,
         turnAccounting,
         blockSeq,
-        ...(observationCandidate ? { observationCandidate } : {}),
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
@@ -1287,8 +1227,7 @@ async function* generateEvents(
         }
 
         const renderBudget = {
-          remainingBytes:
-            deps.observationRendering?.budgetBytes(request) ?? Number.MAX_SAFE_INTEGER,
+          remainingBytes: deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
         };
         // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
@@ -1313,47 +1252,9 @@ async function* generateEvents(
             },
             ...remainingBlocks,
           ];
-          const observationEvidence: WriteObservationEvidence[] = [];
-          for (const run of boundedEdits.runs) {
-            for (const observation of run.observations) {
-              if (observation.kind === "rendered") {
-                observationEvidence.push({
-                  kind: "rendered" as const,
-                  clientID: observation.clientID,
-                  clock: observation.clock,
-                  renderedContent: observation.renderedContent,
-                  sourceText:
-                    run.blocks.find((line) =>
-                      line.includes(
-                        observation.renderedContent.slice(
-                          observation.renderedContent.indexOf("|") + 1,
-                        ),
-                      ),
-                    ) ??
-                    observation.renderedContent.slice(observation.renderedContent.indexOf("|") + 1),
-                });
-              } else {
-                observationEvidence.push({
-                  kind: "explicit_deletion" as const,
-                  clientID: observation.clientID,
-                  clock: observation.clock,
-                  capturedBody: observation.capturedBody,
-                  sourceText:
-                    run.tombstones.find(
-                      (tombstone) => tombstone.capturedBody === observation.capturedBody,
-                    )?.capturedBody ?? observation.capturedBody,
-                });
-              }
-            }
-          }
           const updatedContent = {
             ...content,
             output: updatedOutput,
-            metadata: {
-              ...((content as { metadata?: Record<string, unknown> }).metadata ?? {}),
-              documentId,
-              observationEvidence,
-            },
           };
           const updatedBlockRow = contentForBlockInput({
             id: block.id,

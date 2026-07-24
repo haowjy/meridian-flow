@@ -125,35 +125,6 @@ Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
 only. Optional — falls back to a local in-memory map when omitted.
 
-### ObservationSnapshotStore (`src/ports/observation-snapshot.ts`)
-
-Durable response-scoped observation authority. `createObservationAuthority`
-builds a request-local candidate only from exact rendered block bodies or
-explicit-deletion bodies, then seals it to a successful model response. Before
-any document bytes enter request serialization, the runtime freezes one
-`ResponseCausalCutV1` for every touched document, including documents with no
-observation entries. The cut identifies that document authority's contiguous
-admitted prefix; it seals atomically with the successful response and snapshot.
-Keys use the full document-scoped Yjs item identity (`documentId`, `clientID`,
-`clock`), never a display hash. Omitted and `sync_overflow` bodies deliberately
-create no entry.
-
-Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut against
-the authoring response snapshot. At that synchronous cut it seals a
-`SealedWriterLineageV3` protection scope containing normalized protected roots
-and the response causal-cut ID. Empty scopes are still sealed. State-vector
-frontiers and missing-client rules are not authority. Reversal uses its
-authoring response snapshot independently from the canonical dependency guard.
-
-Concurrent re-sync output is shaped as contiguous prose runs, independent of
-document sections: changed blocks receive one full anchor on each side, nearby
-runs gap-merge with `DEFAULT_CONCURRENT_RUN_GAP`, and rewrite-density coverage
-expands to the whole document. Deletions always carry captured bodies. The
-runtime applies one provider-registry-derived aggregate byte budget to the
-indivisible runs; omitted runs emit `sync_overflow` and earn no reporting
-credit. A later destructive write still merges, and writer-lineage loss is
-captured in the sweep trail.
-
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
@@ -187,15 +158,14 @@ inside the final concurrent-detection window; the shared classifier alone
 decides whether the committed update produces a late-sweep report
 (durable-then-report).
 
-Every normal live projection also returns an immutable atomic observation cut:
-block snapshots immediately before and immediately after the synchronous Yjs
-apply. The final recheck, apply, and after capture have no await between them.
-The shared lifecycle-neutral classifier consumes before/after visible
-occurrences, durable provenance, the writer-protection scope, response cut, and
-observation credit. It returns eligible ranges plus final-rendering projections.
-Agent writes always commit through Yjs merge; classification controls only
-writer-facing sweep capture and trails. The echo informs the agent, the trail
-informs the writer, and agent-only destruction stays silent.
+Every normal live projection classifies the coordinated document immediately
+before and after the synchronous Yjs apply. The final recheck and apply have no
+await between them. The shared lifecycle-neutral classifier consumes those
+visible occurrences and durable writer/agent provenance, returning eligible
+ranges plus final-rendering projections. Agent writes always commit through Yjs
+merge; classification controls only writer-facing sweep capture and trails. The
+echo informs the agent, the trail informs the writer, and agent-only destruction
+stays silent.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
@@ -511,8 +481,7 @@ When last-resort durable recovery succeeds, the committer compares its immutable
 pre-recovery snapshot with the recovered document through the same provenance
 classifier used by normal projection. A detected writer-lineage loss is returned
 with captured bodies as a late sweep; an unavailable recheck returns
-`awarenessDegraded`, grants no observation credit, and can never be laundered
-into plain committed.
+`awarenessDegraded` and can never be laundered into plain committed.
 
 Phase-C apply snapshots the coordinated Y.Doc before its awaited concurrent
 detection and diffs it again immediately before apply. The final snapshot check

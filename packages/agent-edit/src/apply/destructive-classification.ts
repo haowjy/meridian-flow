@@ -7,11 +7,9 @@ import {
   intersectLineageRanges,
   type LineageRange,
   normalizeLineageRanges,
-  type ResponseCausalCutV1,
   subtractLineageRanges,
 } from "../lineage/range-set.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
-import type { ObservationSnapshot } from "../ports/observation-snapshot.js";
 import type { DestructiveProvenanceRun, UpdateJournal } from "../ports/update-journal.js";
 import { type BlockSnapshot, snapshotBlocks } from "./echo.js";
 
@@ -27,17 +25,9 @@ export interface VisibleProseOccurrence {
   finalRendering: string;
 }
 
-export interface DestructiveObservation {
-  /** Final renderings exactly covered by this response's immutable observation snapshot. */
-  coveredFinalRenderings: readonly string[];
-}
-
 export interface DestructiveEffectInput {
   before: readonly VisibleProseOccurrence[];
   afterCandidate: readonly VisibleProseOccurrence[];
-  protectionScope: readonly LineageRange[];
-  responseCut: ResponseCausalCutV1 & { visible: readonly VisibleProseOccurrence[] };
-  observation: DestructiveObservation;
 }
 
 export interface FinalRenderingProjection {
@@ -54,7 +44,6 @@ export interface DestructiveEffect {
 export function classifyDestructiveEffect(input: DestructiveEffectInput): DestructiveEffect {
   validateOccurrences(input.before);
   validateOccurrences(input.afterCandidate);
-  validateOccurrences(input.responseCut.visible);
 
   const survivingRoots = input.afterCandidate.map((occurrence) => occurrence.root);
   const protectedRoots = normalizeLineageRanges(
@@ -110,8 +99,6 @@ export interface DestructiveDocumentEffectInput {
   documentId: string;
   before: DocHandle;
   afterCandidate: DocHandle;
-  observationSnapshot: ObservationSnapshot | null;
-  observedBlocks?: readonly BlockSnapshot[];
   attributedLineage?: readonly (ContentLineage & { origin: "human" | "agent" })[];
 }
 
@@ -152,19 +139,6 @@ export async function classifyDestructiveDocumentEffect(
   const effect = classifyDestructiveEffect({
     before,
     afterCandidate,
-    protectionScope: before
-      .filter((occurrence) => occurrence.provenance === "writer_protected")
-      .map((occurrence) => occurrence.root),
-    responseCut: {
-      id: "live-commit-current-rendering",
-      version: 1,
-      documentId: input.documentId,
-      authorityId: "live-commit-current-rendering",
-      generation: 0n,
-      admittedThrough: 0n,
-      visible: before,
-    },
-    observation: { coveredFinalRenderings: [] },
   });
   const affected = new Set(
     effect.finalRenderingProjections.map((projection) => projection.finalRendering),

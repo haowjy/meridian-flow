@@ -4,11 +4,8 @@ import {
   type AgentEditCodec,
   classifyDestructiveEffect,
   type DocumentCoordinator,
-  digestRenderedContent,
   intersectLineageRanges,
-  type LineageRange,
   normalizeLineageRanges,
-  observationCoversRendering,
   snapshotBlocks,
   toDocHandle,
   type VisibleProseOccurrence,
@@ -229,68 +226,16 @@ export function createBranchPushTransition(input: {
       const beforeOccurrences = occurrencesFor(before, preProvenance);
       const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
       const afterOccurrences = occurrencesFor(after, afterProvenance);
-      const evidenceById = new Map(pending.responseEvidence.map((item) => [item.evidenceId, item]));
-      const eligibleByRendering = new Map<string, LineageRange[]>();
-
-      // A selected row may legitimately predate response sealing. It contributes
-      // Ri = empty: no protected roots and no causal/observation credit. The shared
-      // classifier still derives Hi from writer roots outside that empty cut.
-      const evidenceItems =
-        pending.lineageEvidence.items.length > 0 ? pending.lineageEvidence.items : [null];
-      for (const item of evidenceItems) {
-        const response = item ? evidenceById.get(item.evidenceId) : undefined;
-        if (item && !response) {
-          throw new ProvenanceMaterializationError("Settlement response evidence is unavailable");
-        }
-        const coveredFinalRenderings = before.flatMap((block) => {
-          if (
-            block.clientID === undefined ||
-            block.clock === undefined ||
-            block.renderedContent === undefined
-          )
-            return [];
-          const observation = response?.observations.find(
-            (entry) =>
-              entry.documentId === pending.push.documentId &&
-              entry.clientID === block.clientID &&
-              entry.clock === block.clock,
-          );
-          return observationCoversRendering({
-            observation: observation?.value ?? null,
-            renderedContent: block.renderedContent,
-            digestRenderedContent,
-          })
-            ? [renderingKey(block)]
-            : [];
-        });
-        const effect = classifyDestructiveEffect({
-          before: beforeOccurrences,
-          afterCandidate: afterOccurrences,
-          protectionScope: item?.token.protectedRoots ?? [],
-          responseCut: {
-            ...(response?.responseCut ?? {
-              id: "unsealed-selection",
-              version: 1 as const,
-              documentId: pending.push.documentId,
-              authorityId: `unsealed:${pending.push.documentId}`,
-              generation: 0n,
-              admittedThrough: 0n,
-            }),
-            visible: (response?.visibleAtCut ?? []).map((run) => ({
-              target: run.target,
-              root: run.root,
-              provenance: run.birthClass,
-              finalRendering: "",
-            })),
-          },
-          observation: { coveredFinalRenderings },
-        });
-        for (const projection of effect.finalRenderingProjections) {
-          const ranges = eligibleByRendering.get(projection.finalRendering) ?? [];
-          ranges.push(...projection.ranges);
-          eligibleByRendering.set(projection.finalRendering, ranges);
-        }
-      }
+      const effect = classifyDestructiveEffect({
+        before: beforeOccurrences,
+        afterCandidate: afterOccurrences,
+      });
+      const eligibleByRendering = new Map(
+        effect.finalRenderingProjections.map((projection) => [
+          projection.finalRendering,
+          projection.ranges,
+        ]),
+      );
 
       if (eligibleByRendering.size === 0) {
         return { trail: pending.trail, refineToEmpty: true };
