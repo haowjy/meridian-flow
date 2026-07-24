@@ -724,7 +724,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         replacePushContribution: (
           pushId: Parameters<typeof realChangeTrails.replacePushContribution>[0],
           replacement: Parameters<typeof realChangeTrails.replacePushContribution>[1],
-        ) => realChangeTrails.replacePushContribution(pushId, replacement),
+          context: Parameters<typeof realChangeTrails.replacePushContribution>[2],
+        ) => realChangeTrails.replacePushContribution(pushId, replacement, context),
         reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
           realChangeTrails.reopenOwners(owners),
       };

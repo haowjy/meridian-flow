@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branchPushSettlementOutbox,
   changeTrailDeliveryOutbox,
   changeTrailDocumentDetails,
   changeTrailDocumentOccurrences,
@@ -258,7 +257,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         }
       }
     },
-    async replacePushContribution(pushId, replacement) {
+    async replacePushContribution(pushId, replacement, context) {
       const tx = currentDrizzleDb(db);
       const affected = await tx
         .select({
@@ -278,16 +277,6 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           WHERE change->>'pushId' = ${pushId}
         )`);
       if (affected.length === 0) return;
-      const [settlement] = await tx
-        .select({
-          joinVersion: branchPushSettlementOutbox.joinVersion,
-          classifiedJoinVersion: branchPushSettlementOutbox.classifiedJoinVersion,
-        })
-        .from(branchPushSettlementOutbox)
-        .where(eq(branchPushSettlementOutbox.pushId, Number(pushId)))
-        .limit(1);
-      if (!settlement) throw new Error(`Cannot replace missing push settlement ${pushId}`);
-
       const classifications = replacement.kind === "refine" ? replacement.classifications : [];
       const classificationByKey = new Map(
         classifications.map((change) => [canonicalChangeKey(change), change]),
@@ -342,7 +331,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         documentTitles: new Map(
           [...grouped.values()].flatMap(({ documentTitles }) => [...documentTitles]),
         ),
-        refineCurrentVersion: settlement.classifiedJoinVersion === settlement.joinVersion,
+        refineCurrentVersion: context.refineCurrentVersion,
         replacePushId: pushId,
       });
     },

@@ -105,6 +105,10 @@ export type ChangeTrailPersistence = {
     /** Replaces this push's prior aggregate contribution with the supplied classification. */
     replacePushId?: string;
   }): Promise<void>;
-  replacePushContribution(pushId: string, replacement: TrailContributionReplacement): Promise<void>;
+  replacePushContribution(
+    pushId: string,
+    replacement: TrailContributionReplacement,
+    context: { refineCurrentVersion: boolean },
+  ): Promise<void>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
 };
