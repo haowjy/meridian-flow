@@ -122,6 +122,223 @@ export type DraftApplyOutcome = {
   materializedDocument: boolean;
 };
 
+export type DraftReviewCommandPorts = {
+  loadPreview: (selection: DraftReviewSelection) => Promise<DraftApplyPreview>;
+  apply: (
+    selection: DraftReviewSelection,
+    scope: DraftApplyScope,
+    request: DraftApplyRequest,
+  ) => Promise<DraftAcceptResponse>;
+  discard: (
+    selection: DraftReviewSelection,
+    input: { branchId?: string; operationIds?: string[] },
+  ) => Promise<void>;
+  undo: (selection: DraftReviewSelection, writeId: string) => Promise<void>;
+  applyStarted: () => void;
+  applySettled: (selection: DraftReviewSelection, outcome: DraftApplyOutcome) => void;
+  draftDiscarded: (selection: DraftReviewSelection) => void;
+};
+
+/**
+ * The complete disposition command facade. React supplies I/O ports; this
+ * session owns reservation timing, preview choice, mutation sequencing, typed
+ * outcomes, batches, and terminal callbacks.
+ */
+export class DraftReviewSession {
+  readonly disposition = new DraftDispositionLock();
+
+  constructor(private readonly ports: () => DraftReviewCommandPorts) {}
+
+  applyReviewedDraft(
+    selection: DraftReviewSelection,
+    preview: DraftApplyPreview,
+  ): Promise<DraftCommandOutcome> {
+    return this.withReservation({ kind: "apply-draft", ...selection }, (reservation, ports) =>
+      this.applyDraft(selection, reservation, ports, () =>
+        acquireDraftApplyRequest({ scope: "draft", preview }),
+      ),
+    );
+  }
+
+  applyOperation(
+    selection: DraftReviewSelection,
+    operationId: string,
+  ): Promise<DraftCommandOutcome> {
+    return this.withReservation(
+      { kind: "apply-operation", ...selection, operationId },
+      (reservation, ports) =>
+        this.applyRequest(
+          selection,
+          "operation",
+          reservation,
+          ports,
+          acquireDraftApplyRequest({
+            scope: "operation",
+            draftId: selection.draftId,
+            operationId,
+            loadLatestPreview: async () => {
+              const preview = await ports.loadPreview(selection);
+              return {
+                operationIds: preview.operationIds,
+                draftRevisionToken: preview.draftRevisionToken,
+                ...(preview.branchId ? { branchId: preview.branchId } : {}),
+              };
+            },
+          }),
+        ),
+    );
+  }
+
+  discardOperation(
+    selection: DraftReviewSelection,
+    operationId: string,
+  ): Promise<DraftCommandOutcome> {
+    return this.withReservation(
+      { kind: "discard-operation", ...selection, operationId },
+      async (reservation, ports) => {
+        try {
+          const preview = await ports.loadPreview(selection);
+          this.disposition.advance(reservation, "mutating");
+          await ports.discard(selection, {
+            ...(preview.branchId ? { branchId: preview.branchId } : {}),
+            operationIds: [operationId],
+          });
+          this.disposition.advance(reservation, "settling");
+          return { kind: "discarded" };
+        } catch {
+          return { kind: "failed", code: "discard-offline" };
+        }
+      },
+    );
+  }
+
+  undoOperation(selection: DraftReviewSelection, writeId: string): Promise<DraftCommandOutcome> {
+    return this.withReservation(
+      { kind: "undo-operation", ...selection, writeId },
+      async (reservation, ports) => {
+        try {
+          this.disposition.advance(reservation, "mutating");
+          await ports.undo(selection, writeId);
+          this.disposition.advance(reservation, "settling");
+          return { kind: "undone" };
+        } catch {
+          return { kind: "failed", code: "undo-failed" };
+        }
+      },
+    );
+  }
+
+  discardDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
+    return this.withReservation({ kind: "discard-draft", ...selection }, (reservation, ports) =>
+      this.discardDraftWithReservation(selection, reservation, ports),
+    );
+  }
+
+  async disposeDrafts(
+    mode: "apply" | "discard",
+    drafts: readonly DraftReviewSelection[],
+  ): Promise<DraftCommandOutcome[]> {
+    if (drafts.length === 0) return [];
+    const reservation = this.disposition.reserve({ kind: "batch", mode, count: drafts.length });
+    if (!reservation) return [{ kind: "blocked" }];
+    const ports = this.ports();
+    const outcomes: DraftCommandOutcome[] = [];
+    try {
+      for (const draft of drafts) {
+        outcomes.push(
+          await (mode === "apply"
+            ? this.applyDraft(draft, reservation, ports, () =>
+                this.currentDraftRequest(draft, ports),
+              )
+            : this.discardDraftWithReservation(draft, reservation, ports)),
+        );
+      }
+    } finally {
+      this.disposition.release(reservation);
+    }
+    return outcomes;
+  }
+
+  private applyDraft(
+    selection: DraftReviewSelection,
+    reservation: DraftDispositionReservation,
+    ports: DraftReviewCommandPorts,
+    acquireRequest: () => DraftApplyRequest | Promise<DraftApplyRequest>,
+  ): Promise<DraftCommandOutcome> {
+    this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
+    ports.applyStarted();
+    return this.applyRequest(selection, "draft", reservation, ports, acquireRequest());
+  }
+
+  private async applyRequest(
+    selection: DraftReviewSelection,
+    scope: DraftApplyScope,
+    reservation: DraftDispositionReservation,
+    ports: DraftReviewCommandPorts,
+    requestPromise: DraftApplyRequest | Promise<DraftApplyRequest>,
+  ): Promise<DraftCommandOutcome> {
+    try {
+      const request = await requestPromise;
+      if (request.operationIds.length === 0) {
+        return { kind: "failed", code: "apply-failed" };
+      }
+      this.disposition.advance(reservation, "mutating");
+      const response = await ports.apply(selection, scope, request);
+      this.disposition.advance(reservation, "settling");
+      const outcome = draftApplyOutcome(scope, response);
+      ports.applySettled(selection, outcome);
+      return outcome.command;
+    } catch {
+      return { kind: "failed", code: "apply-failed" };
+    }
+  }
+
+  private async discardDraftWithReservation(
+    selection: DraftReviewSelection,
+    reservation: DraftDispositionReservation,
+    ports: DraftReviewCommandPorts,
+  ): Promise<DraftCommandOutcome> {
+    this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+    try {
+      const preview = await ports.loadPreview(selection);
+      this.disposition.advance(reservation, "mutating");
+      await ports.discard(selection, {
+        ...(preview.branchId ? { branchId: preview.branchId } : {}),
+      });
+      this.disposition.advance(reservation, "settling");
+      ports.draftDiscarded(selection);
+      return { kind: "discarded" };
+    } catch {
+      return { kind: "failed", code: "discard-offline" };
+    }
+  }
+
+  private async currentDraftRequest(
+    selection: DraftReviewSelection,
+    ports: DraftReviewCommandPorts,
+  ): Promise<DraftApplyRequest> {
+    const preview = await ports.loadPreview(selection);
+    return acquireDraftApplyRequest({ scope: "draft", preview });
+  }
+
+  private async withReservation(
+    target: DraftDispositionTarget,
+    command: (
+      reservation: DraftDispositionReservation,
+      ports: DraftReviewCommandPorts,
+    ) => Promise<DraftCommandOutcome>,
+  ): Promise<DraftCommandOutcome> {
+    const reservation = this.disposition.reserve(target);
+    if (!reservation) return { kind: "blocked" };
+    const ports = this.ports();
+    try {
+      return await command(reservation, ports);
+    } finally {
+      this.disposition.release(reservation);
+    }
+  }
+}
+
 export function acquireDraftApplyRequest(input: {
   scope: "draft";
   preview: DraftApplyPreview;
