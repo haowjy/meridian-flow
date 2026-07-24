@@ -463,8 +463,8 @@ export function createBranchAgentEditJournal(input: {
         threadId: input.threadId,
         scope,
         expectedJournalWatermark: records.reduce(
-          (watermark, record) => Math.max(watermark, record.persistGuardWatermark ?? 0),
-          0,
+          (watermark, record) => Math.min(watermark, record.persistGuardWatermark ?? 0),
+          Number.POSITIVE_INFINITY,
         ),
         update: undoUpdate,
         actor,
@@ -493,8 +493,7 @@ export function createBranchAgentEditJournal(input: {
         threadId: input.threadId,
         scope,
         expectedJournalWatermark: entries.reduce(
-          (watermark, entry) =>
-            Math.min(watermark, entry.persistGuardWatermark ?? Number.POSITIVE_INFINITY),
+          (watermark, entry) => Math.min(watermark, entry.persistGuardWatermark ?? 0),
           Number.POSITIVE_INFINITY,
         ),
         update: Y.mergeUpdates(entries.map((entry) => entry.update)),
