@@ -1,6 +1,6 @@
 /** Regression coverage for replacing pre-materialization authorization failures. */
 
-import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
+import type { AuthMeResponse, ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
@@ -34,21 +34,30 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 const { DocumentSessionRegistry } = await import("./document-session-registry");
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
-  it("wires authenticated self-suppression into a session created before auth settles", () => {
+  it("uses the bootstrap's internal identity for self-suppression, never its external id", () => {
+    const authMe = {
+      user: {
+        userId: "cfeb7b0d-658d-4469-9d69-8aa381d8899f",
+        externalId: "user_01workos",
+        email: "writer@example.com",
+        name: "Writer",
+        avatarUrl: null,
+      },
+    } satisfies AuthMeResponse;
     const registry = new DocumentSessionRegistry();
     const session = registry.getDetached("document-before-auth");
-    registry.setOwnUserId("writer-1");
+    registry.setOwnUserId(authMe.user.userId);
     session.markerStore.replaceGroup({
       type: "change_event",
       documentId: "document-before-auth",
       threadId: "thread-1",
-      trailId: "trail-1",
+      trailId: "trail-external",
       projectionRevision: 1,
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
       changes: [
         {
-          changeId: "change-1",
-          admittedByUserId: "writer-1",
+          changeId: "change-external",
+          admittedByUserId: authMe.user.externalId,
           kind: "delete",
           navigation: {
             kind: "deletion_boundary",
@@ -63,7 +72,36 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
       truncated: false,
     } satisfies ChangeEventWsMessage);
 
-    expect(session.markerStore.getSnapshot()).toHaveLength(0);
+    expect(session.markerStore.getSnapshot()).toHaveLength(1);
+
+    session.markerStore.replaceGroup({
+      type: "change_event",
+      documentId: "document-before-auth",
+      threadId: "thread-1",
+      trailId: "trail-internal",
+      projectionRevision: 1,
+      author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+      changes: [
+        {
+          changeId: "change-internal",
+          admittedByUserId: authMe.user.userId,
+          kind: "delete",
+          navigation: {
+            kind: "deletion_boundary",
+            position: "invalid-but-lazily-decoded",
+            affinity: "before_next",
+          },
+          swept: false,
+          excerpt: null,
+          pureDeletionOffset: null,
+        },
+      ],
+      truncated: false,
+    } satisfies ChangeEventWsMessage);
+
+    expect(session.markerStore.getSnapshot().map((marker) => marker.group.trailId)).toEqual([
+      "trail-external",
+    ]);
     registry.destroyAll();
   });
 
