@@ -1,6 +1,11 @@
 /** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
-import { type AgentEditModel, type BlockRef, toDocHandle, unwrapBlock } from "@meridian/agent-edit";
+import {
+  type AgentEditModel,
+  type BlockRef,
+  toDocHandle,
+  unwrapBlock,
+} from "@meridian/agent-edit/integration";
 import {
   cleanupSemantic,
   DIFF_DELETE,

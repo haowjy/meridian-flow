@@ -1,5 +1,5 @@
 /** Real-adapter fixture orchestration for the split cross-Work merge probe. */
-import { toDocHandle } from "@meridian/agent-edit";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";

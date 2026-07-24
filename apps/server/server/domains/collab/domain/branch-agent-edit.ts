@@ -16,7 +16,7 @@ import {
   type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
   yjsUpdateFromState,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";

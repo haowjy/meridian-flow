@@ -6,7 +6,7 @@ import {
   effectiveYjsUpdate,
   type UpdateJournal,
   yjsUpdateFromState,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {

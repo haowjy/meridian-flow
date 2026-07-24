@@ -1,4 +1,4 @@
-import { toDocHandle } from "@meridian/agent-edit";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {

@@ -7,7 +7,7 @@ import {
   type PersistedUpdate,
   type ReversalStore,
   type UpdateJournal,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";

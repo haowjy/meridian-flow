@@ -1,6 +1,6 @@
 /** Killed-process settlement equivalence oracle over normalized durable outputs. */
 import { isDeepStrictEqual } from "node:util";
-import type { LineageRange } from "@meridian/agent-edit";
+import type { LineageRange } from "@meridian/agent-edit/integration";
 
 export type CanonicalSettlementIdentity = {
   documentId: string;

@@ -6,7 +6,7 @@ import {
   type DocumentLockOptions,
   DocumentNotFoundError,
   type UpdateJournal,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { loadDocumentState } from "./document-loader.js";

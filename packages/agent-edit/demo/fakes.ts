@@ -4,7 +4,7 @@ import {
   type DocumentLifecycle,
   DocumentNotFoundError,
   type UpdateJournal,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import * as Y from "yjs";
 import { effectiveYjsUpdate, yjsUpdateFromState } from "../src/yjs-update.js";

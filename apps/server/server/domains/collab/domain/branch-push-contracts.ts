@@ -1,5 +1,5 @@
 /** Neutral branch journal and auto-push contracts shared across collab domain services. */
-import type { LineageRange } from "@meridian/agent-edit";
+import type { LineageRange } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 
 export type BranchJournalRow = {

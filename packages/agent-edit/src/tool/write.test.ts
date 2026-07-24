@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAgentEditCore, toDocHandle, type WriteIdempotencyHitDetail } from "../index.js";
+import { toDocHandle } from "../handles.js";
+import { createAgentEditCore, type WriteIdempotencyHitDetail } from "../index.js";
 import { fragmentOf } from "../model/y-prosemirror.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {

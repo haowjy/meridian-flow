@@ -6,7 +6,7 @@ import {
   type LineageRange,
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
 import * as Y from "yjs";
 import { z } from "zod";

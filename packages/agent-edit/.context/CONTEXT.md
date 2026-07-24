@@ -146,9 +146,13 @@ only. Optional — falls back to a local in-memory map when omitted.
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
+`withResponseDocument(...)`, `responseDocuments(...)`,
 `getAvailability(docId, threadId)`, `undo(docId, threadId)`,
-`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
-`redoTurn` remain host-compatible aliases. Host
+`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`.
+Raw staged Yjs bytes stay private; `withResponseDocument` lends the effective
+response view for the duration of one callback. Composition ports, concrete
+adapters, snapshots, provenance algebra, and Yjs utilities live on the explicit
+`@meridian/agent-edit/integration` entry instead of the default façade. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
 `getAvailability` is the source of truth for whether write-level undo/redo will
@@ -578,7 +582,7 @@ paths so accidental UUID interpolation fails loudly.
 Package tests cover block-hash stability, markup round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
-drift invariants, availability, and public turn seams), response
+drift invariants, and availability), response
 commit/recovery, and create lifecycle.
 
 ### Write handles and selective reversal
