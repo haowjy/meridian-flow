@@ -167,9 +167,9 @@ describe("ChangeViewRows", () => {
       trailId: "trail-1",
       projectionRevision: 1,
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-      admittedByUserId: null,
       changes: [
         {
+          admittedByUserId: null,
           changeId: "change-sweep",
           kind: "delete",
           navigation: { kind: "unavailable", reason: "test" },

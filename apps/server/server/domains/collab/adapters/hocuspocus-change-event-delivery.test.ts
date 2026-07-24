@@ -10,7 +10,6 @@ const message = {
   trailId: "trail-1",
   projectionRevision: 1,
   author: { kind: "agent" as const, threadId: "thread-1", turnId: "turn-1" },
-  admittedByUserId: null,
   changes: [],
   truncated: false,
 };

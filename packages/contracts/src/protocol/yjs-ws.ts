@@ -16,6 +16,7 @@ export type YjsRoomName =
   | { kind: "branch"; branchId: string; generation: number };
 
 export type ChangeEventProjection = Pick<TrailChangeV1, "changeId" | "kind" | "navigation"> & {
+  admittedByUserId: string | null;
   swept: boolean;
   excerpt: string | null;
   pureDeletionOffset: number | null;
@@ -32,13 +33,13 @@ export interface ChangeEventWsMessage {
    */
   projectionRevision: number;
   /**
-   * Authorship and admission are independent facts. Author drives identity and
-   * the conversation link; the admitter drives client self-suppression.
+   * Authorship comes from durable trail ownership and drives identity and the
+   * conversation link. The writer arm is reserved for future writer-push
+   * broadcasts; current change-event producers emit only agent ownership.
    */
   author:
     | { kind: "agent"; threadId: string; turnId: string | null }
     | { kind: "writer"; userId: string };
-  admittedByUserId: string | null;
   changes: ChangeEventProjection[];
   truncated: boolean;
 }
@@ -53,6 +54,7 @@ const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChang
   .pick({ changeId: true, kind: true, navigation: true })
   .extend({
     swept: z.boolean(),
+    admittedByUserId: z.string().nullable(),
     excerpt: z.string().max(500).nullable(),
     pureDeletionOffset: z.number().int().nonnegative().nullable(),
   });
@@ -72,7 +74,6 @@ const changeEventWsMessageSchema: z.ZodType<ChangeEventWsMessage> = z
       }),
       z.object({ kind: z.literal("writer"), userId: z.string() }),
     ]),
-    admittedByUserId: z.string().nullable(),
     changes: z.array(changeEventProjectionSchema),
     truncated: z.boolean(),
   })

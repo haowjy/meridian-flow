@@ -107,5 +107,5 @@ export type CommittedChangeTrailProjection = {
   owner: NormalizedTrail["owner"];
   documentId: string;
   projectionRevision: number;
-  changes: readonly TrailChangeV1[];
+  changes: readonly (TrailChangeV1 & { admittedByUserId: string | null })[];
 };
