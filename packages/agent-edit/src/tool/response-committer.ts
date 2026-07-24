@@ -70,8 +70,6 @@ export interface ResponseCommitOptions {
     commit(): void | Promise<void>;
     abort(): void | Promise<void>;
   }): void;
-  /** Host hook executed inside its response transaction after the outcome is known. */
-  beforeTransactionCommit?(result: ResponseCommitSuccessResult): void | Promise<void>;
 }
 
 export interface ResponseStagePreflightInput {

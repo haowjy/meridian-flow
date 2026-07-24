@@ -2089,12 +2089,6 @@ export function createThreadPeerAgentEditCore(input: {
     reverse(inputReverse) {
       return input.liveUtilityCore.reverse(inputReverse);
     },
-    async undoTurn(docId, threadId) {
-      return (await reversalCoreFor(docId as DocumentId, threadId)).undoTurn(docId, threadId);
-    },
-    async redoTurn(docId, threadId) {
-      return (await reversalCoreFor(docId as DocumentId, threadId)).redoTurn(docId, threadId);
-    },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];
       if (docId && input.discardThreadPeerBranches) {

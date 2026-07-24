@@ -43,18 +43,6 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): Age
       isError: false,
       text: "",
     }),
-    undoTurn: async () => ({
-      command: "undo",
-      status: "nothing_to_undo",
-      isError: false,
-      text: "",
-    }),
-    redoTurn: async () => ({
-      command: "redo",
-      status: "nothing_to_redo",
-      isError: false,
-      text: "",
-    }),
     reverse: async (input) => ({
       command: input.direction,
       status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
