@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: Yjs WebSocket routes now delegate collaboration lifecycle,
+  writer admission, reconnect reconciliation, and graceful drain to one gateway.
+
 - `apps/server`: collab composition now assembles required review, response,
   reversal, effective-read, projection, and thread-peer services from explicit
   production or in-memory adapters instead of hiding feature fallbacks in one

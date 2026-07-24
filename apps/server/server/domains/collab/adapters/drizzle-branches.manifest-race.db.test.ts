@@ -15,7 +15,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
-import { hasLiveManifestMembership } from "../../../routes/ws/yjs.js";
+import { hasLiveManifestMembership } from "../../../lib/yjs-ws-handler.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
