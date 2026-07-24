@@ -11,6 +11,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
 const { ChangeViewRows } = await import("./ChangeViewRows");
+const SWEEP_ROW_TEXT = "Replaced a passage, including edits the agent hadn't seen yet.";
 
 // Captured from the G8 S2 durable detail before the diagnostic Restore. Keep
 // this wire-shaped instead of rebuilding the row through component props: the
@@ -148,7 +149,7 @@ describe("ChangeViewRows", () => {
       async () => {
         expect(document.body.textContent).toContain("Restore");
         expect(document.body.textContent).not.toContain("Copy");
-        await click("Removed");
+        await click(SWEEP_ROW_TEXT);
         expect(document.body.textContent).toContain("Restore");
         expect(document.body.textContent).not.toContain("Copy");
       },
@@ -188,7 +189,7 @@ describe("ChangeViewRows", () => {
         runAction={runAction}
       />,
       async () => {
-        expect(document.body.textContent).toContain("Removed");
+        expect(document.body.textContent).toContain(SWEEP_ROW_TEXT);
         expect(document.body.textContent).toContain("The writer's exact words.");
         await click("Restore");
         expect(document.body.textContent).toContain("Restored");
