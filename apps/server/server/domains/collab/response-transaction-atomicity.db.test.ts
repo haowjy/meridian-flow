@@ -12,6 +12,7 @@ import {
   runInDrizzleTransaction,
   schema,
   THREAD_ID,
+  TURN_ID,
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
@@ -364,5 +365,85 @@ describe("change trail (postgres)", () => {
       }),
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
+  });
+
+  it("does not join separate selective edits into an enclosing replacement scope", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000837";
+    await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
+    const fixture = harness.crossWorkProbeFixture();
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+    };
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "Left root.",
+          content: "LEFT DRAFT",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "Right root.",
+          content: "RIGHT DRAFT",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID,
+        turnId: context.turnId as never,
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const first = fixture.model.getBlocks(toDocHandle(doc))[0] ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        first,
+        fixture.markupCodec.parse("Writer middle insertion."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: preview.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: preview.draftRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toBe(
+      "LEFT DRAFT\n\nWriter middle insertion.\n\nRIGHT DRAFT\n",
+    );
   });
 });
