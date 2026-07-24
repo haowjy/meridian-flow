@@ -6,7 +6,7 @@ import {
   resetDatabase,
 } from "./test-support/change-trail-postgres-harness.js";
 import {
-  type CrossWorkProbeObservation,
+  type CrossWorkProbeResult,
   runCrossWorkProbe,
 } from "./test-support/cross-work-probe-harness.js";
 
@@ -21,17 +21,17 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
 
   it("Case A: records stale conflicting manual Apply behavior", async () => {
     const harness = createHarness();
-    const observation = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "manual");
-    writeObservation(observation);
+    const result = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "manual");
+    writeResult(result);
 
-    expect(observation.aApply).toMatchObject({
+    expect(result.aApply).toMatchObject({
       status: "pushed",
       liveOriginTypes: expect.arrayContaining(["system"]),
     });
-    expect(observation.bApply.status).toBe("concurrent_conflict");
-    expect(observation.approvedTextSurvived).toBe(true);
-    expect(observation.manuscript.afterBApply).toBe(observation.manuscript.beforeBApply);
-    expect(observation.rereview).toMatchObject({
+    expect(result.bApply.status).toBe("concurrent_conflict");
+    expect(result.approvedTextSurvived).toBe(true);
+    expect(result.manuscript.afterBApply).toBe(result.manuscript.beforeBApply);
+    expect(result.rereview).toMatchObject({
       initialStatus: "concurrent_conflict",
       selectedOperationIds: [expect.any(String)],
       applyStatus: "partial_applied",
@@ -42,21 +42,19 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
 
   it("Case B: records stale apply_and_trail settlement and receipt behavior", async () => {
     const harness = createHarness();
-    const observation = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "auto");
-    writeObservation(observation);
+    const result = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "auto");
+    writeResult(result);
 
-    expect(observation.aApply).toMatchObject({
+    expect(result.aApply).toMatchObject({
       status: "pushed",
       liveOriginTypes: expect.arrayContaining(["system"]),
     });
-    expect(observation.bApply.status).toBe("pushed");
-    expect(observation.approvedTextSurvived).toBe(false);
-    expect(observation.protection.classification).toBe("protected");
-    expect(observation.protection.capturedBodies.join("\n")).toContain(
-      "Writer-approved Work A text.",
-    );
-    expect(observation.protection.restoreActionable).toBe(true);
-    expect(observation.protection.trailChanges).toEqual(
+    expect(result.bApply.status).toBe("pushed");
+    expect(result.approvedTextSurvived).toBe(false);
+    expect(result.protection.classification).toBe("protected");
+    expect(result.protection.capturedBodies.join("\n")).toContain("Writer-approved Work A text.");
+    expect(result.protection.restoreActionable).toBe(true);
+    expect(result.protection.trailChanges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           navigation: expect.objectContaining({
@@ -70,22 +68,22 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
         }),
       ]),
     );
-    expect(observation.protection.deliveredEvents).toEqual(
+    expect(result.protection.deliveredEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ counts: expect.objectContaining({ swept: 1 }) }),
       ]),
     );
-    expect(observation.protection.restoreOutcome).toBe("applied");
-    expect(observation.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
-    const receipt = JSON.stringify(observation.echo);
+    expect(result.protection.restoreOutcome).toBe("applied");
+    expect(result.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
+    const receipt = JSON.stringify(result.echo);
     expect(receipt).toContain("Work B stale replacement.");
     expect(receipt).not.toContain("Writer-approved Work A text.");
     harness.destroyWarmState();
   });
 });
 
-function writeObservation(observation: CrossWorkProbeObservation): void {
+function writeResult(result: CrossWorkProbeResult): void {
   process.stdout.write(
-    `\nCROSS_WORK_PROBE ${observation.case.toUpperCase()}\n${JSON.stringify(observation, null, 2)}\n`,
+    `\nCROSS_WORK_PROBE ${result.case.toUpperCase()}\n${JSON.stringify(result, null, 2)}\n`,
   );
 }
