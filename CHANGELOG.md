@@ -5,6 +5,8 @@
 - `apps/server`: request UUIDs now share one canonical hyphenated wire grammar,
   normalize uppercase IDs, accept every UUID version/variant, and reject malformed
   HTTP/WS IDs before Postgres can turn them into `22P02` 500s (#357).
+- `apps/server`: authentication now rejects cross-principal email collisions
+  with a structured 409 instead of adopting the existing Meridian account.
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
   branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
   PR evidence, GitHub failures, and refs that move before execution are refused.
