@@ -70,12 +70,17 @@ type TestPushStores = Pick<
 > &
   Pick<PushCommitStore, "commitPush" | "markRollbackPending"> &
   WorkPushPolicyStore &
-  Partial<
-    Omit<
-      BranchJournalReadStore & PushCommitStore,
-      "commitPush" | "listActiveJournalRows" | "listConcurrentJournalRows" | "markRollbackPending"
-    >
-  >;
+  SettlementObserver & {
+    listReviewableJournalRows?: BranchJournalReadStore["listReviewableJournalRows"];
+    latestPushForBranch?: BranchJournalReadStore["latestPushForBranch"];
+    listPushesForDocument?: BranchJournalReadStore["listPushesForDocument"];
+    listJournalRowsForTurn?: BranchJournalReadStore["listJournalRowsForTurn"];
+    listJournalRowsForBranch?: BranchJournalReadStore["listJournalRowsForBranch"];
+    listPushLineageForTurn?: BranchJournalReadStore["listPushLineageForTurn"];
+    commitPushBatch?: PushCommitStore["commitPushBatch"];
+    commitDiscard?: PushCommitStore["commitDiscard"];
+    commitTurnRedo?: PushCommitStore["commitTurnRedo"];
+  };
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -93,28 +98,92 @@ function createBranchPushService(
     BranchPushServiceInput,
     "commitStore" | "journalReadStore" | "settlementStore" | "workPushPolicyStore"
   > & {
-    pushStore: TestPushStores & SettlementObserver;
+    pushStore: TestPushStores;
     settlementStore?: InMemoryPendingSettlementStore;
   },
 ) {
   const settlementStore = input.settlementStore ?? createInMemoryPendingSettlementStore();
+  const rows = new Map<string, BranchJournalRow>();
+  const pushes = new Map<number, PushLineageRow>();
+  const rememberRows = (observed: readonly BranchJournalRow[]) => {
+    for (const row of observed) {
+      rows.set(`${row.branchId}:${row.generation}:${row.id}`, row);
+    }
+    return [...observed];
+  };
+  const rememberPushes = (observed: readonly PushLineageRow[]) => {
+    for (const push of observed) pushes.set(push.id, push);
+    return [...observed];
+  };
+  const storedRows = (branchId: string, generation: number) =>
+    [...rows.values()].filter((row) => row.branchId === branchId && row.generation === generation);
   const journalReadStore: BranchJournalReadStore = {
-    listActiveJournalRows: input.pushStore.listActiveJournalRows,
-    listReviewableJournalRows:
-      input.pushStore.listReviewableJournalRows ?? input.pushStore.listActiveJournalRows,
-    listConcurrentJournalRows: input.pushStore.listConcurrentJournalRows,
-    latestPushForBranch: input.pushStore.latestPushForBranch ?? (async () => null),
-    listPushesForDocument: input.pushStore.listPushesForDocument ?? (async () => []),
-    listJournalRowsForTurn: input.pushStore.listJournalRowsForTurn ?? (async () => []),
-    listJournalRowsForBranch:
-      input.pushStore.listJournalRowsForBranch ??
-      (async ({ branchId, generation }) =>
-        input.pushStore.listActiveJournalRows(branchId, generation)),
-    listPushLineageForTurn: input.pushStore.listPushLineageForTurn ?? (async () => []),
+    async listActiveJournalRows(branchId, generation) {
+      rememberRows(await input.pushStore.listActiveJournalRows(branchId, generation));
+      return storedRows(branchId, generation).filter((row) => row.status === "active");
+    },
+    async listReviewableJournalRows(branchId, generation) {
+      if (input.pushStore.listReviewableJournalRows) {
+        rememberRows(await input.pushStore.listReviewableJournalRows(branchId, generation));
+      } else {
+        rememberRows(await input.pushStore.listActiveJournalRows(branchId, generation));
+      }
+      return storedRows(branchId, generation).filter(
+        (row) => row.status === "active" || row.status === "rollback_pending",
+      );
+    },
+    async listConcurrentJournalRows(branchId, generation, options) {
+      return rememberRows(
+        await input.pushStore.listConcurrentJournalRows(branchId, generation, options),
+      );
+    },
+    async latestPushForBranch(branchId, generation) {
+      if (input.pushStore.latestPushForBranch) {
+        const push = await input.pushStore.latestPushForBranch(branchId, generation);
+        if (push) rememberPushes([push]);
+        return push;
+      }
+      return (
+        [...pushes.values()]
+          .reverse()
+          .find(
+            (push) =>
+              push.branchId === branchId && push.receiptPayload?.branchGeneration === generation,
+          ) ?? null
+      );
+    },
+    async listPushesForDocument(documentId) {
+      if (input.pushStore.listPushesForDocument) {
+        return rememberPushes(await input.pushStore.listPushesForDocument(documentId));
+      }
+      return [...pushes.values()].filter((push) => push.documentId === documentId);
+    },
+    async listJournalRowsForTurn(turnInput) {
+      if (!input.pushStore.listJournalRowsForTurn) {
+        throw new Error("test journal read store does not implement listJournalRowsForTurn");
+      }
+      return rememberRows(await input.pushStore.listJournalRowsForTurn(turnInput));
+    },
+    async listJournalRowsForBranch(branchInput) {
+      if (!input.pushStore.listJournalRowsForBranch) {
+        throw new Error("test journal read store does not implement listJournalRowsForBranch");
+      }
+      return rememberRows(await input.pushStore.listJournalRowsForBranch(branchInput));
+    },
+    async listPushLineageForTurn(turnInput) {
+      if (input.pushStore.listPushLineageForTurn) {
+        return rememberPushes(await input.pushStore.listPushLineageForTurn(turnInput));
+      }
+      return [...pushes.values()].filter(
+        (push) => push.threadId === turnInput.threadId && push.turnId === turnInput.turnId,
+      );
+    },
   };
   const commitStore: PushCommitStore = {
     async commitPush(prepared) {
       const result = await input.pushStore.commitPush(prepared);
+      rememberRows(prepared.journalRows);
+      rememberPushes([result.push]);
       if (result.status === "inserted") {
         settlementStore.stage({
           ...prepared.pendingLiveSettlement,
@@ -128,6 +197,8 @@ function createBranchPushService(
         throw new Error("test push commit store does not implement commitPushBatch");
       }
       const result = await input.pushStore.commitPushBatch(prepared);
+      rememberRows(prepared.pushes.flatMap((push) => push.journalRows));
+      rememberPushes(result.pushes);
       for (const [index, push] of result.pushes.entries()) {
         const candidate = prepared.pushes[index];
         if (!candidate) throw new Error("missing prepared batch settlement");
@@ -179,23 +250,6 @@ function createBranchPushService(
   return {
     ...branchPush,
     ...branchReview,
-    ...(!input.pushStore.commitDiscard
-      ? {
-          async markFailedResponseRollbackPending(rollbackInput: {
-            branchId: string;
-            threadId: ThreadId;
-            turnId: TurnId;
-          }) {
-            const branch = await input.branchStore.getBranch(rollbackInput.branchId);
-            if (!branch) throw new Error(`Branch ${rollbackInput.branchId} does not exist`);
-            const rowsMarked = await commitStore.markRollbackPending({
-              ...rollbackInput,
-              generation: branch.generation,
-            });
-            return { status: "rollback_pending" as const, rowsMarked };
-          },
-        }
-      : {}),
   };
 }
 
@@ -398,7 +452,11 @@ class Harness {
   failApply = false;
   readonly pushStore: TestPushStores = {
     listActiveJournalRows: vi.fn(async () => (this.row.status === "active" ? [this.row] : [])),
-    listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn([this.row], input)),
+    // The baseline fixture has rollback marking but no reversal persistence.
+    // Tests that install commitDiscard explicitly activate the reversal row view.
+    listJournalRowsForTurn: vi.fn(async (input) =>
+      this.pushStore.commitDiscard ? rowsForTurn([this.row], input) : [],
+    ),
     listJournalRowsForBranch: vi.fn(async () => [this.row]),
     listConcurrentJournalRows: vi.fn(
       listConcurrentJournalRowsInMemory([this.row], (branchId) =>
