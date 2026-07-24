@@ -212,28 +212,20 @@ export function createMutationCommit(deps: {
       input.commandName,
       input.docId,
       async (liveDoc) => {
-        const preflight = await captureCommitPreflight(liveDoc, input);
-        const committed = await commitJournalBatch([
-          {
-            docId: input.docId,
-            update: input.update,
-            meta: input.meta,
-            ...(input.mutation ? { mutation: input.mutation } : {}),
-          },
-        ]);
-        journalCommitKind = committed.journalCommitKind;
-        captured = preflight;
-        const beforeApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
-        // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
-        // never insert an await immediately before Y.applyUpdate.
-        Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
-        const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
-        try {
-          lateSweep = await destructiveReport(input, preflight, beforeApplyDoc, afterApplyDoc);
-        } finally {
-          beforeApplyDoc.destroy();
-          afterApplyDoc.destroy();
-        }
+        const applied = await applyJournaledUpdateUnderLock(liveDoc, {
+          ...input,
+          journalEntries: [
+            {
+              docId: input.docId,
+              update: input.update,
+              meta: input.meta,
+              ...(input.mutation ? { mutation: input.mutation } : {}),
+            },
+          ],
+        });
+        journalCommitKind = applied.journalCommitKind;
+        captured = applied.concurrent;
+        lateSweep = applied.lateSweep;
         return null;
       },
     );
@@ -325,28 +317,15 @@ export function createMutationCommit(deps: {
       input.commandName,
       input.docId,
       async (liveDoc) => {
-        const preflight = await captureCommitPreflight(liveDoc, {
+        const applied = await applyJournaledUpdateUnderLock(liveDoc, {
           ...input,
           ownTurnId: input.turnId,
+          update: mergeUpdates(input.updates.map((entry) => entry.update)),
+          journalEntries: journalEntries(input),
         });
-        const journalCommit = await commitJournalBatch(journalEntries(input));
-        journalCommitKind = journalCommit.journalCommitKind;
-        captured = preflight;
-        const beforeApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
-        // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
-        // never insert an await immediately before Y.applyUpdate.
-        Y.applyUpdate(
-          liveDoc,
-          mergeUpdates(input.updates.map((entry) => entry.update)),
-          input.liveOrigin,
-        );
-        const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
-        try {
-          lateSweep = await destructiveReport(input, preflight, beforeApplyDoc, afterApplyDoc);
-        } finally {
-          beforeApplyDoc.destroy();
-          afterApplyDoc.destroy();
-        }
+        journalCommitKind = applied.journalCommitKind;
+        captured = applied.concurrent;
+        lateSweep = applied.lateSweep;
         return null;
       },
     );
@@ -394,25 +373,49 @@ export function createMutationCommit(deps: {
     input: CommitPreflightInput & { update: Uint8Array; liveOrigin: ConcurrentUpdateOrigin },
     preflight?: CapturedConcurrentDetection,
   ): Promise<ApplyWithRecheckResult> {
-    const current = preflight
-      ? await captureConcurrentDetection(liveDoc, input, preflight)
+    const applied = await applyJournaledUpdateUnderLock(liveDoc, {
+      ...input,
+      journalEntries: [],
+      preflight,
+    });
+    return {
+      concurrent: applied.concurrent,
+      ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
+    };
+  }
+
+  async function applyJournaledUpdateUnderLock(
+    liveDoc: Y.Doc,
+    input: CommitPreflightInput & {
+      update: Uint8Array;
+      liveOrigin: ConcurrentUpdateOrigin;
+      journalEntries: readonly JournalBatchAppendEntry[];
+      preflight?: CapturedConcurrentDetection;
+    },
+  ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
+    const journalCommitKind =
+      input.journalEntries.length > 0
+        ? (await commitJournalBatch(input.journalEntries)).journalCommitKind
+        : null;
+    const current = input.preflight
+      ? await captureConcurrentDetection(liveDoc, input, input.preflight)
       : await captureConcurrentDetection(liveDoc, input);
     const beforeApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
     const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
-    let lateSweep: DestructiveSweepReport | undefined;
     try {
-      lateSweep = await destructiveReport(input, current, beforeApplyDoc, afterApplyDoc);
+      const lateSweep = await destructiveReport(input, current, beforeApplyDoc, afterApplyDoc);
+      return {
+        concurrent: current,
+        journalCommitKind,
+        ...(lateSweep ? { lateSweep } : {}),
+      };
     } finally {
       beforeApplyDoc.destroy();
       afterApplyDoc.destroy();
     }
-    return {
-      concurrent: current,
-      ...(lateSweep ? { lateSweep } : {}),
-    };
   }
 
   async function recheckCommittedUpdate(

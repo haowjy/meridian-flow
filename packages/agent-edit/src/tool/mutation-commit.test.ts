@@ -134,7 +134,9 @@ describe("mutation commit", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      concurrentUpdates: [],
+      concurrentUpdates: [
+        expect.objectContaining({ origin: { type: "human", userId: "unknown" } }),
+      ],
       lateSweep: {
         affectedBlockHashes: [fixture.deletedHash],
         capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
@@ -346,7 +348,7 @@ describe("mutation commit", () => {
 
     expect(result.ok).toBe(true);
     expect(coordinator.acquisitions).toBe(1);
-    expect(coordinator.events).toEqual(["gate:1", "journal:1", "apply:1"]);
+    expect(coordinator.events).toEqual(["journal:1", "gate:1", "apply:1"]);
   });
 });
 

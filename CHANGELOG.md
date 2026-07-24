@@ -11,6 +11,9 @@
 - `apps/server`: live and branch writer frames now share one admission order:
   authority/generation validation, containment acknowledgement, fresh-authorship
   validation, then durable append (#334).
+- `packages/agent-edit`: immediate writes, local-runtime sync, and response
+  phase-C projection now share one journal-first, lock-scoped apply kernel
+  (#334).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
