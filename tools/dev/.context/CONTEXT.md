@@ -31,6 +31,7 @@ tools/dev/
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
 │   ├── migration-state.ts     Expected vs applied migration hash drift detection
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
+│   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
@@ -42,6 +43,8 @@ tools/dev/
 ├── dev-mode.ts                CLI arg parsing + mode detection (local/tailscale/funnel)
 ├── dev-app-env-passthrough.ts App env key allowlist for tmux command
 ├── ensure-db.ts / prepare-db.ts / drop-db.ts / reset-db.ts
+├── smoke-app-dev-transform.ts  Vite dev transform/render boot gate
+├── smoke-app-prod-boot.ts      Production build + Nitro boot gate
 ├── run-db-tests.ts             Owned local DB lifecycle + shared Vitest suite
 ├── gc-dbs.ts                  Stale worktree database cleanup
 ├── print-worktree-env.ts      eval'd by .envrc
@@ -86,7 +89,7 @@ tools/dev/
   2. Server `/readyz` returns 200 and app origin returns 200 or 3xx (`waitForDevReadiness`, HTTP probes via portless CA)
   3. Tailscale external routes verified against `tailscale serve status --json` (`TailscaleDevLifecycle.ensureExternalRoutes`)
   If any gate fails, the script exits with an actionable message and prints the repository-relative `logs/portless.log` path — never prints URLs the app can't reach.
-- **App-boot ownership and routes.** `smoke-app-boot.ts` trusts only the spawned child's reported origin, checks that child remains alive, and applies `lib/app-boot-contract.ts`: `/` must return 307; `/login` must return 200 with the Meridian login-page marker. A foreign listener or merely non-5xx response is not success.
+- **App boot ownership and routes.** `smoke-app-dev-transform.ts` and `smoke-app-prod-boot.ts` trust only the spawned child's reported origin, check that child remains alive, and apply `lib/app-boot-contract.ts`: `/` must return 307; `/login` must return 200 with the Meridian login-page marker. The production gate runs the package's real `build` and validated `start` scripts with fake config scoped to its child. A foreign listener or merely non-5xx response is not success.
 - **Verified Tailscale external routes.** External URLs are only printed after `verifyTailscaleExternalRoutes` confirms the expected `serve`/`funnel` binding exists in `tailscale serve status --json`. An unverified route is treated as a startup failure.
 - **Shared service ports** are deterministic per worktree (`lib/dev-share-ports.ts`): app backend ports in `[37000, 45000)`, Tailscale HTTPS ports in `[47000, 55000)`, funnel ports are fixed (`443`, `8443`). Hash-based collision avoidance across worktrees.
 - `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` terminate only this worktree's owned tmux session and routes. Restart waits for fixed backend ports to become bindable; a remaining listener is reported by PID/command as non-owned and aborts startup. Port discovery never authorizes signaling a process, and discovery failure is a hard refusal.

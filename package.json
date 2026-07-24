@@ -34,7 +34,8 @@
     "dev:db:drop": "tsx tools/dev/drop-db.ts",
     "db:migration-lint": "tsx tools/dev/migration-lint.ts --all",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts",
-    "smoke:app-boot": "tsx tools/dev/smoke-app-boot.ts",
+    "smoke:app-dev-transform": "tsx tools/dev/smoke-app-dev-transform.ts",
+    "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts"
