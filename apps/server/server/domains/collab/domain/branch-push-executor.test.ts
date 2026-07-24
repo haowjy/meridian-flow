@@ -250,6 +250,19 @@ function createBranchPushService(
   return {
     ...branchPush,
     ...branchReview,
+    async markFailedResponseRollbackPending(rollbackInput: {
+      branchId: string;
+      threadId: ThreadId;
+      turnId: TurnId;
+    }) {
+      const branch = await input.branchStore.getBranch(rollbackInput.branchId);
+      if (!branch) throw new Error(`Branch ${rollbackInput.branchId} does not exist`);
+      const rowsMarked = await commitStore.markRollbackPending({
+        ...rollbackInput,
+        generation: branch.generation,
+      });
+      return { status: "rollback_pending" as const, rowsMarked };
+    },
   };
 }
 
@@ -452,11 +465,7 @@ class Harness {
   failApply = false;
   readonly pushStore: TestPushStores = {
     listActiveJournalRows: vi.fn(async () => (this.row.status === "active" ? [this.row] : [])),
-    // The baseline fixture has rollback marking but no reversal persistence.
-    // Tests that install commitDiscard explicitly activate the reversal row view.
-    listJournalRowsForTurn: vi.fn(async (input) =>
-      this.pushStore.commitDiscard ? rowsForTurn([this.row], input) : [],
-    ),
+    listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn([this.row], input)),
     listJournalRowsForBranch: vi.fn(async () => [this.row]),
     listConcurrentJournalRows: vi.fn(
       listConcurrentJournalRowsInMemory([this.row], (branchId) =>

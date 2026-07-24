@@ -13,7 +13,7 @@ type CandidateSource = {
   rows: BranchJournalRow[];
 };
 
-export type CandidateBatchBuildResult =
+type CandidateBatchBuildResult =
   | { kind: "batch"; batch: CandidateBatch }
   | { kind: "no_active_rows"; branch: BranchSnapshot };
 
