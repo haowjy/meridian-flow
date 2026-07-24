@@ -10,26 +10,42 @@ describe("projection effects document write hook", () => {
   it("settles activity and projection independently and reports the first failure", async () => {
     const activityFailure = new Error("activity failed");
     const projectionFailure = new Error("projection failed");
+    let rejectProjection = (_cause: unknown): void => {
+      throw new Error("projection effect did not start");
+    };
+    const projectionPending = new Promise<void>((_resolve, reject) => {
+      rejectProjection = reject;
+    });
     const effects: DocumentProjectionEffects = {
       touchDocumentActivity: vi.fn(async () => {
         throw activityFailure;
       }),
-      updateProjection: vi.fn(async () => {
-        throw projectionFailure;
-      }),
+      updateProjection: vi.fn(() => projectionPending),
       applyPushCompletion: vi.fn(),
     };
     const hook = createProjectionEffectsDocumentWriteHook(effects);
     const at = new Date("2026-07-24T12:00:00.000Z");
 
-    await expect(
-      hook({
-        documentId: DOCUMENT_ID,
-        threadId: THREAD_ID,
-        markdown: "projection",
-        at,
-      }),
-    ).rejects.toBe(activityFailure);
+    const completion = hook({
+      documentId: DOCUMENT_ID,
+      threadId: THREAD_ID,
+      markdown: "projection",
+      at,
+    });
+    let completed = false;
+    void completion.then(
+      () => {
+        completed = true;
+      },
+      () => {
+        completed = true;
+      },
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(completed).toBe(false);
+
+    rejectProjection(projectionFailure);
+    await expect(completion).rejects.toBe(activityFailure);
     expect(effects.touchDocumentActivity).toHaveBeenCalledWith({
       documentId: DOCUMENT_ID,
       threadId: THREAD_ID,
