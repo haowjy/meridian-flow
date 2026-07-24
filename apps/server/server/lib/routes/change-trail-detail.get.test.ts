@@ -1,4 +1,4 @@
-/** Route contract coverage for retained unavailable change-trail document slots. */
+/** Route contract coverage for retained detail whose authorized anchor was deleted. */
 import { expect, it, vi } from "vitest";
 
 const { readDetails } = vi.hoisted(() => ({
@@ -7,7 +7,7 @@ const { readDetails } = vi.hoisted(() => ({
       trailId: "trail-1",
       documentId: "00000000-0000-4000-8000-000000000001",
       documentTitle: "Deleted chapter",
-      unavailable: true as const,
+      anchorState: "deleted" as const,
       changes: [{ changeId: "change-1", writerProtection: { body: { markdown: "Captured." } } }],
     },
   ]),
@@ -32,7 +32,7 @@ vi.mock("../../domains/threads/index.js", () => ({ requireThreadOwner: vi.fn() }
 const handler = (await import("../../routes/api/threads/[threadId]/change-trails/[trailId].get.js"))
   .default as (event: unknown) => Promise<unknown>;
 
-it("returns durable captured detail with the unavailable marker after hard deletion", async () => {
+it("returns durable captured detail with explicit deleted-anchor state", async () => {
   await expect(handler({})).resolves.toEqual({
     version: 1,
     trailId: "trail-1",
@@ -41,7 +41,7 @@ it("returns durable captured detail with the unavailable marker after hard delet
         trailId: "trail-1",
         documentId: "00000000-0000-4000-8000-000000000001",
         documentTitle: "Deleted chapter",
-        unavailable: true,
+        anchorState: "deleted",
         changes: [{ changeId: "change-1", writerProtection: { body: { markdown: "Captured." } } }],
       },
     ],

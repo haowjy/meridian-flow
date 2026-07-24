@@ -490,7 +490,7 @@ describe("change trail (postgres)", () => {
     ).resolves.toEqual([
       expect.objectContaining({
         documentId: ALPHA_ID,
-        unavailable: true,
+        anchorState: "deleted",
         changes: [
           expect.objectContaining({
             beforeText: "deleted-block|Captured after reload.",
@@ -498,6 +498,53 @@ describe("change trail (postgres)", () => {
         ],
       }),
     ]);
+  });
+
+  it("returns no protected trail detail when document authorization fails", async () => {
+    const trailId = "00000000-0000-4000-8000-000000000811";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 1,
+      documentCount: 1,
+    });
+    await db
+      .insert(schema.changeTrailDocumentOccurrences)
+      .values({ trailId, documentId: ALPHA_ID });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Protected chapter",
+      changes: [
+        {
+          changeId: "protected-change",
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: null,
+          kind: "delete",
+          beforeBlockId: "protected-block",
+          afterBlockId: null,
+          beforeText: "protected-block|Protected prose.",
+          afterTextAtReceipt: null,
+          navigation: { kind: "unavailable", reason: "document_deleted" },
+          swept: null,
+          reversible: false,
+        },
+      ],
+    });
+
+    const reader = createDrizzleChangeTrailReader(db, createDrizzleDocumentAccess(db));
+    await expect(
+      reader.readDetails({
+        threadId: THREAD_ID,
+        trailId,
+        userId: "00000000-0000-4000-8000-000000000812" as never,
+      }),
+    ).resolves.toEqual([]);
   });
 
   it("settles manual-policy turn work through a durable no-op", async () => {

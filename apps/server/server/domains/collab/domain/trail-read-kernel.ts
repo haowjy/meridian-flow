@@ -174,8 +174,8 @@ export type ChangeTrailDocumentDetailV1 = {
   documentId: string;
   documentTitle: string;
   changes: TrailChangeV1[];
-  /** The durable detail remains readable, but its live document cannot be opened. */
-  unavailable?: true;
+  /** Retained evidence stays readable after its authorized live anchor is deleted. */
+  anchorState: "available" | "deleted";
 };
 
 const ROOT_NAME = "prosemirror";
