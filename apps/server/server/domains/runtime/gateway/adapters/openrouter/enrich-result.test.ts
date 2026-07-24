@@ -21,7 +21,7 @@ function resultWithUsage(usage: GenerateResult["usage"]): GenerateResult {
   };
 }
 
-function stubGenerationFetch(): void {
+function stubGenerationFetch(totalCost = 0.0042): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => {
@@ -29,7 +29,7 @@ function stubGenerationFetch(): void {
         JSON.stringify({
           data: {
             id: "gen-1",
-            total_cost: 0.0042,
+            total_cost: totalCost,
             native_tokens_prompt: 111,
             native_tokens_cached: 1_792,
             native_tokens_completion: 74,
@@ -82,6 +82,21 @@ describe("OpenRouter result enrichment", () => {
       enrichmentSource: "generation_api",
     });
     expect(settlement?.persist).toBe(true);
+  });
+
+  it("preserves an authoritative zero cost instead of marking usage missing", async () => {
+    stubGenerationFetch(0);
+    const result = await enrichOpenRouterResult(
+      resultWithUsage({ inputTokens: 0, outputTokens: 0 }),
+      "test-key",
+      BASE_URL,
+    );
+
+    expect(result.providerData).toMatchObject({
+      reportedCostUsd: 0,
+      enrichmentSource: "generation_api",
+    });
+    expect(result.providerData).not.toMatchObject({ meteringStatus: "missing_usage" });
   });
 
   it("rejects non-canonical usage instead of hiding the invariant violation", async () => {

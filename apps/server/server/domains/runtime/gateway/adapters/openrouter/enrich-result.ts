@@ -68,15 +68,6 @@ export async function enrichOpenRouterResult(
     return result;
   }
 
-  if (!hasBillableTokenUsage(result.usage) && generation.total_cost <= 0) {
-    return withMissingUsageMeteringForOpenRouter(result, {
-      ...providerData,
-      generationId,
-      generation,
-      enrichmentSource: "generation_api",
-    });
-  }
-
   return {
     ...result,
     providerData: {
