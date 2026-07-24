@@ -28,12 +28,27 @@ journal do).
 
 `ResponseCommitter` commits buffered response updates through `UpdateJournal.appendBatch`.
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
-`ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
-use the same store to plan against retained update rows and mutation metadata.
+`ReversalStore.reserveWriteOrdinal`; a host may supply a durable group ID and
+reuse one ordinal for that group when its journal folds the mutations into one
+row. Each staged mutation also marks replacement-scope capture complete and
+carries certified semantic scope for replacements, including create-overwrite,
+so folding hosts can retain per-write scope without serializing live block
+handles. Undo/redo selection and availability then use the same store to plan
+against retained update rows and mutation metadata.
+Hosts with movable reversal authority implement `withReversalScope` so one
+command plans and persists against one pinned authority. A reconstruction that
+adds synthetic reconciliation updates exposes its durable
+`persistenceWatermark` separately from those synthetic sequence numbers.
 Scope reversal is operation-atomic: every selected group is reconstructed
 before persistence. Multi-group redo is consumed by
 `persistRedoBatch` in one store transaction, then the prepared updates are
 projected together.
+
+Persistence results distinguish durable from staged commits. A failed staged
+projection restores or evicts the runtime before reporting failure. A failed
+projection after a durable reversal recovers from the journal and reports the
+committed outcome; diagnostics must not turn that committed effect into an
+`internal_error`.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
@@ -132,35 +147,6 @@ Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
 only. Optional — falls back to a local in-memory map when omitted.
 
-### ObservationSnapshotStore (`src/ports/observation-snapshot.ts`)
-
-Durable response-scoped observation authority. `createObservationAuthority`
-builds a request-local candidate only from exact rendered block bodies or
-explicit-deletion bodies, then seals it to a successful model response. Before
-any document bytes enter request serialization, the runtime freezes one
-`ResponseCausalCutV1` for every touched document, including documents with no
-observation entries. The cut identifies that document authority's contiguous
-admitted prefix; it seals atomically with the successful response and snapshot.
-Keys use the full document-scoped Yjs item identity (`documentId`, `clientID`,
-`clock`), never a display hash. Omitted and `sync_overflow` bodies deliberately
-create no entry.
-
-Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut against
-the authoring response snapshot. At that synchronous cut it seals a
-`SealedWriterLineageV3` protection scope containing normalized protected roots
-and the response causal-cut ID. Empty scopes are still sealed. State-vector
-frontiers and missing-client rules are not authority. Reversal uses its
-authoring response snapshot independently from the canonical dependency guard.
-
-Concurrent re-sync output is shaped as contiguous prose runs, independent of
-document sections: changed blocks receive one full anchor on each side, nearby
-runs gap-merge with `DEFAULT_CONCURRENT_RUN_GAP`, and rewrite-density coverage
-expands to the whole document. Deletions always carry captured bodies. The
-runtime applies one provider-registry-derived aggregate byte budget to the
-indivisible runs; omitted runs emit `sync_overflow` and earn no reporting
-credit. A later destructive write still merges, and writer-lineage loss is
-captured in the sweep trail.
-
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
@@ -194,15 +180,19 @@ inside the final concurrent-detection window; the shared classifier alone
 decides whether the committed update produces a late-sweep report
 (durable-then-report).
 
-Every normal live projection also returns an immutable atomic observation cut:
-block snapshots immediately before and immediately after the synchronous Yjs
-apply. The final recheck, apply, and after capture have no await between them.
-The shared lifecycle-neutral classifier consumes before/after visible
-occurrences, durable provenance, the writer-protection scope, response cut, and
-observation credit. It returns eligible ranges plus final-rendering projections.
-Agent writes always commit through Yjs merge; classification controls only
-writer-facing sweep capture and trails. The echo informs the agent, the trail
-informs the writer, and agent-only destruction stays silent.
+Every normal live projection classifies the coordinated document immediately
+before and after the synchronous Yjs apply. The final recheck and apply have no
+await between them. The shared lifecycle-neutral classifier consumes those
+visible occurrences and durable writer/agent provenance, returning eligible
+ranges plus final-rendering projections. Agent writes always commit through Yjs
+merge; classification controls only writer-facing sweep capture and trails. The
+echo informs the agent, the trail informs the writer, and agent-only destruction
+stays silent.
+
+Immediate writes, local-runtime synchronization, and response phase-C projection
+compose the same lock-scoped apply kernel. When journal entries are supplied,
+the kernel appends them before its final concurrent recheck; already-durable
+response commits enter through the same kernel without re-appending.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
@@ -320,6 +310,10 @@ expansion, seq ownership, dependency evaluation) are private implementation
 details.
 
 **Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
+
+Multiple handles backed by the same durable journal update are one reversal
+boundary. Selecting any member expands to every handle sharing that update, so
+content and mutation status cannot diverge after a folded branch Apply.
 
 
 ### CRDT-neutral seam, ProseMirror content currency
@@ -518,8 +512,7 @@ When last-resort durable recovery succeeds, the committer compares its immutable
 pre-recovery snapshot with the recovered document through the same provenance
 classifier used by normal projection. A detected writer-lineage loss is returned
 with captured bodies as a late sweep; an unavailable recheck returns
-`awarenessDegraded`, grants no observation credit, and can never be laundered
-into plain committed.
+`awarenessDegraded` and can never be laundered into plain committed.
 
 Phase-C apply snapshots the coordinated Y.Doc before its awaited concurrent
 detection and diffs it again immediately before apply. The final snapshot check

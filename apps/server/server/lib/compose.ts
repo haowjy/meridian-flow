@@ -3,7 +3,6 @@
  * runtime service graph. App startup supplies process-level resources; this file
  * chooses concrete server adapters and assembles domain services behind ports.
  */
-import { createObservationAuthority } from "@meridian/agent-edit";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -40,7 +39,12 @@ import {
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
-import { createNoopEventSink, type EventSink, emitEvent } from "../domains/observability/index.js";
+import {
+  createNoopEventSink,
+  type EventQuery,
+  type EventSink,
+  emitEvent,
+} from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
   createDefaultPackageSeeder,
@@ -64,13 +68,13 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
-import { createDrizzleResponseObservations } from "../domains/runtime/adapters/drizzle-response-observations.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
   createChildRunCoordinator,
   createGatewayFromEnv,
   createHelperResultDelivery,
+  createInstrumentedGateway,
   createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
@@ -125,6 +129,7 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
+import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
   createAgentEditResponseWriteLifecycle,
@@ -155,6 +160,7 @@ export type AppServices = {
   agents: AgentPackageStore;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
   defaultPackageSeeder: DefaultPackageSeeder;
@@ -189,6 +195,7 @@ export type ProductionAppPorts = {
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   runtimeTools: RuntimeToolRegistry;
@@ -219,9 +226,9 @@ export type ProductionAppPorts = {
   activeDocuments: ActiveDocumentResolver;
 };
 
-const OBSERVATION_RENDER_SAFETY_TOKENS = 16_000;
+const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
 
-function observationRenderBudgetBytes(request: {
+function concurrentRenderBudgetBytes(request: {
   model?: string;
   messages: unknown;
   tools?: unknown;
@@ -237,7 +244,7 @@ function observationRenderBudgetBytes(request: {
   // Three UTF-8 bytes per remaining token deliberately underestimates capacity.
   const capacityBytes = Math.max(
     0,
-    (model.contextWindow - model.maxOutputTokens - OBSERVATION_RENDER_SAFETY_TOKENS) * 3,
+    (model.contextWindow - model.maxOutputTokens - CONCURRENT_RENDER_SAFETY_TOKENS) * 3,
   );
   return Math.max(0, capacityBytes - fixedRequestBytes);
 }
@@ -245,11 +252,12 @@ function observationRenderBudgetBytes(request: {
 export async function createProductionAppPorts(input: {
   db: Database;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway } = await createGatewayFromEnv(environment, {
+  const { gateway: rawGateway } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -270,6 +278,13 @@ export async function createProductionAppPorts(input: {
         payload: span.attributes ?? {},
       });
     },
+  });
+  const gateway = createInstrumentedGateway(rawGateway, {
+    sink: eventSink,
+    verbose: resolveObsVerbose({
+      rawNodeEnv: environment.NODE_ENV,
+      obsVerbose: environment.OBS_VERBOSE,
+    }),
   });
   const db = input.db;
   const threadRepos = createDrizzleRepositories(db);
@@ -349,6 +364,7 @@ export async function createProductionAppPorts(input: {
     journalReader,
     journalWriter,
     eventSink,
+    eventQuery: input.eventQuery,
     documentSync,
     contextPorts,
     runtimeTools,
@@ -400,8 +416,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
-  const responseObservations = createDrizzleResponseObservations(ports.db, ports.documentSync);
-  const observationAuthority = createObservationAuthority({ store: responseObservations.store });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -499,11 +513,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     notices: ports.notices,
     activeDocuments: ports.activeDocuments,
-    observationRendering: {
-      authority: observationAuthority,
-      budgetBytes: observationRenderBudgetBytes,
-      freezeCausalCuts: responseObservations.freezeCausalCuts,
-    },
+    concurrentRenderBudgetBytes,
   });
   runTurnProxy.bind(orchestrator);
 
@@ -527,6 +537,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agents: ports.agents,
     interruptRegistry,
     eventSink: ports.eventSink,
+    eventQuery: ports.eventQuery,
     packageRepository: ports.packageRepository,
     marsPackageFetcher: ports.marsPackageFetcher,
     defaultPackageSeeder: ports.defaultPackageSeeder,

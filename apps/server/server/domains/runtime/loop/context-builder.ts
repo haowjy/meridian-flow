@@ -45,7 +45,6 @@
  *   content, not as turn-structured data.
  */
 
-import type { WriteObservationEvidence } from "@meridian/agent-edit";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
@@ -67,26 +66,12 @@ export interface BuildContextInput {
   skillsSystemPromptSection?: string;
 }
 
-export type RequestObservationEvidence = WriteObservationEvidence & { documentId: string };
-
-/** Documents whose persisted tool output can serialize observation evidence into this request. */
-export function observationDocumentIds(blocks: readonly Block[]): string[] {
-  const ids = new Set<string>();
-  for (const block of blocks) {
-    if (block.blockType !== "tool_result" || block.pruned) continue;
-    const content = block.content as Parameters<typeof evidenceProvenByOutput>[0];
-    for (const evidence of evidenceProvenByOutput(content)) ids.add(evidence.documentId);
-  }
-  return [...ids].sort();
-}
-
 export function buildContext(input: BuildContextInput): {
   messages: Message[];
   tools?: Tool[];
-  observationEvidence: RequestObservationEvidence[];
 } {
   const messages: Message[] = [];
-  const observationEvidence: RequestObservationEvidence[] = [];
+  const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
   const composed = input.thread.composedSystemPrompt;
   if (composed && isThreadPromptFrozen(input.thread)) {
@@ -146,72 +131,76 @@ export function buildContext(input: BuildContextInput): {
         // as a separate tool-role message.
         if (block.blockType === "tool_result") {
           if (assistantParts.length > 0) {
-            messages.push(assistant(assistantParts.slice()));
+            const message = assistant(assistantParts.slice());
+            messages.push(message);
+            sourceTurnStatusByMessage.set(message, turn.status);
             assistantParts.length = 0;
           }
           const content = block.content as {
             toolCallId?: string;
             output?: JsonValue;
             isError?: boolean;
-            metadata?: {
-              documentId?: unknown;
-              observationEvidence?: unknown;
-            };
           } | null;
           const toolCallId = content?.toolCallId ?? "";
           messages.push(
             toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
           );
-          observationEvidence.push(...evidenceProvenByOutput(content));
           continue;
         }
         const part = blockToContentPart(block);
         if (part) assistantParts.push(part);
       }
       if (assistantParts.length > 0) {
-        messages.push(assistant(assistantParts.slice()));
+        const message = assistant(assistantParts.slice());
+        messages.push(message);
+        sourceTurnStatusByMessage.set(message, turn.status);
       }
     }
   }
 
   return {
-    messages,
+    messages: completeToolResultGroups(messages, sourceTurnStatusByMessage),
     tools: input.tools?.length ? input.tools : undefined,
-    observationEvidence,
   };
 }
 
-function evidenceProvenByOutput(
-  content: {
-    output?: JsonValue;
-    metadata?: { documentId?: unknown; observationEvidence?: unknown };
-  } | null,
-): RequestObservationEvidence[] {
-  const documentId = content?.metadata?.documentId;
-  const evidence = content?.metadata?.observationEvidence;
-  if (typeof documentId !== "string" || !Array.isArray(evidence)) return [];
-  const serializedOutput = JSON.stringify(content?.output ?? null);
-  return evidence.flatMap((value) => {
-    if (
-      !isWriteObservationEvidence(value) ||
-      !serializedOutput.includes(JSON.stringify(value.sourceText).slice(1, -1))
-    ) {
-      return [];
-    }
-    return [{ documentId, ...value }];
-  });
-}
+function completeToolResultGroups(
+  messages: readonly Message[],
+  sourceTurnStatusByMessage: ReadonlyMap<Message, Turn["status"]>,
+): Message[] {
+  const completed: Message[] = [];
 
-function isWriteObservationEvidence(value: unknown): value is WriteObservationEvidence {
-  if (typeof value !== "object" || value === null) return false;
-  const evidence = value as WriteObservationEvidence;
-  return (
-    Number.isSafeInteger(evidence.clientID) &&
-    Number.isSafeInteger(evidence.clock) &&
-    typeof evidence.sourceText === "string" &&
-    ((evidence.kind === "rendered" && typeof evidence.renderedContent === "string") ||
-      (evidence.kind === "explicit_deletion" && typeof evidence.capturedBody === "string"))
-  );
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    completed.push(message);
+    if (message.role !== "assistant") continue;
+
+    const missingResultIds = new Set(
+      message.content.flatMap((part) => (part.type === "tool_use" ? [part.toolCallId] : [])),
+    );
+    if (missingResultIds.size === 0) continue;
+
+    let nextIndex = index + 1;
+    while (messages[nextIndex]?.role === "tool") {
+      const toolMessage = messages[nextIndex];
+      completed.push(toolMessage);
+      for (const part of toolMessage.content) {
+        if (part.type === "tool_result") missingResultIds.delete(part.toolCallId);
+      }
+      nextIndex++;
+    }
+    index = nextIndex - 1;
+
+    const missingResultMessage =
+      sourceTurnStatusByMessage.get(message) === "cancelled"
+        ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
+        : "Tool call interrupted by an error; no result recorded. Side effects unknown — re-read state before retrying.";
+    for (const toolCallId of missingResultIds) {
+      completed.push(toolResult(toolCallId, missingResultMessage, true));
+    }
+  }
+
+  return completed;
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {

@@ -100,7 +100,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentTitle: "chapter",
           lockCutUpdate: Buffer.from(emptyState),
           pushUpdate: Buffer.from(emptyState),
-          lineageEvidence: { version: 2, items: [] },
           trailSeed: {},
         })),
       );

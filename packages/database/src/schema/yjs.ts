@@ -189,7 +189,6 @@ export const branchPushSettlementOutbox = pgTable(
     documentTitle: text("document_title").notNull(),
     lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
-    lineageEvidence: jsonb("lineage_evidence").$type<unknown>().notNull(),
     trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
     beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),

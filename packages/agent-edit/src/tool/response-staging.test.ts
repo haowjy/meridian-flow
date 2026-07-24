@@ -640,14 +640,20 @@ describe("response staging", () => {
       documentId: "chapter.md",
       updateCount: 1,
       concurrentEdits: expect.objectContaining({ human: [overlapHash], agent: [] }),
+      lateSweep: {
+        capturedDeletedBodies: expect.arrayContaining([
+          expect.objectContaining({ body: "sword zero." }),
+          expect.objectContaining({ body: "sword human." }),
+          expect.objectContaining({ body: "sword far." }),
+        ]),
+      },
     });
-    expect(commit.documents[0]).not.toHaveProperty("lateSweep");
     expect(blockTexts(ctx.liveDoc("chapter.md"))[3]).toContain("human");
     void expectedEchoHashes;
     void farHashes;
   });
 
-  it("suppresses all post-commit output for no-concurrent non-structural staged writes", async () => {
+  it("reports destructive staged writes even without concurrent edits", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword waits." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const responseContext = {
@@ -672,7 +678,13 @@ describe("response staging", () => {
     if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.documents[0]?.concurrentEdits).toBeUndefined();
-    expect(commit.documents[0]).toEqual({ documentId: "chapter.md", updateCount: 2 });
+    expect(commit.documents[0]).toMatchObject({
+      documentId: "chapter.md",
+      updateCount: 2,
+      lateSweep: {
+        capturedDeletedBodies: [expect.objectContaining({ body: "Alpha sword waits." })],
+      },
+    });
   });
 
   it("returns a model-facing concurrent-edit echo when a staged commit merges a human edit", async () => {

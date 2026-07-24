@@ -12,8 +12,11 @@ import type {
   BranchSnapshot,
   BranchStore,
 } from "./domain/branch-coordinator.js";
-import { createWriterIngress, ReservedWriterClientIdError } from "./domain/document-authority.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
+import {
+  admitWriterUpdate,
+  ReservedWriterClientIdError,
+} from "./domain/document-mutation-policy.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
@@ -33,7 +36,7 @@ type HocuspocusPersistenceDeps = {
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
-  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
+  readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
   offlineReconciliation?: OfflineReconciliation;
@@ -74,23 +77,6 @@ export function createHocuspocusPersistenceService(
   const liveGenerations = new Map<string, bigint>();
   const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
-
-  const writerIngress = createWriterIngress<UpdateOrigin>({
-    async admitWriterUpdate({ documentId, update, context }) {
-      const admitted = (await deps.journal.appendWriterUpdate?.(
-        documentId,
-        update,
-        deps.metaForOrigin(context),
-      )) ?? {
-        seq: await deps.journal.append(documentId, update, deps.metaForOrigin(context)),
-        joinedSettlement: false,
-      };
-      return {
-        sequence: BigInt(admitted.seq),
-        joined: admitted.joinedSettlement ? 1 : 0,
-      };
-    },
-  });
 
   const writerIngressBarrier: WriterIngressBarrier = {
     async drain(documentId) {
@@ -253,7 +239,9 @@ export function createHocuspocusPersistenceService(
     writerIngressBarrier,
     async currentLiveGeneration(documentId) {
       const generation =
-        liveGenerations.get(documentId) ?? (await deps.readAuthorityGeneration?.(documentId)) ?? 1n;
+        liveGenerations.get(documentId) ??
+        (await deps.readAuthorityHeadGeneration?.(documentId)) ??
+        1n;
       liveGenerations.set(documentId, generation);
       return generation;
     },
@@ -297,33 +285,69 @@ export function createHocuspocusPersistenceService(
       const trackedGeneration = liveGenerations.get(input.documentId);
       const currentGeneration =
         trackedGeneration ??
-        (deps.readAuthorityGeneration ? await deps.readAuthorityGeneration(input.documentId) : 1n);
+        (deps.readAuthorityHeadGeneration
+          ? await deps.readAuthorityHeadGeneration(input.documentId)
+          : 1n);
       liveGenerations.set(input.documentId, currentGeneration);
-      if (currentGeneration !== input.expectedGeneration) {
-        recordDroppedConnectionUpdate(input.documentId);
-        throw new Error("stale-authority-generation");
-      }
-      const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
-      if (!authoritativeDoc || authoritativeDoc !== input.document) {
-        throw new Error("authority-document-mismatch");
-      }
+      const liveDocument = deps.hocuspocus()?.documents.get(input.documentId);
       const retiredStateVector = retiredStateVectors.get(input.documentId);
-      if (
-        retiredStateVector &&
-        replaysRetiredGeneration(input.update, authoritativeDoc, retiredStateVector)
-      ) {
-        recordDroppedConnectionUpdate(input.documentId);
-        throw new Error("stale-authority-generation");
-      }
-      let preparedAdmission: ReturnType<typeof writerIngress.prepare>;
       try {
-        preparedAdmission = writerIngress.prepare({
-          documentId: input.documentId,
-          authority: authoritativeDoc,
+        const admission = await admitWriterUpdate({
+          targetDocument: input.document,
           update: input.update,
-          source: { kind: "writer" },
-          context: input.origin,
+          validateTarget() {
+            if (currentGeneration !== input.expectedGeneration) {
+              recordDroppedConnectionUpdate(input.documentId);
+              throw new Error("stale-durable-authority-generation");
+            }
+            if (!liveDocument || liveDocument !== input.document) {
+              throw new Error("live-document-room-mismatch");
+            }
+            if (
+              retiredStateVector &&
+              replaysRetiredGeneration(input.update, liveDocument, retiredStateVector)
+            ) {
+              recordDroppedConnectionUpdate(input.documentId);
+              throw new Error("retired-durable-authority-generation");
+            }
+          },
+          // Reconnects replay cached state and delete sets that Yjs would discard
+          // on apply; admitting them wastes storage and pollutes safety signals.
+          isContained: () => documentContainment.contains(input.document, input.update),
+          async append() {
+            const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
+            ingressGenerations.set(input.documentId, generation);
+            const admitted = admittedByDocument.get(input.documentId) ?? new Map();
+            admittedByDocument.set(input.documentId, admitted);
+            const append = deps.journal.appendWriterUpdate
+              ? deps.journal.appendWriterUpdate(
+                  input.documentId,
+                  input.update,
+                  deps.metaForOrigin(input.origin),
+                )
+              : deps.journal
+                  .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
+                  .then((seq) => ({ seq, joinedSettlement: false }));
+            const tracked = append.catch((cause) => {
+              recordDroppedConnectionUpdate(input.documentId);
+              emitPersistenceAppendFailure(input.documentId, cause);
+              throw cause;
+            });
+            admitted.set(generation, tracked);
+            try {
+              return await tracked;
+            } finally {
+              admitted.delete(generation);
+              if (admitted.size === 0) admittedByDocument.delete(input.documentId);
+            }
+          },
         });
+        if (!admission.admitted) return { admitted: false, joinedSettlement: false };
+        deps.onLiveUpdatePersisted?.(input.documentId);
+        return {
+          admitted: true,
+          joinedSettlement: admission.value.joinedSettlement,
+        };
       } catch (cause) {
         if (cause instanceof ReservedWriterClientIdError) {
           rejectReservedClientIdUpdate({ ...input, reservedClientId: cause.clientId });
@@ -331,39 +355,10 @@ export function createHocuspocusPersistenceService(
         }
         throw cause;
       }
-      // Reconnects replay cached state and delete sets that Yjs would discard
-      // on apply; admitting them wastes storage and pollutes safety signals.
-      if (documentContainment.contains(authoritativeDoc, input.update)) {
-        return { admitted: false, joinedSettlement: false };
-      }
-      const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
-      ingressGenerations.set(input.documentId, generation);
-      const admitted = admittedByDocument.get(input.documentId) ?? new Map();
-      admittedByDocument.set(input.documentId, admitted);
-      const append = preparedAdmission
-        .admit()
-        .then((result) => ({
-          seq: Number(result.sequence),
-          joinedSettlement: (result.joined ?? 0) > 0,
-        }))
-        .catch((cause) => {
-          recordDroppedConnectionUpdate(input.documentId);
-          emitPersistenceAppendFailure(input.documentId, cause);
-          throw cause;
-        });
-      admitted.set(generation, append);
-      try {
-        const result = await append;
-        deps.onLiveUpdatePersisted?.(input.documentId);
-        return { admitted: true, joinedSettlement: result.joinedSettlement };
-      } finally {
-        admitted.delete(generation);
-        if (admitted.size === 0) admittedByDocument.delete(input.documentId);
-      }
     },
 
     persistConnectionUpdate(input) {
-      // Durability authority is the awaited pre-apply admission hook. This queue
+      // The durability boundary is the awaited pre-apply admission hook. This queue
       // retains only post-apply reconciliation work and may lag acknowledgements.
       if (input.origin.type !== "user" || !input.reconcileOffline) return;
       const convergedState = Y.encodeStateAsUpdate(input.document);

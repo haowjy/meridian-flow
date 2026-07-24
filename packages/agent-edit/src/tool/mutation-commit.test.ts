@@ -1,10 +1,7 @@
 // Mutation commit contracts at the journal/live projection seam.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
-import { digestRenderedContent } from "../observation-snapshot.js";
-import type { ObservationSnapshotStore } from "../ports/observation-snapshot.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { type CommitPreflightInput, createMutationCommit } from "./mutation-commit.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
@@ -18,55 +15,6 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("mutation commit", () => {
-  it("looks up response observation by full document-scoped Yjs identity", async () => {
-    const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
-    const journal = new MemoryJournal();
-    const mutationCommit = createMutationCommit({
-      journal,
-      coordinator,
-      model,
-      codec,
-      observationSnapshots: {
-        async seal() {},
-        async load(responseId) {
-          return {
-            responseId,
-            entries: [
-              {
-                documentId: "chapter.md",
-                clientID: 4_294_967_295,
-                clock: 21,
-                value: { kind: "rendered", digest: "sha256:full-identity" },
-              },
-            ],
-          };
-        },
-      },
-    });
-
-    await expect(
-      mutationCommit.lookupObservation("response-1", {
-        documentId: "chapter.md",
-        clientID: 4_294_967_295,
-        clock: 21,
-      }),
-    ).resolves.toEqual({ kind: "rendered", digest: "sha256:full-identity" });
-    await expect(
-      mutationCommit.lookupObservation("response-1", {
-        documentId: "chapter.md",
-        clientID: 4_294_967_295,
-        clock: 22,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      mutationCommit.lookupObservation("response-1", {
-        documentId: "other-chapter.md",
-        clientID: 4_294_967_295,
-        clock: 21,
-      }),
-    ).resolves.toBeNull();
-  });
-
   it("commits an immediate update to the journal and projects it to the live document once", async () => {
     const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
     const journal = new MemoryJournal();
@@ -119,19 +67,9 @@ describe("mutation commit", () => {
     expect((await journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(liveProjectionCount).toBe(1);
-    if (!committed.ok) throw new Error("expected commit success");
-    if (!committed.observationCut) throw new Error("expected atomic observation cut");
-    expect(committed.observationCut.liveBefore.map((block) => block.serialized)).toEqual([
-      expect.stringContaining("Alpha."),
-    ]);
-    expect(committed.observationCut.liveAfter.map((block) => block.serialized)).toEqual([
-      expect.stringContaining("Beta."),
-    ]);
-    expect(Object.isFrozen(committed.observationCut)).toBe(true);
-    expect(Object.isFrozen(committed.observationCut.liveBefore)).toBe(true);
   });
 
-  it("S9: does not report a destructive mutation over another agent's block", async () => {
+  it("reports writer roots when an unjournaled peer edit claims agent origin", async () => {
     const fixture = destructiveFixture();
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
@@ -145,7 +83,9 @@ describe("mutation commit", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected commit success");
-    expect(result.lateSweep).toBeUndefined();
+    expect(result.lateSweep).toMatchObject({
+      capturedDeletedBodies: [{ body: "Peer: Alpha." }],
+    });
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
@@ -194,7 +134,9 @@ describe("mutation commit", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      concurrentUpdates: [],
+      concurrentUpdates: [
+        expect.objectContaining({ origin: { type: "human", userId: "unknown" } }),
+      ],
       lateSweep: {
         affectedBlockHashes: [fixture.deletedHash],
         capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
@@ -217,7 +159,6 @@ describe("mutation commit", () => {
       coordinator,
       model,
       codec,
-      observationSnapshots: observationStoreFor("chapter.md", live),
     });
     const append = journal.appendBatch.bind(journal);
     journal.appendBatch = async (entries) => {
@@ -312,22 +253,6 @@ describe("mutation commit", () => {
     });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
-    expect(fixture.journal.recordedSealedLineage()).toEqual([
-      {
-        docId: "chapter.md",
-        responseId: "response-delete",
-        token: {
-          version: 3,
-          documentId: "chapter.md",
-          responseCausalCutId: "cut-response-delete-chapter.md",
-          protectedRoots: expect.arrayContaining([
-            expect.objectContaining({ clientID: expect.any(Number), length: expect.any(Number) }),
-          ]),
-        },
-      },
-    ]);
-    expect(fixture.journal.recordedSealedLineage()[0]?.token).not.toHaveProperty("body");
-    expect(fixture.journal.recordedSealedLineage()[0]?.token).not.toHaveProperty("hash");
   });
 
   it("detects an unjournaled live edit that lands during the phase-C await", async () => {
@@ -360,7 +285,7 @@ describe("mutation commit", () => {
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
-  it("does not report a late sweep when another agent edits the deleted block", async () => {
+  it("reports an unjournaled peer edit conservatively despite its claimed agent origin", async () => {
     const fixture = destructiveFixture();
     const preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
       fixture.mutationCommit.captureCommitPreflight(liveDoc, fixture.input),
@@ -376,16 +301,10 @@ describe("mutation commit", () => {
       ),
     );
 
-    expect(applied.lateSweep).toBeUndefined();
+    expect(applied.lateSweep).toMatchObject({
+      capturedDeletedBodies: [{ body: "Peer: Alpha." }],
+    });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
-    expect(fixture.journal.recordedSealedLineage()).toEqual([
-      expect.objectContaining({
-        token: expect.objectContaining({
-          version: 3,
-          protectedRoots: [expect.objectContaining({ length: expect.any(Number) })],
-        }),
-      }),
-    ]);
   });
 
   it("holds gate, journal append, and live apply in one coordinator callback", async () => {
@@ -396,7 +315,6 @@ describe("mutation commit", () => {
       coordinator,
       model,
       codec,
-      observationSnapshots: observationStoreFor("chapter.md", coordinator.require("chapter.md")),
     });
     const runtimeDoc = cloneDoc(coordinator.require("chapter.md"));
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtimeDoc);
@@ -430,38 +348,19 @@ describe("mutation commit", () => {
 
     expect(result.ok).toBe(true);
     expect(coordinator.acquisitions).toBe(1);
-    expect(coordinator.events).toEqual(["gate:1", "journal:1", "apply:1"]);
+    expect(coordinator.events).toEqual(["journal:1", "gate:1", "apply:1"]);
   });
 });
 
-function destructiveFixture(deleteCount = 1, observationSnapshots?: ObservationSnapshotStore) {
+function destructiveFixture(deleteCount = 1) {
   const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha.\n\nBeta." });
   const journal = new MemoryJournal();
   const baseline = coordinator.require("chapter.md");
-  const observations = snapshotBlocks(toDocHandle(baseline), model, codec).map((block) => ({
-    documentId: "chapter.md",
-    clientID: block.clientID as number,
-    clock: block.clock as number,
-    value: {
-      kind: "rendered" as const,
-      digest: digestRenderedContent(block.renderedContent as string),
-    },
-  }));
   const mutationCommit = createMutationCommit({
     journal,
     coordinator,
     model,
     codec,
-    observationSnapshots: observationSnapshots ?? {
-      async seal() {},
-      async load(responseId) {
-        return {
-          responseId,
-          entries: observations,
-          causalCuts: [causalCut(responseId, "chapter.md")],
-        };
-      },
-    },
   });
   const deletedHashes = Array.from({ length: deleteCount }, (_, index) => hashAt(baseline, index));
   const deletedHash = deletedHashes[0];
@@ -514,35 +413,6 @@ function destructiveFixture(deleteCount = 1, observationSnapshots?: ObservationS
     journalEntry: entry,
     deletedHash,
     deletedHashes,
-  };
-}
-
-function observationStoreFor(documentId: string, doc: Y.Doc) {
-  const entries = snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
-    documentId,
-    clientID: block.clientID as number,
-    clock: block.clock as number,
-    value: {
-      kind: "rendered" as const,
-      digest: digestRenderedContent(block.renderedContent as string),
-    },
-  }));
-  return {
-    async seal() {},
-    async load(responseId: string) {
-      return { responseId, entries, causalCuts: [causalCut(responseId, documentId)] };
-    },
-  };
-}
-
-function causalCut(responseId: string, documentId: string) {
-  return {
-    id: `cut-${responseId}-${documentId}`,
-    version: 1 as const,
-    documentId,
-    authorityId: `authority-${documentId}`,
-    generation: 1n,
-    admittedThrough: 0n,
   };
 }
 

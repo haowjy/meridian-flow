@@ -1,13 +1,5 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
-import {
-  createAgentEditCodec,
-  digestRenderedContent,
-  type ObservationSnapshotStore,
-  snapshotBlocks,
-  toDocHandle,
-  yProsemirrorModel,
-} from "@meridian/agent-edit";
-import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contracts";
+import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -35,9 +27,9 @@ const { createDrizzleChangeTrailPersistence } = await import(
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
 const {
   createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthority,
-  replaceDocumentAuthorityGeneration,
-} = await import("../adapters/drizzle-document-authority.js");
+  readDocumentAuthorityHead,
+  replaceDocumentAuthorityHeadGeneration,
+} = await import("../adapters/drizzle-document-authority-head.js");
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
@@ -48,7 +40,7 @@ const { createBranchCriticalSections } = await import("../domain/branch-critical
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { journalAttributionByChangedBlock } = await import("../domain/branch-trail-projection.js");
-const { createDocumentAuthority } = await import("../domain/document-authority.js");
+const { createDocumentMutationPolicy } = await import("../domain/document-mutation-policy.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
   await import("../domain/provenance.js");
 
@@ -188,14 +180,12 @@ export type MatrixDraftStep = {
   remint?: boolean;
   /** Certifies a length-preserving structural re-mint as one preserved root run. */
   certifiedCarry?: boolean;
-  afterObservation?: boolean;
   transientInsertDelete?: string;
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const persistence = createDrizzleCollabPersistence(db);
   const hocuspocus = fakeHocuspocus();
-  const observationSnapshots = observationStoreFor(hocuspocus.documents);
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
@@ -404,7 +394,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     ...persistence,
     initialDocumentSeeds: persistence.lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(db),
-    observationSnapshots,
     coordinator: liveCoordinator,
     hocuspocus: () => hocuspocus as never,
     bindHocuspocus() {},
@@ -532,7 +521,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     markdown = "Alpha base.\n\nWriter block.",
     writerBlockIndex = 1,
     writerEditBeforeWrite = false,
-    observeWriterEdit = false,
     sameIdentityRewrite = false,
   ) {
     suppressScheduledAutoPush = true;
@@ -563,55 +551,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         model: "fixture",
       });
     }
-    const captureDurableObservation = async () => {
-      const [head] = await db
-        .select({
-          admissionSequence: schema.documentYjsUpdates.admissionSequence,
-          authorityId: schema.documentYjsUpdates.authorityId,
-          generation: schema.documentYjsUpdates.authorityGeneration,
-        })
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, documentId))
-        .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
-        .limit(1);
-      observationSnapshots.configure(responseId, {
-        admittedThrough: head?.admissionSequence ?? 0n,
-        includeEntries: true,
-      });
-      observationSnapshots.capture(responseId);
-      const snapshot = await observationSnapshots.load(responseId);
-      if (!snapshot) throw new Error("fixture observation is unavailable");
-      await db.insert(schema.modelResponseObservationSnapshots).values({
-        responseId: responseId as never,
-      });
-      await db.insert(schema.modelResponseCausalCuts).values(
-        (snapshot.causalCuts ?? []).map((cut) => ({
-          id: cut.id,
-          responseId: responseId as never,
-          documentId: cut.documentId,
-          authorityId:
-            cut.documentId === documentId
-              ? (head?.authorityId ?? cut.authorityId)
-              : cut.authorityId,
-          generation:
-            cut.documentId === documentId ? (head?.generation ?? cut.generation) : cut.generation,
-          admittedThrough: cut.admittedThrough,
-        })),
-      );
-      await db.insert(schema.modelResponseObservationEntries).values(
-        snapshot.entries.map((entry) => ({
-          responseId: responseId as never,
-          documentId: entry.documentId as DocumentId,
-          clientId: entry.clientID,
-          clock: entry.clock,
-          kind: entry.value.kind,
-          contentDigest: entry.value.kind === "rendered" ? entry.value.digest : null,
-          capturedDeletedBody:
-            entry.value.kind === "explicit_deletion" ? entry.value.capturedBody : null,
-        })),
-      );
-    };
-    if (writerEditBeforeWrite && !observeWriterEdit) await captureDurableObservation();
     const applyWriterEdit = () =>
       liveCoordinator.withDocument(documentId, async (doc) => {
         const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];
@@ -630,11 +569,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           });
         }
       });
-    // The probe edit landed after the response's read observation but before the
-    // destructive tool call. Journaled fixtures retain their older phase-C timing.
+    // The probe edit lands after the response's read but before the destructive
+    // tool call. Journaled fixtures retain their older phase-C timing.
     if (writerEditBeforeWrite) {
       await applyWriterEdit();
-      if (observeWriterEdit) await captureDurableObservation();
     }
     await expect(
       collab.agentEdit().write(
@@ -723,7 +661,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     responseId: string;
     initialMarkdown: string;
     steps: readonly MatrixDraftStep[];
-    observation?: { cut: "head" | "empty"; coverage: "current" | "none" };
   }): Promise<string> {
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -733,9 +670,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
-      for (const step of input.steps.filter(
-        (candidate) => candidate.source === "writer" && !candidate.afterObservation,
-      )) {
+      for (const step of input.steps.filter((candidate) => candidate.source === "writer")) {
         before = Y.encodeStateVector(doc);
         if (step.remint) remintMarkdown(doc, step.markdown);
         else replaceMarkdown(doc, step.markdown);
@@ -745,32 +680,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         });
       }
     });
-    if (input.observation || input.steps.some((step) => step.afterObservation)) {
-      const [head] = await db
-        .select({ admissionSequence: schema.documentYjsUpdates.admissionSequence })
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
-        .limit(1);
-      observationSnapshots.configure(input.responseId, {
-        admittedThrough: input.observation?.cut === "empty" ? 0n : (head?.admissionSequence ?? 0n),
-        includeEntries: input.observation?.coverage !== "none",
-      });
-      observationSnapshots.capture(input.responseId);
-      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        for (const step of input.steps.filter(
-          (candidate) => candidate.source === "writer" && candidate.afterObservation,
-        )) {
-          const before = Y.encodeStateVector(doc);
-          if (step.remint) remintMarkdown(doc, step.markdown);
-          else replaceMarkdown(doc, step.markdown);
-          await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-            origin: `human:${USER_ID}`,
-            seq: 0,
-          });
-        }
-      });
-    }
     const context = {
       sessionId: THREAD_ID,
       threadId: THREAD_ID,
@@ -995,11 +904,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .orderBy(desc(schema.documentYjsCheckpoints.id))
         .limit(1);
       if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authority = await readDocumentAuthority(db, ALPHA_ID);
-      const replaced = await replaceDocumentAuthorityGeneration(db, {
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
       if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
       const rebased = await persistence.journal.materializeDestructiveProvenance?.({
@@ -1089,11 +998,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityGeneration(db, {
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
-      expectedGeneration: authority.generation,
+      expectedGeneration: authorityHead.generation,
     });
     if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
     await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
@@ -1105,7 +1014,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
     let releaseBlocker!: () => void;
     let blockerReady!: () => void;
     const blockerRelease = new Promise<void>((resolve) => {
@@ -1137,20 +1046,22 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     }
 
     const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceDocumentAuthorityGeneration> | undefined;
+    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
     try {
       await waitForAdvisoryLockWaiters(1);
-      replacement = replaceDocumentAuthorityGeneration(db, {
+      replacement = replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
       await waitForAdvisoryLockWaiters(2);
     } finally {
       releaseBlocker();
       await blocker;
     }
-    if (!replacement) throw new Error("authority replacement did not enter the lock queue");
+    if (!replacement) {
+      throw new Error("durable authority head generation replacement did not enter the lock queue");
+    }
     const [, replaced] = await Promise.all([compact, replacement]);
     if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
     return authorityReplacementProbeResult(replaced.generation);
@@ -1270,186 +1181,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return branch.branchId;
   }
 
-  async function seedObservedCertifiedDelete(input: {
-    responseId: string;
-    initialMarkdown: string;
-    observation: { cut: "head" | "empty" | "stale_prefix"; coverage: "current" | "none" };
-    postObservationMarkdown?: string;
-    postObservationMutation?: "writer_remint" | "agent_carry" | "agent_restoration";
-    stageDelete?: boolean;
-  }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-    await db.insert(schema.modelResponses).values({
-      id: input.responseId as never,
-      turnId: TURN_ID,
-      sequence: 1,
-      provider: "oracle",
-      model: "oracle",
-    });
-    const [head] = await db
-      .select({
-        admissionSequence: schema.documentYjsUpdates.admissionSequence,
-        authorityId: schema.documentYjsUpdates.authorityId,
-        generation: schema.documentYjsUpdates.authorityGeneration,
-      })
-      .from(schema.documentYjsUpdates)
-      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
-      .limit(1);
-    observationSnapshots.configure(input.responseId, {
-      admittedThrough:
-        input.observation.cut === "empty"
-          ? 0n
-          : input.observation.cut === "stale_prefix"
-            ? (head?.admissionSequence ?? 1n) - 1n
-            : (head?.admissionSequence ?? 0n),
-      // Tool-time safety sees the real request rendering. The persisted omission
-      // below isolates settlement's independent rendering-coverage conjunct.
-      includeEntries: true,
-    });
-    observationSnapshots.capture(input.responseId);
-    const snapshot = await observationSnapshots.load(input.responseId);
-    if (!snapshot) throw new Error("configured oracle observation is unavailable");
-    await db.insert(schema.modelResponseObservationSnapshots).values({
-      responseId: input.responseId as never,
-    });
-    const causalCuts = snapshot.causalCuts ?? [];
-    if (causalCuts.length > 0) {
-      await db.insert(schema.modelResponseCausalCuts).values(
-        causalCuts.map((cut) => ({
-          id: cut.id,
-          responseId: input.responseId as never,
-          documentId: cut.documentId,
-          authorityId:
-            cut.documentId === ALPHA_ID ? (head?.authorityId ?? cut.authorityId) : cut.authorityId,
-          generation:
-            cut.documentId === ALPHA_ID ? (head?.generation ?? cut.generation) : cut.generation,
-          admittedThrough: cut.admittedThrough,
-        })),
-      );
-    }
-    if (input.observation.coverage === "current" && snapshot.entries.length > 0) {
-      await db.insert(schema.modelResponseObservationEntries).values(
-        snapshot.entries.map((entry) => ({
-          responseId: input.responseId as never,
-          documentId: entry.documentId as DocumentId,
-          clientId: entry.clientID,
-          clock: entry.clock,
-          kind: entry.value.kind,
-          contentDigest: entry.value.kind === "rendered" ? entry.value.digest : null,
-          capturedDeletedBody:
-            entry.value.kind === "explicit_deletion" ? entry.value.capturedBody : null,
-        })),
-      );
-    }
-    if (input.postObservationMarkdown !== undefined) {
-      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        const priorBlock = model.getBlocks(toDocHandle(doc))[0];
-        const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
-        const before = Y.encodeStateVector(doc);
-        remintMarkdown(doc, input.postObservationMarkdown ?? "");
-        if (
-          input.postObservationMutation === "agent_carry" ||
-          input.postObservationMutation === "agent_restoration"
-        ) {
-          const replacement = markupCodec.parse(input.postObservationMarkdown ?? "").blocks[0];
-          if (
-            !priorBlock ||
-            !source ||
-            !replacement ||
-            source.length !== replacement.textContent.length
-          ) {
-            throw new Error("post-observation carry must preserve one complete block");
-          }
-          createSemanticProvenanceWriter().writeCertifiedFacts(
-            toDocHandle(doc),
-            {
-              version: 1,
-              documentId: ALPHA_ID,
-              inputRevision: "fixture-revision" as never,
-              scope: [source],
-              deleted: [source],
-              intent: {
-                kind: "mappedEdits",
-                edits: [
-                  {
-                    edit: {
-                      documentId: ALPHA_ID,
-                      file: "alpha.md",
-                      kind: "block",
-                      block: priorBlock,
-                      replacement,
-                    },
-                    outputRuns: [
-                      input.postObservationMutation === "agent_restoration"
-                        ? {
-                            kind: "restoration",
-                            root: source,
-                            payload: replacement.textContent,
-                            output: { from: 0, to: source.length },
-                          }
-                        : {
-                            kind: "preserved",
-                            source,
-                            output: { from: 0, to: source.length },
-                          },
-                    ],
-                  },
-                ],
-              },
-            },
-            before,
-          );
-        }
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin:
-            input.postObservationMutation === "agent_carry" ||
-            input.postObservationMutation === "agent_restoration"
-              ? `agent:${TURN_ID}`
-              : `human:${USER_ID}`,
-          ...(input.postObservationMutation === "agent_carry" ||
-          input.postObservationMutation === "agent_restoration"
-            ? { actorTurnId: TURN_ID }
-            : {}),
-          seq: 0,
-        });
-      });
-    }
-    await collab.agentEdit().write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-      {
-        sessionId: THREAD_ID,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseId: undefined,
-      },
-    );
-    if (input.stageDelete === false) {
-      const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-      branch.doc.destroy();
-      return branch.branchId;
-    }
-    const find = input.postObservationMarkdown ?? input.initialMarkdown;
-    return stageCertifiedReplace({ responseId: input.responseId, find, content: "" });
-  }
-
   async function seedCheckpointRestoredExplicitDelete(responseId: string): Promise<string> {
     const restored = "Explicit restored writer root.";
-    const branchId = await seedObservedCertifiedDelete({
+    const branchId = await seedLiveCertifiedCarry({
       responseId,
       initialMarkdown: restored,
-      observation: { cut: "empty", coverage: "none" },
-      postObservationMarkdown: restored,
-      postObservationMutation: "agent_carry",
-      stageDelete: false,
+      carriedMarkdown: restored,
     });
     const state = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
       Y.encodeStateAsUpdate(doc),
@@ -1463,11 +1200,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         upToSeq,
       ),
     );
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityGeneration(db, {
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
-      expectedGeneration: authority.generation,
+      expectedGeneration: authorityHead.generation,
     });
     if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
 
@@ -1639,14 +1376,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         2,
         true,
       ),
-    seedProbeTimelineObserved: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
+    seedProbeTimelineAfterRead: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
       seedAndStageDestructive(
         responseId,
         documentId,
         true,
         "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
         2,
-        true,
         true,
       ),
     seedDestructivePush,
@@ -1658,7 +1394,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     compactWhileAuthorityReplacementWaits,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
-    seedObservedCertifiedDelete,
     seedCheckpointRestoredExplicitDelete,
     seedSelectivePush,
     crossWorkProbeFixture: () => ({
@@ -1800,12 +1535,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .from(schema.documentYjsCheckpoints)
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
-      if (!checkpoint) throw new Error("authority checkpoint is unavailable");
-      const authority = await readDocumentAuthority(db, ALPHA_ID);
-      return replaceDocumentAuthorityGeneration(db, {
+      if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      return replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
     },
     async attemptDivergentReplicationAdmission() {
@@ -1846,13 +1581,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       const before = Y.encodeStateAsUpdate(target);
       let journaled = false;
       try {
-        await createDocumentAuthority({
-          readMutableAuthority: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
-          readFrozenCut: async () => ({
+        await createDocumentMutationPolicy({
+          readMutationTarget: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
+          readFrozenReplicationSource: async () => ({
             cutId: "injectivity-cut",
             documentId: ALPHA_ID,
-            authorityId: "00000000-0000-4000-8000-000000000899" as DocumentAuthorityId,
-            generation: 1n,
+            sourceId: "00000000-0000-4000-8000-000000000899",
+            version: 1n,
             doc: source,
           }),
           admitImmediate: async ({ update }) => {
@@ -1870,7 +1605,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           completePush: async () => undefined,
         }).mutate({
           kind: "identityReplication",
-          sourceAuthorityCutId: "injectivity-cut",
+          sourceCutId: "injectivity-cut",
           plan: { kind: "wholeDocument" },
         });
         return { rejected: false, journaled, applied: true };
@@ -1933,91 +1668,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         updateData: owned.updateData,
         draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
         updateMeta: owned.updateMeta,
-      });
-    },
-    async duplicateActiveEvidence(input: {
-      responseId: string;
-      cut: "head" | "empty";
-      coverage: "current" | "none";
-    }) {
-      const [owned] = await db
-        .select()
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.status, "active"));
-      if (!owned) throw new Error("active evidence row is unavailable");
-      const meta = owned.updateMeta as {
-        authoringResponseId?: string;
-        sealedWriterLineage?: {
-          version: 3;
-          documentId: DocumentId;
-          protectedRoots: Array<{ clientID: number; clock: number; length: number }>;
-          responseCausalCutId: string;
-        };
-      } | null;
-      if (!meta?.authoringResponseId || !meta.sealedWriterLineage) {
-        throw new Error("active row has no sealed response evidence");
-      }
-      const [sourceCut] = await db
-        .select()
-        .from(schema.modelResponseCausalCuts)
-        .where(eq(schema.modelResponseCausalCuts.id, meta.sealedWriterLineage.responseCausalCutId));
-      if (!sourceCut) throw new Error("source response cut is unavailable");
-      await db.insert(schema.modelResponses).values({
-        id: input.responseId as never,
-        turnId: TURN_ID,
-        sequence: 2,
-        provider: "oracle",
-        model: "oracle",
-      });
-      await db.insert(schema.modelResponseObservationSnapshots).values({
-        responseId: input.responseId as never,
-      });
-      const cutId = crypto.randomUUID();
-      await db.insert(schema.modelResponseCausalCuts).values({
-        id: cutId as never,
-        responseId: input.responseId as never,
-        documentId: sourceCut.documentId,
-        authorityId: sourceCut.authorityId,
-        generation: sourceCut.generation,
-        admittedThrough: input.cut === "head" ? sourceCut.admittedThrough : 0n,
-      });
-      if (input.coverage === "current") {
-        const observations = await db
-          .select()
-          .from(schema.modelResponseObservationEntries)
-          .where(
-            eq(
-              schema.modelResponseObservationEntries.responseId,
-              meta.authoringResponseId as never,
-            ),
-          );
-        if (observations.length > 0) {
-          await db.insert(schema.modelResponseObservationEntries).values(
-            observations.map(({ responseId: _responseId, ...entry }) => ({
-              ...entry,
-              responseId: input.responseId as never,
-            })),
-          );
-        }
-      }
-      await db.insert(schema.branchWriteJournal).values({
-        branchId: owned.branchId,
-        generation: owned.generation,
-        wId: owned.wId,
-        source: owned.source,
-        threadId: owned.threadId,
-        turnId: owned.turnId,
-        actorUserId: owned.actorUserId,
-        updateData: owned.updateData,
-        draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
-        updateMeta: {
-          ...meta,
-          authoringResponseId: input.responseId,
-          sealedWriterLineage: {
-            ...meta.sealedWriterLineage,
-            responseCausalCutId: cutId,
-          },
-        },
       });
     },
     async makeJournalOwnershipNull() {
@@ -2151,60 +1801,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       }))
       .sort((left, right) => left.id.localeCompare(right.id));
   }
-}
-
-function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore & {
-  capture(responseId: string): void;
-  configure(responseId: string, value: { admittedThrough: bigint; includeEntries: boolean }): void;
-} {
-  const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
-  const configurations = new Map<string, { admittedThrough: bigint; includeEntries: boolean }>();
-  const capture = (responseId: string) => {
-    const configuration = configurations.get(responseId) ?? {
-      admittedThrough: 0n,
-      includeEntries: true,
-    };
-    const documentEntries = [...documents.entries()].filter(([documentId]) =>
-      /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId),
-    );
-    const entries = configuration.includeEntries
-      ? documentEntries.flatMap(([documentId, document]) =>
-          snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
-            documentId,
-            clientID: block.clientID as number,
-            clock: block.clock as number,
-            value: {
-              kind: "rendered" as const,
-              digest: digestRenderedContent(block.renderedContent as string),
-            },
-          })),
-        )
-      : [];
-    const causalCuts = documentEntries.map(([documentId]) => ({
-      id: crypto.randomUUID() as ResponseCausalCutId,
-      version: 1 as const,
-      documentId,
-      authorityId: documentId as DocumentAuthorityId,
-      generation: 1n,
-      admittedThrough: configuration.admittedThrough,
-    }));
-    snapshots.set(responseId, { responseId, entries, causalCuts });
-  };
-  return {
-    capture,
-    configure(responseId, value) {
-      configurations.set(responseId, value);
-    },
-    async seal(snapshot) {
-      snapshots.set(snapshot.responseId, snapshot);
-    },
-    async load(responseId) {
-      const existing = snapshots.get(responseId);
-      if (existing !== undefined) return existing;
-      capture(responseId);
-      return snapshots.get(responseId) ?? null;
-    },
-  };
 }
 
 function serializeMarkdown(doc: Y.Doc): string {

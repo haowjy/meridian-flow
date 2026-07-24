@@ -42,6 +42,7 @@ import {
   type BranchCriticalSections,
   createBranchCriticalSections,
 } from "../domain/branch-critical-sections.js";
+import { branchJournalRevision } from "../domain/branch-push-contracts.js";
 import {
   BranchCorruptError,
   BranchNotFoundError,
@@ -49,7 +50,7 @@ import {
   type BranchState,
 } from "../domain/branch-resolver.js";
 import { sync } from "../domain/branch-sync.js";
-import { createDocumentAuthority } from "../domain/document-authority.js";
+import { createDocumentMutationPolicy } from "../domain/document-mutation-policy.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
@@ -197,18 +198,18 @@ export function createDrizzleBranchStore(
     const frozenSource = createCollabYDoc({ gc: false });
     Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
     const unsupported = async (): Promise<never> => {
-      throw new Error("Document authority strategy is unavailable for branch cloning");
+      throw new Error("Document mutation policy dependency is unavailable for branch cloning");
     };
     try {
-      await createDocumentAuthority({
-        readMutableAuthority: () => ({ documentId: "new-branch", generation: 1n, doc: target }),
-        readFrozenCut: async (cutId) =>
+      await createDocumentMutationPolicy({
+        readMutationTarget: () => ({ documentId: "new-branch", generation: 1n, doc: target }),
+        readFrozenReplicationSource: async (cutId) =>
           cutId === "branch-clone"
             ? {
                 cutId,
                 documentId: "new-branch",
-                authorityId: "branch-clone",
-                generation: 1n,
+                sourceId: "branch-clone",
+                version: 1n,
                 doc: frozenSource,
               }
             : null,
@@ -226,7 +227,7 @@ export function createDrizzleBranchStore(
         completePush: unsupported,
       }).mutate({
         kind: "identityReplication",
-        sourceAuthorityCutId: "branch-clone",
+        sourceCutId: "branch-clone",
         plan: { kind: "wholeDocument" },
       });
       return snapshotFromDoc(target);
@@ -247,7 +248,7 @@ export function createDrizzleBranchStore(
 
   async function persistLiveManifestUpdate(
     documentId: DocumentId,
-    authorityDoc: Y.Doc,
+    validationDoc: Y.Doc,
     liveDoc: Y.Doc,
     update: Uint8Array,
   ): Promise<void> {
@@ -255,10 +256,10 @@ export function createDrizzleBranchStore(
       throw new Error("DrizzleBranchStore manifest persistence requires the collab live journal");
     }
     const unsupported = async (): Promise<never> => {
-      throw new Error("Document authority strategy is unavailable for manifest seeding");
+      throw new Error("Document mutation policy dependency is unavailable for manifest seeding");
     };
-    await createDocumentAuthority({
-      readMutableAuthority: () => ({ documentId, generation: 0n, doc: authorityDoc }),
+    await createDocumentMutationPolicy({
+      readMutationTarget: () => ({ documentId, generation: 0n, doc: validationDoc }),
       admitImmediate: async ({ update: admittedUpdate }) => {
         const sequence = await live.journal.append(documentId, admittedUpdate, {
           origin: "system",
@@ -267,7 +268,7 @@ export function createDrizzleBranchStore(
         Y.applyUpdate(liveDoc, admittedUpdate);
         return { sequence: BigInt(sequence), joined: 0 };
       },
-      readFrozenCut: unsupported,
+      readFrozenReplicationSource: unsupported,
       readCurrentRevision: unsupported,
       lowerCertifiedMutation: unsupported,
       loadCheckpoint: unsupported,
@@ -294,20 +295,20 @@ export function createDrizzleBranchStore(
       await runInDrizzleTransaction(db, async () => {
         await lockDocumentMutation(currentDrizzleDb(db), documentId);
         // Another replica may have committed while this process waited for the DB lock.
-        // Reconstruct inside both locks so the computed delta is against durable authority.
-        const authorityDoc = await ensureLiveManifestDocument(documentId);
+        // Reconstruct inside both locks so the computed delta is against the durable live document.
+        const persistedLiveDocument = await ensureLiveManifestDocument(documentId);
         const validationDoc = createCollabYDoc({ gc: false });
         try {
-          const beforeState = Y.encodeStateAsUpdate(authorityDoc);
+          const beforeState = Y.encodeStateAsUpdate(persistedLiveDocument);
           Y.applyUpdate(validationDoc, beforeState);
-          const before = Y.encodeStateVector(authorityDoc);
-          await mutate(authorityDoc);
-          const update = Y.encodeStateAsUpdate(authorityDoc, before);
+          const before = Y.encodeStateVector(persistedLiveDocument);
+          await mutate(persistedLiveDocument);
+          const update = Y.encodeStateAsUpdate(persistedLiveDocument, before);
           if (updateChangesState(beforeState, update)) {
             await persistLiveManifestUpdate(documentId, validationDoc, liveDoc, update);
           }
         } finally {
-          authorityDoc.destroy();
+          persistedLiveDocument.destroy();
           validationDoc.destroy();
         }
       });
@@ -870,6 +871,36 @@ export function createDrizzleBranchStore(
         }
         const ok = await updateBranchSnapshot(input);
         if (!ok) throw new BranchMutationRollback();
+        if (input.journal?.expectedJournalWatermark !== undefined) {
+          const [head] = await currentDrizzleDb(db)
+            .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+            .from(branchWriteJournal)
+            .where(
+              and(
+                eq(branchWriteJournal.branchId, input.journal.branchId),
+                eq(branchWriteJournal.generation, input.journal.generation),
+              ),
+            );
+          if ((head?.id ?? 0) > input.journal.expectedJournalWatermark) {
+            throw new BranchMutationRollback();
+          }
+        }
+        if (input.journal?.expectedJournalRevision !== undefined) {
+          const rows = await currentDrizzleDb(db)
+            .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+            .from(branchWriteJournal)
+            .where(
+              and(
+                eq(branchWriteJournal.branchId, input.journal.branchId),
+                eq(branchWriteJournal.generation, input.journal.generation),
+              ),
+            )
+            .orderBy(branchWriteJournal.id)
+            .for("update");
+          if (branchJournalRevision(rows) !== input.journal.expectedJournalRevision) {
+            throw new BranchMutationRollback();
+          }
+        }
         if (input.journal) {
           await currentDrizzleDb(db)
             .insert(branchWriteJournal)

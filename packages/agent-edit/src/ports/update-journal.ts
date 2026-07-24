@@ -24,6 +24,8 @@ type JournalMutationBase = {
   systemOrigin?: string;
   /** Certified semantic input bound to this exact lowered Yjs update. */
   semanticEditIr?: SemanticEditIRV1;
+  /** Staged host classified whether this mutation carries a replacement scope. */
+  replacementScopeRecorded?: true;
 };
 
 export type JournalMutation = JournalMutationBase &
@@ -33,6 +35,10 @@ export type JournalMutation = JournalMutationBase &
         mode: "threadPeer";
         /** Host branch generation captured with the write baseline. */
         branchGeneration: number;
+        /** Branch journal head captured while planning a staged reversal. */
+        branchJournalWatermark?: number;
+        /** Host revision for status-sensitive branch history transitions. */
+        branchJournalRevision?: string;
       }
   );
 
@@ -83,13 +89,15 @@ export interface WriteMutationRow {
  * that previously thread-served that race is gone.
  */
 export type PersistUndoResult =
-  | { persisted: true }
+  | { persisted: true; journalCommitKind?: JournalCommitKind }
   | { persisted: false; status: "cant_undo_dependent"; message?: string };
 
 export interface PersistRedoEntry {
   update: Uint8Array;
   ref: { threadId: string; undoUpdateSeq: number };
   meta: UpdateMeta;
+  /** Journal high-watermark captured while planning this redo. */
+  persistGuardWatermark?: number;
 }
 
 export interface JournalReadOptions {
@@ -108,12 +116,6 @@ export interface UpdateJournal {
   ): Promise<{ seq: number; joinedSettlement: boolean }>;
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
-  /** Attaches range evidence while a staged response mutation is still pending persistence. */
-  recordWriterProtectionScope?(input: {
-    docId: string;
-    responseId: string;
-    token: import("../lineage/range-set.js").SealedWriterLineageV3;
-  }): Promise<void>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   /** Durable attributed base used when reporting destructive effects. */
   readAttribution?(docId: string): Promise<JournalSnapshot>;
@@ -124,7 +126,7 @@ export interface UpdateJournal {
     docId: string;
     before: DocHandle;
     afterCandidate: DocHandle;
-    /** Branch adapters classify roots absent from live authority as agent-authored. */
+    /** Branch adapters classify roots absent from the live document as agent-authored. */
     fallbackProvenance?: "writer_protected" | "agent";
   }): Promise<{
     before: DestructiveProvenanceRun[];
@@ -140,8 +142,16 @@ export interface DestructiveProvenanceRun {
 
 /** Write-level reversal store: write ordinals, mutation metadata, and undo/redo rows. */
 export interface ReversalStore {
-  /** Reserve the next durable per-(document, thread) write ordinal. */
-  reserveWriteOrdinal(documentId: string, threadId: string): Promise<number>;
+  /**
+   * Pins host-defined reversal authority for one command. Branch adapters use
+   * this to prevent planning on one authority and persisting through another.
+   */
+  withReversalScope?<T>(docId: string, operation: () => Promise<T>): Promise<T>;
+  /**
+   * Reserve the next durable per-(document, thread) write ordinal.
+   * Branch adapters may reuse one ordinal for a host-defined durable group.
+   */
+  reserveWriteOrdinal(documentId: string, threadId: string, groupId?: string): Promise<number>;
   /**
    * Earliest reconstructable base: the newest checkpoint strictly below the
    * earliest retained update row, plus the retained updates after it.
@@ -184,12 +194,12 @@ export interface ReversalStore {
     redoUpdate: Uint8Array,
     ref: { threadId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
-  ): Promise<{ consumed: boolean; seq?: number }>;
+  ): Promise<{ consumed: boolean; seq?: number; journalCommitKind?: JournalCommitKind }>;
   /** Consume several redo groups in one persistence transaction. */
   persistRedoBatch(
     docId: string,
     entries: readonly PersistRedoEntry[],
-  ): Promise<{ consumed: boolean; seqs?: number[] }>;
+  ): Promise<{ consumed: boolean; seqs?: number[]; journalCommitKind?: JournalCommitKind }>;
   readReversals(
     docId: string,
     opts?: { threadId?: string; status?: ReversalRecord["status"][] },

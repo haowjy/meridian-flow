@@ -8,7 +8,6 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
-  type ObservationSnapshotStore,
   parseDocumentAddress,
   type ResponseLifecycleClaimDiscardedDetail,
   type ReversalNoticeFailedDetail,
@@ -53,15 +52,14 @@ import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import {
   createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthority,
-  replaceDocumentAuthorityGeneration,
-} from "./adapters/drizzle-document-authority.js";
+  readDocumentAuthorityHead,
+  replaceDocumentAuthorityHeadGeneration,
+} from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzleLiveTurnDependencyStore,
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
-import { createDrizzleObservationSnapshotStore } from "./adapters/drizzle-observation-snapshots.js";
 import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
 import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -97,9 +95,13 @@ import {
   type PushToLiveResult,
 } from "./domain/branch-push.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
+import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import { createDocumentAuthority, DocumentAuthorityError } from "./domain/document-authority.js";
+import {
+  createDocumentMutationPolicy,
+  DocumentMutationPolicyError,
+} from "./domain/document-mutation-policy.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createMarkdownDocumentEngine,
@@ -140,7 +142,6 @@ export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
-  observationSnapshots?: ObservationSnapshotStore;
   threads: {
     findById(threadId: ThreadId): Promise<unknown>;
   };
@@ -279,17 +280,16 @@ export type CollabFacadeDeps = {
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   documentAuthorityHeads: DocumentAuthorityHeads;
-  observationSnapshots?: ObservationSnapshotStore;
   turnDiffQuery?: TurnDiffQuery;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
-  replaceAuthorityGeneration?(input: {
+  replaceAuthorityHeadGeneration?(input: {
     documentId: DocumentId;
     checkpointId: string;
     expectedGeneration: bigint;
   }): Promise<bigint>;
-  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
+  readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
   resolveDocumentFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -383,8 +383,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
   const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
-  const observationSnapshots =
-    deps.observationSnapshots ?? createDrizzleObservationSnapshotStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -436,11 +434,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const offlineSchema = buildDocumentSchema();
   const offlineReconciliation = createOfflineReconciliation({
     journal,
-    observations: observationSnapshots,
     changeTrails,
     model: yProsemirrorModel(offlineSchema),
     codec: createAgentEditCodec(mdxCodec({ schema: offlineSchema })),
-    digestRenderedContent: (content) => createHash("sha256").update(content).digest("hex"),
     identifyUpdate: (update) => createHash("sha256").update(update).digest("hex"),
     resolveThreadId: async (turnId) => {
       const [row] = await deps.db
@@ -476,7 +472,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
-    observations: observationSnapshots,
     writerIngressBarrier: branchPushIngressBarrier,
     changeEventDelivery: createHocuspocusChangeEventDelivery({
       hocuspocus,
@@ -498,7 +493,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lifecycle,
     initialDocumentSeeds: lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
-    observationSnapshots,
     turnDiffQuery: createDrizzleTurnDiffQuery(deps.db, journal.documentsForTurn.bind(journal)),
     store,
     hocuspocus: () => boundHocuspocus,
@@ -563,22 +557,22 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
     },
-    readAuthorityGeneration: async (documentId) =>
-      (await readDocumentAuthority(deps.db, documentId)).generation,
-    replaceAuthorityGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
-      const result = await replaceDocumentAuthorityGeneration(deps.db, {
+    readAuthorityHeadGeneration: async (documentId) =>
+      (await readDocumentAuthorityHead(deps.db, documentId)).generation,
+    replaceAuthorityHeadGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
+      const result = await replaceDocumentAuthorityHeadGeneration(deps.db, {
         documentId,
         checkpointId: Number(checkpointId),
         expectedGeneration,
       });
       if (result.ok) return result.generation;
-      throw new DocumentAuthorityError(
-        result.code === "authority_busy"
-          ? "authority_busy"
+      throw new DocumentMutationPolicyError(
+        result.code === "authority_head_busy"
+          ? "authority_head_busy"
           : result.code === "checkpoint_incomplete"
             ? "checkpoint_incomplete"
             : "invalid_mutation",
-        `Authority replacement failed: ${result.code}`,
+        `Durable authority head generation replacement failed: ${result.code}`,
       );
     },
   });
@@ -655,7 +649,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       codec,
       model,
       semanticProvenance,
-      observationSnapshots: deps.observationSnapshots,
       turnDiffQuery: deps.turnDiffQuery,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
@@ -666,6 +659,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     deps.branchStore && deps.branchCoordinator
       ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
       : null;
+  const listBranchRows = deps.branchPushStore?.listJournalRowsForBranch;
   const agentEditCore: ThreadPeerAgentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
@@ -677,6 +671,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               threadId,
               liveJournal: deps.journal,
               pendingJournalEntries,
+              branches: branchAgentEdit.store,
+              branchRows: listBranchRows
+                ? {
+                    listJournalRowsForBranch: (input) => listBranchRows(input),
+                  }
+                : undefined,
             }),
             coordinator: createBranchAgentEditCoordinator({
               threadId,
@@ -696,7 +696,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             codec,
             model,
             semanticProvenance,
-            observationSnapshots: deps.observationSnapshots,
             turnDiffQuery: deps.turnDiffQuery,
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
@@ -704,6 +703,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             ...agentEditObservabilityOptions(deps),
           });
         },
+        shouldUseLiveReversal: listBranchRows
+          ? async ({ documentId, threadId }) =>
+              (await resolveBranchReversalScope({
+                documentId,
+                threadId,
+                branches: branchAgentEdit.store,
+                branchRows: {
+                  listJournalRowsForBranch: (input) => listBranchRows(input),
+                },
+              })) === null
+          : undefined,
         discardThreadPeerBranches: async (documentId, threadId) => {
           await deps.branchStore?.discardActiveThreadPeerBranches({
             documentId,
@@ -1053,17 +1063,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     eventSink: deps.eventSink,
     metaForOrigin,
     latestUpdateSeq,
-    readAuthorityGeneration: deps.readAuthorityGeneration,
+    readAuthorityHeadGeneration: deps.readAuthorityHeadGeneration,
     emitAgentEditInvariantViolation,
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
     offlineReconciliation: deps.offlineReconciliation,
   });
   deps.onWriterIngressBarrier?.(hocuspocusPersistence.writerIngressBarrier);
-  const authorityCallbacks =
-    deps.replaceAuthorityGeneration && deps.readAuthorityGeneration
+  const authorityHeadCallbacks =
+    deps.replaceAuthorityHeadGeneration && deps.readAuthorityHeadGeneration
       ? {
-          replace: deps.replaceAuthorityGeneration,
-          readGeneration: deps.readAuthorityGeneration,
+          replace: deps.replaceAuthorityHeadGeneration,
+          readGeneration: deps.readAuthorityHeadGeneration,
         }
       : null;
   const checkpoints = createCheckpointService({
@@ -1071,13 +1081,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     store: deps.store,
     latestUpdateSeq,
     markdownDocuments,
-    ...(authorityCallbacks
+    ...(authorityHeadCallbacks
       ? {
-          authority: (documentId: DocumentId) =>
-            createDocumentAuthority({
-              readMutableAuthority: async () => ({
+          mutationPolicy: (documentId: DocumentId) =>
+            createDocumentMutationPolicy({
+              readMutationTarget: async () => ({
                 documentId,
-                generation: await authorityCallbacks.readGeneration(documentId),
+                generation: await authorityHeadCallbacks.readGeneration(documentId),
                 doc: await deps.coordinator.withDocument(documentId, async (doc) => doc),
               }),
               loadCheckpoint: async (checkpointId) => {
@@ -1092,19 +1102,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               },
               unresolvedSettlements: async () => 0,
               replaceGeneration: async (_checkpoint, expectedGeneration) =>
-                authorityCallbacks.replace({
+                authorityHeadCallbacks.replace({
                   documentId,
                   checkpointId: _checkpoint.checkpointId,
                   expectedGeneration,
                 }),
               disconnectGeneration: (generation) =>
                 hocuspocusPersistence.disconnectLiveGeneration(documentId, generation),
-              admitImmediate: unsupportedAuthorityOperation,
-              readFrozenCut: unsupportedAuthorityOperation,
-              readCurrentRevision: unsupportedAuthorityOperation,
-              lowerCertifiedMutation: unsupportedAuthorityOperation,
-              stagePush: unsupportedAuthorityOperation,
-              completePush: unsupportedAuthorityOperation,
+              admitImmediate: unsupportedMutationPolicyOperation,
+              readFrozenReplicationSource: unsupportedMutationPolicyOperation,
+              readCurrentRevision: unsupportedMutationPolicyOperation,
+              lowerCertifiedMutation: unsupportedMutationPolicyOperation,
+              stagePush: unsupportedMutationPolicyOperation,
+              completePush: unsupportedMutationPolicyOperation,
             }),
         }
       : {}),
@@ -1792,6 +1802,7 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
+  shouldUseLiveReversal?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
   pullThreadPeer?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
     | {
@@ -1832,6 +1843,23 @@ export function createThreadPeerAgentEditCore(input: {
     const core = input.createThreadCore(id);
     cores.set(id, core);
     return core;
+  }
+
+  async function reversalCoreFor(
+    documentId: DocumentId,
+    threadId: string | undefined,
+  ): Promise<AgentEditCore> {
+    if (!threadId) return input.liveUtilityCore;
+    if (
+      input.shouldUseLiveReversal &&
+      (await input.shouldUseLiveReversal({
+        documentId,
+        threadId: threadId as ThreadId,
+      }))
+    ) {
+      return input.liveUtilityCore;
+    }
+    return coreFor(threadId);
   }
 
   async function evictIdleCores(): Promise<void> {
@@ -1886,39 +1914,64 @@ export function createThreadPeerAgentEditCore(input: {
     async write(command, context = {}) {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
-      trackResponse(context.threadId, context.responseId, threadCore);
       const responseAlreadyBufferedDocument = Boolean(
         context.responseId &&
           documentId &&
           threadCore.bufferedUpdatesForDoc(context.responseId, documentId).length > 0,
       );
+      let pulled:
+        | {
+            branchGeneration: number;
+            afterJournalId?: number;
+            liveJournalSeq?: number;
+            attributionBaseline: Uint8Array;
+          }
+        | undefined;
       if (
         documentId &&
         context.threadId &&
         input.pullThreadPeer &&
         !responseAlreadyBufferedDocument
       ) {
-        const pulled = await input.pullThreadPeer({
+        pulled = await input.pullThreadPeer({
           documentId,
           threadId: context.threadId as ThreadId,
         });
-        if (!context.responseId) await threadCore.invalidateThread(documentId, context.threadId);
-        return threadCore.write(command, {
-          ...context,
-          ...(pulled
-            ? {
-                interactionContext: {
-                  mode: "threadPeer" as const,
-                  branchGeneration: pulled.branchGeneration,
-                  afterJournalId: pulled.afterJournalId ?? 0,
-                  liveJournalSeq: pulled.liveJournalSeq,
-                  attributionBaseline: pulled.attributionBaseline,
-                },
-              }
-            : {}),
-        });
       }
-      return threadCore.write(command, context);
+      const owner = context.responseId ? responseOwners.get(context.responseId) : undefined;
+      if (owner && owner.threadId !== context.threadId) {
+        throw new Error(
+          `Response ${context.responseId} is already owned by thread ${owner.threadId ?? "live"}; cannot reuse it from thread ${context.threadId ?? "live"}.`,
+        );
+      }
+      const selectedCore =
+        owner?.core ??
+        (documentId && isReversalWriteCommand(command)
+          ? await reversalCoreFor(documentId, context.threadId)
+          : threadCore);
+      const useLiveReversal = selectedCore === input.liveUtilityCore;
+      // Live reversals commit immediately. They must not claim the response:
+      // a later forward write in the same response still belongs in Draft.
+      if (owner || !useLiveReversal || !isReversalWriteCommand(command)) {
+        trackResponse(context.threadId, context.responseId, selectedCore);
+      }
+      if (!context.responseId && pulled && !useLiveReversal) {
+        await threadCore.invalidateThread(documentId as DocumentId, context.threadId as ThreadId);
+      }
+      return selectedCore.write(command, {
+        ...context,
+        ...(pulled && !useLiveReversal
+          ? {
+              interactionContext: {
+                mode: "threadPeer" as const,
+                branchGeneration: pulled.branchGeneration,
+                afterJournalId: pulled.afterJournalId ?? 0,
+                liveJournalSeq: pulled.liveJournalSeq,
+                attributionBaseline: pulled.attributionBaseline,
+              },
+            }
+          : {}),
+      });
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
@@ -1967,22 +2020,25 @@ export function createThreadPeerAgentEditCore(input: {
       });
     },
     async getAvailability(docId, threadId) {
-      return (await coreFor(threadId)).getAvailability(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).getAvailability(
+        docId,
+        threadId,
+      );
     },
     async undo(docId, threadId) {
-      return (await coreFor(threadId)).undo(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).undo(docId, threadId);
     },
     async redo(docId, threadId) {
-      return (await coreFor(threadId)).redo(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).redo(docId, threadId);
     },
     reverse(inputReverse) {
       return input.liveUtilityCore.reverse(inputReverse);
     },
     async undoTurn(docId, threadId) {
-      return (await coreFor(threadId)).undoTurn(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).undoTurn(docId, threadId);
     },
     async redoTurn(docId, threadId) {
-      return (await coreFor(threadId)).redoTurn(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).redoTurn(docId, threadId);
     },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];
@@ -2035,6 +2091,12 @@ function documentIdFromWriteCommand(command: unknown): DocumentId | null {
     typeof documentId === "string" ? documentId : undefined,
   );
   return address.ok ? (address.documentId as DocumentId) : null;
+}
+
+function isReversalWriteCommand(command: unknown): boolean {
+  if (typeof command !== "object" || command === null) return false;
+  const name = (command as { command?: unknown }).command;
+  return name === "undo" || name === "redo";
 }
 
 function createInMemoryTurnLiveLineageStore(
@@ -2118,8 +2180,8 @@ function attributionFromMeta(meta: UpdateMeta): {
   return { originType: null, actorTurnId: null, actorUserId: null };
 }
 
-async function unsupportedAuthorityOperation(): Promise<never> {
-  throw new Error("Document authority strategy is unavailable in this production adapter");
+async function unsupportedMutationPolicyOperation(): Promise<never> {
+  throw new Error("Document mutation policy dependency is unavailable in this production adapter");
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

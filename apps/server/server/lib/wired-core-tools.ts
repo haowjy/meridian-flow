@@ -462,14 +462,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       }
       return {
         output: outcome.content ?? outcome.text,
-        ...(stagedWrite || outcome.observations?.length
+        ...(stagedWrite
           ? {
               metadata: {
                 documentId: address.documentId,
-                ...(outcome.observations?.length
-                  ? { observationEvidence: outcome.observations }
-                  : {}),
-                ...(stagedWrite ? { stagedWrite: true } : {}),
+                stagedWrite: true,
               },
             }
           : {}),

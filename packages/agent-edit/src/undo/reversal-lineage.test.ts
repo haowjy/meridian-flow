@@ -78,6 +78,24 @@ describe("selectUndoClosure", () => {
     expect(closure.ok && [...closure.targetSeqs]).toEqual([8]);
   });
 
+  it("expands a selected handle to every handle backed by the same durable update", () => {
+    const closure = selectUndoClosure({
+      snapshot: snapshotWithSeqs([8]),
+      reversals: [],
+      rowsByHandle: new Map([
+        ["w1", [mutation("w1", 8)]],
+        ["w2", [mutation("w2", 8)]],
+      ]),
+      selectedHandles: ["w2"],
+      candidateHandles: ["w1", "w2"],
+      reversalOpSeqs: new Set(),
+      isScopeSelection: false,
+    });
+
+    expect(closure.ok && closure.handles).toEqual(["w1", "w2"]);
+    expect(closure.ok && [...closure.targetSeqs]).toEqual([8]);
+  });
+
   it("refuses undo when a later retained write consumes selected content", () => {
     const updates = textUpdates();
     const rowsByHandle = new Map([

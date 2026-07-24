@@ -61,6 +61,7 @@ export function emitEvent(
 ): void {
   sink.emit({
     ...event,
+    eventId: event.eventId ?? crypto.randomUUID(),
     timestamp: event.timestamp ?? new Date().toISOString(),
   });
 }

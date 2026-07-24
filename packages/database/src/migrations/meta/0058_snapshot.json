@@ -1,6 +1,6 @@
 {
-  "id": "a673bbe4-c175-4b95-a692-8d8e95e54a69",
-  "prevId": "071682e1-b5fd-4e62-bac6-0c9807e84815",
+  "id": "071682e1-b5fd-4e62-bac6-0c9807e84815",
+  "prevId": "dcaf276b-d59a-435a-abee-71bb7c35432c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5569,13 +5569,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "projection_revision": {
-          "name": "projection_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         }
       },
       "indexes": {},

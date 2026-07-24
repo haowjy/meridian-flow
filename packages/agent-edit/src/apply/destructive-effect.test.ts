@@ -19,16 +19,6 @@ const occurrence = (input: {
   finalRendering: input.rendering,
 });
 
-const cut = (visible: readonly VisibleProseOccurrence[]) => ({
-  id: "cut-1",
-  version: 1 as const,
-  documentId: "doc-1",
-  authorityId: "authority-1",
-  generation: 1n,
-  admittedThrough: 4n,
-  visible,
-});
-
 describe("classifyDestructiveEffect", () => {
   it("reports only removed protected root units and projects pointwise to final rendering", () => {
     const before = [occurrence({ targetClock: 0, length: 4, rendering: "block-a" })];
@@ -39,9 +29,6 @@ describe("classifyDestructiveEffect", () => {
       classifyDestructiveEffect({
         before,
         afterCandidate,
-        protectionScope: [{ clientID: 9, clock: 0, length: 4 }],
-        responseCut: cut(before),
-        observation: { coveredFinalRenderings: [] },
       }),
     ).toEqual({
       eligibleRanges: [{ clientID: 1, clock: 2, length: 2 }],
@@ -51,17 +38,14 @@ describe("classifyDestructiveEffect", () => {
     });
   });
 
-  it("credits exact observed cut prose but never post-cut writer prose in the same rendering", () => {
+  it("reports every removed writer root", () => {
     const observed = occurrence({ targetClock: 0, length: 2, rendering: "mixed" });
     const postCut = occurrence({ targetClock: 2, rootClock: 2, length: 2, rendering: "mixed" });
     const result = classifyDestructiveEffect({
       before: [observed, postCut],
       afterCandidate: [],
-      protectionScope: [],
-      responseCut: cut([observed]),
-      observation: { coveredFinalRenderings: ["mixed"] },
     });
-    expect(result.eligibleRanges).toEqual([{ clientID: 1, clock: 2, length: 2 }]);
+    expect(result.eligibleRanges).toEqual([{ clientID: 1, clock: 0, length: 4 }]);
   });
 
   it("rejects non-length-preserving continuation input", () => {
@@ -71,9 +55,6 @@ describe("classifyDestructiveEffect", () => {
       classifyDestructiveEffect({
         before: [bad],
         afterCandidate: [],
-        protectionScope: [],
-        responseCut: cut([]),
-        observation: { coveredFinalRenderings: [] },
       }),
     ).toThrow(/length-preserving/);
   });

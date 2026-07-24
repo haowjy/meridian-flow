@@ -77,13 +77,13 @@ describe("ContextFS createUntitledDocument", () => {
 
   it("repairs finalization when retrying a row left by a failed create", async () => {
     const collab = createInMemoryCollabDomain();
-    let failAuthorityOnce = true;
+    let failDurableHeadOnce = true;
     const documentSync = {
       ...collab,
       async ensureDocument(documentId: string) {
-        if (failAuthorityOnce) {
-          failAuthorityOnce = false;
-          throw new Error("authority unavailable");
+        if (failDurableHeadOnce) {
+          failDurableHeadOnce = false;
+          throw new Error("durable document authority head unavailable");
         }
         await collab.ensureDocument(documentId);
       },
@@ -92,7 +92,7 @@ describe("ContextFS createUntitledDocument", () => {
     const ensureMembership = vi.spyOn(store, "ensureDocumentMembership");
 
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).rejects.toThrow(
-      "authority unavailable",
+      "durable document authority head unavailable",
     );
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
       {

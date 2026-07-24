@@ -1,4 +1,4 @@
-/** Persisted collab-authority coverage for client-owned untitled creation. */
+/** Persisted live-document coverage for client-owned untitled creation. */
 
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -64,7 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => db.$client.end());
 
-    it("persists and reloads an authority with zero CRDT structs", async () => {
+    it("persists and reloads a live document with zero CRDT structs", async () => {
       const collab = createCollabDomain({ db, threads: { findById: async () => null } });
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
@@ -86,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(documentYjsCheckpoints)).resolves.toHaveLength(1);
 
       const persistedState = await collab.loadHocuspocusDocument(DOCUMENT_ID);
-      if (!persistedState) throw new Error("untitled authority was not persisted");
+      if (!persistedState) throw new Error("untitled live document was not persisted");
       const reloaded = new Y.Doc({ gc: false });
       Y.applyUpdate(reloaded, persistedState);
       const structs = (

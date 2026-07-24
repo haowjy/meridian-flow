@@ -1,6 +1,6 @@
 {
-  "id": "b6bf7c70-688f-4890-a2d6-72439ccc6dc2",
-  "prevId": "a673bbe4-c175-4b95-a692-8d8e95e54a69",
+  "id": "a673bbe4-c175-4b95-a692-8d8e95e54a69",
+  "prevId": "071682e1-b5fd-4e62-bac6-0c9807e84815",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6681,6 +6681,92 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.pending_notice_deliveries": {
+      "name": "pending_notice_deliveries",
+      "schema": "",
+      "columns": {
+        "notice_id": {
+          "name": "notice_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "pending_notice_deliveries_thread": {
+          "name": "pending_notice_deliveries_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_notice_deliveries_notice_id_pending_notices_id_fk": {
+          "name": "pending_notice_deliveries_notice_id_pending_notices_id_fk",
+          "tableFrom": "pending_notice_deliveries",
+          "tableTo": "pending_notices",
+          "columnsFrom": ["notice_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pending_notice_deliveries_thread_id_threads_id_fk": {
+          "name": "pending_notice_deliveries_thread_id_threads_id_fk",
+          "tableFrom": "pending_notice_deliveries",
+          "tableTo": "threads",
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pending_notice_deliveries_document_id_documents_id_fk": {
+          "name": "pending_notice_deliveries_document_id_documents_id_fk",
+          "tableFrom": "pending_notice_deliveries",
+          "tableTo": "documents",
+          "columnsFrom": ["document_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "pending_notice_deliveries_notice_id_thread_id_pk": {
+          "name": "pending_notice_deliveries_notice_id_thread_id_pk",
+          "columns": ["notice_id", "thread_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.pending_notices": {
       "name": "pending_notices",
       "schema": "",
@@ -6697,8 +6783,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "thread_id": {
-          "name": "thread_id",
+        "scope_kind": {
+          "name": "scope_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -6723,50 +6815,17 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "pending_notices_thread": {
-          "name": "pending_notices_thread",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "pending_notices_thread_id_threads_id_fk": {
-          "name": "pending_notices_thread_id_threads_id_fk",
-          "tableFrom": "pending_notices",
-          "tableTo": "threads",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "pending_notices_scope_valid": {
+          "name": "pending_notices_scope_valid",
+          "value": "\"pending_notices\".\"scope_kind\" IN ('thread', 'document')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.push_lineage": {

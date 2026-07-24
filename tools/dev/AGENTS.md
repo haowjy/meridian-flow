@@ -20,6 +20,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 ## Rules
 
 - **`DEV_DATABASES` (in `lib/dev-env.ts`) is the single source of truth.** To add or change a per-worktree database, edit the registry — never hard-code a second database, env var, or `"web"` special-case in `ensure-db`, `drop-db`, `prepare-db`, `.envrc`, or anywhere else. Every consumer iterates the registry.
+- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. In those environments `DATABASE_URL` resolves to the shared `meridian` database, so migration, test, and admin commands silently target the wrong DB. Agents must derive the worktree DB explicitly — run `pnpm bootstrap` (which calls `applyDevEnvToProcess`) or source `print-worktree-env.ts` output before any database operation.
 - **Use `lib/dev-env.ts` for env loading.** Do not call `process.loadEnvFile` or write a bespoke `loadEnvFromFile`. The canonical entry point is `applyDevEnvToProcess()`.
 - **Use `lib/dev-db.ts` for DB admin.** Do not open a fresh `pg.Client` and run `CREATE`/`DROP`/`CREATE EXTENSION` from a new script — extend the helpers in `lib/dev-db.ts` and add a thin CLI wrapper.
 - **No regex URL surgery.** Transformations on a database URL use `new URL()` and rewrite `pathname` specifically. The worktree name is always `<baseDbName>_<slug>` (derived from the URL's own base name), and the rewrite must stay idempotent.

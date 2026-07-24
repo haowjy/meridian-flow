@@ -9,13 +9,12 @@ import { Trans } from "@lingui/react/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 
-import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ChatPaneControllerProps = {
   projectId: string;
-  activeThreadId: string | null;
+  threadId: string | null;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
   onSelectThread: (threadId: string) => void;
@@ -23,21 +22,18 @@ export type ChatPaneControllerProps = {
 
 export function ChatPaneController({
   projectId,
-  activeThreadId,
+  threadId,
   sidebarToggle,
   contextToggle,
   onSelectThread,
 }: ChatPaneControllerProps) {
-  // Same resolution as the ChatScreen body — otherwise the header shows the
-  // "Chat" fallback while the body already renders the fallback thread.
-  const { resolvedThreadId } = useResolvedChatThread(projectId, activeThreadId);
   return (
     <PaneHeader
       title={
-        resolvedThreadId ? (
+        threadId ? (
           <ChatThreadTitle
             projectId={projectId}
-            threadId={resolvedThreadId}
+            threadId={threadId}
             onSelectThread={onSelectThread}
             // The centered chat body is page-sheet: the switcher wears the
             // active-tab chip so the page continues up into the band.

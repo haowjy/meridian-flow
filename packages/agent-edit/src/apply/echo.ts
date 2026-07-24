@@ -13,7 +13,7 @@ export interface BlockSnapshot {
   hash: string;
   clientID?: number;
   clock?: number;
-  /** Hash-independent canonical rendering used by observation snapshots. */
+  /** Hash-independent canonical rendering used by provenance classification. */
   renderedContent?: string;
   serialized: string;
   /** Visible prose ancestry; identities come from CRDT items, never text bytes. */
@@ -426,32 +426,12 @@ export function renderConcurrentRuns(input: {
       ),
       blocks: blocks.map((block) => block.serialized),
       tombstones: [],
-      observations: blocks.flatMap((block) =>
-        block.clientID !== undefined && block.clock !== undefined && block.renderedContent
-          ? [
-              {
-                kind: "rendered" as const,
-                clientID: block.clientID,
-                clock: block.clock,
-                renderedContent: block.renderedContent,
-              },
-            ]
-          : [],
-      ),
     };
     for (const hash of deletionHashes) {
       const deleted = input.deletedBodies?.get(hash);
       if (!deleted) continue;
       const body = blockBody(deleted.block.serialized).replace(/^\n/, "");
       run.tombstones.push({ hash, capturedBody: body });
-      if (deleted.block.clientID !== undefined && deleted.block.clock !== undefined) {
-        run.observations.push({
-          kind: "explicit_deletion",
-          clientID: deleted.block.clientID,
-          clock: deleted.block.clock,
-          capturedBody: body,
-        });
-      }
       run.origin = mergeOrigin(run.origin, deleted.origin);
     }
     return run;

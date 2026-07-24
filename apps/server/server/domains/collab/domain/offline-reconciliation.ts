@@ -2,8 +2,6 @@
 import {
   type AgentEditCodec,
   getBlockItemId,
-  type ObservationSnapshotStore,
-  observationCoversRendering,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -41,11 +39,9 @@ export type OfflineReconciliation = {
 
 export function createOfflineReconciliation(deps: {
   journal: UpdateJournal;
-  observations: ObservationSnapshotStore;
   changeTrails: Pick<ChangeTrailPersistence, "record">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-  digestRenderedContent(content: string): string;
   identifyUpdate(update: Uint8Array): string;
   resolveThreadId(turnId: string): Promise<string | null>;
   resolveDocumentTitle(documentId: string): Promise<string>;
@@ -73,7 +69,7 @@ export function createOfflineReconciliation(deps: {
         const changed = changedBeforeBlocks(before, after);
 
         if (row.meta.origin.startsWith("human:")) continue;
-        if (!row.meta.origin.startsWith("agent:") || !row.meta.authoringResponseId) continue;
+        if (!row.meta.origin.startsWith("agent:")) continue;
 
         const preSync = createCollabYDoc({ gc: false });
         try {
@@ -98,21 +94,6 @@ export function createOfflineReconciliation(deps: {
             }
             const mergedBlock = findIdentity(convergedBlocks, affected);
             if (mergedBlock?.renderedContent === writerBlock.renderedContent) continue;
-            const observation = await lookupObservation(
-              deps.observations,
-              row.meta.authoringResponseId,
-              input.documentId,
-              writerBlock,
-            );
-            if (
-              observationCoversRendering({
-                observation,
-                renderedContent: writerBlock.renderedContent,
-                digestRenderedContent: deps.digestRenderedContent,
-              })
-            ) {
-              continue;
-            }
             const turnId = row.meta.actorTurnId;
             const threadId = turnId ? await deps.resolveThreadId(turnId) : null;
             if (!turnId || !threadId) {
@@ -252,23 +233,6 @@ function findIdentity(
 ): SnapshotBlock | undefined {
   const key = identityKey(target);
   return blocks.find((block) => identityKey(block) === key);
-}
-
-async function lookupObservation(
-  store: ObservationSnapshotStore,
-  responseId: string,
-  documentId: string,
-  block: SnapshotBlock,
-) {
-  const snapshot = await store.load(responseId);
-  return (
-    snapshot?.entries.find(
-      (entry) =>
-        entry.documentId === documentId &&
-        entry.clientID === block.clientID &&
-        entry.clock === block.clock,
-    )?.value ?? null
-  );
 }
 
 function navigation(input: {
