@@ -8,7 +8,13 @@ import { lineageRangesContain, normalizeLineageRanges } from "./lineage/range-se
 export type Utf16Span = { from: number; to: number };
 
 export type SemanticOutputRun =
-  | { kind: "preserved"; source: LineageRange; output: Utf16Span }
+  | {
+      kind: "preserved";
+      source: LineageRange;
+      output: Utf16Span;
+      /** The source Yjs items remain visible; no continuation fact needs materializing. */
+      materialization?: "retained";
+    }
   | { kind: "fresh"; payload: string; output: Utf16Span }
   | { kind: "copy"; source: LineageRange; payload: string; output: Utf16Span }
   | { kind: "restoration"; root: LineageRange; payload: string; output: Utf16Span };
@@ -124,6 +130,8 @@ function editOutput(edit: ResolvedEdit): string {
     case "text":
     case "insert":
       return edit.newText;
+    case "textRanges":
+      return edit.output;
     case "block":
       return edit.replacement.textContent;
     case "delete":
