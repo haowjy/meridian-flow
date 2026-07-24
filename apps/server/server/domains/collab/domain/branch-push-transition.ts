@@ -17,7 +17,7 @@ import type {
   PendingLiveSettlement,
   PreparedPushCommit,
   PushSweptTrail,
-} from "./branch-push-executor.js";
+} from "./branch-push-contracts.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";

@@ -31,17 +31,19 @@ import {
 } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
+import { createBranchPushService } from "./branch-push.js";
 import {
   type BranchJournalRow,
-  BranchPeerIntegrationError,
-  BranchPushCommitConflictError,
-  BranchPushRetryExhaustedError,
   type BranchPushStore,
-  createBranchPushService,
+  branchJournalRevision,
   type PendingLiveSettlement,
   type PushLineageRow,
-} from "./branch-push.js";
-import { branchJournalRevision } from "./branch-push-contracts.js";
+} from "./branch-push-contracts.js";
+import {
+  BranchPushCommitConflictError,
+  BranchPushRetryExhaustedError,
+} from "./branch-push-executor.js";
+import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";
 import type {
@@ -1253,7 +1255,7 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
-    let pending: import("./branch-push.js").PendingLiveSettlement | null = null;
+    let pending: import("./branch-push-contracts.js").PendingLiveSettlement | null = null;
     const settlements: DurableTrailRecord[] = [];
     const completed: number[] = [];
     let activeDoc = liveDoc;
@@ -1333,7 +1335,8 @@ describe("createBranchPushService", () => {
     await expect(service.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
       "injected process crash",
     );
-    const durable = pending as unknown as import("./branch-push.js").PendingLiveSettlement;
+    const durable =
+      pending as unknown as import("./branch-push-contracts.js").PendingLiveSettlement;
     const coldDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(coldDoc, durable.lockCutUpdate);
     Y.applyUpdate(coldDoc, durable.pushUpdate);

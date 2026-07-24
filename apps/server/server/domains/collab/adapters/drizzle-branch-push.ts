@@ -35,8 +35,8 @@ import type {
   PreparedPushCommit,
   PushLineageRow,
   SettlementClaim,
-} from "../domain/branch-push.js";
-import { BranchPushCommitConflictError } from "../domain/branch-push.js";
+} from "../domain/branch-push-contracts.js";
+import { BranchPushCommitConflictError } from "../domain/branch-push-executor.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";

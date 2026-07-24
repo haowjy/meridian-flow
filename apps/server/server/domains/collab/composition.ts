@@ -99,12 +99,12 @@ import {
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
-import {
-  type BranchPushService,
-  type BranchPushStore,
-  createBranchPushService,
-  type PushToLiveResult,
-} from "./domain/branch-push.js";
+import { createBranchPushService } from "./domain/branch-push.js";
+import type {
+  BranchPushService,
+  BranchPushStore,
+  PushToLiveResult,
+} from "./domain/branch-push-contracts.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";

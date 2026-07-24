@@ -11,7 +11,7 @@ import type {
   PushLineageRow,
   PushReceiptPayload,
   ReceiptBlockChange,
-} from "./branch-push.js";
+} from "./branch-push-contracts.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,

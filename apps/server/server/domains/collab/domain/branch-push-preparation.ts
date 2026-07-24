@@ -14,8 +14,13 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import { type BranchJournalRow, replacementScopesFromBranchRow } from "./branch-push-contracts.js";
-import type { PreparedPushCommit, PushReceiptPayload } from "./branch-push-executor.js";
+import {
+  type BranchJournalRow,
+  type PreparedPush,
+  type PreparedPushCommit,
+  type PushReceiptPayload,
+  replacementScopesFromBranchRow,
+} from "./branch-push-contracts.js";
 import { buildReceipt, markdownFromDoc } from "./branch-push-plan.js";
 import {
   journalAttributionByChangedBlock,
@@ -46,7 +51,7 @@ export async function preparePushUnderLiveLock(
   phase: PushPreparationPhase,
   lockCutUpdate: Uint8Array,
   receiptId = phase.receiptId,
-) {
+): Promise<PreparedPush> {
   const lockCutDoc = createCollabYDoc({ gc: false });
   Y.applyUpdate(lockCutDoc, lockCutUpdate);
   const before = snapshotBlocks(toDocHandle(lockCutDoc), input.model, input.attributionCodec);
@@ -371,8 +376,6 @@ export async function preparePushUnderLiveLock(
     lockCutDoc.destroy();
   }
 }
-
-export type PreparedPush = Awaited<ReturnType<typeof preparePushUnderLiveLock>>;
 
 function replacementHashesFromRowUpdate(
   baselineState: Uint8Array,
