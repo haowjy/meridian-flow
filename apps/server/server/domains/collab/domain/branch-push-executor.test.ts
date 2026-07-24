@@ -18,6 +18,7 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
+import { createBranchAgentEditDiagnostics } from "../adapters/branch-agent-edit-observability.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
@@ -2911,7 +2912,7 @@ describe("thread-peer auto-push wiring", () => {
 
   it("warns and drops mutation-less pending entries instead of retaining an undrainable batch", () => {
     const eventSink = createInMemoryEventSink();
-    const pending = createBranchPendingJournalEntries(eventSink);
+    const pending = createBranchPendingJournalEntries(createBranchAgentEditDiagnostics(eventSink));
 
     pending.push({
       docId: DOCUMENT_ID,
@@ -3916,7 +3917,7 @@ describe("thread-peer auto-push wiring", () => {
   it("fails loudly when a staged response commit produces no branch journal row", async () => {
     const events = createInMemoryEventSink();
     const harness = new ThreadPeerPushHarness("manual", "Base.");
-    const pending = createBranchPendingJournalEntries(events);
+    const pending = createBranchPendingJournalEntries(createBranchAgentEditDiagnostics(events));
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array([1]),
@@ -4339,7 +4340,10 @@ class ThreadPeerPushHarness {
       },
       pendingJournalEntries: pending,
       branchPush: this.branchPush,
-      eventSink,
+      diagnostics: createBranchAgentEditDiagnostics(eventSink),
+      afterCommit(callback) {
+        void callback();
+      },
       model,
       codec: agentCodec,
       ...(watermarks ? { concurrentJournalWatermarks: watermarks } : {}),

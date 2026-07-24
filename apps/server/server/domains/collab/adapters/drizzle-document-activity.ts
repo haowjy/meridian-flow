@@ -1,4 +1,4 @@
-/** Shared document activity/projection side effects for collab writes. */
+/** Drizzle document activity/projection side effects for collab writes. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, threadDocuments, works } from "@meridian/database";

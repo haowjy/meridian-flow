@@ -38,7 +38,12 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import {
+  deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
+  runAfterDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../shared/drizzle-transaction.js";
 import { Ok, type Result } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
@@ -46,9 +51,14 @@ import {
 } from "../context/document-uri-resolver.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import { createBranchAgentEditDiagnostics } from "./adapters/branch-agent-edit-observability.js";
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import {
+  touchDocumentActivity,
+  updateMarkdownProjection,
+} from "./adapters/drizzle-document-activity.js";
 import {
   createDrizzleDocumentAuthorityHeads,
   readDocumentAuthorityHead,
@@ -94,7 +104,6 @@ import {
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
-import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
@@ -118,6 +127,7 @@ import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier
 import { createSemanticProvenanceWriter } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
+  type ResponseTransactionSettlement,
   runResponseTransaction,
 } from "./domain/response-transaction.js";
 import {
@@ -665,6 +675,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();
+  const branchAgentEditDiagnostics = createBranchAgentEditDiagnostics(deps.eventSink);
+  const responseTransactionSettlement = {
+    deferUntilCommit: deferUntilDrizzleCommit,
+    deferUntilRollback: deferUntilDrizzleRollback,
+  };
   const createLiveCore = () =>
     createAgentEditCore({
       journal: deps.journal,
@@ -687,8 +702,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
         commitThreadResponseAtomically: deps.commitThreadResponseAtomically,
+        responseTransactionSettlement,
         createThreadCore: (threadId) => {
-          const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
+          const pendingJournalEntries = createBranchPendingJournalEntries(
+            branchAgentEditDiagnostics,
+          );
           return createAgentEditCore({
             journal: createBranchAgentEditJournal({
               threadId,
@@ -710,7 +728,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               branchPush: deps.branchPush,
               journalRows: deps.branchPushStore,
               liveJournal: deps.journal,
-              eventSink: deps.eventSink,
+              diagnostics: branchAgentEditDiagnostics,
+              afterCommit(callback) {
+                runAfterDrizzleCommit(callback);
+              },
               model,
               codec,
               concurrentJournalWatermarks: deps.concurrentJournalWatermarks,
@@ -1854,6 +1875,7 @@ export function createThreadPeerAgentEditCore(input: {
     | undefined
   >;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  responseTransactionSettlement?: ResponseTransactionSettlement;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
@@ -2023,18 +2045,22 @@ export function createThreadPeerAgentEditCore(input: {
         await options?.beforeTransactionCommit?.(result);
         return result;
       }
-      return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
-        const result = await owner.core.commitResponse(responseId, {
-          deferFinalization: (participant) => {
-            if (!enlistResponseParticipant(participant)) {
-              throw new Error("Response finalization requires an active response transaction");
-            }
-          },
-        });
-        await options?.beforeTransactionCommit?.(result);
-        enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
-        return result;
-      });
+      return runResponseTransaction(
+        input.commitThreadResponseAtomically,
+        async () => {
+          const result = await owner.core.commitResponse(responseId, {
+            deferFinalization: (participant) => {
+              if (!enlistResponseParticipant(participant)) {
+                throw new Error("Response finalization requires an active response transaction");
+              }
+            },
+          });
+          await options?.beforeTransactionCommit?.(result);
+          enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
+          return result;
+        },
+        input.responseTransactionSettlement,
+      );
     },
     bufferedUpdatesForDoc(responseId, docId) {
       return responseOwners.get(responseId)?.core.bufferedUpdatesForDoc(responseId, docId) ?? [];
@@ -2047,17 +2073,21 @@ export function createThreadPeerAgentEditCore(input: {
     async rollbackResponse(responseId) {
       const owner = responseOwners.get(responseId);
       if (!owner) return input.liveUtilityCore.rollbackResponse(responseId);
-      return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
-        const result = await owner.core.rollbackResponse(responseId, {
-          deferFinalization: (participant) => {
-            if (!enlistResponseParticipant(participant)) {
-              throw new Error("Response finalization requires an active response transaction");
-            }
-          },
-        });
-        enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
-        return result;
-      });
+      return runResponseTransaction(
+        input.commitThreadResponseAtomically,
+        async () => {
+          const result = await owner.core.rollbackResponse(responseId, {
+            deferFinalization: (participant) => {
+              if (!enlistResponseParticipant(participant)) {
+                throw new Error("Response finalization requires an active response transaction");
+              }
+            },
+          });
+          enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
+          return result;
+        },
+        input.responseTransactionSettlement,
+      );
     },
     async getAvailability(docId, threadId) {
       return (await reversalCoreFor(docId as DocumentId, threadId)).getAvailability(
