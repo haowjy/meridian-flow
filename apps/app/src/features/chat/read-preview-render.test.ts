@@ -44,4 +44,18 @@ describe("read preview rendering", () => {
       "80px",
     ]);
   });
+
+  it("deactivates unsafe link protocols", () => {
+    const fragment = renderReadFragment(
+      "[safe](https://example.com/chapter) [unsafe](javascript:alert(document.domain))",
+    );
+    const host = document.createElement("div");
+    if (fragment) host.append(fragment);
+
+    expect(host.querySelector('a[href="https://example.com/chapter"]')?.textContent).toBe("safe");
+    const unsafe = Array.from(host.querySelectorAll("a")).find(
+      (link) => link.textContent === "unsafe",
+    );
+    expect(unsafe?.hasAttribute("href")).toBe(false);
+  });
 });
