@@ -202,6 +202,20 @@ describe("mutation commit", () => {
     });
   });
 
+  it("preserves durable acceptance when destructive reporting fails after append", async () => {
+    const fixture = destructiveFixture();
+    const journal: import("../ports/update-journal.js").UpdateJournal = fixture.journal;
+    journal.materializeDestructiveProvenance = async () => {
+      throw new Error("classification failed");
+    };
+
+    await expect(fixture.mutationCommit.submitMutation(fixture.input)).rejects.toMatchObject({
+      journalCommitKind: "durable",
+    });
+    expect((await fixture.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
+  });
+
   it("reports a deterministic late destructive hit and still applies after journal commit", async () => {
     const fixture = destructiveFixture();
     let preflight: Awaited<ReturnType<typeof fixture.mutationCommit.captureCommitPreflight>>;

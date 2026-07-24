@@ -118,6 +118,16 @@ type MutationSubmissionResult =
     }
   | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
 
+export class AcceptedMutationSubmissionError extends Error {
+  constructor(
+    cause: unknown,
+    readonly journalCommitKind: JournalCommitKind,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "AcceptedMutationSubmissionError";
+  }
+}
+
 export interface MutationCommit {
   submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
@@ -227,24 +237,32 @@ export function createMutationCommit(deps: {
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
-    const response = await withLiveDocument(
-      coordinator,
-      input.docId,
-      input.commandName,
-      input.docId,
-      async (liveDoc) => {
-        const applied = await applyJournaledUpdateUnderLock(liveDoc, {
-          ...input,
-          ownTurnId: input.turnId,
-          update: mergeUpdates(input.updates.map((entry) => entry.update)),
-          journalEntries: journalEntries(input),
-        });
-        journalCommitKind = applied.journalCommitKind;
-        captured = applied.concurrent;
-        lateSweep = applied.lateSweep;
-        return null;
-      },
-    );
+    let response: Awaited<ReturnType<typeof withLiveDocument<null>>>;
+    try {
+      response = await withLiveDocument(
+        coordinator,
+        input.docId,
+        input.commandName,
+        input.docId,
+        async (liveDoc) => {
+          const applied = await applyJournaledUpdateUnderLock(liveDoc, {
+            ...input,
+            ownTurnId: input.turnId,
+            update: mergeUpdates(input.updates.map((entry) => entry.update)),
+            journalEntries: journalEntries(input),
+            onJournalAccepted: (accepted) => {
+              journalCommitKind = accepted;
+            },
+          });
+          captured = applied.concurrent;
+          lateSweep = applied.lateSweep;
+          return null;
+        },
+      );
+    } catch (cause) {
+      if (journalCommitKind) throw new AcceptedMutationSubmissionError(cause, journalCommitKind);
+      throw cause;
+    }
     if (isInternalWriteResult(response)) return { ok: false, response, journalCommitKind };
     if (captured) applyCapturedConcurrentToRuntime(input.runtime, captured);
     return {
@@ -303,12 +321,14 @@ export function createMutationCommit(deps: {
       liveOrigin: ConcurrentUpdateOrigin;
       journalEntries: readonly JournalBatchAppendEntry[];
       preflight?: CapturedConcurrentDetection;
+      onJournalAccepted?(journalCommitKind: JournalCommitKind): void;
     },
   ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
     const journalCommitKind =
       input.journalEntries.length > 0
         ? (await commitJournalBatch(input.journalEntries)).journalCommitKind
         : null;
+    if (journalCommitKind) input.onJournalAccepted?.(journalCommitKind);
     const current = input.preflight
       ? await captureConcurrentDetection(liveDoc, input, input.preflight)
       : await captureConcurrentDetection(liveDoc, input);

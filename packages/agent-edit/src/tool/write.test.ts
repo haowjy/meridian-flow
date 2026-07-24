@@ -33,6 +33,31 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("recovers a durable write when destructive reporting fails after append", async () => {
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        journalOverride: (journal) => {
+          const destructiveJournal: UpdateJournal = journal;
+          destructiveJournal.materializeDestructiveProvenance = async () => {
+            throw new Error("classification failed");
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const result = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
   it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
     let reservations = 0;
     const ctx = harness(

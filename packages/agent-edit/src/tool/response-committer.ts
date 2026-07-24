@@ -144,7 +144,6 @@ interface CommittingResponseState {
   acceptance: "none" | JournalCommitKind;
   /** Immutable snapshot exclusively owned by this commit attempt. */
   buffer: ResponseBuffer;
-  documents: ResponseCommitDocumentResult[];
   promise: Promise<ResponseCommitSuccessResult>;
 }
 
@@ -302,8 +301,11 @@ export function createResponseCommitter(deps: {
     responseId: string,
     options: ResponseCommitOptions = {},
   ): Promise<ResponseCommitSuccessResult> {
-    const state = responses.get(responseId);
-    if (!state) return emptyResponseCommit(responseId);
+    let state = responses.get(responseId);
+    if (!state) {
+      state = { kind: "buffered", buffer: emptyResponseBuffer() };
+      responses.set(responseId, state);
+    }
     if (state.kind === "closed") {
       throw lifecycleError({ responseId, operation: "commit", state: state.outcome });
     }
@@ -314,7 +316,6 @@ export function createResponseCommitter(deps: {
       kind: "committing",
       acceptance: "none",
       buffer: snapshotResponseBuffer(state.buffer),
-      documents: [],
       promise: deferred.promise,
     };
     responses.set(responseId, owner);
@@ -496,7 +497,6 @@ export function createResponseCommitter(deps: {
         });
         documents.push(document);
         assertOwner(responseId, owner);
-        owner.documents = [...documents];
         emit("live_projected", responseId, responsePhaseForAcceptance(journalCommitKind), {
           journalCommitKind,
           documentId: docBuffer.docId,
@@ -505,7 +505,6 @@ export function createResponseCommitter(deps: {
       }
 
       assertOwner(responseId, owner);
-      owner.documents = documents;
       emit(
         "live_projected",
         responseId,
@@ -796,8 +795,11 @@ export function createResponseCommitter(deps: {
     responseId: string,
     options: Pick<ResponseCommitOptions, "deferFinalization"> = {},
   ): Promise<ResponseRollbackResult> {
-    const state = responses.get(responseId);
-    if (!state) return emptyResponseRollback(responseId);
+    let state = responses.get(responseId);
+    if (!state) {
+      state = { kind: "buffered", buffer: emptyResponseBuffer() };
+      responses.set(responseId, state);
+    }
     if (state.kind === "closed") {
       throw lifecycleError({ responseId, operation: "rollback", state: state.outcome });
     }
@@ -933,7 +935,7 @@ export function createResponseCommitter(deps: {
     });
     let buffer = activeBuffer(input.responseId);
     if (!buffer) {
-      buffer = { docs: new Map(), nextStageSeq: 0, claimedDiscarded: [] };
+      buffer = emptyResponseBuffer();
       responses.set(input.responseId, { kind: "buffered", buffer });
     }
 
@@ -1245,8 +1247,8 @@ function emptyResponseCommit(
   };
 }
 
-function emptyResponseRollback(responseId: string): ResponseRollbackResult {
-  return { status: "rolledBack", responseId, stagedCreates: { committed: [], discarded: [] } };
+function emptyResponseBuffer(): ResponseBuffer {
+  return { docs: new Map(), nextStageSeq: 0, claimedDiscarded: [] };
 }
 
 function responseStagedCreateOutcome(
