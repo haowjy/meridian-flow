@@ -2,6 +2,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TrailChange } from "@/client/change-trails";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -156,6 +157,27 @@ describe("ChangeViewRows", () => {
 
   it("shows captured sweep words and applies Restore only once", async () => {
     const runAction = vi.fn(async () => ({ status: "applied" as const }));
+    const registry = getDocumentSessionRegistry();
+    const session = registry.getDetached("document-1");
+    session.markerStore.replaceGroup({
+      type: "change_event",
+      documentId: "document-1",
+      threadId: "thread-1",
+      trailId: "trail-1",
+      projectionRevision: 1,
+      author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+      admittedByUserId: null,
+      changes: [
+        {
+          changeId: "change-sweep",
+          kind: "delete",
+          navigation: { kind: "unavailable", reason: "test" },
+          swept: true,
+          excerpt: null,
+        },
+      ],
+      truncated: false,
+    });
     await withReactRoot(
       <ChangeViewRows
         threadId="thread-1"
@@ -174,8 +196,10 @@ describe("ChangeViewRows", () => {
           [...document.querySelectorAll("button")].some((item) => item.textContent === "Restore"),
         ).toBe(false);
         expect(runAction).toHaveBeenCalledTimes(1);
+        expect(session.markerStore.getSnapshot()[0]?.dismissed).toBe(true);
       },
     );
+    await registry.destroyRoom("document-1");
   });
 
   it("degrades Restore to Copy when live-root validation rejects the anchor", async () => {

@@ -2,12 +2,12 @@
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import {
-  absolutePositionToRelativePosition,
-  relativePositionToAbsolutePosition,
-  ySyncPluginKey,
-} from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
+import {
+  relativePositionForIndex,
+  relativePositionRuntimeFromState,
+  resolveRelativeRange,
+} from "../relative-position-runtime";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -29,21 +29,8 @@ export function relativeRangeToEditorPositions(
   editor: Editor,
   range: { start: Y.RelativePosition; end: Y.RelativePosition },
 ): { from: number; to: number } | null {
-  const binding = ySyncPluginKey.getState(editor.state)?.binding;
-  if (!binding) return null;
-  const from = relativePositionToAbsolutePosition(
-    binding.doc,
-    binding.type,
-    range.start,
-    binding.mapping,
-  );
-  const to = relativePositionToAbsolutePosition(
-    binding.doc,
-    binding.type,
-    range.end,
-    binding.mapping,
-  );
-  return from === null || to === null ? null : { from, to };
+  const runtime = relativePositionRuntimeFromState(editor.state);
+  return runtime ? resolveRelativeRange(runtime, range) : null;
 }
 
 function scrollHighlight(editor: Editor): void {
@@ -136,6 +123,6 @@ export function relativePositionForEditorIndex(
   editor: Editor,
   index: number,
 ): Y.RelativePosition | null {
-  const binding = ySyncPluginKey.getState(editor.state)?.binding;
-  return binding ? absolutePositionToRelativePosition(index, binding.type, binding.mapping) : null;
+  const runtime = relativePositionRuntimeFromState(editor.state);
+  return runtime ? relativePositionForIndex(runtime, index) : null;
 }

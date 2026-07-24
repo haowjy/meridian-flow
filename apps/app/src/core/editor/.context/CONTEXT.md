@@ -19,6 +19,12 @@ Yjs document session. It must stay structurally aligned with
 - Live sessions may use versioned IndexedDB persistence. Draft review sessions
   do not: the draft Hocuspocus room is server-persisted and short-lived, and a
   local draft cache risks stale recovery across review sessions.
+- Live `DocumentSession`s own an ephemeral `SessionMarkerStore` sidecar.
+  Change-event replace sets survive editor remounts during the registry's
+  retention window but are never persisted or projected into branch rooms.
+  The ProseMirror projection clears a whole mark only for a local writer edit
+  through its range/seam; remote sync, selection, and boundary-adjacent typing
+  never clear it.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
@@ -57,8 +63,9 @@ commands, and the lightweight hunk model used by the plugin.
 - The plugin is the sole owner of decoration state. React talks to it via TipTap
   commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
   `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.
-- Anchor resolution routes through the y-prosemirror binding
-  (`ySyncPluginKey` state). `Y.RelativePosition` decode is separated from
+- Anchor resolution routes through the shared `relative-position-runtime.ts`
+  extraction of the y-prosemirror binding (`ySyncPluginKey` state).
+  `Y.RelativePosition` decode is separated from
   decoration construction so anchor handling can be unit-tested without a DOM.
 - Local edits map decorations via `DecorationSet.map`. Full re-resolution from
   RelativePositions runs only when a new model arrives from
