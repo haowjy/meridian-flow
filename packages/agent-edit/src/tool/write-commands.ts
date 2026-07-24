@@ -14,7 +14,11 @@ import type { DocumentRenderer } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
-import type { MutationCommit, PreparedMutation } from "./mutation-commit.js";
+import {
+  AcceptedMutationSubmissionError,
+  type MutationCommit,
+  type PreparedMutation,
+} from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -576,9 +580,17 @@ export function createWriteCommands(deps: {
     try {
       result = await mutationCommit.submitMutation(input);
     } catch (cause) {
-      restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
-      markSynced(session, input.docId, input.runtime);
-      throw cause;
+      if (cause instanceof AcceptedMutationSubmissionError) {
+        result = {
+          ok: false,
+          response: status("internal_error", "Retry — transient edit system failure."),
+          journalCommitKind: cause.journalCommitKind,
+        };
+      } else {
+        restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
+        markSynced(session, input.docId, input.runtime);
+        throw cause;
+      }
     }
     if (result.ok) return result;
     if (result.journalCommitKind !== "durable") {

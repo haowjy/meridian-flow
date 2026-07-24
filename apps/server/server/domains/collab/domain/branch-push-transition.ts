@@ -231,8 +231,7 @@ export function createBranchPushTransition(input: {
         const affectedItem = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
         if (!affectedItem) return [];
         const { block, ranges } = affectedItem;
-        const rendering = block.renderedContent;
-        const markdown = rendering.slice(rendering.indexOf("|") + 1);
+        const markdown = block.body;
         return [
           {
             ...change,

@@ -4,6 +4,27 @@ import { describe, expect, it } from "vitest";
 import { context, harness } from "./test-support/write-tool-harness.js";
 
 describe("response staging tombstones", () => {
+  for (const settlement of ["commit", "rollback"] as const) {
+    it(`closes an empty response after ${settlement}`, async () => {
+      const ctx = harness({ "doc.md": "Body." });
+      const responseId = `response-empty-${settlement}`;
+      await ctx.core.write({ command: "read", file: "doc.md" }, context);
+
+      if (settlement === "commit") {
+        await ctx.core.commitResponse(responseId);
+      } else {
+        await ctx.core.rollbackResponse(responseId);
+      }
+
+      const late = await ctx.core.write(
+        { command: "insert", file: "doc.md", content: "Too late." },
+        { ...context, responseId, turnId: `turn-empty-${settlement}` },
+      );
+
+      expect(late).toMatchObject({ status: "invalid_write", isError: true });
+    });
+  }
+
   it("evicts oldest closed-response markers after the FIFO cap", async () => {
     const ctx = harness({ "doc.md": "Body." }, { closedResponseTombstoneCap: 2 });
     await ctx.core.write({ command: "read", file: "doc.md" }, context);
