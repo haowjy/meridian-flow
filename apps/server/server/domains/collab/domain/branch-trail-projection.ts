@@ -4,9 +4,13 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { NoticeInput, NoticePort } from "../../notices/index.js";
-import type { BranchJournalRow, PushReceiptPayload, PushSweptTrail } from "./branch-push.js";
+import type {
+  BranchJournalRow,
+  PreparedPush,
+  PushReceiptPayload,
+  PushSweptTrail,
+} from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
-import type { PreparedPush } from "./branch-push-preparation.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,

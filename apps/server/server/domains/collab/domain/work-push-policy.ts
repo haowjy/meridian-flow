@@ -1,7 +1,7 @@
 /** Work-level auto/manual push policy and auto-push behavior. */
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { BranchStore } from "./branch-coordinator.js";
-import type { BranchPushStore, PushToLiveResult } from "./branch-push.js";
+import type { BranchPushStore, PushToLiveResult } from "./branch-push-contracts.js";
 
 type PushToLive = (input: {
   branchId: string;

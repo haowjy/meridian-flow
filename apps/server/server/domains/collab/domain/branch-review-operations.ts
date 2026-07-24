@@ -3,7 +3,7 @@ import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchJournalRow, BranchPushStore } from "./branch-push.js";
+import type { BranchJournalRow, BranchPushStore } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration, BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { hasDependentLaterRows } from "./journal-dependencies.js";
 
