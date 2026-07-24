@@ -22,7 +22,7 @@ state is a live document.
 | Document mutation policy | `domain/document-mutation-policy.ts` |
 | Durable authority heads and generation fencing | `domain/ports/document-authority-heads.ts`, `adapters/drizzle-document-authority-head.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
-| Document projection and activity read-model writes | `adapters/drizzle-document-activity.ts` |
+| Document projection and activity read-model writes | `domain/ports/document-projection-effects.ts`, `adapters/drizzle-document-activity.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
@@ -40,7 +40,10 @@ state is a live document.
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
 | Offline late reconciliation | `domain/offline-reconciliation.ts` |
-| Safety-notice production + writer delivery | `composition.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
+| Review/effective-read/response/reversal application services | `domain/work-draft-review-service.ts`, `domain/effective-document-reader.ts`, `domain/response-write-finalizer.ts`, `domain/turn-reversal-service.ts` |
+| Thread-peer runtime ownership and LRU | `domain/thread-peer-core-pool.ts` |
+| Safety-notice production + writer delivery | `domain/reversal-notices.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
+| Production/in-memory assembly | `composition.ts`, `collab-facade.ts`, `adapters/in-memory/composition.ts` |
 
 ## Write codec and schema coherence
 
