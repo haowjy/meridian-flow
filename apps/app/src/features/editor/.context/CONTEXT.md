@@ -97,9 +97,11 @@ surface and branch rooms have a different anchor space.
 Detail is lazy on open: it reads the trail detail endpoint and the originating
 thread snapshot, then renders the removed text, a one-line originating-request
 snippet, and the trail row's same `Restore` / `Delete again` forward action.
-Recovery calls `applyTrailForwardAction` and removes the session mark only after
-a successful `applied` / `already_applied` result; a failed action stays
-failed with a retry affordance. *Open conversation* routes through
+Recovery runs through `useTrailForwardAction` (shared in
+[`features/change-trail`](../../change-trail/AGENTS.md)): eligibility, the
+idempotent command, and mark dismissal on a successful `applied` /
+`already_applied` outcome all live there; a failed action stays failed with a
+retry affordance. *Open conversation* routes through
 `requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
 popover closes and the chat side expands the owning turn Changes card, or the
 thread-tail shared Changes entry when the trail has no owning turn, then
