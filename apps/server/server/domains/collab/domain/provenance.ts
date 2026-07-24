@@ -317,7 +317,11 @@ function writeCertifiedProvenanceFacts(
   beforeStateVector: Uint8Array,
 ): void {
   if (ir.intent.kind === "fullScopeFreshReplacement") return;
-  const runs = ir.intent.edits.flatMap(({ outputRuns }) => outputRuns);
+  const runs = ir.intent.edits.flatMap(({ outputRuns }) =>
+    [...outputRuns].sort(
+      (left, right) => left.output.from - right.output.from || left.output.to - right.output.to,
+    ),
+  );
   if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) return;
   const materializedRuns = runs.filter(
     (run) => run.kind !== "preserved" || run.materialization !== "retained",

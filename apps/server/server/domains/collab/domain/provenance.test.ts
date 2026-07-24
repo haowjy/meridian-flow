@@ -115,6 +115,37 @@ describe("provenance materialization", () => {
     });
   });
 
+  it("materializes facts in output order when semantic runs are declared out of order", () => {
+    const doc = proseDoc("cat");
+    const source = textRange(doc);
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(0, 3);
+    text.insert(0, "catkit");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      mappedTextIr(source, "catkit", [
+        { kind: "fresh", payload: "kit", output: { from: 3, to: 6 } },
+        { kind: "restoration", root: source, payload: "cat", output: { from: 0, to: 3 } },
+      ]),
+      before,
+    );
+
+    const [restored, fresh] = materializeCandidateProvenance(doc, [
+      { target: source, root: source, birthClass: "writer_protected" },
+    ]);
+    expect(restored).toMatchObject({
+      root: source,
+      birthClass: "writer_protected",
+    });
+    expect(fresh).toEqual({
+      target: fresh?.target,
+      root: fresh?.target,
+      birthClass: "agent",
+    });
+  });
+
   it("encodes certified continuation facts in the same Yjs update as prose", () => {
     const doc = proseDoc("old");
     const initial = Y.encodeStateAsUpdate(doc);
