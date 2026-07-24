@@ -37,6 +37,7 @@ import type {
   SettlementClaim,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
+import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
@@ -904,6 +905,7 @@ async function completeStagedPush(
           .select()
           .from(branchWriteJournal)
           .where(inArray(branchWriteJournal.id, staged.push.journalIds))
+          .orderBy(branchWriteJournal.id)
       : [];
   if (branchRow) {
     const branch: BranchSnapshot = {
@@ -976,10 +978,10 @@ async function writeMutationRows(
   rows: BranchJournalRow[],
   updateSeq: number,
 ): Promise<void> {
-  const mutationRows = rows.filter(
-    (row): row is BranchJournalRow & { threadId: ThreadId; wId: number } =>
-      row.threadId !== null && row.wId !== null,
-  );
+  // Apply materializes only handles whose final branch state is active. Handles
+  // eliminated by Draft undo are deliberately squashed instead of being
+  // recreated as active live mutations with content that no longer exists.
+  const mutationRows = activeBranchAgentWriteRows(rows);
   if (mutationRows.length === 0) return;
   await db
     .insert(agentEditMutations)

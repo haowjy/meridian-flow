@@ -17,6 +17,15 @@ export type BranchJournalRow = {
   updateMeta?: unknown;
 };
 
+export function branchJournalRevision(
+  rows: readonly Pick<BranchJournalRow, "id" | "status">[],
+): string {
+  return [...rows]
+    .sort((left, right) => left.id - right.id)
+    .map((row) => `${row.id}:${row.status}`)
+    .join(",");
+}
+
 export type AutoBranchPushPort = {
   pushAutoBranchAfterThreadPeerWrite(input: {
     workDraftBranchId: string;

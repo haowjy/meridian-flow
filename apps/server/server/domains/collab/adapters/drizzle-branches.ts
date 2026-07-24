@@ -42,6 +42,7 @@ import {
   type BranchCriticalSections,
   createBranchCriticalSections,
 } from "../domain/branch-critical-sections.js";
+import { branchJournalRevision } from "../domain/branch-push-contracts.js";
 import {
   BranchCorruptError,
   BranchNotFoundError,
@@ -870,6 +871,36 @@ export function createDrizzleBranchStore(
         }
         const ok = await updateBranchSnapshot(input);
         if (!ok) throw new BranchMutationRollback();
+        if (input.journal?.expectedJournalWatermark !== undefined) {
+          const [head] = await currentDrizzleDb(db)
+            .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+            .from(branchWriteJournal)
+            .where(
+              and(
+                eq(branchWriteJournal.branchId, input.journal.branchId),
+                eq(branchWriteJournal.generation, input.journal.generation),
+              ),
+            );
+          if ((head?.id ?? 0) > input.journal.expectedJournalWatermark) {
+            throw new BranchMutationRollback();
+          }
+        }
+        if (input.journal?.expectedJournalRevision !== undefined) {
+          const rows = await currentDrizzleDb(db)
+            .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+            .from(branchWriteJournal)
+            .where(
+              and(
+                eq(branchWriteJournal.branchId, input.journal.branchId),
+                eq(branchWriteJournal.generation, input.journal.generation),
+              ),
+            )
+            .orderBy(branchWriteJournal.id)
+            .for("update");
+          if (branchJournalRevision(rows) !== input.journal.expectedJournalRevision) {
+            throw new BranchMutationRollback();
+          }
+        }
         if (input.journal) {
           await currentDrizzleDb(db)
             .insert(branchWriteJournal)

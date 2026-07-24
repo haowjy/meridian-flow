@@ -13,6 +13,7 @@ and WebSocket callers.
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
+| Draft undo/redo history and Apply folding | `domain/branch-reversal-history.ts` |
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
 | Push materialization | `domain/branch-push-plan.ts` |
@@ -137,10 +138,36 @@ evidence emits degradation telemetry rather than guessing from update bytes.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
+- **Draft write-command reversal is branch-scoped**: while the current Work-draft
+  generation has agent rows for the thread, `write(command="undo"|"redo")`
+  reconstructs and stages reversals exclusively from those rows. The staged
+  system row carries the Work-draft generation and becomes durable in the same
+  branch commit that projects its Yjs update; it never writes the live journal.
+  The command pins one branch scope from planning through persistence, and cold
+  replay is reconciled to the authoritative branch snapshot so selective review
+  remains represented even though reviewed rows stay in the generation history.
+  The commit also checks the planned branch-journal watermark and status revision
+  under the branch snapshot CAS, so appended rows and status-only Apply/review
+  transitions both reject the stale reversal for replanning.
+  After Apply advances to an empty generation, reversal lookup falls back to the
+  live store so pushed writes retain their normal undo path.
+- **Draft handles name durable response groups**: response buffering and branch
+  projection fold all same-document mutations in one response into one
+  `branch_write_journal` row. Every write in that group therefore receives the
+  same `w<N>` handle. Selectors operate on durable rows, not transient tool-call
+  boundaries; redo may further group handles that share one atomic reversal
+  update. This matches the folded, turn-scoped diff contract rather than
+  advertising per-write identity the journal does not retain.
+  Apply materializes only handles whose final branch state is active; handles
+  eliminated by Draft undo are squashed rather than recreated as active live
+  mutations for content that is absent. Because one Apply is one durable live
+  update, all handles materialized by that Apply form one live undo boundary:
+  selecting any of them expands to the full group and marks the group together.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
 the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
 inside the same transaction, under `lockDocumentMutation` advisory lock. There is
-no separate `ReversalCommitGuard` — the guard is intrinsic, never optional.
+no separate live `ReversalCommitGuard`. Draft reversal uses the generation and
+journal-watermark fence above.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in

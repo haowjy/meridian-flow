@@ -35,6 +35,11 @@ export interface JournalSnapshot {
   checkpoint: Uint8Array | null;
   /** Updates in ascending sequence order, filtered by read opts when provided. */
   updates: PersistedUpdate[];
+  /**
+   * Durable log head represented by this snapshot when reconstruction appends
+   * synthetic state-reconciliation updates after the source log.
+   */
+  persistenceWatermark?: number;
 }
 
 /** Outcome of folding old updates into a checkpoint and expiring reversals. */

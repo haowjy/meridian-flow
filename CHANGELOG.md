@@ -16,6 +16,11 @@
   (#334).
 - `apps/server`: branch push orchestration now delegates immutable-base Manual
   Apply preparation and trail/notice projection to typed modules (#334).
+- `packages/agent-edit`, `apps/server`: Draft-mode undo/redo now targets
+  generation-local, response-grouped branch handles atomically without writing
+  live reversal history; durable projection failures recover and report the
+  committed reversal honestly, and handles folded into one Apply reverse as one
+  durable live group (#332).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
