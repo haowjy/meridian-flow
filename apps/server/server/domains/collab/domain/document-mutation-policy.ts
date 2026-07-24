@@ -29,25 +29,6 @@ export type AuthorityHeadCheckpoint = {
 
 export type RestorationCertificate = RestorationCertificatePort;
 
-export type DocumentMutation =
-  | { kind: "attributedFreshAuthorship"; source: AuthorshipSource; update: Uint8Array }
-  | {
-      kind: "certifiedSemanticMutation";
-      actor: "agent";
-      ir: SemanticEditIRV1;
-      reversal?: RestorationCertificate;
-    }
-  | {
-      kind: "identityReplication";
-      sourceCutId: string;
-      plan: IdentityReplicationPlan;
-    }
-  | {
-      kind: "authorityHeadSnapshotReplacement";
-      checkpointId: string;
-      replaceGeneration: true;
-    };
-
 export type ImmediateAdmission = {
   update: Uint8Array;
   attribution: AuthorshipSource | { kind: "agent" };
@@ -61,10 +42,7 @@ export class ReservedWriterClientIdError extends Error {
 }
 
 export type FrozenReplicationSource = {
-  cutId: string;
   documentId: string;
-  sourceId: string;
-  version: bigint;
   doc: Y.Doc;
 };
 
@@ -74,14 +52,24 @@ export type MutationTarget = {
   doc: Y.Doc;
 };
 
-export type DocumentMutationPolicyPort = {
+type ImmediateAdmissionPort = {
   /** Runs under lockDocumentMutation and atomically journals, joins every unresolved
    * same-generation settlement (incrementing join_version), and records the new head. */
   admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint; joined: number }>;
+};
+
+export type FreshAuthorshipPort = ImmediateAdmissionPort & {
   readMutationTarget(): MutationTarget | Promise<MutationTarget>;
-  readFrozenReplicationSource(cutId: string): Promise<FrozenReplicationSource | null>;
+};
+
+export type CertifiedMutationPort = ImmediateAdmissionPort & {
+  readMutationTarget(): MutationTarget | Promise<MutationTarget>;
   readCurrentRevision(): Promise<DocumentRevision>;
   lowerCertifiedMutation(ir: SemanticEditIRV1): Promise<Uint8Array>;
+};
+
+export type AuthorityGenerationReplacementPort = {
+  readMutationTarget(): MutationTarget | Promise<MutationTarget>;
   loadCheckpoint(checkpointId: string): Promise<AuthorityHeadCheckpoint | null>;
   unresolvedSettlements(generation: bigint): Promise<number>;
   /** Installs state and manifest in a fresh generation in the same transaction as the fence. */
@@ -90,18 +78,11 @@ export type DocumentMutationPolicyPort = {
     expectedGeneration: bigint,
   ): Promise<bigint>;
   disconnectGeneration(generation: bigint): Promise<void>;
-  stagePush(input: { update: Uint8Array; expectedGeneration: bigint }): Promise<string>;
-  completePush(input: { stagedPushId: string; expectedGeneration: bigint }): Promise<void>;
 };
 
 export class DocumentMutationPolicyError extends Error {
   constructor(
-    readonly code:
-      | "invalid_mutation"
-      | "stale_target_generation"
-      | "stale_replication_source"
-      | "authority_head_busy"
-      | "checkpoint_incomplete",
+    readonly code: "invalid_mutation" | "authority_head_busy" | "checkpoint_incomplete",
     message: string,
   ) {
     super(message);
@@ -109,7 +90,9 @@ export class DocumentMutationPolicyError extends Error {
   }
 }
 
-export type DocumentMutationPolicy = ReturnType<typeof createDocumentMutationPolicy>;
+export type AuthorityGenerationReplacement = (
+  checkpointId: string,
+) => Promise<{ generation: bigint }>;
 
 /** Shared target validation → containment → authorship → append sequence for writer frames. */
 export async function admitWriterUpdate<T>(input: {
@@ -129,56 +112,17 @@ export async function admitWriterUpdate<T>(input: {
   return { admitted: true, value: await input.append() };
 }
 
-/**
- * Owns strategy validation and update production. Persistence owns the transaction,
- * but never accepts producer-supplied replication or certified-mutation bytes.
- */
-export function createDocumentMutationPolicy(port: DocumentMutationPolicyPort) {
-  return {
-    async mutate(
-      mutation: DocumentMutation,
-    ): Promise<{ sequence?: bigint; joined?: number; generation?: bigint }> {
-      switch (mutation.kind) {
-        case "attributedFreshAuthorship":
-          return admitFresh(port, mutation);
-        case "certifiedSemanticMutation":
-          return admitCertified(port, mutation);
-        case "identityReplication":
-          return admitReplication(port, mutation);
-        case "authorityHeadSnapshotReplacement":
-          return replaceSnapshot(port, mutation);
-      }
-    },
-
-    async stagePush(input: { update: Uint8Array; expectedGeneration: bigint }): Promise<string> {
-      assertNonEmptyUpdate(input.update);
-      const target = await port.readMutationTarget();
-      if (target.generation !== input.expectedGeneration) {
-        throw new DocumentMutationPolicyError(
-          "stale_target_generation",
-          "Durable authority head generation changed before push staging",
-        );
-      }
-      validatePostUpdateProvenance(target.doc, input.update);
-      return port.stagePush(input);
-    },
-
-    completePush(input: { stagedPushId: string; expectedGeneration: bigint }): Promise<void> {
-      if (!input.stagedPushId) invalid("A staged push id is required");
-      return port.completePush(input);
-    },
-  };
-}
-
-async function admitFresh(
-  port: DocumentMutationPolicyPort,
-  mutation: Extract<DocumentMutation, { kind: "attributedFreshAuthorship" }>,
+/** Validates and admits one fresh writer, import, or seed update. */
+export async function admitFreshAuthorship(
+  port: FreshAuthorshipPort,
+  mutation: { source: AuthorshipSource; update: Uint8Array },
 ): Promise<{ sequence: bigint; joined: number }> {
   const targetValue = port.readMutationTarget();
   const target = isPromise(targetValue) ? await targetValue : targetValue;
   const admission = validateFreshAuthorship(target.doc, mutation.update, mutation.source);
-  if (admission.reservedClientId !== null)
+  if (admission.reservedClientId !== null) {
     invalid("Reserved server client IDs cannot author fresh prose");
+  }
   const admitted = await port.admitImmediate({
     update: mutation.update,
     attribution: mutation.source,
@@ -206,11 +150,11 @@ function validateFreshAuthorship(
   return admission;
 }
 
-async function admitCertified(
-  port: DocumentMutationPolicyPort,
-  mutation: Extract<DocumentMutation, { kind: "certifiedSemanticMutation" }>,
+/** Validates semantic intent before lowering and admitting the certified agent update. */
+export async function admitCertifiedMutation(
+  port: CertifiedMutationPort,
+  mutation: { ir: SemanticEditIRV1; reversal?: RestorationCertificate },
 ): Promise<{ sequence: bigint; joined: number }> {
-  if (mutation.actor !== "agent") invalid("Certified semantic mutations require the agent actor");
   const target = await port.readMutationTarget();
   const revision = await port.readCurrentRevision();
   validateSemanticEditIRV1(mutation.ir, {
@@ -224,42 +168,21 @@ async function admitCertified(
   return { sequence: admitted.sequence, joined: admitted.joined };
 }
 
-async function admitReplication(
-  port: DocumentMutationPolicyPort,
-  mutation: Extract<DocumentMutation, { kind: "identityReplication" }>,
-): Promise<{ sequence: bigint; joined: number }> {
-  if (!mutation.sourceCutId) invalid("Identity replication requires a source cut");
-  validateReplicationPlan(mutation.plan);
-  const source = await port.readFrozenReplicationSource(mutation.sourceCutId);
-  if (!source) {
-    throw new DocumentMutationPolicyError(
-      "stale_replication_source",
-      "Frozen replication source is unavailable",
-    );
+/** Replicates canonical Yjs identities from a caller-frozen source into a target. */
+export async function replicateFrozenIdentity(input: {
+  source: FrozenReplicationSource;
+  target: MutationTarget;
+  plan: IdentityReplicationPlan;
+  admit: ImmediateAdmissionPort["admitImmediate"];
+}): Promise<{ sequence: bigint; joined: number }> {
+  validateReplicationPlan(input.plan);
+  if (input.source.documentId !== input.target.documentId) {
+    invalid("Frozen replication source belongs to a different document");
   }
-  const target = await port.readMutationTarget();
-  if (source.documentId !== target.documentId) {
-    throw new DocumentMutationPolicyError(
-      "stale_replication_source",
-      "Frozen replication source belongs to a different document",
-    );
-  }
-  const sourceAgain = await port.readFrozenReplicationSource(mutation.sourceCutId);
-  if (
-    !sourceAgain ||
-    sourceAgain.documentId !== source.documentId ||
-    sourceAgain.sourceId !== source.sourceId ||
-    sourceAgain.version !== source.version
-  ) {
-    throw new DocumentMutationPolicyError(
-      "stale_replication_source",
-      "Frozen replication source changed while replication was prepared",
-    );
-  }
-  const update = replicationUpdate(source.doc, target.doc, mutation.plan);
+  const update = replicationUpdate(input.source.doc, input.target.doc, input.plan);
   assertNonEmptyUpdate(update);
-  validatePostUpdateProvenance(target.doc, update);
-  const admitted = await port.admitImmediate({ update, attribution: { kind: "agent" } });
+  validatePostUpdateProvenance(input.target.doc, update);
+  const admitted = await input.admit({ update, attribution: { kind: "agent" } });
   return { sequence: admitted.sequence, joined: admitted.joined };
 }
 
@@ -276,12 +199,12 @@ function validatePostUpdateProvenance(targetDocument: Y.Doc, update: Uint8Array)
   }
 }
 
-async function replaceSnapshot(
-  port: DocumentMutationPolicyPort,
-  mutation: Extract<DocumentMutation, { kind: "authorityHeadSnapshotReplacement" }>,
+/** Replaces the durable authority generation from one complete checkpoint. */
+export async function replaceAuthorityGeneration(
+  port: AuthorityGenerationReplacementPort,
+  checkpointId: string,
 ): Promise<{ generation: bigint }> {
-  if (mutation.replaceGeneration !== true) invalid("Snapshot replacement must replace generation");
-  const checkpoint = await port.loadCheckpoint(mutation.checkpointId);
+  const checkpoint = await port.loadCheckpoint(checkpointId);
   if (!checkpoint) invalid("Checkpoint does not exist");
   if (!checkpoint.attributionManifest || checkpoint.state.byteLength === 0) {
     throw new DocumentMutationPolicyError(
@@ -312,7 +235,7 @@ function replicationUpdate(
   }
   // Yjs updates cannot be safely filtered after encoding. Build the planned document from
   // named top-level types, then diff it against the target; canonical item identities remain
-  // those from the frozen source cut because the source update is applied, not re-authored.
+  // those from the frozen source because the source update is applied, not re-authored.
   const planned = new Y.Doc({ gc: false });
   for (const [name, type] of source.share) instantiateSharedType(planned, name, type);
   const full = Y.encodeStateAsUpdate(source);
@@ -366,8 +289,9 @@ function assertFreshSource(source: AuthorshipSource): void {
 }
 
 function assertNonEmptyUpdate(update: Uint8Array): void {
-  if (!(update instanceof Uint8Array) || update.byteLength === 0)
+  if (!(update instanceof Uint8Array) || update.byteLength === 0) {
     invalid("Mutation update is empty");
+  }
 }
 
 function isPromise<T>(value: T | Promise<T>): value is Promise<T> {

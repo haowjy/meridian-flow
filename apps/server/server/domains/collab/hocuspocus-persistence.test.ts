@@ -5,11 +5,7 @@ import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
-import {
-  PROVENANCE_ROOTS_TYPE,
-  PROVENANCE_TARGETS_TYPE,
-  ReservedNamespaceAdmissionError,
-} from "./domain/provenance.js";
+import { PROVENANCE_TARGETS_TYPE, ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 const BRANCH_ID = "branch-1";
@@ -536,7 +532,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         (doc.getArray(PROVENANCE_TARGETS_TYPE).get(0) as Y.Array<unknown>).push(["hostile"]),
     ],
     ["delete-only change", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1)],
-    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_ROOTS_TYPE).set("x", 1)],
+    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_TARGETS_TYPE).set("x", 1)],
     [
       "conflicting append-only fact",
       (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([{ root: "other" }]),

@@ -10,7 +10,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { NoticePort } from "../notices/index.js";
-import type { DocumentMutationPolicy } from "./domain/document-mutation-policy.js";
+import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./index.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
@@ -51,7 +51,10 @@ type CheckpointServiceDeps = {
   notices?: NoticePort;
   model?: YProsemirrorDocumentModel;
   codec?: AgentEditCodec;
-  mutationPolicy?(documentId: DocumentId): DocumentMutationPolicy;
+  replaceAuthorityGeneration?(
+    documentId: DocumentId,
+    checkpointId: string,
+  ): ReturnType<AuthorityGenerationReplacement>;
 };
 
 export type CheckpointService = Pick<CollabDomain, "checkpoint" | "restore" | "listCheckpoints">;
@@ -90,12 +93,8 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
                 beforeContentRef: await deps.latestUpdateSeq(documentId),
               }))
             : null;
-        if (deps.mutationPolicy) {
-          await deps.mutationPolicy(documentId as DocumentId).mutate({
-            kind: "authorityHeadSnapshotReplacement",
-            checkpointId,
-            replaceGeneration: true,
-          });
+        if (deps.replaceAuthorityGeneration) {
+          await deps.replaceAuthorityGeneration(documentId as DocumentId, checkpointId);
         } else {
           const result = await deps.markdownDocuments.restoreFromYDoc(
             documentId as DocumentId,
