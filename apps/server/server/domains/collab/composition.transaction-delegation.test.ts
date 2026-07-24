@@ -2,10 +2,27 @@
 import type { AgentEditCore } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
-import { createThreadPeerAgentEditCore } from "./composition.js";
 import { asLiveAgentEditCore } from "./domain/agent-edit-cores.js";
+import {
+  enlistResponseParticipant,
+  runResponseTransaction,
+} from "./domain/response-transaction.js";
+import { createThreadPeerAgentEditCore } from "./domain/thread-peer-core-pool.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
+const threadPeerPoolDefaults = {
+  shouldUseLiveReversal: async () => false,
+  discardThreadPeerBranches: async () => {},
+  pullThreadPeer: async () => undefined,
+  responseTransactionSettlement: {
+    deferUntilCommit: () => false,
+    deferUntilRollback: () => false,
+  },
+  responseTransactions: {
+    enlist: enlistResponseParticipant,
+    run: runResponseTransaction,
+  },
+};
 
 describe("thread-peer response transaction delegation", () => {
   it("routes reversals without active Draft history through the live core", async () => {
@@ -22,6 +39,7 @@ describe("thread-peer response transaction delegation", () => {
     const threadCore = { ...coreShape, write: threadWrite } as unknown as AgentEditCore;
     const shouldUseLiveReversal = vi.fn(async () => true);
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(liveCore),
       createThreadCore: () => threadCore,
       shouldUseLiveReversal,
@@ -63,6 +81,7 @@ describe("thread-peer response transaction delegation", () => {
     const liveCore = { ...coreShape, write: liveWrite } as unknown as AgentEditCore;
     const threadCore = { ...coreShape, write: threadWrite } as unknown as AgentEditCore;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(liveCore),
       createThreadCore: () => threadCore,
       shouldUseLiveReversal: async () => true,
@@ -120,6 +139,7 @@ describe("thread-peer response transaction delegation", () => {
       }
     };
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(fakeCore),
       createThreadCore: () => fakeCore,
       commitThreadResponseAtomically: transaction,
@@ -164,6 +184,7 @@ describe("thread-peer response transaction delegation", () => {
       invalidateThread: vi.fn(async () => {}),
     } as unknown as AgentEditCore;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(threadCore),
       createThreadCore: () => threadCore,
       commitThreadResponseAtomically: async (operation) => {
@@ -239,6 +260,7 @@ describe("thread-peer response transaction delegation", () => {
       rollbackResponse: liveRollback,
     } as unknown as AgentEditCore;
     const core = createThreadPeerAgentEditCore({
+      ...threadPeerPoolDefaults,
       liveUtilityCore: asLiveAgentEditCore(liveCore),
       createThreadCore: () => threadCore,
       commitThreadResponseAtomically: async (operation) => operation(),

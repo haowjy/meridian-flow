@@ -2,7 +2,6 @@
 import { createHash } from "node:crypto";
 import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { MarkupCodec } from "@meridian/markup";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
@@ -11,7 +10,7 @@ import type {
   PushLineageRow,
   PushReceiptPayload,
   ReceiptBlockChange,
-} from "./branch-push.js";
+} from "./branch-push-contracts.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,
@@ -173,15 +172,6 @@ export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<
     result.set(model.getBlockId(block), model.getText(block));
   }
   return result;
-}
-
-export function markdownFromDoc(
-  model: YProsemirrorDocumentModel,
-  codec: MarkupCodec,
-  doc: Y.Doc,
-): string {
-  const blocks = model.getBlocks(toDocHandle(doc));
-  return blocks.length === 0 ? "" : codec.serialize(model.projectBlocks(toDocHandle(doc)));
 }
 
 function wordCount(text: string): number {

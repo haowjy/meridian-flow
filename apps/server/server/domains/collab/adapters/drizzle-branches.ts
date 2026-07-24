@@ -33,7 +33,6 @@ import {
   type AppendBranchJournalInput,
   assertReadableBranch,
   type BranchSnapshot,
-  type BranchStore,
   type CommitBranchMutationInput,
   type PersistBranchInput,
   type ResetBranchSnapshotInput,
@@ -46,7 +45,6 @@ import { branchJournalRevision } from "../domain/branch-push-contracts.js";
 import {
   BranchCorruptError,
   BranchNotFoundError,
-  type BranchResolver,
   type BranchState,
 } from "../domain/branch-resolver.js";
 import { sync } from "../domain/branch-sync.js";
@@ -54,55 +52,13 @@ import {
   admitFreshAuthorship,
   replicateFrozenIdentity,
 } from "../domain/document-mutation-policy.js";
+import type {
+  ApplicationBranchStore,
+  ManifestMutationResult,
+} from "../domain/ports/application-branch-store.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
-export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
-
-export type DrizzleBranchStore = BranchStore &
-  BranchResolver & {
-    listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-    ensureWorkDraftBranch(input: {
-      documentId: DocumentId;
-      workId: WorkId;
-      liveDoc: Y.Doc;
-    }): Promise<BranchSnapshot>;
-    ensureThreadPeerBranch(input: {
-      documentId: DocumentId;
-      threadId: ThreadId;
-      liveDoc: Y.Doc;
-    }): Promise<BranchSnapshot>;
-    discardActiveThreadPeerBranches(input: {
-      documentId: DocumentId;
-      threadId?: ThreadId | null;
-    }): Promise<void>;
-    resolveWorkDraftBranchForThread(
-      documentId: DocumentId,
-      threadId: ThreadId,
-    ): Promise<BranchState>;
-    resolveWorkDraftBranchForWork(input: {
-      documentId: DocumentId;
-      workId: WorkId;
-      liveDoc: Y.Doc;
-    }): Promise<BranchState>;
-    ensureProjectManifest(input: { projectId: ProjectId; contextSourceId?: string }): Promise<{
-      documentId: DocumentId;
-      doc: Y.Doc;
-    }>;
-    resolveManifestMembership(input: {
-      projectId: ProjectId;
-      workId?: WorkId | null;
-      threadId?: ThreadId | null;
-    }): Promise<{ documentId: DocumentId; members: string[] }>;
-    reconcileProjectManifest(projectId: ProjectId): Promise<void>;
-    recordManifestDocumentCreated(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<ManifestMutationResult>;
-    recordManifestDocumentDeleted(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<ManifestMutationResult>;
-  };
+export type DrizzleBranchStore = ApplicationBranchStore;
 
 export function createDrizzleBranchStore(
   db: Database,

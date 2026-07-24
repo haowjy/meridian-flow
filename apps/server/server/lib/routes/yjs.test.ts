@@ -9,9 +9,9 @@ import {
   admitWriterSync,
   type BranchHandshakeState,
   createHocuspocus,
-  createYjsWebSocketHooks,
+  createYjsGateway,
   subscribeWriterNoticeTransport,
-} from "../../routes/ws/yjs.js";
+} from "../yjs-ws-handler.js";
 
 const documentName = "branch:branch_1:gen:3";
 
@@ -26,6 +26,15 @@ function services(stale: boolean) {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
       admitBranchWriterUpdate: vi.fn(async () => undefined),
     } as never,
+  };
+}
+
+function gatewayServices() {
+  return {
+    documentAccess: {} as never,
+    eventSink: {} as never,
+    notices: { subscribeWriterVisible: () => () => {} } as never,
+    documentSync: { bindHocuspocus: () => undefined } as never,
   };
 }
 
@@ -301,41 +310,69 @@ describe("Yjs branch handshake route guard", () => {
   it("clears branch sync state through the route close handler", async () => {
     const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
     const handleClose = vi.fn();
-    const peer = {
-      context: {
-        kind: "authenticated" as const,
-        app: {} as never,
-        userId: "00000000-0000-4000-8000-000000000001" as never,
-        branchSyncState: state,
-      },
-      _hocuspocus: { handleClose },
+    const gateway = createYjsGateway(gatewayServices());
+    const connection = {
+      hocuspocus: { handleClose },
+      branchSyncState: state,
+      offlineSyncUpdates: new Set<string>(),
+      liveGenerations: new Map<string, bigint>(),
     };
 
-    await createYjsWebSocketHooks().close(peer as never, { code: 1000, reason: "test" } as never);
+    gateway.close(connection as never, { code: 1000, reason: "test" });
 
     expect(handleClose).toHaveBeenCalledWith({ code: 1000, reason: "test" });
     expect(state.size).toBe(0);
-    expect("_hocuspocus" in peer).toBe(false);
   });
 
   it("clears branch sync state through the route error handler", async () => {
     const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
     const handleClose = vi.fn();
-    const peer = {
-      context: {
-        kind: "authenticated" as const,
-        app: {} as never,
-        userId: "00000000-0000-4000-8000-000000000001" as never,
-        branchSyncState: state,
-      },
-      _hocuspocus: { handleClose },
+    const gateway = createYjsGateway(gatewayServices());
+    const connection = {
+      hocuspocus: { handleClose },
+      branchSyncState: state,
+      offlineSyncUpdates: new Set<string>(),
+      liveGenerations: new Map<string, bigint>(),
     };
 
-    await createYjsWebSocketHooks().error(peer as never);
+    gateway.error(connection as never);
 
     expect(handleClose).toHaveBeenCalledWith({ code: 1011, reason: "error" });
     expect(state.size).toBe(0);
-    expect("_hocuspocus" in peer).toBe(false);
+  });
+
+  it("stops connection admission synchronously when drain starts", async () => {
+    let finishPersistenceDrain: (() => void) | undefined;
+    const persistenceDrain = new Promise<void>((resolve) => {
+      finishPersistenceDrain = resolve;
+    });
+    const gateway = createYjsGateway({
+      ...gatewayServices(),
+      eventSink: { emit: vi.fn() } as never,
+      documentSync: {
+        bindHocuspocus: () => undefined,
+        getPersistenceQueueMetrics: () => ({}),
+        drainHocuspocusPersistence: () => persistenceDrain,
+      } as never,
+    });
+    const drain = gateway.drain();
+    const close = vi.fn();
+
+    const connection = gateway.connect({
+      request: new Request("https://server.localhost/ws/yjs"),
+      userId: "user-1" as never,
+      close,
+      socket: {
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+      },
+    });
+
+    expect(connection).toBeUndefined();
+    expect(close).toHaveBeenCalledWith(1012, "server-shutdown");
+    finishPersistenceDrain?.();
+    await drain;
   });
 });
 

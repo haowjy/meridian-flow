@@ -3,6 +3,7 @@
  * validation at boot, logging warnings through the process EventSink.
  */
 import { emitEvent } from "../domains/observability";
+import { getApp } from "../lib/app";
 import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
 import {
@@ -12,13 +13,14 @@ import {
 } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
-import { drainYjsCollabPersistence, getYjsHocuspocus } from "../routes/ws/yjs";
+import { getYjsGateway } from "../routes/ws/yjs";
 
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
+let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
 
 installApiProcessCrashPolicy({ eventSink });
 registerProcessShutdownCallback(async () => {
-  await drainYjsCollabPersistence();
+  await yjsGateway?.drain();
 });
 installObservabilityShutdownHooks();
 
@@ -33,7 +35,7 @@ export default async function startupPlugin() {
     });
   }
 
-  await getYjsHocuspocus();
+  yjsGateway = getYjsGateway(await getApp());
 
   // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request.
   await validateAuthConfiguration();

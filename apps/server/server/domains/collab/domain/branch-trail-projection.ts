@@ -4,9 +4,14 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { NoticeInput, NoticePort } from "../../notices/index.js";
-import type { BranchJournalRow, PushReceiptPayload, PushSweptTrail } from "./branch-push.js";
+import type {
+  BranchJournalRow,
+  PreparedPush,
+  PushReceiptPayload,
+  PushSweptTrail,
+  TrailContributionReplacement,
+} from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
-import type { PreparedPush } from "./branch-push-preparation.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -241,11 +246,6 @@ export async function persistDurableTrailRecord(
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
   notices?: NoticePort,
-  options: {
-    refineCurrentVersion?: boolean;
-    refineToEmpty?: boolean;
-    replacePushContribution?: boolean;
-  } = {},
 ): Promise<void> {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
@@ -259,18 +259,10 @@ export async function persistDurableTrailRecord(
     })),
   );
   await persistence.record({
-    trails: options.refineToEmpty
-      ? normalized.map((trail) => ({
-          ...trail,
-          changes: [],
-          counts: { changes: 0, swept: 0, documents: 0 },
-        }))
-      : normalized,
+    trails: normalized,
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
-    ...(options.refineCurrentVersion ? { refineCurrentVersion: true } : {}),
-    ...(options.refineToEmpty || options.replacePushContribution ? { replacePushId: pushId } : {}),
   });
-  if (record.transactionalNotice && !options.refineCurrentVersion) {
+  if (record.transactionalNotice) {
     await notices?.record({
       ...record.transactionalNotice,
       data: {
@@ -281,6 +273,32 @@ export async function persistDurableTrailRecord(
       },
     });
   }
+}
+
+export function trailContributionReplacement(
+  record: DurableTrailRecord,
+  push: { id: number },
+  kind: "refine" | "empty",
+): TrailContributionReplacement {
+  const pushId = String(push.id);
+  const changes = record.changes.map((change) => ({ ...change, pushId }));
+  const trails = normalizeTrailPushes(
+    record.threadIds.map((threadId) => ({
+      pushId,
+      receiptId: record.receiptId,
+      threadId,
+      changes,
+      journalOwners: record.journalOwners,
+    })),
+  );
+  return {
+    kind,
+    targets: trails.map((trail) => ({
+      owner: trail.owner,
+      classifications: trail.changes,
+    })),
+    documentTitles: new Map([[record.documentId, record.documentTitle]]),
+  };
 }
 
 export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {

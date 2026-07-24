@@ -3,7 +3,9 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import { PROVENANCE_RESERVED_TYPES } from "./domain/provenance.js";
+import type { TrailChangeV1 } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -11,6 +13,7 @@ import {
   db,
   markdownFromUpdate,
   resetDatabase,
+  runInRootDrizzleTransaction,
   schema,
 } from "./test-support/change-trail-postgres-harness.js";
 import {
@@ -808,6 +811,74 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
     const [after] = await db.select().from(schema.changeTrailShells);
     expect(after?.version).toBe(before?.version);
+  });
+
+  it("restores a folded-away provisional contribution after a post-cut writer admission", async () => {
+    await resetDatabase();
+    const trailPersistence = createDrizzleChangeTrailPersistence(db);
+    let pushId: string | null = null;
+    const harness = createHarness({
+      afterDurableCommit: async ({ appendWriterPrefix }) => {
+        const [detail] = await db.select().from(schema.changeTrailDocumentDetails);
+        const [shell] = await db.select().from(schema.changeTrailShells);
+        if (!detail || !shell) throw new Error("missing provisional trail contribution");
+        const provisional = detail.changes as TrailChangeV1[];
+        pushId = provisional[0]?.pushId ?? null;
+        const inverse = provisional.map(
+          (change, ordinal): TrailChangeV1 => ({
+            ...change,
+            changeId: `${change.changeId}:inverse`,
+            ordinal,
+            pushId: "fold-away",
+            receiptId: null,
+            kind:
+              change.afterTextAtReceipt === null
+                ? "insert"
+                : change.beforeText === null
+                  ? "delete"
+                  : "modify",
+            beforeText: change.afterTextAtReceipt,
+            afterTextAtReceipt: change.beforeText,
+            swept: null,
+          }),
+        );
+        await runInRootDrizzleTransaction(db, () =>
+          trailPersistence.record({
+            trails: [
+              {
+                owner:
+                  shell.ownerKind === "turn" && shell.turnId
+                    ? { kind: "turn", threadId: shell.threadId, turnId: shell.turnId }
+                    : { kind: "shared", threadId: shell.threadId, turnId: null },
+                changes: inverse,
+                counts: {
+                  changes: inverse.length,
+                  swept: 0,
+                  documents: new Set(inverse.map((change) => change.documentId)).size,
+                },
+              },
+            ],
+            documentTitles: new Map([[detail.documentId, detail.documentTitle]]),
+          }),
+        );
+        expect(await db.select().from(schema.changeTrailDocumentDetails)).toEqual([]);
+        await appendWriterPrefix(ALPHA_ID, "Joined writer: ");
+      },
+    });
+    const branchId = await harness.seedDestructivePush("oracle-folded-away-restoration");
+
+    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+
+    expect(pushId).not.toBeNull();
+    const restored = await db.select().from(schema.changeTrailDocumentDetails);
+    expect(restored).toEqual([
+      expect.objectContaining({
+        documentId: ALPHA_ID,
+        documentTitle: "alpha",
+        changes: expect.arrayContaining([expect.objectContaining({ pushId })]),
+      }),
+    ]);
+    harness.destroyWarmState();
   });
 
   it("item 23: pending insertion keeps the originating agent birth after its writer parent arrives", async () => {
