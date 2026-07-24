@@ -1,6 +1,7 @@
 /** Public barrel for collab domain contracts and composition factories. */
 
-export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";
+export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
+export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export {
   isStaleDocumentSchemaError,

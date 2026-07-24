@@ -20,9 +20,13 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
 const { createActiveDocumentResolver } = await import("../../threads/index.js");
 const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
-export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await import(
-  "../../../shared/drizzle-transaction.js"
-);
+export const {
+  deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
+  runAfterDrizzleCommit,
+  runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
+} = await import("../../../shared/drizzle-transaction.js");
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
 const {
   createDrizzleBranchJournalReadStore,
@@ -48,13 +52,29 @@ const {
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
-const { createFacade, createFacadeRuntime } = await import("../composition.js");
+const { createAgentEditObservabilityOptions, createBranchAgentEditDiagnostics } = await import(
+  "../adapters/agent-edit-observability.js"
+);
+const { createCollabFacade } = await import("../collab-facade.js");
+const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
+const { createDocumentProjectionRefresher, createDocumentWriteHookRunner } = await import(
+  "../domain/document-projection-refresher.js"
+);
+const { enlistResponseParticipant, runResponseTransaction } = await import(
+  "../domain/response-transaction.js"
+);
+const { createResponseBranchFinalization, createResponseWriteFinalizer } = await import(
+  "../domain/response-write-finalizer.js"
+);
+const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
+const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
+const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
@@ -440,43 +460,134 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
-  const facadeDeps: Parameters<typeof createFacade>[0] = {
-    ...persistence,
-    initialDocumentSeeds: persistence.lifecycle,
-    documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(db),
-    coordinator: liveCoordinator,
-    hocuspocus: () => hocuspocus as never,
-    bindHocuspocus() {},
-    liveLineage: {
-      listLiveDocumentsForTurn: async () => [],
-      listEditedDocumentsForTurn: async () => [],
-      getTurnReceiptChip: async () => null,
-    } as never,
-    threads: { findById: async (threadId: ThreadId) => ({ id: threadId }) },
-    notices,
-    eventSink: {
-      emit(event) {
-        events.push({ name: event.name, payload: event.payload });
-      },
-      emitBatch(batch) {
-        for (const event of batch) events.push({ name: event.name, payload: event.payload });
-      },
-      flush: async () => {},
+  const eventSink: import("../../observability/index.js").EventSink = {
+    emit(event) {
+      events.push({ name: event.name, payload: event.payload });
     },
-    branchStore,
+    emitBatch(batch) {
+      for (const event of batch) events.push({ name: event.name, payload: event.payload });
+    },
+    flush: async () => {},
+  };
+  const resolveDocumentUri = async (documentId: string) =>
+    documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md";
+  const runDocumentWriteHook = createDocumentWriteHookRunner({
+    hook: async () => {},
+    eventSink,
+  });
+  const observability = createAgentEditObservabilityOptions({ eventSink });
+  const runtime = createAgentEditRuntime({
+    journal: persistence.journal,
+    coordinator: liveCoordinator,
+    lifecycle: persistence.lifecycle,
+    initialDocumentSeeds: persistence.lifecycle,
+    runDocumentWriteHook,
+    resolveDocumentFiletype: async () => null,
+    observability,
+  });
+  const projections = createDocumentProjectionRefresher({
+    documents: runtime.markdownDocuments,
+    runDocumentWriteHook,
+    eventSink,
+  });
+  const agentEdit = createBranchThreadPeerAgentEditCore({
+    liveUtilityCore: runtime.liveUtilityCore,
+    journal: persistence.journal,
+    liveCoordinator,
+    lifecycle: persistence.lifecycle,
+    branches: branchStore,
     branchCoordinator,
     branchPulls,
     branchPush,
-    branchReview,
-    branchJournalReadStore: durableBranchJournalReadStore,
-    workPushPolicyStore: durableWorkPushPolicyStore,
+    branchJournal: durableBranchJournalReadStore,
     concurrentJournalWatermarks: watermarks,
-    documentUriResolver: async (documentId) =>
-      documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md",
-    resolveWorkWriteMode: async () => "draft",
+    diagnostics: createBranchAgentEditDiagnostics(eventSink),
+    afterCommit: runAfterDrizzleCommit,
+    enlistResponseParticipant,
+    model: runtime.model,
+    codec: runtime.codec,
+    semanticProvenance: runtime.semanticProvenance,
+    observability,
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
-  };
-  const collab = createFacade(facadeDeps, createFacadeRuntime(facadeDeps));
+    responseTransactionSettlement: {
+      deferUntilCommit: deferUntilDrizzleCommit,
+      deferUntilRollback: deferUntilDrizzleRollback,
+    },
+    responseTransactions: {
+      enlist: enlistResponseParticipant,
+      run: runResponseTransaction,
+    },
+  });
+  const noLiveDependents = async () => ({
+    hasDependents: false,
+    blockingActorTypes: [] as Array<"agent" | "human" | "unknown">,
+    checkedUntilSeq: 0,
+  });
+  const responseFinalizer = createResponseWriteFinalizer({
+    agentEdit,
+    liveAgentEdit: runtime.liveUtilityCore,
+    reversalStore: persistence.journal,
+    liveReversal: { checkDependentLaterLiveRows: noLiveDependents },
+    resolveDocumentUri,
+    branches: createResponseBranchFinalization({
+      branches: branchStore,
+      branchCoordinator,
+      branchJournal: durableBranchJournalReadStore,
+      branchReview,
+    }),
+    projections,
+    notices: createPostDurabilityNoticeService({
+      notices,
+      documentUriResolver: resolveDocumentUri,
+      eventSink,
+    }),
+  });
+  const turnReversal = createTurnReversalService({
+    live: {
+      reversalStore: persistence.journal,
+      agentEdit: runtime.liveUtilityCore,
+      resolveDocumentUri,
+      checkDependentLaterLiveRows: noLiveDependents,
+      refreshDocumentProjection: projections.refresh,
+    },
+    branchReview,
+    branchJournal: durableBranchJournalReadStore,
+    branches: branchStore,
+    resolveDocumentUri,
+  });
+  const collab = createCollabFacade({
+    transport: {} as never,
+    authorityHeads: createDrizzleDocumentAuthorityHeads(db),
+    agentEdit: { agentEdit: () => agentEdit },
+    reversal: turnReversal,
+    documents: {
+      ensureDocument: persistence.lifecycle.ensureDocument,
+      readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      writeDocument: runtime.markdownDocuments.writeDocument,
+      editDocument: runtime.markdownDocuments.editDocument,
+    },
+    projections: { refreshDocumentProjection: projections.refresh },
+    lineage: {
+      listLiveDocumentsForTurn: async () => [],
+      listEditedDocumentsForTurn: async () => [],
+      getTurnReceiptChip: async () => null,
+    },
+    responses: responseFinalizer,
+    checkpoints: {} as never,
+    attribution: {} as never,
+    trailForwardActions: {} as never,
+    branchPush: {
+      recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
+      pushToLive: branchPush.pushToLive,
+      pushSelectedToLive: branchPush.pushSelectedToLive,
+      countUnpushedRowsForWork: durableWorkPushPolicyStore.countUnpushedRowsForWork,
+      setWorkPushPolicy: branchPush.setWorkPushPolicy,
+      markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
+    },
+    branchPeers: {} as never,
+    drafts: {} as never,
+  });
 
   async function seedAndStage(responseId: string) {
     await collab.writeDocument({
