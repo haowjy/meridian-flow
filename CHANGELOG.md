@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: Manual Apply now refuses stale replacements that enclose
+  post-base writer insertions while retaining unrelated selective merges (#335).
 - `packages/agent-edit`, `apps/server`: destructive agent writes now always report
   recoverable writer-lineage loss; observation no longer suppresses live,
   offline, or auto-push reports (#333).

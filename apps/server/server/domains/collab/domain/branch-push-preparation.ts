@@ -1,6 +1,7 @@
 /** Immutable-base conflict preparation for Manual Apply and auto-push trail projection. */
 import {
   type AgentEditCodec,
+  type BlockSnapshot,
   diffSnapshots,
   snapshotBlocks,
   toDocHandle,
@@ -63,6 +64,7 @@ export async function preparePushUnderLiveLock(
         row: BranchJournalRow;
         base: (typeof before)[number] | undefined;
         resurrection?: (typeof before)[number];
+        enclosedInsertion?: (typeof before)[number];
         ambiguous?: boolean;
       }
     >();
@@ -126,6 +128,56 @@ export async function preparePushUnderLiveLock(
       );
       baselineDoc.destroy();
       const baselineByHash = new Map(baselineBlocks.map((block) => [block.hash, block]));
+      const rowBaselineAfterDoc = createCollabYDoc({ gc: false });
+      Y.applyUpdate(rowBaselineAfterDoc, baselineState);
+      Y.applyUpdate(rowBaselineAfterDoc, row.updateData);
+      const rowBaselineEffects = diffSnapshots(
+        baselineBlocks,
+        snapshotBlocks(toDocHandle(rowBaselineAfterDoc), input.model, input.attributionCodec),
+      );
+      rowBaselineAfterDoc.destroy();
+      const replacedBaselineHashes = new Set([
+        ...rowBaselineEffects.changed,
+        ...rowBaselineEffects.deleted,
+      ]);
+      const baselineIdentities = new Set(
+        baselineBlocks.flatMap((block) => {
+          const identity = blockIdentity(block);
+          return identity ? [identity] : [];
+        }),
+      );
+      const writerInsertedHashes = new Set(
+        [...coverage.coverage]
+          .filter(([hash, owner]) => {
+            const identity = blockIdentity(beforeByHash.get(hash));
+            return owner.origin === "writer" && !!identity && !baselineIdentities.has(identity);
+          })
+          .map(([hash]) => hash),
+      );
+      for (const hash of coverage.humanResidualHashes) {
+        const identity = blockIdentity(beforeByHash.get(hash));
+        if (identity && !baselineIdentities.has(identity)) {
+          writerInsertedHashes.add(hash);
+        }
+      }
+      for (const hash of writerInsertedHashes) {
+        const inserted = beforeByHash.get(hash);
+        if (
+          inserted &&
+          replacedScopeEnclosesInsertion({
+            baseline: baselineBlocks,
+            live: before,
+            replacedBaselineHashes,
+            insertedHash: hash,
+          })
+        ) {
+          conflictEvidence.set(hash, {
+            row,
+            base: undefined,
+            enclosedInsertion: inserted,
+          });
+        }
+      }
       for (const [hash, evidence] of conflictEvidence) {
         if (evidence.row.id === row.id) evidence.base = baselineByHash.get(hash);
       }
@@ -187,10 +239,17 @@ export async function preparePushUnderLiveLock(
         ReturnType<typeof conflictEvidence.get>
       >;
       const resurrection = evidence.resurrection;
+      const enclosedInsertion = evidence.enclosedInsertion;
       const base = resurrection ?? evidence.base;
       const live = beforeByHash.get(blockId);
       const proposed = afterSnapshotByHash.get(blockId);
-      const effect = resurrection ? "resurrection" : proposed ? "overwrite" : "delete";
+      const effect = resurrection
+        ? "resurrection"
+        : enclosedInsertion
+          ? "enclosed_insertion"
+          : proposed
+            ? "overwrite"
+            : "delete";
       return {
         blockId,
         journalIds: [evidence.row.id],
@@ -198,9 +257,11 @@ export async function preparePushUnderLiveLock(
         effect,
         evidence: resurrection
           ? "human_live_deletion"
-          : evidence.ambiguous
-            ? "ambiguous_protected_divergence"
-            : "human_live_change",
+          : enclosedInsertion
+            ? "human_live_insertion"
+            : evidence.ambiguous
+              ? "ambiguous_protected_divergence"
+              : "human_live_change",
         captured: {
           base: base?.serialized ?? null,
           live: live?.serialized ?? null,
@@ -208,12 +269,17 @@ export async function preparePushUnderLiveLock(
         },
         why: resurrection
           ? "Apply would make content deleted by the writer after this draft began visible again."
-          : evidence.ambiguous
-            ? "Apply inserts content after a protected writer deletion, but canonical ancestry cannot prove which block it covers."
-            : "Apply would delete or overwrite live content changed by the writer after this draft began.",
+          : enclosedInsertion
+            ? "Apply would rewrite the scope where the writer inserted this content after the draft began."
+            : evidence.ambiguous
+              ? "Apply inserts content after a protected writer deletion, but canonical ancestry cannot prove which block it covers."
+              : "Apply would delete or overwrite live content changed by the writer after this draft began.",
       };
     });
-    const blindConflictedBlocks = conflicts.map((conflict) => conflict.blockId).sort();
+    const blindConflictedBlocks = conflicts
+      .filter((conflict) => conflict.effect !== "enclosed_insertion")
+      .map((conflict) => conflict.blockId)
+      .sort();
     const conflictedBlocks = allConflicts;
     const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
     const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
@@ -305,3 +371,52 @@ export async function preparePushUnderLiveLock(
 }
 
 export type PreparedPush = Awaited<ReturnType<typeof preparePushUnderLiveLock>>;
+
+function replacedScopeEnclosesInsertion(input: {
+  baseline: readonly BlockSnapshot[];
+  live: readonly BlockSnapshot[];
+  replacedBaselineHashes: ReadonlySet<string>;
+  insertedHash: string;
+}): boolean {
+  if (input.baseline.length === 0 || input.replacedBaselineHashes.size === 0) return false;
+  if (input.baseline.every((block) => input.replacedBaselineHashes.has(block.hash))) {
+    return true;
+  }
+
+  const insertedIndex = input.live.findIndex((block) => block.hash === input.insertedHash);
+  if (insertedIndex < 0) return false;
+  const baselineIndexByIdentity = new Map(
+    input.baseline.flatMap((block, index) => {
+      const identity = blockIdentity(block);
+      return identity ? [[identity, index] as const] : [];
+    }),
+  );
+  let left: number | undefined;
+  for (let index = insertedIndex - 1; index >= 0; index -= 1) {
+    const identity = blockIdentity(input.live[index]);
+    const baselineIndex = identity ? baselineIndexByIdentity.get(identity) : undefined;
+    if (baselineIndex !== undefined) {
+      left = baselineIndex;
+      break;
+    }
+  }
+  let right: number | undefined;
+  for (let index = insertedIndex + 1; index < input.live.length; index += 1) {
+    const identity = blockIdentity(input.live[index]);
+    const baselineIndex = identity ? baselineIndexByIdentity.get(identity) : undefined;
+    if (baselineIndex !== undefined) {
+      right = baselineIndex;
+      break;
+    }
+  }
+  if (left === undefined || right === undefined || left >= right) return false;
+  return input.baseline
+    .slice(left, right + 1)
+    .every((block) => input.replacedBaselineHashes.has(block.hash));
+}
+
+function blockIdentity(block: BlockSnapshot | undefined): string | undefined {
+  return block?.clientID === undefined || block.clock === undefined
+    ? undefined
+    : `${block.clientID}:${block.clock}`;
+}

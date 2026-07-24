@@ -1,13 +1,19 @@
+import { toDocHandle } from "@meridian/agent-edit";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import {
   ALPHA_ID,
   BETA_ID,
   closeDatabase,
   createHarness,
   db,
+  PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
+  schema,
   THREAD_ID,
+  USER_ID,
+  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -253,5 +259,110 @@ describe("change trail (postgres)", () => {
         ]),
       }),
     ]);
+  });
+
+  it("refuses a stale whole-document Apply that encloses a writer insertion", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000835";
+    await harness.seedWriterDocument("Writer-approved root.", responseId);
+    await harness.stageCertifiedReplace({
+      responseId,
+      find: "Writer-approved root.",
+      content: "STALE DRAFT PROPOSAL",
+    });
+
+    const [beforeRow] = await db.select().from(schema.branchWriteJournal);
+    if (!beforeRow) throw new Error("missing staged draft row");
+
+    const fixture = harness.crossWorkProbeFixture();
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        last,
+        fixture.markupCodec.parse("Writer concurrent insertion."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+
+    const beforeApply = await harness.liveMarkdown(ALPHA_ID);
+    const result = await fixture.collab.draftReview.accept({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      branchId: preview.branchId,
+      userId: USER_ID as never,
+      draftRevisionToken: preview.draftRevisionToken,
+      operationIds: preview.operations.map((operation) => operation.operationId),
+    });
+
+    const [afterRow] = await db.select().from(schema.branchWriteJournal);
+    expect(afterRow?.draftBaseUpdateSeq).toBe(beforeRow.draftBaseUpdateSeq);
+    expect(result).toMatchObject({
+      status: "concurrent_conflict",
+      reason: "draft_base_divergence",
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeApply);
+  });
+
+  it("applies a stale selective edit that does not enclose a writer insertion", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000836";
+    await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
+    await harness.stageCertifiedReplace({
+      responseId,
+      find: "Selected root.",
+      content: "SELECTIVE DRAFT PROPOSAL",
+    });
+
+    const fixture = harness.crossWorkProbeFixture();
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        last,
+        fixture.markupCodec.parse("Writer concurrent insertion."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: preview.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: preview.draftRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 });
