@@ -11,6 +11,9 @@
 - Test suite: removed 235 declarations that pinned transient UI structure,
   debug scaffolding, local store representation, thin delegates, or duplicate
   adapter behavior (#377).
+- `apps/app`, `apps/server`: stateful thread, untitled-lifecycle, and runtime
+  rigs replace collaborator mock graphs and wall-clock polling with controlled
+  gates, event journals, real stores, and outcome queries (#377).
 - `apps/server`: collab domain policy no longer imports Drizzle or observability
   adapters; composition supplies transaction and diagnostic capabilities (#345).
 - `apps/server`: removed draft review endpoints that could only return not found,

@@ -1,185 +1,44 @@
-/** Behavioral coverage for the registry-driven untitled reconciliation loop. */
+/** Stateful lifecycle coverage for untitled document reconciliation. */
 
-import type { CreateUntitledContextDocumentResult } from "@meridian/contracts/protocol";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+  CreateUntitledContextDocumentResponse,
+  MoveContextEntryResult,
+} from "@meridian/contracts/protocol";
+import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { moveContextEntry } from "@/client/api/projects-api";
-import type { DocumentSessionSnapshot } from "@/core/editor/document-session";
 import {
-  type PendingUntitled,
-  type ReconciliationRecord,
-  resolveUntitledHome,
-  UntitledReconciler,
-  type UntitledReconcilerDeps,
-  untitledDocumentIsEmpty,
-} from "./untitled-reconciler";
+  documentWithText,
+  LifecycleSession,
+  lifecycleGate,
+  UNTITLED_HOME,
+  UntitledLifecycleRig,
+} from "./test-support/UntitledLifecycleRig";
+import { resolveUntitledHome, untitledDocumentIsEmpty } from "./untitled-reconciler";
 
-const HOME = { scheme: "scratch", workId: "work-1" } as const;
+const OPENING = {
+  name: "Opening.md",
+  destination: { scheme: "manuscript", folderPath: "Act 1" },
+} as const;
 
-afterEach(() => vi.unstubAllGlobals());
-
-function contentDocument(text = "words"): Y.Doc {
-  const document = new Y.Doc();
-  if (text) {
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.insert(0, [new Y.XmlText(text)]);
-    document.getXmlFragment("prosemirror").insert(0, [paragraph]);
-  }
-  return document;
-}
-
-function harness() {
-  const values = new Map<string, string>();
-  const queued: Array<() => void> = [];
-  const timers: Array<() => void> = [];
-  const online = new Set<() => void>();
-  const sessions = new Map<string, ReturnType<typeof fakeSession>>();
-  const cleared: string[] = [];
-  const create = vi.fn(
-    async (
-      entry: PendingUntitled & { home: typeof HOME },
-    ): Promise<CreateUntitledContextDocumentResult> => ({
-      status: "created",
-      documentId: entry.documentId,
-      scheme: "scratch",
-      path: "/Untitled",
-      name: "Untitled",
-    }),
-  );
-  const resolveHome = vi.fn(async () => HOME as typeof HOME | null);
-  const exists = vi.fn(async () => false);
-  let nextId = "replacement";
-
-  const deps: UntitledReconcilerDeps = {
-    storage: {
-      getItem: (key) => values.get(key) ?? null,
-      setItem: (key, value) => values.set(key, value),
-    },
-    scheduler: {
-      queue: (task) => queued.push(task),
-      setTimer: (task) => {
-        timers.push(task);
-        return task;
-      },
-      clearTimer: (timer) => {
-        const index = timers.indexOf(timer as () => void);
-        if (index >= 0) timers.splice(index, 1);
-      },
-      onOnline: (task) => {
-        online.add(task);
-        return () => online.delete(task);
-      },
-    },
-    api: {
-      resolveHome,
-      create,
-      serverDocumentExists: exists,
-      move: vi.fn(async () => ({
-        status: "moved" as const,
-        scheme: "manuscript" as const,
-        path: "Act 1/Opening.md",
-        name: "Opening.md",
-      })),
-    },
-    sessions: {
-      getDetached(id) {
-        let session = sessions.get(id);
-        if (!session) {
-          session = fakeSession(contentDocument());
-          sessions.set(id, session);
-        }
-        return session;
-      },
-      attachDetached(id) {
-        const session = sessions.get(id);
-        if (!session) throw new Error(`missing session ${id}`);
-        if (session.getSnapshot().status === "detached") session.setStatus("synced");
-        return session;
-      },
-      restartUnavailableRoom: vi.fn(async (id: string) => {
-        const session = sessions.get(id);
-        if (session?.getSnapshot().status !== "access-lost") return false;
-        session.setStatus("detached");
-        return true;
-      }),
-      retain: vi.fn(),
-      release: vi.fn(),
-      async destroyRoom(id, options) {
-        if (options?.clearPersistence) cleared.push(id);
-        sessions.delete(id);
-      },
-    },
-    newDocumentId: () => nextId,
-  };
-
-  async function runQueue(): Promise<void> {
-    queued.shift()?.();
-    for (let index = 0; index < 20; index += 1) await Promise.resolve();
-  }
-
+function created(documentId = "doc-1"): CreateUntitledContextDocumentResponse {
   return {
-    deps,
-    values,
-    queued,
-    timers,
-    online,
-    sessions,
-    cleared,
-    create,
-    resolveHome,
-    exists,
-    runQueue,
-    setNextId(id: string) {
-      nextId = id;
-    },
+    status: "created",
+    documentId,
+    scheme: "scratch",
+    path: "/Untitled",
+    name: "Untitled",
   };
-}
-
-function fakeSession(document: Y.Doc) {
-  let status: DocumentSessionSnapshot["status"] = "synced";
-  let whenLocalPersistenceSynced = vi.fn(async () => {});
-  let waitForDurableSync = vi.fn(async () => {});
-  let flushLocalPersistence = vi.fn(async () => {});
-  return {
-    document,
-    fragmentName: "prosemirror" as const,
-    get whenLocalPersistenceSynced() {
-      return whenLocalPersistenceSynced;
-    },
-    getSnapshot: () => ({ status }) as DocumentSessionSnapshot,
-    get waitForDurableSync() {
-      return waitForDurableSync;
-    },
-    get flushLocalPersistence() {
-      return flushLocalPersistence;
-    },
-    setStatus(next: DocumentSessionSnapshot["status"]) {
-      status = next;
-    },
-    setLocalWait(wait: () => Promise<void>) {
-      whenLocalPersistenceSynced = vi.fn(wait);
-    },
-    setDurableWait(wait: () => Promise<void>) {
-      waitForDurableSync = vi.fn(wait);
-    },
-    setPersistenceFlush(wait: () => Promise<void>) {
-      flushLocalPersistence = vi.fn(wait);
-    },
-  };
-}
-
-function storedEntries(values: Map<string, string>): ReconciliationRecord[] {
-  return JSON.parse(values.get("meridian:pending-untitled") ?? "[]") as ReconciliationRecord[];
 }
 
 describe("untitled reconciler lifecycle", () => {
-  it("starts once, schedules persisted work, and tears down listeners and retries", async () => {
-    const h = harness();
-    h.values.set(
+  it("rehydrates durable work once and tears down online and retry scheduling", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.storage.set(
       "meridian:pending-untitled",
       JSON.stringify([
         {
           documentId: "doc-1",
+          revision: 1,
           materialization: {
             phase: "pending",
             entry: { documentId: "doc-1", projectId: "project-1" },
@@ -188,437 +47,216 @@ describe("untitled reconciler lifecycle", () => {
         },
       ]),
     );
-    h.resolveHome.mockResolvedValue(null);
-    const reconciler = new UntitledReconciler(h.deps);
+    rig.home.setFallback(async () => null);
 
-    reconciler.start();
-    reconciler.start();
-    expect(h.online.size).toBe(1);
-    expect(h.queued).toHaveLength(1);
-    await h.runQueue();
-    expect(h.timers).toHaveLength(1);
-
-    reconciler.dispose();
-    expect(h.online.size).toBe(0);
-    expect(h.timers).toHaveLength(0);
-  });
-
-  it("retains unresolved-home entries for a later retry", async () => {
-    const h = harness();
-    h.resolveHome.mockResolvedValue(null);
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1" });
-
-    await h.runQueue();
-
-    expect(storedEntries(h.values)).toEqual([
+    rig.start();
+    rig.start();
+    expect(rig.onlineListeners.size).toBe(1);
+    expect(rig.queued).toHaveLength(1);
+    await rig.advance();
+    expect(rig.records()).toEqual([
       expect.objectContaining({
         documentId: "doc-1",
-        materialization: {
-          phase: "pending",
-          entry: { documentId: "doc-1", projectId: "project-1" },
-        },
+        materialization: { phase: "pending", entry: expect.any(Object) },
       }),
     ]);
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.timers).toHaveLength(1);
-  });
-});
+    expect(rig.create.calls).toEqual([]);
+    expect(rig.timers).toHaveLength(1);
 
-describe("untitled reconciliation durability", () => {
-  it("preserves identity queued while local persistence is loading", async () => {
-    const h = harness();
-    const session = fakeSession(contentDocument(""));
-    let finishLocalSync!: () => void;
-    session.setLocalWait(
-      () =>
-        new Promise<void>((resolve) => {
-          finishLocalSync = resolve;
-        }),
-    );
-    h.sessions.set("doc-1", session);
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-
-    h.queued.shift()?.();
-    await Promise.resolve();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-    finishLocalSync();
-    for (let index = 0; index < 20; index += 1) await Promise.resolve();
-
-    expect(h.create).toHaveBeenCalledOnce();
-    expect(h.deps.api.move).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: "doc-1" }),
-      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
-      expect.objectContaining({ name: "Opening.md" }),
-    );
-    expect(h.cleared).toEqual([]);
+    rig.reconciler.dispose();
+    expect(rig.onlineListeners.size).toBe(0);
+    expect(rig.timers).toHaveLength(0);
   });
 
-  it("preserves the newest identity queued while an older move is pending", async () => {
-    const h = harness();
-    h.create
-      .mockResolvedValueOnce({
-        status: "created",
-        documentId: "doc-1",
-        scheme: "scratch",
-        path: "/Untitled",
-        name: "Untitled",
-      })
-      .mockResolvedValueOnce({
-        status: "already-materialized",
-        documentId: "doc-1",
-        scheme: "manuscript",
-        path: "/Act 1/First.md",
-        name: "First.md",
-      });
-    let finishFirstMove!: (result: {
-      status: "moved";
-      scheme: "manuscript";
-      path: string;
-      name: string;
-    }) => void;
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishFirstMove = resolve;
-        }),
-    );
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "First.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
+  it("preserves identity edits made while durable sync is gated", async () => {
+    const rig = new UntitledLifecycleRig();
+    const durableGate = lifecycleGate<void>();
+    const session = new LifecycleSession(documentWithText());
+    session.waitForDurable(durableGate);
+    rig.replaceSession("doc-1", session);
+    rig.start();
+    rig.append("doc-1");
 
-    h.queued.shift()?.();
+    rig.queued.shift()?.();
     for (let index = 0; index < 8; index += 1) await Promise.resolve();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Latest.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 2" },
-      },
-    );
-    finishFirstMove({
+    rig.queueIdentity("doc-1", "Opening.md");
+    expect(rig.records()[0]?.desiredIdentity?.name).toBe("Opening.md");
+
+    durableGate.resolve();
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+    await rig.advance();
+    expect(rig.move.calls.at(-1)?.[2]).toEqual(OPENING);
+    expect(rig.records()).toEqual([]);
+  });
+
+  it("rebases the newest identity on the canonical result of an in-flight move", async () => {
+    const rig = new UntitledLifecycleRig();
+    const firstMove = lifecycleGate<MoveContextEntryResult>();
+    rig.create.enqueueResult(created(), {
+      status: "already-materialized",
+      documentId: "doc-1",
+      scheme: "manuscript",
+      path: "/Act 1/First.md",
+      name: "First.md",
+    });
+    rig.move.enqueueHandler(() => firstMove.promise);
+    rig.start();
+    rig.queueIdentity("doc-1", "First.md");
+
+    rig.queued.shift()?.();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    rig.queueIdentity("doc-1", "Latest.md", "Act 2");
+    firstMove.resolve({
       status: "moved",
       scheme: "manuscript",
       path: "Act 1/First.md",
       name: "First.md",
     });
     for (let index = 0; index < 20; index += 1) await Promise.resolve();
+    await rig.advance();
 
-    expect(storedEntries(h.values)[0]?.desiredIdentity).toEqual({
-      name: "Latest.md",
-      destination: { scheme: "manuscript", folderPath: "/Act 2" },
+    expect(rig.move.calls.at(-1)?.[1]).toMatchObject({ path: "/Act 1/First.md" });
+    expect(rig.move.calls.at(-1)?.[2]).toMatchObject({ name: "Latest.md" });
+    expect(rig.records()).toEqual([]);
+  });
+
+  it("restores an explicitly named empty document and materializes it after reload", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.replaceSession("doc-1", new LifecycleSession(documentWithText("")));
+    rig.start();
+    rig.reconciler.queueIdentity({ documentId: "doc-1", projectId: "project-1" }, OPENING);
+
+    rig.restart();
+    await rig.advance(); // callback left by the disposed instance
+    await rig.advance();
+
+    expect(rig.create.calls.at(-1)?.[0]).toMatchObject({
+      documentId: "doc-1",
+      home: UNTITLED_HOME,
     });
-    await h.runQueue();
-    expect(h.deps.api.move).toHaveBeenLastCalledWith(
-      expect.objectContaining({ documentId: "doc-1" }),
-      expect.objectContaining({ path: "/Act 1/First.md", scheme: "manuscript" }),
-      expect.objectContaining({ name: "Latest.md" }),
-    );
-    expect(storedEntries(h.values)).toEqual([]);
+    expect(rig.move.calls.at(-1)?.[2]).toEqual(OPENING);
+    expect(rig.records()).toEqual([]);
+    expect(rig.clearedRooms).toEqual([]);
+  });
+});
+
+describe("empty and denied room recovery", () => {
+  it("drops an empty device-only record only after the server confirms no row", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.replaceSession("doc-1", new LifecycleSession(documentWithText("")));
+    rig.start();
+    rig.append("doc-1");
+    await rig.advance();
+
+    expect(rig.exists.calls).toHaveLength(1);
+    expect(rig.create.calls).toEqual([]);
+    expect(rig.records()).toEqual([]);
+    expect(rig.clearedRooms).toEqual([]);
   });
 
-  it("does not drain identity work queued while durable sync is pending", async () => {
-    const h = harness();
-    const session = fakeSession(contentDocument());
-    let finishDurableSync!: () => void;
-    session.setDurableWait(
-      () =>
-        new Promise<void>((resolve) => {
-          finishDurableSync = resolve;
-        }),
-    );
-    h.sessions.set("doc-1", session);
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+  it("materializes an empty open candidate without probing for a server row", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.replaceSession("doc-1", new LifecycleSession(documentWithText("")));
+    rig.start();
+    rig.trackCandidate("doc-1");
+    rig.append("doc-1");
+    await rig.advance();
 
-    h.queued.shift()?.();
-    for (let index = 0; index < 8; index += 1) await Promise.resolve();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Latest.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-    finishDurableSync();
-    for (let index = 0; index < 20; index += 1) await Promise.resolve();
-
-    expect(storedEntries(h.values)[0]?.desiredIdentity?.name).toBe("Latest.md");
-    await h.runQueue();
-    expect(h.deps.api.move).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: "doc-1" }),
-      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
-      expect.objectContaining({ name: "Latest.md" }),
-    );
+    expect(rig.exists.calls).toEqual([]);
+    expect(rig.create.calls).toHaveLength(1);
+    expect(rig.materialized).toEqual([expect.objectContaining({ documentId: "doc-1" })]);
   });
 
-  it("materializes an explicitly named empty document and keeps it pending across reload", async () => {
-    const h = harness();
-    h.sessions.set("doc-1", fakeSession(contentDocument("")));
-    const first = new UntitledReconciler(h.deps);
-    first.start();
-    first.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-    first.dispose();
+  it("keeps the pending room when the writer types during the no-row check", async () => {
+    const rig = new UntitledLifecycleRig();
+    const existsGate = lifecycleGate<boolean>();
+    const session = new LifecycleSession(documentWithText(""));
+    rig.replaceSession("doc-1", session);
+    rig.exists.enqueueHandler(() => existsGate.promise);
+    rig.start();
+    rig.append("doc-1");
 
-    const restored = new UntitledReconciler(h.deps);
-    restored.rehydrate();
-    expect(restored.has("doc-1")).toBe(true);
-    restored.start();
-    await h.runQueue(); // stale callback from the disposed instance
-    await h.runQueue();
-
-    expect(h.create).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: "doc-1", projectId: "project-1", home: HOME }),
-    );
-    expect(h.deps.api.move).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: "doc-1" }),
-      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-    expect(storedEntries(h.values)).toEqual([]);
-    expect(h.cleared).toEqual([]);
-  });
-
-  it("restores an explicit desired identity after a reload", async () => {
-    const h = harness();
-    const first = new UntitledReconciler(h.deps);
-    first.start();
-    first.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    first.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-    first.dispose();
-
-    expect(storedEntries(h.values)[0]?.desiredIdentity).toEqual({
-      name: "Opening.md",
-      destination: { scheme: "manuscript", folderPath: "/Act 1" },
-    });
-
-    const restored = new UntitledReconciler(h.deps);
-    restored.start();
-    await h.runQueue(); // stale callback from the disposed instance
-    await h.runQueue();
-    expect(h.deps.api.move).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: "doc-1" }),
-      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-  });
-
-  it("drops the record but retains empty local persistence after the server confirms no row", async () => {
-    const h = harness();
-    h.sessions.set("doc-1", fakeSession(contentDocument("")));
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-
-    await h.runQueue();
-
-    expect(h.exists).toHaveBeenCalledOnce();
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.cleared).toEqual([]);
-    expect(storedEntries(h.values)).toEqual([]);
-  });
-
-  it("does not empty-drain an open candidate", async () => {
-    const h = harness();
-    h.sessions.set("doc-1", fakeSession(contentDocument("")));
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.registerCandidate("doc-1", {
-      onReminted: vi.fn(),
-      onMaterialized: vi.fn(),
-    });
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-
-    await h.runQueue();
-
-    expect(h.exists).not.toHaveBeenCalled();
-    expect(h.create).toHaveBeenCalledOnce();
-    expect(h.cleared).toEqual([]);
-  });
-
-  it("aborts empty draining when words are typed during the server check", async () => {
-    const h = harness();
-    const session = fakeSession(contentDocument(""));
-    h.sessions.set("doc-1", session);
-    let finishExistsCheck!: (exists: boolean) => void;
-    h.exists.mockImplementationOnce(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishExistsCheck = resolve;
-        }),
-    );
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-
-    h.queued.shift()?.();
+    rig.queued.shift()?.();
     for (let index = 0; index < 8; index += 1) await Promise.resolve();
     const paragraph = new Y.XmlElement("paragraph");
     paragraph.insert(0, [new Y.XmlText("words typed during the check")]);
     session.document.getXmlFragment("prosemirror").insert(0, [paragraph]);
-    finishExistsCheck(false);
+    existsGate.resolve(false);
     for (let index = 0; index < 20; index += 1) await Promise.resolve();
 
-    expect(h.cleared).toEqual([]);
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.sessions.get("doc-1")?.document).toBe(session.document);
-    expect(untitledDocumentIsEmpty(session.document.getXmlFragment("prosemirror"))).toBe(false);
-    expect(storedEntries(h.values)).toEqual([
+    expect(rig.create.calls).toEqual([]);
+    expect(rig.records()).toEqual([
       expect.objectContaining({
         documentId: "doc-1",
         materialization: expect.objectContaining({ phase: "pending" }),
       }),
     ]);
+    expect(untitledDocumentIsEmpty(session.document.getXmlFragment("prosemirror"))).toBe(false);
   });
 
-  it("attaches and durably flushes empty history when a server row exists", async () => {
-    const h = harness();
-    h.exists.mockResolvedValue(true);
-    const session = fakeSession(contentDocument(""));
-    h.sessions.set("doc-1", session);
-    h.create.mockResolvedValue({
-      status: "already-materialized",
-      documentId: "doc-1",
-      scheme: "scratch",
-      path: "/Untitled",
-      name: "Untitled",
-    });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
+  it("attaches and durably flushes empty history when the server row exists", async () => {
+    const rig = new UntitledLifecycleRig();
+    const session = new LifecycleSession(documentWithText(""));
+    rig.replaceSession("doc-1", session);
+    rig.exists.enqueueResult(true);
+    rig.create.enqueueResult({ ...created(), status: "already-materialized" });
+    rig.start();
+    rig.append("doc-1");
+    await rig.advance();
 
-    await h.runQueue();
-
-    expect(session.waitForDurableSync).toHaveBeenCalledOnce();
-    expect(h.cleared).toEqual([]);
-    expect(storedEntries(h.values)).toEqual([]);
+    expect(session.durableSyncCount).toBe(1);
+    expect(rig.records()).toEqual([]);
   });
 
-  it("restarts a pre-materialization denial and continues with other entries", async () => {
-    const h = harness();
-    const denied = fakeSession(contentDocument("first"));
+  it("restarts an access-lost room and continues draining healthy entries", async () => {
+    const rig = new UntitledLifecycleRig();
+    const denied = rig.session("denied", "first");
     denied.setStatus("access-lost");
-    h.sessions.set("denied", denied);
-    h.sessions.set("healthy", fakeSession(contentDocument("second")));
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "denied", projectId: "project-1", home: HOME });
-    reconciler.append({ documentId: "healthy", projectId: "project-1", home: HOME });
+    rig.session("healthy", "second");
+    rig.start();
+    rig.append("denied");
+    rig.append("healthy");
+    await rig.advance();
 
-    await h.runQueue();
-
-    expect(storedEntries(h.values)).toEqual([]);
-    expect(h.cleared).toEqual([]);
-    expect(h.create).toHaveBeenCalledTimes(2);
-    expect(h.deps.sessions.restartUnavailableRoom).toHaveBeenCalledWith("denied");
+    expect(rig.restartedRooms).toContain("denied");
+    expect(rig.create.calls).toHaveLength(2);
+    expect(rig.records()).toEqual([]);
   });
+});
 
-  it("restores a failure receipt without restoring the device-only warning", async () => {
-    const h = harness();
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "conflict" as const,
-      collision: { scheme: "scratch" as const, path: "taken.md", workId: "work-1" },
-    });
-    const first = new UntitledReconciler(h.deps);
-    first.start();
-    first.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    first.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "taken.md",
-        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-      },
-    );
-    await h.runQueue();
-    first.dispose();
+describe("collision recovery and durable receipts", () => {
+  it("persists the reminted room before clearing the original", async () => {
+    const rig = new UntitledLifecycleRig();
+    const flushGate = lifecycleGate<void>();
+    rig.create.enqueueResult({ status: "conflict" });
+    rig.session("original", "irreplaceable words");
+    const replacement = rig.session("replacement", "");
+    replacement.waitForPersistenceFlush(flushGate);
+    rig.start();
+    rig.append("original");
 
-    const restored = new UntitledReconciler(h.deps);
-    restored.start();
-    expect(restored.queuedIdentityFailure("doc-1")).toMatchObject({
-      kind: "conflict",
-      name: "taken.md",
-    });
-    expect(restored.pendingSince("doc-1")).toBeNull();
-  });
-
-  it("persists a reminted room only after its IndexedDB transaction completes", async () => {
-    const h = harness();
-    h.create.mockResolvedValueOnce({ status: "conflict" });
-    h.sessions.set("original", fakeSession(contentDocument("irreplaceable words")));
-    let finishFlush!: () => void;
-    const replacement = fakeSession(contentDocument(""));
-    replacement.setPersistenceFlush(
-      () =>
-        new Promise<void>((resolve) => {
-          finishFlush = resolve;
-        }),
-    );
-    h.sessions.set("replacement", replacement);
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "original", projectId: "project-1", home: HOME });
-
-    h.queued.shift()?.();
+    rig.queued.shift()?.();
     for (let index = 0; index < 8; index += 1) await Promise.resolve();
-    expect(storedEntries(h.values)[0]?.documentId).toBe("original");
+    expect(rig.records()[0]?.documentId).toBe("original");
 
-    finishFlush();
-    for (let index = 0; index < 8; index += 1) await Promise.resolve();
-    expect(storedEntries(h.values)[0]?.documentId).toBe("replacement");
-    expect(h.cleared).toEqual(["original"]);
+    flushGate.resolve();
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+    expect(rig.records()[0]?.documentId).toBe("replacement");
+    expect(rig.clearedRooms).toEqual(["original"]);
     expect(untitledDocumentIsEmpty(replacement.document.getXmlFragment("prosemirror"))).toBe(false);
   });
 
-  it("leaves a recoverable replacement record when original-room cleanup is interrupted", async () => {
-    const h = harness();
-    h.create.mockResolvedValueOnce({ status: "conflict" });
-    h.sessions.set("original", fakeSession(contentDocument("irreplaceable words")));
-    const replacement = fakeSession(contentDocument(""));
-    h.sessions.set("replacement", replacement);
-    h.deps.sessions.destroyRoom = vi.fn(async () => {
-      throw new Error("interrupted before original cleanup");
-    });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "original", projectId: "project-1", home: HOME });
+  it("leaves the replacement recoverable when original cleanup is interrupted", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.create.enqueueResult({ status: "conflict" });
+    rig.session("original", "irreplaceable words");
+    const replacement = rig.session("replacement", "");
+    rig.destroyRoomError = new Error("interrupted before original cleanup");
+    rig.start();
+    rig.append("original");
+    await rig.advance();
 
-    await h.runQueue();
-
-    expect(storedEntries(h.values)).toEqual([
+    expect(rig.records()).toEqual([
       expect.objectContaining({
         documentId: "replacement",
         materialization: expect.objectContaining({
@@ -628,252 +266,76 @@ describe("untitled reconciliation durability", () => {
     ]);
     expect(untitledDocumentIsEmpty(replacement.document.getXmlFragment("prosemirror"))).toBe(false);
   });
-});
 
-describe("queued identity receipts", () => {
-  it("replays the final canonical identity to a tab restored after materialization", async () => {
-    const h = harness();
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
+  it("replays canonical materialization and identity receipts to a restored tab", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.start();
+    rig.queueIdentity("doc-1", "Opening.md");
+    await rig.advance();
+    rig.trackCandidate("doc-1");
 
-    await h.runQueue();
-    const onMaterialized = vi.fn();
-    const onIdentityCommitted = vi.fn();
-    reconciler.registerCandidate("doc-1", {
-      onReminted: vi.fn(),
-      onMaterialized,
-      onIdentityCommitted,
-    });
-
-    expect(onMaterialized).toHaveBeenCalledWith({
-      status: "already-materialized",
-      documentId: "doc-1",
-      scheme: "manuscript",
-      path: "/Act 1/Opening.md",
-      name: "Opening.md",
-    });
-    expect(onIdentityCommitted).toHaveBeenCalledWith({
-      status: "moved",
-      scheme: "manuscript",
-      path: "/Act 1/Opening.md",
-      name: "Opening.md",
-    });
+    expect(rig.materialized).toEqual([
+      expect.objectContaining({ documentId: "doc-1", scheme: "manuscript", name: "Opening.md" }),
+    ]);
+    expect(rig.identities).toEqual([
+      expect.objectContaining({ status: "moved", scheme: "manuscript", name: "Opening.md" }),
+    ]);
   });
 
-  it("keeps an unreferenced replay receipt within the replay cap", async () => {
-    const h = harness();
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    await h.runQueue();
-
-    reconciler.setMaterializationReceiptOwners(new Set());
-    const onMaterialized = vi.fn();
-    reconciler.registerCandidate("doc-1", {
-      onReminted: vi.fn(),
-      onMaterialized,
-    });
-
-    expect(onMaterialized).toHaveBeenCalledOnce();
-  });
-
-  it("bounds replay receipts by dropping the oldest", async () => {
-    const h = harness();
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
+  it("evicts only unowned receipts beyond the replay cap", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.start();
     for (let index = 0; index < 17; index += 1) {
-      reconciler.append({ documentId: `doc-${index}`, projectId: "project-1", home: HOME });
-      await h.runQueue();
+      rig.append(`doc-${index}`);
+      await rig.advance();
     }
+    rig.trackCandidate("doc-0");
+    rig.trackCandidate("doc-16");
+    expect(rig.materialized.map(({ documentId }) => documentId)).toEqual(["doc-16"]);
 
-    const oldestMaterialized = vi.fn();
-    reconciler.registerCandidate("doc-0", {
-      onReminted: vi.fn(),
-      onMaterialized: oldestMaterialized,
-    });
-    const newestMaterialized = vi.fn();
-    reconciler.registerCandidate("doc-16", {
-      onReminted: vi.fn(),
-      onMaterialized: newestMaterialized,
-    });
-
-    expect(oldestMaterialized).not.toHaveBeenCalled();
-    expect(newestMaterialized).toHaveBeenCalledOnce();
-  });
-
-  it("retains more than 16 replay receipts while desks reference them", async () => {
-    const h = harness();
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.setMaterializationReceiptOwners(
+    const owned = new UntitledLifecycleRig();
+    owned.start();
+    owned.reconciler.setMaterializationReceiptOwners(
       new Set(Array.from({ length: 17 }, (_, index) => `doc-${index}`)),
     );
     for (let index = 0; index < 17; index += 1) {
-      reconciler.append({ documentId: `doc-${index}`, projectId: "project-1", home: HOME });
-      await h.runQueue();
+      owned.append(`doc-${index}`);
+      await owned.advance();
     }
-
-    const oldestMaterialized = vi.fn();
-    reconciler.registerCandidate("doc-0", {
-      onReminted: vi.fn(),
-      onMaterialized: oldestMaterialized,
-    });
-
-    expect(oldestMaterialized).toHaveBeenCalledOnce();
+    owned.trackCandidate("doc-0");
+    expect(owned.materialized.map(({ documentId }) => documentId)).toEqual(["doc-0"]);
   });
+});
 
-  it("retries a stale identity result without discarding the queued identity", async () => {
-    const h = harness();
-    (h.deps.api.move as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ status: "retry" as const, reason: "stale-source" as const })
-      .mockResolvedValueOnce({
-        status: "moved" as const,
-        scheme: "manuscript" as const,
-        path: "Act 1/Opening.md",
-        name: "Opening.md",
-      });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-
-    await h.runQueue();
-    expect(storedEntries(h.values)[0]?.desiredIdentity?.name).toBe("Opening.md");
-
-    h.timers.shift()?.();
-    await h.runQueue();
-
-    expect(h.deps.api.move).toHaveBeenCalledTimes(2);
-    expect(storedEntries(h.values)).toEqual([]);
-  });
-
-  it("retries a transient identity failure without discarding the queued identity", async () => {
-    const h = harness();
-    (h.deps.api.move as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new TypeError("offline"))
-      .mockResolvedValueOnce({
-        status: "moved" as const,
-        scheme: "manuscript" as const,
-        path: "Act 1/Opening.md",
-        name: "Opening.md",
-      });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-
-    await h.runQueue();
-
-    expect(storedEntries(h.values)[0]?.desiredIdentity?.name).toBe("Opening.md");
-    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
-    expect(h.timers).toHaveLength(1);
-
-    h.timers.shift()?.();
-    await h.runQueue();
-
-    expect(h.deps.api.move).toHaveBeenCalledTimes(2);
-    expect(storedEntries(h.values)).toEqual([]);
-  });
-
+describe("queued identity outcomes", () => {
   it.each([
-    400, 401, 403, 404,
-  ])("terminalizes a queued identity after a production-shaped HTTP %s response", async (status) => {
-    const h = harness();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({ statusCode: status, statusMessage: "Rejected", message: "Rejected" }),
-            { status, headers: { "content-type": "application/json" } },
-          ),
-        ),
-      ),
-    );
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockImplementation((_entry, source, desired) =>
-      moveContextEntry("project-1", source.scheme, {
-        path: source.path,
-        destinationScheme: desired.destination.scheme,
-        destinationFolderPath: desired.destination.folderPath,
-      }),
-    );
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-
-    await h.runQueue();
-
-    expect(reconciler.has("doc-1")).toBe(false);
-    expect(reconciler.queuedIdentityFailure("doc-1")).toEqual({
-      kind: "error",
+    { label: "stale source", first: { status: "retry", reason: "stale-source" } as const },
+    { label: "offline", first: new TypeError("offline") },
+  ])("retains identity intent and retries after $label", async ({ first }) => {
+    const rig = new UntitledLifecycleRig();
+    if (first instanceof Error) rig.move.enqueueError(first);
+    else rig.move.enqueueResult(first);
+    rig.move.enqueueResult({
+      status: "moved",
+      scheme: "manuscript",
+      path: "Act 1/Opening.md",
       name: "Opening.md",
     });
-    expect(h.timers).toHaveLength(0);
+    rig.start();
+    rig.queueIdentity("doc-1", "Opening.md");
+
+    await rig.advance();
+    expect(rig.records()[0]?.desiredIdentity?.name).toBe("Opening.md");
+    expect(rig.reconciler.queuedIdentityFailure("doc-1")).toBeNull();
+    await rig.retry();
+
+    expect(rig.move.calls).toHaveLength(2);
+    expect(rig.records()).toEqual([]);
   });
 
-  it("retries a production-shaped HTTP 5xx response", async () => {
-    const h = harness();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Promise.resolve(
-          new Response(JSON.stringify({ statusCode: 503, message: "Unavailable" }), {
-            status: 503,
-            headers: { "content-type": "application/json" },
-          }),
-        ),
-      ),
-    );
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockImplementation((_entry, source, desired) =>
-      moveContextEntry("project-1", source.scheme, {
-        path: source.path,
-        destinationScheme: desired.destination.scheme,
-        destinationFolderPath: desired.destination.folderPath,
-      }),
-    );
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1", home: HOME },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-
-    await h.runQueue();
-
-    expect(reconciler.has("doc-1")).toBe(true);
-    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
-    expect(h.timers).toHaveLength(1);
-  });
-
-  it("applies a rehydrated queued identity when connectivity returns", async () => {
-    const h = harness();
-    h.values.set(
+  it("retries rehydrated identity work immediately when connectivity returns", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.storage.set(
       "meridian:pending-untitled",
       JSON.stringify([
         {
@@ -881,68 +343,37 @@ describe("queued identity receipts", () => {
           revision: 1,
           materialization: {
             phase: "pending",
-            entry: { documentId: "doc-1", projectId: "project-1", home: HOME },
+            entry: { documentId: "doc-1", projectId: "project-1", home: UNTITLED_HOME },
           },
-          desiredIdentity: {
-            name: "Opening.md",
-            destination: { scheme: "manuscript", folderPath: "Act 1" },
-          },
+          desiredIdentity: OPENING,
           pendingSinceMs: Date.now(),
         },
       ]),
     );
-    (h.deps.api.move as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new TypeError("offline"))
-      .mockResolvedValueOnce({
-        status: "moved" as const,
-        scheme: "manuscript" as const,
-        path: "Act 1/Opening.md",
-        name: "Opening.md",
-      });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
+    rig.move.enqueueError(new TypeError("offline"));
+    rig.start();
+    await rig.advance();
 
-    await h.runQueue();
-    expect(h.deps.api.move).toHaveBeenCalledOnce();
-
-    for (const notifyOnline of h.online) notifyOnline();
-    await h.runQueue();
-
-    expect(h.deps.api.move).toHaveBeenCalledTimes(2);
-    expect(storedEntries(h.values)).toEqual([]);
+    rig.notifyOnline();
+    await rig.advance();
+    expect(rig.move.calls).toHaveLength(2);
+    expect(rig.records()).toEqual([]);
   });
 
-  it("records a conflict receipt when the queued identity conflicts after materialization", async () => {
-    const h = harness();
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "conflict" as const,
-      collision: { scheme: "scratch" as const, path: "taken.md", workId: "work-1" },
+  it("stores a terminal conflict apart from materialization and clears it explicitly", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.move.enqueueResult({
+      status: "conflict",
+      collision: { scheme: "scratch", path: "taken.md", workId: "work-1" },
     });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "taken.md",
-        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-      },
-    );
+    rig.start();
+    rig.append("doc-1");
+    rig.queueIdentity("doc-1", "taken.md", "/");
+    await rig.advance();
 
-    await h.runQueue();
-
-    // Materialization itself succeeded: the entry drains and the document is
-    // no longer device-only — only the identity receipt reports the failure.
-    expect(storedEntries(h.values)).toEqual([
-      expect.objectContaining({
-        documentId: "doc-1",
-        materialization: { phase: "synced" },
-        pendingSinceMs: null,
-      }),
-    ]);
-    expect(reconciler.has("doc-1")).toBe(false);
-    expect(reconciler.pendingSince("doc-1")).toBeNull();
-    expect(reconciler.queuedIdentityFailure("doc-1")).toEqual({
+    expect(rig.reconciler.has("doc-1")).toBe(false);
+    expect(rig.reconciler.pendingSince("doc-1")).toBeNull();
+    expect(rig.reconciler.queuedIdentityFailure("doc-1")).toEqual({
       kind: "conflict",
       name: "taken.md",
       scheme: "scratch",
@@ -950,106 +381,19 @@ describe("queued identity receipts", () => {
       workId: "work-1",
     });
 
-    reconciler.clearQueuedIdentityFailure("doc-1");
-    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
-  });
-
-  it("replaces a stale failure when a newer name is queued", async () => {
-    const h = harness();
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      status: "conflict" as const,
-      collision: { scheme: "scratch" as const, path: "taken.md", workId: "work-1" },
-    });
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "taken.md",
-        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-      },
-    );
-    await h.runQueue();
-    expect(reconciler.queuedIdentityFailure("doc-1")?.kind).toBe("conflict");
-
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "free-name.md",
-        destination: { scheme: "scratch", folderPath: "/", workId: "work-1" },
-      },
-    );
-    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
-  });
-
-  it("applies a queued placement through the move seam and reports its conflicts", async () => {
-    const h = harness();
-    const onIdentityCommitted = vi.fn();
-    const reconciler = new UntitledReconciler(h.deps);
-    reconciler.start();
-    reconciler.registerCandidate("doc-1", {
-      onReminted: vi.fn(),
-      onMaterialized: vi.fn(),
-      onIdentityCommitted,
-    });
-    reconciler.append({ documentId: "doc-1", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity(
-      { documentId: "doc-1", projectId: "project-1" },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-    await h.runQueue();
-
-    expect(h.deps.api.move).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: "doc-1" }),
-      expect.objectContaining({ path: "/Untitled", scheme: "scratch" }),
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-    expect(onIdentityCommitted).toHaveBeenCalledWith({
-      status: "moved",
-      scheme: "manuscript",
-      path: "/Act 1/Opening.md",
-      name: "Opening.md",
-    });
-    expect(reconciler.queuedIdentityFailure("doc-1")).toBeNull();
-
-    // Conflict path: the canonical locator lands as a receipt.
-    (h.deps.api.move as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      status: "conflict" as const,
-      collision: { scheme: "manuscript" as const, path: "Act 1/Opening.md" },
-    });
-    reconciler.append({ documentId: "doc-2", projectId: "project-1", home: HOME });
-    reconciler.queueIdentity(
-      { documentId: "doc-2", projectId: "project-1" },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "Act 1" },
-      },
-    );
-    await h.runQueue();
-    expect(reconciler.queuedIdentityFailure("doc-2")).toEqual({
-      kind: "conflict",
-      name: "Opening.md",
-      scheme: "manuscript",
-      path: "/Act 1/Opening.md",
-    });
+    rig.reconciler.clearQueuedIdentityFailure("doc-1");
+    expect(rig.records()).toEqual([]);
   });
 });
 
 describe("untitled document decisions", () => {
   it("resolves the default work scratch root through one seam", () => {
-    expect(resolveUntitledHome("work-1")).toEqual(HOME);
+    expect(resolveUntitledHome("work-1")).toEqual(UNTITLED_HOME);
     expect(resolveUntitledHome(null)).toBeNull();
   });
 
   it("treats structural paragraphs as empty and atoms as content", () => {
-    const document = contentDocument("");
+    const document = documentWithText("");
     const fragment = document.getXmlFragment("prosemirror");
     fragment.insert(0, [new Y.XmlElement("paragraph")]);
     expect(untitledDocumentIsEmpty(fragment)).toBe(true);
