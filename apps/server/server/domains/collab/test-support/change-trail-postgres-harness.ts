@@ -52,9 +52,12 @@ const {
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
-const { createAgentEditObservabilityOptions, createBranchAgentEditDiagnostics } = await import(
-  "../adapters/agent-edit-observability.js"
-);
+const {
+  createAgentEditObservabilityOptions,
+  createBranchAgentEditDiagnostics,
+  createDocumentProjectionDiagnostics,
+  createReversalNoticeDiagnostics,
+} = await import("../adapters/agent-edit-observability.js");
 const { createCollabFacade } = await import("../collab-facade.js");
 const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
@@ -471,9 +474,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   };
   const resolveDocumentUri = async (documentId: string) =>
     documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md";
+  const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
-    eventSink,
+    diagnostics: projectionDiagnostics,
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
   const runtime = createAgentEditRuntime({
@@ -488,7 +492,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const projections = createDocumentProjectionRefresher({
     documents: runtime.markdownDocuments,
     runDocumentWriteHook,
-    eventSink,
+    diagnostics: projectionDiagnostics,
   });
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
@@ -539,7 +543,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     notices: createPostDurabilityNoticeService({
       notices,
       documentUriResolver: resolveDocumentUri,
-      eventSink,
+      diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
   });
   const turnReversal = createTurnReversalService({

@@ -1,6 +1,5 @@
 /** Policy for projection/activity effects after durable document writes. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { DocumentWriteHook } from "../contracts.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import { syncErrorMessage } from "./markdown-document.js";
@@ -8,6 +7,17 @@ import type { DocumentProjectionEffects } from "./ports/document-projection-effe
 
 export type DocumentProjectionRefreshService = {
   refresh(input: { documentId: DocumentId; threadId?: ThreadId }, source?: string): Promise<void>;
+};
+
+export type DocumentProjectionDiagnostics = {
+  failed(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId;
+    source: string;
+    name: "post_write_hook.failed" | "projection_refresh.failed";
+    payload: Record<string, unknown>;
+  }): void;
+  payload(cause: unknown): Record<string, unknown>;
 };
 
 export type DocumentWriteHookRunner = (
@@ -35,19 +45,19 @@ export function createProjectionEffectsDocumentWriteHook(
 
 export function createDocumentWriteHookRunner(input: {
   hook: DocumentWriteHook;
-  eventSink?: EventSink;
+  diagnostics: DocumentProjectionDiagnostics;
 }): DocumentWriteHookRunner {
   return async (event, source = "collab.document_write") => {
     const hookEvent = { ...event, at: new Date() };
     try {
       await input.hook(hookEvent);
     } catch (cause) {
-      emitFailure(input.eventSink, {
+      input.diagnostics.failed({
         documentId: hookEvent.documentId,
         threadId: hookEvent.threadId,
         source,
         name: "post_write_hook.failed",
-        payload: unknownToEventPayload(cause),
+        payload: input.diagnostics.payload(cause),
       });
     }
   };
@@ -56,14 +66,14 @@ export function createDocumentWriteHookRunner(input: {
 export function createDocumentProjectionRefresher(input: {
   documents: Pick<MarkdownDocumentEngine, "readAsMarkdown">;
   runDocumentWriteHook: DocumentWriteHookRunner;
-  eventSink?: EventSink;
+  diagnostics: DocumentProjectionDiagnostics;
 }): DocumentProjectionRefreshService {
   return {
     async refresh({ documentId, threadId }, source = "collab.document_write") {
       try {
         const read = await input.documents.readAsMarkdown(documentId);
         if (!read.ok) {
-          emitFailure(input.eventSink, {
+          input.diagnostics.failed({
             documentId,
             threadId,
             source,
@@ -77,37 +87,14 @@ export function createDocumentProjectionRefresher(input: {
         }
         await input.runDocumentWriteHook({ documentId, threadId, markdown: read.value }, source);
       } catch (cause) {
-        emitFailure(input.eventSink, {
+        input.diagnostics.failed({
           documentId,
           threadId,
           source,
           name: "projection_refresh.failed",
-          payload: unknownToEventPayload(cause),
+          payload: input.diagnostics.payload(cause),
         });
       }
     },
   };
-}
-
-function emitFailure(
-  eventSink: EventSink | undefined,
-  input: {
-    documentId: DocumentId;
-    threadId?: ThreadId;
-    source: string;
-    name: string;
-    payload: Record<string, unknown>;
-  },
-): void {
-  if (!eventSink) return;
-  emitEvent(eventSink, {
-    level: "error",
-    source: input.source,
-    name: input.name,
-    payload: {
-      documentId: input.documentId,
-      threadId: input.threadId ?? null,
-      ...input.payload,
-    },
-  });
 }

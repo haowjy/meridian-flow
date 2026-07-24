@@ -31,7 +31,10 @@ import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.j
 import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
-import { SILENT_POST_DURABILITY_NOTICES } from "../declared-stubs.js";
+import {
+  SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
+  SILENT_POST_DURABILITY_NOTICES,
+} from "../declared-stubs.js";
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
 import {
   createInMemoryCoordinator,
@@ -48,6 +51,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const store = inMemoryStore(journal);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
+    diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
   const runtime = createAgentEditRuntime({
     journal,
@@ -69,6 +73,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const projections = createDocumentProjectionRefresher({
     documents: runtime.markdownDocuments,
     runDocumentWriteHook,
+    diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal,

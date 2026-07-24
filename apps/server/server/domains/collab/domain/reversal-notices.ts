@@ -2,7 +2,28 @@
 import type { DestructiveSweepReport, ReversalNoticePort } from "@meridian/agent-edit/integration";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+
+export type ReversalNoticeDiagnostics = {
+  documentUriMissing(input: {
+    docId: string;
+    threadId: string;
+    representativeTurnId?: string | null;
+  }): void;
+  recordFailedAfterDurability(input: {
+    kind: string;
+    threadId: string;
+    documentIds: readonly string[];
+    responseId?: string;
+    affectedBlockHashes?: readonly string[];
+    cause: unknown;
+  }): void;
+  degradedRecordFailedAfterDurability(input: {
+    threadId: string;
+    documentIds: readonly string[];
+    responseId?: string;
+    cause: unknown;
+  }): void;
+};
 
 export function documentTitleFromUri(uri: string | null): string | null {
   if (!uri) return null;
@@ -72,7 +93,7 @@ export async function recordAwarenessDegradedNotice(input: {
 export async function recordNoticeAfterDurability(
   input: {
     notices: NoticePort;
-    eventSink?: EventSink;
+    diagnostics: ReversalNoticeDiagnostics;
     threadId: string;
     documentIds: readonly string[];
     kind: string;
@@ -85,39 +106,16 @@ export async function recordNoticeAfterDurability(
   try {
     await record();
   } catch (cause) {
-    if (input.eventSink) {
-      emitEvent(input.eventSink, {
-        level: "error",
-        source: "collab.model_context_notices",
-        name: "record_failed_after_durability",
-        payload: {
-          kind: input.kind,
-          threadId: input.threadId,
-          documentIds: [...input.documentIds],
-          ...(input.responseId ? { responseId: input.responseId } : {}),
-          ...(input.affectedBlockHashes
-            ? { affectedBlockHashes: [...input.affectedBlockHashes] }
-            : {}),
-          cause: unknownToEventPayload(cause),
-        },
-      });
-    }
+    input.diagnostics.recordFailedAfterDurability({ ...input, cause });
     try {
       await input.recordDegraded?.();
     } catch (degradedCause) {
-      if (input.eventSink) {
-        emitEvent(input.eventSink, {
-          level: "error",
-          source: "collab.model_context_notices",
-          name: "degraded_record_failed_after_durability",
-          payload: {
-            threadId: input.threadId,
-            documentIds: [...input.documentIds],
-            ...(input.responseId ? { responseId: input.responseId } : {}),
-            cause: unknownToEventPayload(degradedCause),
-          },
-        });
-      }
+      input.diagnostics.degradedRecordFailedAfterDurability({
+        threadId: input.threadId,
+        documentIds: input.documentIds,
+        responseId: input.responseId,
+        cause: degradedCause,
+      });
     }
   }
 }
@@ -139,14 +137,14 @@ export type PostDurabilityNoticeService = {
 export function createPostDurabilityNoticeService(deps: {
   notices: NoticePort;
   documentUriResolver: DocumentUriResolver;
-  eventSink?: EventSink;
+  diagnostics: ReversalNoticeDiagnostics;
 }): PostDurabilityNoticeService {
   return {
     recordAwarenessDegraded(input) {
       return recordNoticeAfterDurability(
         {
           notices: deps.notices,
-          eventSink: deps.eventSink,
+          diagnostics: deps.diagnostics,
           threadId: input.threadId,
           documentIds: input.documentIds,
           kind: "awareness_degraded",
@@ -165,7 +163,7 @@ export function createPostDurabilityNoticeService(deps: {
       return recordNoticeAfterDurability(
         {
           notices: deps.notices,
-          eventSink: deps.eventSink,
+          diagnostics: deps.diagnostics,
           threadId: input.threadId,
           documentIds: [input.documentId],
           kind: "late_sweep",
@@ -195,24 +193,17 @@ export function createPostDurabilityNoticeService(deps: {
 export function createReversalNoticePort(deps: {
   notices: NoticePort;
   documentUriResolver: DocumentUriResolver;
-  eventSink?: EventSink;
+  diagnostics: ReversalNoticeDiagnostics;
 }): ReversalNoticePort {
   return {
     async record(input) {
       const uri = await deps.documentUriResolver(input.docId);
       if (!uri) {
-        if (deps.eventSink) {
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "collab.undo_notifications",
-            name: "document_uri_missing",
-            payload: {
-              docId: input.docId,
-              threadId: input.threadId,
-              representativeTurnId: input.writeHandleTurns[0]?.turnId,
-            },
-          });
-        }
+        deps.diagnostics.documentUriMissing({
+          docId: input.docId,
+          threadId: input.threadId,
+          representativeTurnId: input.writeHandleTurns[0]?.turnId,
+        });
         return;
       }
       const writeHandleTurns = input.writeHandleTurns.filter(

@@ -8,6 +8,8 @@ import type {
 } from "@meridian/agent-edit/integration";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
+import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
+import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 
 export function createBranchAgentEditDiagnostics(
   eventSink?: EventSink,
@@ -69,6 +71,73 @@ export function createAgentEditInvariantDiagnostic(
       name: "invariant_violation",
       payload,
     });
+  };
+}
+
+export function createDocumentProjectionDiagnostics(
+  eventSink?: EventSink,
+): DocumentProjectionDiagnostics {
+  return {
+    failed(input) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: input.source,
+        name: input.name,
+        payload: {
+          documentId: input.documentId,
+          threadId: input.threadId ?? null,
+          ...input.payload,
+        },
+      });
+    },
+    payload: unknownToEventPayload,
+  };
+}
+
+export function createReversalNoticeDiagnostics(eventSink?: EventSink): ReversalNoticeDiagnostics {
+  return {
+    documentUriMissing(input) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.undo_notifications",
+        name: "document_uri_missing",
+        payload: input,
+      });
+    },
+    recordFailedAfterDurability(input) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.model_context_notices",
+        name: "record_failed_after_durability",
+        payload: {
+          kind: input.kind,
+          threadId: input.threadId,
+          documentIds: [...input.documentIds],
+          ...(input.responseId ? { responseId: input.responseId } : {}),
+          ...(input.affectedBlockHashes
+            ? { affectedBlockHashes: [...input.affectedBlockHashes] }
+            : {}),
+          cause: unknownToEventPayload(input.cause),
+        },
+      });
+    },
+    degradedRecordFailedAfterDurability(input) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.model_context_notices",
+        name: "degraded_record_failed_after_durability",
+        payload: {
+          threadId: input.threadId,
+          documentIds: [...input.documentIds],
+          ...(input.responseId ? { responseId: input.responseId } : {}),
+          cause: unknownToEventPayload(input.cause),
+        },
+      });
+    },
   };
 }
 
