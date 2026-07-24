@@ -9,6 +9,13 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn(async () => {}) }),
+  };
+});
 
 const { mutateAsyncMock, trailDetailMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
