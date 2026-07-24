@@ -39,10 +39,7 @@ import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
-import {
-  DurableProjectionSerializationError,
-  type DurableProjectionSerializer,
-} from "../domain/ports/durable-projection.js";
+import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import { materializeProvenanceForDoc } from "../domain/provenance.js";
 import {
   allocateDocumentAdmission,
@@ -1288,12 +1285,7 @@ async function deriveDurableProjection(
   try {
     if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
     for (const row of rows) Y.applyUpdate(doc, row.updateData);
-    let markdownProjection: string;
-    try {
-      markdownProjection = await durableProjectionSerializer.serializeDocument(documentId, doc);
-    } catch (cause) {
-      throw new DurableProjectionSerializationError(cause);
-    }
+    const markdownProjection = await durableProjectionSerializer.serializeDocument(documentId, doc);
     return {
       markdownProjection,
       stateVector: Y.encodeStateVector(doc),

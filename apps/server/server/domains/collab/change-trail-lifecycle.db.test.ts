@@ -188,7 +188,28 @@ describe("change trail (postgres)", () => {
       action: "restore" as const,
       userId: USER_ID,
     };
+    const liveBeforeProjectionFailure = Y.encodeStateAsUpdate(liveDoc);
+    const projectionFailure = createDrizzleTrailForwardActions({
+      db,
+      documentAccess: createDrizzleDocumentAccess(db),
+      coordinator,
+      model,
+      codec,
+      durableProjectionSerializer: {
+        async serializeDocument() {
+          throw new Error("injected projection failure");
+        },
+      },
+    });
 
+    await expect(projectionFailure.apply(request)).rejects.toThrow("injected projection failure");
+    expect(Y.encodeStateAsUpdate(liveDoc)).toEqual(liveBeforeProjectionFailure);
+    await expect(
+      db
+        .select()
+        .from(schema.documentYjsUpdates)
+        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID)),
+    ).resolves.toHaveLength(0);
     await expect(actions.apply(request)).resolves.toEqual({ status: "applied" });
     await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
     expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc)))).toContain("Restored prose.");

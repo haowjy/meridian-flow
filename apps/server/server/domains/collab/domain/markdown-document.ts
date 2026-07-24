@@ -451,8 +451,18 @@ export function syncErrorMessage(error: SyncError): string {
   }
 }
 
+export class DocumentSyncError extends Error {
+  readonly code: SyncError["code"];
+
+  constructor(readonly syncError: SyncError) {
+    super(syncErrorMessage(syncError));
+    this.name = "DocumentSyncError";
+    this.code = syncError.code;
+  }
+}
+
 function throwSyncError(error: SyncError): never {
-  throw new Error(syncErrorMessage(error));
+  throw new DocumentSyncError(error);
 }
 
 function documentWriteResult(
