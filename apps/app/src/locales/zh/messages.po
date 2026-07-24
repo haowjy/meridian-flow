@@ -65,6 +65,10 @@ msgstr ""
 msgid "{remainingPercent}% remaining"
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "@ for reference"
+msgstr "@ 引用内容"
+
 #: src/features/chat/ChangeViewRows.tsx
 msgid "↻ This edit brought back text you had deleted"
 msgstr ""
@@ -122,6 +126,10 @@ msgstr ""
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Actions"
 msgstr ""
+
+#: src/features/chat/placeholders.ts
+msgid "Actually…"
+msgstr "其实…"
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Add a caption for this figure."
@@ -191,8 +199,8 @@ msgid "Ask about your data, methods, or the next step in your work—plain langu
 msgstr "用日常语言描述你的数据、方法或下一步即可。"
 
 #: src/features/chat/Composer.tsx
-msgid "Ask anything…"
-msgstr "随意提问…"
+#~ msgid "Ask anything…"
+#~ msgstr "随意提问…"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -238,6 +246,10 @@ msgstr ""
 #: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr ""
+
+#: src/features/chat/placeholders.ts
+msgid "Brainstorm away"
+msgstr "一起头脑风暴吧"
 
 #: src/features/project/mobile/MobileBreadcrumb.tsx
 msgid "Breadcrumb"
@@ -293,6 +305,10 @@ msgstr ""
 msgid "Chat"
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "Chat away"
+msgstr "随便聊聊"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr ""
@@ -300,6 +316,10 @@ msgstr ""
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
 msgstr ""
+
+#: src/features/chat/placeholders.ts
+msgid "Chime in"
+msgstr "我来说两句"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Choose a home"
@@ -612,6 +632,10 @@ msgstr ""
 msgid "Drafted file"
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Drafting…"
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 msgid "Drop an image file to insert a figure."
 msgstr ""
@@ -643,6 +667,10 @@ msgstr ""
 #: src/features/editor/useInlineReviewSync.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "edited since this draft was written"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Editing…"
 msgstr ""
 
 #: src/features/project/shell/screens.ts
@@ -744,6 +772,10 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "Go ahead"
+msgstr "说吧"
+
 #: src/features/project/lifecycle.ts
 msgid "Grilling"
 msgstr ""
@@ -751,6 +783,10 @@ msgstr ""
 #: src/features/editor/EditorToolbar.tsx
 msgid "Heading"
 msgstr ""
+
+#: src/features/chat/placeholders.ts
+msgid "Hold on…"
+msgstr "等一下…"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/HomePaneController.tsx
@@ -802,6 +838,10 @@ msgstr ""
 msgid "Interface language"
 msgstr "界面语言"
 
+#: src/features/chat/placeholders.ts
+msgid "Interject"
+msgstr "插一句"
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
 msgstr ""
@@ -838,6 +878,10 @@ msgstr "姓"
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "Let's work on it"
+msgstr "我们开始吧"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
 msgstr ""
@@ -852,6 +896,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Listed directory"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Listing…"
 msgstr ""
 
 #: src/features/home/first-party-packages.ts
@@ -1246,6 +1294,10 @@ msgstr ""
 msgid "Protocol Designer"
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "Quick thought"
+msgstr "突然想到"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Ran"
 msgstr ""
@@ -1276,6 +1328,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Reading…"
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1357,8 +1413,8 @@ msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
-msgid "Reply to the agent, or steer the analysis…"
-msgstr "回复智能体，或引导分析方向…"
+#~ msgid "Reply to the agent, or steer the analysis…"
+#~ msgstr "回复智能体，或引导分析方向…"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
@@ -1435,6 +1491,10 @@ msgstr ""
 msgid "Running skill…"
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Running…"
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr ""
@@ -1455,13 +1515,21 @@ msgstr ""
 msgid "Search papers, extract findings, and synthesize a summary across sources."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Searched"
+msgstr ""
+
 #. placeholder {0}: truncate(query, 60)
 #: src/features/chat/tool-renderers.tsx
-msgid "Searched \"{0}\""
-msgstr ""
+#~ msgid "Searched \"{0}\""
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Searching…"
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
@@ -1535,6 +1603,7 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
+#: src/features/home/HomeView.tsx
 msgid "Start writing…"
 msgstr ""
 
@@ -1591,6 +1660,10 @@ msgstr ""
 msgid "Switch work"
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "Talk it out"
+msgstr "说出来理一理"
+
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
 msgstr ""
@@ -1646,6 +1719,10 @@ msgstr ""
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
+
+#: src/features/chat/placeholders.ts
+msgid "Thinking out loud?"
+msgstr "边想边说？"
 
 #. placeholder {0}: segmentIndex + 1
 #: src/features/chat/AssistantTurn.tsx
@@ -1829,6 +1906,18 @@ msgstr ""
 msgid "What are you working on?"
 msgstr "你正在研究什么？"
 
+#: src/features/chat/placeholders.ts
+msgid "What's next?"
+msgstr "接下来呢？"
+
+#: src/features/chat/placeholders.ts
+msgid "What's on your mind?"
+msgstr "你在想什么？"
+
+#: src/features/chat/placeholders.ts
+msgid "Where were we?"
+msgstr "我们说到哪儿了？"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"
 msgstr ""
@@ -1852,8 +1941,16 @@ msgstr ""
 msgid "Workspace navigation"
 msgstr ""
 
+#: src/features/chat/placeholders.ts
+msgid "Write away"
+msgstr "开始写吧"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Write failed"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Writing…"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

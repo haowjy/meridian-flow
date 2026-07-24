@@ -4,29 +4,33 @@
  * Each pool advances once when the browser loads this module. Components can
  * render repeatedly without consuming more entries.
  */
+import type { MessageDescriptor } from "@lingui/core";
+import { msg } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import { useSyncExternalStore } from "react";
 
 export const COMPOSE_PLACEHOLDERS = [
-  "Chat away",
-  "Write away",
-  "Go ahead",
-  "What's next?",
-  "What's on your mind?",
-  "Brainstorm away",
-  "Talk it out",
-  "Thinking out loud?",
-  "Where were we?",
-  "Let's work on it",
+  msg`Chat away`,
+  msg`Write away`,
+  msg`Go ahead`,
+  msg`What's next?`,
+  msg`What's on your mind?`,
+  msg`Brainstorm away`,
+  msg`Talk it out`,
+  msg`Thinking out loud?`,
+  msg`Where were we?`,
+  msg`Let's work on it`,
 ] as const;
 
 export const INTERJECT_PLACEHOLDERS = [
-  "Interject",
-  "Chime in",
-  "Actually...",
-  "Hold on...",
-  "Quick thought",
+  msg`Interject`,
+  msg`Chime in`,
+  msg`Actually…`,
+  msg`Hold on…`,
+  msg`Quick thought`,
 ] as const;
 
+const AT_REFERENCE_HINT = msg`@ for reference`;
 const COMPOSE_LS_KEY = "meridian:placeholderIdx:compose";
 const INTERJECT_LS_KEY = "meridian:placeholderIdx:interject";
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -35,15 +39,15 @@ const SERVER_PLACEHOLDERS = {
   interject: INTERJECT_PLACEHOLDERS[0],
 };
 
-type PlaceholderSelection = {
+type PlaceholderSelection<T> = {
   index: number;
-  value: string;
+  value: T;
 };
 
-export function selectNextPlaceholder(
-  pool: readonly string[],
+export function selectNextPlaceholder<T>(
+  pool: readonly T[],
   storedIndex: string | null,
-): PlaceholderSelection {
+): PlaceholderSelection<T> {
   if (pool.length === 0) {
     throw new Error("Placeholder pools must not be empty");
   }
@@ -55,21 +59,24 @@ export function selectNextPlaceholder(
       : -1;
   const index = (lastIndex + 1) % pool.length;
 
-  return { index, value: pool[index] as string };
+  return { index, value: pool[index] as T };
 }
 
-function advancePool(storage: Storage, key: string, pool: readonly string[]): string {
+function advancePool<T>(storage: Storage, key: string, pool: readonly T[]): T {
   try {
     const selection = selectNextPlaceholder(pool, storage.getItem(key));
     storage.setItem(key, String(selection.index));
     return selection.value;
   } catch {
     // Storage can be unavailable in privacy-restricted browser contexts.
-    return pool[0] as string;
+    return pool[0] as T;
   }
 }
 
-function selectPagePlaceholders(): { compose: string; interject: string } {
+function selectPagePlaceholders(): {
+  compose: MessageDescriptor;
+  interject: MessageDescriptor;
+} {
   if (typeof window === "undefined") {
     return SERVER_PLACEHOLDERS;
   }
@@ -92,21 +99,21 @@ export function shouldShowAtReferenceHint(lastUsed: number | null, now = Date.no
 
 export function appendAtReferenceHint(
   placeholder: string,
+  hint: string,
   lastUsed: number | null,
   enabled: boolean,
   now = Date.now(),
 ): string {
   return enabled && shouldShowAtReferenceHint(lastUsed, now)
-    ? `${placeholder}, @ for reference`
+    ? `${placeholder}, ${hint}`
     : placeholder;
 }
 
-export function getComposePlaceholder(lastAtUsed: number | null = null): string {
-  // TODO: Enable and pass the last-use timestamp when v3 supports @ mentions.
-  return appendAtReferenceHint(PAGE_PLACEHOLDERS.compose, lastAtUsed, false);
+export function getComposePlaceholder(): MessageDescriptor {
+  return PAGE_PLACEHOLDERS.compose;
 }
 
-export function getInterjectPlaceholder(): string {
+export function getInterjectPlaceholder(): MessageDescriptor {
   return PAGE_PLACEHOLDERS.interject;
 }
 
@@ -116,9 +123,13 @@ export function useComposerPlaceholder(
   streaming: boolean,
   lastAtUsed: number | null = null,
 ): string {
-  return useSyncExternalStore(
+  const { i18n } = useLingui();
+  const placeholder = useSyncExternalStore(
     subscribeToNoChanges,
-    () => (streaming ? getInterjectPlaceholder() : getComposePlaceholder(lastAtUsed)),
+    () => (streaming ? getInterjectPlaceholder() : getComposePlaceholder()),
     () => (streaming ? SERVER_PLACEHOLDERS.interject : SERVER_PLACEHOLDERS.compose),
   );
+
+  // TODO: Enable and pass the last-use timestamp when v3 supports @ mentions.
+  return appendAtReferenceHint(i18n._(placeholder), i18n._(AT_REFERENCE_HINT), lastAtUsed, false);
 }

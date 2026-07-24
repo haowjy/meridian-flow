@@ -65,6 +65,10 @@ msgstr "{name} · reviewed"
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
 
+#: src/features/chat/placeholders.ts
+msgid "@ for reference"
+msgstr "@ for reference"
+
 #: src/features/chat/ChangeViewRows.tsx
 msgid "↻ This edit brought back text you had deleted"
 msgstr "↻ This edit brought back text you had deleted"
@@ -122,6 +126,10 @@ msgstr "Account settings."
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Actions"
 msgstr "Actions"
+
+#: src/features/chat/placeholders.ts
+msgid "Actually…"
+msgstr "Actually…"
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Add a caption for this figure."
@@ -191,8 +199,8 @@ msgid "Ask about your data, methods, or the next step in your work—plain langu
 msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
 
 #: src/features/chat/Composer.tsx
-msgid "Ask anything…"
-msgstr "Ask anything…"
+#~ msgid "Ask anything…"
+#~ msgstr "Ask anything…"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -238,6 +246,10 @@ msgstr "Billing"
 #: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr "Bold"
+
+#: src/features/chat/placeholders.ts
+msgid "Brainstorm away"
+msgstr "Brainstorm away"
 
 #: src/features/project/mobile/MobileBreadcrumb.tsx
 msgid "Breadcrumb"
@@ -293,6 +305,10 @@ msgstr "Changes"
 msgid "Chat"
 msgstr "Chat"
 
+#: src/features/chat/placeholders.ts
+msgid "Chat away"
+msgstr "Chat away"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr "Chat context"
@@ -300,6 +316,10 @@ msgstr "Chat context"
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
 msgstr "Checkout unavailable."
+
+#: src/features/chat/placeholders.ts
+msgid "Chime in"
+msgstr "Chime in"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Choose a home"
@@ -612,6 +632,10 @@ msgstr "Drafted"
 msgid "Drafted file"
 msgstr "Drafted file"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Drafting…"
+msgstr "Drafting…"
+
 #: src/features/editor/EditorView.tsx
 msgid "Drop an image file to insert a figure."
 msgstr "Drop an image file to insert a figure."
@@ -644,6 +668,10 @@ msgstr "Edited file"
 #: src/features/project/dock/DockChangesView.tsx
 msgid "edited since this draft was written"
 msgstr "edited since this draft was written"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Editing…"
+msgstr "Editing…"
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -744,6 +772,10 @@ msgstr "Folder name"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
+#: src/features/chat/placeholders.ts
+msgid "Go ahead"
+msgstr "Go ahead"
+
 #: src/features/project/lifecycle.ts
 msgid "Grilling"
 msgstr "Grilling"
@@ -751,6 +783,10 @@ msgstr "Grilling"
 #: src/features/editor/EditorToolbar.tsx
 msgid "Heading"
 msgstr "Heading"
+
+#: src/features/chat/placeholders.ts
+msgid "Hold on…"
+msgstr "Hold on…"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/HomePaneController.tsx
@@ -802,6 +838,10 @@ msgstr "Installed"
 msgid "Interface language"
 msgstr "Interface language"
 
+#: src/features/chat/placeholders.ts
+msgid "Interject"
+msgstr "Interject"
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
 msgstr "Italic"
@@ -838,6 +878,10 @@ msgstr "Last name"
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr "Leading or trailing whitespace detected in file or folder name."
 
+#: src/features/chat/placeholders.ts
+msgid "Let's work on it"
+msgstr "Let's work on it"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
 msgstr "Light"
@@ -853,6 +897,10 @@ msgstr "Listed"
 #: src/features/chat/tool-renderers.tsx
 msgid "Listed directory"
 msgstr "Listed directory"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Listing…"
+msgstr "Listing…"
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
@@ -1246,6 +1294,10 @@ msgstr "Project"
 msgid "Protocol Designer"
 msgstr "Protocol Designer"
 
+#: src/features/chat/placeholders.ts
+msgid "Quick thought"
+msgstr "Quick thought"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Ran"
 msgstr "Ran"
@@ -1277,6 +1329,10 @@ msgstr "Read-only preview"
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
 msgstr "Reading text size"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Reading…"
+msgstr "Reading…"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
@@ -1357,8 +1413,8 @@ msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
 #: src/features/chat/ChatView.tsx
-msgid "Reply to the agent, or steer the analysis…"
-msgstr "Reply to the agent, or steer the analysis…"
+#~ msgid "Reply to the agent, or steer the analysis…"
+#~ msgstr "Reply to the agent, or steer the analysis…"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
@@ -1435,6 +1491,10 @@ msgstr "Running {toolName}"
 msgid "Running skill…"
 msgstr "Running skill…"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Running…"
+msgstr "Running…"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
@@ -1455,14 +1515,22 @@ msgstr "Search chats"
 msgid "Search papers, extract findings, and synthesize a summary across sources."
 msgstr "Search papers, extract findings, and synthesize a summary across sources."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Searched"
+msgstr "Searched"
+
 #. placeholder {0}: truncate(query, 60)
 #: src/features/chat/tool-renderers.tsx
-msgid "Searched \"{0}\""
-msgstr "Searched \"{0}\""
+#~ msgid "Searched \"{0}\""
+#~ msgstr "Searched \"{0}\""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
 msgstr "Searched context"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Searching…"
+msgstr "Searching…"
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Select a document."
@@ -1535,6 +1603,7 @@ msgid "Start a quick chat without a project"
 msgstr "Start a quick chat without a project"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/home/HomeView.tsx
 msgid "Start writing…"
 msgstr "Start writing…"
 
@@ -1591,6 +1660,10 @@ msgstr "Switch to Auto-apply?"
 msgid "Switch work"
 msgstr "Switch work"
 
+#: src/features/chat/placeholders.ts
+msgid "Talk it out"
+msgstr "Talk it out"
+
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
 msgstr "Task Assignment"
@@ -1646,6 +1719,10 @@ msgstr "Theme"
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
+
+#: src/features/chat/placeholders.ts
+msgid "Thinking out loud?"
+msgstr "Thinking out loud?"
 
 #. placeholder {0}: segmentIndex + 1
 #: src/features/chat/AssistantTurn.tsx
@@ -1829,6 +1906,18 @@ msgstr "Waiting on you"
 msgid "What are you working on?"
 msgstr "What are you working on?"
 
+#: src/features/chat/placeholders.ts
+msgid "What's next?"
+msgstr "What's next?"
+
+#: src/features/chat/placeholders.ts
+msgid "What's on your mind?"
+msgstr "What's on your mind?"
+
+#: src/features/chat/placeholders.ts
+msgid "Where were we?"
+msgstr "Where were we?"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
@@ -1852,9 +1941,17 @@ msgstr "Working…"
 msgid "Workspace navigation"
 msgstr "Workspace navigation"
 
+#: src/features/chat/placeholders.ts
+msgid "Write away"
+msgstr "Write away"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Write failed"
 msgstr "Write failed"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Writing…"
+msgstr "Writing…"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Wrote"
