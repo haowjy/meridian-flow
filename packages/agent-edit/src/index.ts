@@ -35,7 +35,9 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 }
 
 export {
+  buildDestructiveEffectInput,
   classifyDestructiveEffect,
+  classifyDestructiveSnapshotEffect,
   type DestructiveEffect,
   type DestructiveEffectInput,
   type VisibleProseOccurrence,
