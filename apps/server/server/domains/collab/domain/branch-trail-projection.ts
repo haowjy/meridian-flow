@@ -280,7 +280,6 @@ export function trailContributionReplacement(
   push: { id: number },
   kind: "refine" | "empty",
 ): TrailContributionReplacement {
-  if (kind === "empty") return { kind: "empty" };
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
   const trails = normalizeTrailPushes(
@@ -292,7 +291,14 @@ export function trailContributionReplacement(
       journalOwners: record.journalOwners,
     })),
   );
-  return { kind: "refine", classifications: trails.flatMap((trail) => trail.changes) };
+  return {
+    kind,
+    targets: trails.map((trail) => ({
+      owner: trail.owner,
+      classifications: trail.changes,
+    })),
+    documentTitles: new Map([[record.documentId, record.documentTitle]]),
+  };
 }
 
 export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {

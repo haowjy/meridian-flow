@@ -258,79 +258,21 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       }
     },
     async replacePushContribution(pushId, replacement, context) {
-      const tx = currentDrizzleDb(db);
-      const affected = await tx
-        .select({
-          trailId: changeTrailShells.id,
-          ownerKind: changeTrailShells.ownerKind,
-          threadId: changeTrailShells.threadId,
-          turnId: changeTrailShells.turnId,
-          documentId: changeTrailDocumentDetails.documentId,
-          documentTitle: changeTrailDocumentDetails.documentTitle,
-          changes: changeTrailDocumentDetails.changes,
-        })
-        .from(changeTrailDocumentDetails)
-        .innerJoin(changeTrailShells, eq(changeTrailShells.id, changeTrailDocumentDetails.trailId))
-        .where(sql`EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(${changeTrailDocumentDetails.changes}) AS change
-          WHERE change->>'pushId' = ${pushId}
-        )`);
-      if (affected.length === 0) return;
-      const classifications = replacement.kind === "refine" ? replacement.classifications : [];
-      const classificationByKey = new Map(
-        classifications.map((change) => [canonicalChangeKey(change), change]),
-      );
-      const grouped = new Map<
-        string,
-        {
-          owner: NormalizedTrail["owner"];
-          changes: TrailChangeV1[];
-          documentTitles: Map<string, string>;
-        }
-      >();
-      for (const row of affected) {
-        const owner =
-          row.ownerKind === "turn" && row.turnId
-            ? {
-                kind: "turn" as const,
-                threadId: row.threadId,
-                turnId: row.turnId,
-              }
-            : {
-                kind: "shared" as const,
-                threadId: row.threadId,
-                turnId: null,
-              };
-        const group = grouped.get(row.trailId) ?? {
+      const trails = replacement.targets.map(({ owner, classifications }) => {
+        const changes = replacement.kind === "refine" ? [...classifications] : [];
+        return {
           owner,
-          changes: [],
-          documentTitles: new Map<string, string>(),
+          changes,
+          counts: {
+            changes: changes.length,
+            swept: changes.filter((change) => change.swept !== null).length,
+            documents: new Set(changes.map((change) => change.documentId)).size,
+          },
         };
-        const pushChanges = (row.changes as TrailChangeV1[]).filter(
-          (change) => change.pushId === pushId,
-        );
-        for (const change of pushChanges) {
-          const classified = classificationByKey.get(canonicalChangeKey(change));
-          if (classified) group.changes.push(classified);
-        }
-        group.documentTitles.set(row.documentId, row.documentTitle);
-        grouped.set(row.trailId, group);
-      }
-      const trails = [...grouped.values()].map(({ owner, changes }) => ({
-        owner,
-        changes,
-        counts: {
-          changes: changes.length,
-          swept: changes.filter((change) => change.swept !== null).length,
-          documents: new Set(changes.map((change) => change.documentId)).size,
-        },
-      }));
+      });
       await writer.record({
         trails,
-        documentTitles: new Map(
-          [...grouped.values()].flatMap(({ documentTitles }) => [...documentTitles]),
-        ),
+        documentTitles: replacement.documentTitles,
         refineCurrentVersion: context.refineCurrentVersion,
         replacePushId: pushId,
       });

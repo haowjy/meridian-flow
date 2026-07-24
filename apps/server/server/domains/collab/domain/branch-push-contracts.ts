@@ -16,7 +16,12 @@ import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
-import type { NavigationTargetV1, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
+import type {
+  NavigationTargetV1,
+  NormalizedTrail,
+  RawTrailChange,
+  TrailChangeV1,
+} from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
   constructor(readonly branchId: string) {
@@ -205,9 +210,15 @@ export type SettlementClaim = {
 
 export type CompletionFenceResult = "applied" | "already_applied" | "retry";
 
-export type TrailContributionReplacement =
-  | { kind: "refine"; classifications: TrailChangeV1[] }
-  | { kind: "empty" };
+type TrailContributionTarget = {
+  owner: NormalizedTrail["owner"];
+  classifications: readonly TrailChangeV1[];
+};
+
+export type TrailContributionReplacement = {
+  targets: readonly TrailContributionTarget[];
+  documentTitles: ReadonlyMap<string, string>;
+} & ({ kind: "refine" } | { kind: "empty" });
 
 export type PreparedDiscardCommit = {
   branch: BranchSnapshot;
