@@ -74,3 +74,30 @@ describe("write tool renderer", () => {
     expect(expand).toContain("overwrite=true");
   });
 });
+
+describe("unknown tool renderer", () => {
+  it("shows a path without exposing other arguments", () => {
+    const tool = writeToolView({
+      toolName: "inspect",
+      input: {
+        path: "manuscript://chapter-1.md",
+        query: "a long developer-facing argument",
+      },
+    });
+    const html = renderToStaticMarkup(rendererFor(tool.toolName).title(tool));
+
+    expect(html).toContain("inspect");
+    expect(html).toContain("manuscript://chapter-1.md");
+    expect(html).not.toContain("query");
+    expect(html).not.toContain("developer-facing");
+  });
+
+  it("shows only the tool name when no path is present", () => {
+    const tool = writeToolView({
+      toolName: "inspect",
+      input: { query: "a long developer-facing argument" },
+    });
+
+    expect(rendererFor(tool.toolName).title(tool)).toBe("inspect");
+  });
+});

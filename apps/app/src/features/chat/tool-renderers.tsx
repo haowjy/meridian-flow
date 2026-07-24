@@ -10,8 +10,8 @@
  *
  * Three-tier contract from `kb/wiki/runtime/.../activity-thinking-model`:
  *   - **Tier 1 (default fallback)** — unknown tool. Static one-line row
- *     `tool_name(arg: …)`. No expand, no destination. Just acknowledges the
- *     call happened.
+ *     showing the tool name and, when present, its path. No expand or
+ *     destination.
  *   - **Tier 2 (registered)** — the entries in this file. Per-tool one-liner
  *     plus per-tool click behaviour.
  *   - **Tier 3 (generative)** — model-authored React. Not implemented here.
@@ -302,33 +302,16 @@ function readExpand(tool: ToolView): ReactNode | null {
 
 /**
  * Tier-1 default — unknown tool. Static one-liner; no expand affordance,
- * no destination. The user sees that *something* was called and what the
- * args were, summarised. Detail belongs behind a dev-only setting if we
- * ever add one.
+ * no destination. Arguments are developer detail, so only a useful path is
+ * shown alongside the tool name.
  */
 const DEFAULT_RENDERER: ToolRenderer = {
   Icon: Wrench,
   title: (tool) => {
-    const args = inputObject(tool);
-    const keys = Object.keys(args);
-    if (keys.length === 0) return tool.toolName;
-    const summarised = keys
-      .slice(0, 2)
-      .map((k) => `${k}: ${truncate(stringifyArg(args[k]), 28)}`)
-      .join(", ");
-    return `${tool.toolName}(${summarised})`;
+    const path = asString(inputObject(tool).path);
+    return path ? <PathTitle verb={tool.toolName} path={path} /> : tool.toolName;
   },
 };
-
-function stringifyArg(value: JsonValue | undefined): string {
-  if (typeof value === "string") return value;
-  if (value == null) return "";
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "";
-  }
-}
 
 const RENDERERS: Record<string, ToolRenderer> = {
   read: {
