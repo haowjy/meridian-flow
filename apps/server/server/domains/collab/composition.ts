@@ -499,7 +499,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     initialDocumentSeeds: lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     observationSnapshots,
-    turnDiffQuery: createDrizzleTurnDiffQuery(deps.db),
+    turnDiffQuery: createDrizzleTurnDiffQuery(deps.db, journal.documentsForTurn.bind(journal)),
     store,
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {

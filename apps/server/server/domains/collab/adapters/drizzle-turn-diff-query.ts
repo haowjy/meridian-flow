@@ -32,7 +32,10 @@ export function mapTrailChangeToTurnDiff(
   };
 }
 
-export function createDrizzleTurnDiffQuery(db: Database): TurnDiffQuery {
+export function createDrizzleTurnDiffQuery(
+  db: Database,
+  documentsForTurn: (threadId: string, turnId: string) => Promise<string[]>,
+): TurnDiffQuery {
   return {
     async query(threadId, turnId, documentId) {
       const [shell] = await db
@@ -46,7 +49,33 @@ export function createDrizzleTurnDiffQuery(db: Database): TurnDiffQuery {
           ),
         )
         .limit(1);
-      if (!shell) return null;
+      if (!shell) {
+        const turnDocumentIds = await documentsForTurn(threadId, turnId);
+        const targetDocumentIds = documentId
+          ? turnDocumentIds.includes(documentId)
+            ? [documentId]
+            : []
+          : turnDocumentIds;
+        if (targetDocumentIds.length === 0) return null;
+        const [sharedDetail] = await db
+          .select({ state: changeTrailShells.state })
+          .from(changeTrailDocumentDetails)
+          .innerJoin(
+            changeTrailShells,
+            eq(changeTrailShells.id, changeTrailDocumentDetails.trailId),
+          )
+          .where(
+            and(
+              eq(changeTrailShells.threadId, threadId),
+              eq(changeTrailShells.ownerKind, "shared"),
+              inArray(changeTrailDocumentDetails.documentId, targetDocumentIds),
+            ),
+          )
+          .limit(1);
+        return sharedDetail
+          ? { trailState: sharedDetail.state, changes: [], sharedEffects: true }
+          : null;
+      }
 
       const detailRows = await db
         .select({

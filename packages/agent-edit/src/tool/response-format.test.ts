@@ -39,4 +39,10 @@ describe("formatTurnDiff", () => {
       formatTurnDiff({ trailState: "settled", changes: [], sharedEffects: false }).text,
     ).not.toContain("provisional");
   });
+
+  it("reports shared-only document effects without inventing turn-owned changes", () => {
+    expect(
+      formatTurnDiff({ trailState: "settled", changes: [], sharedEffects: true }).text,
+    ).toContain("No turn-owned changes; thread-shared effects exist for this turn's documents.");
+  });
 });
