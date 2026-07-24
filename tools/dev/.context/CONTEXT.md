@@ -30,9 +30,13 @@ tools/dev/
 │   ├── tailscale-external-routes.ts  Pure policy: verify expected bindings
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
 │   ├── migration-state.ts     Expected vs applied migration hash drift detection
+│   ├── app-boot-contract.ts   Exact child-owned smoke route contract
+│   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
+│   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
+├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
 ├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
 ├── dev-session-plan.ts        Session command construction + redaction + internal API origin
 ├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)
@@ -40,12 +44,16 @@ tools/dev/
 ├── dev-mode.ts                CLI arg parsing + mode detection (local/tailscale/funnel)
 ├── dev-app-env-passthrough.ts App env key allowlist for tmux command
 ├── ensure-db.ts / prepare-db.ts / drop-db.ts / reset-db.ts
+├── smoke-app-dev-transform.ts  Vite dev transform/render boot gate
+├── smoke-app-prod-boot.ts      Production build + Nitro boot gate
 ├── run-db-tests.ts             Owned local DB lifecycle + shared Vitest suite
 ├── gc-dbs.ts                  Stale worktree database cleanup
 ├── print-worktree-env.ts      eval'd by .envrc
 ├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
 ├── prune-worktrees.ts         Merged worktree + branch + DB + work-item cleanup
-└── migration-lint.ts
+├── migration-lint.ts
+├── project.json               Nx project; exposes the tools typecheck target
+└── tsconfig.json              Canonical strict TypeScript boundary for this directory
 ```
 
 ## Environment contract
@@ -66,6 +74,11 @@ tools/dev/
   its template; `dev:gc-dbs` recognizes the encoded owner PID for interrupted
   runs. CI/external Postgres instances retain serial execution against their
   pre-provisioned ephemeral database.
+- **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
+  missing or unreachable configured Postgres server is a loud skip because the
+  static CI job has no database service; a reachable server runs the same
+  managed `pnpm test:db` gate and propagates failures. Invoke `pnpm test:db`
+  directly when the DB suite must not skip.
 - **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
 - **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
 - **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.
@@ -74,7 +87,7 @@ tools/dev/
 
 `dev-session-plan.ts` separates **what to run** from **what to print/persist**:
 
-- **Canonical env before construction.** `applyDevEnvToProcess(repoRoot)` runs before `createDevSessionCommand`, so the tmux command consumes resolved worktree-scoped URLs — never ambient `.env` + ad-hoc pass-through. The caller in `dev-tmux.ts` applies env at line ~507, then builds the command at line ~510.
+- **Canonical env before construction.** `applyDevEnvToProcess(repoRoot)` runs before `createDevSessionCommand`, so the tmux command consumes resolved worktree-scoped URLs — never ambient `.env` + ad-hoc pass-through. `dev-tmux.ts` preserves that ordering without tying the contract to source line numbers.
 - **Executable vs display.** `createDevSessionCommand` returns a `DevSessionCommand`: `executable` (may contain secrets, sent to tmux only), `display` (redacted, printed to stdout and persisted in metadata), and `internalApiOrigin` (used by app SSR).
 - **Redaction.** `redactEnvValue` replaces `DATABASE_URL` with `<postgres:host/dbname>`, API keys and cookie passwords with `<redacted>`, and `WORKOS_DEV_LOGIN_EMAIL` with `<redacted>`. Portless env keys (`PORTLESS_*`) and non-sensitive app config pass through unredacted.
 - **Metadata** (`.meridian/dev-session.json`) stores the **display** command only. The `DevSessionMetadata.command` field is redacted; the executable command is never persisted. External routes are verified before being written.
@@ -88,10 +101,11 @@ tools/dev/
   1. Portless routes present and PIDs registered (`readPortlessState` → `validateExpectedRoutes`)
   2. Server `/readyz` returns 200 and app origin returns 200 or 3xx (`waitForDevReadiness`, HTTP probes via portless CA)
   3. Tailscale external routes verified against `tailscale serve status --json` (`TailscaleDevLifecycle.ensureExternalRoutes`)
-  If any gate fails, the script exits with an actionable message and the log path — never prints URLs the app can't reach.
+  If any gate fails, the script exits with an actionable message and prints the repository-relative `logs/portless.log` path — never prints URLs the app can't reach.
+- **App boot ownership and routes.** `smoke-app-dev-transform.ts` and `smoke-app-prod-boot.ts` trust only the spawned child's reported origin, check that child remains alive, and apply `lib/app-boot-contract.ts`: `/` must return 307; `/login` must return 200 with the Meridian login-page marker. The production gate runs the package's real `build` and validated `start` scripts with fake config scoped to its child. A foreign listener or merely non-5xx response is not success.
 - **Verified Tailscale external routes.** External URLs are only printed after `verifyTailscaleExternalRoutes` confirms the expected `serve`/`funnel` binding exists in `tailscale serve status --json`. An unverified route is treated as a startup failure.
 - **Shared service ports** are deterministic per worktree (`lib/dev-share-ports.ts`): app backend ports in `[37000, 45000)`, Tailscale HTTPS ports in `[47000, 55000)`, funnel ports are fixed (`443`, `8443`). Hash-based collision avoidance across worktrees.
-- `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` clean only this worktree's session and orphaned routes.
+- `pnpm dev` → worktree-scoped tmux session; `--stop` / `--restart` terminate only this worktree's owned tmux session and routes. Restart waits for fixed backend ports to become bindable; a remaining listener is reported by PID/command as non-owned and aborts startup. Port discovery never authorizes signaling a process, and discovery failure is a hard refusal.
 - Before launching portless, dev start prunes stale Tailscale serve/funnel routes whose `127.0.0.1:<port>` target has no live listener. Cleanup is surgical per HTTPS port (`off`) only: never `tailscale serve reset`, and never prune a route with any live target.
 - Tailscale serve is the default (`--tailscale`); `--no-tailscale` opts out to local-only; funnel is explicit opt-in (`--funnel` / `PORTLESS_FUNNEL=1`).
 - Smoke/e2e should use portless/TLS routes unless intentionally in-process.
@@ -111,8 +125,9 @@ tools/dev/
 
 - **Two modes:** `--auto` (all merged non-primary worktrees) or `--target <value>` (work id, worktree path, branch name, or PR number via `gh`).
 - **Resolver** (`lib/worktree-cleanup.ts`) correlates work item ↔ task dir/worktree ↔ branch ↔ PR head branch. Ambiguous matches (multiple worktrees for a target, multiple work items for a worktree) refuse to resolve with candidate lists.
-- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → delete local branch → mark Meridian work done.
-- **Safety gates:** refuses primary worktree, current worktree, `main` branch, unmerged branches, detached worktrees.
+- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Planning resolves the local branch ref OID. Cleanup requires that exact OID to be either an ancestor of the base or the unique head OID of a merged PR matching the base, branch, and repository owner. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action.
+- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → mark Meridian work done → force-delete local branch (`git branch -D`; the exact squash-merge-aware evidence has just been revalidated, while `-d` is squash-blind).
+- **Safety gates:** refuses primary worktree, current worktree, the base branch, branches that are neither ancestry- nor PR-merged, detached worktrees.
 - **Confirmation:** dry-run prints every planned action and target; destructive cleanup requires interactive `[y/N]` or `--yes`.
 - **`--dry-run`** prints the plan without executing it.
 
@@ -154,10 +169,14 @@ Policy:
 ## Conventions
 
 - Top-level scripts stay thin; reusable logic in `lib/`.
+- `tools/dev/tsconfig.json` is the canonical strict type boundary.
+  `tools/dev/project.json` registers `meridian-dev-tools:typecheck` as
+  `tsc --noEmit -p tsconfig.json`; Nx discovers it for the root
+  `pnpm typecheck` / `pnpm check` gate.
 - URL transforms use `new URL()` — no regex surgery on connection strings.
 - Explicit errors over silent fallback.
 - Provider assumptions stay in dev tooling, not domain code.
-- No file crosses 1,000 lines; `dev-tmux.ts` is the orchestrator (<550 lines), with session planning, readiness, tailscale, and output extracted behind clear interfaces.
+- No file crosses 1,000 lines; `dev-tmux.ts` owns orchestration only, with session planning, readiness, port lifecycle, Tailscale lifecycle, and output policy extracted behind clear interfaces.
 
 ## Related documentation
 

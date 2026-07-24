@@ -9,8 +9,8 @@ import {
 } from "nitro/h3";
 import { z } from "zod";
 import { ReverseThreadContextError } from "../../../../../domains/collab/index.js";
-import { getApp } from "../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { requireRequestId } from "../../../../../lib/request-id.js";
 
 const reverseBodySchema = z.object({
   uri: z
@@ -23,7 +23,7 @@ const reverseBodySchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  const { user } = await requireAppUser(event);
+  const { app, user } = await requireAppUser(event);
   const rawBody = await readBody(event);
   const normalizedBody =
     rawBody !== null && typeof rawBody === "object" && !Array.isArray(rawBody) ? rawBody : {};
@@ -33,8 +33,8 @@ export default defineEventHandler(async (event) => {
   }
   const body = parsed.data;
   try {
-    const outcome = await (await getApp()).documentSync.reverseThreadContext({
-      threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
+    const outcome = await app.documentSync.reverseThreadContext({
+      threadId: requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId,
       userId: user.userId,
       ...(body.uri ? { uri: body.uri } : {}),
       direction: body.direction,

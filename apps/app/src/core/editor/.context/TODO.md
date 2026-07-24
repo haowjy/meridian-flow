@@ -35,7 +35,7 @@ node *in place*, and y-prosemirror reconciles a reorder by **slot** — it keeps
 Yjs item id pinned to its position and rewrites content into it. That **re-binds
 block hashes** (the moved figure, and every block it jumps over, get new hashes),
 which breaks agent-edit's "block hash = stable block identity" contract. See the
-no-in-place-reorder policy in `packages/agent-edit/.context/CONTEXT.md`.
+no-in-place-reorder policy in `packages/agent-edit/.context/write-invariants.md`.
 
 We removed `draggable: true` from `figure` (here and in
 `packages/prosemirror-schema`); figures move via cut/paste (delete+insert).

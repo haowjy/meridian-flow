@@ -11,6 +11,7 @@ import type {
   AgentEditModel,
   ContentLineage,
   InlineReplacementResult,
+  InlineTextReplacement,
   TextRun,
 } from "../ports/model.js";
 import {
@@ -130,6 +131,16 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
         unwrapBlock(block),
         span,
         replacementMarkup,
+        codec,
+        schema,
+      );
+    },
+
+    applyInlineReplacements(doc, block, replacements, codec) {
+      return applyInlineReplacements(
+        unwrapDoc(doc),
+        unwrapBlock(block),
+        replacements,
         codec,
         schema,
       );
@@ -272,6 +283,52 @@ export function applyInlineReplacement(
     return blockTypeMismatch(blockType, replacement.type.name);
   }
   writePmBlock(doc, element, replacement);
+  return { ok: true };
+}
+
+export function applyInlineReplacements(
+  doc: Y.Doc,
+  block: Y.XmlElement | BlockRef,
+  replacements: readonly InlineTextReplacement[],
+  codec: AgentEditCodec,
+  schema: Schema,
+): InlineReplacementResult {
+  const element = unwrapBlock(toRef(block));
+  const current = toProsemirrorBlock(doc, element, schema);
+  const blockType = element.nodeName;
+  if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
+  if (!canReplaceInline(current) || current.content.size !== current.textContent.length) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Multi-range text edits require flat inline content in ${current.type.name} blocks`,
+    };
+  }
+
+  const parsedReplacements: Array<{ span: Span; nodes: Block[] }> = [];
+  for (const replacement of replacements) {
+    let parsed: ParsedContent;
+    try {
+      parsed = replacement.newText.length === 0 ? { blocks: [] } : codec.parse(replacement.newText);
+    } catch (cause) {
+      return parseFailure(cause);
+    }
+    const inline = inlineReplacement(parsed);
+    if (!inline.ok) return inline;
+    parsedReplacements.push({ span: replacement.span, nodes: inline.nodes });
+  }
+
+  const transform = new Transform(current);
+  for (const replacement of [...parsedReplacements].reverse()) {
+    transform.replaceWith(
+      replacement.span.from,
+      replacement.span.to,
+      Fragment.from(replacement.nodes),
+    );
+    // Project each exact step while the surrounding Yjs transaction remains open.
+    // updateYFragment can then retain equal prose on both sides of every range.
+    writePmBlock(doc, element, transform.doc);
+  }
   return { ok: true };
 }
 

@@ -68,11 +68,12 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then groups adjacent logical tool runs |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts route through `onRespondToInterrupt` |
-| `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
+| `placeholders.ts` | Localized per-page-load compose/interject prompt rotation with an SSR-safe external-store seam |
+| `tool-renderers.tsx` | Tool renderer registry — real runtime names, status-aware `toolVerb()` labels, curated expansions, and a humanized fallback |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/draft-editing.md`](.context/draft-editing.md). |
-| `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams |
+| `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams. Returns null for plain-insert-only trails (no writer protection) |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
@@ -166,9 +167,6 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 → TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
 → useChatFollowScroll.ts header comment (state machine invariants +
   re-armable 180ms guard + near-bottom-wins ordering)
-→ [KB: chat scroll follow-state decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/chat-scroll-follow-state.md)
-
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
-→ [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
+→ [Draft Review Lifecycle KB decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher

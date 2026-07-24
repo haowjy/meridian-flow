@@ -6,25 +6,24 @@ const mocks = vi.hoisted(() => ({
   reverseThreadContext: vi.fn(),
   setResponseStatus: vi.fn(),
 }));
+const THREAD_ID = "00000000-0000-0000-0000-000000000001";
 
 vi.mock("nitro/h3", () => ({
   createError: (input: { statusCode: number; message?: string }) =>
     Object.assign(new Error(input.message), input),
   defineEventHandler: (handler: unknown) => handler,
-  getRouterParam: () => "thread-1",
+  getRouterParam: () => THREAD_ID,
   readBody: async () => mocks.body,
   setResponseStatus: mocks.setResponseStatus,
 }));
 vi.mock("../../../../../domains/collab/index.js", () => ({
   ReverseThreadContextError: class ReverseThreadContextError extends Error {},
 }));
-vi.mock("../../../../../lib/app.js", () => ({
-  getApp: async () => ({
-    documentSync: { reverseThreadContext: mocks.reverseThreadContext },
-  }),
-}));
 vi.mock("../../../../../lib/auth-gate.js", () => ({
-  requireAppUser: async () => ({ user: { userId: "user-1" } }),
+  requireAppUser: async () => ({
+    app: { documentSync: { reverseThreadContext: mocks.reverseThreadContext } },
+    user: { userId: "user-1" },
+  }),
 }));
 
 const handler = (await import("./reverse.post.js")).default as unknown as (
@@ -54,7 +53,7 @@ describe("thread-context reversal body parity", () => {
       expect.objectContaining({
         direction: body.direction,
         scope: body.scope,
-        threadId: "thread-1",
+        threadId: THREAD_ID,
         userId: "user-1",
       }),
     );

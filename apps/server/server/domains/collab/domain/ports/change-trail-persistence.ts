@@ -1,5 +1,6 @@
 /** Domain port for atomically recording normalized change trails. */
 
+import { isUuid } from "../../../../shared/uuid.js";
 import type { NoticeInput } from "../../../notices/index.js";
 import type { TrailContributionReplacement } from "../branch-push-contracts.js";
 import type { NormalizedTrail, RawTrailChange, TrailOwner } from "../trail-read-kernel.js";
@@ -86,10 +87,6 @@ function parseTrailOwner(value: unknown): TrailOwner | null {
 
 function isUuidString(value: unknown): value is string {
   return typeof value === "string" && isUuid(value);
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

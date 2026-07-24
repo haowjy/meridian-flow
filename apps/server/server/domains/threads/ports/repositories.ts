@@ -263,6 +263,15 @@ export type ThreadRepositories = {
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  /**
+   * Serializes a complete turn-start transition on the thread and rejects
+   * when another transition advanced the expected active leaf first.
+   */
+  runTurnStartTransition<T>(
+    threadId: ThreadId,
+    expectedActiveLeafTurnId: TurnId | null,
+    operation: () => Promise<T>,
+  ): Promise<T>;
 } & UsageRecorder;
 
 /** Adapter-level aggregate used only at composition time for internal spawn wiring. */

@@ -25,6 +25,12 @@ nothing moves when an untitled tab materializes. Never re-encode these classes
 at a call site. (The document identity bar deliberately does NOT share the
 column: it is pane-wide navigation chrome, like the tab strip.)
 
+The bottom padding (`pb-[50vh]`) on the ProseMirror node is deliberate: it
+keeps the active writing line near the vertical center of the viewport in long
+manuscripts, and makes clicking below the last line focus the editor at the
+document end. This padding lives in `editorProseClass`, not in editor CSS —
+it is geometry, owned by `editor-column.ts`.
+
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
 

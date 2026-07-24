@@ -60,8 +60,11 @@ instead of `console.log`.
 
 - Server diagnostics go through `EventSink` / `emitEvent`.
 - Stdout is authoritative and lands interleaved in `logs/portless.log` during
-  local dev. `LOG_DIR` adds a best-effort daily JSONL mirror at
-  `logs/events/YYYY-MM-DD.jsonl`; files are day-pruned, not an audit log.
+  local dev. The dev stack pins `LOG_DIR` to the absolute repo-root
+  `logs/events/` directory, so its best-effort daily JSONL mirror lands at
+  `logs/events/YYYY-MM-DD.jsonl` regardless of each service's working
+  directory. An absolute `LOG_DIR` override is honored; relative overrides are
+  ignored. Files are day-pruned, not an audit log.
 - The local output sink holds at most 5,000 pending events. Output backpressure
   drops oldest first; the next successful write prepends an
   `observability.sink.dropped` record with the loss count.

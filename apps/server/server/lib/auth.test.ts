@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts/runtime";
+import { createApp, toWebHandler } from "nitro/h3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInMemoryUserRepository,
@@ -85,10 +86,29 @@ function requestWithCookie(cookie: string | null): Request {
 function createTestProjectBootstrap(): {
   projects: ProjectBootstrapRepository;
   bootstrapCalls: number;
+  readinessChecks: number;
   personalProjectId: ProjectId | null;
 } {
   let personalProjectId: ProjectId | null = null;
   let bootstrapCalls = 0;
+  let readinessChecks = 0;
+  let ready = false;
+
+  async function ensureDefaultBootstrap() {
+    bootstrapCalls += 1;
+    personalProjectId = randomUUID() as ProjectId;
+    ready = true;
+    return {
+      projectId: personalProjectId,
+      workId: randomUUID() as never,
+      threadId: randomUUID() as never,
+      documentId: randomUUID() as never,
+      contextSourceId: randomUUID() as never,
+      agentDefinitionId: randomUUID() as never,
+      uri: "manuscript://chapter-1.md" as never,
+    };
+  }
+
   return {
     get personalProjectId() {
       return personalProjectId;
@@ -96,23 +116,19 @@ function createTestProjectBootstrap(): {
     get bootstrapCalls() {
       return bootstrapCalls;
     },
+    get readinessChecks() {
+      return readinessChecks;
+    },
     projects: {
       async findPersonalProjectId() {
         return personalProjectId;
       },
-      async ensureDefaultBootstrap() {
-        bootstrapCalls += 1;
-        personalProjectId = randomUUID() as ProjectId;
-        return {
-          projectId: personalProjectId,
-          workId: randomUUID() as never,
-          threadId: randomUUID() as never,
-          documentId: randomUUID() as never,
-          contextSourceId: randomUUID() as never,
-          agentDefinitionId: randomUUID() as never,
-          uri: "manuscript://chapter-1.md" as never,
-        };
+      async ensureDefaultBootstrapReady() {
+        readinessChecks += 1;
+        if (!ready) await ensureDefaultBootstrap();
+        return true;
       },
+      ensureDefaultBootstrap,
     },
   };
 }
@@ -255,12 +271,14 @@ describe("WorkOS request auth", () => {
       projects: bootstrap.projects,
     });
     expect(second.userId).toBe(resolved.userId);
-    expect(bootstrap.bootstrapCalls).toBe(2);
+    expect(bootstrap.readinessChecks).toBe(2);
+    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 });
 
 describe("auth principal provisioning", () => {
   let provisionAuthenticatedUser: typeof import("./auth.js").provisionAuthenticatedUser;
+  let AccountLinkConflictError: typeof import("../domains/projects/index.js").AccountLinkConflictError;
 
   beforeAll(async () => {
     process.env.WORKOS_API_KEY = process.env.WORKOS_API_KEY ?? "dev-workos-key";
@@ -269,6 +287,8 @@ describe("auth principal provisioning", () => {
     process.env.WORKOS_REDIRECT_URI =
       process.env.WORKOS_REDIRECT_URI ?? "https://app.meridian.localhost/api/auth/callback";
     provisionAuthenticatedUser = (await import("./auth.js")).provisionAuthenticatedUser;
+    AccountLinkConflictError = (await import("../domains/projects/index.js"))
+      .AccountLinkConflictError;
   });
 
   it("maps external auth to an internal user idempotently", async () => {
@@ -295,10 +315,92 @@ describe("auth principal provisioning", () => {
     );
 
     expect(secondUserId).toBe(firstUserId);
-    expect(bootstrap.bootstrapCalls).toBe(2);
+    expect(bootstrap.readinessChecks).toBe(2);
+    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 
-  it("rechecks bootstrap completion for an existing personal project", async () => {
+  it("surfaces account-link conflicts as a structured 409 without bootstrapping", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    users.ensureUser = async () => {
+      throw new AccountLinkConflictError();
+    };
+
+    await expect(
+      provisionAuthenticatedUser(
+        {
+          externalId: "user_conflict",
+          email: "conflict@example.com",
+          name: "Conflict User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      data: { code: "account_link_conflict" },
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+    });
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("serializes account-link conflicts without provider or internal identities", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    users.ensureUser = async () => {
+      throw new AccountLinkConflictError();
+    };
+    const app = createApp();
+    app.use(async () => {
+      await provisionAuthenticatedUser(
+        {
+          externalId: "user_conflict",
+          email: "conflict@example.com",
+          name: "Conflict User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      );
+    });
+
+    const response = await toWebHandler(app)(new Request("https://server.localhost/api/test"));
+    const body = await response.text();
+    expect(response.status).toBe(409);
+    expect(JSON.parse(body)).toEqual({
+      status: 409,
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+      data: { code: "account_link_conflict" },
+    });
+    expect(body).not.toContain("user_conflict");
+    expect(body).not.toContain("conflict@example.com");
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("preserves unrelated provisioning failures", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    const failure = new Error("database unavailable");
+    users.ensureUser = async () => {
+      throw failure;
+    };
+
+    await expect(
+      provisionAuthenticatedUser(
+        {
+          externalId: "user_failure",
+          email: "failure@example.com",
+          name: "Failure User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      ),
+    ).rejects.toBe(failure);
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("skips deep bootstrap after durable readiness completes", async () => {
     const users = createInMemoryUserRepository();
     const bootstrap = createTestProjectBootstrap();
     const externalUser = {
@@ -312,6 +414,32 @@ describe("auth principal provisioning", () => {
     expect(bootstrap.bootstrapCalls).toBe(1);
 
     await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
-    expect(bootstrap.bootstrapCalls).toBe(2);
+    expect(bootstrap.readinessChecks).toBe(2);
+    expect(bootstrap.bootstrapCalls).toBe(1);
+  });
+
+  it("does not fail authentication while bootstrap seed repair remains pending", async () => {
+    const users = createInMemoryUserRepository();
+    const externalUser = {
+      externalId: "user_bootstrap_seed_failure",
+      email: "bootstrap-seed-failure@example.com",
+      name: "Bootstrap User",
+      avatarUrl: null,
+    };
+    const projects: ProjectBootstrapRepository = {
+      async findPersonalProjectId() {
+        return null;
+      },
+      async ensureDefaultBootstrapReady() {
+        return false;
+      },
+      async ensureDefaultBootstrap() {
+        throw new Error("deep bootstrap should remain behind the readiness port");
+      },
+    };
+
+    await expect(
+      provisionAuthenticatedUser(externalUser, { users, projects }),
+    ).resolves.toBeTruthy();
   });
 });

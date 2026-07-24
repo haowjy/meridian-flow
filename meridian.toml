@@ -24,7 +24,7 @@
 # Per-spawn overrides for wait yield (also accepted under [timeouts]).
 # default_wait_yield_seconds = 3000.0
 # min_wait_yield_seconds = 30.0
-deny_headless_harnesses = ["claude"]
+# deny_headless_harnesses = ["claude"]
 
 # -- Harness default models -------------------------------------------------
 [harness]

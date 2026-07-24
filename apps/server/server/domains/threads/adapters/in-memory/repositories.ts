@@ -4,6 +4,7 @@
  * aggregate). For tests/local dev; shares creation semantics via thread-create.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
@@ -12,6 +13,7 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -159,6 +161,8 @@ export function createInMemoryRepositories(
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
   const lastOpenedByThreadUser = new Map<string, string>();
+  const transactionContext = new AsyncLocalStorage<boolean>();
+  let transactionTail: Promise<void> = Promise.resolve();
 
   function openedKey(threadId: ThreadId, userId: string): string {
     return `${threadId}:${userId}`;
@@ -440,6 +444,14 @@ export function createInMemoryRepositories(
       const turn = defaultTurn(input);
       const existing = turns.get(turn.id);
       if (existing) return existing;
+      if (
+        !turn.prevTurnId &&
+        [...turns.values()].some(
+          (candidate) => candidate.threadId === turn.threadId && !candidate.prevTurnId,
+        )
+      ) {
+        throw new TurnStartConflictError(turn.threadId, "already_exists");
+      }
       turns.set(turn.id, turn);
       const thread = threads.get(turn.threadId);
       if (thread) {
@@ -723,32 +735,58 @@ export function createInMemoryRepositories(
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
     async transaction(operation) {
-      const threadsSnapshot = new Map(threads);
-      const turnsSnapshot = new Map(turns);
-      const blocksSnapshot = new Map(blocks);
-      const modelResponsesSnapshot = new Map(modelResponses);
-      const threadDocumentsSnapshot = new Map(threadDocuments);
-      const documentTouchesSnapshot = new Map(documentTouches);
-      const threadWorksSnapshot = new Map(threadWorks);
+      if (transactionContext.getStore()) return operation();
+
+      const previous = transactionTail;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      transactionTail = previous.then(
+        () => gate,
+        () => gate,
+      );
+      await previous.catch(() => undefined);
       try {
-        return await operation();
-      } catch (error) {
-        threads.clear();
-        for (const entry of threadsSnapshot) threads.set(...entry);
-        turns.clear();
-        for (const entry of turnsSnapshot) turns.set(...entry);
-        blocks.clear();
-        for (const entry of blocksSnapshot) blocks.set(...entry);
-        modelResponses.clear();
-        for (const entry of modelResponsesSnapshot) modelResponses.set(...entry);
-        threadDocuments.clear();
-        for (const entry of threadDocumentsSnapshot) threadDocuments.set(...entry);
-        documentTouches.clear();
-        for (const entry of documentTouchesSnapshot) documentTouches.set(...entry);
-        threadWorks.clear();
-        for (const entry of threadWorksSnapshot) threadWorks.set(...entry);
-        throw error;
+        return await transactionContext.run(true, async () => {
+          const threadsSnapshot = new Map(threads);
+          const turnsSnapshot = new Map(turns);
+          const blocksSnapshot = new Map(blocks);
+          const modelResponsesSnapshot = new Map(modelResponses);
+          const threadDocumentsSnapshot = new Map(threadDocuments);
+          const documentTouchesSnapshot = new Map(documentTouches);
+          const threadWorksSnapshot = new Map(threadWorks);
+          try {
+            return await operation();
+          } catch (error) {
+            threads.clear();
+            for (const entry of threadsSnapshot) threads.set(...entry);
+            turns.clear();
+            for (const entry of turnsSnapshot) turns.set(...entry);
+            blocks.clear();
+            for (const entry of blocksSnapshot) blocks.set(...entry);
+            modelResponses.clear();
+            for (const entry of modelResponsesSnapshot) modelResponses.set(...entry);
+            threadDocuments.clear();
+            for (const entry of threadDocumentsSnapshot) threadDocuments.set(...entry);
+            documentTouches.clear();
+            for (const entry of documentTouchesSnapshot) documentTouches.set(...entry);
+            threadWorks.clear();
+            for (const entry of threadWorksSnapshot) threadWorks.set(...entry);
+            throw error;
+          }
+        });
+      } finally {
+        release();
       }
+    },
+    async runTurnStartTransition(threadId, expectedActiveLeafTurnId, operation) {
+      return this.transaction(async () => {
+        if (threads.get(threadId)?.activeLeafTurnId !== expectedActiveLeafTurnId) {
+          throw new TurnStartConflictError(threadId, "already_running");
+        }
+        return operation();
+      });
     },
     async recordModelResponseUsage(input) {
       const modelResponseResult = await modelResponseRepo.create(input.response);

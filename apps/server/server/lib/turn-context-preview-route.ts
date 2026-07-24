@@ -3,7 +3,6 @@
  * read-only preview of the next turn's model context (system prompt, tools, gateway params).
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
 import type { TurnContextPreview } from "@meridian/contracts/threads";
 import type { PackageRepository } from "../domains/packages/index.js";
 import { loadThreadConversationContext } from "../domains/runtime/loop/fork-thread-context.js";
@@ -31,16 +30,11 @@ export async function handleGetTurnContextPreview(
     throwHttpInterruptForStatus(404, "Thread not found");
   }
 
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: deps.repos.threads, projects: deps.projectRepo },
     input.threadId,
     input.userId,
   );
-
-  const thread = await deps.repos.threads.findById(input.threadId as ThreadId);
-  if (!thread) {
-    throwHttpInterruptForStatus(404, "Thread not found");
-  }
 
   const conversation = await loadThreadConversationContext(
     {

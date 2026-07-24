@@ -7,10 +7,13 @@ import { requireAppUser } from "../../../../../lib/auth-gate.js";
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: app.threadRepos.threads, projects: app.projectRepo },
     threadId,
     user.userId,
   );
-  return { version: 1, shells: await app.changeTrails.listShells(threadId) };
+  return {
+    version: 1,
+    shells: await app.changeTrails.listShells(thread.id as ThreadId),
+  };
 });

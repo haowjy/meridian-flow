@@ -10,8 +10,8 @@ import {
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type { DrizzleDb } from "../shared/drizzle-transaction.js";
+import { isUuid } from "../shared/uuid.js";
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
 
 export type DocumentAccessState = "available" | "deleted";
@@ -66,7 +66,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
     documentId: string,
     projectId?: ProjectId,
   ): Promise<DocumentAccessState | null> {
-    if (!UUID_PATTERN.test(documentId)) return null;
+    if (!isUuid(documentId)) return null;
     const [row] = await db
       .select({
         documentDeletedAt: documents.deletedAt,
@@ -97,7 +97,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
     userId: UserId,
     documentId: string,
   ): Promise<DocumentAccessState | null> {
-    if (!UUID_PATTERN.test(documentId)) return null;
+    if (!isUuid(documentId)) return null;
     const [anchor] = await tx
       .select({
         documentDeletedAt: documents.deletedAt,
@@ -138,7 +138,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
   }
 
   async function projectIdForDocument(documentId: string): Promise<ProjectId | null> {
-    if (!UUID_PATTERN.test(documentId)) return null;
+    if (!isUuid(documentId)) return null;
     const [row] = await db
       .select({
         projectId: effectiveProjectId,

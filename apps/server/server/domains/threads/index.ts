@@ -17,6 +17,10 @@ export {
   projectOrchestratorEvents,
 } from "./domain/orchestrator-event-projector.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
+export {
+  TurnStartConflictError,
+  type TurnStartConflictReason,
+} from "./domain/turn-start-transition.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export { requireThreadOwner } from "./thread-access.js";

@@ -9,7 +9,11 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  await requireThreadOwner({ threads: repos.threads, projects: projectRepo }, threadId, userId);
-  await repos.threads.softDelete(threadId);
+  const thread = await requireThreadOwner(
+    { threads: repos.threads, projects: projectRepo },
+    threadId,
+    userId,
+  );
+  await repos.threads.softDelete(thread.id);
   setResponseStatus(event, 204);
 });

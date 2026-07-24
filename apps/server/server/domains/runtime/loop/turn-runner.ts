@@ -33,7 +33,11 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { ThreadEventHub, TurnRepository } from "../../threads/index.js";
+import {
+  type ThreadEventHub,
+  type TurnRepository,
+  TurnStartConflictError,
+} from "../../threads/index.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { RunTurnPort } from "./run-turn-port.js";
 
@@ -143,7 +147,7 @@ export function createTurnRunner(deps: {
       snapshotFloorNextSeq: string;
     }> {
       if (running.has(input.threadId)) {
-        throw new Error(`Turn already running for thread: ${input.threadId}`);
+        throw new TurnStartConflictError(input.threadId, "already_running");
       }
 
       assertConnectionTokenLive(input.connectionToken);

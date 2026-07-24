@@ -97,6 +97,51 @@
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
+- `apps/server`: request UUIDs now share one canonical hyphenated wire grammar,
+  normalize uppercase IDs, accept every UUID version/variant, and reject malformed
+  HTTP/WS IDs before Postgres can turn them into `22P02` 500s (#357).
+- `apps/server`: authenticated request fan-out now reads a durable bootstrap-ready
+  flag instead of re-locking and re-seeding completed default workspaces; seed
+  failures stay repairable without failing unrelated requests (#358).
+- `apps/server`: concurrent turn starts now serialize on the thread row and
+  return a 409 conflict instead of leaking PostgreSQL's single-root violation.
+- `agent-edit`: find-all now replaces exact same-block ranges without re-authoring
+  untouched writer prose or normalizing whitespace around deletions, and adjacent
+  structural matches no longer fail on deleted predecessor anchors. Failed
+  multi-edit applies and provenance-writer failures restore the session's pre-write
+  document; retained roots bypass continuation-fact rematerialization.
+- `apps/server`: authentication now rejects cross-principal email collisions
+  with a structured 409 instead of adopting the existing Meridian account.
+- `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
+  branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
+  PR evidence, GitHub failures, and refs that move before execution are refused.
+- `tools/dev`: restart now terminates only its owned tmux session, waits for
+  fixed ports to become bindable, and refuses non-owned or uninspectable
+  listeners instead of killing processes discovered by port.
+- `tools/dev`: the app dev-transform smoke now uses an OS-assigned port reported
+  by its child, requires the child to remain alive, and enforces `/` 307 plus
+  `/login` 200 with Meridian's login-page marker.
+- CI now builds the app's production `.output`, passes validated fake config to
+  the generated Nitro server, and enforces the same exact public-route contract.
+- `tools/dev`: destructive and gate-critical scripts now compile under one
+  strict Nx typecheck target included in root `pnpm typecheck`.
+- `tools/dev`: startup failures now print the concrete portless log path, while
+  pre-launch port refusals identify the non-owned holder by PID and command.
+- `apps/app`: chat composer opens at its one-line height reliably and rotates
+  short, localized placeholders per page load — a calmer interject pool shows
+  while the AI is streaming.
+- `apps/app`: unknown tool rows show just the tool name (plus path when
+  present) instead of truncated argument dumps; in-flight tool calls show
+  present-tense labels ("Writing…", "Reading…") until they complete.
+- `apps/app`: reasoning disclosures show the full thinking text — the
+  220-character cut is gone.
+- `apps/app`: change-trail cards no longer list per-operation "Inserted text"
+  rows for pure-generative writes; writer-safety rows (sweeps, resurrections)
+  still render.
+- `apps/app`: the editor keeps the active writing line away from the viewport
+  bottom with 50vh of trailing space; clicking the empty space still places
+  the cursor at the end.
+
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

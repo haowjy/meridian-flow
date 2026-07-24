@@ -2,6 +2,7 @@
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { requireRequestId } from "../../../../../lib/request-id.js";
 import {
   handoffThreadAgent,
   type ThreadAgentSwapDeps,
@@ -10,7 +11,7 @@ import { AgentBindingNotFoundError } from "../../../../../lib/thread-creation.js
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const threadId = getRouterParam(event, "threadId") ?? "";
+  const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId");
   const body =
     (await readBody<{ targetAgent?: string | null; summary?: string | null }>(event)) ?? {};
   try {

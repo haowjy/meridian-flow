@@ -66,6 +66,11 @@ canonical internal `UserId` values from `public.users`; route and WebSocket
 boundaries verify the sealed `wos-session` cookie and provision via
 `UserRepository.ensureUser` on first login.
 
+WorkOS user ID is the sole automatic account key. Email is mutable profile
+data, not a merge key: if it is already attached to another WorkOS
+principal, HTTP auth gates return structured `409 account_link_conflict` and no
+account is provisioned or adopted.
+
 Keep provider-specific auth details in `server/lib/auth.ts` and app-side AuthKit
 helpers. Domain repositories should depend on user IDs and explicit access
 checks, not on WorkOS client objects.
@@ -140,6 +145,16 @@ and surfaces as a retryable provider error when no output has been emitted.
 `server/lib/observability.ts` owns the process-scoped deferred sink used by startup, request observability, crash policy, and app composition. `server/lib/event-sink-factory.ts` keeps the upstream composition seam but only selects Meridian-local sinks: `EVENT_PROVIDER=local` writes structured JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set, while `none`/`noop` returns the no-op sink. External provider policy is deliberately not wired into production composition yet; inject another `EventSink` later without changing route or domain code.
 
 ## Route conventions
+
+### Request IDs
+
+Values backed by Postgres `uuid` columns use the request-ID grammar in
+`server/shared/uuid.ts`: canonical 36-character hyphenated hexadecimal, any UUID
+version/variant bits, case-insensitive on input and lowercase below the parsing
+boundary. The primitive stays dependency-neutral because domain ports and
+adapters use the same grammar; `server/lib/request-id.ts` wraps it with HTTP
+error mapping. Malformed HTTP IDs become 400 responses before any repository
+call; thread WebSocket messages deliberately report not-found.
 
 ### Route-core handlers
 

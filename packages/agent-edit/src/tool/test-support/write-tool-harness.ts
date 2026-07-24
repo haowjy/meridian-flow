@@ -17,6 +17,8 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { AgentEditModel } from "../../ports/model.js";
+import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import type { ReversalNoticePort } from "../write-reversal.js";
 import { MemoryJournal } from "./recording-journal.js";
@@ -52,8 +54,11 @@ export function harness(
     >[0]["closedResponseTombstoneCap"];
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
+    model?: AgentEditModel;
+    semanticProvenance?: SemanticProvenanceWriter;
   } = {},
 ) {
+  const agentEditModel = options.model ?? model;
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
@@ -65,7 +70,8 @@ export function harness(
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
-    model,
+    model: agentEditModel,
+    semanticProvenance: options.semanticProvenance,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),
