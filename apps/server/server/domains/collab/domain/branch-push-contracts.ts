@@ -249,6 +249,7 @@ export type PushCandidate = {
   materialization: "whole" | "selected_rows";
   conflictPolicy: "refuse" | "apply_and_trail";
   sweepPolicy: "project" | "none";
+  noticePolicy: "required" | "best_effort";
 };
 
 export type CandidateBatch = {

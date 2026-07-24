@@ -201,7 +201,12 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One push commit seam**: whole, selective, and companion builders produce a
   `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
   Candidate data carries whole-vs-selected materialization, conflict/sweep policy,
-  and the shared receipt; immutable-base conflict preparation lives in
+  notice delivery policy, and the shared receipt. Whole pushes require a notice
+  recorder before projecting a destructive sweep; companion pushes preserve the
+  historical best-effort notice behavior. A companion selection with no matching
+  active content rows is a builder outcome mapped to `noop` or `already_pushed`
+  before cardinality validation; non-empty partial matches remain conflicts.
+  Immutable-base conflict preparation lives in
   `branch-push-preparation.ts`, trail and notice projection live in
   `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders capture
   through fenced completion. A durable commit requires its trail bundle. Review
