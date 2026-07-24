@@ -3,7 +3,7 @@ import { decodeNavigationPosition, validateLiveBlockRange } from "@meridian/agen
 import type * as Y from "yjs";
 import type { TrailChange } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "./document-session-registry";
-import { showLiveRangeInEditor } from "./live-range-navigation-runtime";
+import { showLiveRangeInEditor, showPeerMarkerInEditor } from "./live-range-navigation-runtime";
 import { relativePositionTargetsFragment } from "./relative-position-runtime";
 
 export type TrailNavigationResult =
@@ -20,6 +20,7 @@ export async function navigateToTrailChange(input: {
   timeoutMs?: number;
   registry?: Pick<ReturnType<typeof getDocumentSessionRegistry>, "get" | "retain" | "release">;
   showRange?: typeof showLiveRangeInEditor;
+  showMarker?: typeof showPeerMarkerInEditor;
   signal?: AbortSignal;
 }): Promise<TrailNavigationResult> {
   const cancelled = () => input.signal?.aborted === true;
@@ -42,6 +43,20 @@ export async function navigateToTrailChange(input: {
     ]);
     if (cancelled()) return { kind: "could_not_open" };
     if (session.getSnapshot().status !== "synced") return { kind: "could_not_open" };
+
+    const sessionMarker = session.markerStore
+      ?.getSnapshot()
+      .some((marker) => marker.changeId === input.change.changeId && !marker.dismissed);
+    if (sessionMarker) {
+      const showMarker = input.showMarker ?? showPeerMarkerInEditor;
+      const deadline = Date.now() + (input.timeoutMs ?? 10_000);
+      do {
+        if (cancelled()) return { kind: "could_not_open" };
+        if (showMarker(input.documentId, input.change.changeId).shown) return { kind: "shown" };
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      } while (Date.now() < deadline);
+      return { kind: "could_not_open" };
+    }
 
     let range: { start: Y.RelativePosition; end: Y.RelativePosition };
     let boundary = false;

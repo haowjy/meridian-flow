@@ -75,6 +75,8 @@ export type CreateEditorExtensionsOptions = {
   enableDraftInlineReview?: boolean;
   /** Live-session sidecar; omitted for branch/draft rooms. */
   markerStore?: SessionMarkerStore;
+  /** Resolve the writer-facing title for an agent-authored session mark. */
+  markerAgentName?: (threadId: string) => string | undefined;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -222,6 +224,7 @@ export function createEditorExtensions({
   showCollaborationDecorations,
   enableDraftInlineReview = false,
   markerStore,
+  markerAgentName,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -234,7 +237,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
     ...collaboration,
-    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore })] : []),
+    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, markerAgentName })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
 }
@@ -288,6 +291,7 @@ export function createEditorConfig({
   showCollaborationDecorations,
   enableDraftInlineReview,
   markerStore,
+  markerAgentName,
   editable = true,
   autofocus = false,
   placeholder,
@@ -311,6 +315,7 @@ export function createEditorConfig({
         showCollaborationDecorations,
         enableDraftInlineReview,
         markerStore,
+        markerAgentName,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
