@@ -153,6 +153,10 @@ msgstr "AI added text"
 msgid "AI changed text"
 msgstr "AI changed text"
 
+#: src/features/chat/DraftModeIndicator.tsx
+msgid "AI changes wait for your review"
+msgstr "AI changes wait for your review"
+
 #: src/features/chat/ChangeViewRows.tsx
 msgid "AI deleted text"
 msgstr "AI deleted text"
@@ -625,6 +629,10 @@ msgstr "Draft"
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
 msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
+
+#: src/features/chat/DraftModeIndicator.tsx
+msgid "Draft mode"
+msgstr "Draft mode"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Draft write failed"
@@ -1341,7 +1349,6 @@ msgstr "Refresh"
 msgid "remaining"
 msgstr "remaining"
 
-#: src/features/chat/ChangeViewRows.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
 msgstr "Removed"
@@ -1370,6 +1377,10 @@ msgstr "Renamed to {trimmed}"
 #: src/features/account/SettingsDialog.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Replaced a passage, including edits the agent hadn't seen yet."
+msgstr "Replaced a passage, including edits the agent hadn't seen yet."
 
 #: src/features/chat/ChatView.tsx
 msgid "Reply to the agent, or steer the analysis…"
@@ -1692,8 +1703,8 @@ msgid "This change is too old to undo."
 msgstr "This change is too old to undo."
 
 #: src/features/chat/TurnEditsCard.tsx
-msgid "This chapter is no longer available, so its change details can't be shown."
-msgstr "This chapter is no longer available, so its change details can't be shown."
+#~ msgid "This chapter is no longer available, so its change details can't be shown."
+#~ msgstr "This chapter is no longer available, so its change details can't be shown."
 
 #: src/features/chat/TurnEditsCard.tsx
 msgid "This chapter is no longer available. Copy any saved text you want to keep."

@@ -1,16 +1,20 @@
-/** Writer-protection rows inside the existing per-turn Changes view. */
+/** Peer-edit rows with recovery actions inside the existing per-turn Changes view. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
+import type {
+  TrailChangeV1 as TrailChange,
+  TrailForwardAction,
+  TrailForwardActionStateV1,
+} from "@meridian/contracts";
 import { useRef, useState } from "react";
-import { applyTrailForwardAction, type TrailChange } from "@/client/change-trails";
+import { applyTrailForwardAction } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 /** The sweep label's wording veto lives here: changing this one key changes every sweep row. */
-export const sweepRemovedLabel = () => t`Removed`;
+export const sweepRowText = () => t`Replaced a passage, including edits the agent hadn't seen yet.`;
 
 export function ChangeViewRows({
   threadId,
@@ -154,7 +158,7 @@ function ChangeViewRow({
         {protection?.kind === "resurrection" ? (
           <Trans>↻ AI brought back text you deleted</Trans>
         ) : protection?.kind === "sweep" ? (
-          sweepRemovedLabel()
+          sweepRowText()
         ) : change.kind === "insert" ? (
           <Trans>AI added text</Trans>
         ) : change.kind === "modify" ? (

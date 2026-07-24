@@ -8,6 +8,9 @@
   transport delivery, replace-set and bounded retry semantics, local-writer
   self-clear, and a headless ProseMirror decoration projection.
 - Add `write(command: "diff")` for turn-scoped, folded change-trail self-inspection.
+- `apps/app`: pure-generative AI writes no longer produce repetitive trail
+  detail rows; mixed turns show only writer-touching rows, with peer-edit
+  recovery copy. Draft threads now carry a quiet persistent mode indicator.
 - `@meridian/contracts`, `apps/server`, `apps/app`: single-source the complete
   change-trail wire model and parsers, and add the validated Yjs `change_event`
   stateless contract for session change marks.

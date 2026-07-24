@@ -153,6 +153,10 @@ msgstr ""
 msgid "AI changed text"
 msgstr ""
 
+#: src/features/chat/DraftModeIndicator.tsx
+msgid "AI changes wait for your review"
+msgstr ""
+
 #: src/features/chat/ChangeViewRows.tsx
 msgid "AI deleted text"
 msgstr ""
@@ -624,6 +628,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
+msgstr ""
+
+#: src/features/chat/DraftModeIndicator.tsx
+msgid "Draft mode"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1341,7 +1349,6 @@ msgstr ""
 msgid "remaining"
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
 msgstr ""
@@ -1369,6 +1376,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reopens your last document and chat when you switch devices"
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Replaced a passage, including edits the agent hadn't seen yet."
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
@@ -1692,8 +1703,8 @@ msgid "This change is too old to undo."
 msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx
-msgid "This chapter is no longer available, so its change details can't be shown."
-msgstr ""
+#~ msgid "This chapter is no longer available, so its change details can't be shown."
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx
 msgid "This chapter is no longer available. Copy any saved text you want to keep."

@@ -1,3 +1,4 @@
+import type { TrailChangeV1 } from "@meridian/contracts";
 import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -9,8 +10,9 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { mutateAsyncMock } = vi.hoisted(() => ({
+const { mutateAsyncMock, trailDetailMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
+  trailDetailMock: { data: [] as unknown[], isError: false },
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
@@ -18,6 +20,14 @@ vi.mock("@/client/query/useReverseMutation", () => ({
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
+}));
+vi.mock("./useAuthorizedChangeTrailDetail", () => ({
+  useAuthorizedChangeTrailDetail: () => ({
+    detail: {
+      ...trailDetailMock,
+      refetch: vi.fn(),
+    },
+  }),
 }));
 
 const { TurnEditsCard } = await import("./TurnEditsCard");
@@ -34,6 +44,41 @@ function turn(): Turn {
 }
 
 const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
+const changeTrail = {
+  trailId: "trail-1",
+  owner: { kind: "turn", threadId: "thread-1", turnId: "turn-1" },
+  state: "settled",
+  version: 1,
+  changeCount: 2,
+  sweptChangeCount: 1,
+  documentCount: 1,
+  updatedAt: "2026-07-04T00:00:00.000Z",
+  settledAt: "2026-07-04T00:00:00.000Z",
+} as const;
+
+function trailChange(changeId: string, writerTouching: boolean): TrailChangeV1 {
+  return {
+    changeId,
+    ordinal: writerTouching ? 1 : 0,
+    documentId: "document-1",
+    pushId: null,
+    receiptId: null,
+    kind: writerTouching ? "delete" : "insert",
+    beforeBlockId: null,
+    afterBlockId: null,
+    beforeText: null,
+    afterTextAtReceipt: null,
+    navigation: { kind: "unavailable", reason: "test" },
+    swept: null,
+    writerProtection: writerTouching
+      ? {
+          kind: "sweep",
+          body: { status: "available", markdown: "The writer's passage." },
+        }
+      : undefined,
+    reversible: false,
+  };
+}
 
 async function withInteractiveCard(
   props: Partial<React.ComponentProps<typeof TurnEditsCard>>,
@@ -153,5 +198,58 @@ describe("TurnEditsCard", () => {
     );
     expect(html).toContain("This change is too old to undo.");
     expect(html).not.toContain("Later edits build");
+  });
+
+  it("keeps the document line and Undo but hides pure-generative trail rows", async () => {
+    trailDetailMock.data = [
+      {
+        trailId: "trail-1",
+        documentId: "document-1",
+        documentTitle: "Chapter 1",
+        changes: [trailChange("generated", false)],
+      },
+    ];
+
+    await withInteractiveCard(
+      {
+        changeTrail,
+        navigateToChange: vi.fn(async () => ({ kind: "shown" as const })),
+      },
+      async (card) => {
+        await card.click("✎AI edited 1 chapter");
+
+        expect(document.body.textContent).toContain("chapter-1");
+        expect(document.body.textContent).toContain("Undo");
+        expect(document.querySelector("[data-change-view-row]")).toBeNull();
+        expect(document.querySelector('section[aria-label="Chapter 1"]')).toBeNull();
+      },
+    );
+  });
+
+  it("shows only writer-touching rows in a mixed turn", async () => {
+    trailDetailMock.data = [
+      {
+        trailId: "trail-1",
+        documentId: "document-1",
+        documentTitle: "Chapter 1",
+        changes: [trailChange("generated", false), trailChange("writer-touching", true)],
+      },
+    ];
+
+    await withInteractiveCard(
+      {
+        changeTrail,
+        navigateToChange: vi.fn(async () => ({ kind: "shown" as const })),
+      },
+      async (card) => {
+        await card.click("✎AI edited 1 chapter");
+
+        expect(document.querySelectorAll("[data-change-view-row]")).toHaveLength(1);
+        expect(document.body.textContent).toContain(
+          "Replaced a passage, including edits the agent hadn't seen yet.",
+        );
+        expect(document.body.textContent).not.toContain("AI added text");
+      },
+    );
   });
 });
