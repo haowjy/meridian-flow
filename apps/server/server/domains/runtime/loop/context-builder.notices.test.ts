@@ -31,15 +31,4 @@ describe("formatNotices", () => {
       ]),
     ).toContain("chapter-one, chapter-two");
   });
-
-  it("omits legacy sweep notices from model context", () => {
-    expect(
-      formatNotices([
-        notice("push_swept", {
-          affectedBlockHashes: ["missing"],
-          capturedDeletedBodies: [{ hash: "missing", body: "body_unavailable" }],
-        }),
-      ]),
-    ).toBe("");
-  });
 });

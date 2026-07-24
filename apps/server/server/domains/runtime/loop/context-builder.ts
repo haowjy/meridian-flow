@@ -310,13 +310,6 @@ export function formatNotices(notices: readonly Notice[]): string {
 function formatNotice(notice: Notice): string {
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
-  if (
-    notice.kind === "late_sweep" ||
-    notice.kind === "push_swept" ||
-    notice.kind === "checkpoint_sweep"
-  ) {
-    return "";
-  }
   if (notice.kind === "awareness_degraded") {
     const documentNames = Array.isArray(notice.data.documentNames)
       ? notice.data.documentNames.filter(

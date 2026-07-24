@@ -22,7 +22,6 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { NoticeInput, NoticePort } from "../../notices/index.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
@@ -383,7 +382,6 @@ export type BranchPushExecutorInput = {
   pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
-  notices?: NoticePort;
   /** Sealed authoring-response evidence used only to attribute automatic push reports. */
   observations?: ObservationSnapshotStore;
   writerIngressBarrier?: WriterIngressBarrier;
@@ -947,25 +945,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       threadIds: [...threadIds],
       journalOwners,
       changes: inputRecord.prepared.trailChanges,
-      ...(inputRecord.swept
-        ? {
-            transactionalNotice: {
-              kind: "push_swept",
-              scope: {
-                kind: "document",
-                documentId: inputRecord.prepared.prepared.branch.documentId,
-              },
-              message:
-                "AI applied changes that removed words not yet synced to the agent — View change",
-              data: {
-                documentId: inputRecord.prepared.prepared.branch.documentId,
-                documentName: inputRecord.documentTitle,
-                pushId: "pending",
-                ...inputRecord.swept,
-              },
-            } satisfies NoticeInput,
-          }
-        : {}),
     };
   }
 
@@ -1123,9 +1102,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
             const needsSweptTrail =
               inputPush.overlapPolicy === "apply_and_trail" &&
               gated.blindConflictedBlocks.length > 0;
-            if (needsSweptTrail && !input.notices) {
-              throw new Error("apply_and_trail requires a durable notice recorder");
-            }
             const swept = needsSweptTrail ? await pushSweptTrail(gated) : undefined;
             const trailDocumentName = await resolveDocumentTitle(phase1.branch.documentId);
             const trail = durableTrailRecord({

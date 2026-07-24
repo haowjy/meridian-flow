@@ -1,6 +1,5 @@
-/** Postgres coverage for model-context notice fan-out and destructive drains. */
+/** Postgres coverage for model-context notice recording and destructive drains. */
 
-import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -8,8 +7,6 @@ const DATABASE_URL = process.env.DATABASE_URL;
 
 const USER_ID = "00000000-0000-4000-8000-000000000301";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000302";
-const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000303";
-const DOCUMENT_ID = "00000000-0000-4000-8000-000000000304";
 const THREAD_ID = "00000000-0000-4000-8000-000000000305";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000306";
 
@@ -31,12 +28,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 1 });
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
-        schema.pendingNoticeDeliveries,
         schema.pendingNotices,
-        schema.threadDocuments,
         schema.threads,
-        schema.documents,
-        schema.contextSources,
         schema.projects,
         schema.users,
       ]);
@@ -46,18 +39,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Notice Project",
         slug: "notice-project",
-      });
-      await db.insert(schema.contextSources).values({
-        id: CONTEXT_SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-      });
-      await db.insert(schema.documents).values({
-        id: DOCUMENT_ID,
-        contextSourceId: CONTEXT_SOURCE_ID,
-        name: "chapter-one",
       });
       await db.insert(schema.threads).values([
         {
@@ -77,64 +58,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "idle",
         },
       ]);
-      await db.insert(schema.threadDocuments).values([
-        { threadId: THREAD_ID, documentId: DOCUMENT_ID, relationship: "editing" },
-        { threadId: OTHER_THREAD_ID, documentId: DOCUMENT_ID, relationship: "editing" },
-      ]);
     });
 
     afterAll(async () => {
       await db.close();
     });
 
-    it("fans a document-scoped notice out to both active threads", async () => {
+    it("drains only the requested thread and deletes delivered notices", async () => {
       const port = createDrizzleNoticePort(db);
-      await port.record({
-        kind: "checkpoint_sweep",
-        scope: { kind: "document", documentId: DOCUMENT_ID },
-        message: "Checkpoint content was discarded",
-        data: {
-          documentId: DOCUMENT_ID,
-          affectedBlockHashes: ["hash-a"],
-          capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-          beforeContentRef: 42,
-        },
-      });
+      for (const threadId of [THREAD_ID, OTHER_THREAD_ID]) {
+        await port.record({
+          kind: "awareness_degraded",
+          scope: { kind: "thread", threadId },
+          message: "Document awareness degraded",
+          data: { documentIds: [] },
+        });
+      }
 
-      await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toMatchObject([
-        { kind: "checkpoint_sweep" },
+      await expect(port.drainForModelContext(THREAD_ID)).resolves.toMatchObject([
+        { kind: "awareness_degraded", scope: { kind: "thread", threadId: THREAD_ID } },
       ]);
-      await expect(
-        port.drainForModelContext(OTHER_THREAD_ID, [DOCUMENT_ID]),
-      ).resolves.toMatchObject([{ kind: "checkpoint_sweep" }]);
-      await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toEqual([]);
-    });
-
-    it("delivers an existing document notice to a thread attached after recording", async () => {
-      await db
-        .delete(schema.threadDocuments)
-        .where(eq(schema.threadDocuments.threadId, OTHER_THREAD_ID));
-      const port = createDrizzleNoticePort(db);
-      await port.record({
-        kind: "checkpoint_sweep",
-        scope: { kind: "document", documentId: DOCUMENT_ID },
-        message: "Checkpoint content was discarded",
-        data: {
-          documentId: DOCUMENT_ID,
-          affectedBlockHashes: ["hash-a"],
-          capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-        },
-      });
-      await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toHaveLength(1);
-
-      await db.insert(schema.threadDocuments).values({
-        threadId: OTHER_THREAD_ID,
-        documentId: DOCUMENT_ID,
-        relationship: "editing",
-      });
-      await expect(port.drainForModelContext(OTHER_THREAD_ID, [DOCUMENT_ID])).resolves.toHaveLength(
-        1,
-      );
+      await expect(port.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
+      await expect(port.drainForModelContext(OTHER_THREAD_ID)).resolves.toHaveLength(1);
     });
 
     it("records inside an ambient Drizzle transaction", async () => {
@@ -146,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             kind: "awareness_degraded",
             scope: { kind: "thread", threadId: THREAD_ID },
             message: "Document awareness degraded",
-            data: { documentIds: [DOCUMENT_ID] },
+            data: { documentIds: [] },
           });
           throw new Error("roll back response transaction");
         }),

@@ -7,7 +7,6 @@ import {
   db,
   resetDatabase,
   runInDrizzleTransaction,
-  THREAD_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -132,41 +131,6 @@ describe("change trail (postgres)", () => {
       branchBroadcasts: [],
       watermarkCommits: [],
     });
-  });
-
-  it("rolls back an attempted late-sweep notice with its ambient transaction, then persists it on commit", async () => {
-    const harness = createHarness();
-    const responseId = "late-sweep-notice-response";
-    await harness.seedAndStageDestructive(responseId);
-
-    await expect(
-      runInDrizzleTransaction(db, async () => {
-        await expect(harness.commit(responseId)).resolves.toMatchObject({
-          status: "committed",
-          documents: [
-            expect.objectContaining({
-              documentId: ALPHA_ID,
-              lateSweep: expect.objectContaining({ affectedBlockHashes: expect.any(Array) }),
-            }),
-          ],
-        });
-        throw new Error("failure after late-sweep notice recording");
-      }),
-    ).rejects.toThrow("failure after late-sweep notice recording");
-
-    expect(harness.noticeRecordAttempts()).toBeGreaterThan(0);
-    expect(await harness.noticeRows()).toEqual([]);
-
-    const commitHarness = createHarness();
-    const commitResponseId = "late-sweep-notice-commit-response";
-    await commitHarness.seedAndStageDestructive(commitResponseId, BETA_ID);
-    await expect(commitHarness.commit(commitResponseId)).resolves.toMatchObject({
-      status: "committed",
-      documents: [expect.objectContaining({ lateSweep: expect.any(Object) })],
-    });
-    expect(await commitHarness.noticeRows()).toEqual([
-      expect.objectContaining({ kind: "late_sweep", scopeKind: "thread", scopeId: THREAD_ID }),
-    ]);
   });
 
   it("persists a writer edit journaled after the observation cut as swept", async () => {

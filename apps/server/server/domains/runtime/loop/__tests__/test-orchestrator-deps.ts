@@ -110,12 +110,8 @@ export function createTestNoticePort(initial: Notice[] = []): NoticePort & { row
       const notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
     },
-    async drainForModelContext(threadId, activeDocumentIds) {
-      const consumed = rows.filter((notice) =>
-        notice.scope.kind === "thread"
-          ? notice.scope.threadId === threadId
-          : activeDocumentIds.includes(notice.scope.documentId),
-      );
+    async drainForModelContext(threadId) {
+      const consumed = rows.filter((notice) => notice.scope.threadId === threadId);
       for (const notice of consumed) rows.splice(rows.indexOf(notice), 1);
       return consumed;
     },

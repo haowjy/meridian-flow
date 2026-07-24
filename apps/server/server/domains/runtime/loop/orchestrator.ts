@@ -981,8 +981,7 @@ async function* generateEvents(
       const observationCandidate = built.observationCandidate;
 
       {
-        const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
-        const notices = await deps.notices.drainForModelContext(input.threadId, activeDocumentIds);
+        const notices = await deps.notices.drainForModelContext(input.threadId);
         if (notices.length > 0) {
           const noticeMessage = noticeSystemMessage(notices);
           if (noticeMessage) {

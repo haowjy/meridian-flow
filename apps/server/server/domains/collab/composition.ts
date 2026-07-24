@@ -372,9 +372,7 @@ export function createReversalNoticePort(deps: {
       });
     },
     recordLateSweep() {
-      // The mutation echo and durable trail already report this effect. Runtime
-      // context deliberately suppresses late_sweep notices, so recording one
-      // here would create an unconsumed duplicate.
+      // The mutation echo and durable trail already report this effect.
       return Promise.resolve();
     },
   };
@@ -462,7 +460,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       codec: mdxCodec({ schema: buildDocumentSchema() }),
     },
     changeTrails,
-    deps.notices,
   );
   let writerIngressBarrier: WriterIngressBarrier | undefined;
   const branchPushIngressBarrier: WriterIngressBarrier = {
@@ -480,7 +477,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
     observations: observationSnapshots,
-    notices: deps.notices,
     writerIngressBarrier: branchPushIngressBarrier,
     changeEventDelivery: createHocuspocusChangeEventDelivery({
       hocuspocus,
@@ -1075,9 +1071,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     store: deps.store,
     latestUpdateSeq,
     markdownDocuments,
-    notices: deps.notices,
-    model,
-    codec,
     ...(authorityCallbacks
       ? {
           authority: (documentId: DocumentId) =>

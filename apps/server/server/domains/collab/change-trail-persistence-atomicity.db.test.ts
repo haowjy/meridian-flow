@@ -77,7 +77,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("atomically persists an auto-push sweep trail and rolls the push back when trail recording fails", async () => {
+  it("persists an auto-push sweep in its durable trail without a model-context notice", async () => {
     const success = createHarness();
     const successBranchId = await success.seedDestructivePush("push-swept-success");
     const beforeSuccess = await success.liveMarkdown(ALPHA_ID);
@@ -86,49 +86,12 @@ describe("change trail (postgres)", () => {
       swept: { reversible: false },
     });
     expect(await success.liveMarkdown(ALPHA_ID)).not.toEqual(beforeSuccess);
-    expect(await success.noticeRows()).toEqual([
-      expect.objectContaining({
-        kind: "push_swept",
-        data: expect.objectContaining({
-          documentName: "alpha",
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          reversible: false,
-          capturedDeletedBodies: [
-            expect.objectContaining({ body: expect.stringContaining("Writer captured body") }),
-          ],
-        }),
-      }),
-    ]);
+    expect(await success.noticeRows()).toEqual([]);
     expect(await success.trailRows()).toMatchObject({
       shells: [{}],
       details: [{}],
       outbox: [{}],
     });
-
-    await truncateDrizzleTables(db, [
-      schema.pendingNoticeDeliveries,
-      schema.pendingNotices,
-      schema.changeTrailDeliveryOutbox,
-      schema.changeTrailDocumentDetails,
-      schema.changeTrailShells,
-      schema.agentEditMutations,
-      schema.branchWriteJournal,
-      schema.pushLineage,
-      schema.documentBranches,
-      schema.documentYjsCheckpoints,
-      schema.documentYjsHeads,
-      schema.documentYjsUpdates,
-    ]);
-    const failed = createHarness();
-    const failedBranchId = await failed.seedDestructivePush("push-swept-failure");
-    const beforeFailure = await failed.liveMarkdown(ALPHA_ID);
-    failed.failNoticeRecording = true;
-    await expect(failed.autoPush(failedBranchId)).rejects.toThrow("injected notice failure");
-    expect(await failed.liveMarkdown(ALPHA_ID)).toEqual(beforeFailure);
-    expect(await failed.pushRows()).toEqual([]);
-    expect(await failed.noticeRows()).toEqual([]);
-    expect(await failed.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
   });
 
   it("rolls content, lineage, shell, detail, and outbox back at every trail insert boundary", async () => {
@@ -233,7 +196,6 @@ describe("change trail (postgres)", () => {
       schema.changeTrailDeliveryOutbox,
       schema.changeTrailDocumentDetails,
       schema.changeTrailShells,
-      schema.pendingNoticeDeliveries,
       schema.pendingNotices,
       schema.agentEditMutations,
       schema.branchWriteJournal,

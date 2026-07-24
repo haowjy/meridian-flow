@@ -895,30 +895,20 @@ export function createInMemoryAppServices(): AppServices {
 
 function createInMemoryNoticePort(): NoticePort {
   const rows: Notice[] = [];
-  const deliveredDocumentScopes = new Map<number, Set<string>>();
   let nextId = 1;
   return {
     async record(input) {
       const notice: Notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
     },
-    async drainForModelContext(threadId, activeDocumentIds) {
+    async drainForModelContext(threadId) {
       const consumed: Notice[] = [];
       for (let index = rows.length - 1; index >= 0; index -= 1) {
         const notice = rows[index];
         if (!notice) continue;
-        if (notice.scope.kind === "thread") {
-          if (notice.scope.threadId !== threadId) continue;
-          consumed.unshift(notice);
-          rows.splice(index, 1);
-          continue;
-        }
-        if (!activeDocumentIds.includes(notice.scope.documentId)) continue;
-        const deliveries = deliveredDocumentScopes.get(notice.id) ?? new Set<string>();
-        if (deliveries.has(threadId)) continue;
-        deliveries.add(threadId);
-        deliveredDocumentScopes.set(notice.id, deliveries);
+        if (notice.scope.threadId !== threadId) continue;
         consumed.unshift(notice);
+        rows.splice(index, 1);
       }
       return consumed;
     },

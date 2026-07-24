@@ -363,18 +363,6 @@ export function createBranchPushTransition(input: {
         trail: {
           ...pending.trail,
           changes: lateChanges,
-          transactionalNotice: {
-            kind: "push_swept",
-            scope: { kind: "document", documentId: pending.push.documentId },
-            message:
-              "AI applied changes that removed words not yet synced to the agent — View change",
-            data: {
-              documentId: pending.push.documentId,
-              documentName: pending.documentTitle,
-              pushId: String(pending.push.id),
-              ...swept,
-            },
-          },
         },
         swept,
       };
