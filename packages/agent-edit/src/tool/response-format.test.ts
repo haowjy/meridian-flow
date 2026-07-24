@@ -1,6 +1,6 @@
 // Guards the manual write-status error classification against union drift.
 import { describe, expect, it } from "vitest";
-import { isWriteErrorStatus } from "./response-format.js";
+import { formatTurnDiff, isWriteErrorStatus } from "./response-format.js";
 import type { WriteErrorStatus, WriteStatus } from "./types.js";
 
 const ERROR_STATUSES = {
@@ -27,5 +27,16 @@ describe("isWriteErrorStatus", () => {
     "nothing_to_undo",
   ])("does not classify the success status %s as an error", (status) => {
     expect(isWriteErrorStatus(status)).toBe(false);
+  });
+});
+
+describe("formatTurnDiff", () => {
+  it("distinguishes a missing provisional shell from a settled net-empty turn", () => {
+    expect(formatTurnDiff(null).text).toContain(
+      "Results are provisional until the turn's change trail settles.",
+    );
+    expect(
+      formatTurnDiff({ trailState: "settled", changes: [], sharedEffects: false }).text,
+    ).not.toContain("provisional");
   });
 });

@@ -3,11 +3,7 @@
 import type { TurnDiffChange, TurnDiffQuery } from "@meridian/agent-edit";
 import type { TrailChangeV1 } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import {
-  changeTrailDocumentDetails,
-  changeTrailDocumentOccurrences,
-  changeTrailShells,
-} from "@meridian/database/schema";
+import { changeTrailDocumentDetails, changeTrailShells } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 
@@ -73,22 +69,22 @@ export function createDrizzleTurnDiffQuery(db: Database): TurnDiffQuery {
 
       let sharedEffects = false;
       if (documentIds.length > 0) {
-        const [sharedOccurrence] = await db
-          .select({ documentId: changeTrailDocumentOccurrences.documentId })
-          .from(changeTrailDocumentOccurrences)
+        const [sharedDetail] = await db
+          .select({ documentId: changeTrailDocumentDetails.documentId })
+          .from(changeTrailDocumentDetails)
           .innerJoin(
             changeTrailShells,
-            eq(changeTrailShells.id, changeTrailDocumentOccurrences.trailId),
+            eq(changeTrailShells.id, changeTrailDocumentDetails.trailId),
           )
           .where(
             and(
               eq(changeTrailShells.threadId, threadId),
               eq(changeTrailShells.ownerKind, "shared"),
-              inArray(changeTrailDocumentOccurrences.documentId, documentIds),
+              inArray(changeTrailDocumentDetails.documentId, documentIds),
             ),
           )
           .limit(1);
-        sharedEffects = sharedOccurrence !== undefined;
+        sharedEffects = sharedDetail !== undefined;
       }
 
       return { trailState: shell.state, changes, sharedEffects };

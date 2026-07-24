@@ -27,7 +27,7 @@ export interface ApplySuccessResponseInput {
 export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult {
   if (!diff || diff.changes.length === 0) {
     const provisional =
-      diff && diff.trailState !== "settled"
+      diff?.trailState !== "settled"
         ? "\nResults are provisional until the turn's change trail settles."
         : "";
     return result(
