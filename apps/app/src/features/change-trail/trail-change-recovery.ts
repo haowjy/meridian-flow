@@ -31,7 +31,7 @@ type RecoveryCommandState =
 export type TrailChangeRecovery = {
   action: TrailForwardAction;
   body: string | null;
-  canRecover: boolean;
+  canExecute: boolean;
   durableState: TrailForwardActionStateV1 | undefined;
   protection: TrailChange["writerProtection"];
 };
@@ -42,10 +42,12 @@ export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
     protection?.kind === "resurrection" ? "delete-again" : "restore";
   const durableState = change.forwardActions?.[action];
   const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
+  const canExecute = Boolean(protection || change.swept || durableState);
   return {
     action,
     body: protectedBody ?? bodyFromTrailHashline(change.beforeText),
-    canRecover: Boolean(protection || change.swept || durableState),
+    canExecute:
+      canExecute && durableState?.status !== "applied" && durableState?.status !== "settled",
     durableState,
     protection,
   };
@@ -80,6 +82,7 @@ export function useTrailForwardAction(input: {
     (command.kind === "settling" &&
       (command.outcome.kind === "anchor-unavailable" ||
         command.outcome.kind === "retry-exhausted"));
+  const canExecute = recovery.canExecute && !applied && !anchorUnavailable;
 
   async function execute(): Promise<TrailRecoveryOutcome> {
     if (!input.change) return { kind: "failed" };
@@ -116,6 +119,7 @@ export function useTrailForwardAction(input: {
 
   return {
     ...recovery,
+    canExecute,
     applied,
     anchorUnavailable,
     isPending: command.kind === "pending",
@@ -144,7 +148,7 @@ function protectionFor(change: TrailChange): TrailChange["writerProtection"] {
 const EMPTY_RECOVERY: TrailChangeRecovery = {
   action: "restore",
   body: null,
-  canRecover: false,
+  canExecute: false,
   durableState: undefined,
   protection: undefined,
 };

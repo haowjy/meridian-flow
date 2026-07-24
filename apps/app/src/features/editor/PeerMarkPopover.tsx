@@ -187,7 +187,7 @@ export function PeerMarkPopover({
 
         {agentAuthor ? (
           <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
-            {recovery.canRecover && !recovery.applied ? (
+            {recovery.canExecute ? (
               <Button
                 size="sm"
                 disabled={recovery.isPending}
