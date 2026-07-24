@@ -4,6 +4,8 @@ import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
+import { changeMarkLabel } from "../change-mark-labels";
+import { collaborationColorFor } from "../collaboration-colors";
 import {
   relativePositionRuntimeFromState,
   resolveRelativePosition,
@@ -19,6 +21,31 @@ type PeerMarkerPluginState = {
   pendingClearIds: readonly string[];
 };
 
+function markerColor(marker: SessionMarker): string {
+  const identity =
+    marker.author.kind === "agent" ? marker.author.threadId : `writer:${marker.author.userId}`;
+  // Thread identity, rather than arrival order, keeps a peer's hue stable.
+  return collaborationColorFor(identity);
+}
+
+function markerLabel(marker: SessionMarker): string {
+  return marker.author.kind === "agent"
+    ? changeMarkLabel(marker.kind, marker.pureDeletionOffset)
+    : "Collaborator edited text";
+}
+
+function interactiveAttributes(marker: SessionMarker): Record<string, string> {
+  const label = markerLabel(marker);
+  return {
+    "data-peer-mark": marker.changeId,
+    "data-peer-mark-label": label,
+    role: "button",
+    tabindex: "0",
+    "aria-label": `${label}. Show change details.`,
+    style: `--peer-mark-color: ${markerColor(marker)}`,
+  };
+}
+
 function resolvedMarkerPosition(
   marker: SessionMarker,
   state: EditorState,
@@ -33,34 +60,70 @@ function resolvedMarkerPosition(
   return pos === null ? null : { type: "boundary", pos };
 }
 
+/** Count text from the resolved block start, clamping against concurrent edits. */
+function pureDeletionPosition(state: EditorState, rangeStart: number, offset: number): number {
+  const $start = state.doc.resolve(rangeStart);
+  let depth = $start.depth;
+  while (depth > 0 && !$start.node(depth).isTextblock) depth--;
+  if (!$start.node(depth).isTextblock) return rangeStart;
+  const blockStart = $start.start(depth);
+  const blockEnd = $start.end(depth);
+  let remaining = Math.max(0, offset);
+  let resolved = blockStart;
+  state.doc.nodesBetween(blockStart, blockEnd, (node, pos) => {
+    if (!node.isText || remaining === 0) return remaining > 0;
+    const length = node.text?.length ?? 0;
+    if (remaining <= length) {
+      resolved = pos + remaining;
+      remaining = 0;
+      return false;
+    }
+    remaining -= length;
+    resolved = pos + length;
+    return true;
+  });
+  return Math.min(resolved, blockEnd);
+}
+
 function buildMarkerDecorations(store: SessionMarkerStore, state: EditorState): DecorationSet {
   const decorations: Decoration[] = [];
   for (const marker of store.getSnapshot()) {
     if (marker.dismissed) continue;
     const position = resolvedMarkerPosition(marker, state);
     if (!position) continue;
-    if (position.type === "range" && position.to > position.from) {
+    const pureDeletion =
+      marker.kind === "modify" && marker.pureDeletionOffset !== null && position.type === "range";
+    if (position.type === "range" && position.to > position.from && !pureDeletion) {
       decorations.push(
         Decoration.inline(position.from, position.to, {
           class: "meridian-peer-mark--range",
-          "data-peer-mark": marker.changeId,
+          ...interactiveAttributes(marker),
         }),
       );
       continue;
     }
-    const pos = position.type === "boundary" ? position.pos : position.from;
+    const pos =
+      pureDeletion && position.type === "range"
+        ? pureDeletionPosition(state, position.from, marker.pureDeletionOffset ?? 0)
+        : position.type === "boundary"
+          ? position.pos
+          : position.from;
     decorations.push(
       Decoration.widget(
         pos,
         () => {
-          const tick = document.createElement("span");
-          tick.className =
-            marker.anchor.type === "boundary" && marker.anchor.affinity === "document_start"
-              ? "meridian-peer-mark--seam"
-              : "meridian-peer-mark--tick";
-          tick.dataset.peerMark = marker.changeId;
-          tick.setAttribute("contenteditable", "false");
-          return tick;
+          const mark = document.createElement(marker.kind === "delete" ? "div" : "span");
+          mark.className =
+            marker.kind === "delete" ? "meridian-peer-mark--seam" : "meridian-peer-mark--tick";
+          for (const [name, value] of Object.entries(interactiveAttributes(marker))) {
+            mark.setAttribute(name, value);
+          }
+          mark.setAttribute("contenteditable", "false");
+          const label = document.createElement("span");
+          label.className = "meridian-collab-cursor__label meridian-peer-mark__label";
+          label.textContent = markerLabel(marker);
+          mark.append(label);
+          return mark;
         },
         { side: -1, key: marker.changeId },
       ),

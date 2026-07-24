@@ -16,6 +16,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { COLLABORATION_CURSOR_COLORS } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import {
@@ -90,20 +91,9 @@ const lowlight = createLowlight(common);
  * CollaborationCaret writes these into inline styles, where `var()` still
  * resolves against the active theme.
  */
-const CURSOR_COLORS = [
-  "var(--color-collab-cursor-1)",
-  "var(--color-collab-cursor-2)",
-  "var(--color-collab-cursor-3)",
-  "var(--color-collab-cursor-4)",
-  "var(--color-collab-cursor-5)",
-  "var(--color-collab-cursor-6)",
-  "var(--color-collab-cursor-7)",
-  "var(--color-collab-cursor-8)",
-] as const;
-
 const DEFAULT_USER: EditorUser = {
   name: "Meridian Researcher",
-  color: CURSOR_COLORS[4],
+  color: COLLABORATION_CURSOR_COLORS[4],
 };
 
 export const COLLABORATION_Y_UNDO_TRACKED_ORIGINS = [
@@ -119,7 +109,9 @@ function pickCursorColor(awareness: Awareness): string {
       taken.add(state.user.color as string);
     }
   }
-  return CURSOR_COLORS.find((c) => !taken.has(c)) ?? CURSOR_COLORS[0];
+  return (
+    COLLABORATION_CURSOR_COLORS.find((color) => !taken.has(color)) ?? COLLABORATION_CURSOR_COLORS[0]
+  );
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
