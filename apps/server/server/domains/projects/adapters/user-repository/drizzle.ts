@@ -6,6 +6,28 @@ import { users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import type { EnsureUserInput, UserRepository } from "../../ports/user-repository.js";
 
+/**
+ * A concurrent provisioning of the same email under a *different* external id
+ * surfaces here: `onConflictDoUpdate` can only arbitrate one unique index
+ * (external_id), so a simultaneous insert that already claimed
+ * `users_email_unique` raises a raw `23505` instead of taking the update path.
+ * We converge on the row that won the race rather than tripping the 500 boundary.
+ */
+function isEmailUniqueViolation(error: unknown): boolean {
+  let cause: unknown = error;
+  while (cause) {
+    if (
+      typeof cause === "object" &&
+      (cause as { code?: unknown }).code === "23505" &&
+      (cause as { constraint_name?: unknown }).constraint_name === "users_email_unique"
+    ) {
+      return true;
+    }
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export interface DrizzleUserRepositoryDeps {
   db: Database;
 }
@@ -17,29 +39,44 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
       const now = new Date().toISOString();
-      const [row] = await db
-        .insert(users)
-        .values({
-          externalId: input.externalId,
-          email: input.email,
-          name: input.name,
-          avatarUrl: input.avatarUrl,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: users.externalId,
-          set: {
+      try {
+        const [row] = await db
+          .insert(users)
+          .values({
+            externalId: input.externalId,
             email: input.email,
             name: input.name,
             avatarUrl: input.avatarUrl,
             updatedAt: now,
-          },
-        })
-        .returning({ id: users.id });
-      if (!row) {
-        throw new Error("User provisioning did not return an internal user id");
+          })
+          .onConflictDoUpdate({
+            target: users.externalId,
+            set: {
+              email: input.email,
+              name: input.name,
+              avatarUrl: input.avatarUrl,
+              updatedAt: now,
+            },
+          })
+          .returning({ id: users.id });
+        if (!row) {
+          throw new Error("User provisioning did not return an internal user id");
+        }
+        return row.id as UserId;
+      } catch (error) {
+        if (!isEmailUniqueViolation(error)) throw error;
+        // The email is already provisioned (race winner committed first). Adopt
+        // that canonical account and refresh mutable profile fields to match the
+        // just-authenticated session. `email` is unique by schema, so one email
+        // maps to exactly one account.
+        const [existing] = await db
+          .update(users)
+          .set({ name: input.name, avatarUrl: input.avatarUrl, updatedAt: now })
+          .where(eq(users.email, input.email))
+          .returning({ id: users.id });
+        if (!existing) throw error;
+        return existing.id as UserId;
       }
-      return row.id as UserId;
     },
 
     async getLastActiveProjectId(userId: UserId): Promise<ProjectId | null> {

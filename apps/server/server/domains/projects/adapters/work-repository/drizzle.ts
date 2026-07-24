@@ -3,6 +3,7 @@ import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { isUuid } from "../../../../lib/uuid.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -52,6 +53,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       return mapWork(row);
     },
     async findById(id: WorkId): Promise<Work | null> {
+      // A non-UUID id would reach the `uuid` column and raise a Postgres parse
+      // error; treat it as not-found so callers get a clean 404, not a 500.
+      if (!isUuid(id)) return null;
       const [row] = await db.select().from(works).where(eq(works.id, id)).limit(1);
       return row ? mapWork(row) : null;
     },
