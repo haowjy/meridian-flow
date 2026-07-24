@@ -77,16 +77,15 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, emphasize the exact row |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
+| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. It renders the model and delegates bulk disposition to the review session. Chrome, not a card |
 | `DraftModeIndicator.tsx` | Quiet, informational thread-header strip shown only while the server-authoritative Work is in Draft mode. It is not a control. |
 | `ComposerWriteModeControl.tsx` | Compact Draft / Auto-apply selector beside the Writer pill. `ProjectView` resolves the thread's Work once for the provider and `ChatView`; the control reads and mutates only that Work, with server-authoritative confirmation before pushing pending drafts live. |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner for UI state, editor coordination, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
-| `draft-apply-disposition.ts` | Shared revision acquisition and response policy for whole-draft and per-card Apply |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
+| `useDraftReviewController.ts` | React adapter from query/editor/tab ports to the draft review session commands. Emits message codes (no writer-facing strings); the dock localizes |
+| `draft-review-session.ts` | The sole disposition policy: synchronous global lock, typed command outcomes, Apply response interpretation, revision acquisition, and pure review-session transitions |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 
@@ -104,7 +103,7 @@ the single clear-all path.
 Per-card Apply routes the closure-card `acceptDraft` mutation with
 `operationIds`; the server receives the vended closure class as one card, so
 there is no dependency confirmation state. Every disposition is serialized by
-one lock (`controller.isDisposing` / `acceptIsBlocked`): while any whole-draft or
+the session's synchronous lock (`controller.isDisposing`): while any whole-draft or
 per-card Apply/Discard/Undo is in flight, all mutating controls disable and a
 second card click is ignored rather than clearing the in-flight card's pending
 state. Per-card Discard routes to the server discard mutation with
@@ -112,6 +111,9 @@ state. Per-card Discard routes to the server discard mutation with
 the next preview refetch drops the operation. Keep that pending state and timer
 in the controller/session path, keyed by draft id; do not add module-global or
 component-local review/discard state.
+
+Bulk Apply/Discard is one controller command over a captured target list; the
+dock does not infer command completion from busy/idle render edges.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns

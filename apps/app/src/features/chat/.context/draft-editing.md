@@ -89,11 +89,11 @@ have a Work and do not have this gap.
 
 The composer-attached `DraftDock`, dock `Changes` view, and editor
 `DraftReviewHeader` share one server-backed draft state through
-`DraftReviewProvider`. Client review-session state has one owner:
-`useDraftReviewController` plus `draft-review-controller-transitions.ts`.
-Whole-draft and per-card Apply share revision acquisition and response policy
-through `draft-apply-disposition.ts`; the controller only coordinates that
-disposition with UI state and editor tabs.
+`DraftReviewProvider`. Client review-session policy has one owner:
+`draft-review-session.ts`. It owns the synchronous disposition lock, typed
+outcomes, revision acquisition, Apply response interpretation, and pure UI
+transitions. `useDraftReviewController` adapts React Query and editor/tab ports
+to those commands.
 
 That session owns active inline selection, stale-draft handling,
 closure/discard confirmations, inline messages, discard timers, and the inline

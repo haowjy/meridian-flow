@@ -6,6 +6,8 @@
   command, so editor marks and mounted trail rows converge on durable status.
 - `apps/app`: draft chips, dock rows, and write-mode confirmation now project
   from one canonical pending-review collection.
+- `apps/app`: draft Apply, Discard, Undo, and bulk commands now share one
+  synchronous session lock and typed outcome policy.
 B- `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

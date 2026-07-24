@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -42,48 +42,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
-
-  // Sequential Apply all / Discard all. The shared accept/reject mutation and
-  // its `isPending` gate make concurrent disposition unsafe, so we run one
-  // draft at a time against a snapshot queue captured at bulk start — the pump
-  // must not abort when the work-drafts query is still stale after a reject.
-  type BulkTarget = { documentId: string; draftId: string };
-  const [bulk, setBulk] = useState<{
-    mode: "apply" | "discard";
-    inFlightDraftId: string | null;
-    observedPending: boolean;
-    /** Snapshot captured at bulk start — the pump must not depend on live query rows. */
-    queue: BulkTarget[];
-  } | null>(null);
-  useEffect(() => {
-    if (!bulk) return;
-    if (bulk.queue.length === 0) {
-      setBulk(null);
-      return;
-    }
-    if (controller.isDisposing) {
-      if (bulk.inFlightDraftId && !bulk.observedPending) {
-        setBulk({ ...bulk, observedPending: true });
-      }
-      return;
-    }
-    if (bulk.inFlightDraftId) {
-      if (!bulk.observedPending) return;
-      const remaining = bulk.queue.filter((item) => item.draftId !== bulk.inFlightDraftId);
-      setBulk({ mode: bulk.mode, inFlightDraftId: null, observedPending: false, queue: remaining });
-      return;
-    }
-    const next = bulk.queue[0];
-    if (!next) return;
-    setBulk({ ...bulk, inFlightDraftId: next.draftId, observedPending: false });
-    const run =
-      bulk.mode === "apply"
-        ? controller.accept(next.documentId, next.draftId)
-        : controller.reject(next.documentId, next.draftId);
-    void Promise.resolve(run).catch(() => {
-      setBulk(null);
-    });
-  }, [bulk, controller.isDisposing, controller.accept, controller.reject]);
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -119,8 +77,8 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     totalCount: rows.length,
     aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
     mounted: pendingRows.length > 0,
-    inFlightDraftId: bulk?.inFlightDraftId ?? null,
-    isBusy: controller.isDisposing || bulk !== null,
+    inFlightDraftId: null,
+    isBusy: controller.isDisposing,
     needsRereview: controller.needsRereview,
     applyRefusal: controller.applyRefusal,
     reviewRow,
@@ -131,26 +89,24 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     },
     applyRow: applyDraft,
     discardRow: (row: DockRow) => controller.reject(row.documentId, row.draft.draftId),
-    startApplyAll: () =>
-      setBulk({
-        mode: "apply",
-        inFlightDraftId: null,
-        observedPending: false,
-        queue: pendingRows.map((row) => ({
+    startApplyAll: () => {
+      void controller.disposeDrafts(
+        "apply",
+        pendingRows.map((row) => ({
           documentId: row.documentId,
           draftId: row.draft.draftId,
         })),
-      }),
-    startDiscardAll: () =>
-      setBulk({
-        mode: "discard",
-        inFlightDraftId: null,
-        observedPending: false,
-        queue: pendingRows.map((row) => ({
+      );
+    },
+    startDiscardAll: () => {
+      void controller.disposeDrafts(
+        "discard",
+        pendingRows.map((row) => ({
           documentId: row.documentId,
           draftId: row.draft.draftId,
         })),
-      }),
+      );
+    },
   };
   return model;
 }

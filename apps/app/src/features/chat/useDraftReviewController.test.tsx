@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const resolveDraftOnlyTabMock = vi.fn();
-const operationAcceptMutateMock = vi.fn(
-  (_input: unknown, options: { onSuccess: (response: unknown) => void }) => {
-    options.onSuccess({ status: "partial_applied", writeId: "write-1" });
-  },
-);
+const operationAcceptMutateMock = vi.fn(async (_input: unknown) => ({
+  status: "partial_applied" as const,
+  draftId: "draft-1",
+  writeId: "write-1",
+}));
 let wholeDraftResponse: unknown = null;
 const draftPreview = {
   status: "active",
@@ -23,23 +23,16 @@ const draftPreview = {
   ],
 };
 let draftPreviewPromise: Promise<typeof draftPreview> | null = null;
-const wholeDraftAcceptMutateMock = vi.fn(
-  (_input: unknown, options: { onSuccess: (response: unknown) => void }) => {
-    if (wholeDraftResponse) options.onSuccess(wholeDraftResponse);
-  },
+const wholeDraftAcceptMutateMock = vi.fn(async (_input: unknown) =>
+  wholeDraftResponse ? wholeDraftResponse : { status: "applied" as const, draftId: "draft-1" },
 );
-const acceptMutateMock = vi.fn(
-  (
-    input: { operationIds?: readonly string[] },
-    options: { onSuccess: (response: unknown) => void },
-  ) => {
-    if (input.operationIds?.length === 1) {
-      operationAcceptMutateMock(input, options);
-      return;
-    }
-    wholeDraftAcceptMutateMock(input, options);
-  },
-);
+const acceptMutateMock = vi.fn((input: { operationIds?: readonly string[] }) => {
+  if (input.operationIds?.length === 1) {
+    return operationAcceptMutateMock(input);
+  }
+  return wholeDraftAcceptMutateMock(input);
+});
+const rejectMutateMock = vi.fn(async () => ({ status: "discarded" as const }));
 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({
@@ -51,9 +44,9 @@ vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: () => draftPreviewPromise ?? Promise.resolve(draftPreview),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
-  useAcceptDraft: () => ({ isPending: false, mutate: acceptMutateMock }),
-  useUndoDraftAccept: () => ({ isPending: false, mutate: vi.fn() }),
-  useRejectDraft: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }),
+  useAcceptDraft: () => ({ mutateAsync: acceptMutateMock }),
+  useUndoDraftAccept: () => ({ mutateAsync: vi.fn() }),
+  useRejectDraft: () => ({ mutateAsync: rejectMutateMock }),
 }));
 vi.mock("@/client/stores", () => ({
   useContextTabsStore: {
@@ -70,6 +63,7 @@ describe("useDraftReviewController", () => {
     acceptMutateMock.mockClear();
     operationAcceptMutateMock.mockClear();
     wholeDraftAcceptMutateMock.mockClear();
+    rejectMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -130,7 +124,6 @@ describe("useDraftReviewController", () => {
           draftRevisionToken: 1,
           operationIds: ["operation-1", "operation-2"],
         }),
-        expect.any(Object),
       );
     });
   });
@@ -140,6 +133,7 @@ describe("useDraftReviewController", () => {
     acceptMutateMock.mockClear();
     operationAcceptMutateMock.mockClear();
     wholeDraftAcceptMutateMock.mockClear();
+    rejectMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -167,7 +161,7 @@ describe("useDraftReviewController", () => {
       });
       const activeController = controller;
       if (!activeController) throw new Error("controller did not mount");
-      let operationApply!: Promise<void>;
+      let operationApply!: ReturnType<typeof activeController.acceptOperation>;
       await act(async () => {
         operationApply = activeController.acceptOperation("operation-1", {
           operations: [{ operationId: "operation-1" }],
@@ -177,9 +171,11 @@ describe("useDraftReviewController", () => {
           operations: [{ operationId: "operation-2" }],
         } as never);
         await activeController.accept("document-1", "draft-1");
+        await activeController.reject("document-2", "draft-2");
       });
 
       expect(wholeDraftAcceptMutateMock).not.toHaveBeenCalled();
+      expect(rejectMutateMock).not.toHaveBeenCalled();
 
       await act(async () => {
         resolvePreview(draftPreview);
