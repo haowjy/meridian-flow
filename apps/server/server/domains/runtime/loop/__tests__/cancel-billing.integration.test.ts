@@ -21,17 +21,34 @@ import {
   type MockOpenAIServer,
 } from "../../gateway/adapters/mock/server.js";
 import { createGateway } from "../../gateway/create-gateway.js";
-import type { Gateway } from "../../gateway/index.js";
+import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTurnRunner } from "../turn-runner.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
-async function collectEvents(handle: { events: AsyncIterable<OrchestratorEvent> }) {
+async function collectEvents(
+  handle: { events: AsyncIterable<OrchestratorEvent> },
+  onEvent?: (event: OrchestratorEvent) => void,
+) {
   const events: OrchestratorEvent[] = [];
-  for await (const event of handle.events) events.push(event);
+  for await (const event of handle.events) {
+    events.push(event);
+    onEvent?.(event);
+  }
   return events;
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
 }
 
 function createMockGateway(mock: MockOpenAIServer): Gateway {
@@ -56,6 +73,27 @@ function createMockGateway(mock: MockOpenAIServer): Gateway {
     defaultModel: "gpt-4.1-mini",
     retry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 },
   });
+}
+
+function observeStreamStart(gateway: Gateway): {
+  gateway: Gateway;
+  started: Promise<void>;
+} {
+  const started = deferred();
+  return {
+    started: started.promise,
+    gateway: {
+      ...gateway,
+      async *stream(request): AsyncGenerator<StreamEvent> {
+        for await (const event of gateway.stream(request)) {
+          if (event.type.endsWith(".delta")) started.resolve();
+          yield event;
+        }
+      },
+      generate: (request) => gateway.generate(request),
+      getDefaultModel: () => gateway.getDefaultModel(),
+    },
+  };
 }
 
 async function setup(gateway: Gateway) {
@@ -97,10 +135,6 @@ async function setup(gateway: Gateway) {
   return { repos, thread, creditLedger, orchestrator, runner, hub, project };
 }
 
-async function waitForStreamStart() {
-  await new Promise((resolve) => setTimeout(resolve, 50));
-}
-
 describe("cancel billing", () => {
   let mock: MockOpenAIServer;
 
@@ -120,8 +154,11 @@ describe("cancel billing", () => {
       userText: "cancel billing",
       signal: controller.signal,
     });
-    const eventsPromise = collectEvents(handle);
-    await waitForStreamStart();
+    const streamStarted = deferred();
+    const eventsPromise = collectEvents(handle, (event) => {
+      if (event.type === "stream.delta") streamStarted.resolve();
+    });
+    await streamStarted.promise;
     controller.abort();
     const events = await eventsPromise;
 
@@ -142,8 +179,11 @@ describe("cancel billing", () => {
       userText: "cancel billing",
       signal: controller.signal,
     });
-    const eventsPromise = collectEvents(handle);
-    await waitForStreamStart();
+    const streamStarted = deferred();
+    const eventsPromise = collectEvents(handle, (event) => {
+      if (event.type === "stream.delta") streamStarted.resolve();
+    });
+    await streamStarted.promise;
     controller.abort();
     await eventsPromise;
     const balanceAfterCancel = await creditLedger.getBalance({
@@ -158,7 +198,8 @@ describe("cancel billing", () => {
   });
 
   it("does not cancel the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {
-    const gateway = createMockGateway(mock);
+    const observed = observeStreamStart(createMockGateway(mock));
+    const gateway = observed.gateway;
     const { thread, creditLedger, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
     app.gateway = gateway;
@@ -209,12 +250,12 @@ describe("cancel billing", () => {
     ownerSession.open();
     expect(ownerConnectionToken.length).toBeGreaterThan(0);
 
-    const startPromise = runner.startTurn({
+    await runner.startTurn({
       threadId: thread.id,
       userText: "cancel billing",
       connectionToken: ownerConnectionToken,
     });
-    await waitForStreamStart();
+    await observed.started;
     const turnId = runner.getRunningTurnId(thread.id);
     expect(turnId).not.toBeNull();
 
@@ -222,7 +263,6 @@ describe("cancel billing", () => {
     expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
 
     await app.runner.cancel(thread.id, turnId as NonNullable<typeof turnId>);
-    await startPromise;
     const deadline = Date.now() + 5_000;
     while (runner.getRunningTurnId(thread.id) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -237,7 +277,8 @@ describe("cancel billing", () => {
   });
 
   it("does not cancel turns when another subscribed WebSocket disconnects", async () => {
-    const gateway = createMockGateway(mock);
+    const observed = observeStreamStart(createMockGateway(mock));
+    const gateway = observed.gateway;
     const { thread, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
     app.gateway = gateway;
@@ -286,12 +327,12 @@ describe("cancel billing", () => {
     };
     createThreadWebSocketSession(ownerPeer).open();
 
-    const startPromise = runner.startTurn({
+    await runner.startTurn({
       threadId: thread.id,
       userText: "cancel billing",
       connectionToken: ownerConnectionToken,
     });
-    await waitForStreamStart();
+    await observed.started;
     const turnId = runner.getRunningTurnId(thread.id);
     expect(turnId).not.toBeNull();
 
@@ -311,11 +352,11 @@ describe("cancel billing", () => {
     expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
 
     await app.runner.cancel(thread.id, turnId as NonNullable<typeof turnId>);
-    await startPromise;
   });
 
   it("does not cancel tokenless runs when a subscribed WebSocket disconnects", async () => {
-    const gateway = createMockGateway(mock);
+    const observed = observeStreamStart(createMockGateway(mock));
+    const gateway = observed.gateway;
     const { thread, runner, hub, repos } = await setup(gateway);
     const app = createInMemoryAppServices();
     app.gateway = gateway;
@@ -350,11 +391,11 @@ describe("cancel billing", () => {
       },
     };
 
-    const startPromise = runner.startTurn({
+    await runner.startTurn({
       threadId: thread.id,
       userText: "cancel billing",
     });
-    await waitForStreamStart();
+    await observed.started;
     const turnId = runner.getRunningTurnId(thread.id);
     expect(turnId).not.toBeNull();
 
@@ -374,6 +415,5 @@ describe("cancel billing", () => {
     expect(runner.getRunningTurnId(thread.id)).toBe(turnId);
 
     await app.runner.cancel(thread.id, turnId as NonNullable<typeof turnId>);
-    await startPromise;
   });
 });

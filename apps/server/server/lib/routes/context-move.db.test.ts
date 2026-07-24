@@ -1,7 +1,7 @@
 /** Postgres-backed coverage for promoting work-scoped scratch documents. */
 
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -12,7 +12,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("context move route (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const { Hocuspocus } = await import("@hocuspocus/server");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
@@ -25,6 +24,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleProjectBootstrapRepository } = await import(
       "../../domains/projects/index.js"
+    );
+    const { useRollbackTestDatabase } = await import(
+      "../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createUntitledContextDocument } = await import(
@@ -45,27 +47,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const USER_ID = "00000000-0000-4000-8000-000000000941";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000942";
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        schema.branchWriteJournal,
-        schema.pushLineage,
-        schema.documentBranches,
-        schema.documentYjsCheckpoints,
-        schema.documentYjsHeads,
-        schema.documentYjsUpdates,
-        schema.folders,
-        schema.documents,
-        schema.contextSources,
-        schema.works,
-        schema.projects,
-        schema.users,
-      ]);
+      db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "scratch-promotion"));
     });
-
-    afterAll(async () => db.$client.end());
 
     function createBoundCollab() {
       const collab = createCollabDomain({

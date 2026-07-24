@@ -1,11 +1,21 @@
 #!/usr/bin/env tsx
 /** Run the shared DB suite against a database owned by this invocation. */
 import { spawn } from "node:child_process";
-import { dropDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
+import {
+  cloneDatabaseForUrl,
+  dropDatabaseForUrl,
+  ensureDatabaseForUrl,
+  isLocalDevPostgres,
+} from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
-import { managedTestDatabaseUrl } from "./lib/test-db-lifecycle";
+import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
-function run(repoRoot: string, args: string[], databaseUrl: string): Promise<number> {
+function run(
+  repoRoot: string,
+  args: string[],
+  databaseUrl: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn("pnpm", args, {
       cwd: repoRoot,
@@ -14,6 +24,7 @@ function run(repoRoot: string, args: string[], databaseUrl: string): Promise<num
         DATABASE_URL: databaseUrl,
         RUN_DB_TESTS: "1",
         TEST_DB_ALLOW_DESTRUCTIVE: "1",
+        ...extraEnv,
       },
       stdio: "inherit",
     });
@@ -42,6 +53,9 @@ async function main(): Promise<void> {
   }
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
+  const workerDatabaseUrls = local
+    ? Array.from({ length: 4 }, (_, index) => managedTestDatabaseWorkerUrl(databaseUrl, index + 1))
+    : [];
 
   try {
     if (local) {
@@ -54,16 +68,29 @@ async function main(): Promise<void> {
       if (functionsExit !== 0) {
         throw new Error(`DB function installation exited with status ${functionsExit}.`);
       }
+      await Promise.all(
+        workerDatabaseUrls.map(async (workerDatabaseUrl) => {
+          const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl);
+          console.log(`DB tests: cloned worker database ${workerDb}.`);
+        }),
+      );
     }
 
     const testExit = await run(
       repoRoot,
       ["exec", "vitest", "run", "--config", "apps/server/vitest.db.config.ts", ...testArgs],
       databaseUrl,
+      workerDatabaseUrls.length > 0
+        ? { DB_TEST_DATABASE_URLS: JSON.stringify(workerDatabaseUrls) }
+        : {},
     );
     process.exitCode = testExit;
   } finally {
     if (local) {
+      for (const workerDatabaseUrl of workerDatabaseUrls) {
+        const result = await dropDatabaseForUrl(workerDatabaseUrl, mainDatabaseNames);
+        console.log(`DB tests: dropped worker database ${result.targetDb}.`);
+      }
       const result = await dropDatabaseForUrl(databaseUrl, mainDatabaseNames);
       console.log(`DB tests: dropped owned database ${result.targetDb}.`);
     }

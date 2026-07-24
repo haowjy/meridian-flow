@@ -1,6 +1,6 @@
 /** Postgres regression coverage for bootstrap-owned durable document authority head. */
 
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -12,7 +12,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("project bootstrap document authority head (postgres)", async () => {
     const { Hocuspocus } = await import("@hocuspocus/server");
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -20,18 +19,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
+    const { useRollbackTestDatabase } = await import(
+      "../../test-support/rollback-test-database.js"
+    );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
 
     const USER_ID = "00000000-0000-4000-8000-000000000317";
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "bootstrap-authority"));
     });
-
-    afterAll(async () => db.$client.end());
 
     function createBoundCollab() {
       const collab = createCollabDomain({
