@@ -1,9 +1,8 @@
 /** Drizzle-backed lookup functions used by collab service composition. */
-import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, turns, works } from "@meridian/database/schema";
+import { documents, turns } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
-import type { WriteMode } from "../contracts.js";
 
 export function createDrizzleCollabLookups(db: Database) {
   return {
@@ -22,18 +21,6 @@ export function createDrizzleCollabLookups(db: Database) {
         .where(eq(turns.id, turnId))
         .limit(1);
       return row?.threadId ?? null;
-    },
-    async resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null> {
-      const [row] = await db
-        .select({ aiWriteMode: works.aiWriteMode })
-        .from(works)
-        .where(eq(works.id, workId))
-        .limit(1);
-      return row?.aiWriteMode === "draft"
-        ? "draft"
-        : row?.aiWriteMode === "direct"
-          ? "direct"
-          : null;
     },
   };
 }

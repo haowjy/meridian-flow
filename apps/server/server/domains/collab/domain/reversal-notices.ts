@@ -34,12 +34,8 @@ export function documentTitleFromUri(uri: string | null): string | null {
 
 export function createDocumentPresentationResolver(resolveDocumentUri: DocumentUriResolver) {
   return {
-    resolveUri: resolveDocumentUri,
     async resolveTitle(documentId: string): Promise<string | null> {
       return documentTitleFromUri(await resolveDocumentUri(documentId));
-    },
-    async resolveTitleOrUntitled(documentId: string): Promise<string> {
-      return documentTitleFromUri(await resolveDocumentUri(documentId)) ?? "Untitled document";
     },
   };
 }

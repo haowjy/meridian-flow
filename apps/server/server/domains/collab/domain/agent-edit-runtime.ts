@@ -98,8 +98,6 @@ export function createAgentEditRuntime(input: {
     markdownDocuments,
     markupCodec,
     model,
-    runDocumentWriteHook: input.runDocumentWriteHook,
-    schema,
     semanticProvenance,
   };
 }

@@ -44,11 +44,9 @@ const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
-const {
-  createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthorityHead,
-  replaceDocumentAuthorityHeadGeneration,
-} = await import("../adapters/drizzle-document-authority-head.js");
+const { readDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
+  "../adapters/drizzle-document-authority-head.js"
+);
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
@@ -58,7 +56,6 @@ const {
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } = await import("../adapters/agent-edit-observability.js");
-const { createCollabFacade } = await import("../collab-facade.js");
 const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
@@ -574,39 +571,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentUri,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
   });
-  const collab = createCollabFacade({
-    transport: {} as never,
-    authorityHeads: createDrizzleDocumentAuthorityHeads(db),
-    agentEdit: { agentEdit: () => agentEdit },
-    reversal: turnReversal,
-    documents: {
-      ensureDocument: persistence.lifecycle.ensureDocument,
-      readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
-      seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
-      writeDocument: runtime.markdownDocuments.writeDocument,
-      editDocument: runtime.markdownDocuments.editDocument,
-    },
-    projections: { refreshDocumentProjection: projections.refresh },
-    lineage: {
-      listLiveDocumentsForTurn: async () => [],
-      listEditedDocumentsForTurn: async () => [],
-      getTurnReceiptChip: async () => null,
-    },
-    responses: responseFinalizer,
-    checkpoints: {} as never,
-    attribution: {} as never,
-    trailForwardActions: {} as never,
-    branchPush: {
-      recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
-      pushToLive: branchPush.pushToLive,
-      pushSelectedToLive: branchPush.pushSelectedToLive,
-      countUnpushedRowsForWork: durableWorkPushPolicyStore.countUnpushedRowsForWork,
-      setWorkPushPolicy: branchPush.setWorkPushPolicy,
-      markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
-    },
-    branchPeers: {} as never,
-    drafts,
-  });
+  const collab = {
+    agentEdit: () => agentEdit,
+    reverseTurn: turnReversal.reverseTurn,
+    writeDocument: runtime.markdownDocuments.writeDocument,
+    ...responseFinalizer,
+    ...drafts,
+  };
 
   async function seedAndStage(responseId: string) {
     await collab.writeDocument({
