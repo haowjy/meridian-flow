@@ -49,6 +49,7 @@ export const projects = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     isPersonal: boolean("is_personal").notNull().default(false),
+    defaultBootstrapReady: boolean("default_bootstrap_ready").notNull().default(false),
     systemPrompt: text("system_prompt"),
     settings: jsonbDefault("settings").$type<ProjectSettings>(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),

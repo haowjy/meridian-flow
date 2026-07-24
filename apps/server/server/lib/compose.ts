@@ -689,6 +689,9 @@ export function createInMemoryAppServices(): AppServices {
       async findPersonalProjectId() {
         return null;
       },
+      async ensureDefaultBootstrapReady() {
+        return false;
+      },
       async ensureDefaultBootstrap() {
         throw new Error("in-memory projects are not implemented");
       },

@@ -400,6 +400,13 @@
       "when": 1784347578092,
       "tag": "0056_aspiring_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784905888302,
+      "tag": "0057_bitter_meteorite",
+      "breakpoints": true
     }
   ]
 }

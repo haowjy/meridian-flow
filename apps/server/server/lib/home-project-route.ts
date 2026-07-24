@@ -20,7 +20,6 @@ export async function handleGetHomeProjectRequest(
   deps: HomeProjectRouteDeps,
   userId: UserId,
 ): Promise<HomeProjectResponse> {
-  const bootstrap = await deps.projects.ensureDefaultBootstrap(userId);
   const lastActiveProjectId = await deps.users.getLastActiveProjectId(userId);
   if (lastActiveProjectId) {
     const project = await deps.projectRepo.findById(lastActiveProjectId);
@@ -29,5 +28,9 @@ export async function handleGetHomeProjectRequest(
     }
   }
 
+  const personalProjectId = await deps.projects.findPersonalProjectId(userId);
+  if (personalProjectId) return { projectId: personalProjectId };
+
+  const bootstrap = await deps.projects.ensureDefaultBootstrap(userId);
   return { projectId: bootstrap.projectId as ProjectId };
 }
