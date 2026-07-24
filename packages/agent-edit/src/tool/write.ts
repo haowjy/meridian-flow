@@ -13,8 +13,6 @@ import type {
   RedoResult,
   ResponseCommitSuccessResult,
   ResponseRollbackResult,
-  TurnRedoResult,
-  TurnUndoResult,
   UndoResult,
   WriteContext,
   WriteFunction,
@@ -63,8 +61,6 @@ export interface WriteTool {
   undo(docId: string, threadId: string): Promise<UndoResult>;
   redo(docId: string, threadId: string): Promise<RedoResult>;
   reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
-  undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
-  redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
   invalidateThread(docId: string, threadId: string): Promise<void>;
 }
 
@@ -201,10 +197,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     undo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
     redo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
     reverse: reversalEndpoints.reverse,
-    undoTurn: (docId, threadId) =>
-      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
-    redoTurn: (docId, threadId) =>
-      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread: reversalEndpoints.invalidateThread,
   };
 }

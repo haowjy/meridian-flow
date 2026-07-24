@@ -350,9 +350,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(outcomeText(await restarted.redoTurn(DOC_ID, THREAD_ID))).toContain(
-        "status: reconciled",
-      );
+      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reconciled");
 
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
