@@ -40,6 +40,20 @@ export const ReadCommandSchema = BaseCommandSchema.extend({
   format: z.enum(["auto", "full", "outline"]).optional(),
 }).strict();
 
+export const DiffCommandSchema = z
+  .object({
+    command: z.literal("diff"),
+    document_id: z
+      .string()
+      .optional()
+      .describe("Optionally narrow the turn's folded net effect to one document."),
+    tool_use_id: z.string().optional(),
+  })
+  .strict()
+  .describe(
+    "Read the settled net effect of this turn's writes. Results are folded across writes and provisional until the trail settles.",
+  );
+
 export const InsertCommandSchema = BaseCommandSchema.extend({
   command: z.literal("insert"),
   content: z.string(),
@@ -76,13 +90,14 @@ export const RedoCommandSchema = BaseCommandSchema.extend({
 export const WriteCommandSchema = z.discriminatedUnion("command", [
   CreateCommandSchema,
   ReadCommandSchema,
+  DiffCommandSchema,
   InsertCommandSchema,
   ReplaceCommandSchema,
   UndoCommandSchema,
   RedoCommandSchema,
 ]);
 
-export const QUERY_WRITE_COMMANDS = ["read"] as const;
+export const QUERY_WRITE_COMMANDS = ["read", "diff"] as const;
 export const MUTATING_WRITE_COMMANDS = ["create", "insert", "replace"] as const;
 export const HISTORY_WRITE_COMMANDS = ["undo", "redo"] as const;
 
@@ -94,6 +109,8 @@ export function writeCommandCategory(
   switch (command.command) {
     case "read":
       // Not pure: read rebuilds the runtime from live state and replays staged updates.
+      return "query";
+    case "diff":
       return "query";
     case "create":
     case "insert":

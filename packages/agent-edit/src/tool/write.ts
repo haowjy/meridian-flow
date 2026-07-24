@@ -140,7 +140,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtimeStore,
     threadOrigins,
   });
-  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
+  const dispatch = createWriteDispatch({
+    commands,
+    reversal: reversalEndpoints,
+    turnDiffQuery: options.turnDiffQuery,
+  });
 
   const write: WriteFunction = async (command, context = {}) => {
     const parsed = WriteCommandSchema.safeParse(command);

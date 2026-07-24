@@ -87,6 +87,13 @@ describe("WriteCommandSchema", () => {
     expect(scoped.in).toEqual([1, "c3d4"]);
   });
 
+  it("accepts a pathless turn diff with optional document narrowing", () => {
+    expect(WriteCommandSchema.parse({ command: "diff", document_id: "document-1" })).toEqual({
+      command: "diff",
+      document_id: "document-1",
+    });
+  });
+
   it("rejects only the intended strict-schema tightenings", () => {
     expect(intendedTightenings.map(([label]) => label)).toEqual([
       "extra key",
@@ -107,6 +114,7 @@ describe("WriteCommandSchema", () => {
 
   it("classifies query, mutating, and history commands", () => {
     expect(writeCommandCategory({ command: "read", file: "chapter.md" })).toBe("query");
+    expect(writeCommandCategory({ command: "diff" })).toBe("query");
     expect(writeCommandCategory({ command: "insert", file: "chapter.md", content: "Beta" })).toBe(
       "mutating",
     );
