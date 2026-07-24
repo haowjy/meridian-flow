@@ -71,7 +71,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const collab = createCollabDomain({
           db,
           documentAccess: createDrizzleDocumentAccess(db),
-          threads: { findById: async () => null },
         });
         const hocuspocus = new Hocuspocus({
           yDocOptions: { gc: false, gcFilter: () => true },
@@ -155,7 +154,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => null },
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -193,7 +191,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => null },
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -237,7 +234,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => null },
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -315,7 +311,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => null },
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -386,7 +381,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => null },
       });
       collab.bindHocuspocus(new Hocuspocus({ yDocOptions: { gc: false, gcFilter: () => true } }));
 

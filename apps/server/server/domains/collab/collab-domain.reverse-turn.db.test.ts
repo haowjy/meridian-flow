@@ -63,7 +63,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createCollabDomain({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
-        threads: { findById: async () => ({ id: THREAD_ID }) },
       });
 
     beforeEach(async () => {

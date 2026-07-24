@@ -301,7 +301,6 @@ export async function createProductionAppPorts(input: {
     documentAccess,
     eventSink,
     notices,
-    threads: threadRepos.threads,
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
