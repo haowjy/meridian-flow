@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`, `packages/database`: the PostgreSQL gate now runs every
+  registered non-collab DB contract instead of silently skipping 31 tests
+  (#377).
 - `apps/server`: collab domain policy no longer imports Drizzle or observability
   adapters; composition supplies transaction and diagnostic capabilities (#345).
 - `apps/server`: removed draft review endpoints that could only return not found,
