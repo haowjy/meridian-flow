@@ -281,7 +281,13 @@ function lowerFindMatches(
     const groupSource = group.elements
       .map((element) => serializeBlockBody(ctx, element))
       .join("\n\n");
-    const replacedSource = spliceFindMatches(groupSource, group, params.content, command);
+    const replacedSource = spliceFindMatches(
+      groupSource,
+      group.matches,
+      group.rangeStart,
+      params.content,
+      command,
+    );
     const parsed = parseReplacementRange(ctx, replacedSource);
     if (!parsed.ok) return parsed;
     const lowered = replaceScope(
@@ -308,20 +314,45 @@ function lowerPlainTextFindMatches(
   command: WriteCommandName,
 ): ResolvedEdit[] | null {
   if (!isPlainTextContent(ctx, params.content)) return null;
-  const edits: ResolvedEdit[] = [];
+  // Collapse every match within a block into one reverse-spliced edit. Emitting
+  // one edit per match carried resolve-time absolute spans that drift once an
+  // earlier unequal-length replacement shifts the block, so later edits landed
+  // mid-word (#126). Grouping is per block because spans are block-local.
+  const byBlock = new Map<BlockRef, TextFindMatch[]>();
   for (const match of matches) {
     if (match.elements.length !== 1) return null;
     const [element] = match.elements;
     if (match.rangeSource !== ctx.model.getText(element)) return null;
-    const start = command === "insert" ? match.matchEnd : match.matchStart;
-    const end = match.matchEnd;
+    const existing = byBlock.get(element);
+    if (existing) existing.push(match);
+    else byBlock.set(element, [match]);
+  }
+  const edits: ResolvedEdit[] = [];
+  for (const [element, blockMatches] of byBlock) {
+    const anchor = blockMatches[0];
+    const last = blockMatches.at(-1);
+    if (!anchor || !last) continue;
+    const blockText = ctx.model.getText(element);
+    // Splice all of a block's matches into one edit whose span covers just the
+    // window from the first op position to the last match end. For a single
+    // match this reduces to the exact per-match span/newText the resolver
+    // emitted before; the reverse splice is what makes multi-match drift-free.
+    const windowStart = command === "insert" ? anchor.matchEnd : anchor.matchStart;
+    const windowEnd = last.matchEnd;
+    const newText = spliceFindMatches(
+      blockText.slice(windowStart, windowEnd),
+      blockMatches,
+      anchor.rangeStart + windowStart,
+      params.content,
+      command,
+    );
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
       kind: "text",
       block: element,
-      span: { start, end },
-      newText: params.content,
+      span: { start: windowStart, end: windowEnd },
+      newText,
       semanticLowering: "prosemirror",
     });
   }
@@ -368,14 +399,15 @@ function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
 
 function spliceFindMatches(
   source: string,
-  group: FindMatchGroup,
+  matches: readonly TextFindMatch[],
+  rangeStart: number,
   content: string,
   command: WriteCommandName,
 ): string {
   let result = source;
-  for (const match of [...group.matches].reverse()) {
-    const start = match.rangeStart + match.matchStart - group.rangeStart;
-    const end = match.rangeStart + match.matchEnd - group.rangeStart;
+  for (const match of [...matches].reverse()) {
+    const start = match.rangeStart + match.matchStart - rangeStart;
+    const end = match.rangeStart + match.matchEnd - rangeStart;
     const spliceStart = command === "insert" ? end : start;
     result = result.slice(0, spliceStart) + content + result.slice(end);
   }

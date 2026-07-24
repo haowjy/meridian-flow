@@ -1403,6 +1403,25 @@ describe("write tool dispatch", () => {
     );
   });
 
+  it("applies unequal-length find-all replaces on a plain block without span drift", async () => {
+    // Regression for #126: multiple same-block matches were lowered to N
+    // independent tier-2 text edits carrying resolve-time absolute spans. Once
+    // the first unequal-length replacement shifted the block, later spans were
+    // stale and landed mid-word ("kitten akittencat"). Same-block matches must
+    // collapse into one reverse-spliced edit.
+    const ctx = harness({ "chapter.md": "cat and cat" });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
+      context,
+    );
+
+    expect(outcomeText(replaced)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["kitten and kitten"]);
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
   it("routes single-block find replacements that change block type through structural reconcile", async () => {
     const ctx = harness({ "chapter.md": "Opening line.\n\nTail." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
