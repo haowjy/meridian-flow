@@ -104,8 +104,9 @@ tools/dev/
 
 - **Two modes:** `--auto` (all merged non-primary worktrees) or `--target <value>` (work id, worktree path, branch name, or PR number via `gh`).
 - **Resolver** (`lib/worktree-cleanup.ts`) correlates work item ↔ task dir/worktree ↔ branch ↔ PR head branch. Ambiguous matches (multiple worktrees for a target, multiple work items for a worktree) refuse to resolve with candidate lists.
-- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → delete local branch → mark Meridian work done.
-- **Safety gates:** refuses primary worktree, current worktree, `main` branch, unmerged branches, detached worktrees.
+- **Merged = ancestry OR merged PR (squash-aware).** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. A branch counts as merged if it is an ancestor of the base (`git branch --merged`) **or** has a merged pull request (`gh pr list --head <branch> --state merged`). The PR arm is required because squash merges leave the branch tip unreachable from the base, so ancestry alone can never clean a squash-merged branch. gh being absent/failing is a safe no: the run degrades to ancestry-only and keeps refusing.
+- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → force-delete local branch (`git branch -D`; mergedness is already gated at plan time, and `-d` is itself squash-blind) → mark Meridian work done.
+- **Safety gates:** refuses primary worktree, current worktree, the base branch, branches that are neither ancestry- nor PR-merged, detached worktrees.
 - **Confirmation:** dry-run prints every planned action and target; destructive cleanup requires interactive `[y/N]` or `--yes`.
 - **`--dry-run`** prints the plan without executing it.
 

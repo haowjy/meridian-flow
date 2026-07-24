@@ -22,7 +22,12 @@ export interface CleanupContext {
   readonly worktrees: readonly GitWorktree[];
   readonly primaryWorktreePath: string;
   readonly currentWorktreePath: string;
+  // Branches considered merged: the union of `git branch --merged <baseBranch>`
+  // (ancestry) and branches whose pull request is merged. The PR arm is what
+  // makes this squash-merge-aware -- a squashed branch tip is never an ancestor
+  // of the base, so ancestry alone can never see it as merged.
   readonly mergedBranches: ReadonlySet<string>;
+  readonly baseBranch: string;
   readonly workItems: readonly MeridianWorkItem[];
 }
 
@@ -163,6 +168,7 @@ export function parseMeridianWorkShow(id: string, output: string): MeridianWorkI
 export function buildCleanupContext(input: {
   readonly gitWorktreePorcelain: string;
   readonly mergedBranches: string | readonly string[] | ReadonlySet<string>;
+  readonly baseBranch: string;
   readonly meridianWorkItems: readonly MeridianWorkItem[];
   readonly currentWorktreePath: string;
 }): CleanupContext {
@@ -179,6 +185,7 @@ export function buildCleanupContext(input: {
     primaryWorktreePath: normalizePath(worktrees[0].path),
     currentWorktreePath: normalizePath(input.currentWorktreePath),
     mergedBranches,
+    baseBranch: input.baseBranch,
     workItems: input.meridianWorkItems,
   };
 }
@@ -223,10 +230,13 @@ function assertSafeTarget(context: CleanupContext, target: CleanupTarget): void 
   if (normalizedWorktreePath === context.currentWorktreePath) {
     throw new CleanupResolverError(`Refusing to remove current worktree: ${target.worktree.path}`);
   }
-  if (target.branch === "main") throw new CleanupResolverError("Refusing to delete branch 'main'.");
+  if (target.branch === context.baseBranch) {
+    throw new CleanupResolverError(`Refusing to delete base branch '${context.baseBranch}'.`);
+  }
   if (!context.mergedBranches.has(target.branch)) {
     throw new CleanupResolverError(
-      `Refusing to clean branch '${target.branch}' because it is not merged into local main.`,
+      `Refusing to clean branch '${target.branch}': not merged into '${context.baseBranch}' ` +
+        "and no merged pull request found for it.",
     );
   }
 }
@@ -305,7 +315,7 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
     if (normalizePath(worktree.path) === context.primaryWorktreePath) continue;
     if (normalizePath(worktree.path) === context.currentWorktreePath) continue;
     if (!worktree.branch) continue;
-    if (worktree.branch === "main") continue;
+    if (worktree.branch === context.baseBranch) continue;
     if (!context.mergedBranches.has(worktree.branch)) continue;
     targets.push(targetForWorktree(context, worktree));
   }
@@ -324,18 +334,11 @@ function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): C
     {
       kind: "delete-branch",
       cwd: primaryWorktreePath,
-      // `git branch -d` checks the current checkout unless an upstream is set;
-      // pin the check to local main without persisting branch config.
-      command: [
-        "git",
-        "-c",
-        `branch.${target.branch}.remote=.`,
-        "-c",
-        `branch.${target.branch}.merge=refs/heads/main`,
-        "branch",
-        "-d",
-        target.branch,
-      ],
+      // Force-delete: the plan only reaches here for branches assertSafeTarget
+      // already proved merged (ancestry OR a merged PR). `git branch -d` is
+      // squash-blind and would refuse a squash-merged branch, so it can't be
+      // the gate here -- the plan-time check is the single source of truth.
+      command: ["git", "branch", "-D", target.branch],
     },
   ];
 
