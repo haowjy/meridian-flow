@@ -8,6 +8,8 @@
 - `packages/agent-edit`, `apps/server`: live and branch destructive receipts now
   share one typed snapshot/provenance projection with complete block identity
   and hashless bodies (#344).
+- `packages/agent-edit`: immediate creates and edits now submit one prepared
+  mutation shape through one journal/apply/recovery wrapper (#344).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).

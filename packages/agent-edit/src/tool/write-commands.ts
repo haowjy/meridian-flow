@@ -14,10 +14,10 @@ import type { DocumentRenderer } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
-import type { MutationCommit } from "./mutation-commit.js";
+import type { MutationCommit, PreparedMutation } from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
-import type { RuntimeStore } from "./runtime-store.js";
+import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
@@ -296,9 +296,8 @@ export function createWriteCommands(deps: {
       });
     }
 
-    let committed: Awaited<ReturnType<MutationCommit["commitImmediate"]>>;
-    try {
-      committed = await mutationCommit.commitImmediate({
+    const committed = await submitPreparedMutation(
+      {
         docId: address.documentId,
         commandName: command.command,
         runtime,
@@ -331,20 +330,13 @@ export function createWriteCommands(deps: {
           context.interactionContext,
           writeIdentity.durableId,
         ),
-      });
-    } catch (cause) {
-      restorePreWriteSnapshot(runtime, preWriteSnapshot);
-      markSynced(session, address.documentId, runtime);
-      throw cause;
-    }
+      },
+      session,
+    );
     if (!committed.ok) {
       if (committed.journalCommitKind !== "durable") {
-        await runtimeStore.evictRuntime(session, address.documentId);
         return committed.response;
       }
-      await runtimeStore.recoverCommittedResponseProjection([
-        { docId: address.documentId, session, runtime, commandName: command.command },
-      ]);
     }
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
@@ -515,48 +507,44 @@ export function createWriteCommands(deps: {
       }
     }
 
-    let syncedMutation: Awaited<ReturnType<MutationCommit["syncAfterLocalMutation"]>>;
-    try {
-      syncedMutation = await mutationCommit.syncAfterLocalMutation({
+    let syncedMutation = await submitPreparedMutation(
+      {
         docId: address.documentId,
         commandName: command.command,
         runtime,
-        update: ownUpdate,
-        meta,
-        mutation: {
-          threadId: session.threadId,
-          turnId,
-          ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-          actorKind: actor.kind,
-          ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-          ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-          ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
-          writeId: writeIdentity.durableId,
-          wId: writeIdentity.ordinal,
-          ...mutationMode(interactionContext),
-        },
+        updates: [
+          {
+            update: ownUpdate,
+            meta,
+            mutation: {
+              threadId: session.threadId,
+              turnId,
+              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+              actorKind: actor.kind,
+              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+              ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
+              writeId: writeIdentity.durableId,
+              wId: writeIdentity.ordinal,
+              ...mutationMode(interactionContext),
+            },
+          },
+        ],
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
-        ...(turnId ? { ownTurnId: turnId } : {}),
+        ...(turnId ? { turnId } : {}),
         preOwnSnapshot,
         ...(interactionContext ? { interactionContext } : {}),
-      });
-    } catch (cause) {
-      restorePreWriteSnapshot(runtime, preOwnSnapshot);
-      markSynced(session, address.documentId, runtime);
-      throw cause;
-    }
+      },
+      session,
+    );
     if (!syncedMutation.ok) {
       if (syncedMutation.journalCommitKind !== "durable") {
-        await runtimeStore.evictRuntime(session, address.documentId);
         return syncedMutation.response;
       }
-      await runtimeStore.recoverCommittedResponseProjection([
-        { docId: address.documentId, session, runtime, commandName: command.command },
-      ]);
       syncedMutation = {
         ok: true,
         journalCommitKind: "durable",
@@ -578,6 +566,34 @@ export function createWriteCommands(deps: {
       deletedBlocks: applied.deletedBlocks,
       ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
     });
+  }
+
+  async function submitPreparedMutation(
+    input: PreparedMutation & { runtime: RuntimeDocumentState },
+    session: ActorSession,
+  ) {
+    let result: Awaited<ReturnType<MutationCommit["submitMutation"]>>;
+    try {
+      result = await mutationCommit.submitMutation(input);
+    } catch (cause) {
+      restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
+      markSynced(session, input.docId, input.runtime);
+      throw cause;
+    }
+    if (result.ok) return result;
+    if (result.journalCommitKind !== "durable") {
+      await runtimeStore.evictRuntime(session, input.docId);
+      return result;
+    }
+    await runtimeStore.recoverCommittedResponseProjection([
+      {
+        docId: input.docId,
+        session,
+        runtime: input.runtime,
+        commandName: input.commandName,
+      },
+    ]);
+    return result;
   }
 
   function validateResolvedIr(

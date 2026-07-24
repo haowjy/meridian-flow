@@ -1,9 +1,10 @@
 // Mutation commit contracts at the journal/live projection seam.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
-import { type CommitPreflightInput, createMutationCommit } from "./mutation-commit.js";
+import { createMutationCommit, type PreparedMutation } from "./mutation-commit.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
 import { MemoryJournal } from "./test-support/recording-journal.js";
 import {
@@ -33,10 +34,11 @@ describe("mutation commit", () => {
       liveProjectionCount += 1;
     });
 
-    const committed = await mutationCommit.commitImmediate({
+    const committed = await mutationCommit.submitMutation({
       docId: "chapter.md",
       commandName: "replace",
       runtime: { doc: runtimeDoc },
+      before: snapshotBlocks(toDocHandle(coordinator.require("chapter.md")), model, codec),
       updates: [
         {
           update,
@@ -74,7 +76,7 @@ describe("mutation commit", () => {
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
 
-    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+    const result = await fixture.mutationCommit.submitMutation({
       ...fixture.input,
       commandName: "replace",
       before: [],
@@ -90,7 +92,7 @@ describe("mutation commit", () => {
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
-  it("reports an unjournaled WS edit that lands during syncAfterLocalMutation journal append", async () => {
+  it("reports an unjournaled WS edit that lands during mutation submission", async () => {
     const fixture = destructiveFixture();
     const append = fixture.journal.appendBatch.bind(fixture.journal);
     fixture.journal.appendBatch = async (entries) => {
@@ -99,7 +101,7 @@ describe("mutation commit", () => {
       return append(entries);
     };
 
-    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+    const result = await fixture.mutationCommit.submitMutation({
       ...fixture.input,
       commandName: "replace",
       before: [],
@@ -108,35 +110,6 @@ describe("mutation commit", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      lateSweep: {
-        affectedBlockHashes: [fixture.deletedHash],
-        capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
-      },
-    });
-    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
-  });
-
-  it("reports an unjournaled WS edit that lands during commitImmediate journal append", async () => {
-    const fixture = destructiveFixture();
-    const append = fixture.journal.appendBatch.bind(fixture.journal);
-    fixture.journal.appendBatch = async (entries) => {
-      humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "WS: ");
-      await Promise.resolve();
-      return append(entries);
-    };
-
-    const result = await fixture.mutationCommit.commitImmediate({
-      ...fixture.input,
-      updates: [fixture.journalEntry],
-      touchedHashes: new Set(),
-      turnId: fixture.input.ownTurnId,
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      concurrentUpdates: [
-        expect.objectContaining({ origin: { type: "human", userId: "unknown" } }),
-      ],
       lateSweep: {
         affectedBlockHashes: [fixture.deletedHash],
         capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
@@ -166,10 +139,11 @@ describe("mutation commit", () => {
       return append(entries);
     };
 
-    const result = await mutationCommit.commitImmediate({
+    const result = await mutationCommit.submitMutation({
       docId: "chapter.md",
       commandName: "replace",
       runtime: { doc: runtimeDoc },
+      before: snapshotBlocks(toDocHandle(live), model, codec),
       updates: [journalEntry(update)],
       liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
       touchedHashes: new Set([hashAt(runtimeDoc, 0)]),
@@ -210,7 +184,7 @@ describe("mutation commit", () => {
       return append(entries);
     };
 
-    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+    const result = await fixture.mutationCommit.submitMutation({
       ...fixture.input,
       commandName: "replace",
       before: [],
@@ -328,10 +302,11 @@ describe("mutation commit", () => {
       coordinator.events.push(`apply:${coordinator.depth}`);
     });
 
-    const result = await mutationCommit.commitImmediate({
+    const result = await mutationCommit.submitMutation({
       docId: "chapter.md",
       commandName: "replace",
       runtime: { doc: runtimeDoc },
+      before: snapshotBlocks(toDocHandle(coordinator.require("chapter.md")), model, codec),
       updates: [journalEntry(Y.encodeStateAsUpdate(runtimeDoc, beforeVector))],
       liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
       touchedHashes: new Set([hashAt(runtimeDoc, 0)]),
@@ -378,25 +353,18 @@ function destructiveFixture(deleteCount = 1) {
   );
   const update = Y.encodeStateAsUpdate(runtimeDoc, beforeVector);
   const entry = journalEntry(update);
-  const input: CommitPreflightInput & {
-    update: Uint8Array;
-    liveOrigin: { type: "agent"; actorTurnId: string };
-    meta: JournalBatchAppendEntry["meta"];
-    mutation: NonNullable<JournalBatchAppendEntry["mutation"]>;
-    ownTurnId: string;
-    commandName: "replace";
-  } = {
+  const input: PreparedMutation & { update: Uint8Array } = {
     docId: "chapter.md",
     runtime: { doc: runtimeDoc },
+    before: snapshotBlocks(toDocHandle(baseline), model, codec),
+    updates: [entry],
     update,
     deletedHashes: new Set(deletedHashes),
     touchedHashes: new Set(deletedHashes),
     preOwnSnapshot,
     interactionContext: { mode: "live", afterJournalId: 41 },
     liveOrigin: { type: "agent", actorTurnId: "turn-delete" },
-    meta: entry.meta,
-    mutation: entry.mutation as NonNullable<JournalBatchAppendEntry["mutation"]>,
-    ownTurnId: "turn-delete",
+    turnId: "turn-delete",
     actor: {
       kind: "agent",
       turnId: "turn-delete",
