@@ -6,6 +6,7 @@
       "!**/node_modules",
       "!**/dist",
       "!**/.output",
+      "!logs",
       "!**/.nx",
       "!**/.mars",
       "!**/.meridian",

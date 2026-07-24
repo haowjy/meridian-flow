@@ -32,10 +32,31 @@
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
+- `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
+- `apps/server`: gateway calls now emit correlated open, first-output, retry,
+  and close lifecycle events with queryable terminal error codes;
+  development/test processes can opt into metadata-only chunk events with
+  UTF-8 byte counts through `OBS_VERBOSE=gateway.chunks`.
+- `apps/server`: local JSONL diagnostics now bound pending writes to 5,000
+  events, drop oldest under filesystem backpressure, and report loss through
+  `observability.sink.dropped`.
+- `apps/server`: observability events now receive stable IDs at emit time for
+  use as incremental debug-feed cursors.
+- `apps/server`: observability now provides a sanitized 5,000-record recent
+  events ring, filtered query/subscription port, and multi-sink tee adapter.
+- `apps/server`: authenticated development/test servers now expose filtered
+  recent events at `/api/debug/events` and a live SSE feed at
+  `/api/debug/events/stream`; production and disabled providers return 404.
+  The dev DebugOverlay can toggle that server feed into its existing Streams
+  trace ring, filters, and exports.
+- Server debugging guidance now distinguishes authoritative stdout from the
+  best-effort bounded JSONL mirror and documents query, SSE, and `jq` workflows.
+- `apps/server`: interrupted tool calls no longer poison later model retries;
+  rebuilt histories carry an explicit unknown-outcome error result without
+  re-executing the tool.
 - `apps/server`: fresh-project documents are now initialized exactly once in
   canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
-  warm collaboration rooms reconcile with the seed, and AI causal-cut capture
-  initializes missing authority heads without requiring an editor open (#317).
+  and warm collaboration rooms reconcile with the seed (#317).
 - `apps/app`: universal document identity bar — every open document shows a
   quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
   match the suggestion dropdown, with a permanent chip whose label graduates

@@ -920,6 +920,12 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
+      request.correlation = {
+        threadId: input.threadId,
+        turnId: currentAssistantTurn.id,
+        iteration: iteration - 1,
+        ...(thread.currentAgent ? { agentSlug: thread.currentAgent } : {}),
+      };
 
       {
         const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);

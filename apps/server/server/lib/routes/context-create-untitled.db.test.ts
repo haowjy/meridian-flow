@@ -18,18 +18,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { createCollabDomain } = await import("../../../../../../domains/collab/composition.js");
+    const { createCollabDomain } = await import("../../domains/collab/composition.js");
     const { createProductionUnifiedContextPortFactory } = await import(
-      "../../../../../../domains/context/unified-context-port-factory.js"
+      "../../domains/context/unified-context-port-factory.js"
     );
     const { createDrizzleProjectBootstrapRepository } = await import(
-      "../../../../../../domains/projects/index.js"
+      "../../domains/projects/index.js"
     );
-    const { truncateDrizzleTables } = await import(
-      "../../../../../../test-support/drizzle-reset.js"
+    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { createUntitledContextDocument } = await import(
+      "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
-    const { createUntitledContextDocument } = await import("./create-untitled.post.js");
-    const { buildProjectContextTree } = await import("./tree.get.js");
+    const { buildProjectContextTree } = await import(
+      "../../routes/api/projects/[projectId]/context/[scheme]/tree.get.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000931";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000933";

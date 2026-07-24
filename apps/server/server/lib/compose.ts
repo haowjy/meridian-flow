@@ -39,7 +39,12 @@ import {
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
-import { createNoopEventSink, type EventSink, emitEvent } from "../domains/observability/index.js";
+import {
+  createNoopEventSink,
+  type EventQuery,
+  type EventSink,
+  emitEvent,
+} from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
   createDefaultPackageSeeder,
@@ -69,6 +74,7 @@ import {
   createChildRunCoordinator,
   createGatewayFromEnv,
   createHelperResultDelivery,
+  createInstrumentedGateway,
   createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
@@ -123,6 +129,7 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
+import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
   createAgentEditResponseWriteLifecycle,
@@ -153,6 +160,7 @@ export type AppServices = {
   agents: AgentPackageStore;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
   defaultPackageSeeder: DefaultPackageSeeder;
@@ -187,6 +195,7 @@ export type ProductionAppPorts = {
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   runtimeTools: RuntimeToolRegistry;
@@ -243,11 +252,12 @@ function concurrentRenderBudgetBytes(request: {
 export async function createProductionAppPorts(input: {
   db: Database;
   eventSink: EventSink;
+  eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway } = await createGatewayFromEnv(environment, {
+  const { gateway: rawGateway } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -268,6 +278,13 @@ export async function createProductionAppPorts(input: {
         payload: span.attributes ?? {},
       });
     },
+  });
+  const gateway = createInstrumentedGateway(rawGateway, {
+    sink: eventSink,
+    verbose: resolveObsVerbose({
+      rawNodeEnv: environment.NODE_ENV,
+      obsVerbose: environment.OBS_VERBOSE,
+    }),
   });
   const db = input.db;
   const threadRepos = createDrizzleRepositories(db);
@@ -347,6 +364,7 @@ export async function createProductionAppPorts(input: {
     journalReader,
     journalWriter,
     eventSink,
+    eventQuery: input.eventQuery,
     documentSync,
     contextPorts,
     runtimeTools,
@@ -519,6 +537,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agents: ports.agents,
     interruptRegistry,
     eventSink: ports.eventSink,
+    eventQuery: ports.eventQuery,
     packageRepository: ports.packageRepository,
     marsPackageFetcher: ports.marsPackageFetcher,
     defaultPackageSeeder: ports.defaultPackageSeeder,

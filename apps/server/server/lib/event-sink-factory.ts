@@ -5,8 +5,12 @@
 import {
   createLocalEventSink,
   createNoopEventSink,
+  createTeeEventSink,
+  type EventQuery,
   type EventSink,
+  RecentEventsBuffer,
 } from "../domains/observability/index.js";
+import { resolveRecentEventsEnabled } from "./env.js";
 
 const DEFAULT_LOG_RETENTION_DAYS = 14;
 
@@ -20,15 +24,25 @@ function localLogRetentionDays(): number {
   return parsed;
 }
 
-export function createEventSinkFromEnv(): EventSink {
+export interface EventSinkComposition {
+  sink: EventSink;
+  eventQuery?: EventQuery;
+}
+
+export function createEventSinkFromEnv(): EventSinkComposition {
   const provider = process.env.EVENT_PROVIDER ?? "local";
-  if (provider === "none" || provider === "noop") return createNoopEventSink();
+  if (provider === "none" || provider === "noop") return { sink: createNoopEventSink() };
   if (provider === "local") {
     const dir = process.env.LOG_DIR || undefined;
-    return createLocalEventSink({
+    const local = createLocalEventSink({
       dir,
       retentionDays: dir ? localLogRetentionDays() : undefined,
     });
+    if (!resolveRecentEventsEnabled({ rawNodeEnv: process.env.NODE_ENV })) {
+      return { sink: local };
+    }
+    const eventQuery = new RecentEventsBuffer();
+    return { sink: createTeeEventSink([local, eventQuery]), eventQuery };
   }
   throw new Error(`Unsupported EVENT_PROVIDER: ${provider}`);
 }

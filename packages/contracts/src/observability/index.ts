@@ -1,6 +1,7 @@
 /**
  * Shared JSON-natural observability vocabulary for client and server event producers.
  * These contracts describe diagnostic events, not document provenance authority.
+ * Server emitters must populate `stream.observedAt: "server"` and reuse these key names verbatim.
  */
 
 /** Severity for filtering and routing; mirrors common log levels. */
@@ -21,6 +22,8 @@ export interface EventCorrelation {
   agentSlug?: string;
   iteration?: number;
   attemptId?: string;
+  /** One logical gateway call: a `stream()`/`generate()` invocation including internal retries. */
+  gatewayCallId?: string;
   provider?: string;
   model?: string;
   route?: string;
@@ -45,7 +48,7 @@ export interface EventCorrelation {
 export interface TraceStreamRef {
   /**
    * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:branch:<id>:gen:3`,
-   * `thread:<threadId>`, or `gateway:<attemptId>`.
+   * `thread:<threadId>`, or `gateway:<gatewayCallId>`.
    */
   streamId: string;
   transport: "thread" | "yjs" | "gateway";
@@ -58,7 +61,8 @@ export interface TraceStreamRef {
    * thread: `event` | `subscribed` | `gap` | `ping` | ...
    * yjs: `sync.step1` | `sync.step2` | `sync.update` | `sync.status` | `awareness` |
    *   `stateless` | `auth` | `close` | `ping` | `pong` | `unknown`
-   * gateway: `start` | `text.delta` | `usage` | `end` | `error`
+   * gateway: `start` | `text.delta` | `reasoning.delta` | `tool_call.delta` |
+   *   `custom.delta` | `usage` | `end` | `error`
    */
   messageClass?: string;
   bytes?: number;

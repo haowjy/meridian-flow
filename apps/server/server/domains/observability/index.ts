@@ -11,7 +11,15 @@ export {
   type LocalEventSinkOptions,
 } from "./adapters/local/local-event-sink.js";
 export { createNoopEventSink, NoopEventSink } from "./adapters/noop/noop-event-sink.js";
+export { RecentEventsBuffer } from "./adapters/recent/recent-events-buffer.js";
+export { createTeeEventSink, TeeEventSink } from "./adapters/tee/tee-event-sink.js";
 export { emitEvent, unknownToEventPayload } from "./emit-event.js";
+export {
+  type EventQuery,
+  type EventQueryFilter,
+  type EventQueryResult,
+  eventMatchesQueryFilter,
+} from "./ports/event-query.js";
 export type {
   EventCorrelation,
   EventLevel,
