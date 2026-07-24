@@ -66,7 +66,12 @@ export function PeerMarkPopover({
     documentId: marker?.group.documentId ?? "",
     change,
   });
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyReceipt, setCopyReceipt] = useState<{
+    changeId: string;
+    state: "copied" | "failed";
+  } | null>(null);
+  const copyState =
+    copyReceipt && copyReceipt.changeId === change?.changeId ? copyReceipt.state : "idle";
   const requestSnippet = useMemo(
     () => originatingRequestSnippet(snapshot.data?.turns ?? [], agentAuthor?.turnId ?? null),
     [agentAuthor?.turnId, snapshot.data?.turns],
@@ -116,13 +121,14 @@ export function PeerMarkPopover({
   }
 
   async function copyRecoveryBody(): Promise<void> {
-    if (!recovery.body) return;
-    setCopyState("idle");
+    if (!recovery.body || !change) return;
+    const changeId = change.changeId;
+    setCopyReceipt(null);
     try {
       await navigator.clipboard.writeText(recovery.body);
-      setCopyState("copied");
+      setCopyReceipt({ changeId, state: "copied" });
     } catch {
-      setCopyState("failed");
+      setCopyReceipt({ changeId, state: "failed" });
     }
   }
 
