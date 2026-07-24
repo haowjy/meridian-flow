@@ -2,7 +2,6 @@
 
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { parseNullableRequestId } from "../request-id.js";
 import { createThreadWebSocketSession, type WsPeer } from "../ws-thread-handler.js";
 
 const VALID_ID = "00000000-0000-0000-0000-000000000001";
@@ -10,11 +9,16 @@ const MALFORMED_ID = "not-a-uuid";
 const CANONICAL_THREAD_ID = "abcdef00-0000-0000-0000-000000000001";
 const CANONICAL_TURN_ID = "abcdef00-0000-0000-0000-000000000002";
 
+const createThreadForProject = vi.hoisted(() => vi.fn());
+const forkThreadAgent = vi.hoisted(() => vi.fn());
+const readThreadContextDocument = vi.hoisted(() => vi.fn());
+
 vi.mock("nitro/h3", async (importOriginal) => {
   const actual = await importOriginal<typeof import("nitro/h3")>();
   return {
     ...actual,
     defineEventHandler: (handler: unknown) => handler,
+    getQuery: (event: TestEvent) => event.query ?? {},
     getRouterParam: (event: TestEvent, name: string) => event.params[name],
     readBody: async (event: TestEvent) => event.body,
     readMultipartFormData: async (event: TestEvent) => event.multipart,
@@ -28,10 +32,26 @@ vi.mock("../auth-gate.js", () => ({
   requireAppUser: async (event: TestEvent) => event.auth,
 }));
 
+vi.mock("../thread-creation.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../thread-creation.js")>()),
+  createThreadForProject,
+}));
+
+vi.mock("../thread-agent-swap.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../thread-agent-swap.js")>()),
+  forkThreadAgent,
+}));
+
+vi.mock("../thread-context-route.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../thread-context-route.js")>()),
+  readThreadContextDocument,
+}));
+
 type TestHandler = (event: TestEvent) => Promise<unknown>;
 
 type TestEvent = {
   params: Record<string, string>;
+  query?: Record<string, string>;
   body?: unknown;
   multipart?: unknown;
   res: { status: number };
@@ -103,6 +123,8 @@ const [
   deleteTrailChangeAgain,
   uploadFigure,
   signedFigureUrl,
+  reverseAvailability,
+  reverseContext,
   createProject,
   createThread,
   createProjectThread,
@@ -138,6 +160,12 @@ const [
   import(
     "../../routes/api/projects/[projectId]/documents/[documentId]/figure/signed-url.get.js"
   ).then((module) => module.default as unknown as TestHandler),
+  import("../../routes/api/threads/[threadId]/context/reverse-availability.get.js").then(
+    (module) => module.default as unknown as TestHandler,
+  ),
+  import("../../routes/api/threads/[threadId]/context/reverse.post.js").then(
+    (module) => module.default as unknown as TestHandler,
+  ),
   import("../../routes/api/projects/index.post.js").then(
     (module) => module.default as unknown as TestHandler,
   ),
@@ -155,6 +183,9 @@ const [
 describe("malformed HTTP request IDs", () => {
   beforeEach(() => {
     databaseCall.mockClear();
+    createThreadForProject.mockReset();
+    forkThreadAgent.mockReset();
+    readThreadContextDocument.mockReset();
   });
 
   it.each([
@@ -205,6 +236,10 @@ describe("malformed HTTP request IDs", () => {
     [
       "project-scoped thread create client ID",
       () => createProjectThread(event({ projectId: VALID_ID }, { id: MALFORMED_ID })),
+    ],
+    [
+      "project-scoped thread create project ID",
+      () => createProjectThread(event({ projectId: MALFORMED_ID })),
     ],
     [
       "project-scoped thread create work ID",
@@ -259,8 +294,103 @@ describe("malformed HTTP request IDs", () => {
     });
   });
 
-  it("preserves nullable fork origin semantics", () => {
-    expect(parseNullableRequestId(null, "originTurnId")).toBeNull();
+  it("normalizes project-scoped creation IDs before thread creation", async () => {
+    createThreadForProject.mockResolvedValueOnce({ id: VALID_ID });
+
+    await createProjectThread(
+      event(
+        { projectId: CANONICAL_THREAD_ID.toUpperCase() },
+        { id: CANONICAL_TURN_ID.toUpperCase(), workId: VALID_ID.toUpperCase() },
+      ),
+    );
+
+    expect(createThreadForProject).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        projectId: CANONICAL_THREAD_ID,
+        id: CANONICAL_TURN_ID,
+        workId: VALID_ID,
+      }),
+    );
+  });
+
+  it.each([
+    ["global", () => createThread(event({}, { projectId: VALID_ID }))],
+    ["project-scoped", () => createProjectThread(event({ projectId: VALID_ID }))],
+  ])("maps %s thread creation work-attachment errors to 400", async (_surface, invoke) => {
+    const { InvalidWorkAttachmentError } = await import("../thread-creation.js");
+    createThreadForProject.mockRejectedValueOnce(
+      new InvalidWorkAttachmentError("Work is not available in this project"),
+    );
+
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("preserves nullable fork origin semantics through the route", async () => {
+    forkThreadAgent.mockResolvedValueOnce({ id: VALID_ID });
+
+    await forkThread(event({ threadId: VALID_ID }, { originTurnId: null }));
+
+    expect(forkThreadAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ threadId: VALID_ID, originTurnId: null }),
+    );
+  });
+
+  it("normalizes context reversal availability IDs below the route", async () => {
+    const getAvailability = vi.fn(async () => ({ undo: true, redo: false }));
+    readThreadContextDocument.mockResolvedValueOnce({
+      documentId: VALID_ID,
+      uri: "project://documents/chapter.md",
+      markdown: "",
+    });
+
+    await reverseAvailability({
+      ...event({ threadId: CANONICAL_THREAD_ID.toUpperCase() }, undefined, {
+        documentSync: { agentEdit: () => ({ getAvailability }) },
+      }),
+      query: { uri: "project://documents/chapter.md" },
+    });
+
+    expect(readThreadContextDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ threadId: CANONICAL_THREAD_ID }),
+    );
+    expect(getAvailability).toHaveBeenCalledWith(VALID_ID, CANONICAL_THREAD_ID);
+  });
+
+  it("normalizes context reversal IDs below the route", async () => {
+    const reverse = vi.fn(async () => ({ status: "nothing_to_undo" }));
+    readThreadContextDocument.mockResolvedValueOnce({
+      documentId: VALID_ID,
+      uri: "project://documents/chapter.md",
+      markdown: "",
+    });
+
+    await reverseContext(
+      event(
+        { threadId: CANONICAL_THREAD_ID.toUpperCase() },
+        {
+          uri: "project://documents/chapter.md",
+          direction: "undo",
+          scope: "thread",
+        },
+        {
+          documentSync: {
+            agentEdit: () => ({ reverse }),
+            refreshDocumentProjection: vi.fn(),
+          },
+        },
+      ),
+    );
+
+    expect(readThreadContextDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ threadId: CANONICAL_THREAD_ID }),
+    );
+    expect(reverse).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: CANONICAL_THREAD_ID }),
+    );
   });
 });
 
@@ -342,5 +472,50 @@ describe("malformed WebSocket thread IDs", () => {
       interruptId: "interrupt-1",
       value: null,
     });
+  });
+
+  it("uses one normalized subscription key across uppercase subscribe and unsubscribe", async () => {
+    const unsubscribe = vi.fn();
+    const requireOwnedThread = vi.fn();
+    const peer = {
+      request: new Request("https://app.localhost/api/threads/ws"),
+      context: {
+        userId: VALID_ID,
+        app: {
+          threadRuntime: {
+            requireOwnedThread,
+            liveState: vi.fn(async () => ({
+              threadId: CANONICAL_THREAD_ID,
+              status: "idle",
+              runningTurnId: null,
+              currentAgent: null,
+              resumeAfterSeq: "0",
+            })),
+          },
+          threadEventHub: {
+            catchupAndSubscribe: vi.fn(async () => ({
+              catchup: [],
+              hitReplayLimit: false,
+              unsubscribe,
+            })),
+          },
+          hub: { headSeq: vi.fn(async () => 0n) },
+          runner: {},
+        },
+      },
+      send: vi.fn(),
+      close: vi.fn(),
+    } as unknown as WsPeer;
+    const session = createThreadWebSocketSession(peer);
+
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", threadId: CANONICAL_THREAD_ID.toUpperCase() }),
+    );
+    await session.onMessage(
+      JSON.stringify({ type: "unsubscribe", threadId: CANONICAL_THREAD_ID.toUpperCase() }),
+    );
+
+    expect(requireOwnedThread).toHaveBeenCalledWith(CANONICAL_THREAD_ID, VALID_ID);
+    expect(unsubscribe).toHaveBeenCalledOnce();
   });
 });

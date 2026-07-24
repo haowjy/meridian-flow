@@ -7,7 +7,7 @@ import {
   type SequencedEvent,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import type { AppServices } from "./app.js";
@@ -253,7 +253,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             }
             const result = context.app.interruptRegistry.resolve({
               threadId,
-              turnId: turnId as never,
+              turnId: turnId as TurnId,
               interruptId: message.interruptId,
               value: message.value as JsonValue,
             });
