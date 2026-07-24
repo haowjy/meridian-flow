@@ -106,12 +106,14 @@ export function ProjectView(props: ProjectViewProps) {
   const routeWorkId = threadWorkId ?? defaultWorkId;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
+  const selectThreadRef = useRef(props.onSelectThread);
+  selectThreadRef.current = props.onSelectThread;
   useEffect(
     () =>
       registerConversationRevealNavigator((threadId) => {
-        props.onSelectThread(threadId);
+        selectThreadRef.current(threadId);
       }),
-    [props.onSelectThread],
+    [],
   );
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
