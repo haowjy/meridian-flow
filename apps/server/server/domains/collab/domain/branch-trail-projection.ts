@@ -3,9 +3,10 @@ import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edi
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { NoticePort } from "../../notices/index.js";
-import type { BranchJournalRow, PushReceiptPayload } from "./branch-push.js";
+import type { NoticeInput, NoticePort } from "../../notices/index.js";
+import type { BranchJournalRow, PushReceiptPayload, PushSweptTrail } from "./branch-push.js";
 import { blockTextMap } from "./branch-push-plan.js";
+import type { PreparedPush } from "./branch-push-preparation.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -293,4 +294,70 @@ export async function persistDurableTrailRecord(
       },
     });
   }
+}
+
+export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
+  const sweptChanges = prepared.trailChanges.filter((change) => change.swept !== null);
+  return {
+    affectedBlockHashes: prepared.blindConflictedBlocks,
+    capturedDeletedBodies: sweptChanges.map((change) => ({
+      hash: change.swept?.affectedBlockHash as string,
+      body:
+        change.swept?.removed.status === "available"
+          ? change.swept.removed.markdown
+          : "body_unavailable",
+    })),
+    beforeContentRef: prepared.beforeContentRef,
+    receiptId: prepared.prepared.receiptId as string,
+    locations: sweptChanges.map((change) => ({
+      changeId: change.changeId,
+      affectedBlockHash: change.swept?.affectedBlockHash as string,
+      outcome: change.kind === "modify" ? "modify" : "delete",
+      navigation: change.navigation,
+    })),
+    // Push-target reversal is not an exposed contract yet. Retaining a
+    // baseline alone must never be presented as an undo affordance.
+    reversible: false,
+  };
+}
+
+export function buildDurablePushTrail(input: {
+  prepared: PreparedPush;
+  documentTitle: string;
+  swept?: PushSweptTrail;
+}): DurableTrailRecord {
+  const journalOwners = input.prepared.prepared.journalRows.map((row) =>
+    row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,
+  );
+  const threadIds = new Set(
+    input.prepared.prepared.journalRows.flatMap((row) => (row.threadId ? [row.threadId] : [])),
+  );
+  return {
+    documentId: input.prepared.prepared.branch.documentId,
+    documentTitle: input.documentTitle,
+    receiptId: input.prepared.prepared.receiptId as string,
+    threadIds: [...threadIds],
+    journalOwners,
+    changes: input.prepared.trailChanges,
+    ...(input.swept
+      ? {
+          transactionalNotice: {
+            kind: "push_swept",
+            scope: {
+              kind: "document",
+              documentId: input.prepared.prepared.branch.documentId,
+            },
+            writerVisible: true,
+            message:
+              "AI applied changes that removed words not yet synced to the agent — View change",
+            data: {
+              documentId: input.prepared.prepared.branch.documentId,
+              documentName: input.documentTitle,
+              pushId: "pending",
+              ...input.swept,
+            },
+          } satisfies NoticeInput,
+        }
+      : {}),
+  };
 }
