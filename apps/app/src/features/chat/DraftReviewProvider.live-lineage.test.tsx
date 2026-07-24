@@ -13,6 +13,8 @@ let currentGroups: ThreadDraftGroup[] = [];
 let currentInlineReview: { documentId: string; draftId: string } | null = null;
 let currentReviewRoomName: string | null = null;
 let rerenderProvider: (() => void) | null = null;
+let controllerMounts = 0;
+let controllerUnmounts = 0;
 
 const docUpdateHandlers = new Map<string, Set<() => void>>();
 
@@ -32,11 +34,19 @@ vi.mock("@/client/stores", () => ({
   },
 }));
 vi.mock("./useDraftReviewController", () => ({
-  useDraftReviewController: () => ({
-    exitReview: exitReviewMock,
-    inlineReview: currentInlineReview,
-    reviewRoomName: currentReviewRoomName,
-  }),
+  useDraftReviewController: () => {
+    useEffect(() => {
+      controllerMounts += 1;
+      return () => {
+        controllerUnmounts += 1;
+      };
+    }, []);
+    return {
+      exitReview: exitReviewMock,
+      inlineReview: currentInlineReview,
+      reviewRoomName: currentReviewRoomName,
+    };
+  },
 }));
 vi.mock("@/core/editor/document-session-registry", () => ({
   getDocumentSessionRegistry: () => ({
@@ -122,6 +132,8 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     currentGroups = [];
     currentInlineReview = null;
     currentReviewRoomName = null;
+    controllerMounts = 0;
+    controllerUnmounts = 0;
     vi.useFakeTimers();
   });
 
@@ -201,6 +213,27 @@ describe("DraftReviewProvider live lineage invalidation", () => {
           "draft-terminal",
         ),
       });
+    });
+  });
+
+  it("remounts the review session when the Work identity changes", async () => {
+    let switchWork: (() => void) | null = null;
+
+    function ScopedHarness() {
+      const [workId, setWorkId] = useState("work-1");
+      switchWork = () => setWorkId("work-2");
+      return (
+        <DraftReviewProvider projectId="project-1" workId={workId} threadId="thread-1">
+          <div />
+        </DraftReviewProvider>
+      );
+    }
+
+    await withReactRoot(<ScopedHarness />, async () => {
+      expect(controllerMounts).toBe(1);
+      await act(async () => switchWork?.());
+      expect(controllerUnmounts).toBe(1);
+      expect(controllerMounts).toBe(2);
     });
   });
 });

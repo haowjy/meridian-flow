@@ -99,6 +99,8 @@ The controller is the single client review-session owner. Its reducer owns
 message target, and inline messages. The synchronous disposition lock is the
 only pending-command source. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
+`DraftReviewProvider` keys that owner by Project + Work so refusal, conflict,
+and dock-error state cannot cross a Work switch.
 
 Per-card Apply routes the closure-card `acceptDraft` mutation with
 `operationIds`; the server receives the vended closure class as one card, so
@@ -115,6 +117,9 @@ Bulk Apply/Discard is one controller command over a captured target list; the
 dock does not infer command completion from busy/idle render edges. Direct
 inline Apply uses the exact preview the writer reviewed; bulk Apply acquires
 each captured draft's current preview while retaining the batch reservation.
+A reviewed whole-draft Apply stays disabled until that exact preview is
+available; Apply/Discard failures are session outcomes rendered by the review
+header rather than ignored promises.
 A batch stops at its first refusal/failure so later targets cannot erase the
 explanation; transport failures surface through the dock's typed error state.
 

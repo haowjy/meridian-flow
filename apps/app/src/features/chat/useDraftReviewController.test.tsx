@@ -141,6 +141,46 @@ describe("useDraftReviewController", () => {
     });
   });
 
+  it("reports reviewed whole-draft failures after preview readiness", async () => {
+    let controller: ReturnType<typeof useDraftReviewController> | null = null;
+    wholeDraftResponses = [new Error("offline")];
+
+    function Probe() {
+      const value = useDraftReviewController("project-1", "work-1", "thread-1");
+      useEffect(() => {
+        controller = value;
+      }, [value]);
+      return null;
+    }
+
+    await withReactRoot(<Probe />, async () => {
+      await act(async () => {
+        controller?.enterInlineReview("document-1", "draft-1");
+      });
+      expect(controller?.canAcceptReviewedDraft).toBe(false);
+
+      await act(async () => {
+        controller?.inlineReviewModelAvailable(
+          "draft-1:0:1",
+          "document-1",
+          "draft-1",
+          ["operation-1", "operation-2"],
+          { draftRevisionToken: 1, branchId: "branch-1" },
+        );
+      });
+      expect(controller?.canAcceptReviewedDraft).toBe(true);
+
+      await act(async () => {
+        await controller?.accept("document-1", "draft-1");
+      });
+      expect(controller?.inlineReviewMessage).toMatchObject({
+        code: "apply-failed",
+        tone: "error",
+      });
+    });
+    wholeDraftResponses = [];
+  });
+
   it("acquires and applies every captured draft in a dock batch", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     acceptMutateMock.mockClear();

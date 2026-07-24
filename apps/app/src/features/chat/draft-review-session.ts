@@ -141,6 +141,10 @@ export type DraftReviewCommandPorts = {
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
   applySettled: (selection: DraftReviewSelection, outcome: DraftApplyOutcome) => void;
+  draftFailed: (
+    selection: DraftReviewSelection,
+    code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">,
+  ) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
 
@@ -288,6 +292,7 @@ export class DraftReviewSession {
     try {
       const request = await requestPromise;
       if (request.operationIds.length === 0) {
+        if (scope === "draft") ports.draftFailed(selection, "apply-failed");
         return { kind: "failed", code: "apply-failed" };
       }
       this.disposition.advance(reservation, "mutating");
@@ -297,6 +302,7 @@ export class DraftReviewSession {
       ports.applySettled(selection, outcome);
       return outcome.command;
     } catch {
+      if (scope === "draft") ports.draftFailed(selection, "apply-failed");
       return { kind: "failed", code: "apply-failed" };
     }
   }
@@ -317,6 +323,7 @@ export class DraftReviewSession {
       ports.draftDiscarded(selection);
       return { kind: "discarded" };
     } catch {
+      ports.draftFailed(selection, "discard-offline");
       return { kind: "failed", code: "discard-offline" };
     }
   }
@@ -542,6 +549,11 @@ export type DraftReviewAction =
   | { type: "discardFailed"; code: InlineReviewMessageCode }
   | { type: "batchStarted" }
   | { type: "batchSettled"; error: DraftBatchErrorCode | null }
+  | {
+      type: "draftCommandFailed";
+      selection: DraftReviewSelection;
+      code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">;
+    }
   | { type: "rejectSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
@@ -607,6 +619,10 @@ export function draftReviewReducer(
       return { ...state, dockDispositionError: null };
     case "batchSettled":
       return { ...state, dockDispositionError: action.error };
+    case "draftCommandFailed":
+      return surfaceMatchesDraft(state.surface, action.selection)
+        ? { ...state, inlineReviewMessage: { code: action.code, tone: "error" } }
+        : state;
     case "rejectSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
