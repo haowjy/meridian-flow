@@ -1,6 +1,6 @@
 /** Route seam coverage for create-with-content followed by the public read projection. */
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -12,7 +12,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("context create/read routes (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const { Hocuspocus } = await import("@hocuspocus/server");
     const { Schema } = await import("prosemirror-model");
     const { yXmlFragmentToProsemirrorJSON } = await import("y-prosemirror");
@@ -30,6 +29,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
     const { createDrizzleDocumentAccess } = await import("../document-access.js");
+    const { useRollbackTestDatabase } = await import(
+      "../../test-support/rollback-test-database.js"
+    );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createContextEntry, parseCreateContextEntryBody } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create.post.js"
@@ -38,30 +40,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_ID = "00000000-0000-4000-8000-000000000921";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000922";
     const WORK_ID = "00000000-0000-4000-8000-000000000923";
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        schema.branchWriteJournal,
-        schema.pushLineage,
-        schema.documentBranches,
-        schema.documentYjsCheckpoints,
-        schema.documentYjsHeads,
-        schema.documentYjsUpdates,
-        schema.folders,
-        schema.documents,
-        schema.contextSources,
-        schema.works,
-        schema.projects,
-        schema.users,
-      ]);
+      db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "context-route"));
       await db
         .insert(schema.projects)
         .values({ id: PROJECT_ID, userId: USER_ID, name: "Project", slug: "project" });
     });
-
-    afterAll(async () => db.$client.end());
 
     for (const { path, schemaType } of [
       { path: "chapter.prose", schemaType: "document" },

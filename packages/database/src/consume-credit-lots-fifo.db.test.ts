@@ -1,22 +1,28 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { assertLocalDevPostgresOrExplicitAllow } from "./__test-support__/db-fixtures";
+import {
+  assertLocalDevPostgresOrExplicitAllow,
+  DB_TEST_FIXTURE_USER_ID_PRIMARY,
+  resolveDbTestFixtureUserId,
+} from "./__test-support__/db-fixtures";
 
 const databaseUrl = process.env.DATABASE_URL;
-const testUserId = process.env.TEST_USER_ID;
+const runDbTests = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
-function testConfig(): { databaseUrl: string; userId: string } {
-  if (!databaseUrl || !testUserId) {
-    throw new Error("databaseUrl and testUserId are required");
-  }
-  return { databaseUrl, userId: testUserId };
+async function testConfig(): Promise<{ databaseUrl: string; userId: string }> {
+  if (!databaseUrl) throw new Error("DATABASE_URL is required");
+  const userId = await resolveDbTestFixtureUserId(databaseUrl, {
+    fixtureUserId: DB_TEST_FIXTURE_USER_ID_PRIMARY,
+    suite: "consume-credit-lots-fifo",
+  });
+  return { databaseUrl, userId };
 }
 
-describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
+describe.skipIf(!runDbTests || !databaseUrl)("consume_credit_lots_fifo", () => {
   it("debits FIFO, is idempotent, and can go negative via debt lot", async () => {
     assertLocalDevPostgresOrExplicitAllow(databaseUrl);
-    const { databaseUrl: dbUrl, userId } = testConfig();
+    const { databaseUrl: dbUrl, userId } = await testConfig();
     const sql = postgres(dbUrl, { max: 1 });
     const groupId = randomUUID();
     const usageEventId = `test-${randomUUID()}`;
@@ -117,7 +123,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
 
   it("creates debt lot on overspend when user has no lots", async () => {
     assertLocalDevPostgresOrExplicitAllow(databaseUrl);
-    const { databaseUrl: dbUrl, userId } = testConfig();
+    const { databaseUrl: dbUrl, userId } = await testConfig();
     const sql = postgres(dbUrl, { max: 1 });
 
     try {
@@ -149,7 +155,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
 
   it("debits expiring grant before non-expiring purchase", async () => {
     assertLocalDevPostgresOrExplicitAllow(databaseUrl);
-    const { databaseUrl: dbUrl, userId } = testConfig();
+    const { databaseUrl: dbUrl, userId } = await testConfig();
     const sql = postgres(dbUrl, { max: 1 });
     const usageEventId = `test-${randomUUID()}`;
 
@@ -195,7 +201,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
 
   it("allows purchase lots without a subscription", async () => {
     assertLocalDevPostgresOrExplicitAllow(databaseUrl);
-    const { databaseUrl: dbUrl, userId } = testConfig();
+    const { databaseUrl: dbUrl, userId } = await testConfig();
     const sql = postgres(dbUrl, { max: 1 });
 
     try {
@@ -234,7 +240,7 @@ describe.skipIf(!databaseUrl || !testUserId)("consume_credit_lots_fifo", () => {
 
   it("rejects null or empty usage_event_id", async () => {
     assertLocalDevPostgresOrExplicitAllow(databaseUrl);
-    const { databaseUrl: dbUrl, userId } = testConfig();
+    const { databaseUrl: dbUrl, userId } = await testConfig();
     const sql = postgres(dbUrl, { max: 1 });
 
     try {

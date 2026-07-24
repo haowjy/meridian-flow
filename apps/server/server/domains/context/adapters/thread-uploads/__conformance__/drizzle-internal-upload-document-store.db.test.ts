@@ -1,5 +1,5 @@
 /** Drizzle conformance tests for thread-upload backing documents against the real documents table constraints. */
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -10,23 +10,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("drizzle internal upload document store (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
+    const { useRollbackTestDatabase } = await import(
+      "../../../../../test-support/rollback-test-database.js"
+    );
     const { truncateDrizzleTables } = await import("../../../../../test-support/drizzle-reset.js");
     const { createDrizzleInternalUploadDocumentStore } = await import(
       "../internal-upload-document-store.js"
     );
 
-    const db = createDb(DATABASE_URL, { max: 1 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 1,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        schema.documents,
-        schema.folders,
-        schema.contextSources,
-        schema.projects,
-        schema.users,
-      ]);
+      db = database.current;
       const { conformanceUserValues } = await import(
         "@meridian/database/__test-support__/db-fixtures"
       );
@@ -41,10 +41,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Upload conformance",
         slug: "upload-conformance",
       });
-    });
-
-    afterAll(async () => {
-      await db.close();
     });
 
     it("persists generic binary uploads through the real documents.file_type constraint", async () => {

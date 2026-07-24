@@ -58,7 +58,14 @@ tools/dev/
 
 - One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
 - **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves live worktrees, active managed test runs, explicit `<base>_test-manual-*` databases, and reserved names. It drops stale worktree databases and managed test databases whose owner process has stopped.
-- **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and migrates a unique `<base>_test-run-<pid>-<timestamp>` database, runs the shared Vitest project, and drops only that owned database. The nested fresh-migration proof uses the existing `<base>_migrations_<pid>_<timestamp>` managed convention. CI/external Postgres instances rely on their own pre-provisioned ephemeral database. A killed local run is reclaimed later by `dev:gc-dbs` only when its encoded owner PID is no longer alive. Managed and manual test prefixes are reserved from worktree database slugs.
+- **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and
+  migrates one `<base>_test-run-<pid>-<timestamp>` template, clones four
+  `-worker-<n>` databases, and routes each Vitest worker to its own clone.
+  Migration catalog assertions run against those fresh clones instead of
+  replaying migrations in a nested process. The runner drops every clone and
+  its template; `dev:gc-dbs` recognizes the encoded owner PID for interrupted
+  runs. CI/external Postgres instances retain serial execution against their
+  pre-provisioned ephemeral database.
 - **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
 - **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
 - **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.

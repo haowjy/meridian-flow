@@ -1,7 +1,7 @@
 /** Postgres coverage for safety-notice fan-out and destructive drains. */
 
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -21,10 +21,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("drizzle notice port (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
+    );
+    const { useRollbackTestDatabase } = await import(
+      "../../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleNoticePort } = await import("./drizzle-notice-port.js");
@@ -34,21 +36,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
-    const db = createDb(DATABASE_URL, { max: 1 });
-    const threadRepos = createDrizzleRepositories(db);
-    const activeDocuments = createActiveDocumentResolver(threadRepos);
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 1,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
+    let threadRepos = createDrizzleRepositories(db);
+    let activeDocuments = createActiveDocumentResolver(threadRepos);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        schema.pendingNoticeDeliveries,
-        schema.pendingNotices,
-        schema.threadDocuments,
-        schema.threads,
-        schema.documents,
-        schema.contextSources,
-        schema.projects,
-        schema.users,
-      ]);
+      db = database.current;
+      threadRepos = createDrizzleRepositories(db);
+      activeDocuments = createActiveDocumentResolver(threadRepos);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "pending-notices"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -90,10 +89,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { threadId: THREAD_ID, documentId: DOCUMENT_ID, relationship: "editing" },
         { threadId: OTHER_THREAD_ID, documentId: DOCUMENT_ID, relationship: "editing" },
       ]);
-    });
-
-    afterAll(async () => {
-      await db.close();
     });
 
     it("fans a document-scoped notice out to both active threads", async () => {
