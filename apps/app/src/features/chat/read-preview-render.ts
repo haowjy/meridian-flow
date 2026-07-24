@@ -18,8 +18,8 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 
 const NODE_TO_DOM = {
-  paragraph: () => ["p", 0],
-  heading: (node: PMNode) => [`h${node.attrs.level ?? 1}`, 0],
+  paragraph: (node: PMNode) => ["p", alignedBlockAttrs(node), 0],
+  heading: (node: PMNode) => [`h${node.attrs.level ?? 1}`, alignedBlockAttrs(node), 0],
   blockquote: () => ["blockquote", 0],
   bullet_list: () => ["ul", 0],
   ordered_list: (node: PMNode) => {
@@ -31,7 +31,7 @@ const NODE_TO_DOM = {
   hard_break: () => ["br"],
   horizontal_rule: () => ["hr"],
   image: (node: PMNode) => ["img", imageAttrs(node)],
-  table: () => ["table", ["tbody", 0]],
+  table: (node: PMNode) => ["table", alignedBlockAttrs(node), ["tbody", 0]],
   table_row: () => ["tr", 0],
   table_header: (node: PMNode) => ["th", tableCellAttrs(node), 0],
   table_cell: (node: PMNode) => ["td", tableCellAttrs(node), 0],
@@ -100,11 +100,20 @@ function linkAttrs(mark: Mark): Record<string, string> {
 
 function tableCellAttrs(node: PMNode): Record<string, string | number> {
   const attrs: Record<string, string | number> = {};
+  const styles: string[] = [];
   const alignment = node.attrs.alignment;
-  if (alignment) attrs.style = `text-align: ${alignment}`;
+  if (alignment) styles.push(`text-align: ${alignment}`);
+  const width = Array.isArray(node.attrs.colwidth) ? Number(node.attrs.colwidth[0]) : 0;
+  if (Number.isFinite(width) && width > 0) styles.push(`width: ${width}px`);
+  if (styles.length > 0) attrs.style = styles.join("; ");
   const colspan = Number(node.attrs.colspan ?? 1);
   const rowspan = Number(node.attrs.rowspan ?? 1);
   if (colspan > 1) attrs.colspan = colspan;
   if (rowspan > 1) attrs.rowspan = rowspan;
   return attrs;
+}
+
+function alignedBlockAttrs(node: PMNode): Record<string, string> {
+  const align = node.attrs.align;
+  return align === "center" || align === "right" ? { style: `text-align: ${align}` } : {};
 }

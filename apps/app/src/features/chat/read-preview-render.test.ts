@@ -19,4 +19,29 @@ describe("read preview rendering", () => {
     expect(host.querySelector("em")?.textContent).toBe("move");
     expect(host.textContent).not.toContain("abcd|");
   });
+
+  it("materializes Layout alignment and table column widths", () => {
+    const fragment = renderReadFragment(
+      [
+        '<Layout align="center">',
+        "  Centered prose.",
+        "</Layout>",
+        "",
+        '<Layout align="right" widths="120,80">',
+        "  | Name | Value |",
+        "  | ---- | ----: |",
+        "  | Qi   | 12    |",
+        "</Layout>",
+      ].join("\n"),
+    );
+    const host = document.createElement("div");
+    if (fragment) host.append(fragment);
+
+    expect(host.querySelector("p")?.style.textAlign).toBe("center");
+    expect(host.querySelector("table")?.style.textAlign).toBe("right");
+    expect(Array.from(host.querySelectorAll("th")).map((cell) => cell.style.width)).toEqual([
+      "120px",
+      "80px",
+    ]);
+  });
 });
