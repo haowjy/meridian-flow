@@ -22,6 +22,7 @@ import {
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../../ports/model.js";
 import type { ObservationSnapshotStore } from "../../ports/observation-snapshot.js";
+import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
@@ -58,6 +59,7 @@ export function harness(
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
     observationSnapshots?: ObservationSnapshotStore;
     model?: AgentEditModel;
+    semanticProvenance?: SemanticProvenanceWriter;
   } = {},
 ) {
   const agentEditModel = options.model ?? model;
@@ -104,6 +106,7 @@ export function harness(
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
     model: agentEditModel,
+    semanticProvenance: options.semanticProvenance,
     observationSnapshots,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),

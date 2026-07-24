@@ -1431,8 +1431,49 @@ describe("write tool dispatch", () => {
       kind: "preserved",
       source: { clientID: writerGapRoots[0]?.clientID, clock: writerGapRoots[0]?.clock, length: 5 },
       output: { from: 6, to: 11 },
+      materialization: "retained",
     });
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
+  it("does not rematerialize provenance for roots retained by a multi-range edit", async () => {
+    const writeCertifiedFacts = vi.fn();
+    const ctx = harness(
+      { "chapter.md": "cat and cat" },
+      { semanticProvenance: { writeCertifiedFacts } },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
+      context,
+    );
+
+    expectOutcome(replaced, "success");
+    expect(writeCertifiedFacts).not.toHaveBeenCalled();
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["kitten and kitten"]);
+  });
+
+  it("forwards semantic provenance and restores the runtime if its writer rejects", async () => {
+    const writeCertifiedFacts = vi.fn(() => {
+      throw new Error("forced provenance rejection");
+    });
+    const ctx = harness(
+      { "chapter.md": "cat one" },
+      { semanticProvenance: { writeCertifiedFacts } },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
+      context,
+    );
+    expectOutcome(failed, "internal_error", true);
+    expect(writeCertifiedFacts).toHaveBeenCalledOnce();
+
+    const reread = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    expectOutcome(reread, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
   });
 
   it.each([

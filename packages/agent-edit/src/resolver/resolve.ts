@@ -642,6 +642,7 @@ function semanticRunsForTextRanges(
         kind: "preserved",
         source,
         output: { from: outputCursor, to: outputCursor + source.length },
+        materialization: "retained",
       });
       outputCursor += source.length;
     }

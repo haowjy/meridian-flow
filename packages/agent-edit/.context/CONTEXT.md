@@ -252,9 +252,11 @@ Plain same-block find-all emits one `textRanges` edit with exact, ordered match
 spans. The adapter adds those replacements back-to-front to one ProseMirror
 `Transform` and projects each exact step inside one Yjs transaction. Unmatched
 gaps therefore keep their CRDT items; the semantic IR partitions the replacement
-window into fresh payload and preserved source-lineage runs. Single-match output
-retains the existing `text` shape. Formatted and cross-block finds keep the
-serialized-markdown reconciliation path.
+window into fresh payload and `materialization: "retained"` preserved runs.
+Retained runs need no continuation facts because the original roots remain
+visible, so the write façade does not send them to the inserted-prose
+materializer. Single-match output retains the existing `text` shape. Formatted
+and cross-block finds keep the serialized-markdown reconciliation path.
 
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all

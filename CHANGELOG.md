@@ -5,7 +5,8 @@
 - `agent-edit`: find-all now replaces exact same-block ranges without re-authoring
   untouched writer prose or normalizing whitespace around deletions, and adjacent
   structural matches no longer fail on deleted predecessor anchors. Failed
-  multi-edit applies restore the session's pre-write document.
+  multi-edit applies and provenance-writer failures restore the session's pre-write
+  document; retained roots bypass continuation-fact rematerialization.
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;
