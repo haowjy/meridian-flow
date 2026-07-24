@@ -875,6 +875,9 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentAccess: {
+      async documentAccessState() {
+        return "available";
+      },
       async canAccessDocument() {
         return true;
       },

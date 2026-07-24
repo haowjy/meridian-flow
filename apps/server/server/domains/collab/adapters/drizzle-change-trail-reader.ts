@@ -6,7 +6,7 @@ import {
   changeTrailDocumentOccurrences,
   changeTrailShells,
 } from "@meridian/database/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DocumentAccessPort } from "../../../lib/document-access.js";
 import type {
   ChangeTrailDocumentDetailV1,
@@ -18,7 +18,7 @@ export type ChangeTrailReader = ReturnType<typeof createDrizzleChangeTrailReader
 
 export function createDrizzleChangeTrailReader(
   db: Database,
-  documentAccess: Pick<DocumentAccessPort, "canAccessDocument">,
+  documentAccess: Pick<DocumentAccessPort, "documentAccessState">,
 ) {
   async function listShells(threadId: string): Promise<ChangeTrailShellV1[]> {
     const rows = await db
@@ -50,8 +50,7 @@ export function createDrizzleChangeTrailReader(
     const rows = await db
       .select({
         documentId: changeTrailDocumentOccurrences.documentId,
-        documentTitle: changeTrailDocumentDetails.documentTitle,
-        changes: changeTrailDocumentDetails.changes,
+        detailDocumentId: changeTrailDocumentDetails.documentId,
       })
       .from(changeTrailDocumentOccurrences)
       .innerJoin(
@@ -73,21 +72,60 @@ export function createDrizzleChangeTrailReader(
       )
       .orderBy(asc(changeTrailDocumentOccurrences.documentId));
 
-    return Promise.all(
+    const authorized = await Promise.all(
       rows.map(async (row) => {
-        if (row.changes === null || row.documentTitle === null) {
-          return { documentId: row.documentId, unavailable: true as const };
+        if (row.detailDocumentId === null) {
+          return { kind: "unavailable" as const, documentId: row.documentId };
         }
-        const unavailable = !(await documentAccess.canAccessDocument(input.userId, row.documentId));
-        return {
-          trailId: input.trailId,
-          documentId: row.documentId,
-          documentTitle: row.documentTitle,
-          changes: parseTrailChangesV1(row.changes),
-          ...(unavailable ? { unavailable: true as const } : {}),
-        };
+        const anchorState = await documentAccess.documentAccessState(input.userId, row.documentId);
+        return anchorState
+          ? { kind: "detail" as const, documentId: row.documentId, anchorState }
+          : null;
       }),
     );
+    const authorizedDocumentIds = authorized.flatMap((row) =>
+      row?.kind === "detail" ? [row.documentId] : [],
+    );
+    const detailRows =
+      authorizedDocumentIds.length === 0
+        ? []
+        : await db
+            .select({
+              documentId: changeTrailDocumentDetails.documentId,
+              documentTitle: changeTrailDocumentDetails.documentTitle,
+              changes: changeTrailDocumentDetails.changes,
+            })
+            .from(changeTrailDocumentDetails)
+            .where(
+              and(
+                eq(changeTrailDocumentDetails.trailId, input.trailId),
+                inArray(changeTrailDocumentDetails.documentId, authorizedDocumentIds),
+              ),
+            );
+    const detailsByDocumentId = new Map(detailRows.map((row) => [row.documentId, row]));
+
+    const result: Array<ChangeTrailDocumentDetailV1 | { documentId: string; unavailable: true }> =
+      [];
+    for (const access of authorized) {
+      if (!access) continue;
+      if (access.kind === "unavailable") {
+        result.push({ documentId: access.documentId, unavailable: true });
+        continue;
+      }
+      const row = detailsByDocumentId.get(access.documentId);
+      if (!row) {
+        result.push({ documentId: access.documentId, unavailable: true });
+        continue;
+      }
+      result.push({
+        trailId: input.trailId,
+        documentId: row.documentId,
+        documentTitle: row.documentTitle,
+        changes: parseTrailChangesV1(row.changes),
+        anchorState: access.anchorState,
+      });
+    }
+    return result;
   }
 
   return { listShells, readDetails };
