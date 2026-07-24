@@ -84,6 +84,7 @@ export function fallbackCommandName(command: unknown): WriteCommand["command"] {
     switch (value) {
       case "create":
       case "read":
+      case "diff":
       case "insert":
       case "replace":
       case "undo":
