@@ -111,7 +111,7 @@ function ChatScreenLoaded({
 
       <div className="min-h-0 flex-1">
         <ProjectChatContextNavigationProvider
-          activeWorkId={thread?.workId ?? null}
+          activeWorkId={activeWork?.id ?? null}
           onSelectContextPath={onSelectContextPath}
         >
           <ChatView

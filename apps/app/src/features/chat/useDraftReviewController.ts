@@ -122,7 +122,7 @@ export type DraftReviewController = {
    * can drive the manuscript without holding the editor handle itself.
    */
   focusReviewOperation: (operationId: string) => void;
-  acceptOperation: (operationId: string, model: InlineReviewModel) => void;
+  acceptOperation: (operationId: string, model: InlineReviewModel) => Promise<void>;
   undoAcceptOperation: () => void;
   discardOperation: (operationId: string) => Promise<void>;
   accept: (documentId: string, draftId: string) => Promise<void>;
@@ -147,6 +147,7 @@ export function useDraftReviewController(
   const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
+  const applyInFlightRef = useRef(false);
   const displayedPreviewRef = useRef<(DraftApplyPreview & { identity: string }) | null>(null);
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
@@ -182,7 +183,11 @@ export function useDraftReviewController(
   // all AND every per-card verb, including Undo) disables on this, so the writer
   // can never stack two overlapping dispositions against the same draft.
   const isDisposing =
-    isPending || isOperationAccepting || isInlineDiscardPending || isOperationUndoing;
+    isPending ||
+    isOperationAccepting ||
+    acceptingOperationId !== null ||
+    isInlineDiscardPending ||
+    isOperationUndoing;
 
   useEffect(() => {
     if (inlineReview) return;
@@ -376,7 +381,7 @@ export function useDraftReviewController(
       // A second Apply while one is already in flight is ignored — it must NOT
       // dispatch a failure, which would clear the real `acceptingOperationId`
       // and make the busy card look idle mid-mutation.
-      if (operationAcceptMutation.isPending) return;
+      if (applyInFlightRef.current || operationAcceptMutation.isPending) return;
       const operation = model.operations.find((candidate) => candidate.operationId === operationId);
       if (!operation) {
         void queryClient.invalidateQueries({
@@ -393,6 +398,7 @@ export function useDraftReviewController(
         });
         return;
       }
+      applyInFlightRef.current = true;
       dispatch({ type: "operationAcceptStarted", operationId });
       let request: DraftApplyRequest;
       try {
@@ -410,6 +416,7 @@ export function useDraftReviewController(
             ),
         });
       } catch {
+        applyInFlightRef.current = false;
         dispatch({
           type: "operationAcceptFailed",
           message: { code: "apply-failed", tone: "error" },
@@ -427,8 +434,10 @@ export function useDraftReviewController(
         {
           onSuccess(response) {
             applyDisposition("operation", inline.documentId, inline.draftId, response);
+            applyInFlightRef.current = false;
           },
           onError() {
+            applyInFlightRef.current = false;
             dispatch({
               type: "operationAcceptFailed",
               message: { code: "apply-failed", tone: "error" },
@@ -528,6 +537,7 @@ export function useDraftReviewController(
 
   const accept = useCallback(
     async (documentId: string, draftId: string) => {
+      if (applyInFlightRef.current) return;
       if (
         acceptIsBlocked({
           isPending,
@@ -547,6 +557,7 @@ export function useDraftReviewController(
       ) {
         return;
       }
+      applyInFlightRef.current = true;
       const request = acquireDraftApplyRequest({
         scope: "draft",
         preview: displayedPreview,
@@ -563,6 +574,10 @@ export function useDraftReviewController(
         {
           onSuccess(response) {
             applyDisposition("draft", documentId, draftId, response);
+            applyInFlightRef.current = false;
+          },
+          onError() {
+            applyInFlightRef.current = false;
           },
         },
       );
