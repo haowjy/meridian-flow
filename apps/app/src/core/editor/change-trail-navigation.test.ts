@@ -27,7 +27,7 @@ function deletionChange(doc: Y.Doc): TrailChange {
   };
 }
 
-function registryFor(doc: Y.Doc, status: "synced" | "syncing") {
+function registryFor(doc: Y.Doc, status: "synced" | "syncing", markerIds: readonly string[] = []) {
   const events: string[] = [];
   return {
     events,
@@ -36,6 +36,9 @@ function registryFor(doc: Y.Doc, status: "synced" | "syncing") {
       release: () => events.push("release"),
       get: () => ({
         document: doc,
+        markerStore: {
+          getSnapshot: () => markerIds.map((changeId) => ({ changeId, dismissed: false })),
+        },
         waitForCurrentSync: async () => events.push("sync"),
         getSnapshot: () => ({ status }),
       }),
@@ -59,6 +62,26 @@ describe("change trail navigation", () => {
     ).resolves.toEqual({ kind: "shown" });
     expect(events).toEqual(["retain", "sync", "release"]);
     expect(showRange).toHaveBeenCalledOnce();
+  });
+
+  it("reveals an existing session mark instead of adding a generic range", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const { registry } = registryFor(doc, "synced", ["change-1"]);
+    const showMarker = vi.fn(() => ({ shown: true }));
+    const showRange = vi.fn(() => ({ shown: true }));
+
+    await expect(
+      navigateToTrailChange({
+        documentId: "doc-1",
+        change: deletionChange(doc),
+        openDocument: async () => true,
+        registry: registry as never,
+        showMarker,
+        showRange,
+      }),
+    ).resolves.toEqual({ kind: "shown" });
+    expect(showMarker).toHaveBeenCalledWith("doc-1", "change-1");
+    expect(showRange).not.toHaveBeenCalled();
   });
 
   it("reports a sync timeout honestly and still releases", async () => {

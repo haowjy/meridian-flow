@@ -26,3 +26,9 @@ export function showLiveRangeInEditor(
     : editor.commands.showLiveRange(range);
   return { shown };
 }
+
+export function showPeerMarkerInEditor(documentId: string, changeId: string): { shown: boolean } {
+  const editor = editors.get(documentId);
+  if (!editor || editor.isDestroyed) return { shown: false };
+  return { shown: editor.commands.showPeerMarker(changeId) };
+}
