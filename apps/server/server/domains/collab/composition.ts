@@ -223,7 +223,7 @@ export async function recordNoticeAfterDurability(
     if (input.eventSink) {
       emitEvent(input.eventSink, {
         level: "error",
-        source: "collab.safety_notices",
+        source: "collab.model_context_notices",
         name: "record_failed_after_durability",
         payload: {
           kind: input.kind,
@@ -243,7 +243,7 @@ export async function recordNoticeAfterDurability(
       if (input.eventSink) {
         emitEvent(input.eventSink, {
           level: "error",
-          source: "collab.safety_notices",
+          source: "collab.model_context_notices",
           name: "degraded_record_failed_after_durability",
           payload: {
             threadId: input.threadId,
@@ -1270,9 +1270,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
         return { status: "gone", live: live.value };
       },
-      async journal() {
-        return { status: "not_found" as const };
-      },
       async accept(input) {
         if (input.workId && deps.branchStore && deps.branchPush) {
           const branch = input.branchId ? await deps.branchStore.getBranch(input.branchId) : null;
@@ -1432,18 +1429,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         }
         return { status: "discarded" as const, draftId: input.draftId ?? input.branchId ?? "" };
       },
-      async undoAccept(input) {
-        return { status: "not_found" as const, draftId: input.draftId };
-      },
-      async undoReject(input) {
-        return { status: "not_found" as const, draftId: input.draftId };
-      },
     },
 
     draftSessionStats: {
-      countInFlightDraftSessionsByWork() {
-        return 0;
-      },
       async listActiveDraftsByWork(input) {
         return (await listReviewableWorkDraftBranches(input.workId)).filter(
           (draft): draft is ReviewableDraft & { status: "active" } => draft.status === "active",

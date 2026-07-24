@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: removed draft review endpoints that could only return not found,
+  plus stale safety-era diagnostic naming (#345).
 - `apps/server`: collab mutation admission now exposes only supported operations;
   journal attribution is the sole provenance birth-class authority (#345).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the

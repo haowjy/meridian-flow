@@ -17,7 +17,6 @@ import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
   DraftAcceptResult,
-  DraftJournalSnapshot,
   DraftRejectResult,
   DraftReviewPreview,
   ReviewableDraft,
@@ -253,12 +252,6 @@ export type DraftReviewApi = {
     | ({ status: "active"; draftId?: string; branchId?: string } & DraftReviewPreview)
     | { status: "gone"; live: string }
   >;
-  journal(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<DraftJournalSnapshot | { status: "not_found" }>;
   accept(input: {
     projectId?: ProjectId;
     workId?: WorkId;
@@ -281,24 +274,9 @@ export type DraftReviewApi = {
     userId?: UserId;
     operationIds?: string[];
   }): Promise<DraftRejectResult>;
-  undoAccept(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-    userId: UserId;
-    writeId?: string;
-  }): Promise<{ status: "not_found"; draftId: string }>;
-  undoReject(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<{ status: "not_found"; draftId: string }>;
 };
 
 export type DraftSessionStats = {
-  countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
 };
 
