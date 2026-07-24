@@ -105,6 +105,65 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
     afterTextAtReceipt: "Agent replacement.",
     navigation: { kind: "live_block_range" },
   });
+
+  model.applyTextEdit(
+    toDocHandle(branchDoc),
+    afterBlock,
+    { from: 0, to: "Agent replacement.".length },
+    "",
+  );
+  const emptiedBlock = model.getBlocks(toDocHandle(branchDoc))[0];
+  const emptiedElement = branchDoc.getXmlFragment("prosemirror").get(0);
+  if (!emptiedBlock || !(emptiedElement instanceof Y.XmlElement)) {
+    throw new Error("missing emptied block");
+  }
+  const emptiedId = model.getBlockId(emptiedBlock);
+  expect(getBlockItemId(emptiedBlock)).toEqual(getBlockItemId(afterBlock));
+
+  const emptiedChanges = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: afterId,
+          beforeText: "Agent replacement.",
+          afterText: "",
+          beforeWordCount: 2,
+          afterWordCount: 0,
+          wordDelta: -2,
+        },
+      ],
+      totalWordDelta: -2,
+    },
+    receiptId: "receipt-emptied-identity",
+    ownersByBlock: new Map([[afterId, [null]]]),
+    operations: [],
+    conflictedBlocks: [],
+    before: [{ hash: afterId, serialized: "Agent replacement." }],
+    blockIdentities: new Map([
+      [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
+      [emptiedId, { documentId: "document-1", ...getBlockItemId(emptiedBlock) }],
+    ]),
+    beforeBodies: new Map([[afterId, "Agent replacement."]]),
+    afterIds: new Set([emptiedId]),
+    afterById: new Map([[emptiedId, emptiedElement]]),
+    afterDoc: branchDoc,
+    beforeContentRef: 1,
+  });
+
+  expect(emptiedChanges).toMatchObject([
+    {
+      kind: "delete",
+      beforeBlockId: afterId,
+      afterBlockId: null,
+      afterBlockIdentity: null,
+      navigation: { kind: "deletion_boundary" },
+    },
+  ]);
 });
 
 it("projects a structurally adjacent whole-block replacement as one modification", () => {

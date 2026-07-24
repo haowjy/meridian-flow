@@ -241,17 +241,32 @@ export function preparedTrailChanges(input: {
       : undefined;
     const replacementBlock =
       sameIdentityAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
+    const beforeBody = bodyFromHashline(block.beforeText);
+    const afterBody = bodyFromHashline(block.afterText);
+    // A textblock can retain its Yjs identity while its entire body is removed.
+    // Project that as a deletion at the surviving empty block, rather than as
+    // an invisible modification range over zero text.
+    const emptiedSurvivingBlock =
+      sameIdentityAfter !== undefined &&
+      block.beforeText !== null &&
+      beforeBody.status === "available" &&
+      beforeBody.markdown.length > 0 &&
+      block.afterText !== null &&
+      afterBody.status === "available" &&
+      afterBody.markdown.length === 0;
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
-    const afterIdentity =
-      sameIdentityAfter?.identity ??
-      (replacementId !== undefined
-        ? (input.blockIdentities.get(replacementId) ?? null)
-        : block.afterText === null
-          ? null
-          : (input.blockIdentities.get(block.blockId) ?? null));
+    const afterIdentity = emptiedSurvivingBlock
+      ? null
+      : (sameIdentityAfter?.identity ??
+        (replacementId !== undefined
+          ? (input.blockIdentities.get(replacementId) ?? null)
+          : block.afterText === null
+            ? null
+            : (input.blockIdentities.get(block.blockId) ?? null)));
     const location: TrailProjectionLocation = {
-      kind:
-        replacementId !== undefined
+      kind: emptiedSurvivingBlock
+        ? "delete"
+        : replacementId !== undefined
           ? "modify"
           : (sweptNavigation?.outcome ??
             (block.beforeText === null
@@ -261,12 +276,14 @@ export function preparedTrailChanges(input: {
                 : "modify")),
       beforeIdentity,
       afterIdentity,
-      navigation: sameIdentityAfter
-        ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
-        : (sweptNavigation?.navigation ??
-          (replacementBlock
-            ? liveBlockTarget(input.afterDoc, replacementBlock)
-            : ordinaryNavigation)),
+      navigation: emptiedSurvivingBlock
+        ? deletionBoundaryTarget({ doc: input.afterDoc, next: sameIdentityAfter.block })
+        : sameIdentityAfter
+          ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
+          : (sweptNavigation?.navigation ??
+            (replacementBlock
+              ? liveBlockTarget(input.afterDoc, replacementBlock)
+              : ordinaryNavigation)),
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
@@ -277,7 +294,9 @@ export function preparedTrailChanges(input: {
       receiptId: input.receiptId,
       kind: location.kind,
       beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
+      afterBlockId: emptiedSurvivingBlock
+        ? null
+        : (replacementId ?? (block.afterText === null ? null : block.blockId)),
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,

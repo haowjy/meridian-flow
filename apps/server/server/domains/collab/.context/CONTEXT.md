@@ -240,6 +240,8 @@ history is preserved for attribution, echo, and undo dependency checking.
   push with an empty set. Same joined authority refines the existing aggregate
   version; only journal or staged-push authority joined after the durable commit
   publishes another trail version.
+  A surviving textblock whose non-empty body becomes empty projects as a deletion
+  at that block's boundary, not as a zero-width modification range.
 - **Settlement verification stack**: the shared killed-process oracle in
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
   Fixtures run a warm control, stop an identical subject at the durable commit
