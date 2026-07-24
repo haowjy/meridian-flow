@@ -53,6 +53,10 @@ export type CommitBranchMutationInput = PersistBranchInput & {
 export type AppendBranchJournalInput = {
   branchId: string;
   generation: number;
+  /** Rejects a staged reversal if branch history advanced after planning. */
+  expectedJournalWatermark?: number;
+  /** Rejects status-only Apply/discard/redo transitions after planning. */
+  expectedJournalRevision?: string;
   updateData: Uint8Array;
   source: "agent" | "writer";
   wId?: number | null;

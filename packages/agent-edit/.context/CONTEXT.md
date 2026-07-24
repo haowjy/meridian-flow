@@ -21,12 +21,24 @@ journal do).
 
 `ResponseCommitter` commits buffered response updates through `UpdateJournal.appendBatch`.
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
-`ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
-use the same store to plan against retained update rows and mutation metadata.
+`ReversalStore.reserveWriteOrdinal`; a host may supply a durable group ID and
+reuse one ordinal for that group when its journal folds the mutations into one
+row. Undo/redo selection and availability then use the same store to plan
+against retained update rows and mutation metadata.
+Hosts with movable reversal authority implement `withReversalScope` so one
+command plans and persists against one pinned authority. A reconstruction that
+adds synthetic reconciliation updates exposes its durable
+`persistenceWatermark` separately from those synthetic sequence numbers.
 Scope reversal is operation-atomic: every selected group is reconstructed
 before persistence. Multi-group redo is consumed by
 `persistRedoBatch` in one store transaction, then the prepared updates are
 projected together.
+
+Persistence results distinguish durable from staged commits. A failed staged
+projection restores or evicts the runtime before reporting failure. A failed
+projection after a durable reversal recovers from the journal and reports the
+committed outcome; diagnostics must not turn that committed effect into an
+`internal_error`.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
@@ -288,6 +300,10 @@ expansion, seq ownership, dependency evaluation) are private implementation
 details.
 
 **Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
+
+Multiple handles backed by the same durable journal update are one reversal
+boundary. Selecting any member expands to every handle sharing that update, so
+content and mutation status cannot diverge after a folded branch Apply.
 
 
 ### CRDT-neutral seam, ProseMirror content currency
