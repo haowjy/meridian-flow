@@ -112,7 +112,7 @@ export async function readChangeTrail(
   return result.documents;
 }
 
-/** Forward writer actions are server-owned so validation and journal persistence share one lock. */
+/** Recovery actions are server-owned so validation and journal persistence share one lock. */
 export async function applyTrailForwardAction(input: {
   threadId: string;
   trailId: string;
