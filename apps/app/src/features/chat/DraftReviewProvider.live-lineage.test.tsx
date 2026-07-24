@@ -1,20 +1,23 @@
 import { act, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const invalidateQueriesMock = vi.fn();
+const queryClientMock = { invalidateQueries: invalidateQueriesMock };
 const exitReviewMock = vi.fn();
 const resolveDraftOnlyTabMock = vi.fn();
 let currentGroups: ThreadDraftGroup[] = [];
 let currentInlineReview: { documentId: string; draftId: string } | null = null;
+let currentReviewRoomName: string | null = null;
 let rerenderProvider: (() => void) | null = null;
 
 const docUpdateHandlers = new Map<string, Set<() => void>>();
 
 vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+  useQueryClient: () => queryClientMock,
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({
@@ -32,7 +35,7 @@ vi.mock("./useDraftReviewController", () => ({
   useDraftReviewController: () => ({
     exitReview: exitReviewMock,
     inlineReview: currentInlineReview,
-    reviewRoomName: null,
+    reviewRoomName: currentReviewRoomName,
   }),
 }));
 vi.mock("@/core/editor/document-session-registry", () => ({
@@ -54,6 +57,18 @@ vi.mock("@/core/editor/document-session-registry", () => ({
         },
       };
     },
+    getRoom: (roomName: string) => ({
+      document: {
+        on: (event: string, handler: () => void) => {
+          if (event !== "update") return;
+          docUpdateHandlers.get(roomName)?.add(handler);
+        },
+        off: (event: string, handler: () => void) => {
+          if (event !== "update") return;
+          docUpdateHandlers.get(roomName)?.delete(handler);
+        },
+      },
+    }),
     has: (documentId: string) => docUpdateHandlers.has(documentId),
   }),
 }));
@@ -106,6 +121,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     docUpdateHandlers.clear();
     currentGroups = [];
     currentInlineReview = null;
+    currentReviewRoomName = null;
     vi.useFakeTimers();
   });
 
@@ -159,6 +175,32 @@ describe("DraftReviewProvider live lineage invalidation", () => {
         "discarded",
       );
       expect(exitReviewMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("attaches the draft-room observer when its room name arrives after selection", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    docUpdateHandlers.set("branch:draft-terminal", new Set());
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentReviewRoomName = "branch:draft-terminal";
+      await act(async () => rerenderProvider?.());
+      invalidateQueriesMock.mockClear();
+
+      emitDocumentUpdate("branch:draft-terminal");
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+
+      expect(invalidateQueriesMock).toHaveBeenCalledWith({
+        queryKey: projectQueryKeys.workDraftPreview(
+          "project-1",
+          "work-1",
+          "doc-terminal",
+          "draft-terminal",
+        ),
+      });
     });
   });
 });

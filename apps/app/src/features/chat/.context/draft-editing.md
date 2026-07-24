@@ -95,9 +95,10 @@ outcomes, revision acquisition, Apply response interpretation, and pure UI
 transitions. `useDraftReviewController` adapts React Query and editor/tab ports
 to those commands.
 
-That session owns active inline selection, stale-draft handling,
-closure/discard confirmations, inline messages, discard timers, and the inline
-discard journal cache. Editor-side code adapts runtime inputs:
+That session owns active inline selection, stale-draft handling, inline
+messages, and the single pending disposition target. React Query mutations hold
+the command through draft-list and preview refresh, so discard has no separate
+timer or pending cache. Editor-side code adapts runtime inputs:
 `useInlineReviewSync` pushes and reports plugin models; dock cards focus and
 settle changes through the controller.
 
