@@ -211,7 +211,11 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. It is also the sole interpreter
   of `TrailContributionReplacement`; settlement carries the replacement opaquely.
-  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
+  Each replacement carries its durable per-owner classifications and document-title
+  context. Never recover that context from surviving aggregate rows: an intervening
+  fold can remove every provisional row before final classification must restore the
+  push contribution. Dispatch, work claiming, and reconciliation do not duplicate
+  aggregate SQL.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -292,7 +296,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   Swept trail details retain the normalized final-pre-push target ranges and exact
   final-pre-push body. Settlement refines a complete provisional push trail in its
   existing aggregate version; only journal or staged-push authority joined after
-  the durable commit publishes another trail version. A complete empty
+  the durable commit publishes another trail version. If that admission's aggregate
+  fold cancels the provisional row, the next classification restores the push
+  contribution from the replacement's durable owner/title context. A complete empty
   classification removes that push's provisional changes in the same version.
 - **Settlement verification stack**: the shared killed-process oracle in
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
