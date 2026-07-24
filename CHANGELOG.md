@@ -24,8 +24,8 @@
   document projection engine; code files persist raw text and unsupported
   filetypes block settlement instead of storing markdown-shaped projections.
 - `apps/server`, `packages/database`: the PostgreSQL gate now runs every
-  registered non-collab DB contract instead of silently skipping 31 tests
-  (#377).
+  registered DB contract, including branch-push projection settlement, instead
+  of silently skipping actionable suites (#377).
 - `apps/server`, `packages/database`, `tools/dev`: unit files run in parallel;
   PostgreSQL tests clone four worker databases from one migrated template and
   ordinary adapter/route cases roll back instead of truncating per test (#377).
