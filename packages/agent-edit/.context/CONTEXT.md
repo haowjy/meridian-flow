@@ -167,6 +167,11 @@ merge; classification controls only writer-facing sweep capture and trails. The
 echo informs the agent, the trail informs the writer, and agent-only destruction
 stays silent.
 
+Immediate writes, local-runtime synchronization, and response phase-C projection
+compose the same lock-scoped apply kernel. When journal entries are supplied,
+the kernel appends them before its final concurrent recheck; already-durable
+response commits enter through the same kernel without re-appending.
+
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
 ## Architecture
