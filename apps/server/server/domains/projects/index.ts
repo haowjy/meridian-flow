@@ -361,6 +361,10 @@ export type {
   ProjectRepository,
   UpdateProjectInput,
 } from "./ports/project-repository.js";
-export type { EnsureUserInput, UserRepository } from "./ports/user-repository.js";
+export {
+  AccountLinkConflictError,
+  type EnsureUserInput,
+  type UserRepository,
+} from "./ports/user-repository.js";
 export type { CreateWorkInput, ListWorksOptions, WorkRepository } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
