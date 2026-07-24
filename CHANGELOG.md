@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: final branch-push classification now restores trail
+  contributions that provisional aggregate folding had cancelled away.
 - `apps/server`: branch pushes and trail actions now use the filetype-aware
   document projection engine; code files persist raw text and unsupported
   filetypes block settlement instead of storing markdown-shaped projections.
