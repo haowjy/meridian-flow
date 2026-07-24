@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: branch pushes and trail actions now use the filetype-aware
+  document projection engine; code files persist raw text and unsupported
+  filetypes block settlement instead of storing markdown-shaped projections.
 - `apps/server`: collab domain policy no longer imports Drizzle or observability
   adapters; composition supplies transaction and diagnostic capabilities (#345).
 - `apps/server`: removed draft review endpoints that could only return not found,

@@ -94,6 +94,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return doc;
     }
 
+    const unusedDurableProjectionSerializer = {
+      async serializeDocument() {
+        return "";
+      },
+    };
+    const markdownProjectionSerializer = (
+      model: ReturnType<typeof yProsemirrorModel>,
+      codec: ReturnType<typeof mdxCodec>,
+    ) => ({
+      async serializeDocument(_documentId: string, doc: Y.Doc) {
+        return codec.serialize(model.projectBlocks(toDocHandle(doc)));
+      },
+    });
+
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
         changeTrailDeliveryOutbox,
@@ -269,7 +283,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source: "agent",
         threadId: THREAD_ID as never,
       });
-      const pushStore = createDrizzleBranchPushStore(db);
+      const pushStore = createDrizzleBranchPushStore(db, unusedDurableProjectionSerializer);
       await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(1);
 
       await coordinator.resetFromDoc(work.branchId, live);
@@ -593,10 +607,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const schema = buildDocumentSchema();
       const branchPush = createBranchPushService({
         branchStore: store,
-        pushStore: createDrizzleBranchPushStore(db, {
-          model: yProsemirrorModel(schema),
-          codec: mdxCodec({ schema }),
-        }),
+        pushStore: createDrizzleBranchPushStore(
+          db,
+          markdownProjectionSerializer(yProsemirrorModel(schema), mdxCodec({ schema })),
+        ),
         branchCoordinator: createBranchCoordinator({ store }),
         journal: livePersistence.journal,
         liveCoordinator,
@@ -703,7 +717,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const branchPush = createBranchPushService({
         branchStore: store,
-        pushStore: createDrizzleBranchPushStore(db, { model, codec }, failingChangeTrails),
+        pushStore: createDrizzleBranchPushStore(
+          db,
+          markdownProjectionSerializer(model, codec),
+          failingChangeTrails,
+        ),
         branchCoordinator: coordinator,
         journal: livePersistence.journal,
         liveCoordinator,
@@ -800,7 +818,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("finds push lineage by bigint journal-id overlap", async () => {
-      const pushStore = createDrizzleBranchPushStore(db);
+      const pushStore = createDrizzleBranchPushStore(db, unusedDurableProjectionSerializer);
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
@@ -839,10 +857,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
       const schema = buildDocumentSchema();
-      const pushStore = createDrizzleBranchPushStore(db, {
-        model: yProsemirrorModel(schema),
-        codec: mdxCodec({ schema }),
-      });
+      const pushStore = createDrizzleBranchPushStore(
+        db,
+        markdownProjectionSerializer(yProsemirrorModel(schema), mdxCodec({ schema })),
+      );
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
@@ -895,9 +913,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             totalWordDelta: 0,
           },
           idempotencyKey: "stale-branch",
-          markdownProjection: "draft",
-          liveStateVector: Y.encodeStateVector(branchDoc),
-          liveState: Y.encodeStateAsUpdate(branchDoc),
           trail: {
             documentId: DOC_ID,
             documentTitle: "document",
@@ -961,9 +976,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             totalWordDelta: 0,
           },
           idempotencyKey: "inactive-row",
-          markdownProjection: "draft",
-          liveStateVector: Y.encodeStateVector(branchDoc),
-          liveState: Y.encodeStateAsUpdate(branchDoc),
           trail: {
             documentId: DOC_ID,
             documentTitle: "document",
@@ -1043,7 +1055,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("lists concurrent journal rows by the production document/generation/floor predicate", async () => {
-      const pushStore = createDrizzleBranchPushStore(db);
+      const pushStore = createDrizzleBranchPushStore(db, unusedDurableProjectionSerializer);
       const update = Buffer.from(Y.encodeStateAsUpdate(docWithText("row")));
       const otherDocId = "00000000-0000-4000-8000-000000000612";
       await db.insert(documents).values({

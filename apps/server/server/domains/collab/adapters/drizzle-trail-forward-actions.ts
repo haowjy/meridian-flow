@@ -22,6 +22,7 @@ import type { Database } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
   changeTrailShells,
+  documents,
   documentYjsUpdates,
 } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -31,6 +32,7 @@ import {
   applyCommittedUpdateAtFingerprint,
   fullStateFingerprint,
 } from "../domain/branch-push-transition.js";
+import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
@@ -51,6 +53,7 @@ export function createDrizzleTrailForwardActions(input: {
   coordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
+  durableProjectionSerializer: DurableProjectionSerializer;
 }) {
   return {
     async apply(actionInput: {
@@ -210,6 +213,14 @@ export function createDrizzleTrailForwardActions(input: {
                 })
                 .returning({ id: documentYjsUpdates.id });
               if (!journalRow) throw new Error("Failed to persist trail forward action");
+              const markdownProjection = await input.durableProjectionSerializer.serializeDocument(
+                detail.documentId as never,
+                liveDoc,
+              );
+              await tx
+                .update(documents)
+                .set({ markdownProjection, updatedAt: new Date() })
+                .where(eq(documents.id, detail.documentId as never));
               await updateActionState(tx, {
                 ...actionInput,
                 documentId: detail.documentId,

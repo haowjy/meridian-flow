@@ -23,7 +23,6 @@ import {
   assertRowsIntegrated,
   buildReceipt,
   conflictEchoFrom,
-  markdownFromDoc,
   stablePushIdempotencyKey,
   wholeBranchPushUpdate,
 } from "./branch-push-plan.js";
@@ -71,9 +70,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     rows: BranchJournalRow[];
     pushUpdate: Uint8Array;
     receipt: PushReceiptPayload;
-    markdownProjection: string;
-    liveStateVector: Uint8Array;
-    liveState: Uint8Array;
     idempotencyKey: string;
     receiptId: string;
     baselineState: Uint8Array;
@@ -141,9 +137,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         beforeDoc: liveDoc,
         afterDoc,
       });
-      const markdownProjection = markdownFromDoc(input.model, input.codec, afterDoc);
-      const liveState = Y.encodeStateAsUpdate(afterDoc);
-      const liveStateVector = Y.encodeStateVector(afterDoc);
       const idempotencyKey = stablePushIdempotencyKey({
         branchId: branch.branchId,
         generation: branch.generation,
@@ -155,9 +148,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         rows,
         pushUpdate,
         receipt,
-        markdownProjection,
-        liveStateVector,
-        liveState,
         idempotencyKey,
         receiptId: randomUUID(),
         baselineState: Y.encodeStateAsUpdate(baselineDoc),
@@ -184,7 +174,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
 
   const preparePush = (phase: ComputedPush, lockCutUpdate: Uint8Array, receiptId?: string) =>
     preparePushUnderLiveLock(
-      { journal: input.journal, model: input.model, codec: input.codec, attributionCodec },
+      { journal: input.journal, model: input.model, attributionCodec },
       phase,
       lockCutUpdate,
       receiptId,

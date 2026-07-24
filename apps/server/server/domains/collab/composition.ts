@@ -364,6 +364,114 @@ export type CollabFacadeDeps = {
   onWriterIngressBarrier?(barrier: WriterIngressBarrier): void;
 };
 
+type FacadeRuntimeDeps = Pick<
+  CollabFacadeDeps,
+  | "coordinator"
+  | "documentWriteHook"
+  | "eventSink"
+  | "initialDocumentSeeds"
+  | "journal"
+  | "lifecycle"
+  | "resolveDocumentFiletype"
+  | "reversalNoticePort"
+>;
+
+function createDocumentWriteHookRunner(
+  deps: Pick<CollabFacadeDeps, "documentWriteHook" | "eventSink">,
+) {
+  return async (
+    event: Omit<Parameters<DocumentWriteHook>[0], "at">,
+    source = "collab.document_write",
+  ): Promise<void> => {
+    if (!deps.documentWriteHook) return;
+    const hookEvent = { ...event, at: new Date() };
+    try {
+      // The journal/live-doc write is the source of truth. The read-model hook is
+      // awaited for freshness, but its failure is logged and never turns the
+      // committed write into an error.
+      await deps.documentWriteHook(hookEvent);
+    } catch (cause) {
+      if (!deps.eventSink) return;
+      emitEvent(deps.eventSink, {
+        level: "error",
+        source,
+        name: "post_write_hook.failed",
+        payload: {
+          documentId: hookEvent.documentId,
+          threadId: hookEvent.threadId ?? null,
+          ...unknownToEventPayload(cause),
+        },
+      });
+    }
+  };
+}
+
+export function createFacadeRuntime(deps: FacadeRuntimeDeps) {
+  const schema = buildDocumentSchema();
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodec(markupCodec);
+  const model = yProsemirrorModel(schema);
+  const semanticProvenance = createSemanticProvenanceWriter();
+  const runDocumentWriteHook = createDocumentWriteHookRunner(deps);
+  const liveUtilityCore = asLiveAgentEditCore(
+    createAgentEditCore({
+      journal: deps.journal,
+      coordinator: deps.coordinator,
+      lifecycle: deps.lifecycle,
+      codec,
+      model,
+      semanticProvenance,
+      undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+      createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+      ...agentEditObservabilityOptions(deps),
+    }),
+  );
+  const markdownDocuments = createMarkdownDocumentEngine({
+    codec: markupCodec,
+    schema,
+    model,
+    journal: deps.journal,
+    coordinator: deps.coordinator,
+    lifecycle: deps.lifecycle,
+    initialDocumentSeeds: deps.initialDocumentSeeds,
+    metaForOrigin,
+    afterWrite: runDocumentWriteHook,
+    identityPreservingWrite: ({ documentId, markdown, actor }) =>
+      liveUtilityCore.write(
+        {
+          command: "create",
+          file: "document.md",
+          documentId,
+          content: markdown,
+          overwrite: true,
+        },
+        {
+          actor,
+          sessionId:
+            actor.kind === "human"
+              ? actor.userId
+              : actor.kind === "agent"
+                ? actor.turnId
+                : `system:${actor.origin}`,
+          ...(actor.kind === "agent" || actor.kind === "human" ? { threadId: actor.threadId } : {}),
+        },
+      ),
+    resolveFiletype: deps.resolveDocumentFiletype,
+  });
+  return {
+    codec,
+    liveUtilityCore,
+    markdownDocuments,
+    markupCodec,
+    model,
+    runDocumentWriteHook,
+    schema,
+    semanticProvenance,
+  };
+}
+
+type FacadeRuntime = ReturnType<typeof createFacadeRuntime>;
+
 export function createReversalNoticePort(deps: {
   notices: NoticePort;
   documentUriResolver: DocumentUriResolver;
@@ -473,6 +581,39 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
+  const resolveDocumentFiletype = async (documentId: DocumentId) => {
+    const [row] = await deps.db
+      .select({ filetype: documents.fileType })
+      .from(documents)
+      .where(eq(documents.id, documentId))
+      .limit(1);
+    return row?.filetype ?? null;
+  };
+  const reversalNoticePort = deps.notices
+    ? createReversalNoticePort({
+        notices: deps.notices,
+        documentUriResolver,
+        eventSink: deps.eventSink,
+      })
+    : undefined;
+  const documentWriteHook: DocumentWriteHook = async ({ documentId, threadId, markdown, at }) => {
+    const results = await Promise.allSettled([
+      touchDocumentActivity(deps.db, documentId, threadId, at),
+      updateMarkdownProjection(deps.db, documentId, markdown, at),
+    ]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  };
+  const runtime = createFacadeRuntime({
+    journal,
+    coordinator,
+    lifecycle,
+    initialDocumentSeeds: lifecycle,
+    eventSink: deps.eventSink,
+    documentWriteHook,
+    resolveDocumentFiletype,
+    reversalNoticePort,
+  });
   const offlineSchema = buildDocumentSchema();
   const offlineReconciliation = createOfflineReconciliation({
     journal,
@@ -493,10 +634,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const branchPushStore = createDrizzleBranchPushStore(
     deps.db,
-    {
-      model: yProsemirrorModel(buildDocumentSchema()),
-      codec: mdxCodec({ schema: buildDocumentSchema() }),
-    },
+    runtime.markdownDocuments,
     changeTrails,
     deps.notices,
   );
@@ -513,8 +651,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     journal,
     liveCoordinator: coordinator,
-    model: yProsemirrorModel(buildDocumentSchema()),
-    codec: mdxCodec({ schema: buildDocumentSchema() }),
+    model: runtime.model,
+    codec: runtime.markupCodec,
     notices: deps.notices,
     writerIngressBarrier: branchPushIngressBarrier,
     resolveDocumentTitle: async (documentId) =>
@@ -524,98 +662,82 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     db: deps.db,
     documentAccess: deps.documentAccess,
     coordinator,
-    model: yProsemirrorModel(buildDocumentSchema()),
-    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
+    model: runtime.model,
+    codec: runtime.codec,
+    durableProjectionSerializer: runtime.markdownDocuments,
   });
 
-  return createFacade({
-    journal,
-    coordinator,
-    lifecycle,
-    initialDocumentSeeds: lifecycle,
-    documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
-    store,
-    hocuspocus: () => boundHocuspocus,
-    bindHocuspocus(instance) {
-      boundHocuspocus = instance;
+  return createFacade(
+    {
+      journal,
+      coordinator,
+      lifecycle,
+      initialDocumentSeeds: lifecycle,
+      documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
+      store,
+      hocuspocus: () => boundHocuspocus,
+      bindHocuspocus(instance) {
+        boundHocuspocus = instance;
+      },
+      onWriterIngressBarrier(barrier) {
+        writerIngressBarrier = barrier;
+      },
+      eventSink: deps.eventSink,
+      documentUriResolver,
+      resolveDocumentFiletype,
+      liveLineage: createTurnLiveLineageReadModel({
+        store: liveLineageStore,
+        receiptStore: turnReceiptStore,
+        resolveDocumentUri: documentUriResolver,
+      }),
+      liveDependencyStore,
+      reversalNoticePort,
+      notices: deps.notices,
+      threads: deps.threads,
+      branchStore,
+      branchCoordinator,
+      branchPulls,
+      branchPush,
+      concurrentJournalWatermarks,
+      offlineReconciliation,
+      trailForwardActions,
+      branchPushStore,
+      manifestMembership: branchStore,
+      resolveWorkWriteMode: async (workId) => {
+        const [row] = await deps.db
+          .select({ aiWriteMode: works.aiWriteMode })
+          .from(works)
+          .where(eq(works.id, workId))
+          .limit(1);
+        return row?.aiWriteMode === "draft"
+          ? "draft"
+          : row?.aiWriteMode === "direct"
+            ? "direct"
+            : null;
+      },
+      commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
+      documentWriteHook,
+      readAuthorityHeadGeneration: async (documentId) =>
+        (await readDocumentAuthorityHead(deps.db, documentId)).generation,
+      replaceAuthorityHeadGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
+        const result = await replaceDocumentAuthorityHeadGeneration(deps.db, {
+          documentId,
+          checkpointId: Number(checkpointId),
+          expectedGeneration,
+        });
+        if (result.ok) return result.generation;
+        throw new DocumentMutationPolicyError(
+          result.code === "authority_head_busy"
+            ? "authority_head_busy"
+            : result.code === "checkpoint_incomplete"
+              ? "checkpoint_incomplete"
+              : "invalid_mutation",
+          `Durable authority head generation replacement failed: ${result.code}`,
+        );
+      },
     },
-    onWriterIngressBarrier(barrier) {
-      writerIngressBarrier = barrier;
-    },
-    eventSink: deps.eventSink,
-    documentUriResolver,
-    resolveDocumentFiletype: async (documentId) => {
-      const [row] = await deps.db
-        .select({ filetype: documents.fileType })
-        .from(documents)
-        .where(eq(documents.id, documentId))
-        .limit(1);
-      return row?.filetype ?? null;
-    },
-    liveLineage: createTurnLiveLineageReadModel({
-      store: liveLineageStore,
-      receiptStore: turnReceiptStore,
-      resolveDocumentUri: documentUriResolver,
-    }),
-    liveDependencyStore,
-    reversalNoticePort: deps.notices
-      ? createReversalNoticePort({
-          notices: deps.notices,
-          documentUriResolver,
-          eventSink: deps.eventSink,
-        })
-      : undefined,
-    notices: deps.notices,
-    threads: deps.threads,
-    branchStore,
-    branchCoordinator,
-    branchPulls,
-    branchPush,
-    concurrentJournalWatermarks,
-    offlineReconciliation,
-    trailForwardActions,
-    branchPushStore,
-    manifestMembership: branchStore,
-    resolveWorkWriteMode: async (workId) => {
-      const [row] = await deps.db
-        .select({ aiWriteMode: works.aiWriteMode })
-        .from(works)
-        .where(eq(works.id, workId))
-        .limit(1);
-      return row?.aiWriteMode === "draft"
-        ? "draft"
-        : row?.aiWriteMode === "direct"
-          ? "direct"
-          : null;
-    },
-    commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
-    documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
-      const results = await Promise.allSettled([
-        touchDocumentActivity(deps.db, documentId, threadId, at),
-        updateMarkdownProjection(deps.db, documentId, markdown, at),
-      ]);
-      const failed = results.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") throw failed.reason;
-    },
-    readAuthorityHeadGeneration: async (documentId) =>
-      (await readDocumentAuthorityHead(deps.db, documentId)).generation,
-    replaceAuthorityHeadGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
-      const result = await replaceDocumentAuthorityHeadGeneration(deps.db, {
-        documentId,
-        checkpointId: Number(checkpointId),
-        expectedGeneration,
-      });
-      if (result.ok) return result.generation;
-      throw new DocumentMutationPolicyError(
-        result.code === "authority_head_busy"
-          ? "authority_head_busy"
-          : result.code === "checkpoint_incomplete"
-            ? "checkpoint_incomplete"
-            : "invalid_mutation",
-        `Durable authority head generation replacement failed: ${result.code}`,
-      );
-    },
-  });
+    runtime,
+  );
 }
 
 export function createInMemoryCollabDomain(): CollabDomain {
@@ -625,7 +747,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   let boundHocuspocus: Hocuspocus | null = null;
   const authorityHeads = new Map<string, DocumentAuthorityHead>();
 
-  return createFacade({
+  const facadeDeps: CollabFacadeDeps = {
     journal,
     coordinator,
     lifecycle,
@@ -672,33 +794,24 @@ export function createInMemoryCollabDomain(): CollabDomain {
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
     },
-  });
+  };
+  return createFacade(facadeDeps, createFacadeRuntime(facadeDeps));
 }
 
-export function createFacade(deps: CollabFacadeDeps): CollabDomain {
-  const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({ schema });
-  const codec = createAgentEditCodec(markupCodec);
-  const model = yProsemirrorModel(schema);
-  const semanticProvenance = createSemanticProvenanceWriter();
+export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): CollabDomain {
+  const {
+    codec,
+    liveUtilityCore,
+    markdownDocuments,
+    model,
+    runDocumentWriteHook,
+    semanticProvenance,
+  } = runtime;
   const branchAgentEditDiagnostics = createBranchAgentEditDiagnostics(deps.eventSink);
   const responseTransactionSettlement = {
     deferUntilCommit: deferUntilDrizzleCommit,
     deferUntilRollback: deferUntilDrizzleRollback,
   };
-  const createLiveCore = () =>
-    createAgentEditCore({
-      journal: deps.journal,
-      coordinator: deps.coordinator,
-      lifecycle: deps.lifecycle,
-      codec,
-      model,
-      semanticProvenance,
-      undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
-      createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-      ...agentEditObservabilityOptions(deps),
-    });
-  const liveUtilityCore = asLiveAgentEditCore(createLiveCore());
   const branchAgentEdit =
     deps.branchStore && deps.branchCoordinator
       ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
@@ -775,38 +888,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           : undefined,
       })
     : asThreadPeerAgentEditCore(liveUtilityCore);
-  const markdownDocuments = createMarkdownDocumentEngine({
-    codec: markupCodec,
-    schema,
-    model,
-    journal: deps.journal,
-    coordinator: deps.coordinator,
-    lifecycle: deps.lifecycle,
-    initialDocumentSeeds: deps.initialDocumentSeeds,
-    metaForOrigin,
-    afterWrite: runDocumentWriteHook,
-    identityPreservingWrite: ({ documentId, markdown, actor }) =>
-      liveUtilityCore.write(
-        {
-          command: "create",
-          file: "document.md",
-          documentId,
-          content: markdown,
-          overwrite: true,
-        },
-        {
-          actor,
-          sessionId:
-            actor.kind === "human"
-              ? actor.userId
-              : actor.kind === "agent"
-                ? actor.turnId
-                : `system:${actor.origin}`,
-          ...(actor.kind === "agent" || actor.kind === "human" ? { threadId: actor.threadId } : {}),
-        },
-      ),
-    resolveFiletype: deps.resolveDocumentFiletype,
-  });
   async function resolveDraftOnlyDocumentIds(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -982,32 +1063,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         threadId,
         source,
         payload: unknownToEventPayload(cause),
-      });
-    }
-  }
-
-  async function runDocumentWriteHook(
-    event: Omit<Parameters<DocumentWriteHook>[0], "at">,
-    source = "collab.document_write",
-  ): Promise<void> {
-    if (!deps.documentWriteHook) return;
-    const hookEvent = { ...event, at: new Date() };
-    try {
-      // The journal/live-doc write is the source of truth. The read-model hook is
-      // awaited for freshness, but its failure is logged and never turns the
-      // committed write into an error.
-      await deps.documentWriteHook(hookEvent);
-    } catch (cause) {
-      if (!deps.eventSink) return;
-      emitEvent(deps.eventSink, {
-        level: "error",
-        source,
-        name: "post_write_hook.failed",
-        payload: {
-          documentId: hookEvent.documentId,
-          threadId: hookEvent.threadId ?? null,
-          ...unknownToEventPayload(cause),
-        },
       });
     }
   }

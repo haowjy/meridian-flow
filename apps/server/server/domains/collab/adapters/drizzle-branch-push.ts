@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -19,7 +18,6 @@ import {
   threadDocuments,
   works,
 } from "@meridian/database/schema";
-import type { MarkupCodec } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -41,6 +39,10 @@ import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
+import {
+  DurableProjectionSerializationError,
+  type DurableProjectionSerializer,
+} from "../domain/ports/durable-projection.js";
 import { materializeProvenanceForDoc } from "../domain/provenance.js";
 import {
   allocateDocumentAdmission,
@@ -118,7 +120,7 @@ async function persistPendingSettlement(
 
 export function createDrizzleBranchPushStore(
   db: Database,
-  projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+  durableProjectionSerializer: DurableProjectionSerializer,
   changeTrails?: ChangeTrailPersistence,
   notices?: NoticePort,
 ): BranchPushStore {
@@ -366,7 +368,12 @@ export function createDrizzleBranchPushStore(
 
           // Persist the staged candidate before the synchronous live apply. If the
           // recheck rejects it, throwing rolls this entire admission back.
-          await completeStagedPush(txDb, input.pushId, input.documentId, projection);
+          await completeStagedPush(
+            txDb,
+            input.pushId,
+            input.documentId,
+            durableProjectionSerializer,
+          );
           const result = complete();
           if (result !== "applied" && result !== "already_applied" && result !== "retry") {
             throw new Error("Completion fence callback must return synchronously");
@@ -845,7 +852,7 @@ async function completeStagedPush(
   db: DrizzleDb,
   pushId: number,
   documentId: DocumentId,
-  projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+  durableProjectionSerializer: DurableProjectionSerializer,
 ): Promise<void> {
   const [staged] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -929,16 +936,9 @@ async function completeStagedPush(
       schemaVersion: branchRow.schemaVersion,
     };
     await writeMutationRows(db, branch, journalRows.map(mapJournalRow), updateRow.id);
-    if (projection) {
-      const durable = await deriveDurableProjection(db, documentId, projection);
-      await upsertHead(db, documentId, updateRow.id, durable.stateVector);
-      await refreshProjectionAndActivity(db, branch, durable.markdownProjection, new Date());
-    }
-  }
-  if (!projection) {
-    const durable = await materializeDurableDocumentBefore(db, documentId, Number.MAX_SAFE_INTEGER);
-    await upsertHead(db, documentId, updateRow.id, Y.encodeStateVector(durable));
-    durable.destroy();
+    const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
+    await upsertHead(db, documentId, updateRow.id, durable.stateVector);
+    await refreshProjectionAndActivity(db, branch, durable.markdownProjection, new Date());
   }
   await joinStagedPushIntoOtherSettlements(
     db,
@@ -1257,7 +1257,7 @@ async function joinStagedPushIntoOtherSettlements(
 async function deriveDurableProjection(
   db: DrizzleDb,
   documentId: DocumentId,
-  projection: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+  durableProjectionSerializer: DurableProjectionSerializer,
 ): Promise<{ markdownProjection: string; stateVector: Uint8Array }> {
   await lockDocumentYjsHead(db, documentId);
   const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
@@ -1285,16 +1285,22 @@ async function deriveDurableProjection(
     .where(eq(documentYjsUpdates.documentId, documentId))
     .orderBy(documentYjsUpdates.id);
   const doc = createCollabYDoc({ gc: false });
-  if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-  for (const row of rows) Y.applyUpdate(doc, row.updateData);
-  const blocks = projection.model.getBlocks(toDocHandle(doc));
-  return {
-    markdownProjection:
-      blocks.length === 0
-        ? ""
-        : projection.codec.serialize(projection.model.projectBlocks(toDocHandle(doc))),
-    stateVector: Y.encodeStateVector(doc),
-  };
+  try {
+    if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
+    for (const row of rows) Y.applyUpdate(doc, row.updateData);
+    let markdownProjection: string;
+    try {
+      markdownProjection = await durableProjectionSerializer.serializeDocument(documentId, doc);
+    } catch (cause) {
+      throw new DurableProjectionSerializationError(cause);
+    }
+    return {
+      markdownProjection,
+      stateVector: Y.encodeStateVector(doc),
+    };
+  } finally {
+    doc.destroy();
+  }
 }
 
 async function materializeDurableDocumentBefore(
