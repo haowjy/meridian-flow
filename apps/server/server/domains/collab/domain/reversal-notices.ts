@@ -106,7 +106,14 @@ export async function recordNoticeAfterDurability(
   try {
     await record();
   } catch (cause) {
-    input.diagnostics.recordFailedAfterDurability({ ...input, cause });
+    input.diagnostics.recordFailedAfterDurability({
+      kind: input.kind,
+      threadId: input.threadId,
+      documentIds: input.documentIds,
+      responseId: input.responseId,
+      affectedBlockHashes: input.affectedBlockHashes,
+      cause,
+    });
     try {
       await input.recordDegraded?.();
     } catch (degradedCause) {
