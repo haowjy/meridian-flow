@@ -6,6 +6,10 @@ export function changeKindLabel(kind: "insert" | "modify" | "delete"): string {
   return "AI deleted text";
 }
 
+export function collaboratorChangeLabel(): string {
+  return "Collaborator edited text";
+}
+
 export function changeMarkLabel(
   kind: "insert" | "modify" | "delete",
   pureDeletionOffset: number | null,

@@ -293,7 +293,9 @@ function SessionEditorView({
               return openPeerMark(event.target);
             },
             keydown(_view, event) {
-              if (event.key !== "Enter" || !openPeerMark(event.target)) return false;
+              if ((event.key !== "Enter" && event.key !== " ") || !openPeerMark(event.target)) {
+                return false;
+              }
               event.preventDefault();
               return true;
             },
@@ -482,7 +484,12 @@ function SessionEditorView({
         target={peerMarkTarget}
         markerStore={session.markerStore}
         onOpenChange={(open) => {
-          if (!open) setPeerMarkTarget(null);
+          if (open) return;
+          const mark = peerMarkTarget?.element;
+          setPeerMarkTarget(null);
+          requestAnimationFrame(() => {
+            if (mark?.isConnected) mark.focus();
+          });
         }}
       />
     </section>

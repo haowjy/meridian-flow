@@ -131,6 +131,20 @@ describe("peer marker writer self-clear", () => {
     expect(dismissed("range-mark")).toBe(false);
   });
 
+  it("clears a pure-deletion tick only at its effective position", () => {
+    addMarker("range", 1, 6, "-before", 2);
+    editor.commands.insertContentAt(2, "x");
+    expect(dismissed("range-mark-before")).toBe(false);
+
+    addMarker("range", 1, 7, "-at", 2);
+    editor.commands.insertContentAt(3, "x");
+    expect(dismissed("range-mark-at")).toBe(true);
+
+    addMarker("range", 1, 8, "-after", 2);
+    editor.commands.insertContentAt(6, "x");
+    expect(dismissed("range-mark-after")).toBe(false);
+  });
+
   it("projects range and boundary markers with their final forms", () => {
     addMarker("range", 2, 5);
     addMarker("boundary", 6);
