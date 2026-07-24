@@ -20,10 +20,13 @@ propagation between them.
 - Checkpoint restore replaces the authority generation. It never applies checkpoint
   bytes to the current Y.Doc; the transport fences each connection to its opened
   generation and rejects retired-identity insertion or delete-set replay.
-- **Safety provenance is journal-derived.** Ordinary prose birth class comes
-  from authenticated journal attribution. Certified semantic mutations may add
-  sparse continuation/restoration facts in the reserved Yjs provenance types,
-  atomically with their prose update; ordinary authorship adds no reserved fact.
+- **Safety provenance is journal-derived and writer-interpreted.** Ordinary prose
+  birth class comes from authenticated journal attribution. The provenance writer
+  canonically interprets per-run `materialization`: callers must forward the whole
+  certified IR, never pre-filter it or skip provenance wholesale. The writer
+  excludes retained runs from its insertion stream while atomically writing
+  continuation/restoration facts for non-retained runs in the same IR; ordinary
+  authorship adds no reserved fact.
 - **Closure means card review.** `branch-review-closure.ts` computes
   journal-backed closure classes so review cards apply/discard coherent sets.
 
