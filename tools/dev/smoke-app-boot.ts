@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /**
  * App-boot smoke — boots the @meridian/app dev server far enough to SSR-render a
- * real route, then asserts it does not 500.
+ * real routes, then asserts their exact public contract.
  *
  * `pnpm check` (lint + typecheck + unit tests) never boots the running app, so a
  * regression that only manifests at app runtime — a module that fails to
@@ -22,21 +22,18 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import net from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { APP_BOOT_ROUTES, routeContractFailure } from "./lib/app-boot-contract";
 import { applyDevEnvToProcess, resolveCurrentRepoRoot } from "./lib/dev-env";
 
 const HOST = "127.0.0.1";
-const DEFAULT_PORT = 31734;
-/** Server must accept a connection within this window or the boot has failed. */
+/** Vite must report its bound address within this window or boot has failed. */
 const READY_TIMEOUT_MS = 90_000;
 /** First SSR request triggers on-demand transforms; allow a generous per-request budget. */
 const REQUEST_TIMEOUT_MS = 60_000;
-const POLL_INTERVAL_MS = 500;
 /** How much of the child's captured output to echo when the smoke fails. */
 const LOG_TAIL_LINES = 60;
-
-/** Routes that must not 5xx. `/` redirects (auth); `/login` fully SSR-renders. */
-const ASSERTED_ROUTES = ["/", "/login"];
 
 /**
  * Dev-boot placeholders applied only when unset. The dev app skips production
@@ -80,7 +77,7 @@ async function fetchStatus(
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { redirect: "manual", signal: controller.signal });
-    const body = response.status >= 500 ? await response.text() : "";
+    const body = await response.text();
     return { ok: true, status: response.status, body };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -89,22 +86,64 @@ async function fetchStatus(
   }
 }
 
-/** Resolve when the server accepts a connection; reject if it never listens. */
-async function waitForListening(port: number, child: ChildProcess, log: RingLog): Promise<void> {
-  const deadline = Date.now() + READY_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(
-        `App dev server exited before it started listening (code=${child.exitCode}, signal=${child.signalCode}).\n${log.tail()}`,
-      );
-    }
-    // Any HTTP response — even a 5xx — means the server is up; route assertions
-    // below decide pass/fail. A connection error means it is still starting.
-    const result = await fetchStatus(`http://${HOST}:${port}/healthz`);
-    if (result.ok) return;
-    await sleep(POLL_INTERVAL_MS);
+function reserveEphemeralPort(): Promise<number> {
+  const reservation = net.createServer();
+  return new Promise((resolve, reject) => {
+    reservation.once("error", reject);
+    reservation.listen({ host: HOST, port: 0, exclusive: true }, () => {
+      const address = reservation.address();
+      if (!address || typeof address === "string") {
+        reservation.close();
+        reject(new Error("Could not resolve an OS-assigned app smoke port."));
+        return;
+      }
+      reservation.close((error) => {
+        if (error) reject(error);
+        else resolve(address.port);
+      });
+    });
+  });
+}
+
+function assertChildAlive(child: ChildProcess, phase: string): void {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    throw new Error(
+      `App dev server exited ${phase} (code=${child.exitCode}, signal=${child.signalCode}).`,
+    );
   }
-  throw new Error(`App dev server did not listen within ${READY_TIMEOUT_MS}ms.\n${log.tail()}`);
+}
+
+/** Resolve the actual address Vite reports after it has bound its HTTP server. */
+function waitForBoundOrigin(child: ChildProcess, log: RingLog): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let output = "";
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`App dev server did not bind within ${READY_TIMEOUT_MS}ms.\n${log.tail()}`));
+    }, READY_TIMEOUT_MS);
+    const onData = (chunk: Buffer) => {
+      output += chunk.toString();
+      const match = output.match(/Local:\s+(http:\/\/[^\s]+)/);
+      if (!match) return;
+      cleanup();
+      resolve(match[1].replace(/\/$/, ""));
+    };
+    const onExit = () => {
+      cleanup();
+      reject(
+        new Error(
+          `App dev server exited before reporting its bound address (code=${child.exitCode}, signal=${child.signalCode}).\n${log.tail()}`,
+        ),
+      );
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.stdout?.off("data", onData);
+      child.off("exit", onExit);
+    };
+    child.stdout?.on("data", onData);
+    child.once("exit", onExit);
+  });
 }
 
 async function stop(child: ChildProcess): Promise<void> {
@@ -123,36 +162,42 @@ async function main(): Promise<void> {
   for (const [key, value] of Object.entries(BOOT_ENV_DEFAULTS)) {
     if (!process.env[key]) process.env[key] = value;
   }
-  // vite.config reads server.port from PORT, so it overrides any --port flag.
-  const port = Number(process.env.PORT) || DEFAULT_PORT;
-  process.env.PORT = String(port);
+  const port = await reserveEphemeralPort();
 
   const log = new RingLog();
   const child = spawn("pnpm", ["--filter", "@meridian/app", "exec", "vite", "dev"], {
     cwd: repoRoot,
-    env: { ...process.env, HOST },
+    env: { ...process.env, HOST, PORT: String(port), NO_COLOR: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout?.on("data", (d: Buffer) => log.push(d.toString()));
   child.stderr?.on("data", (d: Buffer) => log.push(d.toString()));
 
   try {
-    await waitForListening(port, child, log);
+    const origin = await waitForBoundOrigin(child, log);
+    assertChildAlive(child, "after binding");
 
     const failures: string[] = [];
-    for (const route of ASSERTED_ROUTES) {
-      const result = await fetchStatus(`http://${HOST}:${port}${route}`);
+    for (const route of APP_BOOT_ROUTES) {
+      assertChildAlive(child, `before checking ${route.path}`);
+      const result = await fetchStatus(`${origin}${route.path}`);
       if (!result.ok) {
-        failures.push(`${route}: request failed (${result.error})`);
+        failures.push(`${route.path}: request failed (${result.error})`);
         continue;
       }
-      if (result.status >= 500) {
-        failures.push(`${route}: ${result.status}\n${result.body.slice(0, 800)}`);
-        continue;
-      }
-      console.log(`  ${route} -> ${result.status}`);
+      assertChildAlive(child, `while checking ${route.path}`);
+      const failure = routeContractFailure({
+        path: route.path,
+        expectedStatus: route.status,
+        actualStatus: result.status,
+        body: result.body,
+        bodyMarker: "bodyMarker" in route ? route.bodyMarker : undefined,
+      });
+      if (failure) failures.push(`${failure}\n${result.body.slice(0, 800)}`);
+      else console.log(`  ${route.path} -> ${result.status}`);
     }
 
+    assertChildAlive(child, "at contract completion");
     if (failures.length > 0) {
       throw new Error(`App-boot smoke failed:\n${failures.join("\n")}\n\n${log.tail()}`);
     }

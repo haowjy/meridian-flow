@@ -1,23 +1,35 @@
 /**
- * Local TCP port liveness + reaping for deterministic dev restarts.
+ * Safe fixed-port release checks for deterministic dev restarts.
  *
- * On `pnpm dev --restart` the previous session's app/www Vite listeners bind
- * fixed, worktree-deterministic backend ports (see dev-share-ports). Killing the
- * tmux session does not guarantee those ports are released synchronously, so a
- * new session can race the dying listener. These helpers let the restart path
- * wait for the fixed ports to free and SIGKILL any straggler that outlived its
- * tmux session, so the relaunched Vite always binds the port portless proxies to.
+ * Restart owns the old tmux session, not arbitrary listeners. After tmux
+ * teardown this module waits for its ports to become bindable, then reports any
+ * remaining holder as non-owned. It never signals a process discovered by port.
  */
 import { spawnSync } from "node:child_process";
 import net from "node:net";
 
 const LOOPBACK_HOST = "127.0.0.1";
 
-/**
- * True when a fresh listener can bind 127.0.0.1:<port> — i.e. nothing is holding
- * it. Uses a bind probe (not connect) because that is exactly the operation the
- * relaunched Vite performs, so it never reports a TIME_WAIT socket as free.
- */
+export interface PortHolder {
+  readonly pid: number;
+  readonly command: string;
+}
+
+export type PortHolderDiscovery =
+  | { readonly ok: true; readonly holders: readonly PortHolder[] }
+  | { readonly ok: false; readonly error: string };
+
+export type PortReleaseResult =
+  | { readonly status: "released"; readonly ports: readonly number[] }
+  | {
+      readonly status: "stillHeld";
+      readonly held: readonly { readonly port: number; readonly holders: readonly PortHolder[] }[];
+    }
+  | {
+      readonly status: "discoveryError";
+      readonly errors: readonly { readonly port: number; readonly error: string }[];
+    };
+
 export function isLocalPortFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = net.createServer();
@@ -28,46 +40,40 @@ export function isLocalPortFree(port: number): Promise<boolean> {
   });
 }
 
-/**
- * PIDs holding a LISTEN socket on the loopback port. Best-effort via `lsof`;
- * returns an empty list when `lsof` is unavailable or nothing is listening.
- */
-export function listenerPids(port: number): number[] {
-  const result = spawnSync("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"], {
+export function discoverPortHolders(port: number): PortHolderDiscovery {
+  const result = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpc"], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  if (result.status !== 0 || !result.stdout) return [];
-  return [
-    ...new Set(
-      result.stdout
-        .split(/\s+/)
-        .map((raw) => Number.parseInt(raw, 10))
-        .filter((pid) => Number.isInteger(pid) && pid > 0),
-    ),
-  ];
-}
+  if (result.error) return { ok: false, error: result.error.message };
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      error: result.stderr.trim() || `lsof exited with status ${result.status ?? "unknown"}`,
+    };
+  }
 
-/** SIGKILL every process listening on the port. Returns the PIDs reaped. */
-export function reapPort(port: number): number[] {
-  const reaped: number[] = [];
-  for (const pid of listenerPids(port)) {
-    try {
-      process.kill(pid, "SIGKILL");
-      reaped.push(pid);
-    } catch {
-      // Already gone between discovery and kill — nothing to reap.
+  const holders: PortHolder[] = [];
+  let pid: number | undefined;
+  for (const line of result.stdout.split(/\r?\n/)) {
+    if (line.startsWith("p")) {
+      const parsed = Number.parseInt(line.slice(1), 10);
+      pid = Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+    } else if (line.startsWith("c") && pid !== undefined) {
+      holders.push({ pid, command: line.slice(1) || "(unknown)" });
     }
   }
-  return reaped;
+  if (holders.length === 0) {
+    return { ok: false, error: "lsof found no inspectable listener" };
+  }
+  return {
+    ok: true,
+    holders: [...new Map(holders.map((holder) => [holder.pid, holder])).values()],
+  };
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Poll until every port is free or the deadline passes. Returns the ports still
- * held at timeout so the caller can reap or fail loudly.
- */
 export async function waitForPortsFree(
   ports: readonly number[],
   { timeoutMs = 5_000, intervalMs = 100 }: { timeoutMs?: number; intervalMs?: number } = {},
@@ -89,20 +95,26 @@ async function filterHeld(ports: readonly number[]): Promise<number[]> {
   return results.filter((entry) => !entry.free).map((entry) => entry.port);
 }
 
-/**
- * Ensure the given fixed backend ports are free before a dev (re)start: wait for
- * graceful release, then SIGKILL any straggler that outlived its tmux session.
- * Returns the ports that were force-reaped so the caller can report them.
- */
 export async function releaseFixedPorts(
   ports: readonly number[],
-  options: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<{ reaped: number[] }> {
-  if (ports.length === 0) return { reaped: [] };
-  const stillHeld = await waitForPortsFree(ports, options);
-  const reaped: number[] = [];
+  options: {
+    readonly timeoutMs?: number;
+    readonly intervalMs?: number;
+    readonly discoverHolders?: (port: number) => PortHolderDiscovery;
+  } = {},
+): Promise<PortReleaseResult> {
+  const unique = [...new Set(ports)];
+  const stillHeld = await waitForPortsFree(unique, options);
+  if (stillHeld.length === 0) return { status: "released", ports: unique };
+
+  const discoverHolders = options.discoverHolders ?? discoverPortHolders;
+  const held: { port: number; holders: readonly PortHolder[] }[] = [];
+  const errors: { port: number; error: string }[] = [];
   for (const port of stillHeld) {
-    if (reapPort(port).length > 0) reaped.push(port);
+    const discovery = discoverHolders(port);
+    if (discovery.ok) held.push({ port, holders: discovery.holders });
+    else errors.push({ port, error: discovery.error });
   }
-  return { reaped };
+  if (errors.length > 0) return { status: "discoveryError", errors };
+  return { status: "stillHeld", held };
 }

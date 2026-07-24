@@ -1,7 +1,7 @@
 /** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331). */
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { isLocalPortFree, waitForPortsFree } from "./port-lifecycle";
+import { isLocalPortFree, releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
 
 const servers: net.Server[] = [];
 
@@ -52,5 +52,47 @@ describe("waitForPortsFree", () => {
 
   it("treats an empty port list as immediately free", async () => {
     expect(await waitForPortsFree([])).toEqual([]);
+  });
+});
+
+describe("releaseFixedPorts", () => {
+  it("reports a non-owned holder without killing it", async () => {
+    const port = await listenOnEphemeralPort();
+    const result = await releaseFixedPorts([port], {
+      timeoutMs: 0,
+      discoverHolders: () => ({
+        ok: true,
+        holders: [{ pid: process.pid, command: "vitest" }],
+      }),
+    });
+
+    expect(result).toEqual({
+      status: "stillHeld",
+      held: [{ port, holders: [{ pid: process.pid, command: "vitest" }] }],
+    });
+    expect(await isLocalPortFree(port)).toBe(false);
+  });
+
+  it("reports discovery failure instead of treating an uninspectable holder as released", async () => {
+    const port = await listenOnEphemeralPort();
+    const result = await releaseFixedPorts([port], {
+      timeoutMs: 0,
+      discoverHolders: () => ({ ok: false, error: "lsof unavailable" }),
+    });
+
+    expect(result).toEqual({
+      status: "discoveryError",
+      errors: [{ port, error: "lsof unavailable" }],
+    });
+  });
+
+  it("reports released only after every port is bindable", async () => {
+    const port = await listenOnEphemeralPort();
+    setTimeout(() => void closeServer(servers.pop() as net.Server), 40);
+
+    await expect(releaseFixedPorts([port], { timeoutMs: 2_000, intervalMs: 25 })).resolves.toEqual({
+      status: "released",
+      ports: [port],
+    });
   });
 });

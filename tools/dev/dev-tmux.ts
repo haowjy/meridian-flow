@@ -332,21 +332,32 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
   }
 }
 
-/**
- * Wait for the fixed app/www backend ports to be released before relaunching on
- * `--restart`, reaping any listener that outlived its tmux session. Without this
- * the new Vite races the dying one: it finds the port held, and with strictPort
- * it fails fast (loud) instead of silently drifting off the port portless
- * proxies to (the old 502 + orphan-listener failure mode).
- */
 async function releaseFixedBackendPorts(
   sharedPorts: ReadonlyArray<SharedDevServicePorts>,
 ): Promise<void> {
   const ports = sharedPorts.map((entry) => entry.appBackendPort);
-  const { reaped } = await releaseFixedPorts(ports);
-  if (reaped.length > 0) {
-    console.warn(`reaped orphan dev listener(s) on port(s) ${reaped.join(", ")}`);
+  const result = await releaseFixedPorts(ports);
+  if (result.status === "released") return;
+  if (result.status === "discoveryError") {
+    throw new Error(
+      result.errors
+        .map(
+          ({ port, error }) =>
+            `port ${port} is still held, but its non-owned listener could not be inspected: ${error}`,
+        )
+        .join("; "),
+    );
   }
+  throw new Error(
+    result.held
+      .map(
+        ({ port, holders }) =>
+          `port ${port} held by ${holders
+            .map(({ pid, command }) => `PID ${pid} (${command})`)
+            .join(", ")}; refusing to kill a non-owned process`,
+      )
+      .join("; "),
+  );
 }
 
 async function main(): Promise<void> {
