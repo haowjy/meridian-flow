@@ -14,6 +14,8 @@ import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
+  createDocumentProjectionDiagnostics,
+  createReversalNoticeDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import { SILENT_POST_DURABILITY_NOTICES } from "./adapters/declared-stubs.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
@@ -131,16 +133,18 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const lookups = createDrizzleCollabLookups(deps.db);
   const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
   const projectionEffects = createDrizzleDocumentProjectionEffects(deps.db);
+  const projectionDiagnostics = createDocumentProjectionDiagnostics(deps.eventSink);
+  const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
   const documentWriteHook = createProjectionEffectsDocumentWriteHook(projectionEffects);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: documentWriteHook,
-    eventSink: deps.eventSink,
+    diagnostics: projectionDiagnostics,
   });
   const reversalNoticePort = deps.notices
     ? createReversalNoticePort({
         notices: deps.notices,
         documentUriResolver,
-        eventSink: deps.eventSink,
+        diagnostics: noticeDiagnostics,
       })
     : undefined;
   const observability = createAgentEditObservabilityOptions({
@@ -159,7 +163,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const projectionRefresher = createDocumentProjectionRefresher({
     documents: runtime.markdownDocuments,
     runDocumentWriteHook,
-    eventSink: deps.eventSink,
+    diagnostics: projectionDiagnostics,
   });
 
   const pendingSettlements = createDrizzlePendingSettlementStore(
@@ -260,7 +264,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ? createPostDurabilityNoticeService({
         notices: deps.notices,
         documentUriResolver,
-        eventSink: deps.eventSink,
+        diagnostics: noticeDiagnostics,
       })
     : SILENT_POST_DURABILITY_NOTICES;
   const liveDependencies = createDrizzleLiveTurnDependencyStore(deps.db);

@@ -1,6 +1,7 @@
 /** Safety-notice producer coverage for collab response finalization. */
 import { describe, expect, it, vi } from "vitest";
 import type { NoticePort } from "../notices/index.js";
+import { SILENT_REVERSAL_NOTICE_DIAGNOSTICS } from "./adapters/declared-stubs.js";
 import {
   createReversalNoticePort,
   recordAwarenessDegradedNotice,
@@ -25,6 +26,7 @@ describe("collab safety notices", () => {
         },
       },
       documentUriResolver: async () => "manuscript://chapter-one.md",
+      diagnostics: SILENT_REVERSAL_NOTICE_DIAGNOSTICS,
     });
 
     await port.record({
@@ -134,6 +136,7 @@ describe("collab safety notices", () => {
           documentIds: ["document-1"],
           kind: "late_sweep",
           recordDegraded,
+          diagnostics: SILENT_REVERSAL_NOTICE_DIAGNOSTICS,
         },
         async () => {
           throw new Error("notice store unavailable");
