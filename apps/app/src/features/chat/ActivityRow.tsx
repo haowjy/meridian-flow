@@ -10,18 +10,13 @@
  *
  *  1. **Action layout** (`title` set) — a single-line `icon + title + status
  *     + chevron` row. Used by tool rows and other "verb noun" actions. If
- *     `expand` is set, clicking the row toggles an inline curated fold; if
- *     `onClick` is set, the row routes to a destination instead.
+ *     `expand` is set, clicking the row toggles an inline curated fold.
  *
  *  2. **Prose layout** (`children` set, no `title`) — `icon + paragraph`
  *     side-by-side, so a multiline reasoning block aligns the prose against
  *     the icon's baseline instead of stacking under it. This was the misalign
  *     bug in v1: rendering `<icon-only-row>` then `<prose-block>` with a left
  *     pad below the icon left a gap between the icon and the first line.
- *
- * Clickability priority: `onClick` (per-tool destination, e.g. `read` →
- * context sidebar) wins over `expand` (generic inline reveal) when both are
- * present, so a registered destination always takes precedence.
  *
  * **Timeline rail (self-contained).** Each row paints its own piece of the
  * Claude-style process timeline inside the icon column: the chip sits at the
@@ -51,19 +46,12 @@ export type ActivityRowStatus = "running" | "done" | "error";
 
 export type ActivityRowProps = {
   Icon: LucideIcon;
-  /** Visual tint for the icon chip. `muted` for default rows; `primary` for accents. */
-  iconTint?: "muted" | "primary";
   /** Single-line action title (e.g. `Read foo.md`). Omit when using `children`. */
   title?: ReactNode;
   /** Status indicator. Hidden when the row is `done` and not interactive. */
   status?: ActivityRowStatus;
   /** Inline expandable content (curated — no raw JSON). Click toggles fold. */
   expand?: ReactNode;
-  /**
-   * External destination handler — e.g. `read` opens the file in the context
-   * sidebar. Takes precedence over `expand` for the click target.
-   */
-  onClick?: () => void;
   /**
    * Multiline prose body (reasoning paragraphs, text fallbacks). When `title`
    * is omitted, this lays out side-by-side with the icon. When `title` is
@@ -73,11 +61,6 @@ export type ActivityRowProps = {
   /** Optional className applied to the prose container — for variant tinting. */
   proseClassName?: string;
 };
-
-const TINT_BG = {
-  muted: "bg-chip-muted-bg text-ink-subtle",
-  primary: "bg-chip-primary-bg text-primary",
-} as const;
 
 /**
  * Per-row vertical rhythm. Lives on the icon column AND content column so the
@@ -90,35 +73,23 @@ const ICON_TOP_PAD = "pt-[3px]";
 
 export function ActivityRow({
   Icon,
-  iconTint = "muted",
   title,
   status,
   expand,
-  onClick,
   children,
   proseClassName,
 }: ActivityRowProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
 
-  // onClick wins: a registered destination (sidebar, diff) is a specific
-  // commitment about what the user expects. expand is a generic fallback.
-  const interactive = !!onClick || !!expand;
-  const hasInlineFold = !!expand && !onClick;
-
-  const handleClick = () => {
-    if (onClick) onClick();
-    else if (expand) setOpen((value) => !value);
-  };
+  const hasInlineFold = !!expand;
 
   // Icon column owns the rail. `items-stretch` on the row + `flex-1` on the
   // line span makes the rail fill from below the chip to the row's bottom
   // edge regardless of how tall the content column grows.
   const iconColumn = (
     <div className={cn("flex w-[19px] shrink-0 flex-col items-center", ICON_TOP_PAD)}>
-      <span
-        className={cn("grid size-[19px] shrink-0 place-items-center rounded-md", TINT_BG[iconTint])}
-      >
+      <span className="grid size-[19px] shrink-0 place-items-center rounded-md bg-chip-muted-bg text-ink-subtle">
         <Icon className="size-3" aria-hidden />
       </span>
       <span className="mt-1 w-px flex-1 bg-border" aria-hidden />
@@ -185,12 +156,12 @@ export function ActivityRow({
     <div className="flex items-stretch gap-2.5" data-activity-row>
       {iconColumn}
       <div className={cn("min-w-0 flex-1 pb-2", ICON_TOP_PAD)}>
-        {interactive ? (
+        {hasInlineFold ? (
           <button
             type="button"
-            onClick={handleClick}
-            aria-expanded={hasInlineFold ? open : undefined}
-            aria-controls={hasInlineFold ? panelId : undefined}
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls={panelId}
             className="focus-ring -mx-1 flex w-[calc(100%+0.5rem)] cursor-pointer items-start rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted"
           >
             {titleRowContent}
