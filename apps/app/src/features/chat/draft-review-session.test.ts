@@ -1,11 +1,54 @@
 /** Contract for the synchronous, session-wide draft disposition lock. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DraftDispositionLock,
+  type DraftReviewCommandPorts,
+  DraftReviewSession,
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
   inlineReviewFromState,
 } from "./draft-review-session";
+
+describe("DraftReviewSession", () => {
+  it("keeps reviewed Apply pinned while dock Apply acquires every current preview", async () => {
+    const ports = commandPorts();
+    const session = new DraftReviewSession(() => ports);
+    const reviewed = {
+      documentId: "document-1",
+      draftId: "draft-1",
+      operationIds: ["reviewed-operation"],
+      draftRevisionToken: 1,
+      branchId: "branch-1",
+    };
+
+    await expect(
+      session.applyReviewedDraft(
+        { documentId: reviewed.documentId, draftId: reviewed.draftId },
+        reviewed,
+      ),
+    ).resolves.toEqual({ kind: "applied" });
+    expect(ports.loadPreview).not.toHaveBeenCalled();
+    expect(ports.apply).toHaveBeenLastCalledWith(
+      { documentId: "document-1", draftId: "draft-1" },
+      "draft",
+      {
+        draftId: "draft-1",
+        operationIds: ["reviewed-operation"],
+        draftRevisionToken: 1,
+        branchId: "branch-1",
+      },
+    );
+
+    await expect(
+      session.disposeDrafts("apply", [
+        { documentId: "document-1", draftId: "draft-1" },
+        { documentId: "document-2", draftId: "draft-2" },
+      ]),
+    ).resolves.toEqual([{ kind: "applied" }, { kind: "applied" }]);
+    expect(ports.loadPreview).toHaveBeenCalledTimes(2);
+    expect(ports.apply).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe("DraftDispositionLock", () => {
   it("reserves synchronously before acquisition and rejects every overlapping command", () => {
@@ -76,3 +119,21 @@ describe("draft review derived identity", () => {
     expect(inlineReviewFromState(repeated)).toBe(selection);
   });
 });
+
+function commandPorts(): DraftReviewCommandPorts {
+  return {
+    loadPreview: vi.fn(async ({ documentId, draftId }) => ({
+      documentId,
+      draftId,
+      operationIds: [`operation-${draftId}`],
+      draftRevisionToken: 2,
+      branchId: `branch-${draftId}`,
+    })),
+    apply: vi.fn(async ({ draftId }) => ({ status: "applied" as const, draftId })),
+    discard: vi.fn(async () => {}),
+    undo: vi.fn(async () => {}),
+    applyStarted: vi.fn(),
+    applySettled: vi.fn(),
+    draftDiscarded: vi.fn(),
+  };
+}

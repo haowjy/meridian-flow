@@ -31,16 +31,14 @@ import {
 import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
-  acquireDraftApplyRequest,
   conflictForSelection,
   type DraftApplyOutcome,
   type DraftApplyPreview,
   type DraftApplyRefusal,
-  type DraftApplyRequest,
   type DraftCommandOutcome,
-  DraftDispositionLock,
+  type DraftReviewCommandPorts,
   type DraftReviewSelection,
-  draftApplyOutcome,
+  DraftReviewSession,
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
@@ -148,7 +146,17 @@ export function useDraftReviewController(
   const undoAcceptMutation = useUndoDraftAccept();
   const rejectMutation = useRejectDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
-  const dispositionLock = useMemo(() => new DraftDispositionLock(), []);
+  const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
+  const reviewSession = useMemo(
+    () =>
+      new DraftReviewSession(() => {
+        const ports = commandPortsRef.current;
+        if (!ports) throw new Error("Draft review command ports are not ready.");
+        return ports;
+      }),
+    [],
+  );
+  const dispositionLock = reviewSession.disposition;
   const disposition = useSyncExternalStore(
     dispositionLock.subscribe,
     dispositionLock.getSnapshot,
@@ -274,6 +282,63 @@ export function useDraftReviewController(
     [loadInlineReviewRoom, projectId, queryClient, workId],
   );
 
+  commandPortsRef.current = {
+    loadPreview: async ({ documentId, draftId }) => {
+      const preview = await latestPreviewRevisionTokens(
+        queryClient,
+        projectId,
+        workId,
+        documentId,
+        draftId,
+      );
+      return {
+        documentId,
+        draftId,
+        operationIds: preview.operationIds,
+        draftRevisionToken: preview.draftRevisionToken,
+        ...(preview.branchId ? { branchId: preview.branchId } : {}),
+      };
+    },
+    apply: ({ documentId }, scope, request) =>
+      (scope === "operation" ? operationAcceptMutation : acceptMutation).mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        ...request,
+      }),
+    discard: async ({ documentId, draftId }, input) => {
+      await rejectMutation.mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        draftId,
+        ...input,
+      });
+    },
+    undo: async ({ documentId, draftId }, writeId) => {
+      await undoAcceptMutation.mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        draftId,
+        writeId,
+      });
+    },
+    applyStarted: () => {
+      dispatch({ type: "applyStarted" });
+    },
+    applySettled: ({ documentId, draftId }, outcome) => {
+      applyDisposition(documentId, draftId, outcome);
+    },
+    draftDiscarded: ({ documentId, draftId }) => {
+      dispatch({ type: "rejectSucceeded", draftId });
+      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
+    },
+  };
+
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
       dispatch({ type: "enterInline", documentId, draftId });
@@ -375,60 +440,17 @@ export function useDraftReviewController(
         });
         return { kind: "failed", code: "change-moved" };
       }
-      const reservation = dispositionLock.reserve({
-        kind: "apply-operation",
-        documentId: inline.documentId,
-        draftId: inline.draftId,
-        operationId,
-      });
-      if (!reservation) return { kind: "blocked" };
       dispatch({ type: "operationAcceptStarted", operationId });
-      try {
-        const request: DraftApplyRequest = await acquireDraftApplyRequest({
-          scope: "operation",
-          draftId: inline.draftId,
-          operationId,
-          loadLatestPreview: () =>
-            latestPreviewRevisionTokens(
-              queryClient,
-              projectId,
-              workId,
-              inline.documentId,
-              inline.draftId,
-            ),
-        });
-        dispositionLock.advance(reservation, "mutating");
-        const response = await operationAcceptMutation.mutateAsync({
-          projectId,
-          workId,
-          threadId,
-          documentId: inline.documentId,
-          ...request,
-        });
-        dispositionLock.advance(reservation, "settling");
-        const outcome = draftApplyOutcome("operation", response);
-        applyDisposition(inline.documentId, inline.draftId, outcome);
-        return outcome.command;
-      } catch {
-        const outcome: DraftCommandOutcome = { kind: "failed", code: "apply-failed" };
+      const outcome = await reviewSession.applyOperation(inline, operationId);
+      if (outcome.kind === "failed") {
         dispatch({
           type: "operationAcceptFailed",
           message: { code: outcome.code, tone: "error" },
         });
-        return outcome;
-      } finally {
-        dispositionLock.release(reservation);
       }
+      return outcome;
     },
-    [
-      dispositionLock,
-      operationAcceptMutation,
-      queryClient,
-      projectId,
-      workId,
-      threadId,
-      applyDisposition,
-    ],
+    [projectId, queryClient, reviewSession, workId],
   );
 
   // Reverse the most recent per-card Apply. The `writeId` rides on the
@@ -437,117 +459,36 @@ export function useDraftReviewController(
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     const writeId = stateRef.current.inlineReviewMessage?.writeId;
     if (!inline || !writeId) return { kind: "failed", code: "undo-failed" };
-    const reservation = dispositionLock.reserve({
-      kind: "undo-operation",
-      documentId: inline.documentId,
-      draftId: inline.draftId,
-      writeId,
-    });
-    if (!reservation) return { kind: "blocked" };
-    try {
-      dispositionLock.advance(reservation, "mutating");
-      await undoAcceptMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId: inline.documentId,
-        draftId: inline.draftId,
-        writeId,
-      });
-      dispositionLock.advance(reservation, "settling");
+    const outcome = await reviewSession.undoOperation(inline, writeId);
+    if (outcome.kind === "undone") {
       dispatch({
         type: "operationUndoAcceptSucceeded",
         message: { code: "change-restored" },
       });
-      return { kind: "undone" };
-    } catch {
+    } else if (outcome.kind === "failed") {
       dispatch({
         type: "operationUndoAcceptFailed",
         message: { code: "undo-failed", tone: "error" },
       });
-      return { kind: "failed", code: "undo-failed" };
-    } finally {
-      dispositionLock.release(reservation);
     }
-  }, [dispositionLock, projectId, undoAcceptMutation, workId, threadId]);
+    return outcome;
+  }, [reviewSession]);
 
   const discardOperation = useCallback(
     async (operationId: string): Promise<DraftCommandOutcome> => {
       const runtime = inlineRuntimeRef.current;
       if (!runtime?.draftId) return { kind: "failed", code: "discard-failed" };
-      const reservation = dispositionLock.reserve({
-        kind: "discard-operation",
-        documentId: runtime.documentId,
-        draftId: runtime.draftId,
-        operationId,
-      });
-      if (!reservation) return { kind: "blocked" };
       dispatch({ type: "discardStarted" });
-      try {
-        const { draftRevisionToken: _draftRevisionToken, branchId } =
-          await latestPreviewRevisionTokens(
-            queryClient,
-            projectId,
-            workId,
-            runtime.documentId,
-            runtime.draftId,
-          );
-        dispositionLock.advance(reservation, "mutating");
-        await rejectMutation.mutateAsync({
-          projectId,
-          workId,
-          threadId,
-          documentId: runtime.documentId,
-          draftId: runtime.draftId,
-          branchId,
-          operationIds: [operationId],
-        });
-        dispositionLock.advance(reservation, "settling");
-        return { kind: "discarded" };
-      } catch {
+      const outcome = await reviewSession.discardOperation(runtime, operationId);
+      if (outcome.kind === "failed") {
         dispatch({
           type: "discardFailed",
-          code: "discard-offline",
+          code: outcome.code,
         });
-        return { kind: "failed", code: "discard-offline" };
-      } finally {
-        dispositionLock.release(reservation);
       }
+      return outcome;
     },
-    [dispositionLock, queryClient, projectId, workId, threadId, rejectMutation],
-  );
-
-  const applyDraft = useCallback(
-    async (
-      documentId: string,
-      draftId: string,
-      reservation: symbol,
-      acquireRequest: () => DraftApplyRequest | Promise<DraftApplyRequest>,
-    ): Promise<DraftCommandOutcome> => {
-      dispositionLock.retarget(reservation, { kind: "apply-draft", documentId, draftId });
-      dispatch({ type: "applyStarted" });
-      try {
-        const request = await acquireRequest();
-        if (request.operationIds.length === 0) {
-          return { kind: "failed", code: "apply-failed" };
-        }
-        dispositionLock.advance(reservation, "mutating");
-        const response = await acceptMutation.mutateAsync({
-          projectId,
-          workId,
-          threadId,
-          documentId,
-          ...request,
-        });
-        dispositionLock.advance(reservation, "settling");
-        const outcome = draftApplyOutcome("draft", response);
-        applyDisposition(documentId, draftId, outcome);
-        return outcome.command;
-      } catch {
-        return { kind: "failed", code: "apply-failed" };
-      }
-    },
-    [acceptMutation, applyDisposition, dispositionLock, projectId, threadId, workId],
+    [reviewSession],
   );
 
   const accept = useCallback(
@@ -561,104 +502,23 @@ export function useDraftReviewController(
       ) {
         return { kind: "failed", code: "apply-failed" };
       }
-      const target = { kind: "apply-draft" as const, documentId, draftId };
-      const reservation = dispositionLock.reserve(target);
-      if (!reservation) return { kind: "blocked" };
-      try {
-        return await applyDraft(documentId, draftId, reservation, () =>
-          acquireDraftApplyRequest({
-            scope: "draft",
-            preview: displayedPreview,
-          }),
-        );
-      } finally {
-        dispositionLock.release(reservation);
-      }
+      return reviewSession.applyReviewedDraft({ documentId, draftId }, displayedPreview);
     },
-    [applyDraft, dispositionLock],
+    [reviewSession],
   );
 
   const reject = useCallback(
-    async (
-      documentId: string,
-      draftId: string,
-      batchReservation?: symbol,
-    ): Promise<DraftCommandOutcome> => {
-      const target = { kind: "discard-draft" as const, documentId, draftId };
-      const reservation = batchReservation ?? dispositionLock.reserve(target);
-      if (!reservation) return { kind: "blocked" };
-      if (batchReservation) dispositionLock.retarget(reservation, target);
-      try {
-        const { branchId } = await latestPreviewRevisionTokens(
-          queryClient,
-          projectId,
-          workId,
-          documentId,
-          draftId,
-        );
-        dispositionLock.advance(reservation, "mutating");
-        await rejectMutation.mutateAsync({
-          projectId,
-          workId,
-          threadId,
-          documentId,
-          draftId,
-          branchId,
-        });
-        dispositionLock.advance(reservation, "settling");
-        dispatch({ type: "rejectSucceeded", draftId });
-        useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
-        return { kind: "discarded" };
-      } catch {
-        return { kind: "failed", code: "discard-offline" };
-      } finally {
-        if (!batchReservation) dispositionLock.release(reservation);
-      }
-    },
-    [dispositionLock, rejectMutation, queryClient, projectId, workId, threadId],
+    (documentId: string, draftId: string): Promise<DraftCommandOutcome> =>
+      reviewSession.discardDraft({ documentId, draftId }),
+    [reviewSession],
   );
 
   const disposeDrafts = useCallback(
-    async (
+    (
       mode: "apply" | "discard",
       drafts: readonly DraftReviewSelection[],
-    ): Promise<DraftCommandOutcome[]> => {
-      if (drafts.length === 0) return [];
-      const reservation = dispositionLock.reserve({ kind: "batch", mode, count: drafts.length });
-      if (!reservation) return [{ kind: "blocked" }];
-      const outcomes: DraftCommandOutcome[] = [];
-      try {
-        for (const draft of drafts) {
-          outcomes.push(
-            await (mode === "apply"
-              ? applyDraft(draft.documentId, draft.draftId, reservation, async () => {
-                  const preview = await latestPreviewRevisionTokens(
-                    queryClient,
-                    projectId,
-                    workId,
-                    draft.documentId,
-                    draft.draftId,
-                  );
-                  return acquireDraftApplyRequest({
-                    scope: "draft",
-                    preview: {
-                      documentId: draft.documentId,
-                      draftId: draft.draftId,
-                      operationIds: preview.operationIds,
-                      draftRevisionToken: preview.draftRevisionToken,
-                      ...(preview.branchId ? { branchId: preview.branchId } : {}),
-                    },
-                  });
-                })
-              : reject(draft.documentId, draft.draftId, reservation)),
-          );
-        }
-      } finally {
-        dispositionLock.release(reservation);
-      }
-      return outcomes;
-    },
-    [applyDraft, dispositionLock, projectId, queryClient, reject, workId],
+    ): Promise<DraftCommandOutcome[]> => reviewSession.disposeDrafts(mode, drafts),
+    [reviewSession],
   );
 
   return useMemo(
