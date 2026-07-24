@@ -67,6 +67,14 @@ code pushes now project raw verbatim text (the single `code_block` `textContent`
 prepared projection fields or a `{model, codec}` bag re-opens the fence-corruption
 class for the projection column.
 
+**Projection effects preserve caller-specific ordering.** Ordinary durable
+writes start document activity and markdown projection together and settle both
+before reporting the first failure. Push completion instead runs projection,
+all-thread activity, explicit Work activity, active-document project lookup, and
+project activity in that order. The Drizzle adapter resolves the ambient
+transaction for every port operation so a completion retry rolls these
+read-model writes back with journal, lineage, mutation, and outbox writes.
+
 Filetype resolution uses the contracts disposition registry. Missing or
 unregistered persisted values deliberately use the document schema; a registered
 binary/custom value on a tracked journal returns `corrupt_state` from

@@ -9,6 +9,7 @@ import {
   documents,
   documentYjsUpdates,
   projects,
+  threadDocuments,
   threads,
   threadWorks,
   turns,
@@ -420,6 +421,171 @@ describe("branch-push durable projection", () => {
       .from(documents)
       .where(eq(documents.id, documentId));
     expect(documentAfterRecovery?.markdownProjection).toBe("Recovered projection\n");
+
+    branchDoc.destroy();
+    liveDoc.destroy();
+  });
+
+  it("rolls back projection and activity when push completion retries", async () => {
+    const userId = randomUUID();
+    const projectId = randomUUID();
+    const workId = randomUUID();
+    const sourceId = randomUUID();
+    const documentId = randomUUID();
+    const threadId = randomUUID();
+    const turnId = randomUUID();
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    await db.insert(users).values(conformanceUserValues(userId, "branch-push-retry-rollback"));
+    await db.insert(projects).values({
+      id: projectId,
+      userId,
+      name: "Retry rollback project",
+      slug: `retry-rollback-${projectId}`,
+      updatedAt: old,
+      lastActivityAt: old,
+    });
+    await db.insert(works).values({
+      id: workId,
+      projectId,
+      createdByUserId: userId,
+      title: "Retry rollback work",
+      updatedAt: old,
+    });
+    await db.insert(contextSources).values({
+      id: sourceId,
+      projectId,
+      name: "Manuscript",
+      slug: "manuscript",
+      scope: "project",
+      isPrimary: true,
+    });
+    await db.insert(documents).values({
+      id: documentId,
+      contextSourceId: sourceId,
+      name: "chapter",
+      extension: "md",
+      fileType: "markdown",
+      markdownProjection: "stale projection",
+      updatedAt: old,
+    });
+    await db.insert(threads).values({
+      id: threadId,
+      projectId,
+      createdByUserId: userId,
+      title: "Retry rollback thread",
+      kind: "primary",
+      status: "active",
+    });
+    await db.insert(threadDocuments).values({
+      threadId,
+      documentId,
+      relationship: "editing",
+      firstTouchedAt: old,
+      lastTouchedAt: old,
+    });
+    await db.insert(turns).values({
+      id: turnId,
+      threadId,
+      role: "assistant",
+      status: "complete",
+    });
+    await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
+    await persistence.lifecycle.ensureDocument(documentId as never);
+
+    const schema = buildDocumentSchema();
+    const model = yProsemirrorModel(schema);
+    const codec = mdxCodec({ schema });
+    const engine = createMarkdownDocumentEngine({
+      schema,
+      model,
+      codec,
+      journal: persistence.journal,
+      coordinator: liveCoordinator,
+      lifecycle: persistence.lifecycle,
+      initialDocumentSeeds: persistence.lifecycle,
+      metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      resolveFiletype: async () => "markdown",
+    });
+    const changeTrails = createDrizzleChangeTrailPersistence(db);
+    const journalReadStore = createDrizzleBranchJournalReadStore(db);
+    const commitStore = createDrizzlePushCommitStore(
+      db,
+      stagePendingSettlementWithinTx,
+      changeTrails,
+    );
+    const branchCoordinator = createBranchCoordinator({ store: branchStore });
+    const liveDoc = createCollabYDoc({ gc: false });
+    const branch = await branchStore.ensureWorkDraftBranch({
+      documentId: documentId as never,
+      workId: workId as never,
+      liveDoc,
+    });
+    const branchDoc = createCollabYDoc({ gc: false });
+    model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Never completed"));
+    await branchCoordinator.commitUpdate({
+      branchId: branch.branchId,
+      updateData: Y.encodeStateAsUpdate(branchDoc),
+      source: "agent",
+      threadId: threadId as never,
+      turnId: turnId as never,
+    });
+    const branchPush = createBranchPushService({
+      branchStore,
+      journalReadStore,
+      commitStore,
+      workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
+      settlementStore: createDrizzlePendingSettlementStore(
+        db,
+        engine,
+        createDrizzleDocumentProjectionEffects(db),
+        changeTrails,
+      ),
+      branchCoordinator,
+      journal: persistence.journal,
+      liveCoordinator,
+      model,
+      codec,
+      writerIngressBarrier: {
+        drain: async () => 1,
+        isGenerationCurrent: () => false,
+      },
+    });
+
+    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
+      /pending_live_settlement after bounded retries/,
+    );
+
+    const [document] = await db
+      .select({
+        markdownProjection: documents.markdownProjection,
+        updatedAt: documents.updatedAt,
+      })
+      .from(documents)
+      .where(eq(documents.id, documentId));
+    const [threadDocument] = await db
+      .select({ lastTouchedAt: threadDocuments.lastTouchedAt })
+      .from(threadDocuments)
+      .where(eq(threadDocuments.documentId, documentId));
+    const [work] = await db
+      .select({ updatedAt: works.updatedAt })
+      .from(works)
+      .where(eq(works.id, workId));
+    const [project] = await db
+      .select({ updatedAt: projects.updatedAt, lastActivityAt: projects.lastActivityAt })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const journal = await db
+      .select({ id: documentYjsUpdates.id })
+      .from(documentYjsUpdates)
+      .where(eq(documentYjsUpdates.documentId, documentId));
+
+    expect(document?.markdownProjection).toBe("stale projection");
+    expect(document?.updatedAt.toISOString()).toBe(old.toISOString());
+    expect(threadDocument?.lastTouchedAt.toISOString()).toBe(old.toISOString());
+    expect(work?.updatedAt.toISOString()).toBe(old.toISOString());
+    expect(project?.updatedAt.toISOString()).toBe(old.toISOString());
+    expect(project?.lastActivityAt.toISOString()).toBe(old.toISOString());
+    expect(journal).toEqual([]);
 
     branchDoc.destroy();
     liveDoc.destroy();
