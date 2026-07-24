@@ -1,11 +1,16 @@
 /**
  * Markdown renderer wrapper around Streamdown with Meridian's prose tokens and streaming block collapse behavior.
  */
-import { Streamdown, type StreamdownProps } from "streamdown";
+import { type Components, Streamdown, type StreamdownProps } from "streamdown";
 
 import { cn } from "@/lib/utils";
 
 import { collapseMarkdownBlocks } from "./collapse-markdown-blocks";
+import {
+  documentMarkdownAllowedTags,
+  documentMarkdownComponents,
+  documentMarkdownImageComponent,
+} from "./registry-markdown";
 
 export type MarkdownProps = {
   children: string;
@@ -26,6 +31,10 @@ export type MarkdownProps = {
 const SHIKI_THEME: NonNullable<StreamdownProps["shikiTheme"]> = ["github-light", "github-dark"];
 
 const CONTROLS = { code: true, table: false, mermaid: false } as const;
+const COMPONENTS: Components = {
+  ...documentMarkdownComponents,
+  img: documentMarkdownImageComponent,
+};
 
 /**
  * Thin Streamdown shell. Warm Organic element styling lives in `globals.css`
@@ -41,6 +50,8 @@ export function Markdown({ children, variant, mode = "static", className }: Mark
       parseMarkdownIntoBlocksFn={streaming ? collapseMarkdownBlocks : undefined}
       shikiTheme={SHIKI_THEME}
       controls={CONTROLS}
+      allowedTags={documentMarkdownAllowedTags}
+      components={COMPONENTS}
       className={cn(
         "prose-tokens",
         variant === "compact" && "text-tier-compact",

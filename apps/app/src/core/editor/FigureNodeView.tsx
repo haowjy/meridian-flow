@@ -10,12 +10,12 @@ import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
-import { getFigureSignedUrl } from "@/client/api/figures-api";
 import { Button } from "@/components/ui/button";
-import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "@/core/editor/image-workflow";
 import { cn } from "@/lib/utils";
+
+import { useAssetImageRenderState } from "./asset-image-render-state";
 
 type MeridianFigureExtensionOptions = {
   projectId?: string;
@@ -27,12 +27,6 @@ type FigureAttrs = {
   label: string | null;
   caption: string;
 };
-
-type RenderState =
-  | { kind: "idle"; url: string | null; message?: string }
-  | { kind: "loading"; url: string | null; message?: string }
-  | { kind: "ready"; url: string; expiresAt?: string }
-  | { kind: "error"; url: string | null; message: string };
 
 function textAttr(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
@@ -54,79 +48,6 @@ function getFigureAttrs(props: NodeViewProps): FigureAttrs {
 
 function getExtensionOptions(props: NodeViewProps): MeridianFigureExtensionOptions {
   return (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
-}
-
-export function useAssetImageRenderState(input: {
-  projectId?: string;
-  src: string;
-}): [RenderState, () => void] {
-  const { projectId, src } = input;
-  const assetDocumentId = assetDocumentIdFromSrc(src);
-  const [refreshToken, setRefreshToken] = useState(0);
-  const [state, setState] = useState<RenderState>(() => {
-    if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
-    return assetDocumentId ? { kind: "loading", url: null } : { kind: "ready", url: src };
-  });
-
-  const refresh = useCallback(() => setRefreshToken((token) => token + 1), []);
-
-  useEffect(() => {
-    if (!src) {
-      setState({ kind: "idle", url: null, message: t`Missing figure source` });
-      return;
-    }
-
-    if (!assetDocumentId) {
-      setState({ kind: "ready", url: src });
-      return;
-    }
-
-    if (!projectId) {
-      setState({
-        kind: "error",
-        url: null,
-        message: t`This stored figure needs a project before it can be rendered.`,
-      });
-      return;
-    }
-
-    let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const routeProjectId = projectId;
-    const routeAssetDocumentId = assetDocumentId;
-
-    async function loadSignedUrl(skipCache: boolean) {
-      setState((current) => ({ kind: "loading", url: current.url }));
-
-      try {
-        const signed = await getFigureSignedUrl({
-          projectId: routeProjectId,
-          assetDocumentId: routeAssetDocumentId,
-          skipCache,
-        });
-        if (cancelled) return;
-        setState({ kind: "ready", url: signed.signedUrl, expiresAt: signed.signedUrlExpiresAt });
-        const delay = signedUrlRefreshDelayMs(signed.signedUrlExpiresAt);
-        refreshTimer = setTimeout(() => void loadSignedUrl(true), delay);
-      } catch (error) {
-        if (cancelled) return;
-        setState({
-          kind: "error",
-          url: null,
-          message: error instanceof Error ? error.message : t`Figure could not be loaded.`,
-        });
-      }
-    }
-
-    void loadSignedUrl(refreshToken > 0);
-
-    return () => {
-      cancelled = true;
-      if (refreshTimer) clearTimeout(refreshTimer);
-    };
-  }, [assetDocumentId, projectId, refreshToken, src]);
-
-  return [state, refresh];
 }
 
 export function FigureNodeView(props: NodeViewProps) {

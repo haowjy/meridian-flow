@@ -28,6 +28,7 @@ import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
+import { DocumentMarkdownProvider } from "@/rich-content/registry-markdown";
 
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
@@ -191,15 +192,17 @@ export function ChatView({
         </div>
       }
     >
-      <TurnList
-        threadId={threadId}
-        turns={turns}
-        tailFollowRevision={tailFollowRevision}
-        ariaLabel={t`Chat`}
-        onRespondToInterrupt={handleRespondToInterrupt}
-        draftTurnIds={draftTurnIds}
-        changeTrails={changeTrails.byId}
-      />
+      <DocumentMarkdownProvider projectId={projectId}>
+        <TurnList
+          threadId={threadId}
+          turns={turns}
+          tailFollowRevision={tailFollowRevision}
+          ariaLabel={t`Chat`}
+          onRespondToInterrupt={handleRespondToInterrupt}
+          draftTurnIds={draftTurnIds}
+          changeTrails={changeTrails.byId}
+        />
+      </DocumentMarkdownProvider>
     </ChatSurface>
   );
 }

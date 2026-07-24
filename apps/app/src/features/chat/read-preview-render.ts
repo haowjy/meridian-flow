@@ -10,12 +10,16 @@
  * TipTap extensions normally own DOM rendering, so this module supplies the
  * small explicit node/mark map needed for read-only preview HTML.
  */
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { builtInComponents, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { DOMSerializer, Fragment, type Mark, type Node as PMNode } from "@tiptap/pm/model";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({
+  schema,
+  assetPathResolver: unresolvedAssetPathResolver,
+  components: builtInComponents,
+});
 
 const NODE_TO_DOM = {
   paragraph: (node: PMNode) => ["p", alignedBlockAttrs(node), 0],
@@ -42,8 +46,8 @@ const NODE_TO_DOM = {
   ],
   // MDX component nodes are not executable UI inside a read preview. Preserve
   // their children as inert semantic containers so prose around them still renders.
-  jsx_leaf: () => ["span", 0],
-  jsx_container: () => ["div", 0],
+  jsx_leaf: (node: PMNode) => ["span", { role: "note" }, fallbackLeafText(node)],
+  jsx_container: (node: PMNode) => ["div", genericContainerAttrs(node), 0],
 };
 
 const MARK_TO_DOM = {
@@ -116,4 +120,22 @@ function tableCellAttrs(node: PMNode): Record<string, string | number> {
 function alignedBlockAttrs(node: PMNode): Record<string, string> {
   const align = node.attrs.align;
   return align === "center" || align === "right" ? { style: `text-align: ${align}` } : {};
+}
+
+function genericContainerAttrs(node: PMNode): Record<string, string> {
+  const props = node.attrs.props;
+  if (!props || typeof props !== "object") return {};
+  const align = (props as Record<string, unknown>).align;
+  return align === "center" || align === "right" ? { style: `text-align: ${align}` } : {};
+}
+
+function fallbackLeafText(node: PMNode): string {
+  const props =
+    node.attrs.props && typeof node.attrs.props === "object"
+      ? (node.attrs.props as Record<string, unknown>)
+      : {};
+  for (const key of ["alt", "label", "title"]) {
+    if (typeof props[key] === "string" && props[key].length > 0) return String(props[key]);
+  }
+  return String(node.attrs.name ?? "");
 }
