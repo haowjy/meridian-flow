@@ -4,62 +4,36 @@
  * owning thread routing itself.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import { useEffect } from "react";
+import type { ProjectContextTreeScheme, Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
-import { useResolvedChatThread } from "./chat-thread-resolution";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
 
 export type ChatScreenProps = {
   projectId: string;
-  /** Explicit `?thread=` from the route. Null = resolve via fallback chain. */
+  /** ProjectView's resolved thread. */
   threadId: string | null;
   activeWork: Work | null;
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
-  /**
-   * Whether this instance may write its resolved fallback thread into the route
-   * (`?thread=`). Only the destination-owning chat (centered) should — a
-   * persistent dock on Home/Context must NOT, or it would hijack navigation and
-   * redirect every destination to Chat. Defaults to true.
-   */
-  writeThreadToRoute?: boolean;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 };
 
-/**
- * Renders the thread conversation. When the thread is a subagent, prepends a
- * context banner that links back to the parent. Otherwise renders the chat as-is.
- *
- * The thread-id resolution chain mirrors the previous adapter:
- *   1. Pending-stream deferred-send map (synchronous on optimistic create).
- *   2. React Query thread-list cache.
- *   3. Server `listProjectThreads` fallback.
- */
+/** Renders the resolved thread, with parent context when it is a subagent. */
 export function ChatScreen({
   projectId,
-  threadId: explicitThreadId,
+  threadId,
   activeWork,
   onSelectThread,
-  writeThreadToRoute = true,
   onSelectContextPath,
 }: ChatScreenProps) {
-  const { resolvedThreadId, projectThreads, isError, refetch } = useResolvedChatThread(
-    projectId,
-    explicitThreadId,
-  );
+  const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
 
-  useEffect(() => {
-    if (!writeThreadToRoute || explicitThreadId || !resolvedThreadId) return;
-    onSelectThread(resolvedThreadId);
-  }, [writeThreadToRoute, explicitThreadId, onSelectThread, resolvedThreadId]);
-
-  if (resolvedThreadId === null) {
+  if (threadId === null) {
     if (isError) {
       return (
         <div className="px-4 py-3">
@@ -80,8 +54,9 @@ export function ChatScreen({
   return (
     <ChatScreenLoaded
       projectId={projectId}
-      threadId={resolvedThreadId}
+      threadId={threadId}
       activeWork={activeWork}
+      projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
       onSelectContextPath={onSelectContextPath}
     />
@@ -92,12 +67,14 @@ function ChatScreenLoaded({
   projectId,
   threadId,
   activeWork,
+  projectThreads,
   onSelectThread,
   onSelectContextPath,
 }: {
   projectId: string;
   threadId: string;
   activeWork: Work | null;
+  projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 }) {
@@ -108,11 +85,9 @@ function ChatScreenLoaded({
     isError,
     refetch,
   } = useThreadSnapshotSync(threadId);
-  const { threads: projectThreads } = useProjectThreads(projectId);
-  const allThreads = projectThreads ?? [];
-  const thread = allThreads.find((t) => t.id === threadId) ?? snapshotThread;
+  const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
   const parent = thread?.parentThreadId
-    ? (allThreads.find((t) => t.id === thread.parentThreadId) ?? null)
+    ? (projectThreads.find((t) => t.id === thread.parentThreadId) ?? null)
     : null;
 
   const isSubagent = thread?.kind === "subagent";
@@ -136,7 +111,7 @@ function ChatScreenLoaded({
 
       <div className="min-h-0 flex-1">
         <ProjectChatContextNavigationProvider
-          activeWorkId={thread?.workId ?? null}
+          activeWorkId={activeWork?.id ?? null}
           onSelectContextPath={onSelectContextPath}
         >
           <ChatView

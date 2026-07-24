@@ -10,6 +10,19 @@ const operationAcceptMutateMock = vi.fn(
   },
 );
 let wholeDraftResponse: unknown = null;
+const draftPreview = {
+  status: "active",
+  draftRevisionToken: 1,
+  liveRevisionToken: 0,
+  branchId: "branch-1",
+  reviewRoomName: "branch:branch-1",
+  operations: [
+    { operationId: "operation-1" },
+    { operationId: "operation-2" },
+    { operationId: "operation-3" },
+  ],
+};
+let draftPreviewPromise: Promise<typeof draftPreview> | null = null;
 const wholeDraftAcceptMutateMock = vi.fn(
   (_input: unknown, options: { onSuccess: (response: unknown) => void }) => {
     if (wholeDraftResponse) options.onSuccess(wholeDraftResponse);
@@ -35,18 +48,7 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 vi.mock("@/client/api/drafts-api", () => ({
-  getDraftPreview: async () => ({
-    status: "active",
-    draftRevisionToken: 1,
-    liveRevisionToken: 0,
-    branchId: "branch-1",
-    reviewRoomName: "branch:branch-1",
-    operations: [
-      { operationId: "operation-1" },
-      { operationId: "operation-2" },
-      { operationId: "operation-3" },
-    ],
-  }),
+  getDraftPreview: () => draftPreviewPromise ?? Promise.resolve(draftPreview),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
   useAcceptDraft: () => ({ isPending: false, mutate: acceptMutateMock }),
@@ -130,6 +132,61 @@ describe("useDraftReviewController", () => {
         }),
         expect.any(Object),
       );
+    });
+  });
+
+  it("locks every Apply before per-card revision acquisition settles", async () => {
+    let controller: ReturnType<typeof useDraftReviewController> | null = null;
+    acceptMutateMock.mockClear();
+    operationAcceptMutateMock.mockClear();
+    wholeDraftAcceptMutateMock.mockClear();
+
+    function Probe() {
+      const value = useDraftReviewController("project-1", "work-1", "thread-1");
+      useEffect(() => {
+        controller = value;
+      }, [value]);
+      return null;
+    }
+
+    await withReactRoot(<Probe />, async () => {
+      await act(async () => {
+        controller?.enterInlineReview("document-1", "draft-1");
+        controller?.inlineReviewModelAvailable(
+          "draft-1:0:1",
+          "document-1",
+          "draft-1",
+          ["operation-1", "operation-2"],
+          { draftRevisionToken: 1, branchId: "branch-1" },
+        );
+      });
+
+      let resolvePreview!: (preview: typeof draftPreview) => void;
+      draftPreviewPromise = new Promise((resolve) => {
+        resolvePreview = resolve;
+      });
+      const activeController = controller;
+      if (!activeController) throw new Error("controller did not mount");
+      let operationApply!: Promise<void>;
+      await act(async () => {
+        operationApply = activeController.acceptOperation("operation-1", {
+          operations: [{ operationId: "operation-1" }],
+        } as never);
+        await Promise.resolve();
+        await activeController.acceptOperation("operation-2", {
+          operations: [{ operationId: "operation-2" }],
+        } as never);
+        await activeController.accept("document-1", "draft-1");
+      });
+
+      expect(wholeDraftAcceptMutateMock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolvePreview(draftPreview);
+        await operationApply;
+      });
+      expect(operationAcceptMutateMock).toHaveBeenCalledOnce();
+      draftPreviewPromise = null;
     });
   });
 

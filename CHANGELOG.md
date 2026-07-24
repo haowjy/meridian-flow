@@ -21,6 +21,11 @@
   live reversal history; durable projection failures recover and report the
   committed reversal honestly, and handles folded into one Apply reverse as one
   durable live group (#332).
+- `apps/app`: project chat resolves one thread and Work for context hydration,
+  Draft Review, headers, and the conversation body (#334).
+- `apps/app`: per-card and whole-draft Apply now share one revision and response
+  disposition policy (#334).
+
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

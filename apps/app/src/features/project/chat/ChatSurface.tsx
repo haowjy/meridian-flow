@@ -21,7 +21,6 @@ import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
-import { useResolvedChatThread } from "./chat-thread-resolution";
 
 /** `center` = the wide main column (Chat dest); `dock` = right rail (Home/Context). */
 export type ChatPlacement = "center" | "dock";
@@ -31,7 +30,7 @@ export const CHAT_DOCK_WIDTH = "clamp(20rem,28vw,26rem)";
 
 export type ChatSurfaceProps = {
   projectId: string;
-  activeThreadId: string | null;
+  threadId: string | null;
   activeWork: Work | null;
   /** Active screen — drives the dock view set when this surface is docked. */
   activeScreen: ScreenKey;
@@ -50,7 +49,7 @@ export type ChatSurfaceProps = {
 
 export function ChatSurface({
   projectId,
-  activeThreadId,
+  threadId,
   activeWork,
   activeScreen,
   onSelectThread,
@@ -59,10 +58,6 @@ export function ChatSurface({
   onCloseDock,
   onSelectContextPath,
 }: ChatSurfaceProps) {
-  // The header must name the SAME thread the body resolves — the route id is
-  // null on Home/Context, where ChatScreen falls back without route
-  // write-back. One shared resolution keeps title and conversation in sync.
-  const { resolvedThreadId } = useResolvedChatThread(projectId, activeThreadId);
   return (
     <div
       aria-hidden={!visible}
@@ -81,10 +76,10 @@ export function ChatSurface({
         screen={activeScreen}
         onClose={onCloseDock}
         threadSelect={
-          resolvedThreadId ? (
+          threadId ? (
             <ChatThreadTitle
               projectId={projectId}
-              threadId={resolvedThreadId}
+              threadId={threadId}
               onSelectThread={onSelectThread}
             />
           ) : (
@@ -96,15 +91,10 @@ export function ChatSurface({
       >
         <ChatScreen
           projectId={projectId}
-          threadId={activeThreadId}
+          threadId={threadId}
           activeWork={activeWork}
           onSelectThread={onSelectThread}
           onSelectContextPath={onSelectContextPath}
-          // Both placements now carry external chrome (PaneHeader for center, the
-          // dock header for dock), so ChatScreen never renders its own. Only the
-          // centered (destination-owning) chat may write its fallback thread to
-          // the route. A dock must not, or it hijacks navigation.
-          writeThreadToRoute={placement === "center"}
         />
       </DockShell>
     </div>
