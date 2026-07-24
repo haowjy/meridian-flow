@@ -101,9 +101,17 @@ Recovery calls `applyTrailForwardAction` and removes the session mark only after
 a successful `applied` / `already_applied` result; a failed action stays
 failed with a retry affordance. *Open conversation* routes through
 `requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
-popover closes and the chat side expands `TurnEditsCard`, scrolls to the turn,
-and emphasizes the owning row. The popover returns focus to the mark element on
-close.
+popover closes and the chat side expands the owning turn Changes card, or the
+thread-tail shared Changes entry when the trail has no owning turn, then
+emphasizes the exact row.
+
+Trail-row navigation addresses a matching live session mark first, preserving
+its range/tick/seam anatomy and emphasis treatment. Generic temporary range
+navigation remains the fallback after that mark has cleared or expired.
+
+Popover focus follows activation. Pointer open prevents Radix autofocus and
+pointer close restores the captured editor selection and caret. Keyboard
+activation moves focus into the popover; Escape/close returns focus to the mark.
 
 ## Deferred
 
