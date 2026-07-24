@@ -46,7 +46,7 @@ instead of the N:1 `threads.workId` column.
   explicit confirmation; the confirmed request pushes every pending Work draft
   to live before switching the policy. `direct` → `draft` is always permitted.
 
-  → See [`domains/collab/.context/CONTEXT.md`](../collab/.context/CONTEXT.md)
+  → See [`domains/collab/.context/CONTEXT.md`](../../collab/.context/CONTEXT.md)
     for the branch review model.
 - **Active documents** — `createActiveDocumentResolver` is the sole definition
   of document activity for a thread: the union of explicit `thread_documents`

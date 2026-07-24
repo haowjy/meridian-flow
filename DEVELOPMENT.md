@@ -73,9 +73,10 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 
 Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
-database owned by that invocation, then drops it on exit. If the process is
-killed before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes the managed name
-and drops it only after its owner process has stopped. Manually named test
+template owned by that invocation, clones four isolated worker databases from
+it, then drops the workers and template on exit. If the process is killed
+before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes every managed name and
+drops it only after its owner process has stopped. Manually named test
 databases that must survive GC use `<base>_test-manual-<label>`; test lifecycle
 prefixes are reserved from worktree slugs.
 
