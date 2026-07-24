@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "paths": {
+      "@meridian/contracts/*": ["../../packages/contracts/src/*"]
+    }
+  },
+  "include": ["**/*.ts"]
+}

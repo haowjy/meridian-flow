@@ -97,7 +97,12 @@ pnpm dev:prune-worktrees -- --auto --dry-run   # print plan without executing
 pnpm dev:prune-worktrees -- --auto --yes       # execute without confirmation
 ```
 
-Per target, cleanup runs in order: stop dev stack → drop database → remove git worktree → delete local branch → mark Meridian work done. The resolver refuses primary worktree, current worktree, `main` branch, and unmerged branches.
+Per target, cleanup runs in order: stop dev stack → drop database → remove git
+worktree → mark Meridian work done → delete the local branch. Eligibility is
+bound to the planned branch commit and revalidated before every action; exact
+merged-PR evidence must match the detected base, head commit, and repository
+owner. The resolver refuses primary/current worktrees, the detected base branch,
+unmerged commits, ambiguous evidence, and refs that move after planning.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
@@ -156,6 +161,10 @@ pnpm dev --stop           # stop this worktree's tmux session + prune routes
 pnpm dev --restart        # stop + restart (preserves mode unless --no-tailscale/--funnel)
 pnpm portless:list        # live localhost HTTPS URLs
 ```
+
+Restart terminates only this worktree's owned tmux session. If a fixed port
+remains held or its holder cannot be inspected, startup refuses with diagnostics;
+port discovery never authorizes killing the holder.
 
 ## Workstation: memory-safe ripgrep
 

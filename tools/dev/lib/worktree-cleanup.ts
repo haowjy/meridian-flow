@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { CleanupEligibility, EligibilityDecision } from "./worktree-cleanup-eligibility";
 
 export interface GitWorktree {
   readonly path: string;
@@ -22,11 +23,7 @@ export interface CleanupContext {
   readonly worktrees: readonly GitWorktree[];
   readonly primaryWorktreePath: string;
   readonly currentWorktreePath: string;
-  // Branches considered merged: the union of `git branch --merged <baseBranch>`
-  // (ancestry) and branches whose pull request is merged. The PR arm is what
-  // makes this squash-merge-aware -- a squashed branch tip is never an ancestor
-  // of the base, so ancestry alone can never see it as merged.
-  readonly mergedBranches: ReadonlySet<string>;
+  readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
   readonly baseBranch: string;
   readonly workItems: readonly MeridianWorkItem[];
 }
@@ -39,6 +36,7 @@ export interface CleanupTarget {
   readonly worktree: GitWorktree;
   readonly branch: string;
   readonly workItem?: MeridianWorkItem;
+  readonly eligibility: CleanupEligibility;
 }
 
 export type CleanupActionKind =
@@ -71,12 +69,17 @@ export interface CleanupExecutionResult {
   readonly ok: boolean;
   readonly failedTarget?: CleanupTargetPlan;
   readonly failedAction?: CleanupAction;
+  readonly eligibilityFailure?: string;
 }
 
 export type CleanupActionRunner = (
   action: CleanupAction,
   target: CleanupTargetPlan,
 ) => CleanupActionResult | Promise<CleanupActionResult>;
+
+export type CleanupEligibilityValidator = (
+  target: CleanupTargetPlan,
+) => EligibilityDecision | Promise<EligibilityDecision>;
 
 export interface CleanupExecutionHooks {
   readonly onTargetStart?: (target: CleanupTargetPlan) => void;
@@ -126,24 +129,18 @@ export function parseGitWorktreePorcelain(output: string): GitWorktree[] {
     }
     const [key, ...rest] = line.split(" ");
     const value = rest.join(" ");
-    if (key === "worktree") record.path = value;
-    if (key === "HEAD") record.head = value;
-    if (key === "branch") record.branch = stripRefPrefix(value);
-    if (key === "detached") record.detached = true;
-    if (key === "bare") record.bare = true;
+    record = {
+      ...record,
+      ...(key === "worktree" ? { path: value } : {}),
+      ...(key === "HEAD" ? { head: value } : {}),
+      ...(key === "branch" ? { branch: stripRefPrefix(value) } : {}),
+      ...(key === "detached" ? { detached: true } : {}),
+      ...(key === "bare" ? { bare: true } : {}),
+    };
   }
   flush();
 
   return worktrees;
-}
-
-export function parseMergedBranches(output: string): Set<string> {
-  return new Set(
-    output
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean),
-  );
 }
 
 export function parseMeridianWorkList(output: string): MeridianWorkListItem[] {
@@ -167,7 +164,7 @@ export function parseMeridianWorkShow(id: string, output: string): MeridianWorkI
 
 export function buildCleanupContext(input: {
   readonly gitWorktreePorcelain: string;
-  readonly mergedBranches: string | readonly string[] | ReadonlySet<string>;
+  readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
   readonly baseBranch: string;
   readonly meridianWorkItems: readonly MeridianWorkItem[];
   readonly currentWorktreePath: string;
@@ -175,16 +172,11 @@ export function buildCleanupContext(input: {
   const worktrees = parseGitWorktreePorcelain(input.gitWorktreePorcelain);
   if (worktrees.length === 0) throw new CleanupResolverError("No git worktrees found.");
 
-  const mergedBranches =
-    typeof input.mergedBranches === "string"
-      ? parseMergedBranches(input.mergedBranches)
-      : new Set(input.mergedBranches);
-
   return {
     worktrees,
     primaryWorktreePath: normalizePath(worktrees[0].path),
     currentWorktreePath: normalizePath(input.currentWorktreePath),
-    mergedBranches,
+    eligibilityByBranch: input.eligibilityByBranch,
     baseBranch: input.baseBranch,
     workItems: input.meridianWorkItems,
   };
@@ -222,7 +214,10 @@ function formatWorkItemCandidate(workItem: MeridianWorkItem): string {
   return `work ${workItem.id}${workItem.taskDir ? ` (Task dir: ${workItem.taskDir})` : ""}`;
 }
 
-function assertSafeTarget(context: CleanupContext, target: CleanupTarget): void {
+function assertSafeTarget(
+  context: CleanupContext,
+  target: Pick<CleanupTarget, "worktree" | "branch">,
+): void {
   const normalizedWorktreePath = normalizePath(target.worktree.path);
   if (normalizedWorktreePath === context.primaryWorktreePath) {
     throw new CleanupResolverError(`Refusing to remove primary worktree: ${target.worktree.path}`);
@@ -233,10 +228,10 @@ function assertSafeTarget(context: CleanupContext, target: CleanupTarget): void 
   if (target.branch === context.baseBranch) {
     throw new CleanupResolverError(`Refusing to delete base branch '${context.baseBranch}'.`);
   }
-  if (!context.mergedBranches.has(target.branch)) {
+  if (!context.eligibilityByBranch.has(target.branch)) {
     throw new CleanupResolverError(
-      `Refusing to clean branch '${target.branch}': not merged into '${context.baseBranch}' ` +
-        "and no merged pull request found for it.",
+      `Refusing to clean branch '${target.branch}': its current commit is not merged into ` +
+        `'${context.baseBranch}' and has no exact merged pull request.`,
     );
   }
 }
@@ -247,12 +242,16 @@ function targetForWorktree(context: CleanupContext, worktree: GitWorktree): Clea
       `Refusing to clean worktree without a local branch: ${worktree.path}`,
     );
   }
+  assertSafeTarget(context, { worktree, branch: worktree.branch });
+  const eligibility = context.eligibilityByBranch.get(worktree.branch);
+  if (!eligibility)
+    throw new CleanupResolverError("Missing cleanup eligibility after safety check.");
   const target = {
     worktree,
     branch: worktree.branch,
     workItem: findLinkedWorkItem(context, worktree.path),
+    eligibility,
   } satisfies CleanupTarget;
-  assertSafeTarget(context, target);
   return target;
 }
 
@@ -316,7 +315,7 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
     if (normalizePath(worktree.path) === context.currentWorktreePath) continue;
     if (!worktree.branch) continue;
     if (worktree.branch === context.baseBranch) continue;
-    if (!context.mergedBranches.has(worktree.branch)) continue;
+    if (!context.eligibilityByBranch.has(worktree.branch)) continue;
     targets.push(targetForWorktree(context, worktree));
   }
   return targets;
@@ -331,15 +330,6 @@ function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): C
       cwd: primaryWorktreePath,
       command: ["git", "worktree", "remove", target.worktree.path],
     },
-    {
-      kind: "delete-branch",
-      cwd: primaryWorktreePath,
-      // Force-delete: the plan only reaches here for branches assertSafeTarget
-      // already proved merged (ancestry OR a merged PR). `git branch -d` is
-      // squash-blind and would refuse a squash-merged branch, so it can't be
-      // the gate here -- the plan-time check is the single source of truth.
-      command: ["git", "branch", "-D", target.branch],
-    },
   ];
 
   if (target.workItem) {
@@ -348,6 +338,15 @@ function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): C
       command: ["meridian", "work", "done", target.workItem.id],
     });
   }
+
+  actions.push({
+    kind: "delete-branch",
+    cwd: primaryWorktreePath,
+    // Force-delete is safe only because exact commit eligibility is revalidated
+    // immediately before every action. `git branch -d` is squash-blind and
+    // would refuse a squash-merged tip even after that proof.
+    command: ["git", "branch", "-D", target.branch],
+  });
 
   return actions;
 }
@@ -375,12 +374,22 @@ export function parsePrNumber(value: string): string {
 
 export async function executeCleanupPlan(
   plan: CleanupPlan,
+  validateEligibility: CleanupEligibilityValidator,
   runAction: CleanupActionRunner,
   hooks: CleanupExecutionHooks = {},
 ): Promise<CleanupExecutionResult> {
   for (const target of plan.targets) {
     hooks.onTargetStart?.(target);
     for (const action of target.actions) {
+      const eligibility = await validateEligibility(target);
+      if (!eligibility.eligible) {
+        return {
+          ok: false,
+          failedTarget: target,
+          failedAction: action,
+          eligibilityFailure: eligibility.reason,
+        };
+      }
       hooks.onActionStart?.(action, target);
       const result = await runAction(action, target);
       if (!result.ok) return { ok: false, failedTarget: target, failedAction: action };

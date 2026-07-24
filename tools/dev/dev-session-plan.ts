@@ -246,9 +246,7 @@ export function sharedServiceNamesForMode(mode: DevMode): SharedDevServiceName[]
   return DEV_SERVICES.filter(
     (service): service is DevServiceSpec & { serviceName: SharedDevServiceName } =>
       service.shared && (service.serviceName === "app" || service.serviceName === "www"),
-  )
-    .filter((service) => mode !== "local" || !service.sharedModeOnly)
-    .map((service) => service.serviceName);
+  ).map((service) => service.serviceName);
 }
 
 export function buildMetadata({
