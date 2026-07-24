@@ -13,6 +13,7 @@ import {
 import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
+import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
@@ -331,6 +332,23 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
   }
 }
 
+/**
+ * Wait for the fixed app/www backend ports to be released before relaunching on
+ * `--restart`, reaping any listener that outlived its tmux session. Without this
+ * the new Vite races the dying one: it finds the port held, and with strictPort
+ * it fails fast (loud) instead of silently drifting off the port portless
+ * proxies to (the old 502 + orphan-listener failure mode).
+ */
+async function releaseFixedBackendPorts(
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
+): Promise<void> {
+  const ports = sharedPorts.map((entry) => entry.appBackendPort);
+  const { reaped } = await releaseFixedPorts(ports);
+  if (reaped.length > 0) {
+    console.warn(`reaped orphan dev listener(s) on port(s) ${reaped.join(", ")}`);
+  }
+}
+
 async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
   const tailscale = new TailscaleDevLifecycle();
@@ -410,6 +428,7 @@ async function main(): Promise<void> {
   if (cliOptions.restart) {
     tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
+    await releaseFixedBackendPorts(sharedPorts);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
     const runningSharedPorts = resolveSharedDevServicePorts({

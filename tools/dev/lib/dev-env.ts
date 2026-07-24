@@ -140,9 +140,13 @@ export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void 
     if (process.env[key] === undefined) process.env[key] = value;
   }
 
-  if (process.env.LOG_DIR === undefined) {
-    process.env.LOG_DIR = resolveDevLogDir(repoRoot);
-  }
+  // The dev stack owns the structured-event mirror location. Pin it here rather
+  // than deferring to an inherited value: a relative LOG_DIR (e.g. a stale
+  // `.env` `LOG_DIR=logs`) is never correct because app/server/www each run in
+  // their own package cwd via `pnpm --filter`, so a relative path scatters the
+  // JSONL mirror away from repo-root `logs/events/` (where `logs/portless.log`
+  // and probe tooling look). resolveDevLogDir keeps only an absolute override.
+  process.env.LOG_DIR = resolveDevLogDir(repoRoot, process.env.LOG_DIR);
 
   for (const db of DEV_DATABASES) {
     const baseUrl = mainEnv[db.envVar] ?? process.env[db.envVar];
@@ -151,8 +155,15 @@ export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void 
   }
 }
 
-/** Repo-local structured event mirror used by the server EventSink in dev. */
-export function resolveDevLogDir(repoRoot: string): string {
+/**
+ * Absolute path to the repo-local structured-event mirror the server EventSink
+ * writes in dev. An absolute override is honored as-is; any relative or empty
+ * value falls back to the canonical `<repoRoot>/logs/events` — a relative
+ * LOG_DIR would resolve against each service's own cwd and never land here.
+ */
+export function resolveDevLogDir(repoRoot: string, override?: string): string {
+  const raw = override?.trim();
+  if (raw && path.isAbsolute(raw)) return raw;
   return path.join(repoRoot, "logs", "events");
 }
 
