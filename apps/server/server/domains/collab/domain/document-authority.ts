@@ -53,15 +53,6 @@ export type ImmediateAdmission = {
   attribution: AuthorshipSource | { kind: "agent" };
 };
 
-export type WriterIngressPort<Context> = {
-  admitWriterUpdate(input: {
-    documentId: string;
-    update: Uint8Array;
-    source: Extract<AuthorshipSource, { kind: "writer" }>;
-    context: Context;
-  }): Promise<{ sequence: bigint; joined: number }>;
-};
-
 export class ReservedWriterClientIdError extends Error {
   constructor(readonly clientId: number) {
     super("Reserved server client IDs cannot author fresh prose");
@@ -116,23 +107,22 @@ export class DocumentAuthorityError extends Error {
 
 export type DocumentAuthority = ReturnType<typeof createDocumentAuthority>;
 
-/** The writer transport's deliberately narrow admission capability. */
-export function createWriterIngress<Context>(port: WriterIngressPort<Context>) {
-  return {
-    prepare(input: {
-      documentId: string;
-      authority: Y.Doc;
-      update: Uint8Array;
-      source: Extract<AuthorshipSource, { kind: "writer" }>;
-      context: Context;
-    }): { admit(): Promise<{ sequence: bigint; joined: number }> } {
-      const admission = validateFreshAuthorship(input.authority, input.update, input.source);
-      if (admission.reservedClientId !== null) {
-        throw new ReservedWriterClientIdError(admission.reservedClientId);
-      }
-      return { admit: () => port.admitWriterUpdate(input) };
-    },
-  };
+/** Shared authority → containment → authorship → append sequence for writer frames. */
+export async function admitWriterUpdate<T>(input: {
+  authority: Y.Doc;
+  update: Uint8Array;
+  validateAuthority(): void | Promise<void>;
+  isContained(): boolean;
+  append(): Promise<T>;
+}): Promise<{ admitted: false } | { admitted: true; value: T }> {
+  const validation = input.validateAuthority();
+  if (validation) await validation;
+  if (input.isContained()) return { admitted: false };
+  const admission = validateFreshAuthorship(input.authority, input.update, { kind: "writer" });
+  if (admission.reservedClientId !== null) {
+    throw new ReservedWriterClientIdError(admission.reservedClientId);
+  }
+  return { admitted: true, value: await input.append() };
 }
 
 /**
