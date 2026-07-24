@@ -172,7 +172,7 @@ async function scenarioCrossBlockFind(env: DemoEnvironment, docId: string) {
 }
 
 async function scenarioMultiWriteTurn() {
-  section("7. multi-write turn: one turnId groups two write() calls for undo/redo");
+  section("7. multi-write turn: undo/redo follows durable write order");
   const env = createEnvironment();
   const docId = "turn-demo.mdx";
   await env.core.write(
@@ -196,26 +196,34 @@ async function scenarioMultiWriteTurn() {
   print("write(replace, same turnId)", replace.text);
   printBlocks("after two writes", await blocks(env, docId));
 
-  const undo = await env.core.write({ command: "undo", file: docId }, defaultContext);
-  print("write(undo)", undo.text);
-  printBlocks("after undo", await blocks(env, docId));
-  assert(undo.text.includes("undo: 1 edit(s)"), "undo should report the grouped edit count");
+  const undoReplace = await env.core.write({ command: "undo", file: docId }, defaultContext);
+  print("write(undo replace)", undoReplace.text);
+  printBlocks("after first undo", await blocks(env, docId));
   assert(
-    equal(await plainTexts(env, docId), ["Alpha sword.", "Omega."]),
-    "undo should reverse both writes in the turn",
+    equal(await plainTexts(env, docId), ["Alpha sword.", "Inserted in the same turn.", "Omega."]),
+    "first undo should reverse the latest write",
   );
 
-  const redo = await env.core.write({ command: "redo", file: docId }, defaultContext);
-  print("write(redo)", redo.text);
-  printBlocks("after redo", await blocks(env, docId));
+  const undoInsert = await env.core.write({ command: "undo", file: docId }, defaultContext);
+  print("write(undo insert)", undoInsert.text);
+  printBlocks("after second undo", await blocks(env, docId));
+  assert(
+    equal(await plainTexts(env, docId), ["Alpha sword.", "Omega."]),
+    "second undo should reverse the earlier write",
+  );
+
+  await env.core.write({ command: "redo", file: docId }, defaultContext);
+  const redoReplace = await env.core.write({ command: "redo", file: docId }, defaultContext);
+  print("write(redo replace)", redoReplace.text);
+  printBlocks("after two redos", await blocks(env, docId));
   assert(
     equal(await plainTexts(env, docId), ["Alpha blade.", "Inserted in the same turn.", "Omega."]),
-    "redo should restore both writes in the turn",
+    "redo should restore both writes in durable order",
   );
 }
 
 async function scenarioConcurrentReconciled() {
-  section("8. concurrent/reconciled: human edits live doc after agent sync");
+  section("8. merged edits: a durable human edit survives the next agent write");
   const env = createEnvironment();
   const docId = "concurrent-demo.mdx";
   await env.core.write(
@@ -235,15 +243,11 @@ async function scenarioConcurrentReconciled() {
     { command: "replace", file: docId, find: "sword", content: "blade" },
     defaultContext,
   );
-  print('write(replace stale snapshot find "sword" -> "blade")', result.text);
+  print('write(replace find "sword" -> "blade")', result.text);
   printBlocks("merged live doc", await blocks(env, docId));
   assert(
     result.text.includes("status: success"),
     "agent replace should still succeed after human edit",
-  );
-  assert(
-    result.text.includes("concurrent edits:"),
-    "result should report the concurrent human edit",
   );
   assert(
     (await rendered(env, docId)).includes("Human note: Alpha waits."),
@@ -271,7 +275,7 @@ async function scenarioColdUndoAfterRestart() {
   print("cold reconstruction undo", undo.text);
   print("rendered after undo", afterUndo);
 
-  assert(undo.text.includes("status: reversed"), "cold undo should reverse the edit");
+  assert(undo.text.includes("status: reconciled"), "cold undo should reconcile the edit");
   assert(afterUndo.includes("Alpha sword."), "cold undo should restore the original text");
 }
 
@@ -294,7 +298,7 @@ async function rendered(env: DemoEnvironment, docId: string): Promise<string> {
 }
 
 function serializeWithoutHashes(doc: Y.Doc): string {
-  return codec.serialize(model.getBlocks(doc).map((block) => model.toProsemirrorBlock(doc, block)));
+  return codec.serialize(model.projectBlocks(doc));
 }
 
 function section(title: string) {
