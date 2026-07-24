@@ -18,7 +18,10 @@ import {
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } from "./adapters/agent-edit-observability.js";
-import { SILENT_POST_DURABILITY_NOTICES } from "./adapters/declared-stubs.js";
+import {
+  SILENT_POST_DURABILITY_NOTICES,
+  UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
+} from "./adapters/declared-stubs.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import {
   createDrizzleBranchJournalReadStore,
@@ -106,15 +109,6 @@ type CollabDomainDeps = {
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
-};
-
-const UNAVAILABLE_THREAD_CONTEXT_REVERSAL: ThreadContextReversalResolver = {
-  async requireThreadOwner() {
-    throw new Error("Thread context reversal is not configured");
-  },
-  async resolveContextDocument() {
-    throw new Error("Thread context reversal is not configured");
-  },
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -366,7 +360,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
     documentAccess: deps.documentAccess,
-    threadContext: deps.threadContext ?? UNAVAILABLE_THREAD_CONTEXT_REVERSAL,
+    threadContext:
+      deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   const trailForwardActions = createDrizzleTrailForwardActions({
     db: deps.db,

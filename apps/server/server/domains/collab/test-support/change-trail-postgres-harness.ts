@@ -75,6 +75,9 @@ const { createResponseBranchFinalization, createResponseWriteFinalizer } = await
 const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
 const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
+const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
+  "../adapters/declared-stubs.js"
+);
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
@@ -545,6 +548,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     }),
   });
   const turnReversal = createTurnReversalService({
+    ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     live: {
       reversalStore: persistence.journal,
       agentEdit: runtime.liveUtilityCore,
