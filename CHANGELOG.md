@@ -7,6 +7,8 @@
   structural matches no longer fail on deleted predecessor anchors. Failed
   multi-edit applies and provenance-writer failures restore the session's pre-write
   document; retained roots bypass continuation-fact rematerialization.
+- `apps/server`: authentication now rejects cross-principal email collisions
+  with a structured 409 instead of adopting the existing Meridian account.
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
   branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
   PR evidence, GitHub failures, and refs that move before execution are refused.

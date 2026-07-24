@@ -6,7 +6,11 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import { CookieSessionStorage, createAuthService, validateConfig } from "@workos/authkit-session";
 import { HTTPError } from "nitro/h3";
-import type { ProjectBootstrapRepository, UserRepository } from "../domains/projects/index.js";
+import {
+  AccountLinkConflictError,
+  type ProjectBootstrapRepository,
+  type UserRepository,
+} from "../domains/projects/index.js";
 
 /**
  * Custom cookie session storage that manually parses the cookie header.
@@ -106,12 +110,23 @@ export async function provisionAuthenticatedUser(
   user: ResolvedExternalUser,
   deps: UserProvisioningDeps,
 ): Promise<UserId> {
-  const userId = await deps.users.ensureUser({
-    externalId: user.externalId,
-    email: user.email,
-    name: user.name,
-    avatarUrl: user.avatarUrl,
-  });
+  let userId: UserId;
+  try {
+    userId = await deps.users.ensureUser({
+      externalId: user.externalId,
+      email: user.email,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+    });
+  } catch (error) {
+    if (!(error instanceof AccountLinkConflictError)) throw error;
+    throw new HTTPError({
+      status: 409,
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+      data: { code: "account_link_conflict" },
+    });
+  }
 
   await deps.projects.ensureDefaultBootstrap(userId);
 
