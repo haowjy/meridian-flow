@@ -232,7 +232,7 @@ describe("branch push change-event broadcast", () => {
       author: { kind: "agent", threadId: THREAD_ID, turnId: TURN_ID },
       changes: [
         { changeId: "auto", admittedByUserId: null },
-        { changeId: "manual", admittedByUserId: USER_W, pureDeletionOffset: null },
+        { changeId: "manual", admittedByUserId: USER_W, pureDeletionOffset: 7 },
       ],
     });
     expect(delivered[2]).toMatchObject({

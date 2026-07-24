@@ -508,7 +508,7 @@ export function createBranchPushTransition(input: {
       swept: change.writerProtection !== undefined,
       excerpt: text === null ? null : text.slice(0, 500),
       pureDeletionOffset:
-        change.kind === "delete"
+        change.kind === "modify"
           ? detectPureDeletionOffset(
               renderedBodyText(change.beforeText, input.codec),
               renderedBodyText(change.afterTextAtReceipt, input.codec),
