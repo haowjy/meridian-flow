@@ -8,9 +8,9 @@ function validMessage(): Parameters<typeof encodeChangeEventWsMessage>[0] {
     trailId: "trail-1",
     projectionRevision: 2,
     author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    admittedByUserId: null,
     changes: [
       {
+        admittedByUserId: null,
         changeId: "change-1",
         kind: "delete",
         navigation: {
@@ -36,9 +36,9 @@ describe("Yjs stateless messages", () => {
       trailId: "trail-1",
       projectionRevision: 2,
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-      admittedByUserId: null,
       changes: [
         {
+          admittedByUserId: null,
           changeId: "change-1",
           kind: "delete",
           navigation: {
@@ -61,9 +61,9 @@ describe("Yjs stateless messages", () => {
       trailId: "trail-1",
       projectionRevision: 2,
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-      admittedByUserId: null,
       changes: [
         {
+          admittedByUserId: null,
           changeId: "change-1",
           kind: "delete",
           navigation: {
@@ -92,7 +92,6 @@ describe("Yjs stateless messages", () => {
           trailId: "trail-1",
           projectionRevision: -1,
           author: { kind: "writer", userId: "user-1" },
-          admittedByUserId: "user-1",
           changes: [],
           truncated: false,
         }),

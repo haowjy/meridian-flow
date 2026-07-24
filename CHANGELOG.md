@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Change-event attribution now follows durable trail ownership and each folded
+  change's admitting push; self-admitted changes are suppressed without
+  weakening replace-set revision ordering.
+- `apps/app`: bound peer-marker expiry, dismissal eviction, and revision
+  tombstones; Restore no longer acquires or prolongs a document session.
+- `write(command: "diff")` now distinguishes provisional missing trails from
+  settled empty trails and preserves the command name in malformed responses.
 - Change-event broadcasts now identify pure in-block deletions and their splice
   offsets so editor marks can render at the exact deletion site.
 - `apps/app`: render AI insert/replacement highlights, exact-site deletion

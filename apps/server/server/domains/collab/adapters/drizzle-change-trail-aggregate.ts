@@ -7,8 +7,9 @@ import {
   changeTrailDocumentDetails,
   changeTrailDocumentOccurrences,
   changeTrailShells,
+  pushLineage,
 } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleTransaction,
@@ -177,6 +178,23 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
                 : persistedChanges,
               replacement,
             );
+        const pushIds = [
+          ...new Set(
+            changes.flatMap((change) =>
+              change.pushId !== null && /^\d+$/.test(change.pushId) ? [Number(change.pushId)] : [],
+            ),
+          ),
+        ];
+        const admitters =
+          pushIds.length === 0
+            ? []
+            : await tx
+                .select({ id: pushLineage.id, pushedByUserId: pushLineage.pushedByUserId })
+                .from(pushLineage)
+                .where(inArray(pushLineage.id, pushIds));
+        const admitterByPushId = new Map(
+          admitters.map((row) => [String(row.id), row.pushedByUserId ?? null]),
+        );
         const documentIds = new Set([
           ...existingDetails.map((detail) => detail.documentId),
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
@@ -204,7 +222,11 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             owner: trail.owner,
             documentId,
             projectionRevision: occurrence.projectionRevision,
-            changes: documentChanges,
+            changes: documentChanges.map((change) => ({
+              ...change,
+              admittedByUserId:
+                change.pushId === null ? null : (admitterByPushId.get(change.pushId) ?? null),
+            })),
           });
           if (documentChanges.length === 0) {
             await tx

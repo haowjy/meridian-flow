@@ -159,6 +159,10 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Committed projection delivery**: aggregate recording returns the persisted
   post-fold replace-set with its durable occurrence revision. The push transition
   may deliver it only after `completeUnderFence` reports applied/already-applied.
+  Message authorship comes from the trail shell owner. Each projected change,
+  rather than the cumulative message, carries the admitting user resolved from
+  its surviving `push_lineage` row inside the aggregate transaction; missing
+  lineage is explicitly `null`.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.

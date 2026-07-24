@@ -419,7 +419,7 @@ export function createBranchPushTransition(input: {
           for (const projection of committedProjections) {
             if (projection.documentId !== pending.push.documentId) continue;
             try {
-              input.changeEventDelivery?.deliver(changeEventMessage(projection, pending));
+              input.changeEventDelivery?.deliver(changeEventMessage(projection));
             } catch {
               // Delivery is an ephemeral session hint; durable push completion
               // and the trail must never be reported as failed because it missed.
@@ -441,7 +441,6 @@ export function createBranchPushTransition(input: {
 
   function changeEventMessage(
     projection: CommittedChangeTrailProjection,
-    pending: PendingLiveSettlement,
   ): Omit<ChangeEventWsMessage, "type"> {
     const capped = projection.changes.slice(0, 100);
     return {
@@ -449,21 +448,20 @@ export function createBranchPushTransition(input: {
       threadId: projection.owner.threadId,
       trailId: projection.trailId,
       projectionRevision: projection.projectionRevision,
+      // Trail shells are agent-owned today. The wire contract retains its
+      // writer arm for a future writer-push broadcast producer.
       author:
-        pending.push.threadId === null && pending.push.pushedByUserId
-          ? { kind: "writer", userId: pending.push.pushedByUserId }
-          : projection.owner.kind === "turn"
-            ? {
-                kind: "agent",
-                threadId: projection.owner.threadId,
-                turnId: projection.owner.turnId,
-              }
-            : {
-                kind: "agent",
-                threadId: projection.owner.threadId,
-                turnId: null,
-              },
-      admittedByUserId: pending.push.pushedByUserId ?? null,
+        projection.owner.kind === "turn"
+          ? {
+              kind: "agent",
+              threadId: projection.owner.threadId,
+              turnId: projection.owner.turnId,
+            }
+          : {
+              kind: "agent",
+              threadId: projection.owner.threadId,
+              turnId: null,
+            },
       changes: capped.map(projectChangeEvent),
       truncated: projection.changes.length > capped.length,
     };
@@ -479,6 +477,7 @@ export function createBranchPushTransition(input: {
     const text = body.status === "available" ? body.markdown : null;
     return {
       changeId: change.changeId,
+      admittedByUserId: change.admittedByUserId,
       kind: change.kind,
       navigation: change.navigation,
       swept: change.writerProtection !== undefined,

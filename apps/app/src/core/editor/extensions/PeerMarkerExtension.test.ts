@@ -49,9 +49,9 @@ function addMarker(
     trailId: `trail-${kind}${suffix}`,
     projectionRevision: 1,
     author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    admittedByUserId: null,
     changes: [
       {
+        admittedByUserId: null,
         changeId: `${kind}-mark${suffix}`,
         kind: kind === "range" ? "modify" : "delete",
         navigation,

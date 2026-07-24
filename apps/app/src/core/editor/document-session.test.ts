@@ -115,17 +115,21 @@ function track(session: DocumentSession): {
   return { snapshots, unsubscribe };
 }
 
-function changeEvent(documentId: string, admittedByUserId: string | null): ChangeEventWsMessage {
+function changeEvent(
+  documentId: string,
+  admittedByUserId: string | null,
+  projectionRevision = 1,
+): ChangeEventWsMessage {
   return {
     type: "change_event",
     documentId,
     threadId: "thread-1",
     trailId: "trail-1",
-    projectionRevision: 1,
+    projectionRevision,
     author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    admittedByUserId,
     changes: [
       {
+        admittedByUserId,
         changeId: "change-1",
         kind: "delete",
         navigation: { kind: "unavailable", reason: "test" },
@@ -149,7 +153,7 @@ describe("DocumentSession status derivation", () => {
     });
     liveTransport.current().emitChange(changeEvent("doc-markers", "me"));
     expect(live.markerStore.getSnapshot()).toHaveLength(0);
-    liveTransport.current().emitChange(changeEvent("doc-markers", null));
+    liveTransport.current().emitChange(changeEvent("doc-markers", null, 2));
     expect(live.markerStore.getSnapshot().map((marker) => marker.changeId)).toEqual(["change-1"]);
     await live.destroy();
 

@@ -1036,7 +1036,10 @@ describe("createBranchPushService", () => {
               documentId: DOCUMENT_ID,
               projectionRevision: 2,
               // The fake persistence seam returns its authoritative post-fold set.
-              changes: trail?.changes as TrailChangeV1[],
+              changes: (trail?.changes as TrailChangeV1[]).map((change) => ({
+                ...change,
+                admittedByUserId: path === "whole" ? USER_ID : null,
+              })),
             },
           ];
         }),
@@ -1101,10 +1104,10 @@ describe("createBranchPushService", () => {
         trailId: "trail-1",
         projectionRevision: 2,
         author: { kind: "agent", threadId: THREAD_ID, turnId: TURN_ID },
-        admittedByUserId: path === "whole" ? USER_ID : null,
         truncated: false,
         changes: [
           expect.objectContaining({
+            admittedByUserId: path === "whole" ? USER_ID : null,
             changeId: expect.any(String),
             kind: "delete",
             swept: true,
