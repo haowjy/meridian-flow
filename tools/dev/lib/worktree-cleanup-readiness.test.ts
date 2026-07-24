@@ -15,6 +15,13 @@ function temporaryRepository(): string {
   return repo;
 }
 
+async function waitForOutput(child: ReturnType<typeof spawn>): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.stdout?.once("data", () => resolve());
+  });
+}
+
 describe("decideAutoCleanupReadiness", () => {
   it("requires a clean worktree with no owner or liveness evidence", () => {
     expect(
@@ -84,6 +91,37 @@ describe("decideAutoCleanupReadiness", () => {
         reasons: expect.arrayContaining([
           expect.stringMatching(
             new RegExp(`live processes have cwd under worktree:.*\\b${child.pid}\\b`),
+          ),
+        ]),
+      });
+    } finally {
+      child.kill("SIGTERM");
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a same-user process hides its cwd", async () => {
+    const repo = temporaryRepository();
+    const child = spawn(
+      "python3",
+      [
+        "-c",
+        [
+          "import ctypes, time",
+          "ctypes.CDLL(None).prctl(4, 0, 0, 0, 0)",
+          "print('ready', flush=True)",
+          "time.sleep(30)",
+        ].join("; "),
+      ],
+      { cwd: repo, stdio: ["ignore", "pipe", "ignore"] },
+    );
+    try {
+      await waitForOutput(child);
+      expect(inspectAutoCleanupReadiness(repo, [])).toMatchObject({
+        ready: false,
+        reasons: expect.arrayContaining([
+          expect.stringMatching(
+            new RegExp(`could not inspect cwd for same-user processes:.*\\b${child.pid}\\b`),
           ),
         ]),
       });

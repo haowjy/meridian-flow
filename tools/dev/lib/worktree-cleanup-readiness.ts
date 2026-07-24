@@ -105,6 +105,7 @@ function currentUserProcessCwds(): {
   const uid = process.getuid?.();
   const entries: ProcessCwd[] = [];
   const failures: string[] = [];
+  const hiddenCwdPids: number[] = [];
   for (const entry of procEntries) {
     if (!/^\d+$/.test(entry)) continue;
     const pid = Number(entry);
@@ -118,7 +119,6 @@ function currentUserProcessCwds(): {
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === "ENOENT") continue;
-        if (code === "EACCES" || code === "EPERM") continue;
         failures.push(`could not inspect process ${pid} ownership`);
         continue;
       }
@@ -129,11 +129,15 @@ function currentUserProcessCwds(): {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") continue;
-      // Linux ptrace policy can hide unrelated same-UID processes. Processes
-      // launched from this checkout remain visible and are still gated.
-      if (code === "EACCES" || code === "EPERM") continue;
+      if (code === "EACCES" || code === "EPERM") {
+        hiddenCwdPids.push(pid);
+        continue;
+      }
       failures.push(`could not inspect process ${pid} cwd`);
     }
+  }
+  if (hiddenCwdPids.length > 0) {
+    failures.push(`could not inspect cwd for same-user processes: ${hiddenCwdPids.join(", ")}`);
   }
 
   return { entries, failures };
