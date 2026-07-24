@@ -1,4 +1,4 @@
-import { parseWriteHandle, type ReversalSelection } from "@meridian/agent-edit";
+import { parseWriteHandle, type ReversalSelection } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   createError,

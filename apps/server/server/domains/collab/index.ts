@@ -1,6 +1,9 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { ConcurrentEditInfo, ResponseCommitWriteReceipt } from "@meridian/agent-edit";
+import type {
+  ConcurrentEditInfo,
+  ResponseCommitWriteReceipt,
+} from "@meridian/agent-edit/integration";
 import type { TrailForwardActionResult } from "@meridian/contracts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type {
@@ -194,7 +197,7 @@ export type ResponseWriteCommitDocument = {
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
-  lateSweep?: import("@meridian/agent-edit").DestructiveSweepReport;
+  lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
 };
 
 export type DraftClosedFinalizeResult = {

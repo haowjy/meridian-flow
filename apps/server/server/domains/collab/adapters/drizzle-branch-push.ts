@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {

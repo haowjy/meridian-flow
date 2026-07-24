@@ -69,26 +69,10 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   actor: MutationActor;
 }
 
-export interface ImmediateCommitInput extends LiveProjectionInput {
+export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
-  before?: readonly BlockSnapshot[];
-}
-
-export interface LocalMutationSyncInput {
-  docId: string;
-  commandName: WriteCommand["command"];
-  runtime: MutationCommitRuntime;
-  update: Uint8Array;
-  meta: UpdateMeta;
-  mutation?: JournaledUpdate["mutation"];
-  liveOrigin: ConcurrentUpdateOrigin;
   before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  ownTurnId?: string;
-  interactionContext?: InteractionContext;
-  preOwnSnapshot?: Uint8Array;
-  actor: MutationActor;
+  preOwnSnapshot: Uint8Array;
 }
 
 export interface CommitPreflightInput {
@@ -125,32 +109,28 @@ export type JournalBatchCommit = {
   journalCommitKind: JournalCommitKind;
 };
 
-type LiveCommitResult =
+type MutationSubmissionResult = (
   | {
       ok: true;
-      concurrentUpdates: ConcurrentUpdate[];
       summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind;
       lateSweep?: DestructiveSweepReport;
     }
-  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
+  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null }
+) & { awarenessDegraded?: true };
 
-type MutationSyncResult =
-  | {
-      ok: true;
-      summary: SyncedMutationSummary;
-      journalCommitKind: JournalCommitKind | null;
-      lateSweep?: DestructiveSweepReport;
-    }
-  | {
-      ok: false;
-      response: InternalWriteResult;
-      journalCommitKind: JournalCommitKind | null;
-    };
+export class AcceptedMutationSubmissionError extends Error {
+  constructor(
+    cause: unknown,
+    readonly journalCommitKind: JournalCommitKind,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "AcceptedMutationSubmissionError";
+  }
+}
 
 export interface MutationCommit {
-  syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
-  commitImmediate(input: ImmediateCommitInput): Promise<LiveCommitResult>;
+  submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
   summarizeMutationEcho(
     input: MutationEchoInput,
@@ -189,8 +169,7 @@ export function createMutationCommit(deps: {
   const { journal, coordinator, model, codec } = deps;
 
   return {
-    syncAfterLocalMutation,
-    commitImmediate,
+    submitMutation,
     commitJournalBatch,
     summarizeMutationEcho,
     detectConcurrentEdits,
@@ -198,49 +177,6 @@ export function createMutationCommit(deps: {
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
   };
-
-  async function syncAfterLocalMutation(
-    input: LocalMutationSyncInput,
-  ): Promise<MutationSyncResult> {
-    let captured: CapturedConcurrentDetection | undefined;
-    let lateSweep: DestructiveSweepReport | undefined;
-    let journalCommitKind: JournalCommitKind | null = null;
-    const response = await withLiveDocument(
-      coordinator,
-      input.docId,
-      input.commandName,
-      input.docId,
-      async (liveDoc) => {
-        const applied = await applyJournaledUpdateUnderLock(liveDoc, {
-          ...input,
-          journalEntries: [
-            {
-              docId: input.docId,
-              update: input.update,
-              meta: input.meta,
-              ...(input.mutation ? { mutation: input.mutation } : {}),
-            },
-          ],
-        });
-        journalCommitKind = applied.journalCommitKind;
-        captured = applied.concurrent;
-        lateSweep = applied.lateSweep;
-        return null;
-      },
-    );
-    if (isInternalWriteResult(response)) {
-      return { ok: false, response, journalCommitKind };
-    }
-    const concurrent = captured
-      ? applyCapturedConcurrentToRuntime(input.runtime, captured)
-      : emptyConcurrentDetection();
-    return {
-      ok: true,
-      summary: summarizeMutationEcho(input, concurrent),
-      journalCommitKind,
-      ...(lateSweep ? { lateSweep } : {}),
-    };
-  }
 
   function summarizeMutationEcho(
     input: MutationEchoInput,
@@ -298,39 +234,44 @@ export function createMutationCommit(deps: {
     }
   }
 
-  async function commitImmediate(input: ImmediateCommitInput): Promise<LiveCommitResult> {
+  async function submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult> {
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
-    const response = await withLiveDocument(
-      coordinator,
-      input.docId,
-      input.commandName,
-      input.docId,
-      async (liveDoc) => {
-        const applied = await applyJournaledUpdateUnderLock(liveDoc, {
-          ...input,
-          ownTurnId: input.turnId,
-          update: mergeUpdates(input.updates.map((entry) => entry.update)),
-          journalEntries: journalEntries(input),
-        });
-        journalCommitKind = applied.journalCommitKind;
-        captured = applied.concurrent;
-        lateSweep = applied.lateSweep;
-        return null;
-      },
-    );
+    let response: Awaited<ReturnType<typeof withLiveDocument<null>>>;
+    try {
+      response = await withLiveDocument(
+        coordinator,
+        input.docId,
+        input.commandName,
+        input.docId,
+        async (liveDoc) => {
+          const applied = await applyJournaledUpdateUnderLock(liveDoc, {
+            ...input,
+            ownTurnId: input.turnId,
+            update: mergeUpdates(input.updates.map((entry) => entry.update)),
+            journalEntries: journalEntries(input),
+            onJournalAccepted: (accepted) => {
+              journalCommitKind = accepted;
+            },
+          });
+          captured = applied.concurrent;
+          lateSweep = applied.lateSweep;
+          return null;
+        },
+      );
+    } catch (cause) {
+      if (journalCommitKind) throw new AcceptedMutationSubmissionError(cause, journalCommitKind);
+      throw cause;
+    }
     if (isInternalWriteResult(response)) return { ok: false, response, journalCommitKind };
     if (captured) applyCapturedConcurrentToRuntime(input.runtime, captured);
     return {
       ok: true,
-      concurrentUpdates: [...(captured?.updates ?? [])],
       summary: summarizeMutationEcho(
         {
           runtime: input.runtime,
-          before:
-            input.before ??
-            snapshotFromUpdate(input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc)),
+          before: input.before,
           touchedHashes: input.touchedHashes,
           deletedHashes: input.deletedHashes,
         },
@@ -381,12 +322,14 @@ export function createMutationCommit(deps: {
       liveOrigin: ConcurrentUpdateOrigin;
       journalEntries: readonly JournalBatchAppendEntry[];
       preflight?: CapturedConcurrentDetection;
+      onJournalAccepted?(journalCommitKind: JournalCommitKind): void;
     },
   ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
     const journalCommitKind =
       input.journalEntries.length > 0
         ? (await commitJournalBatch(input.journalEntries)).journalCommitKind
         : null;
+    if (journalCommitKind) input.onJournalAccepted?.(journalCommitKind);
     const current = input.preflight
       ? await captureConcurrentDetection(liveDoc, input, input.preflight)
       : await captureConcurrentDetection(liveDoc, input);
@@ -425,15 +368,6 @@ export function createMutationCommit(deps: {
     }
   }
 
-  function snapshotFromUpdate(update: Uint8Array): BlockSnapshot[] {
-    const doc = docFromSnapshot(update);
-    try {
-      return snapshotBlocks(toDocHandle(doc), model, codec);
-    } finally {
-      doc.destroy();
-    }
-  }
-
   function captureSnapshotBodies(
     snapshot: readonly BlockSnapshot[],
     affectedHashes: readonly string[],
@@ -441,13 +375,7 @@ export function createMutationCommit(deps: {
     const affected = new Set(affectedHashes);
     return snapshot.flatMap((block) => {
       if (!affected.has(block.hash)) return [];
-      const separator = block.serialized.indexOf("|");
-      return [
-        {
-          hash: block.hash,
-          body: separator < 0 ? block.serialized : block.serialized.slice(separator + 1),
-        },
-      ];
+      return [{ hash: block.hash, body: block.body }];
     });
   }
 

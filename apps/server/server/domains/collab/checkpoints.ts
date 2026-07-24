@@ -3,8 +3,12 @@ import type {
   AgentEditCodec,
   DocumentCoordinator,
   YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
-import { isDocumentNotFoundError, snapshotBlocks, toDocHandle } from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
+import {
+  isDocumentNotFoundError,
+  snapshotBlocks,
+  toDocHandle,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";

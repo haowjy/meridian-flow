@@ -22,6 +22,7 @@ export interface ApplySuccessResponseInput {
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
+  awarenessDegraded?: boolean;
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -48,6 +49,9 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     for (const { hash, body } of input.lateSweep.capturedDeletedBodies ?? []) {
       metaLines.push(`swept: ${hash}|${body}`);
     }
+  }
+  if (input.awarenessDegraded) {
+    metaLines.push("destructive awareness degraded after durable recovery; re-read required");
   }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];

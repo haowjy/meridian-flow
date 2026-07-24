@@ -10,7 +10,7 @@ import {
   type UpdateMeta,
   type WriteMutationRow,
   writeHandle,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";

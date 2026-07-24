@@ -8,7 +8,7 @@ import {
   toDocHandle,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DraftApplyConflict } from "@meridian/contracts";
 import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -298,19 +298,16 @@ export async function preparePushUnderLiveLock(
     const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
     for (const [hash, block] of resurrectionBodies) beforeBodies.set(hash, block.serialized);
     const blockIdentities = new Map(
-      [...before, ...after].flatMap((block) =>
-        block.clientID === undefined || block.clock === undefined
-          ? []
-          : [
-              [
-                block.hash,
-                {
-                  documentId: phase.branch.documentId,
-                  clientID: block.clientID,
-                  clock: block.clock,
-                },
-              ] as const,
-            ],
+      [...before, ...after].map(
+        (block) =>
+          [
+            block.hash,
+            {
+              documentId: phase.branch.documentId,
+              clientID: block.clientID,
+              clock: block.clock,
+            },
+          ] as const,
       ),
     );
     const changes: RawTrailChange[] = preparedTrailChanges({
@@ -441,7 +438,5 @@ function replacedScopeEnclosesInsertion(input: {
 }
 
 function blockIdentity(block: BlockSnapshot | undefined): string | undefined {
-  return block?.clientID === undefined || block.clock === undefined
-    ? undefined
-    : `${block.clientID}:${block.clock}`;
+  return block ? `${block.clientID}:${block.clock}` : undefined;
 }

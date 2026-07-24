@@ -1,5 +1,5 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";

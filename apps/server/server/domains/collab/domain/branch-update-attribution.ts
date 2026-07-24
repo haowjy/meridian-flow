@@ -5,7 +5,7 @@ import {
   snapshotBlocks,
   toDocHandle,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 
 type BlockCoverage = { origin: "agent" | "writer"; actorTurnId?: string };

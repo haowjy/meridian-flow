@@ -8,7 +8,7 @@ import {
   type PersistedUpdate,
   type UpdateJournal,
   type UpdateMeta,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {

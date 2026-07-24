@@ -8,6 +8,25 @@ import { context, harness, model, THREAD_ID } from "./test-support/write-tool-ha
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
 describe("response committer", () => {
+  it("lends one effective response document without exposing staged update bytes", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-effective-document";
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-effective-document" },
+    );
+
+    const text = await ctx.core.withResponseDocument(
+      responseId,
+      "chapter.md",
+      toDocHandle(ctx.liveDoc("chapter.md")),
+      (doc) => model.getBlocks(doc).map((block) => model.getText(block)),
+    );
+
+    expect(text).toEqual(["Alpha.", "Beta."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+  });
+
   it("commits a blind agent overwrite of agent-only content without a sweep", async () => {
     const ctx = harness();
     await ctx.core.write(
@@ -190,7 +209,7 @@ describe("response committer", () => {
     });
     expect(transitions.some((event) => event.transition === "closed")).toBe(false);
     await participant?.abort();
-    expect(ctx.core.bufferedUpdatesForDoc(responseId, "chapter.md")).toHaveLength(1);
+    expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(true);
   });
 
   it("publishes deferred lifecycle close only after the host commits", async () => {
@@ -242,7 +261,7 @@ describe("response committer", () => {
     await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("staged journal batch");
     expect(transitions.map((event) => event.transition)).toContain("journal_staged");
     expect(transitions.map((event) => event.transition)).not.toContain("journal_committed");
-    expect(ctx.core.bufferedUpdatesForDoc(responseId, "chapter.md")).toHaveLength(1);
+    expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(true);
   });
 
   it("S2: reports text typed during the turn and keeps the merge", async () => {

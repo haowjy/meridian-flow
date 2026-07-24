@@ -10,7 +10,7 @@ import {
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAgentEditCodec } from "../../codec-adapter.js";
-import { createAgentEditCore, type ReversalNoticePort } from "../../index.js";
+import { createAgentEditCore } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
@@ -18,6 +18,7 @@ import {
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
+import type { ReversalNoticePort } from "../write-reversal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();

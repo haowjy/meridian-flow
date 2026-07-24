@@ -6,15 +6,13 @@ import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { WriteCommandSchema } from "./command-schema.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { createMutationCommit } from "./mutation-commit.js";
-import { createResponseCommitter } from "./response-committer.js";
+import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   RedoResult,
   ResponseCommitSuccessResult,
   ResponseRollbackResult,
-  TurnRedoResult,
-  TurnUndoResult,
   UndoResult,
   WriteContext,
   WriteFunction,
@@ -57,14 +55,13 @@ export interface WriteTool {
     responseId: string,
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
-  bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
-  stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
+  hasResponseDocument: ResponseCommitter["hasResponseDocument"];
+  withResponseDocument: ResponseCommitter["withResponseDocument"];
+  responseDocuments: ResponseCommitter["responseDocuments"];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undo(docId: string, threadId: string): Promise<UndoResult>;
   redo(docId: string, threadId: string): Promise<RedoResult>;
   reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
-  undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
-  redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
   invalidateThread(docId: string, threadId: string): Promise<void>;
 }
 
@@ -195,16 +192,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
-    bufferedUpdatesForDoc: responseCommitter.bufferedUpdatesForDoc,
-    stagedCreatedDocumentIds: responseCommitter.stagedCreatedDocumentIds,
+    hasResponseDocument: responseCommitter.hasResponseDocument,
+    withResponseDocument: responseCommitter.withResponseDocument,
+    responseDocuments: responseCommitter.responseDocuments,
     getAvailability: writeReversal.getAvailability,
     undo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
     redo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
     reverse: reversalEndpoints.reverse,
-    undoTurn: (docId, threadId) =>
-      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
-    redoTurn: (docId, threadId) =>
-      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread: reversalEndpoints.invalidateThread,
   };
 }

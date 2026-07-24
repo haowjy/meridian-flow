@@ -1,5 +1,5 @@
 /** Unit coverage for draft live-vs-draft hunk extraction and attribution. */
-import { toDocHandle, unwrapBlock, yProsemirrorModel } from "@meridian/agent-edit";
+import { toDocHandle, unwrapBlock, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";

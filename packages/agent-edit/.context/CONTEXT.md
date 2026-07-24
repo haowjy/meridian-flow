@@ -146,9 +146,13 @@ only. Optional — falls back to a local in-memory map when omitted.
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
+`withResponseDocument(...)`, `responseDocuments(...)`,
 `getAvailability(docId, threadId)`, `undo(docId, threadId)`,
-`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
-`redoTurn` remain host-compatible aliases. Host
+`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`.
+Raw staged Yjs bytes stay private; `withResponseDocument` lends the effective
+response view for the duration of one callback. Composition ports, concrete
+adapters, snapshots, provenance algebra, and Yjs utilities live on the explicit
+`@meridian/agent-edit/integration` entry instead of the default façade. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
 `getAvailability` is the source of truth for whether write-level undo/redo will
@@ -207,7 +211,6 @@ its concern. Production modules (excluding colocated tests) are:
 | `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
 | `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
 | `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
-| `response-lifecycle.ts` | Defines response transition values used by the committer and observability. |
 | `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
 | `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
 | `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
@@ -218,7 +221,8 @@ its concern. Production modules (excluding colocated tests) are:
 | `write-helpers.ts` | Shared parsing, identity, and error helpers. |
 | `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
 | `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
-| `write-reversal.ts` | Executes write-level undo/redo from durable journal reconstruction. |
+| `write-reversal.ts` | Selects, submits, persists, and reports write-level undo/redo. |
+| `undo/reversal-reconstruction.ts` | Synthesizes one cold undo/redo update, including plain-text order repair. |
 | `write.ts` | Wires the modules into the public `WriteTool`; it contains no command implementation. |
 | `test-support/` | Shared package-test journals, harnesses, scenarios, and assertions. |
 
@@ -479,32 +483,37 @@ Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 - **`Buffered`:** owns the mutable response buffer. Only this state may stage or
   drop writes. `commitResponse` atomically snapshots the buffer and transfers
   ownership to `Committing` before any asynchronous work begins.
-- **`Committing`:** owns one immutable snapshot and one promise across journal
+- **`Committing`:** owns one immutable attempt and one promise across journal
   append, live projection, and recovery. Concurrent commit callers join that
-  promise even after append has completed. Its observable operational phase moves
-  from `buffered` to `journalStaged`/`journalCommitted` to `liveProjected` without replacing the
-  owner. Rollback is rejected while this owner exists; reporting rollback success
-  while a commit can still persist would make the caller's cancellation contract
-  dishonest.
+  promise even after append has completed. The attempt records one acceptance
+  value (`none | staged | durable`); observability phases derive from it instead
+  of carrying a parallel lifecycle. Rollback is rejected while this owner exists;
+  reporting rollback success while a commit can still persist would make the
+  caller's cancellation contract dishonest.
 - **`Closed`:** records a bounded `committed` or `rolledBack` tombstone. Further
-  stage/commit/rollback calls fail; an unknown response id remains a valid empty
-  commit/rollback because a model response may have issued no mutations.
+  stage/commit/rollback calls fail. An unknown response id remains a valid empty
+  commit/rollback because a model response may have issued no mutations, and
+  that settlement still installs a tombstone so a late tool handler cannot
+  reopen the response.
 
-Journal append throws directly. Live projection returns a narrow outcome carrying
-its accepted journal kind, which lets the write boundary restore speculative
-runtime state before acceptance or route durable projection failure through
-journal recovery. State transitions verify the current owner before changing the
-map, preventing stale async work from reopening or overwriting a closed response.
+The mutation submission attempt records journal acceptance immediately after
+append, before concurrency classification or live-projection reporting can fail.
+The write boundary therefore restores speculative runtime state before
+acceptance, but routes every failure after durable acceptance through journal
+recovery. If destructive reporting cannot be rebuilt, the committed tool result
+explicitly reports degraded awareness instead of presenting ordinary success.
+State transitions verify the current owner before changing the map, preventing
+stale async work from reopening or overwriting a closed response.
 
 **Rollback and recovery follow the journal boundary.** While still `buffered`,
 commit failure evicts speculative runtimes but leaves the response retryable;
 rollback restores existing runtimes from live (and evicts runtime-only creates),
-then closes `rolledBack`. After any accepted journal batch, rollback is
-recover-and-close rather than buffer discard. For `"durable"`, those rows cannot
-be undone by lifecycle rollback: projection failure triggers journal recovery and
-runtime reconstruction. Successful recovery is reported as a successful commit;
-failed recovery evicts runtimes, marks live state stale, closes the durable
-response as committed, and still reports the projection failure to the caller.
+then closes `rolledBack`. Once a commit attempt owns the response, rollback is
+rejected. A durable projection failure is therefore recovered by that commit
+attempt through journal replay and runtime reconstruction. Successful recovery
+is reported as a successful commit; failed recovery evicts runtimes, marks live
+state stale, closes the durable response as committed, and still reports the
+projection failure to the caller.
 When last-resort durable recovery succeeds, the committer compares its immutable
 pre-recovery snapshot with the recovered document through the same provenance
 classifier used by normal projection. A detected writer-lineage loss is returned
@@ -528,18 +537,12 @@ their path, while only pre-commit discards are cleanup candidates.
 
 ### Mutation outcomes
 
-`response-lifecycle.ts` contains only the response transition values used by the
-committer and observability. Immediate mutation submission returns the journal
-kind needed by the atomic apply→submit boundary; unused write constructors,
-aggregate wrappers, and generic transition `Result` ceremony were deleted. The
-public `WriteOutcome.phase` remains `"staged" | "committed"`; hosts must not treat
-a staged success as durable. `discardedClaims` is returned directly by the owning
-committer and preserved by the server response owner.
-
-Every journal batch reports `"durable"` or `"staged"`. `MutationLifecycle`
-represents them structurally: only durable rows enter `journalCommitted`, while
-process-local thread-peer entries enter `journalStaged`. Staged failures return
-to `buffered`; they never enter durable-journal recovery.
+Every journal batch reports `"durable"` or `"staged"`. The owning commit attempt
+stores that one acceptance value: staged failures return to `buffered`, while
+durable failures enter journal recovery. The public `WriteOutcome.phase` remains
+`"staged" | "committed"`; hosts must not treat a staged success as durable.
+`discardedClaims` is returned directly by the owning committer and preserved by
+the server response owner.
 
 ### Tool concerns
 
@@ -583,7 +586,7 @@ paths so accidental UUID interpolation fails loudly.
 Package tests cover block-hash stability, markup round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
-drift invariants, availability, and public turn seams), response
+drift invariants, and availability), response
 commit/recovery, and create lifecycle.
 
 ### Write handles and selective reversal

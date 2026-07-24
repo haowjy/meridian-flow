@@ -47,7 +47,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { mdxCodec } = await import("@meridian/markup");
-    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit");
+    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
     const { DrizzleContextDocumentStore } = await import(
       "../../../context/adapters/context-fs/drizzle-store.js"
