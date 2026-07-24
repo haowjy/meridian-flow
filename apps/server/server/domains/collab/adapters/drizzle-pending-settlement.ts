@@ -124,7 +124,9 @@ export function createDrizzlePendingSettlementStore(
           .limit(1);
         if (!owned) return false;
         if (input.replacement) {
-          await changeTrails.replacePushContribution(String(input.push.id), input.replacement);
+          await changeTrails.replacePushContribution(String(input.push.id), input.replacement, {
+            refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
+          });
         }
         if (input.trail?.transactionalNotice && owned.classifiedJoinVersion !== input.joinVersion) {
           await notices?.record({
