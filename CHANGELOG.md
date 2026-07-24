@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: concurrent turn starts now serialize on the thread row and
+  return a 409 conflict instead of leaking PostgreSQL's single-root violation.
 - `agent-edit`: find-all now replaces exact same-block ranges without re-authoring
   untouched writer prose or normalizing whitespace around deletions, and adjacent
   structural matches no longer fail on deleted predecessor anchors. Failed
