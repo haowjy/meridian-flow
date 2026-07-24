@@ -21,6 +21,7 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 import { createBranchAgentEditDiagnostics } from "../adapters/branch-agent-edit-observability.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
+import { createInMemoryPendingSettlementStore } from "../test-support/in-memory-pending-settlement-store.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import {
   createBranchAgentEditCoordinator,
@@ -68,26 +69,21 @@ type LegacySettlementCapabilities = {
   settlePushTrail: PendingSettlementStore["settlePushTrail"];
   listRecoverableSettlementIds: PendingSettlementStore["listRecoverableSettlementIds"];
   withCompletionFence: PendingSettlementStore["withCompletionFence"];
-  renewSettlementClaim: PendingSettlementStore["renewClaim"];
-  handoffSettlementClaim: PendingSettlementStore["handoffClaim"];
   claimRecoverable: PendingSettlementStore["claimRecoverable"];
-  recordLiveSettlementFailure: PendingSettlementStore["recordFailure"];
-  blockLiveSettlement: PendingSettlementStore["block"];
 };
 
 function createBranchPushService(
   input: Omit<BranchPushExecutorInput, "pushStore" | "settlementStore"> & {
     pushStore: BranchPushStore & Partial<LegacySettlementCapabilities>;
-    settlementStore?: PendingSettlementStore;
   },
 ) {
-  const committedSettlements = new Map<number, PendingLiveSettlement>();
+  const inMemorySettlements = createInMemoryPendingSettlementStore();
   const pushStore: BranchPushStore = {
     ...input.pushStore,
     async commitPush(prepared) {
       const result = await input.pushStore.commitPush(prepared);
       if (result.status === "inserted") {
-        committedSettlements.set(result.push.id, {
+        inMemorySettlements.stage({
           ...prepared.pendingLiveSettlement,
           push: result.push,
         });
@@ -102,7 +98,7 @@ function createBranchPushService(
             for (const [index, push] of result.pushes.entries()) {
               const candidate = prepared.pushes[index];
               if (!candidate) throw new Error("missing prepared batch settlement");
-              committedSettlements.set(push.id, {
+              inMemorySettlements.stage({
                 ...candidate.pendingLiveSettlement,
                 push,
               });
@@ -113,28 +109,27 @@ function createBranchPushService(
       : {}),
   };
   const legacy = input.pushStore;
-  const settlementStore: PendingSettlementStore = input.settlementStore ?? {
-    async joinAdmission() {},
-    async loadLiveSettlement(pushId) {
-      if (legacy.loadLiveSettlement) return legacy.loadLiveSettlement(pushId);
-      const committedSettlement = committedSettlements.get(pushId);
-      if (!committedSettlement) {
-        throw new Error(`missing settlement ${pushId}`);
-      }
-      return committedSettlement;
-    },
+  const settlementStore: PendingSettlementStore = {
+    ...inMemorySettlements,
+    loadLiveSettlement: legacy.loadLiveSettlement ?? inMemorySettlements.loadLiveSettlement,
     async claimRecoverable(claimInput) {
-      const claimed = await legacy.claimRecoverable?.(claimInput);
-      if (claimed) committedSettlements.set(claimed.push.id, claimed);
-      return claimed ?? null;
+      if (!legacy.claimRecoverable) {
+        return inMemorySettlements.claimRecoverable(claimInput);
+      }
+      const claimed = await legacy.claimRecoverable(claimInput);
+      if (claimed) inMemorySettlements.stage(claimed);
+      return claimed;
     },
-    renewClaim: legacy.renewSettlementClaim ?? (async ({ claim }) => claim),
-    handoffClaim: legacy.handoffSettlementClaim ?? (async () => true),
-    recordFailure: legacy.recordLiveSettlementFailure ?? (async () => true),
-    block: legacy.blockLiveSettlement ?? (async () => true),
-    settlePushTrail: legacy.settlePushTrail ?? (async () => true),
-    withCompletionFence: legacy.withCompletionFence ?? (async (_input, complete) => complete()),
-    listRecoverableSettlementIds: legacy.listRecoverableSettlementIds ?? (async () => []),
+    async settlePushTrail(settleInput) {
+      if (legacy.settlePushTrail) {
+        const settled = await legacy.settlePushTrail(settleInput);
+        if (!settled) return false;
+      }
+      return inMemorySettlements.settlePushTrail(settleInput);
+    },
+    withCompletionFence: legacy.withCompletionFence ?? inMemorySettlements.withCompletionFence,
+    listRecoverableSettlementIds:
+      legacy.listRecoverableSettlementIds ?? inMemorySettlements.listRecoverableSettlementIds,
   };
   return createBranchPushServiceCore({ ...input, pushStore, settlementStore });
 }
