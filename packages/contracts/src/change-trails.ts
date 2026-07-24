@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 
+const yjsIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
 export type TrailForwardAction = "restore" | "delete-again";
 
 export type TrailForwardActionStateV1 =
@@ -120,8 +122,8 @@ export const historicalBodySchema: z.ZodType<HistoricalBody> = z.discriminatedUn
 
 export const canonicalBlockIdentityV1Schema: z.ZodType<CanonicalBlockIdentityV1> = z.object({
   documentId: z.string(),
-  clientID: z.number().int(),
-  clock: z.number().int(),
+  clientID: yjsIntegerSchema,
+  clock: yjsIntegerSchema,
 });
 
 export const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discriminatedUnion(
@@ -131,7 +133,7 @@ export const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discrim
       kind: z.literal("live_block_range"),
       relStart: z.string(),
       relEnd: z.string(),
-      targetBlockId: z.object({ clientID: z.number().int(), clock: z.number().int() }),
+      targetBlockId: z.object({ clientID: yjsIntegerSchema, clock: yjsIntegerSchema }),
     }),
     z.object({
       kind: z.literal("deletion_boundary"),
@@ -188,8 +190,8 @@ export const trailChangeV1Schema = z.object({
         ranges: z
           .array(
             z.object({
-              clientID: z.number().int().nonnegative(),
-              clock: z.number().int().nonnegative(),
+              clientID: yjsIntegerSchema,
+              clock: yjsIntegerSchema,
               length: z.number().int().positive(),
             }),
           )

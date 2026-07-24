@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `@meridian/contracts`: reject out-of-range Yjs identities, oversized live
+  change excerpts, and cross-thread agent authorship on stateless change events;
+  server encoding now validates the same schema as client parsing.
 - `apps/server`: remove dead checkpoint/push sweep notice producers and the
   document fan-out queue; model-context notices are now thread-scoped and
   checkpoint restore cannot fail after committing because of notice validation
