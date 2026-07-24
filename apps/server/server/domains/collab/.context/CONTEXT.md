@@ -78,8 +78,10 @@ by its final output span and intersects that span with newly inserted strings.
 
 **Regression trap:** hand-performing Yjs mutations in IR declaration order does
 not exercise this seam. Provenance ordering tests must compose the real
-`applyEdits`. Restoration length remains independently validated at both the
-certification and writer boundaries.
+`applyEdits`.
+
+Restoration length is validated independently at both the certification and the
+writer boundary; neither check assumes the other ran.
 
 ## Live manifest membership
 
