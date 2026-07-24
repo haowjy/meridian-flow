@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { changeTrailDetailKey, readChangeTrail } from "@/client/change-trails";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -66,6 +66,7 @@ export function PeerMarkPopover({
     documentId: marker?.group.documentId ?? "",
     change,
   });
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const requestSnippet = useMemo(
     () => originatingRequestSnippet(snapshot.data?.turns ?? [], agentAuthor?.turnId ?? null),
     [agentAuthor?.turnId, snapshot.data?.turns],
@@ -112,6 +113,17 @@ export function PeerMarkPopover({
       changeId: currentMarker.changeId,
     });
     onOpenChange(false);
+  }
+
+  async function copyRecoveryBody(): Promise<void> {
+    if (!recovery.body) return;
+    setCopyState("idle");
+    try {
+      await navigator.clipboard.writeText(recovery.body);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
   }
 
   return (
@@ -187,6 +199,11 @@ export function PeerMarkPopover({
 
         {agentAuthor ? (
           <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
+            {recovery.canCopy && recovery.body ? (
+              <Button size="sm" onClick={() => void copyRecoveryBody()}>
+                <Trans>Copy</Trans>
+              </Button>
+            ) : null}
             {recovery.canExecute ? (
               <Button
                 size="sm"
@@ -209,6 +226,11 @@ export function PeerMarkPopover({
                 )}
               </span>
             ) : null}
+            {copyState === "copied" ? (
+              <span className="text-jade-text">
+                <Trans>Copied</Trans>
+              </span>
+            ) : null}
             <Button size="sm" variant="quiet" onClick={openConversation}>
               <Trans>Open conversation</Trans>
             </Button>
@@ -217,6 +239,11 @@ export function PeerMarkPopover({
         {recovery.failed ? (
           <p className="text-destructive">
             <Trans>Couldn't apply that recovery action. Try again.</Trans>
+          </p>
+        ) : null}
+        {copyState === "failed" ? (
+          <p className="text-destructive">
+            <Trans>Couldn't copy. Select the saved text and copy it manually.</Trans>
           </p>
         ) : null}
       </PopoverContent>

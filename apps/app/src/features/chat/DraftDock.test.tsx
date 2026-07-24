@@ -6,6 +6,7 @@ import { act, useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import type { DraftDockModel } from "./DraftDock";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -48,7 +49,7 @@ type ControllerStub = {
 
 const harnessRef: {
   groups: ThreadDraftGroup[];
-  dock: { isBusy: boolean; needsRereview: boolean; startDiscardAll: () => void } | null;
+  dock: DraftDockModel | null;
   controller: ControllerStub;
 } = {
   groups: [],
@@ -183,6 +184,23 @@ describe("useDraftDock disposition lock", () => {
 });
 
 describe("useDraftDock bulk disposition", () => {
+  it("routes a single dock Apply through current-preview disposition", async () => {
+    harnessRef.groups = [draftGroup("doc-a", "draft-a")];
+
+    await withReactRoot(<DockHarness />, async () => {
+      const row = harnessRef.dock?.pendingRows[0];
+      if (!row) throw new Error("missing pending row");
+      await act(async () => {
+        await harnessRef.dock?.applyRow(row);
+      });
+
+      expect(harnessRef.controller.accept).not.toHaveBeenCalled();
+      expect(harnessRef.controller.disposeDrafts).toHaveBeenCalledWith("apply", [
+        { documentId: "doc-a", draftId: "draft-a" },
+      ]);
+    });
+  });
+
   it("hands one captured draft snapshot to the session command", async () => {
     harnessRef.groups = [draftGroup("doc-a", "draft-a"), draftGroup("doc-b", "draft-b")];
 

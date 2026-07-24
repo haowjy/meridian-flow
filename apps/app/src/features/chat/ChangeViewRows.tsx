@@ -102,6 +102,7 @@ function ChangeViewRow({
   const [emphasized, setEmphasized] = useState(shouldEmphasize);
   const anchorUnavailable = recovery.anchorUnavailable || locallyUnavailable;
   const body = protection || anchorUnavailable ? recovery.body : null;
+  const canCopy = recovery.canCopy || locallyUnavailable;
 
   useEffect(() => {
     if (!shouldEmphasize || !conversationReveal) return;
@@ -170,7 +171,7 @@ function ChangeViewRow({
       ) : null}
       {body && (protection || anchorUnavailable) ? (
         <div className="flex items-center gap-2">
-          {anchorUnavailable || (recovery.failed && action === "restore") ? (
+          {canCopy || (recovery.failed && action === "restore") ? (
             <Button size="sm" onClick={() => void copy(body)}>
               <Trans>Copy</Trans>
             </Button>

@@ -161,7 +161,7 @@ export class SessionMarkerStore {
     }
   }
 
-  /** Whole-mark removal is used by writer edits and successful forward actions. */
+  /** Whole-mark removal is reserved for writer edits and invalidated anchors. */
   remove(changeId: string): void {
     const next = this.markers.filter((marker) => marker.changeId !== changeId);
     if (next.length === this.markers.length) return;
