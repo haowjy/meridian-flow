@@ -14,6 +14,7 @@ import {
   type ReversalNoticeFailedDetail,
   type ReversalNoticePort,
   type ReversalStore,
+  type TurnDiffQuery,
   toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
@@ -62,6 +63,7 @@ import {
 } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleObservationSnapshotStore } from "./adapters/drizzle-observation-snapshots.js";
 import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
+import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -300,6 +302,7 @@ export type CollabFacadeDeps = {
   initialDocumentSeeds: InitialDocumentSeeds;
   documentAuthorityHeads: DocumentAuthorityHeads;
   observationSnapshots?: ObservationSnapshotStore;
+  turnDiffQuery?: TurnDiffQuery;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
@@ -521,6 +524,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     initialDocumentSeeds: lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     observationSnapshots,
+    turnDiffQuery: createDrizzleTurnDiffQuery(deps.db),
     store,
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
@@ -677,6 +681,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       model,
       semanticProvenance,
       observationSnapshots: deps.observationSnapshots,
+      turnDiffQuery: deps.turnDiffQuery,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       ...agentEditObservabilityOptions(deps),
@@ -717,6 +722,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             model,
             semanticProvenance,
             observationSnapshots: deps.observationSnapshots,
+            turnDiffQuery: deps.turnDiffQuery,
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
