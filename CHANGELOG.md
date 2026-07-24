@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
+  branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
+  PR evidence, GitHub failures, and refs that move before execution are refused.
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;
