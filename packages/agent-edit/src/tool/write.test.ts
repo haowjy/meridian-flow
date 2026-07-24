@@ -1467,6 +1467,39 @@ describe("write tool dispatch", () => {
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe("# kitten\n\n# kitten\n");
   });
 
+  it("restores the pre-write runtime snapshot after an apply failure", async () => {
+    let inlineApplications = 0;
+    const rejectingModel = {
+      ...model,
+      applyInlineReplacement(...args: Parameters<typeof model.applyInlineReplacement>) {
+        inlineApplications += 1;
+        if (inlineApplications === 2) {
+          return {
+            ok: false as const,
+            code: "invalid_write" as const,
+            message: "forced second-block rejection",
+          };
+        }
+        return model.applyInlineReplacement(...args);
+      },
+    };
+    const ctx = harness({ "chapter.md": "cat one\n\ncat two" }, { model: rejectingModel });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
+      context,
+    );
+    expectOutcome(failed, "invalid_write", true);
+
+    const retry = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "lynx", find: "cat one" },
+      context,
+    );
+    expectOutcome(retry, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["lynx", "cat two"]);
+  });
+
   it("routes single-block find replacements that change block type through structural reconcile", async () => {
     const ctx = harness({ "chapter.md": "Opening line.\n\nTail." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);

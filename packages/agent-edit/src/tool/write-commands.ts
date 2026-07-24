@@ -441,8 +441,10 @@ export function createWriteCommands(deps: {
         syncStateVector: synced.stateVector,
       },
     );
-    if (!applied.ok)
+    if (!applied.ok) {
+      restorePreWriteSnapshot(runtime, preOwnSnapshot);
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
+    }
     options.semanticProvenance?.writeCertifiedFacts(
       toDocHandle(runtime.doc),
       resolved.ir,

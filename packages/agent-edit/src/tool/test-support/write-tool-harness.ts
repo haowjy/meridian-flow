@@ -20,6 +20,7 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { AgentEditModel } from "../../ports/model.js";
 import type { ObservationSnapshotStore } from "../../ports/observation-snapshot.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
@@ -56,8 +57,10 @@ export function harness(
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
     observationSnapshots?: ObservationSnapshotStore;
+    model?: AgentEditModel;
   } = {},
 ) {
+  const agentEditModel = options.model ?? model;
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
@@ -65,7 +68,7 @@ export function harness(
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
   const initialObservationEntries = [...coordinator.docs].flatMap(([documentId, doc]) =>
-    snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+    snapshotBlocks(toDocHandle(doc), agentEditModel, codec).map((block) => ({
       documentId,
       clientID: block.clientID as number,
       clock: block.clock as number,
@@ -81,7 +84,7 @@ export function harness(
       const entries =
         responseId === "test-observed-response"
           ? [...coordinator.docs].flatMap(([documentId, doc]) =>
-              snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+              snapshotBlocks(toDocHandle(doc), agentEditModel, codec).map((block) => ({
                 documentId,
                 clientID: block.clientID as number,
                 clock: block.clock as number,
@@ -100,7 +103,7 @@ export function harness(
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
-    model,
+    model: agentEditModel,
     observationSnapshots,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
