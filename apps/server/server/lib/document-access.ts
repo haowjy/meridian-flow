@@ -9,8 +9,8 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
+import { isUuid } from "./uuid.js";
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
 
 function activeEffectiveProject(input: { userId?: UserId; projectId?: ProjectId } = {}) {
@@ -47,7 +47,7 @@ export function createAllowAllDocumentAccess(): DocumentAccessPort {
 }
 export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
   async function canAccessDocument(userId: UserId, documentId: string): Promise<boolean> {
-    if (!UUID_PATTERN.test(documentId)) return false;
+    if (!isUuid(documentId)) return false;
     const [row] = await db
       .select({ id: documents.id })
       .from(documents)
@@ -72,7 +72,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
     documentId: string,
     projectId: ProjectId,
   ): Promise<boolean> {
-    if (!UUID_PATTERN.test(documentId)) return false;
+    if (!isUuid(documentId)) return false;
     const [row] = await db
       .select({ id: documents.id })
       .from(documents)
@@ -93,7 +93,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
   }
 
   async function projectIdForDocument(documentId: string): Promise<ProjectId | null> {
-    if (!UUID_PATTERN.test(documentId)) return null;
+    if (!isUuid(documentId)) return null;
     const [row] = await db
       .select({
         projectId: effectiveProjectId,
