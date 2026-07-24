@@ -183,13 +183,7 @@ function captureDeletedBodies(
     const affected = new Set(affectedHashes);
     return snapshotBlocks(toDocHandle(doc), model, codec).flatMap((block) => {
       if (!affected.has(block.hash)) return [];
-      const separator = block.serialized.indexOf("|");
-      return [
-        {
-          hash: block.hash,
-          body: separator < 0 ? block.serialized : block.serialized.slice(separator + 1),
-        },
-      ];
+      return [{ hash: block.hash, body: block.body }];
     });
   } finally {
     doc.destroy();

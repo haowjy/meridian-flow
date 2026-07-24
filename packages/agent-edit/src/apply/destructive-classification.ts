@@ -30,6 +30,13 @@ export interface DestructiveEffectInput {
   afterCandidate: readonly VisibleProseOccurrence[];
 }
 
+export interface DestructiveSnapshotInput {
+  before: readonly BlockSnapshot[];
+  afterCandidate: readonly BlockSnapshot[];
+  beforeProvenance: readonly DestructiveProvenanceRun[];
+  afterCandidateProvenance: readonly DestructiveProvenanceRun[];
+}
+
 export interface FinalRenderingProjection {
   finalRendering: string;
   ranges: LineageRange[];
@@ -74,6 +81,36 @@ export function classifyDestructiveEffect(input: DestructiveEffectInput): Destru
       finalRenderingProjections.flatMap((projection) => projection.ranges),
     ),
     finalRenderingProjections,
+  };
+}
+
+/** Build the classifier's pointwise input from canonical snapshots and provenance runs. */
+export function buildDestructiveEffectInput(
+  input: DestructiveSnapshotInput,
+): DestructiveEffectInput {
+  return {
+    before: occurrencesFor(input.before, input.beforeProvenance),
+    afterCandidate: occurrencesFor(input.afterCandidate, input.afterCandidateProvenance),
+  };
+}
+
+export function classifyDestructiveSnapshotEffect(input: DestructiveSnapshotInput): {
+  effect: DestructiveEffect;
+  affectedBefore: Array<{ block: BlockSnapshot; ranges: LineageRange[] }>;
+} {
+  const effect = classifyDestructiveEffect(buildDestructiveEffectInput(input));
+  const rangesByRendering = new Map(
+    effect.finalRenderingProjections.map((projection) => [
+      projection.finalRendering,
+      projection.ranges,
+    ]),
+  );
+  return {
+    effect,
+    affectedBefore: input.before.flatMap((block) => {
+      const ranges = rangesByRendering.get(finalRenderingKey(block));
+      return ranges ? [{ block, ranges }] : [];
+    }),
   };
 }
 
@@ -128,22 +165,15 @@ export async function classifyDestructiveDocumentEffect(
         beforeBlocks,
         afterBlocks,
       });
-  const before = occurrencesFor(
-    beforeBlocks,
-    applyAttributedLineage(provenance.before, input.attributedLineage ?? []),
-  );
-  const afterCandidate = occurrencesFor(
-    afterBlocks,
-    applyAttributedLineage(provenance.afterCandidate, input.attributedLineage ?? []),
-  );
-  const effect = classifyDestructiveEffect({
-    before,
-    afterCandidate,
-  });
-  const affected = new Set(
-    effect.finalRenderingProjections.map((projection) => projection.finalRendering),
-  );
-  return beforeBlocks.filter((block) => affected.has(finalRenderingKey(block)));
+  return classifyDestructiveSnapshotEffect({
+    before: beforeBlocks,
+    afterCandidate: afterBlocks,
+    beforeProvenance: applyAttributedLineage(provenance.before, input.attributedLineage ?? []),
+    afterCandidateProvenance: applyAttributedLineage(
+      provenance.afterCandidate,
+      input.attributedLineage ?? [],
+    ),
+  }).affectedBefore.map(({ block }) => block);
 }
 
 function applyAttributedLineage(
@@ -177,7 +207,7 @@ function occurrencesFor(
 ): VisibleProseOccurrence[] {
   return blocks.flatMap((block) =>
     provenance.flatMap((run) =>
-      intersectLineageRanges(block.lineage ?? [], [run.target]).map((target) => ({
+      intersectLineageRanges(block.lineage, [run.target]).map((target) => ({
         target,
         root: provenanceTargetSliceToRoot(run, target),
         provenance: run.provenance,
@@ -188,7 +218,7 @@ function occurrencesFor(
 }
 
 function finalRenderingKey(block: BlockSnapshot): string {
-  return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
+  return `${block.clientID}:${block.clock}:${block.renderedContent}`;
 }
 
 async function reconstructConservativeProvenance(input: {
@@ -224,7 +254,7 @@ async function reconstructConservativeProvenance(input: {
 }
 
 function visibleLineage(blocks: readonly BlockSnapshot[]): LineageRange[] {
-  return blocks.flatMap((block) => block.lineage ?? []);
+  return blocks.flatMap((block) => block.lineage);
 }
 
 function provenanceForKnownRoots(

@@ -5,6 +5,9 @@
 - `packages/agent-edit`, `apps/server`: removed the inert low-level response
   transaction hook and duplicate undo/redo aliases; response transactions now
   own their callback explicitly (#344).
+- `packages/agent-edit`, `apps/server`: live and branch destructive receipts now
+  share one typed snapshot/provenance projection with complete block identity
+  and hashless bodies (#344).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).

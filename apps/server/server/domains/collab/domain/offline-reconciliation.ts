@@ -193,10 +193,12 @@ export function createOfflineReconciliation(deps: {
     return blocks.map((blockRef, index) => {
       const block = unwrapBlock(blockRef);
       const id = getBlockItemId(block);
+      const canonicalBlock = canonical[index];
+      if (!canonicalBlock) throw new Error(`Missing canonical snapshot block at index ${index}`);
       return {
         hash: hashes[index] as string,
         serialized: serialized[index] as string,
-        renderedContent: canonical[index]?.renderedContent ?? serialized[index] ?? "",
+        renderedContent: canonicalBlock.renderedContent,
         clientID: id.clientID,
         clock: id.clock,
         block,
