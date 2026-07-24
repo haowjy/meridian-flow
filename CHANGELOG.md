@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: Restore and Delete-again now share one query-backed recovery
+  command, so editor marks and mounted trail rows converge on durable status.
 B- `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).

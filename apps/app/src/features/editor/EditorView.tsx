@@ -533,7 +533,6 @@ function SessionEditorView({
       <PeerMarkPopover
         key={peerMarkTarget?.marker.changeId ?? "closed"}
         target={peerMarkTarget}
-        markerStore={session.markerStore}
         onOpenChange={(open) => {
           if (open) return;
           const closingTarget = peerMarkTarget;

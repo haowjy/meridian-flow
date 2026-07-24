@@ -1,11 +1,12 @@
 /** Authorization-sensitive change-view data lifecycle. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
-import { type ChangeTrailShell, readChangeTrail } from "@/client/change-trails";
+import {
+  type ChangeTrailShell,
+  changeTrailDetailKey,
+  readChangeTrail,
+} from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-
-export const changeTrailDetailKey = (threadId: string, trailId: string) =>
-  ["change-trail-detail", threadId, trailId] as const;
 
 export function useAuthorizedChangeTrailDetail(
   threadId: string,

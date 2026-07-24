@@ -1,33 +1,16 @@
 /** Peer-edit rows with recovery actions inside the existing per-turn Changes view. */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type {
-  TrailChangeV1 as TrailChange,
-  TrailForwardAction,
-  TrailForwardActionStateV1,
-} from "@meridian/contracts";
+import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
 import { useEffect, useRef, useState } from "react";
 import { applyTrailForwardAction } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
-import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import {
+  trailChangeLabel,
+  useTrailForwardAction,
+} from "@/features/change-trail/trail-change-recovery";
 import { type ConversationReveal, completeConversationReveal } from "./conversation-reveal";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
-
-/** The sweep label's wording veto lives here: changing this one key changes every sweep row. */
-export const sweepRowText = () => t`Replaced a passage, including edits the agent hadn't seen yet.`;
-
-export function trailChangeLabel(change: TrailChange): string {
-  const protection = protectionFor(change);
-  if (protection?.kind === "resurrection") return t`↻ AI brought back text you deleted`;
-  if (protection?.kind === "sweep") return sweepRowText();
-  return changeKindLabel(change.kind);
-}
-
-export function trailChangeForwardAction(change: TrailChange): TrailForwardAction {
-  return protectionFor(change)?.kind === "resurrection" ? "delete-again" : "restore";
-}
 
 export function ChangeViewRows({
   threadId,
@@ -96,30 +79,29 @@ function ChangeViewRow({
   emphasized: boolean;
   reveal: ConversationReveal | null;
 }) {
-  const protection = protectionFor(change);
-  const action = trailChangeForwardAction(change);
-  const durableActionState: TrailForwardActionStateV1 | undefined = change.forwardActions?.[action];
+  const recovery = useTrailForwardAction({
+    threadId,
+    trailId,
+    documentId,
+    change,
+    runAction,
+  });
+  const { action, protection } = recovery;
   const hasCanonicalRestoreAnchor =
     action === "restore" &&
     change.navigation.kind === "unavailable" &&
     change.afterBlockIdentity?.documentId === change.documentId;
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
-  const [actionState, setActionState] = useState<"idle" | "pending" | "applied">(
-    durableActionState?.status === "applied" ? "applied" : "idle",
+  const [locallyUnavailable, setLocallyUnavailable] = useState(
+    !recovery.durableState &&
+      (initiallyUnavailable ||
+        (change.navigation.kind === "unavailable" && !hasCanonicalRestoreAnchor)),
   );
-  const [anchorUnavailable, setAnchorUnavailable] = useState(
-    durableActionState?.status === "settled" ||
-      (!durableActionState &&
-        (initiallyUnavailable ||
-          (change.navigation.kind === "unavailable" && !hasCanonicalRestoreAnchor))),
-  );
-  const [restoreFailed, setRestoreFailed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const actionRequest = useRef<Promise<void> | null>(null);
   const rowRef = useRef<HTMLLIElement>(null);
   const [emphasized, setEmphasized] = useState(shouldEmphasize);
-  const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
-  const body = protectedBody ?? (anchorUnavailable ? bodyFromHashline(change.beforeText) : null);
+  const anchorUnavailable = recovery.anchorUnavailable || locallyUnavailable;
+  const body = protection || anchorUnavailable ? recovery.body : null;
 
   useEffect(() => {
     if (!shouldEmphasize || !conversationReveal) return;
@@ -131,38 +113,7 @@ function ChangeViewRow({
   async function revealInEditor() {
     const result = await navigateToChange(documentId, change);
     setNavigation(result);
-    if (result.kind === "unavailable" && !hasCanonicalRestoreAnchor) setAnchorUnavailable(true);
-  }
-
-  async function forward(action: TrailForwardAction) {
-    if (actionState !== "idle" || actionRequest.current) return;
-    setActionState("pending");
-    setRestoreFailed(false);
-    const request = runAction({ threadId, trailId, changeId: change.changeId, action })
-      .then((result) => {
-        if (result.status === "anchor_unavailable") {
-          setAnchorUnavailable(true);
-          setActionState("idle");
-          return;
-        }
-        if (result.status === "retry_exhausted") {
-          setRestoreFailed(true);
-          setActionState("idle");
-          return;
-        }
-        setActionState("applied");
-        const registry = getDocumentSessionRegistry();
-        registry.peek(documentId)?.markerStore.dismiss(change.changeId);
-      })
-      .catch(() => {
-        setRestoreFailed(true);
-        setActionState("idle");
-      })
-      .finally(() => {
-        actionRequest.current = null;
-      });
-    actionRequest.current = request;
-    await request;
+    if (result.kind === "unavailable" && !hasCanonicalRestoreAnchor) setLocallyUnavailable(true);
   }
 
   async function copy(body: string) {
@@ -208,7 +159,7 @@ function ChangeViewRow({
           <Trans>This passage can't be restored in place. Copy it instead.</Trans>
         </p>
       ) : null}
-      {restoreFailed ? (
+      {recovery.failed ? (
         <p className="text-destructive">
           {action === "restore" ? (
             <Trans>Couldn't restore the passage. Try again, or copy it instead.</Trans>
@@ -219,21 +170,17 @@ function ChangeViewRow({
       ) : null}
       {body && (protection || anchorUnavailable) ? (
         <div className="flex items-center gap-2">
-          {anchorUnavailable || (restoreFailed && action === "restore") ? (
+          {anchorUnavailable || (recovery.failed && action === "restore") ? (
             <Button size="sm" onClick={() => void copy(body)}>
               <Trans>Copy</Trans>
             </Button>
           ) : null}
-          {!anchorUnavailable && actionState !== "applied" ? (
-            <Button
-              size="sm"
-              disabled={actionState !== "idle"}
-              onClick={() => void forward(action)}
-            >
+          {!anchorUnavailable && !recovery.applied ? (
+            <Button size="sm" disabled={recovery.isPending} onClick={() => void recovery.execute()}>
               {action === "delete-again" ? <Trans>Delete again</Trans> : <Trans>Restore</Trans>}
             </Button>
           ) : null}
-          {actionState === "applied" ? (
+          {recovery.applied ? (
             <span className="text-jade-text">
               {action === "delete-again" ? <Trans>Deleted again</Trans> : <Trans>Restored</Trans>}
             </span>
@@ -252,17 +199,6 @@ function ChangeViewRow({
       ) : null}
     </li>
   );
-}
-
-function bodyFromHashline(serialized: string | null): string | null {
-  if (serialized === null) return null;
-  const separator = serialized.indexOf("|");
-  return separator < 0 ? serialized : serialized.slice(separator + 1);
-}
-
-function protectionFor(change: TrailChange): TrailChange["writerProtection"] {
-  if (change.writerProtection) return change.writerProtection;
-  return change.swept ? { kind: "sweep", body: change.swept.removed } : undefined;
 }
 
 async function copyToClipboard(text: string): Promise<void> {
