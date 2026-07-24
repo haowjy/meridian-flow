@@ -38,7 +38,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
-    const { createDrizzleBranchPushStore } = await import("../drizzle-branch-push.js");
+    const {
+      createDrizzleBranchJournalReadStore,
+      createDrizzlePushCommitStore,
+      createDrizzleWorkPushPolicyStore,
+    } = await import("../drizzle-branch-push.js");
     const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
       "../drizzle-pending-settlement.js"
     );
@@ -113,10 +117,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const createPushStores = (
       serializer: Parameters<typeof createDrizzlePendingSettlementStore>[1],
       changeTrails = createDrizzleChangeTrailPersistence(db),
-    ) => ({
-      pushStore: createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx, changeTrails),
-      settlementStore: createDrizzlePendingSettlementStore(db, serializer, changeTrails),
-    });
+    ) => {
+      const journalReadStore = createDrizzleBranchJournalReadStore(db);
+      const commitStore = createDrizzlePushCommitStore(
+        db,
+        stagePendingSettlementWithinTx,
+        changeTrails,
+      );
+      return {
+        journalReadStore,
+        commitStore,
+        workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
+        settlementStore: createDrizzlePendingSettlementStore(db, serializer, changeTrails),
+      };
+    };
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
@@ -293,7 +307,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source: "agent",
         threadId: THREAD_ID as never,
       });
-      const pushStore = createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx);
+      const pushStore = createDrizzleWorkPushPolicyStore(db);
       await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(1);
 
       await coordinator.resetFromDoc(work.branchId, live);
@@ -828,7 +842,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("finds push lineage by bigint journal-id overlap", async () => {
-      const pushStore = createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx);
+      const pushStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
@@ -856,7 +870,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         idempotencyKey: "bigint-overlap",
       });
 
-      const rows = await pushStore.listPushLineageForTurn?.({
+      const rows = await pushStore.listPushLineageForTurn({
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
       });
@@ -867,7 +881,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
       const _schema = buildDocumentSchema();
-      const pushStore = createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx);
+      const pushStore = createDrizzlePushCommitStore(
+        db,
+        stagePendingSettlementWithinTx,
+        createDrizzleChangeTrailPersistence(db),
+      );
+      const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
@@ -963,7 +982,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         liveDoc: docWithText("live"),
       });
-      const freshRows = await pushStore.listActiveJournalRows(fresh.branchId, fresh.generation);
+      const freshRows = await journalReadStore.listActiveJournalRows(
+        fresh.branchId,
+        fresh.generation,
+      );
       await db
         .update(branchWriteJournal)
         .set({ status: "discarded" })
@@ -1062,7 +1084,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("lists concurrent journal rows by the production document/generation/floor predicate", async () => {
-      const pushStore = createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx);
+      const pushStore = createDrizzleBranchJournalReadStore(db);
       const update = Buffer.from(Y.encodeStateAsUpdate(docWithText("row")));
       const otherDocId = "00000000-0000-4000-8000-000000000612";
       await db.insert(documents).values({

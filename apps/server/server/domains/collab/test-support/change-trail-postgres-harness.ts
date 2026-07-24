@@ -24,7 +24,11 @@ export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await im
   "../../../shared/drizzle-transaction.js"
 );
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-const { createDrizzleBranchPushStore } = await import("../adapters/drizzle-branch-push.js");
+const {
+  createDrizzleBranchJournalReadStore,
+  createDrizzlePushCommitStore,
+  createDrizzleWorkPushPolicyStore,
+} = await import("../adapters/drizzle-branch-push.js");
 const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
@@ -47,6 +51,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
+const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
@@ -293,12 +298,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return row?.filetype ?? null;
     },
   });
-  const durableBranchPushStore = createDrizzleBranchPushStore(
+  const durableBranchJournalReadStore = createDrizzleBranchJournalReadStore(db);
+  const durablePushCommitStore = createDrizzlePushCommitStore(
     db,
     stagePendingSettlementWithinTx,
     changeTrails,
     notices,
   );
+  const durableWorkPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
@@ -361,7 +368,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const realBranchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
-    pushStore: durableBranchPushStore,
+    journalReadStore: durableBranchJournalReadStore,
+    commitStore: durablePushCommitStore,
+    workPushPolicyStore: durableWorkPushPolicyStore,
     settlementStore,
     branchCoordinator,
     journal: persistence.journal,
@@ -383,6 +392,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
             }),
         }
       : undefined,
+  });
+  const branchReview = createBranchReviewOperations({
+    branchStore,
+    journalReadStore: durableBranchJournalReadStore,
+    commitStore: durablePushCommitStore,
+    branchCoordinator,
+    journal: persistence.journal,
+    criticalSections: branchCriticalSections,
   });
   const deliveredEvents: unknown[] = [];
   const fences: Array<{ threadId: string; documentId: string }> = [];
@@ -446,7 +463,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchCoordinator,
     branchPulls,
     branchPush,
-    branchPushStore: durableBranchPushStore,
+    branchReview,
+    branchJournalReadStore: durableBranchJournalReadStore,
+    workPushPolicyStore: durableWorkPushPolicyStore,
     concurrentJournalWatermarks: watermarks,
     documentUriResolver: async (documentId) =>
       documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md",

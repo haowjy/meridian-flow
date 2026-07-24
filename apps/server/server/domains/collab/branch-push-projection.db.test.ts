@@ -20,7 +20,11 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { desc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
+import {
+  createDrizzleBranchJournalReadStore,
+  createDrizzlePushCommitStore,
+  createDrizzleWorkPushPolicyStore,
+} from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
@@ -157,9 +161,18 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const changeTrails = createDrizzleChangeTrailPersistence(db);
+    const journalReadStore = createDrizzleBranchJournalReadStore(db);
+    const commitStore = createDrizzlePushCommitStore(
+      db,
+      stagePendingSettlementWithinTx,
+      changeTrails,
+    );
+    const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
     const branchPush = createBranchPushService({
       branchStore,
-      pushStore: createDrizzleBranchPushStore(db, stagePendingSettlementWithinTx, changeTrails),
+      journalReadStore,
+      commitStore,
+      workPushPolicyStore,
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         durableProjectionSerializer,
@@ -313,11 +326,13 @@ describe("branch-push durable projection", () => {
       },
     };
     const changeTrails = createDrizzleChangeTrailPersistence(db);
-    const pushStore = createDrizzleBranchPushStore(
+    const journalReadStore = createDrizzleBranchJournalReadStore(db);
+    const commitStore = createDrizzlePushCommitStore(
       db,
       stagePendingSettlementWithinTx,
       changeTrails,
     );
+    const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
     const settlementStore = createDrizzlePendingSettlementStore(db, serializer, changeTrails);
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
@@ -337,7 +352,9 @@ describe("branch-push durable projection", () => {
     });
     const branchPush = createBranchPushService({
       branchStore,
-      pushStore,
+      journalReadStore,
+      commitStore,
+      workPushPolicyStore,
       settlementStore,
       branchCoordinator,
       journal: persistence.journal,

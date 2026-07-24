@@ -1,7 +1,7 @@
 /** Work-level auto/manual push policy and auto-push behavior. */
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { BranchStore } from "./branch-coordinator.js";
-import type { BranchPushStore, PushToLiveResult } from "./branch-push-contracts.js";
+import type { PushToLiveResult, WorkPushPolicyStore } from "./branch-push-contracts.js";
 
 type PushToLive = (input: {
   branchId: string;
@@ -12,7 +12,7 @@ type PushToLive = (input: {
 
 export function createWorkPushPolicy(input: {
   branchStore: BranchStore;
-  pushStore: BranchPushStore;
+  workPushPolicyStore: WorkPushPolicyStore;
   pushToLive: PushToLive;
 }) {
   return {
@@ -41,10 +41,12 @@ export function createWorkPushPolicy(input: {
       pushedByUserId?: UserId;
     }) {
       if (policyInput.policy === "manual") {
-        await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "manual");
+        await input.workPushPolicyStore.updateWorkDraftPushPolicy(policyInput.workId, "manual");
         return { status: "updated" as const, policy: "manual" as const };
       }
-      const unpushedCount = await input.pushStore.countUnpushedRowsForWork(policyInput.workId);
+      const unpushedCount = await input.workPushPolicyStore.countUnpushedRowsForWork(
+        policyInput.workId,
+      );
       if (unpushedCount > 0 && !policyInput.confirmedPush) {
         return {
           status: "confirmation_required" as const,
@@ -53,7 +55,7 @@ export function createWorkPushPolicy(input: {
         };
       }
       if (unpushedCount > 0) {
-        for (const branchId of await input.pushStore.listActiveWorkDraftBranchIdsForWork(
+        for (const branchId of await input.workPushPolicyStore.listActiveWorkDraftBranchIdsForWork(
           policyInput.workId,
         )) {
           await input.pushToLive({
@@ -64,7 +66,7 @@ export function createWorkPushPolicy(input: {
           });
         }
       }
-      await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
+      await input.workPushPolicyStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
       return { status: "updated" as const, policy: "auto" as const };
     },
   };

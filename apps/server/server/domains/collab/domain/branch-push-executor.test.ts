@@ -37,18 +37,21 @@ import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-co
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
 import { createBranchPushService as createBranchPushServiceCore } from "./branch-push.js";
 import {
+  type BranchJournalReadStore,
   type BranchJournalRow,
   BranchPushCommitConflictError,
-  type BranchPushExecutorInput,
-  type BranchPushStore,
+  BranchPushRetryExhaustedError,
+  type BranchPushServiceInput,
   branchJournalRevision,
   type PendingLiveSettlement,
   type PreparedPushCommit,
+  type PushCommitStore,
   type PushLineageRow,
+  type WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
-import { BranchPushRetryExhaustedError } from "./branch-push-executor.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
+import { createBranchReviewOperations } from "./branch-review-operations.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";
 import type {
   ChangeTrailPersistence,
@@ -60,6 +63,19 @@ type SettlementObserver = {
   /** Observes the durable boundary; the stateful store always performs the settlement. */
   settlePushTrail?: PendingSettlementStore["settlePushTrail"];
 };
+
+type TestPushStores = Pick<
+  BranchJournalReadStore,
+  "listActiveJournalRows" | "listConcurrentJournalRows"
+> &
+  Pick<PushCommitStore, "commitPush" | "markRollbackPending"> &
+  WorkPushPolicyStore &
+  Partial<
+    Omit<
+      BranchJournalReadStore & PushCommitStore,
+      "commitPush" | "listActiveJournalRows" | "listConcurrentJournalRows" | "markRollbackPending"
+    >
+  >;
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -73,14 +89,30 @@ const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
 
 function createBranchPushService(
-  input: Omit<BranchPushExecutorInput, "pushStore" | "settlementStore"> & {
-    pushStore: BranchPushStore & SettlementObserver;
+  input: Omit<
+    BranchPushServiceInput,
+    "commitStore" | "journalReadStore" | "settlementStore" | "workPushPolicyStore"
+  > & {
+    pushStore: TestPushStores & SettlementObserver;
     settlementStore?: InMemoryPendingSettlementStore;
   },
 ) {
   const settlementStore = input.settlementStore ?? createInMemoryPendingSettlementStore();
-  const pushStore: BranchPushStore = {
-    ...input.pushStore,
+  const journalReadStore: BranchJournalReadStore = {
+    listActiveJournalRows: input.pushStore.listActiveJournalRows,
+    listReviewableJournalRows:
+      input.pushStore.listReviewableJournalRows ?? input.pushStore.listActiveJournalRows,
+    listConcurrentJournalRows: input.pushStore.listConcurrentJournalRows,
+    latestPushForBranch: input.pushStore.latestPushForBranch ?? (async () => null),
+    listPushesForDocument: input.pushStore.listPushesForDocument ?? (async () => []),
+    listJournalRowsForTurn: input.pushStore.listJournalRowsForTurn ?? (async () => []),
+    listJournalRowsForBranch:
+      input.pushStore.listJournalRowsForBranch ??
+      (async ({ branchId, generation }) =>
+        input.pushStore.listActiveJournalRows(branchId, generation)),
+    listPushLineageForTurn: input.pushStore.listPushLineageForTurn ?? (async () => []),
+  };
+  const commitStore: PushCommitStore = {
     async commitPush(prepared) {
       const result = await input.pushStore.commitPush(prepared);
       if (result.status === "inserted") {
@@ -91,24 +123,34 @@ function createBranchPushService(
       }
       return result;
     },
-    ...(input.pushStore.commitPushBatch
-      ? {
-          async commitPushBatch(prepared: { pushes: PreparedPushCommit[] }) {
-            const result = await input.pushStore.commitPushBatch?.(prepared);
-            if (!result) throw new Error("missing batch push result");
-            for (const [index, push] of result.pushes.entries()) {
-              const candidate = prepared.pushes[index];
-              if (!candidate) throw new Error("missing prepared batch settlement");
-              settlementStore.stage({
-                ...candidate.pendingLiveSettlement,
-                push,
-              });
-            }
-            return result;
-          },
-        }
-      : {}),
+    async commitPushBatch(prepared: { pushes: PreparedPushCommit[] }) {
+      if (!input.pushStore.commitPushBatch) {
+        throw new Error("test push commit store does not implement commitPushBatch");
+      }
+      const result = await input.pushStore.commitPushBatch(prepared);
+      for (const [index, push] of result.pushes.entries()) {
+        const candidate = prepared.pushes[index];
+        if (!candidate) throw new Error("missing prepared batch settlement");
+        settlementStore.stage({
+          ...candidate.pendingLiveSettlement,
+          push,
+        });
+      }
+      return result;
+    },
+    commitDiscard:
+      input.pushStore.commitDiscard ??
+      (async () => {
+        throw new Error("test push commit store does not implement commitDiscard");
+      }),
+    commitTurnRedo:
+      input.pushStore.commitTurnRedo ??
+      (async () => {
+        throw new Error("test push commit store does not implement commitTurnRedo");
+      }),
+    markRollbackPending: input.pushStore.markRollbackPending,
   };
+  const workPushPolicyStore: WorkPushPolicyStore = input.pushStore;
   const observedSettlementStore: PendingSettlementStore = input.pushStore.settlePushTrail
     ? {
         ...settlementStore,
@@ -118,11 +160,43 @@ function createBranchPushService(
         },
       }
     : settlementStore;
-  return createBranchPushServiceCore({
-    ...input,
-    pushStore,
+  const { pushStore: _pushStore, settlementStore: _settlementStore, ...serviceInput } = input;
+  const branchPush = createBranchPushServiceCore({
+    ...serviceInput,
+    journalReadStore,
+    commitStore,
+    workPushPolicyStore,
     settlementStore: observedSettlementStore,
   });
+  const branchReview = createBranchReviewOperations({
+    branchStore: input.branchStore,
+    journalReadStore,
+    commitStore,
+    branchCoordinator: input.branchCoordinator,
+    journal: input.journal,
+    criticalSections: input.criticalSections,
+  });
+  return {
+    ...branchPush,
+    ...branchReview,
+    ...(!input.pushStore.commitDiscard
+      ? {
+          async markFailedResponseRollbackPending(rollbackInput: {
+            branchId: string;
+            threadId: ThreadId;
+            turnId: TurnId;
+          }) {
+            const branch = await input.branchStore.getBranch(rollbackInput.branchId);
+            if (!branch) throw new Error(`Branch ${rollbackInput.branchId} does not exist`);
+            const rowsMarked = await commitStore.markRollbackPending({
+              ...rollbackInput,
+              generation: branch.generation,
+            });
+            return { status: "rollback_pending" as const, rowsMarked };
+          },
+        }
+      : {}),
+  };
 }
 
 function docFromMarkdown(markdown: string): Y.Doc {
@@ -189,7 +263,7 @@ function makeBranch(branchDoc: Y.Doc): BranchSnapshot {
 function listConcurrentJournalRowsInMemory(
   rows: readonly BranchJournalRow[],
   branchForRow: (branchId: string) => BranchSnapshot | null | undefined,
-): BranchPushStore["listConcurrentJournalRows"] {
+): BranchJournalReadStore["listConcurrentJournalRows"] {
   return async (branchId, generation, options) =>
     rows.filter((row) => {
       if (row.id <= (options.afterJournalId ?? 0)) return false;
@@ -258,9 +332,7 @@ function prefixWideningFixture(): {
   };
 }
 
-type ListJournalRowsForTurnInput = Parameters<
-  NonNullable<BranchPushStore["listJournalRowsForTurn"]>
->[0];
+type ListJournalRowsForTurnInput = Parameters<BranchJournalReadStore["listJournalRowsForTurn"]>[0];
 
 /**
  * One copy of the store's listJournalRowsForTurn filter contract. Per-test
@@ -324,9 +396,10 @@ class Harness {
   readonly lineage: PushLineageRow[] = [];
   policy: "manual" | "auto" = "manual";
   failApply = false;
-  readonly pushStore: BranchPushStore = {
+  readonly pushStore: TestPushStores = {
     listActiveJournalRows: vi.fn(async () => (this.row.status === "active" ? [this.row] : [])),
     listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn([this.row], input)),
+    listJournalRowsForBranch: vi.fn(async () => [this.row]),
     listConcurrentJournalRows: vi.fn(
       listConcurrentJournalRowsInMemory([this.row], (branchId) =>
         branchId === this.branch.branchId ? this.branch : null,
@@ -1326,7 +1399,7 @@ describe("createBranchPushService", () => {
       onCompleted: (pushId) => completed.push(pushId),
     });
     let activeDoc = liveDoc;
-    const pushStore: BranchPushStore & SettlementObserver = {
+    const pushStore: TestPushStores & SettlementObserver = {
       listActiveJournalRows: vi.fn(async () => [row]),
       listConcurrentJournalRows: vi.fn(async () => []),
       latestPushForBranch: vi.fn(async () => null),
