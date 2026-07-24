@@ -24,6 +24,7 @@ import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import {
+  activeBranchAgentWriteRows,
   createBranchAgentEditCoordinator,
   createBranchAgentEditJournal,
   createBranchConcurrentJournalWatermarks,
@@ -3506,6 +3507,57 @@ describe("thread-peer auto-push wiring", () => {
     expect((await harness.journal.read(DOCUMENT_ID)).updates).toHaveLength(1);
   });
 
+  it("routes post-Apply undo to live authority and reverses the folded Apply group honestly", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+    const stage = async (responseId: string, content: string) => {
+      await core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content,
+        },
+        {
+          sessionId: "session-post-apply",
+          threadId: THREAD_ID,
+          turnId: responseId,
+          responseId,
+        },
+      );
+      await core.commitResponse(responseId);
+    };
+    await stage("response-post-apply-1", "Applied first.");
+    await stage("response-post-apply-2", "Applied second.");
+    await harness.branchPush.pushToLive({ branchId: harness.work.branchId });
+
+    const undo = await core.write(
+      { command: "undo", file: "chapter.md", documentId: DOCUMENT_ID },
+      {
+        sessionId: "session-post-apply",
+        threadId: THREAD_ID,
+        turnId: "turn-post-apply-undo",
+        responseId: "response-post-apply-undo",
+      },
+    );
+
+    expect(undo).toMatchObject({ status: expect.stringMatching(/^(reversed|reconciled)$/) });
+    expect(undo.text).toContain("undo: 2 edit(s)");
+    expect(markdown(harness.liveDoc)).toBe("Base.\n");
+    const durable = new Y.Doc({ gc: false });
+    const snapshot = await harness.journal.readForReconstruction(DOCUMENT_ID);
+    if (snapshot.checkpoint) Y.applyUpdate(durable, snapshot.checkpoint);
+    for (const update of snapshot.updates) Y.applyUpdate(durable, update.update);
+    expect(markdown(durable)).toBe("Base.\n");
+    durable.destroy();
+    await expect(harness.journal.mutationsForWrite(DOCUMENT_ID, THREAD_ID, "w1")).resolves.toEqual([
+      expect.objectContaining({ status: "reversed" }),
+    ]);
+    await expect(harness.journal.mutationsForWrite(DOCUMENT_ID, THREAD_ID, "w2")).resolves.toEqual([
+      expect.objectContaining({ status: "reversed" }),
+    ]);
+  });
+
   it("leaves draft and live state unchanged when reversal persistence fails", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();
@@ -4105,6 +4157,37 @@ class ThreadPeerPushHarness {
           origin: `push:${input.branch.branchId}`,
           seq: 0,
         });
+        const entry = (
+          this.journal as typeof this.journal & {
+            debugEntry(documentId: string):
+              | {
+                  mutations: Array<{
+                    wId: number;
+                    documentId: string;
+                    threadId: string;
+                    turnId: string | null;
+                    writeId: string;
+                    status: "active";
+                    createdSeq: number;
+                    createdAt: Date;
+                  }>;
+                }
+              | undefined;
+          }
+        ).debugEntry(input.branch.documentId);
+        if (!entry) throw new Error("push update was not retained");
+        for (const row of activeBranchAgentWriteRows(input.journalRows)) {
+          entry.mutations.push({
+            wId: row.wId,
+            documentId: input.branch.documentId,
+            threadId: row.threadId,
+            turnId: row.turnId,
+            writeId: `push:${input.branch.branchId}:${row.id}`,
+            status: "active",
+            createdSeq: seq,
+            createdAt: new Date(),
+          });
+        }
         const push: PushLineageRow = {
           id: this.lineage.length + 1,
           branchId: input.branch.branchId,
@@ -4257,30 +4340,12 @@ class ThreadPeerPushHarness {
         return { responseId, entries: observationEntries };
       },
     };
-    const createCoreForCoordinator = (coordinator: DocumentCoordinator) =>
+    const createCoreForCoordinator = (
+      coordinator: DocumentCoordinator,
+      journal: ReturnType<typeof createBranchAgentEditJournal> | typeof this.journal,
+    ) =>
       createAgentEditCore({
-        journal: createBranchAgentEditJournal({
-          threadId: THREAD_ID,
-          liveJournal: this.journal,
-          pendingJournalEntries: pending,
-          branches: {
-            resolveThreadBranch: async () => ({
-              branchId: this.thread.branchId,
-              doc: docFromUpdate(this.thread.state),
-              generation: this.thread.generation,
-            }),
-            ensureThreadPeerBranch: async () => this.thread,
-            ensureWorkDraftBranch: async () => this.work,
-            listActiveWorkDraftBranchIds: async () => [this.work.branchId],
-            getBranch: async (branchId: string) => this.branchStore.getBranch(branchId),
-          },
-          branchRows: {
-            listJournalRowsForBranch: async (input) =>
-              this.rows.filter(
-                (row) => row.branchId === input.branchId && row.generation === input.generation,
-              ),
-          },
-        }),
+        journal,
         coordinator,
         lifecycle: {
           ensureDocument: async () => undefined,
@@ -4291,17 +4356,52 @@ class ThreadPeerPushHarness {
         defaultThreadId: THREAD_ID,
         createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       });
+    const branchJournal = createBranchAgentEditJournal({
+      threadId: THREAD_ID,
+      liveJournal: this.journal,
+      pendingJournalEntries: pending,
+      branches: {
+        resolveThreadBranch: async () => ({
+          branchId: this.thread.branchId,
+          doc: docFromUpdate(this.thread.state),
+          generation: this.thread.generation,
+        }),
+        ensureThreadPeerBranch: async () => this.thread,
+        ensureWorkDraftBranch: async () => this.work,
+        listActiveWorkDraftBranchIds: async () => [this.work.branchId],
+        getBranch: async (branchId: string) => this.branchStore.getBranch(branchId),
+      },
+      branchRows: {
+        listJournalRowsForBranch: async (input) =>
+          this.rows.filter(
+            (row) => row.branchId === input.branchId && row.generation === input.generation,
+          ),
+      },
+    });
 
     return createThreadPeerAgentEditCore({
       commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(
-        createCoreForCoordinator({
-          withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),
-          recover: vi.fn(),
-        }),
+        createCoreForCoordinator(
+          {
+            withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),
+            recover: vi.fn(),
+          },
+          this.journal,
+        ),
       ),
       createThreadCore: () =>
-        createCoreForCoordinator(this.createAgentCoordinator(pending, watermarks)),
+        createCoreForCoordinator(this.createAgentCoordinator(pending, watermarks), branchJournal),
+      shouldUseLiveReversal: async () =>
+        !this.rows.some(
+          (row) =>
+            row.branchId === this.work.branchId &&
+            row.generation === this.work.generation &&
+            row.status === "active" &&
+            row.source === "agent" &&
+            row.threadId === THREAD_ID &&
+            row.wId !== null,
+        ),
       pullThreadPeer: async () => ({
         branchGeneration: this.work.generation,
         afterJournalId: 0,

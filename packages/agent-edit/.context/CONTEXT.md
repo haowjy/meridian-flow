@@ -322,6 +322,10 @@ details.
 
 **Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
 
+Multiple handles backed by the same durable journal update are one reversal
+boundary. Selecting any member expands to every handle sharing that update, so
+content and mutation status cannot diverge after a folded branch Apply.
+
 
 ### CRDT-neutral seam, ProseMirror content currency
 

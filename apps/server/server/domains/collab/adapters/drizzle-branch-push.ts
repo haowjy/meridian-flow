@@ -32,7 +32,6 @@ import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
-import { activeBranchAgentWriteRows } from "../domain/branch-agent-edit.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -44,6 +43,7 @@ import type {
   SettlementClaim,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
+import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
@@ -918,6 +918,7 @@ async function completeStagedPush(
           .select()
           .from(branchWriteJournal)
           .where(inArray(branchWriteJournal.id, staged.push.journalIds))
+          .orderBy(branchWriteJournal.id)
       : [];
   if (branchRow) {
     const branch: BranchSnapshot = {
