@@ -407,15 +407,25 @@ function visibleOutputWindow(
   }
   const ranges = visibleStringRanges(unwrapBlock(edit.block));
   if (edit.kind === "block") return sliceRanges(ranges, 0, outputLength);
-  const start = edit.kind === "text" ? edit.span.start : (edit.replacements[0]?.span.start ?? 0);
+  const inputSpan = textEditInputSpan(edit);
+  if (!inputSpan) {
+    throw new ProvenanceMaterializationError("Certified text edit has no output window");
+  }
+  const start = inputSpan.from;
+  const declarationIndex = declarations.findIndex(({ edit: declared }) => declared === edit);
   let finalStart = start;
-  for (const { edit: other } of declarations) {
+  for (const [otherIndex, { edit: other }] of declarations.entries()) {
     if (other === edit || !("block" in other) || other.block !== edit.block) continue;
     const span = textEditInputSpan(other);
     if (!span) continue;
-    if (span.to <= start) {
+    const equalAnchorInsertions =
+      inputSpan.from === inputSpan.to && span.from === span.to && span.from === inputSpan.from;
+    if (
+      span.to < start ||
+      (span.to === start && (!equalAnchorInsertions || otherIndex > declarationIndex))
+    ) {
       finalStart += textEditOutputLength(other) - (span.to - span.from);
-    } else if (span.from < start + textEditInputLength(edit) && span.to > start) {
+    } else if (span.from < inputSpan.to && span.to > start) {
       throw new ProvenanceMaterializationError(
         "Certified text edits overlap while locating provenance output",
       );
@@ -430,11 +440,6 @@ function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number
   const first = edit.replacements[0];
   const last = edit.replacements.at(-1);
   return first && last ? { from: first.span.start, to: last.span.end } : undefined;
-}
-
-function textEditInputLength(edit: MappedEdit["edit"]): number {
-  const span = textEditInputSpan(edit);
-  return span ? span.to - span.from : 0;
 }
 
 function textEditOutputLength(edit: MappedEdit["edit"]): number {

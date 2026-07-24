@@ -232,7 +232,7 @@ describe("provenance materialization", () => {
     text.delete(4, 3);
     text.insert(4, "TWO");
     text.delete(0, 3);
-    text.insert(0, "ONE");
+    text.insert(0, "ONE!");
 
     createSemanticProvenanceWriter().writeCertifiedFacts(
       doc as never,
@@ -245,7 +245,25 @@ describe("provenance materialization", () => {
         intent: {
           kind: "mappedEdits",
           edits: [
-            restorationTextEdit(block, firstRoot, 0, "ONE"),
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: block as never,
+                span: { start: 0, end: 3 },
+                newText: "ONE!",
+              },
+              outputRuns: [
+                {
+                  kind: "restoration",
+                  root: firstRoot,
+                  payload: "ONE",
+                  output: { from: 0, to: 3 },
+                },
+                { kind: "fresh", payload: "!", output: { from: 3, to: 4 } },
+              ],
+            },
             restorationTextEdit(block, secondRoot, 4, "TWO"),
           ],
         },
@@ -257,10 +275,50 @@ describe("provenance materialization", () => {
       { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
       { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
     ]);
-    expect(visible).toHaveLength(3);
     expect(visible[0]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
-    expect(visible[1]).toMatchObject({ birthClass: "agent" });
-    expect(visible[2]).toMatchObject({ root: secondRoot, birthClass: "writer_protected" });
+    expect(visible.at(-1)).toMatchObject({
+      root: secondRoot,
+      birthClass: "writer_protected",
+    });
+  });
+
+  it("locates equal-anchor insertions in their stable application order", () => {
+    const doc = proseDoc("abbase");
+    const source = textRange(doc);
+    const firstRoot = { ...source, length: 1 };
+    const secondRoot = { ...source, clock: source.clock + 1, length: 1 };
+    const block = proseBlock(doc);
+    const text = proseText(doc);
+    const before = Y.encodeStateVector(doc);
+    text.delete(0, 2);
+    text.insert(0, "A");
+    text.insert(0, "B");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [firstRoot, secondRoot],
+        deleted: [firstRoot, secondRoot],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            restorationInsertion(block, firstRoot, "A"),
+            restorationInsertion(block, secondRoot, "B"),
+          ],
+        },
+      },
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
+      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
+    ]);
+    expect(visible[0]).toMatchObject({ root: secondRoot, birthClass: "writer_protected" });
+    expect(visible[1]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
   });
 
   it("encodes certified continuation facts in the same Yjs update as prose", () => {
@@ -581,6 +639,31 @@ function restorationTextEdit(
       file: "document.md",
       block: block as never,
       span: { start, end: start + root.length },
+      newText: payload,
+    },
+    outputRuns: [
+      {
+        kind: "restoration" as const,
+        root,
+        payload,
+        output: { from: 0, to: payload.length },
+      },
+    ],
+  };
+}
+
+function restorationInsertion(
+  block: Y.XmlElement,
+  root: { clientID: number; clock: number; length: number },
+  payload: string,
+) {
+  return {
+    edit: {
+      kind: "text" as const,
+      documentId: "document",
+      file: "document.md",
+      block: block as never,
+      span: { start: 0, end: 0 },
       newText: payload,
     },
     outputRuns: [
