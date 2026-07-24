@@ -14,6 +14,7 @@ import {
 } from "../../../../../domains/collab/domain/turn-reversal.js";
 import type { AppServices } from "../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { requireRequestId } from "../../../../../lib/request-id.js";
 import { readThreadContextDocument } from "../../../../../lib/thread-context-route.js";
 import {
   handleTurnLiveLineageRequest,
@@ -46,7 +47,7 @@ function selectReverseRouteServices(app: AppServices): ReverseRouteServices {
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const services = selectReverseRouteServices(app);
-  const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
+  const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const body = (await readBody<ReverseBody>(event)) ?? {};
   const input = parseReverseBody(body);
 

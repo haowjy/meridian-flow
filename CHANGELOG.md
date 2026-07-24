@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: request UUIDs now share one canonical hyphenated wire grammar,
+  normalize uppercase IDs, accept every UUID version/variant, and reject malformed
+  HTTP/WS IDs before Postgres can turn them into `22P02` 500s (#357).
 - `apps/server`: authenticated request fan-out now reads a durable bootstrap-ready
   flag instead of re-locking and re-seeding completed default workspaces; seed
   failures stay repairable without failing unrelated requests (#358).

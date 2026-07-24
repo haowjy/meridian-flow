@@ -12,13 +12,13 @@ function parseLimit(raw: unknown): number | undefined {
 export default defineEventHandler(async (event): Promise<ListThreadRecentDocumentsResponse> => {
   const { app, user } = await requireAppUser(event);
   const threadId = getRouterParam(event, "threadId") ?? "";
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: app.repos.threads, projects: app.projectRepo },
     threadId,
     user.userId,
   );
   const touches = await app.repos.documentTouches.listByThread(
-    threadId,
+    thread.id,
     parseLimit(getQuery(event).limit),
   );
   return { documents: await app.uploadDocuments.listRecent(touches) };

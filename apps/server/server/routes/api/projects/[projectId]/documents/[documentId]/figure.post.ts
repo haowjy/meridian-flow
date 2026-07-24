@@ -8,6 +8,7 @@ import {
 } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
+import { requireRequestId } from "../../../../../../lib/request-id.js";
 
 function formText(
   parts: Awaited<ReturnType<typeof readMultipartFormData>>,
@@ -28,7 +29,7 @@ function toHttpError(error: { code: string; message: string }) {
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
-  const documentId = getRouterParam(event, "documentId") ?? "";
+  const documentId = requireRequestId(getRouterParam(event, "documentId"), "documentId");
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const parts = await readMultipartFormData(event);
   const file = parts?.find((part) => part.name === "file" && part.filename);

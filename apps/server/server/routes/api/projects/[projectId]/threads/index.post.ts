@@ -3,15 +3,21 @@ import { type CreateThreadRequest, serializeTransport } from "@meridian/contract
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import {
+  parseNullableRequestId,
+  parseOptionalRequestId,
+  requireRequestId,
+} from "../../../../../lib/request-id.js";
+import {
   AgentBindingNotFoundError,
   createThreadForProject,
+  InvalidWorkAttachmentError,
 } from "../../../../../lib/thread-creation.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const { repos, projectRepo, workRepo } = app;
   const { userId } = user;
-  const projectId = getRouterParam(event, "projectId") ?? "";
+  const projectId = requireRequestId(getRouterParam(event, "projectId"), "projectId");
   const body = (await readBody<CreateThreadRequest>(event)) ?? { projectId };
 
   try {
@@ -28,11 +34,11 @@ export default defineEventHandler(async (event) => {
       {
         projectId,
         userId,
-        id: body.id,
+        id: parseOptionalRequestId(body.id, "id"),
         title: body.title ?? null,
         systemPrompt: body.systemPrompt ?? null,
         currentAgent: body.currentAgent ?? null,
-        workId: body.workId ?? null,
+        workId: parseNullableRequestId(body.workId, "workId") ?? null,
       },
     );
 
@@ -40,7 +46,7 @@ export default defineEventHandler(async (event) => {
     return serializeTransport(thread);
   } catch (error) {
     // An unresolvable agent slug is a client error, not a server fault.
-    if (error instanceof AgentBindingNotFoundError) {
+    if (error instanceof AgentBindingNotFoundError || error instanceof InvalidWorkAttachmentError) {
       throw createError({ statusCode: 400, message: error.message });
     }
     throw error;

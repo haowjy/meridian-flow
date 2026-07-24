@@ -1,14 +1,23 @@
 /**
- * UUID shape guard for id-typed route params before they reach a `uuid` column.
+ * Request-ID wire grammar for values backed by Postgres `uuid` columns.
  *
- * Postgres `uuid` columns reject any non-UUID text with a `22P02` parse error
- * that surfaces as an unhandled 500. Repository `findById` boundaries call this
- * so a malformed id (e.g. a project slug in a `:projectId` route) resolves to a
- * clean not-found instead of leaking a driver error.
+ * The wire accepts exactly the canonical 36-character, hyphenated hexadecimal
+ * UUID shape, case-insensitively, and normalizes it to lowercase. UUID
+ * version and variant bits are data, not syntax. Alternate Postgres spellings
+ * such as braces, omitted hyphens, and `urn:uuid:` are deliberately rejected.
  */
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
+declare const parsedRequestId: unique symbol;
+export type ParsedRequestId = string & { readonly [parsedRequestId]: true };
+
+export function parseRequestId(value: unknown): ParsedRequestId | null {
+  if (typeof value !== "string" || !REQUEST_ID_RE.test(value)) return null;
+  return value.toLowerCase() as ParsedRequestId;
+}
+
+/** Defensive predicate for repository and persistence boundaries. */
+export function isUuid(value: string): value is ParsedRequestId {
+  return parseRequestId(value) !== null;
 }

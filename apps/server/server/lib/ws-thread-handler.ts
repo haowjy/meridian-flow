@@ -7,10 +7,11 @@ import {
   type SequencedEvent,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import type { AppServices } from "./app.js";
+import { parseRequestId } from "./uuid.js";
 
 const SERVER_VERSION = "0.0.0";
 
@@ -83,10 +84,20 @@ function sendError(peer: WsPeer, error: MeridianError, threadId?: string): boole
   return sendFrame(peer, { type: "error", kind: "error", error, threadId });
 }
 
-async function subscribeThread(peer: WsPeer, threadId: ThreadId, lastSeq?: string): Promise<void> {
+async function subscribeThread(
+  peer: WsPeer,
+  requestedThreadId: string,
+  lastSeq?: string,
+): Promise<void> {
   const auth = peer.context;
   if (!auth) {
     sendError(peer, meridianError("auth_failed", "Authenticate before subscribing"));
+    return;
+  }
+
+  const threadId = parseRequestId(requestedThreadId) as ThreadId | null;
+  if (!threadId) {
+    sendError(peer, meridianError("not_found", "Thread not found"), requestedThreadId);
     return;
   }
 
@@ -210,7 +221,11 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             }
             return;
           case "unsubscribe": {
-            const threadId = message.threadId as ThreadId;
+            const threadId = parseRequestId(message.threadId) as ThreadId | null;
+            if (!threadId) {
+              sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+              return;
+            }
             const state = getPeerState(peer);
             state.subscriptions.get(threadId)?.();
             state.subscriptions.delete(threadId);
@@ -218,7 +233,16 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             return;
           }
           case "interrupt.respond": {
-            const threadId = message.threadId as ThreadId;
+            const threadId = parseRequestId(message.threadId) as ThreadId | null;
+            if (!threadId) {
+              sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+              return;
+            }
+            const turnId = parseRequestId(message.turnId);
+            if (!turnId) {
+              sendError(peer, meridianError("not_found", "Turn not found"), threadId);
+              return;
+            }
             const context = peer.context;
             try {
               if (!context) throw new Error("Missing peer context");
@@ -229,7 +253,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             }
             const result = context.app.interruptRegistry.resolve({
               threadId,
-              turnId: message.turnId as never,
+              turnId: turnId as TurnId,
               interruptId: message.interruptId,
               value: message.value as JsonValue,
             });

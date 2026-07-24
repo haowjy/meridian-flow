@@ -10,6 +10,10 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  await requireThreadOwner({ threads: repos.threads, projects: projectRepo }, threadId, userId);
-  return serializeTransport(await buildThreadSnapshot(repos, hub, runner, threadId, userId));
+  const thread = await requireThreadOwner(
+    { threads: repos.threads, projects: projectRepo },
+    threadId,
+    userId,
+  );
+  return serializeTransport(await buildThreadSnapshot(repos, hub, runner, thread.id, userId));
 });

@@ -26,7 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.projects]);
+      await truncateDrizzleTables(db, [schema.users, schema.projects, schema.works]);
     });
     afterAll(async () => db.$client.end());
 
@@ -38,6 +38,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("work findById on a non-UUID slug resolves to null", async () => {
       const repo = createDrizzleWorkRepository({ db });
       await expect(repo.findById("also-a-slug" as never)).resolves.toBeNull();
+    });
+
+    it("create and find accept canonical UUIDs regardless of version or variant bits", async () => {
+      const userId = "93b1f764-1234-f678-0712-123456789ab0";
+      const projectId = "93b1f764-1234-f678-0712-123456789ab1";
+      const workId = "93b1f764-1234-9678-f712-123456789ab2";
+      await db.insert(schema.users).values({
+        id: userId,
+        externalId: "slug-routing-uuid-grammar",
+        email: "uuid-grammar@example.com",
+      });
+
+      const projects = createDrizzleProjectRepository({ db });
+      const works = createDrizzleWorkRepository({ db });
+      await projects.create({ id: projectId, userId, title: "UUID grammar" });
+      await works.create({ id: workId, projectId, createdByUserId: userId, title: "Work" });
+
+      await expect(projects.findById(projectId.toUpperCase() as never)).resolves.toMatchObject({
+        id: projectId,
+      });
+      await expect(works.findById(workId as never)).resolves.toMatchObject({ id: workId });
     });
   });
 }

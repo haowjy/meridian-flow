@@ -8,6 +8,7 @@ import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
+import { parseRequestId } from "../../lib/uuid.js";
 import type { ThreadRepository } from "./index.js";
 
 interface ProjectOwnerRepository {
@@ -20,7 +21,11 @@ export async function requireThreadOwner(
   threadId: string,
   userId: UserId,
 ): Promise<Thread> {
-  const thread = await repos.threads.findById(threadId);
+  const parsedThreadId = parseRequestId(threadId);
+  if (!parsedThreadId) {
+    throwHttpInterruptForStatus(400, "`threadId` must be a canonical UUID");
+  }
+  const thread = await repos.threads.findById(parsedThreadId);
   if (!thread || thread.deletedAt) {
     throwHttpInterruptForStatus(404, "Thread not found");
   }
