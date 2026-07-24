@@ -24,7 +24,10 @@ const reverseBodySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const { user } = await requireAppUser(event);
-  const parsed = reverseBodySchema.safeParse((await readBody(event)) ?? {});
+  const rawBody = await readBody(event);
+  const normalizedBody =
+    rawBody !== null && typeof rawBody === "object" && !Array.isArray(rawBody) ? rawBody : {};
+  const parsed = reverseBodySchema.safeParse(normalizedBody);
   if (!parsed.success) {
     throw createError({ statusCode: 400, message: parsed.error.issues[0]?.message });
   }
