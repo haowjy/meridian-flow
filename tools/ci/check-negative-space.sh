@@ -43,14 +43,15 @@ if (( ${#found[@]} > 0 )); then
   exit 1
 fi
 
-# Content mutation operations are explicit capabilities. The old sum-interface,
-# fake source-cut lookup, and unsupported arms must not return.
+# Content mutation operations are explicit capabilities, and journal attribution
+# is the sole birth-class authority. The old sum-interface, fake source-cut
+# lookup, unsupported arms, and explicit provenance-root policy must not return.
 mutation_policy_violations=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && mutation_policy_violations+=("$hit")
 done < <(
   git grep -n -E \
-    'createDocumentMutationPolicy|DocumentMutationPolicyPort|sourceCutId|unsupportedMutationPolicyOperation|stagePush|completePush' \
+    'createDocumentMutationPolicy|DocumentMutationPolicyPort|sourceCutId|unsupportedMutationPolicyOperation|stagePush|completePush|PROVENANCE_ROOTS_TYPE|ProvenanceRootFactV1|__meridian_provenance_roots_v1' \
     -- \
     'apps/server/server/domains/collab/*.ts' \
     'apps/server/server/domains/collab/**/*.ts' \
@@ -113,7 +114,9 @@ done < <(
     2>/dev/null || true
 )
 
-latest_database_snapshot="$(printf '%s\n' packages/database/src/migrations/meta/*_snapshot.json | sort -V | tail -n 1)"
+latest_database_snapshot="$(
+  printf '%s\n' packages/database/src/migrations/meta/*_snapshot.json | LC_ALL=C sort | tail -n 1
+)"
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && report_only_sediment+=("$latest_database_snapshot:$hit")
 done < <(
