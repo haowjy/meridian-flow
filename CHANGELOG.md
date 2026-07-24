@@ -27,7 +27,8 @@
   Draft Review, headers, and the conversation body (#334).
 - `apps/app`: per-card and whole-draft Apply now share one revision and response
   disposition policy (#334).
-
+- `apps/server`: durable authority heads, document mutation policy, and live
+  documents now have distinct collab names and layer-specific failures (#320).
 - `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
@@ -70,7 +71,7 @@
 - `apps/server`: live writer sync admission now uses Hocuspocus's single decoded
   `beforeSync` payload, a mutation-aware exact containment cache with a
   state-vector novelty fast path, and a narrow reusable writer-ingress
-  capability instead of rebuilding a full document-authority facade per frame.
+  capability instead of rebuilding a full document-mutation-policy facade per frame.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening

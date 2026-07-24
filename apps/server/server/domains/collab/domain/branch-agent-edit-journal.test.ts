@@ -50,7 +50,7 @@ describe("branch agent-edit journal appendBatch", () => {
     ).resolves.toEqual([1, 1]);
   });
 
-  it("classifies roots absent from live authority as agent-owned branch content", async () => {
+  it("classifies roots absent from the live document as agent-owned branch content", async () => {
     const liveJournal = createInMemoryJournal();
     const materialize = vi.fn(async (input: { fallbackProvenance?: string }) => ({
       before: [],

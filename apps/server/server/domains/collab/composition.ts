@@ -51,9 +51,9 @@ import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import {
   createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthority,
-  replaceDocumentAuthorityGeneration,
-} from "./adapters/drizzle-document-authority.js";
+  readDocumentAuthorityHead,
+  replaceDocumentAuthorityHeadGeneration,
+} from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzleLiveTurnDependencyStore,
@@ -95,7 +95,10 @@ import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolve
 import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import { createDocumentAuthority, DocumentAuthorityError } from "./domain/document-authority.js";
+import {
+  createDocumentMutationPolicy,
+  DocumentMutationPolicyError,
+} from "./domain/document-mutation-policy.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createMarkdownDocumentEngine,
@@ -302,12 +305,12 @@ export type CollabFacadeDeps = {
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
-  replaceAuthorityGeneration?(input: {
+  replaceAuthorityHeadGeneration?(input: {
     documentId: DocumentId;
     checkpointId: string;
     expectedGeneration: bigint;
   }): Promise<bigint>;
-  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
+  readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
   resolveDocumentFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -578,22 +581,22 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
     },
-    readAuthorityGeneration: async (documentId) =>
-      (await readDocumentAuthority(deps.db, documentId)).generation,
-    replaceAuthorityGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
-      const result = await replaceDocumentAuthorityGeneration(deps.db, {
+    readAuthorityHeadGeneration: async (documentId) =>
+      (await readDocumentAuthorityHead(deps.db, documentId)).generation,
+    replaceAuthorityHeadGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
+      const result = await replaceDocumentAuthorityHeadGeneration(deps.db, {
         documentId,
         checkpointId: Number(checkpointId),
         expectedGeneration,
       });
       if (result.ok) return result.generation;
-      throw new DocumentAuthorityError(
-        result.code === "authority_busy"
-          ? "authority_busy"
+      throw new DocumentMutationPolicyError(
+        result.code === "authority_head_busy"
+          ? "authority_head_busy"
           : result.code === "checkpoint_incomplete"
             ? "checkpoint_incomplete"
             : "invalid_mutation",
-        `Authority replacement failed: ${result.code}`,
+        `Durable authority head generation replacement failed: ${result.code}`,
       );
     },
   });
@@ -1082,17 +1085,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     eventSink: deps.eventSink,
     metaForOrigin,
     latestUpdateSeq,
-    readAuthorityGeneration: deps.readAuthorityGeneration,
+    readAuthorityHeadGeneration: deps.readAuthorityHeadGeneration,
     emitAgentEditInvariantViolation,
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
     offlineReconciliation: deps.offlineReconciliation,
   });
   deps.onWriterIngressBarrier?.(hocuspocusPersistence.writerIngressBarrier);
-  const authorityCallbacks =
-    deps.replaceAuthorityGeneration && deps.readAuthorityGeneration
+  const authorityHeadCallbacks =
+    deps.replaceAuthorityHeadGeneration && deps.readAuthorityHeadGeneration
       ? {
-          replace: deps.replaceAuthorityGeneration,
-          readGeneration: deps.readAuthorityGeneration,
+          replace: deps.replaceAuthorityHeadGeneration,
+          readGeneration: deps.readAuthorityHeadGeneration,
         }
       : null;
   const checkpoints = createCheckpointService({
@@ -1103,13 +1106,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     notices: deps.notices,
     model,
     codec,
-    ...(authorityCallbacks
+    ...(authorityHeadCallbacks
       ? {
-          authority: (documentId: DocumentId) =>
-            createDocumentAuthority({
-              readMutableAuthority: async () => ({
+          mutationPolicy: (documentId: DocumentId) =>
+            createDocumentMutationPolicy({
+              readMutationTarget: async () => ({
                 documentId,
-                generation: await authorityCallbacks.readGeneration(documentId),
+                generation: await authorityHeadCallbacks.readGeneration(documentId),
                 doc: await deps.coordinator.withDocument(documentId, async (doc) => doc),
               }),
               loadCheckpoint: async (checkpointId) => {
@@ -1124,19 +1127,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               },
               unresolvedSettlements: async () => 0,
               replaceGeneration: async (_checkpoint, expectedGeneration) =>
-                authorityCallbacks.replace({
+                authorityHeadCallbacks.replace({
                   documentId,
                   checkpointId: _checkpoint.checkpointId,
                   expectedGeneration,
                 }),
               disconnectGeneration: (generation) =>
                 hocuspocusPersistence.disconnectLiveGeneration(documentId, generation),
-              admitImmediate: unsupportedAuthorityOperation,
-              readFrozenCut: unsupportedAuthorityOperation,
-              readCurrentRevision: unsupportedAuthorityOperation,
-              lowerCertifiedMutation: unsupportedAuthorityOperation,
-              stagePush: unsupportedAuthorityOperation,
-              completePush: unsupportedAuthorityOperation,
+              admitImmediate: unsupportedMutationPolicyOperation,
+              readFrozenReplicationSource: unsupportedMutationPolicyOperation,
+              readCurrentRevision: unsupportedMutationPolicyOperation,
+              lowerCertifiedMutation: unsupportedMutationPolicyOperation,
+              stagePush: unsupportedMutationPolicyOperation,
+              completePush: unsupportedMutationPolicyOperation,
             }),
         }
       : {}),
@@ -2232,8 +2235,8 @@ function attributionFromMeta(meta: UpdateMeta): {
   return { originType: null, actorTurnId: null, actorUserId: null };
 }
 
-async function unsupportedAuthorityOperation(): Promise<never> {
-  throw new Error("Document authority strategy is unavailable in this production adapter");
+async function unsupportedMutationPolicyOperation(): Promise<never> {
+  throw new Error("Document mutation policy dependency is unavailable in this production adapter");
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

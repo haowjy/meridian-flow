@@ -21,7 +21,7 @@ function docWithText(value: string): Y.Doc {
   return doc;
 }
 
-function reservedAuthorityDoc(): Y.Doc {
+function documentWithReservedFacts(): Y.Doc {
   const doc = docWithText("seed");
   const nested = new Y.Array<unknown>();
   doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
@@ -213,7 +213,7 @@ describe("BranchCoordinator", () => {
 
   it("rejects reserved namespace deletion against the snapshot it would commit", async () => {
     const store = new MemoryBranchStore();
-    const branchDoc = reservedAuthorityDoc();
+    const branchDoc = documentWithReservedFacts();
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: branchDoc }));
     const roomDocument = materialize(storedBranch(store, "work"));
     const hostileClient = materialize(storedBranch(store, "work"));

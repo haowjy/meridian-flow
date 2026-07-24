@@ -1,6 +1,5 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
 import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
-import type { DocumentAuthorityId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -29,9 +28,9 @@ const { createDrizzleChangeTrailPersistence } = await import(
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
 const {
   createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthority,
-  replaceDocumentAuthorityGeneration,
-} = await import("../adapters/drizzle-document-authority.js");
+  readDocumentAuthorityHead,
+  replaceDocumentAuthorityHeadGeneration,
+} = await import("../adapters/drizzle-document-authority-head.js");
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
@@ -41,7 +40,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
-const { createDocumentAuthority } = await import("../domain/document-authority.js");
+const { createDocumentMutationPolicy } = await import("../domain/document-mutation-policy.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
   await import("../domain/provenance.js");
 
@@ -882,11 +881,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .orderBy(desc(schema.documentYjsCheckpoints.id))
         .limit(1);
       if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authority = await readDocumentAuthority(db, ALPHA_ID);
-      const replaced = await replaceDocumentAuthorityGeneration(db, {
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
       if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
       const rebased = await persistence.journal.materializeDestructiveProvenance?.({
@@ -976,11 +975,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityGeneration(db, {
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
-      expectedGeneration: authority.generation,
+      expectedGeneration: authorityHead.generation,
     });
     if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
     await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
@@ -992,7 +991,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
     let releaseBlocker!: () => void;
     let blockerReady!: () => void;
     const blockerRelease = new Promise<void>((resolve) => {
@@ -1024,20 +1023,22 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     }
 
     const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceDocumentAuthorityGeneration> | undefined;
+    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
     try {
       await waitForAdvisoryLockWaiters(1);
-      replacement = replaceDocumentAuthorityGeneration(db, {
+      replacement = replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
       await waitForAdvisoryLockWaiters(2);
     } finally {
       releaseBlocker();
       await blocker;
     }
-    if (!replacement) throw new Error("authority replacement did not enter the lock queue");
+    if (!replacement) {
+      throw new Error("durable authority head generation replacement did not enter the lock queue");
+    }
     const [, replaced] = await Promise.all([compact, replacement]);
     if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
     return authorityReplacementProbeResult(replaced.generation);
@@ -1176,11 +1177,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         upToSeq,
       ),
     );
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityGeneration(db, {
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
-      expectedGeneration: authority.generation,
+      expectedGeneration: authorityHead.generation,
     });
     if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
 
@@ -1508,12 +1509,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .from(schema.documentYjsCheckpoints)
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
-      if (!checkpoint) throw new Error("authority checkpoint is unavailable");
-      const authority = await readDocumentAuthority(db, ALPHA_ID);
-      return replaceDocumentAuthorityGeneration(db, {
+      if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      return replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
     },
     async attemptDivergentReplicationAdmission() {
@@ -1554,13 +1555,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       const before = Y.encodeStateAsUpdate(target);
       let journaled = false;
       try {
-        await createDocumentAuthority({
-          readMutableAuthority: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
-          readFrozenCut: async () => ({
+        await createDocumentMutationPolicy({
+          readMutationTarget: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
+          readFrozenReplicationSource: async () => ({
             cutId: "injectivity-cut",
             documentId: ALPHA_ID,
-            authorityId: "00000000-0000-4000-8000-000000000899" as DocumentAuthorityId,
-            generation: 1n,
+            sourceId: "00000000-0000-4000-8000-000000000899",
+            version: 1n,
             doc: source,
           }),
           admitImmediate: async ({ update }) => {
@@ -1578,7 +1579,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           completePush: async () => undefined,
         }).mutate({
           kind: "identityReplication",
-          sourceAuthorityCutId: "injectivity-cut",
+          sourceCutId: "injectivity-cut",
           plan: { kind: "wholeDocument" },
         });
         return { rejected: false, journaled, applied: true };

@@ -93,7 +93,7 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("does not compact a retired-generation suffix into restored authority", async () => {
+  it("does not compact a retired-generation suffix into the restored authority head", async () => {
     const harness = createHarness();
 
     await expect(harness.compactAfterAuthorityReplacement()).resolves.toEqual({
@@ -102,7 +102,7 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("serializes compaction with concurrent authority replacement", async () => {
+  it("serializes compaction with concurrent authority-head replacement", async () => {
     const harness = createHarness();
 
     await expect(harness.compactWhileAuthorityReplacementWaits()).resolves.toEqual({

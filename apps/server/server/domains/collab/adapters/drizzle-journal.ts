@@ -46,7 +46,10 @@ import {
   materializeProvenanceForDoc,
 } from "../domain/provenance.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
-import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
+import {
+  allocateDocumentAdmission,
+  readDocumentAuthorityHead,
+} from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
@@ -358,19 +361,19 @@ async function insertCheckpoint(
   reason: string,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
-  const authority = await readDocumentAuthority(db, documentId);
+  const authorityHead = await readDocumentAuthorityHead(db, documentId);
   const attributionManifest = await checkpointAttributionManifest(
     db,
     documentId,
     upToSeq,
-    authority,
+    authorityHead,
   );
   const [inserted] = await db
     .insert(documentYjsCheckpoints)
     .values({
       documentId: asDocumentId(documentId),
-      authorityId: authority.authorityId,
-      authorityGeneration: authority.generation,
+      authorityId: authorityHead.authorityId,
+      authorityGeneration: authorityHead.generation,
       attributionManifest,
       state: toBuffer(state),
       stateVector: toBuffer(stateVector),
@@ -418,14 +421,14 @@ async function appendUpdate(
   meta: UpdateMeta,
 ): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
-  const authority = await allocateDocumentAdmission(db, documentId);
+  const authorityHead = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
     .values({
       documentId: asDocumentId(documentId),
-      authorityId: authority.authorityId,
-      authorityGeneration: authority.generation,
-      admissionSequence: authority.admissionSequence,
+      authorityId: authorityHead.authorityId,
+      authorityGeneration: authorityHead.generation,
+      admissionSequence: authorityHead.admissionSequence,
       batchOrdinal: 0,
       updateData: toBuffer(update),
       originType: origin.originType,
@@ -447,7 +450,7 @@ async function checkpointAttributionManifest(
   db: JournalDb,
   documentId: string,
   upToSeq: number,
-  authority: { authorityId: DocumentAuthorityId; generation: bigint },
+  authorityHead: { authorityId: DocumentAuthorityId; generation: bigint },
 ): Promise<unknown> {
   const [checkpoint] = await db
     .select()
@@ -455,8 +458,8 @@ async function checkpointAttributionManifest(
     .where(
       and(
         eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-        eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-        eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+        eq(documentYjsCheckpoints.authorityId, authorityHead.authorityId),
+        eq(documentYjsCheckpoints.authorityGeneration, authorityHead.generation),
         lte(documentYjsCheckpoints.upToSeq, upToSeq),
       ),
     )
@@ -482,8 +485,8 @@ async function checkpointAttributionManifest(
     .where(
       and(
         eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
-        eq(documentYjsUpdates.authorityId, authority.authorityId),
-        eq(documentYjsUpdates.authorityGeneration, authority.generation),
+        eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+        eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
         lte(documentYjsUpdates.id, upToSeq),
       ),
     )
@@ -847,15 +850,15 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .values(
             entries.map((entry) => {
               const origin = parseOrigin(entry.meta);
-              const authority = admissions.get(entry.docId);
-              if (!authority) throw new Error("Missing allocated document admission");
+              const authorityHead = admissions.get(entry.docId);
+              if (!authorityHead) throw new Error("Missing allocated document admission");
               const batchOrdinal = batchOrdinals.get(entry.docId) ?? 0;
               batchOrdinals.set(entry.docId, batchOrdinal + 1);
               return {
                 documentId: asDocumentId(entry.docId),
-                authorityId: authority.authorityId,
-                authorityGeneration: authority.generation,
-                admissionSequence: authority.admissionSequence,
+                authorityId: authorityHead.authorityId,
+                authorityGeneration: authorityHead.generation,
+                admissionSequence: authorityHead.admissionSequence,
                 batchOrdinal,
                 updateData: toBuffer(entry.update),
                 originType: origin.originType,
@@ -959,7 +962,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
     async materializeDestructiveProvenance(input) {
       const readDb = currentDrizzleDb(db as Database) as JournalDb;
-      const authority = await readDocumentAuthority(readDb, input.docId);
+      const authorityHead = await readDocumentAuthorityHead(readDb, input.docId);
       const rows = await readDb
         .select({
           authorityId: documentYjsUpdates.authorityId,
@@ -975,8 +978,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         .where(
           and(
             eq(documentYjsUpdates.documentId, asDocumentId(input.docId)),
-            eq(documentYjsUpdates.authorityId, authority.authorityId),
-            eq(documentYjsUpdates.authorityGeneration, authority.generation),
+            eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+            eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
           ),
         )
         .orderBy(
@@ -995,8 +998,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         .where(
           and(
             eq(documentYjsCheckpoints.documentId, asDocumentId(input.docId)),
-            eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-            eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+            eq(documentYjsCheckpoints.authorityId, authorityHead.authorityId),
+            eq(documentYjsCheckpoints.authorityGeneration, authorityHead.generation),
           ),
         )
         .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
@@ -1188,16 +1191,16 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           ? await latestCheckpointAtOrBefore(readDb, docId, opts.until)
           : await latestCheckpoint(readDb, docId)
         : await reconstructionCheckpoint(readDb, docId, opts.until);
-      const authority = checkpoint
+      const authorityHead = checkpoint
         ? {
             authorityId: checkpoint.authorityId,
             generation: checkpoint.authorityGeneration,
           }
-        : await readDocumentAuthority(readDb, docId);
+        : await readDocumentAuthorityHead(readDb, docId);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-        eq(documentYjsUpdates.authorityId, authority.authorityId),
-        eq(documentYjsUpdates.authorityGeneration, authority.generation),
+        eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+        eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
         gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
       ];
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
@@ -1252,15 +1255,15 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const authority = await readDocumentAuthority(txDb, docId);
+        const authorityHead = await readDocumentAuthorityHead(txDb, docId);
         const [checkpoint] = await txDb
           .select()
           .from(documentYjsCheckpoints)
           .where(
             and(
               eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
-              eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-              eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+              eq(documentYjsCheckpoints.authorityId, authorityHead.authorityId),
+              eq(documentYjsCheckpoints.authorityGeneration, authorityHead.generation),
             ),
           )
           .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
@@ -1275,8 +1278,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .where(
             and(
               eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-              eq(documentYjsUpdates.authorityId, authority.authorityId),
-              eq(documentYjsUpdates.authorityGeneration, authority.generation),
+              eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+              eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
               gt(documentYjsUpdates.id, checkpointSeq),
             ),
           )
@@ -1306,8 +1309,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             .where(
               and(
                 eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-                eq(documentYjsUpdates.authorityId, authority.authorityId),
-                eq(documentYjsUpdates.authorityGeneration, authority.generation),
+                eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+                eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
                 lte(documentYjsUpdates.id, compactedThroughSeq),
               ),
             );
