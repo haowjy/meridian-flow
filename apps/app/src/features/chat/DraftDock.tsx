@@ -35,7 +35,9 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const applyDraft = useCallback(
     (row: DockRow) => {
-      return controller.accept(row.documentId, row.draft.draftId);
+      return controller.disposeDrafts("apply", [
+        { documentId: row.documentId, draftId: row.draft.draftId },
+      ]);
     },
     [controller],
   );

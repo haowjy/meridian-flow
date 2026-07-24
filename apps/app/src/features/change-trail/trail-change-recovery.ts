@@ -83,6 +83,7 @@ export function useTrailForwardAction(input: {
       (command.outcome.kind === "anchor-unavailable" ||
         command.outcome.kind === "retry-exhausted"));
   const canExecute = recovery.canExecute && !applied && !anchorUnavailable;
+  const canCopy = anchorUnavailable && Boolean(recovery.body);
 
   async function execute(): Promise<TrailRecoveryOutcome> {
     if (!input.change) return { kind: "failed" };
@@ -120,6 +121,7 @@ export function useTrailForwardAction(input: {
   return {
     ...recovery,
     canExecute,
+    canCopy,
     applied,
     anchorUnavailable,
     isPending: command.kind === "pending",
