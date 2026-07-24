@@ -20,6 +20,13 @@ export type ResolvedEdit = { documentId: string; file: string } & (
       semanticLowering?: "prosemirror";
     }
   | {
+      kind: "textRanges";
+      block: BlockRef;
+      replacements: Array<{ span: ResolvedSpan; newText: string }>;
+      /** Semantic projection of the exact replacement window; never used to drive mutation. */
+      output: string;
+    }
+  | {
       kind: "insert";
       after?: BlockRef;
       newText: string;
