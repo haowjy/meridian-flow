@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-- `apps/server`, `apps/app`: denied change-trail document reads no longer
-  disclose retained titles or prose; authorized deleted anchors remain readable
-  through an explicit state (#343).
+- `apps/server`, `apps/app`: denied change-trail document access no longer
+  discloses retained titles/prose or permits forward actions; authorized deleted
+  anchors remain readable through an explicit state (#343).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).
