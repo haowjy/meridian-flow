@@ -277,7 +277,9 @@ function lowerFindMatches(
   if (plainTextEdits) return { ok: true, edits: plainTextEdits };
 
   const edits: ResolvedEdit[] = [];
-  for (const group of groupFindMatches(matches)) {
+  // Structural groups can replace their predecessor block. Lower from the end
+  // so every insert anchor remains live until its group executes.
+  for (const group of groupFindMatches(matches).reverse()) {
     const groupSource = group.elements
       .map((element) => serializeBlockBody(ctx, element))
       .join("\n\n");

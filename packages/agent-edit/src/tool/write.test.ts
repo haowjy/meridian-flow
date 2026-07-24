@@ -1454,6 +1454,19 @@ describe("write tool dispatch", () => {
     expect(block ? model.getText(block) : undefined).toBe(expected);
   });
 
+  it("replaces adjacent structural find-all groups without stale predecessor anchors", async () => {
+    const ctx = harness({ "chapter.md": "cat\n\ncat" });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const replaced = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "# kitten", find: "cat", all: true },
+      context,
+    );
+
+    expectOutcome(replaced, "success");
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe("# kitten\n\n# kitten\n");
+  });
+
   it("routes single-block find replacements that change block type through structural reconcile", async () => {
     const ctx = harness({ "chapter.md": "Opening line.\n\nTail." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
