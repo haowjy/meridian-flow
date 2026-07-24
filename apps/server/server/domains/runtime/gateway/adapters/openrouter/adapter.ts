@@ -34,11 +34,7 @@ async function enrichResult(
   baseUrl: string,
   request: GenerateRequest,
 ) {
-  try {
-    return await enrichOpenRouterResult(result, apiKey, baseUrl, enrichSignal(request));
-  } catch {
-    return result;
-  }
+  return enrichOpenRouterResult(result, apiKey, baseUrl, enrichSignal(request));
 }
 function openRouterHeaders(config: ProviderConfig): Record<string, string> {
   return {

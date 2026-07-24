@@ -79,16 +79,12 @@ export async function settleOpenRouterCancelledResult(
   if (!result || !shouldPersistOpenRouterCancelledResult(result)) return null;
 
   if (needsOpenRouterReconciliation(result) && input.apiKey) {
-    try {
-      result = await enrichOpenRouterResult(
-        result,
-        input.apiKey,
-        input.baseUrl,
-        input.signal ?? createReconcileSignal(),
-      );
-    } catch {
-      // Enrichment is best effort; persisting the request id is still useful for audit/replay.
-    }
+    result = await enrichOpenRouterResult(
+      result,
+      input.apiKey,
+      input.baseUrl,
+      input.signal ?? createReconcileSignal(),
+    );
   }
 
   return { result: withOpenRouterGenerationId(result), persist: true };

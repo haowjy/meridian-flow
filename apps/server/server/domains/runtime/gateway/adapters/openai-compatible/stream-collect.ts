@@ -182,9 +182,29 @@ export function* eventsFromOpenAIChunk(
   },
   acc: StreamAccumulator,
 ): Generator<StreamEvent> {
+  if (chunk.usage) {
+    // OpenAI-compatible providers deliver cumulative usage on the final chunk
+    // (or a trailing usage-only chunk) when stream_options.include_usage is
+    // set. Map prompt/completion tokens and optional reasoning tokens into
+    // Meridian Usage. The SDK docs warn: interrupted streams may never deliver
+    // this chunk.
+    const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
+    const cacheReadTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
+    const usage: Usage = {
+      inputTokens: chunk.usage.prompt_tokens ?? 0,
+      outputTokens: chunk.usage.completion_tokens ?? 0,
+      ...(reasoningTokens ? { reasoningTokens } : {}),
+      ...(cacheReadTokens ? { cacheReadTokens } : {}),
+    };
+    assertValidUsage(usage);
+    applyUsage(acc, usage);
+    yield { type: "usage", usage };
+  }
+
   // This adapter consumes only the first streamed choice. The gateway API models
   // one assistant continuation per request, and request mapping never asks for
-  // multiple choices.
+  // multiple choices. Usage-only terminal chunks intentionally continue through
+  // the provider-neutral usage path above before this choice-specific exit.
   const choice = chunk.choices?.[0];
   if (!choice) return;
 
@@ -257,25 +277,6 @@ export function* eventsFromOpenAIChunk(
         }
       }
     }
-  }
-
-  if (chunk.usage) {
-    // OpenAI-compatible providers deliver cumulative usage on the final chunk
-    // (or a trailing usage-only chunk) when stream_options.include_usage is
-    // set. Map prompt/completion tokens and optional reasoning tokens into
-    // Meridian Usage. The SDK docs warn: interrupted streams may never deliver
-    // this chunk.
-    const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
-    const cacheReadTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
-    const usage: Usage = {
-      inputTokens: chunk.usage.prompt_tokens ?? 0,
-      outputTokens: chunk.usage.completion_tokens ?? 0,
-      ...(reasoningTokens ? { reasoningTokens } : {}),
-      ...(cacheReadTokens ? { cacheReadTokens } : {}),
-    };
-    assertValidUsage(usage);
-    applyUsage(acc, usage);
-    yield { type: "usage", usage };
   }
 
   if (choice.finish_reason) {
