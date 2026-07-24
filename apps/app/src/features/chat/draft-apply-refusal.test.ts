@@ -1,7 +1,7 @@
 /** Contract-level coverage for DraftDock refusal normalization. */
 import type { DraftApplyRefusal } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
-import { draftApplyRefusalFromResponse } from "./draft-apply-refusal";
+import { draftApplyOutcome } from "./draft-review-session";
 
 describe("draftApplyRefusalFromResponse", () => {
   it("renders protected resurrection evidence from the real server refusal contract", () => {
@@ -26,9 +26,13 @@ describe("draftApplyRefusalFromResponse", () => {
       ],
     };
 
-    expect(draftApplyRefusalFromResponse(response)).toEqual({
-      reason: "protected_resurrection",
-      passages: [{ body: "Deleted by the writer." }],
+    expect(draftApplyOutcome("draft", response).command).toEqual({
+      kind: "conflict",
+      conflictedBlocks: ["block-1"],
+      refusal: {
+        reason: "protected_resurrection",
+        passages: [{ body: "Deleted by the writer." }],
+      },
     });
   });
 });

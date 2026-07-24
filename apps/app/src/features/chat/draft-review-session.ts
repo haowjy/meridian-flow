@@ -1,6 +1,159 @@
-/** draft-review-controller-transitions — pure state machine for draft review sessions. */
-import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
-import { type DraftApplyRefusal, draftApplyRefusalFromResponse } from "./draft-apply-refusal";
+/** One command/state policy for draft review selection and disposition. */
+import type {
+  DraftAcceptResponse,
+  DraftApplyRefusal as DraftApplyRefusalResponse,
+} from "@meridian/contracts/drafts";
+
+export type DraftDispositionTarget =
+  | { kind: "apply-draft"; documentId: string; draftId: string }
+  | { kind: "discard-draft"; documentId: string; draftId: string }
+  | {
+      kind: "apply-operation" | "discard-operation";
+      documentId: string;
+      draftId: string;
+      operationId: string;
+    }
+  | { kind: "undo-operation"; documentId: string; draftId: string; writeId: string }
+  | { kind: "batch"; mode: "apply" | "discard"; count: number };
+
+export type DraftDispositionState =
+  | { phase: "idle" }
+  | {
+      phase: "acquiring" | "mutating" | "settling";
+      target: DraftDispositionTarget;
+    };
+
+export type DraftDispositionReservation = symbol;
+
+/**
+ * The session's synchronous disposition authority. Reservation happens before
+ * any preview read or mutation promise is created, so every command observes
+ * the same lock even before React can render its pending state.
+ */
+export class DraftDispositionLock {
+  private state: DraftDispositionState = { phase: "idle" };
+  private owner: DraftDispositionReservation | null = null;
+  private readonly listeners = new Set<() => void>();
+
+  getSnapshot = (): DraftDispositionState => this.state;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  reserve(target: DraftDispositionTarget): DraftDispositionReservation | null {
+    if (this.state.phase !== "idle") return null;
+    const reservation = Symbol(target.kind);
+    this.owner = reservation;
+    this.publish({ phase: "acquiring", target });
+    return reservation;
+  }
+
+  advance(reservation: DraftDispositionReservation, phase: "mutating" | "settling"): boolean {
+    if (this.owner !== reservation || this.state.phase === "idle") return false;
+    this.publish({ phase, target: this.state.target });
+    return true;
+  }
+
+  retarget(reservation: DraftDispositionReservation, target: DraftDispositionTarget): boolean {
+    if (this.owner !== reservation) return false;
+    this.publish({ phase: "acquiring", target });
+    return true;
+  }
+
+  release(reservation: DraftDispositionReservation): boolean {
+    if (this.owner !== reservation) return false;
+    this.owner = null;
+    this.publish({ phase: "idle" });
+    return true;
+  }
+
+  private publish(state: DraftDispositionState): void {
+    this.state = state;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+export type DraftCommandOutcome =
+  | { kind: "blocked" }
+  | { kind: "applied" }
+  | { kind: "partial-applied"; writeId: string }
+  | { kind: "stale"; draftId: string }
+  | {
+      kind: "conflict";
+      conflictedBlocks: string[];
+      refusal: DraftApplyRefusal;
+    }
+  | { kind: "discarded" }
+  | { kind: "discard-settling"; draftId: string; operationId: string }
+  | { kind: "undone" }
+  | { kind: "failed"; code: InlineReviewMessageCode };
+
+export type DraftApplyScope = "draft" | "operation";
+
+export type DraftApplyPreview = {
+  documentId: string;
+  draftId: string;
+  operationIds: readonly string[];
+  draftRevisionToken: number;
+  branchId?: string;
+};
+
+type LatestDraftPreviewRevision = {
+  operationIds: readonly string[];
+  draftRevisionToken: number;
+  branchId?: string;
+};
+
+export type DraftApplyRequest = {
+  draftId: string;
+  operationIds: string[];
+  draftRevisionToken: number;
+  branchId?: string;
+};
+
+export type DraftApplyOutcome = {
+  command: Extract<
+    DraftCommandOutcome,
+    { kind: "applied" | "partial-applied" | "stale" | "conflict" }
+  >;
+  message: InlineReviewMessage | null;
+  refreshDraftId: string | null;
+  materializedDocument: boolean;
+};
+
+export function acquireDraftApplyRequest(input: {
+  scope: "draft";
+  preview: DraftApplyPreview;
+}): DraftApplyRequest;
+export function acquireDraftApplyRequest(input: {
+  scope: "operation";
+  draftId: string;
+  operationId: string;
+  loadLatestPreview: () => Promise<LatestDraftPreviewRevision>;
+}): Promise<DraftApplyRequest>;
+export function acquireDraftApplyRequest(
+  input:
+    | { scope: "draft"; preview: DraftApplyPreview }
+    | {
+        scope: "operation";
+        draftId: string;
+        operationId: string;
+        loadLatestPreview: () => Promise<LatestDraftPreviewRevision>;
+      },
+): DraftApplyRequest | Promise<DraftApplyRequest> {
+  if (input.scope === "operation") {
+    return input.loadLatestPreview().then((preview) =>
+      requestFromPreview({
+        ...preview,
+        draftId: input.draftId,
+        operationIds: [input.operationId],
+      }),
+    );
+  }
+  return requestFromPreview(input.preview);
+}
 
 export type DraftReviewSelection = {
   documentId: string;
@@ -42,6 +195,84 @@ export type InlineReviewMessage = {
   writeId?: string;
 };
 
+export type DraftApplyRefusal = {
+  reason: "stale_draft" | "unsynced_live_edits" | "protected_resurrection";
+  passages: Array<{ body: string }>;
+};
+
+/** Interpret a server Apply response exactly once for every Apply surface. */
+export function draftApplyOutcome(
+  scope: DraftApplyScope,
+  response: DraftAcceptResponse,
+): DraftApplyOutcome {
+  const refreshDraftId = response.status === "stale_draft" ? response.draftId : null;
+  const materializedDocument =
+    response.status === "applied" ||
+    (scope === "operation" && response.status === "partial_applied");
+  if (response.status === "applied") {
+    return {
+      command: { kind: "applied" },
+      message: null,
+      refreshDraftId,
+      materializedDocument,
+    };
+  }
+  if (response.status === "partial_applied") {
+    return {
+      command: { kind: "partial-applied", writeId: response.writeId },
+      message: scope === "operation" ? { code: "change-applied", writeId: response.writeId } : null,
+      refreshDraftId,
+      materializedDocument,
+    };
+  }
+  if (response.status === "stale_draft") {
+    return {
+      command: { kind: "stale", draftId: response.draftId },
+      message: scope === "operation" ? { code: "changes-moved-refreshed" } : null,
+      refreshDraftId,
+      materializedDocument,
+    };
+  }
+  return {
+    command: {
+      kind: "conflict",
+      conflictedBlocks: response.conflictedBlocks,
+      refusal: draftApplyRefusalFromResponse(response),
+    },
+    message: null,
+    refreshDraftId,
+    materializedDocument,
+  };
+}
+
+function requestFromPreview(preview: Omit<DraftApplyPreview, "documentId">): DraftApplyRequest {
+  return {
+    draftId: preview.draftId,
+    ...(preview.branchId ? { branchId: preview.branchId } : {}),
+    draftRevisionToken: preview.draftRevisionToken,
+    operationIds: [...preview.operationIds],
+  };
+}
+
+function draftApplyRefusalFromResponse(response: DraftApplyRefusalResponse): DraftApplyRefusal {
+  const protectedResurrection = response.conflicts.some(
+    (conflict) => conflict.effect === "resurrection",
+  );
+  return {
+    reason: protectedResurrection ? "protected_resurrection" : "unsynced_live_edits",
+    passages: response.conflicts.flatMap((conflict) => {
+      const captured =
+        conflict.effect === "resurrection" ? conflict.captured.base : conflict.captured.live;
+      return captured ? [{ body: bodyFromHashline(captured) }] : [];
+    }),
+  };
+}
+
+function bodyFromHashline(value: string): string {
+  const separator = value.indexOf("|");
+  return separator < 0 ? value : value.slice(separator + 1).replace(/^\n/, "");
+}
+
 export type DraftReviewSurface =
   | { kind: "none" }
   | ({ kind: "inline"; previewIdentity?: string } & DraftReviewSelection);
@@ -49,16 +280,8 @@ export type DraftReviewSurface =
 export type DraftReviewState = {
   surface: DraftReviewSurface;
   staleDraft: DraftReviewSelection | null;
-  /** Operation ids currently settling, keyed by draft id so one draft cannot block another. */
+  /** Operation ids awaiting their query-backed preview settle signal. */
   pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
-  /** The draft currently running a reject operation; rejects serialize only inside that draft. */
-  activeDiscardDraftId: string | null;
-  /**
-   * The operation whose per-card Apply is in flight — from the click through the
-   * mutation's terminal response. Drives the "disable both verbs on the in-flight
-   * card only" affordance; only one accept runs at a time.
-   */
-  acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   applyRefusal: DraftApplyRefusal | null;
@@ -70,7 +293,7 @@ export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "applyStarted" }
-  | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
+  | { type: "applySucceeded"; documentId: string; draftId: string; outcome: DraftApplyOutcome }
   | { type: "operationAcceptStarted"; operationId: string }
   | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
@@ -87,8 +310,6 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
   staleDraft: null,
   pendingDiscardIdsByDraft: new Map(),
-  activeDiscardDraftId: null,
-  acceptingOperationId: null,
   inlineReviewMessage: null,
   inlineDiscardError: null,
   applyRefusal: null,
@@ -115,25 +336,23 @@ export function draftReviewReducer(
     case "applySucceeded":
       return {
         ...stateAfterAcceptResult(state, action),
-        acceptingOperationId: null,
-        applyRefusal: draftApplyRefusalFromResponse(action.response),
+        applyRefusal:
+          action.outcome.command.kind === "conflict"
+            ? action.outcome.command.refusal
+            : action.outcome.command.kind === "stale"
+              ? { reason: "stale_draft", passages: [] }
+              : null,
       };
     case "operationAcceptStarted":
-      // A start can't preempt an accept already in flight — the in-flight one
-      // owns `acceptingOperationId` until it terminates. (The controller also
-      // guards on the mutation's pending state; this keeps the reducer honest
-      // if a second start ever reaches it.)
-      if (state.acceptingOperationId) return state;
       return {
         ...state,
-        acceptingOperationId: action.operationId,
         inlineReviewMessage: null,
         applyRefusal: null,
       };
     case "operationAcceptSucceeded":
-      return { ...state, acceptingOperationId: null, inlineReviewMessage: action.message };
+      return { ...state, inlineReviewMessage: action.message };
     case "operationAcceptFailed":
-      return { ...state, acceptingOperationId: null, inlineReviewMessage: action.message };
+      return { ...state, inlineReviewMessage: action.message };
     case "operationUndoAcceptSucceeded":
     case "operationUndoAcceptFailed":
       return { ...state, inlineReviewMessage: action.message };
@@ -146,7 +365,6 @@ export function draftReviewReducer(
           action.draftId,
           action.operationId,
         ),
-        activeDiscardDraftId: action.draftId,
       };
     case "discardSettled":
       return settleDiscard(state, action.draftId, action.operationId, null);
@@ -170,20 +388,6 @@ export function draftReviewReducer(
     default:
       return state;
   }
-}
-
-export function acceptIsBlocked(input: {
-  isPending: boolean;
-  isInlineDiscardPending: boolean;
-  isOperationAccepting?: boolean;
-  isOperationUndoing?: boolean;
-}): boolean {
-  return (
-    input.isPending ||
-    input.isInlineDiscardPending ||
-    input.isOperationAccepting === true ||
-    input.isOperationUndoing === true
-  );
 }
 
 export function inlineDiscardIsPending(state: DraftReviewState, draftId?: string | null): boolean {
@@ -219,12 +423,8 @@ export function pendingDiscardIdsSettledByPreview(
   return pendingDiscardIdsMissingFromModel(state, input.draftId, input.operationIds);
 }
 
-export function discardCanStart(state: DraftReviewState, draftId: string): boolean {
-  return state.activeDiscardDraftId == null || state.activeDiscardDraftId !== draftId;
-}
-
 export function inlineReviewFromState(state: DraftReviewState): InlineDraftReview | null {
-  return state.surface.kind === "inline" ? selectionFromSurface(state.surface) : null;
+  return state.surface.kind === "inline" ? state.surface : null;
 }
 
 function inlineSurfaceForEnter(
@@ -237,25 +437,25 @@ function inlineSurfaceForEnter(
 
 function stateAfterAcceptResult(
   state: DraftReviewState,
-  input: { documentId: string; draftId: string; response: DraftAcceptResponse },
+  input: { documentId: string; draftId: string; outcome: DraftApplyOutcome },
 ): DraftReviewState {
-  const { documentId, draftId, response } = input;
-  if (response.status === "stale_draft") {
+  const { documentId, draftId, outcome } = input;
+  if (outcome.command.kind === "stale") {
     return {
       ...state,
-      surface: { kind: "inline", documentId, draftId: response.draftId },
-      staleDraft: { documentId, draftId: response.draftId },
+      surface: { kind: "inline", documentId, draftId: outcome.command.draftId },
+      staleDraft: { documentId, draftId: outcome.command.draftId },
     };
   }
-  if (response.status === "partial_applied") {
+  if (outcome.command.kind === "partial-applied") {
     return { ...state, staleDraft: null };
   }
-  if (response.status === "concurrent_conflict") {
+  if (outcome.command.kind === "conflict") {
     const concurrentConflicts = new Map(state.concurrentConflicts);
     concurrentConflicts.set(reviewSelectionKey({ documentId, draftId }), {
       documentId,
       draftId,
-      conflictedBlocks: response.conflictedBlocks,
+      conflictedBlocks: outcome.command.conflictedBlocks,
     });
     return {
       ...state,
@@ -291,7 +491,8 @@ function stateAfterInlineModelAvailable(
     surfaceMatchesDraft(state.surface, action) && state.surface.kind === "inline"
       ? state.surface.previewIdentity
       : undefined;
-  if (!priorIdentity || priorIdentity === action.identity) {
+  if (priorIdentity === action.identity) return state;
+  if (!priorIdentity) {
     return { ...state, surface: nextSurface };
   }
   // A new server preview identity is the explicit re-review transition: the
@@ -315,7 +516,6 @@ function reviewSelectionKey(selection: DraftReviewSelection): string {
 function clearInlineState(state: DraftReviewState): DraftReviewState {
   return {
     ...state,
-    acceptingOperationId: null,
     inlineReviewMessage: null,
     inlineDiscardError: null,
   };
@@ -334,14 +534,8 @@ function settleDiscard(
       draftId,
       operationId,
     ),
-    activeDiscardDraftId:
-      state.activeDiscardDraftId === draftId ? null : state.activeDiscardDraftId,
     inlineDiscardError: error,
   };
-}
-
-function selectionFromSurface(surface: Extract<DraftReviewSurface, { kind: "inline" }>) {
-  return { documentId: surface.documentId, draftId: surface.draftId };
 }
 
 function surfaceMatchesDraft(

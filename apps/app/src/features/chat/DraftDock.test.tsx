@@ -1,9 +1,8 @@
 /**
  * useDraftDock behavior: the disposition lock (busy off isDisposing, not
- * isPending) and the bulk-discard pump draining a captured snapshot even
- * when the work-drafts query stays stale.
+ * isPending) and delegation of bulk commands to the review session.
  */
-import { act, useEffect, useMemo, useRef, useState } from "react";
+import { act, useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -42,6 +41,7 @@ type ControllerStub = {
   isDisposing: boolean;
   accept: ReturnType<typeof vi.fn>;
   reject: ReturnType<typeof vi.fn>;
+  disposeDrafts: ReturnType<typeof vi.fn>;
   needsRereview: boolean;
   applyRefusal: null;
 };
@@ -49,17 +49,16 @@ type ControllerStub = {
 const harnessRef: {
   groups: ThreadDraftGroup[];
   dock: { isBusy: boolean; needsRereview: boolean; startDiscardAll: () => void } | null;
-  rejectCalls: string[];
   controller: ControllerStub;
 } = {
   groups: [],
   dock: null,
-  rejectCalls: [],
   controller: {
     isPending: false,
     isDisposing: false,
     accept: vi.fn(),
     reject: vi.fn(),
+    disposeDrafts: vi.fn(),
     needsRereview: false,
     applyRefusal: null,
   },
@@ -90,50 +89,15 @@ function DockHarness() {
   return null;
 }
 
-/** Reject flips isPending for a tick so the pump has to wait it out per card. */
-function PumpHarness() {
-  const [isPending, setIsPending] = useState(false);
-  const rejectCallsRef = useRef<string[]>([]);
-  harnessRef.controller = useMemo(
-    () => ({
-      isPending,
-      isDisposing: isPending,
-      accept: vi.fn(),
-      reject: vi.fn(async (_documentId: string, draftId: string) => {
-        rejectCallsRef.current.push(draftId);
-        setIsPending(true);
-        await Promise.resolve();
-        setIsPending(false);
-      }),
-      needsRereview: false,
-      applyRefusal: null,
-    }),
-    [isPending],
-  );
-  const dock = useDraftDock({ generating: false });
-  useEffect(() => {
-    harnessRef.dock = dock;
-    harnessRef.rejectCalls = rejectCallsRef.current;
-  });
-  return null;
-}
-
-async function flushMicrotasks() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
-
 beforeEach(() => {
   harnessRef.groups = [];
   harnessRef.dock = null;
-  harnessRef.rejectCalls = [];
   harnessRef.controller = {
     isPending: false,
     isDisposing: false,
     accept: vi.fn(),
     reject: vi.fn(),
+    disposeDrafts: vi.fn(async () => []),
     needsRereview: false,
     applyRefusal: null,
   };
@@ -218,20 +182,19 @@ describe("useDraftDock disposition lock", () => {
   });
 });
 
-describe("useDraftDock bulk discard pump", () => {
-  it("discards every captured pending draft even when the work-drafts query stays stale", async () => {
+describe("useDraftDock bulk disposition", () => {
+  it("hands one captured draft snapshot to the session command", async () => {
     harnessRef.groups = [draftGroup("doc-a", "draft-a"), draftGroup("doc-b", "draft-b")];
 
-    await withReactRoot(<PumpHarness />, async () => {
+    await withReactRoot(<DockHarness />, async () => {
       await act(async () => {
         harnessRef.dock?.startDiscardAll();
       });
 
-      for (let attempt = 0; attempt < 8 && harnessRef.rejectCalls.length < 2; attempt += 1) {
-        await flushMicrotasks();
-      }
-
-      expect(harnessRef.rejectCalls).toEqual(["draft-a", "draft-b"]);
+      expect(harnessRef.controller.disposeDrafts).toHaveBeenCalledWith("discard", [
+        { documentId: "doc-a", draftId: "draft-a" },
+        { documentId: "doc-b", draftId: "draft-b" },
+      ]);
     });
   });
 });

@@ -170,23 +170,6 @@ export function DraftReviewProvider({
     };
   }, [activeEditorDocumentId, queryClient, threadId]);
 
-  useEffect(() => {
-    const inline = controller.inlineReview;
-    if (!projectId || !workId || !inline) return;
-    const draft = groups
-      .flatMap((group) => group.drafts)
-      .find((candidate) => candidate.draftId === inline.draftId);
-    if (draft?.status !== "active") return;
-    void queryClient.invalidateQueries({
-      queryKey: projectQueryKeys.workDraftPreview(
-        projectId,
-        workId,
-        inline.documentId,
-        inline.draftId,
-      ),
-    });
-  }, [controller.inlineReview, groups, projectId, queryClient, workId]);
-
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,

@@ -1,7 +1,7 @@
 /** Behavioral contract for the shared Apply disposition layer. */
 import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
 import { describe, expect, it, vi } from "vitest";
-import { acquireDraftApplyRequest, dispositionForDraftApply } from "./draft-apply-disposition";
+import { acquireDraftApplyRequest, draftApplyOutcome } from "./draft-review-session";
 
 describe("draft Apply disposition", () => {
   it.each([
@@ -10,8 +10,9 @@ describe("draft Apply disposition", () => {
   ] as const)("routes terminal %s Apply responses through the shared draft transition", (scope) => {
     const response: DraftAcceptResponse = { status: "applied", draftId: "draft-1" };
 
-    expect(dispositionForDraftApply(scope, response)).toEqual({
-      transition: { kind: "draft", response },
+    expect(draftApplyOutcome(scope, response)).toEqual({
+      command: { kind: "applied" },
+      message: null,
       refreshDraftId: null,
       materializedDocument: true,
     });
@@ -24,11 +25,9 @@ describe("draft Apply disposition", () => {
       writeId: "write-1",
     };
 
-    expect(dispositionForDraftApply("operation", response)).toEqual({
-      transition: {
-        kind: "operation",
-        message: { code: "change-applied", writeId: "write-1" },
-      },
+    expect(draftApplyOutcome("operation", response)).toEqual({
+      command: { kind: "partial-applied", writeId: "write-1" },
+      message: { code: "change-applied", writeId: "write-1" },
       refreshDraftId: null,
       materializedDocument: true,
     });
@@ -41,16 +40,15 @@ describe("draft Apply disposition", () => {
       draftRevisionToken: 2,
     };
 
-    expect(dispositionForDraftApply("operation", response)).toEqual({
-      transition: {
-        kind: "operation",
-        message: { code: "changes-moved-refreshed" },
-      },
+    expect(draftApplyOutcome("operation", response)).toEqual({
+      command: { kind: "stale", draftId: "draft-2" },
+      message: { code: "changes-moved-refreshed" },
       refreshDraftId: "draft-2",
       materializedDocument: false,
     });
-    expect(dispositionForDraftApply("draft", response)).toEqual({
-      transition: { kind: "draft", response },
+    expect(draftApplyOutcome("draft", response)).toEqual({
+      command: { kind: "stale", draftId: "draft-2" },
+      message: null,
       refreshDraftId: "draft-2",
       materializedDocument: false,
     });

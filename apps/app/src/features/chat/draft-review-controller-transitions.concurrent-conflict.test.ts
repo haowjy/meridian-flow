@@ -2,9 +2,10 @@
 import { describe, expect, it } from "vitest";
 import {
   conflictForSelection,
+  draftApplyOutcome,
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
-} from "./draft-review-controller-transitions";
+} from "./draft-review-session";
 
 describe("draft review concurrent conflict", () => {
   it("keeps the draft pending in needs-re-review state", () => {
@@ -18,12 +19,12 @@ describe("draft review concurrent conflict", () => {
       type: "applySucceeded",
       documentId: "document-1",
       draftId: "draft-1",
-      response: {
+      outcome: draftApplyOutcome("draft", {
         status: "concurrent_conflict",
         reason: "draft_base_divergence",
         conflictedBlocks: ["block-a"],
         conflicts: [],
-      },
+      }),
     });
 
     expect(conflicted.surface).toMatchObject({ kind: "inline", draftId: "draft-1" });
