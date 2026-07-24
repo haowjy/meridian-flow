@@ -6,9 +6,9 @@
   reversal, effective-read, projection, and thread-peer services from explicit
   production or in-memory adapters instead of hiding feature fallbacks in one
   facade closure.
-- `apps/server`: ordinary collab writes and completed branch pushes now share one
-  document projection/activity adapter with explicit thread, work, and project
-  selection rules.
+- `apps/server`: ordinary collab writes retain independent activity/projection
+  settlement, while completed branch pushes keep projection and activity inside
+  the fenced settlement transaction.
 - `apps/server`: whole, selective, and companion branch pushes now share one
   candidate-batch pipeline and required persistence ports without changing
   selective error identity, empty companion results, or whole-only notice

@@ -105,17 +105,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("touches thread, work, project activity and updates the markdown projection", async () => {
-      await createDrizzleDocumentProjectionEffects(db).apply({
+      const effects = createDrizzleDocumentProjectionEffects(db);
+      await effects.touchDocumentActivity({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        at: NOW,
+      });
+      await effects.updateProjection({
         documentId: DOC_ID,
         markdown: "fresh projection",
         at: NOW,
-        threadDocuments: { kind: "thread", threadId: THREAD_ID },
-        work: { kind: "document_scope" },
-        project: {
-          kind: "document_scope",
-          includeWorkProject: true,
-          activeDocumentsOnly: false,
-        },
       });
 
       const [threadDocument] = await db

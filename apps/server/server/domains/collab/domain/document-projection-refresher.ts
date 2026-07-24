@@ -28,19 +28,14 @@ export type DocumentWriteHookRunner = (
 export function createProjectionEffectsDocumentWriteHook(
   effects: DocumentProjectionEffects,
 ): DocumentWriteHook {
-  return ({ documentId, threadId, markdown, at }) =>
-    effects.apply({
-      documentId,
-      markdown,
-      at,
-      threadDocuments: threadId ? { kind: "thread", threadId } : { kind: "none" },
-      work: { kind: "document_scope" },
-      project: {
-        kind: "document_scope",
-        includeWorkProject: true,
-        activeDocumentsOnly: false,
-      },
-    });
+  return async ({ documentId, threadId, markdown, at }) => {
+    const results = await Promise.allSettled([
+      effects.touchDocumentActivity({ documentId, threadId, at }),
+      effects.updateProjection({ documentId, markdown, at }),
+    ]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  };
 }
 
 export function createDocumentWriteHookRunner(input: {

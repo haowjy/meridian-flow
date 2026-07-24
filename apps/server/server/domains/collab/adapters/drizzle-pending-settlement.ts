@@ -458,17 +458,11 @@ async function completeStagedPush(
     await writeMutationRows(db, branch, journalRows.map(mapJournalRow), updateRow.id);
     const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
     await upsertHead(db, documentId, updateRow.id, durable.stateVector);
-    await projectionEffects.apply({
+    await projectionEffects.applyPushCompletion({
       documentId: branch.documentId,
       markdown: durable.markdownProjection,
+      ...(branch.workId ? { workId: branch.workId } : {}),
       at: new Date(),
-      threadDocuments: { kind: "all" },
-      work: branch.workId ? { kind: "work", workId: branch.workId } : { kind: "none" },
-      project: {
-        kind: "document_scope",
-        includeWorkProject: false,
-        activeDocumentsOnly: true,
-      },
     });
   }
   await joinAdmissionWithinTx(db, {
