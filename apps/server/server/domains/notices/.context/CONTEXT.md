@@ -22,6 +22,7 @@ not this queue.
 
 Once the underlying mutation is durable, notice failure cannot make the write
 look rolled back. The collab composition layer catches and structured-logs the
-failure, sets the READ-REQUIRED fence, and attempts an `awareness_degraded`
-notice. If that fallback record also fails, the fence remains and the second
-failure is logged; durable state is still reported as durable.
+failure and may attempt an `awareness_degraded` notice. If that fallback record
+also fails, the second failure is logged; durable state is still reported as
+durable. Notices are informational model context, not mutation authority or a
+read-required fence.
