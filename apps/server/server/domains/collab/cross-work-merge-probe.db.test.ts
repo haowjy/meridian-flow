@@ -40,7 +40,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("Case B: records stale apply_and_trail settlement and echo behavior", async () => {
+  it("Case B: records stale apply_and_trail settlement and receipt behavior", async () => {
     const harness = createHarness();
     const observation = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "auto");
     writeObservation(observation);
@@ -77,7 +77,9 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     );
     expect(observation.protection.restoreOutcome).toBe("applied");
     expect(observation.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
-    expect(JSON.stringify(observation.echo)).toContain("Writer-approved Work A text.");
+    const receipt = JSON.stringify(observation.echo);
+    expect(receipt).toContain("Work B stale replacement.");
+    expect(receipt).not.toContain("Writer-approved Work A text.");
     harness.destroyWarmState();
   });
 });
