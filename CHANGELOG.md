@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: authentication now rejects cross-principal email collisions
+  with a structured 409 instead of adopting the existing Meridian account.
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

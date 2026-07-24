@@ -261,6 +261,7 @@ describe("WorkOS request auth", () => {
 
 describe("auth principal provisioning", () => {
   let provisionAuthenticatedUser: typeof import("./auth.js").provisionAuthenticatedUser;
+  let AccountLinkConflictError: typeof import("../domains/projects/index.js").AccountLinkConflictError;
 
   beforeAll(async () => {
     process.env.WORKOS_API_KEY = process.env.WORKOS_API_KEY ?? "dev-workos-key";
@@ -269,6 +270,8 @@ describe("auth principal provisioning", () => {
     process.env.WORKOS_REDIRECT_URI =
       process.env.WORKOS_REDIRECT_URI ?? "https://app.meridian.localhost/api/auth/callback";
     provisionAuthenticatedUser = (await import("./auth.js")).provisionAuthenticatedUser;
+    AccountLinkConflictError = (await import("../domains/projects/index.js"))
+      .AccountLinkConflictError;
   });
 
   it("maps external auth to an internal user idempotently", async () => {
@@ -296,6 +299,32 @@ describe("auth principal provisioning", () => {
 
     expect(secondUserId).toBe(firstUserId);
     expect(bootstrap.bootstrapCalls).toBe(2);
+  });
+
+  it("surfaces account-link conflicts as a structured 409 without bootstrapping", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    users.ensureUser = async () => {
+      throw new AccountLinkConflictError();
+    };
+
+    await expect(
+      provisionAuthenticatedUser(
+        {
+          externalId: "user_conflict",
+          email: "conflict@example.com",
+          name: "Conflict User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      data: { code: "account_link_conflict" },
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+    });
+    expect(bootstrap.bootstrapCalls).toBe(0);
   });
 
   it("rechecks bootstrap completion for an existing personal project", async () => {
