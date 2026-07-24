@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { ToolView } from "./group-delivery-segments";
 import { rendererFor } from "./tool-renderers";
 
-vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((copy, part, index) => copy + part + (values[index] ?? ""), ""),
+}));
 
 function writeToolView(overrides: Partial<ToolView> = {}): ToolView {
   return {
@@ -144,5 +147,32 @@ describe("runtime tool registry", () => {
 
     expect(html).toContain("dragon");
     expect(html).not.toContain("wrong field");
+  });
+
+  it("renders the server grep result array as curated rows", () => {
+    const tool = writeToolView({
+      toolName: "grep",
+      output: [
+        {
+          uri: "manuscript://chapter-12.md",
+          excerpt: "The dragon stirred beneath the mountain.",
+          line: 42,
+          score: 0.91,
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(rendererFor("grep").expand?.(tool));
+
+    expect(html).toContain("manuscript://chapter-12.md");
+    expect(html).toContain("Line 42");
+    expect(html).toContain("The dragon stirred beneath the mountain.");
+    expect(html).not.toContain("0.91");
+  });
+
+  it("does not expand an empty server grep result array", () => {
+    const tool = writeToolView({ toolName: "grep", output: [] });
+
+    expect(rendererFor("grep").expand?.(tool)).toBeNull();
   });
 });

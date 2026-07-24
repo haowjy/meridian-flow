@@ -109,9 +109,7 @@ function PathTitle({ verb, path }: { verb: ReactNode; path: string }) {
 
 /* ── inline-expand renderers (curated, never JSON) ─────────────────────── */
 
-function ResultRows({ tool }: { tool: ToolView }) {
-  const rows = normalizeToolResultRows(tool.output ?? undefined);
-  if (rows.length === 0) return null;
+function ResultRows({ rows }: { rows: ReturnType<typeof normalizeToolResultRows> }) {
   return (
     <ul className="space-y-2">
       {rows.map((row) => (
@@ -289,7 +287,7 @@ function streamOrOutput(tool: ToolView): ReactNode | null {
 function resultRowsOrNothing(tool: ToolView): ReactNode | null {
   const rows = normalizeToolResultRows(tool.output ?? undefined);
   if (rows.length === 0) return null;
-  return <ResultRows tool={tool} />;
+  return <ResultRows rows={rows} />;
 }
 
 /* ── registry ──────────────────────────────────────────────────────────── */

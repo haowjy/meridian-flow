@@ -13,7 +13,22 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 export type ToolResultRow = { title: string; subtitle?: string; snippet?: string };
 
 export function normalizeToolResultRows(output: JsonValue | undefined): ToolResultRow[] {
-  if (!output || typeof output !== "object" || Array.isArray(output)) return [];
+  if (Array.isArray(output)) {
+    return output.slice(0, 4).flatMap((entry): ToolResultRow[] => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const row = entry as Record<string, JsonValue>;
+      if (typeof row.uri !== "string" || typeof row.excerpt !== "string") return [];
+      return [
+        {
+          title: row.uri,
+          subtitle: typeof row.line === "number" ? t`Line ${row.line}` : undefined,
+          snippet: row.excerpt,
+        },
+      ];
+    });
+  }
+
+  if (!output || typeof output !== "object") return [];
   const obj = output as Record<string, JsonValue>;
 
   if (Array.isArray(obj.results)) {
