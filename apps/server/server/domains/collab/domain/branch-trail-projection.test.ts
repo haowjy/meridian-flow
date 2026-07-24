@@ -16,6 +16,97 @@ import {
   preparedTrailChanges,
 } from "./branch-trail-projection.js";
 
+it("projects a same-identity whole-block rewrite as a live modification", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const liveDoc = createCollabYDoc({ gc: false });
+  model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Writer text."));
+  const branchDoc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(branchDoc, Y.encodeStateAsUpdate(liveDoc));
+  const beforeVector = Y.encodeStateVector(branchDoc);
+  const branchBlock = model.getBlocks(toDocHandle(branchDoc))[0];
+  const replacement = codec.parse("Agent replacement.").blocks[0];
+  if (!branchBlock || !replacement) throw new Error("missing rewrite fixture");
+  model.applyBlockReplacement(toDocHandle(branchDoc), branchBlock, replacement);
+  const updateData = Y.encodeStateAsUpdate(branchDoc, beforeVector);
+  const beforeBlock = model.getBlocks(toDocHandle(liveDoc))[0];
+  const afterBlock = model.getBlocks(toDocHandle(branchDoc))[0];
+  const afterElement = branchDoc.getXmlFragment("prosemirror").get(0);
+  if (!beforeBlock || !afterBlock || !(afterElement instanceof Y.XmlElement)) {
+    throw new Error("missing rewritten block");
+  }
+  const beforeId = model.getBlockId(beforeBlock);
+  const afterId = model.getBlockId(afterBlock);
+  expect(getBlockItemId(afterBlock)).toEqual(getBlockItemId(beforeBlock));
+
+  const attribution = journalAttributionByChangedBlock({
+    liveDoc,
+    rows: [
+      {
+        id: 1,
+        branchId: "branch-1",
+        generation: 1,
+        wId: null,
+        source: "agent",
+        threadId: null,
+        turnId: null,
+        actorUserId: null,
+        updateData,
+        draftBaseUpdateSeq: 0,
+        status: "active",
+      },
+    ],
+    model,
+  });
+  expect(attribution.operations).toEqual([]);
+
+  const changes = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: beforeId,
+          beforeText: "Writer text.",
+          afterText: "Agent replacement.",
+          beforeWordCount: 2,
+          afterWordCount: 2,
+          wordDelta: 0,
+        },
+      ],
+      totalWordDelta: 0,
+    },
+    receiptId: "receipt-same-identity",
+    ownersByBlock: attribution.ownersByBlock,
+    operations: [],
+    conflictedBlocks: [beforeId],
+    before: [{ hash: beforeId, serialized: "Writer text." }],
+    blockIdentities: new Map([
+      [beforeId, { documentId: "document-1", ...getBlockItemId(beforeBlock) }],
+      [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
+    ]),
+    beforeBodies: new Map([[beforeId, "Writer text."]]),
+    afterIds: new Set([afterId]),
+    afterById: new Map([[afterId, afterElement]]),
+    afterDoc: branchDoc,
+    beforeContentRef: 1,
+  });
+
+  expect(changes).toHaveLength(1);
+  expect(changes[0]).toMatchObject({
+    kind: "modify",
+    beforeBlockId: beforeId,
+    afterBlockId: afterId,
+    beforeText: "Writer text.",
+    afterTextAtReceipt: "Agent replacement.",
+    navigation: { kind: "live_block_range" },
+  });
+});
+
 it("projects a structurally adjacent whole-block replacement as one modification", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));

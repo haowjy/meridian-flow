@@ -211,8 +211,7 @@ export type BranchPushStore = {
   /** Adds a frozen post-commit cut through the same trail aggregate/outbox. */
   settlePushTrail?(input: {
     push: PushLineageRow;
-    trail?: DurableTrailRecord;
-    refineToEmpty?: boolean;
+    refinement?: SettlementTrailRefinement;
     claim: SettlementClaim;
     joinVersion: number;
   }): Promise<boolean | readonly CommittedChangeTrailProjection[] | undefined>;
@@ -271,6 +270,19 @@ export type BranchPushStore = {
     turnId: TurnId;
   }): Promise<number>;
 };
+
+export type SettlementTrailRefinement =
+  | {
+      kind: "refine_classifications";
+      /** Final destructive classifications; ordinary persisted changes are retained. */
+      trail: DurableTrailRecord;
+      classifications: DurableTrailRecord["changes"];
+    }
+  | {
+      kind: "empty_contribution";
+      /** The push genuinely contributes no changes and replaces its contribution with empty. */
+      trail: DurableTrailRecord;
+    };
 
 export type PushUpdateComputer = (input: {
   branch: BranchSnapshot;

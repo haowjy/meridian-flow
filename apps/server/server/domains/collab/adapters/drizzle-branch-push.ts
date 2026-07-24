@@ -309,11 +309,15 @@ export function createDrizzleBranchPushStore(
           .for("update")
           .limit(1);
         if (!owned) return false;
-        const committed = input.trail
-          ? await persistDurableTrailRecord(input.trail, input.push, changeTrails, {
-              refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
-              replacePushContribution: true,
-              ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
+        const committed = input.refinement
+          ? await persistDurableTrailRecord(input.refinement.trail, input.push, changeTrails, {
+              settlementRefinement: {
+                kind: input.refinement.kind,
+                currentVersion: owned.classifiedJoinVersion === input.joinVersion,
+                ...(input.refinement.kind === "refine_classifications"
+                  ? { classifications: input.refinement.classifications }
+                  : {}),
+              },
             })
           : [];
         const [settled] = await txDb

@@ -180,6 +180,16 @@ export function preparedTrailChanges(input: {
     }
   }
   const replacementIds = new Set(provenReplacements.values());
+  const survivingAfterBlockByIdentity = new Map<
+    string,
+    { blockId: string; block: Y.XmlElement; identity: CanonicalBlockIdentityV1 }
+  >();
+  for (const [blockId, block] of input.afterById) {
+    const identity = input.blockIdentities.get(blockId);
+    if (identity) {
+      survivingAfterBlockByIdentity.set(canonicalBlockKey(identity), { blockId, block, identity });
+    }
+  }
   return input.receipt.changedBlocks.flatMap((block, sequence) => {
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
@@ -219,20 +229,26 @@ export function preparedTrailChanges(input: {
             previousSurvivor: previousId ? input.afterById.get(previousId) : null,
           })
         : null;
-    const replacementId = provenReplacements.get(block.blockId);
+    const beforeIdentity =
+      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
+    const sameIdentityAfter =
+      block.beforeText !== null && block.afterText !== null && beforeIdentity
+        ? survivingAfterBlockByIdentity.get(canonicalBlockKey(beforeIdentity))
+        : undefined;
+    const replacementId = sameIdentityAfter?.blockId ?? provenReplacements.get(block.blockId);
     const replacement = replacementId
       ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
       : undefined;
-    const replacementBlock = replacementId ? input.afterById.get(replacementId) : undefined;
+    const replacementBlock =
+      sameIdentityAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
-    const beforeIdentity =
-      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
     const afterIdentity =
-      replacementId !== undefined
+      sameIdentityAfter?.identity ??
+      (replacementId !== undefined
         ? (input.blockIdentities.get(replacementId) ?? null)
         : block.afterText === null
           ? null
-          : (input.blockIdentities.get(block.blockId) ?? null);
+          : (input.blockIdentities.get(block.blockId) ?? null));
     const location: TrailProjectionLocation = {
       kind:
         replacementId !== undefined
@@ -245,9 +261,12 @@ export function preparedTrailChanges(input: {
                 : "modify")),
       beforeIdentity,
       afterIdentity,
-      navigation:
-        sweptNavigation?.navigation ??
-        (replacementBlock ? liveBlockTarget(input.afterDoc, replacementBlock) : ordinaryNavigation),
+      navigation: sameIdentityAfter
+        ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
+        : (sweptNavigation?.navigation ??
+          (replacementBlock
+            ? liveBlockTarget(input.afterDoc, replacementBlock)
+            : ordinaryNavigation)),
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
@@ -262,7 +281,9 @@ export function preparedTrailChanges(input: {
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,
-      afterTextAtReceipt: replacement?.afterText ?? block.afterText,
+      afterTextAtReceipt: sameIdentityAfter
+        ? block.afterText
+        : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
       swept: isSwept
         ? {
@@ -297,9 +318,11 @@ export async function persistDurableTrailRecord(
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
   options: {
-    refineCurrentVersion?: boolean;
-    refineToEmpty?: boolean;
-    replacePushContribution?: boolean;
+    settlementRefinement?: {
+      kind: "refine_classifications" | "empty_contribution";
+      currentVersion: boolean;
+      classifications?: DurableTrailRecord["changes"];
+    };
   } = {},
 ): Promise<readonly CommittedChangeTrailProjection[]> {
   const pushId = String(push.id);
@@ -313,17 +336,45 @@ export async function persistDurableTrailRecord(
       journalOwners: record.journalOwners,
     })),
   );
-  const committed = await persistence.record({
-    trails: options.refineToEmpty
-      ? normalized.map((trail) => ({
+  const classified =
+    options.settlementRefinement?.kind === "refine_classifications"
+      ? normalizeTrailPushes(
+          record.threadIds.map((threadId) => ({
+            pushId,
+            receiptId: record.receiptId,
+            threadId,
+            changes: (options.settlementRefinement?.classifications ?? []).map((change) => ({
+              ...change,
+              pushId,
+            })),
+            journalOwners: record.journalOwners,
+          })),
+        )
+      : [];
+  const classifiedByOwner = new Map(
+    classified.map((trail) => [JSON.stringify(trail.owner), trail]),
+  );
+  const refinementTrails = options.settlementRefinement
+    ? normalized.map((trail) => {
+        const final = classifiedByOwner.get(JSON.stringify(trail.owner));
+        return {
           ...trail,
-          changes: [],
-          counts: { changes: 0, swept: 0, documents: 0 },
-        }))
-      : normalized,
+          changes: final?.changes ?? [],
+          counts: final?.counts ?? { changes: 0, swept: 0, documents: 0 },
+        };
+      })
+    : normalized;
+  const committed = await persistence.record({
+    trails: refinementTrails,
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
-    ...(options.refineCurrentVersion ? { refineCurrentVersion: true } : {}),
-    ...(options.refineToEmpty || options.replacePushContribution ? { replacePushId: pushId } : {}),
+    ...(options.settlementRefinement
+      ? {
+          settlementRefinement: {
+            pushId,
+            ...options.settlementRefinement,
+          },
+        }
+      : {}),
   });
   return committed;
 }

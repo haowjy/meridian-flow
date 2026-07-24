@@ -1024,11 +1024,14 @@ describe("createBranchPushService", () => {
           if (!durableSettlement) throw new Error("missing durable settlement");
           return withDurableWriterProvenance(durableSettlement);
         }),
-        settlePushTrail: vi.fn(async ({ trail }) => {
+        settlePushTrail: vi.fn(async ({ refinement }) => {
+          if (!refinement) throw new Error("missing trail refinement");
           // This is the durable aggregate/outbox boundary. The live delete must
           // not have happened yet when settlement commits.
           expect(markdown(liveDoc)).toContain("Unjournaled WS body.");
-          settlements.push(trail);
+          const changes =
+            refinement.kind === "refine_classifications" ? refinement.classifications : [];
+          settlements.push({ ...refinement.trail, changes });
           return [
             {
               trailId: "trail-1",
@@ -1036,7 +1039,7 @@ describe("createBranchPushService", () => {
               documentId: DOCUMENT_ID,
               projectionRevision: 2,
               // The fake persistence seam returns its authoritative post-fold set.
-              changes: (trail?.changes as TrailChangeV1[]).map((change) => ({
+              changes: (changes as TrailChangeV1[]).map((change) => ({
                 ...change,
                 admittedByUserId: path === "whole" ? USER_ID : null,
               })),
@@ -1196,8 +1199,12 @@ describe("createBranchPushService", () => {
           if (!durableSettlement) throw new Error("missing durable settlement");
           return withDurableWriterProvenance(durableSettlement);
         }),
-        settlePushTrail: vi.fn(async ({ trail }) => {
-          settlements.push(trail);
+        settlePushTrail: vi.fn(async ({ refinement }) => {
+          if (!refinement) throw new Error("missing trail refinement");
+          settlements.push({
+            ...refinement.trail,
+            changes: refinement.kind === "refine_classifications" ? refinement.classifications : [],
+          });
           return true;
         }),
         countUnpushedRowsForWork: vi.fn(async () => 1),
@@ -1299,8 +1306,12 @@ describe("createBranchPushService", () => {
         pending = { ...prepared.pendingLiveSettlement, push };
         return { status: "inserted" as const, push };
       }),
-      settlePushTrail: vi.fn(async ({ trail }) => {
-        settlements.push(trail);
+      settlePushTrail: vi.fn(async ({ refinement }) => {
+        if (!refinement) throw new Error("missing trail refinement");
+        settlements.push({
+          ...refinement.trail,
+          changes: refinement.kind === "refine_classifications" ? refinement.classifications : [],
+        });
         return true;
       }),
       listRecoverableSettlementIds: vi.fn(async () => (pending ? [pending.push.id] : [])),

@@ -120,13 +120,13 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailShells)
           .where(eq(changeTrailShells.id, trailId))
           .limit(1);
-        if (input.refineCurrentVersion && !existingShell) {
+        if (input.settlementRefinement?.currentVersion && !existingShell) {
           throw new Error(`Cannot refine missing change trail ${trailId}`);
         }
-        const version = input.refineCurrentVersion
+        const version = input.settlementRefinement?.currentVersion
           ? (existingShell?.version as number)
           : (existingShell?.version ?? 0) + 1;
-        if (!input.refineCurrentVersion) {
+        if (!input.settlementRefinement?.currentVersion) {
           await tx
             .insert(changeTrailShells)
             .values({
@@ -150,7 +150,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
         const incomingPushIds = new Set(trail.changes.map((change) => change.pushId));
-        if (input.replacePushId) incomingPushIds.add(input.replacePushId);
+        if (input.settlementRefinement) incomingPushIds.add(input.settlementRefinement.pushId);
         const persistedChanges = existingDetails.flatMap(
           (detail) => detail.changes as TrailChangeV1[],
         );
@@ -158,16 +158,16 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           incomingPushIds.has(change.pushId),
         );
         const incomingKeys = new Set(trail.changes.map(canonicalChangeKey));
-        const refinementIsComplete = input.replacePushId
+        const refinementIsComplete = input.settlementRefinement
           ? true
           : persistedPushChanges.length === incomingKeys.size &&
             persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
-        const replacement = input.replacePushId
-          ? trail.changes.length === 0
+        const replacement = input.settlementRefinement
+          ? input.settlementRefinement.kind === "empty_contribution"
             ? []
             : refinePushChanges(persistedPushChanges, trail.changes)
           : trail.changes;
-        const changes = input.refineCurrentVersion
+        const changes = input.settlementRefinement?.currentVersion
           ? refinementIsComplete
             ? mergeTrailChanges(
                 persistedChanges.filter((change) => !incomingPushIds.has(change.pushId)),
@@ -175,8 +175,10 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
               )
             : persistedChanges
           : mergeTrailChanges(
-              input.replacePushId
-                ? persistedChanges.filter((change) => change.pushId !== input.replacePushId)
+              input.settlementRefinement
+                ? persistedChanges.filter(
+                    (change) => change.pushId !== input.settlementRefinement?.pushId,
+                  )
                 : persistedChanges,
               replacement,
             );
@@ -281,7 +283,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
           documentCount: details.length,
         };
-        if (input.refineCurrentVersion) {
+        if (input.settlementRefinement?.currentVersion) {
           await tx
             .update(changeTrailDeliveryOutbox)
             .set(counts)
