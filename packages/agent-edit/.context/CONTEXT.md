@@ -129,6 +129,8 @@ Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
 (`resolver/block-hash.ts`), and echo after-snapshots in
 `tool/mutation-commit.ts`. Response settlement recomputes each staged write's
 receipt against the settled runtime projection before the host publishes it.
+Receipts carry a unique host-only settlement id because several tool calls may
+intentionally share one model-facing reversal handle.
 The Drizzle journal adapter commits a buffered response in one multi-row INSERT
 via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same

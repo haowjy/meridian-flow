@@ -17,6 +17,7 @@ import type {
 export interface ApplySuccessResponseInput {
   phase: WriteSuccessPhase;
   writeId?: string;
+  settlementId?: string;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
@@ -58,6 +59,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     text: content.map((block) => block.text).join("\n\n"),
     content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
+    ...(input.settlementId ? { settlementId: input.settlementId } : {}),
   };
 }
 
@@ -111,6 +113,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     command,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
+    ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
