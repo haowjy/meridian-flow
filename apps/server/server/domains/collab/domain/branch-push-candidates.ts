@@ -13,6 +13,10 @@ type CandidateSource = {
   rows: BranchJournalRow[];
 };
 
+export type CandidateBatchBuildResult =
+  | { kind: "batch"; batch: CandidateBatch }
+  | { kind: "no_active_rows"; branch: BranchSnapshot };
+
 export function buildWholeBranchCandidates(input: {
   source: CandidateSource;
   conflictPolicy: "refuse" | "apply_and_trail";
@@ -29,6 +33,7 @@ export function buildWholeBranchCandidates(input: {
         materialization: "whole",
         conflictPolicy: input.conflictPolicy,
         sweepPolicy: "project",
+        noticePolicy: "required",
       },
     ],
     receiptId: randomUUID(),
@@ -53,6 +58,7 @@ export function buildSelectedRowCandidates(input: {
         materialization: "selected_rows",
         conflictPolicy: "refuse",
         sweepPolicy: "none",
+        noticePolicy: "best_effort",
       },
     ],
     receiptId: randomUUID(),
@@ -67,40 +73,53 @@ export function buildCompanionCandidates(input: {
   contentJournalIds?: readonly number[];
   conflictPolicy: "refuse" | "apply_and_trail";
   pushedByUserId?: UserId;
-}): CandidateBatch {
-  const contentRows = input.contentJournalIds
-    ? selectedRows(input.content, input.contentJournalIds, "selective_push_requires_rows")
-    : input.content.rows;
+}): CandidateBatchBuildResult {
+  let contentRows = input.content.rows;
+  if (input.contentJournalIds) {
+    const selected = new Set(input.contentJournalIds);
+    contentRows = input.content.rows.filter((row) => selected.has(row.id));
+    if (contentRows.length === 0) {
+      return { kind: "no_active_rows", branch: input.content.branch };
+    }
+    if (contentRows.length !== selected.size) {
+      throw new BranchPushCommitConflictError(input.content.branch.branchId);
+    }
+  }
   const manifestRows = input.manifest.rows.filter(
     (row) => manifestMembershipRowDocumentId(row) === input.manifestEntryDocumentId,
   );
   return {
-    candidates: [
-      {
-        branchId: input.content.branch.branchId,
-        documentId: input.content.branch.documentId,
-        rows: contentRows,
-        kind: "content",
-        materialization: input.contentJournalIds ? "selected_rows" : "whole",
-        conflictPolicy: input.conflictPolicy,
-        sweepPolicy: "project",
-      },
-      ...(manifestRows.length > 0
-        ? [
-            {
-              branchId: input.manifest.branch.branchId,
-              documentId: input.manifest.branch.documentId,
-              rows: manifestRows,
-              kind: "manifest" as const,
-              materialization: "selected_rows" as const,
-              conflictPolicy: "refuse" as const,
-              sweepPolicy: "none" as const,
-            },
-          ]
-        : []),
-    ],
-    receiptId: randomUUID(),
-    ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
+    kind: "batch",
+    batch: {
+      candidates: [
+        {
+          branchId: input.content.branch.branchId,
+          documentId: input.content.branch.documentId,
+          rows: contentRows,
+          kind: "content",
+          materialization: input.contentJournalIds ? "selected_rows" : "whole",
+          conflictPolicy: input.conflictPolicy,
+          sweepPolicy: "project",
+          noticePolicy: "best_effort",
+        },
+        ...(manifestRows.length > 0
+          ? [
+              {
+                branchId: input.manifest.branch.branchId,
+                documentId: input.manifest.branch.documentId,
+                rows: manifestRows,
+                kind: "manifest" as const,
+                materialization: "selected_rows" as const,
+                conflictPolicy: "refuse" as const,
+                sweepPolicy: "none" as const,
+                noticePolicy: "best_effort" as const,
+              },
+            ]
+          : []),
+      ],
+      receiptId: randomUUID(),
+      ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
+    },
   };
 }
 

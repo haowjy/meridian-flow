@@ -3,7 +3,9 @@
 ## [Unreleased]
 
 - `apps/server`: whole, selective, and companion branch pushes now share one
-  candidate-batch pipeline and required persistence ports.
+  candidate-batch pipeline and required persistence ports without changing
+  selective error identity, empty companion results, or whole-only notice
+  requirements.
 - `apps/server`: final branch-push classification now restores trail
   contributions that provisional aggregate folding had cancelled away.
 - `apps/server`: branch pushes and trail actions now use the filetype-aware

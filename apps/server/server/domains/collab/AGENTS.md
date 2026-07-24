@@ -40,7 +40,8 @@ propagation between them.
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
   immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
   trail/notice projection. `branch-push-candidates.ts` builds whole, selective,
-  and companion candidate batches; `branch-push.ts` runs their one shared pipeline;
+  and companion candidate outcomes; `branch-push.ts` runs ready batches through
+  their one shared pipeline;
   `branch-push-transition.ts` is the sole ordering owner for settlement
   drain/reload/materialization/classification/refinement/fenced completion and
   delivery across every push mode. `branch-review*.ts` is a separately composed

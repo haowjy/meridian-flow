@@ -117,14 +117,15 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     try {
       let pushUpdate: Uint8Array;
       if (candidate.materialization === "selected_rows") {
+        const operation = "selective_push_peer";
         Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
         for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
         assertNoPendingIntegration(
           afterDoc,
-          `${candidate.kind}_push_peer`,
+          operation,
           rows.map((row) => row.id),
         );
-        assertRowsIntegrated(afterDoc, rows, `${candidate.kind}_push_peer`);
+        assertRowsIntegrated(afterDoc, rows, operation);
         pushUpdate = Y.encodeStateAsUpdate(afterDoc, Y.encodeStateVector(liveDoc));
       } else {
         branchDoc = materializeBranch(branch);
@@ -260,7 +261,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             if (policy !== "project" || candidate.blindConflictedBlocks.length === 0) {
               return undefined;
             }
-            if (!input.notices) {
+            if (phases[index]?.candidate.noticePolicy === "required" && !input.notices) {
               throw new Error("apply_and_trail requires a durable notice recorder");
             }
             return projectPushSweep(candidate);
@@ -473,7 +474,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         const content = await sourceFor(contentBranch as BranchSnapshot);
         if (content.rows.length === 0) return mapNoActiveRows(await noActiveRows(content.branch));
         const manifest = await sourceFor(manifestBranch as BranchSnapshot);
-        const batch = buildCompanionCandidates({
+        const built = buildCompanionCandidates({
           content,
           manifest,
           manifestEntryDocumentId: pushInput.manifestEntryDocumentId,
@@ -483,8 +484,11 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           conflictPolicy: pushInput.overlapPolicy ?? "refuse",
           ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
         });
+        if (built.kind === "no_active_rows") {
+          return mapNoActiveRows(await noActiveRows(built.branch));
+        }
         const result = await executeCandidateBatch(
-          batch,
+          built.batch,
           branchMap([content.branch, manifest.branch]),
           lease,
           pushInput.signal,
@@ -556,6 +560,3 @@ function assertActiveWorkDraftBranch(
 }
 
 const maxCasRetries = 3;
-
-export { BranchPeerIntegrationError } from "./branch-push-plan.js";
-export { PendingLiveSettlementError } from "./branch-push-transition.js";
