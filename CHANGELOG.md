@@ -8,9 +8,11 @@
 - `tools/dev`: restart now terminates only its owned tmux session, waits for
   fixed ports to become bindable, and refuses non-owned or uninspectable
   listeners instead of killing processes discovered by port.
-- `tools/dev`: the app-boot smoke now uses an OS-assigned port reported by its
-  child, requires the child to remain alive, and enforces `/` 307 plus `/login`
-  200 with Meridian's login-page marker.
+- `tools/dev`: the app dev-transform smoke now uses an OS-assigned port reported
+  by its child, requires the child to remain alive, and enforces `/` 307 plus
+  `/login` 200 with Meridian's login-page marker.
+- CI now builds the app's production `.output`, passes validated fake config to
+  the generated Nitro server, and enforces the same exact public-route contract.
 - `tools/dev`: destructive and gate-critical scripts now compile under one
   strict Nx typecheck target included in root `pnpm typecheck`.
 - `tools/dev`: startup failures now print the concrete portless log path, while
