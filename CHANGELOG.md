@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Empty settlement refinements now clear the push's committed change-event
+  replace-set while preserving its monotonic projection revision.
 - Change-event attribution now follows durable trail ownership and each folded
   change's admitting push; self-admitted changes are suppressed without
   weakening replace-set revision ordering.
