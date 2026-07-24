@@ -479,13 +479,13 @@ Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 - **`Buffered`:** owns the mutable response buffer. Only this state may stage or
   drop writes. `commitResponse` atomically snapshots the buffer and transfers
   ownership to `Committing` before any asynchronous work begins.
-- **`Committing`:** owns one immutable snapshot and one promise across journal
+- **`Committing`:** owns one immutable attempt and one promise across journal
   append, live projection, and recovery. Concurrent commit callers join that
-  promise even after append has completed. Its observable operational phase moves
-  from `buffered` to `journalStaged`/`journalCommitted` to `liveProjected` without replacing the
-  owner. Rollback is rejected while this owner exists; reporting rollback success
-  while a commit can still persist would make the caller's cancellation contract
-  dishonest.
+  promise even after append has completed. The attempt records one acceptance
+  value (`none | staged | durable`); observability phases derive from it instead
+  of carrying a parallel lifecycle. Rollback is rejected while this owner exists;
+  reporting rollback success while a commit can still persist would make the
+  caller's cancellation contract dishonest.
 - **`Closed`:** records a bounded `committed` or `rolledBack` tombstone. Further
   stage/commit/rollback calls fail; an unknown response id remains a valid empty
   commit/rollback because a model response may have issued no mutations.
@@ -499,12 +499,12 @@ map, preventing stale async work from reopening or overwriting a closed response
 **Rollback and recovery follow the journal boundary.** While still `buffered`,
 commit failure evicts speculative runtimes but leaves the response retryable;
 rollback restores existing runtimes from live (and evicts runtime-only creates),
-then closes `rolledBack`. After any accepted journal batch, rollback is
-recover-and-close rather than buffer discard. For `"durable"`, those rows cannot
-be undone by lifecycle rollback: projection failure triggers journal recovery and
-runtime reconstruction. Successful recovery is reported as a successful commit;
-failed recovery evicts runtimes, marks live state stale, closes the durable
-response as committed, and still reports the projection failure to the caller.
+then closes `rolledBack`. Once a commit attempt owns the response, rollback is
+rejected. A durable projection failure is therefore recovered by that commit
+attempt through journal replay and runtime reconstruction. Successful recovery
+is reported as a successful commit; failed recovery evicts runtimes, marks live
+state stale, closes the durable response as committed, and still reports the
+projection failure to the caller.
 When last-resort durable recovery succeeds, the committer compares its immutable
 pre-recovery snapshot with the recovered document through the same provenance
 classifier used by normal projection. A detected writer-lineage loss is returned
@@ -528,18 +528,12 @@ their path, while only pre-commit discards are cleanup candidates.
 
 ### Mutation outcomes
 
-`response-lifecycle.ts` contains only the response transition values used by the
-committer and observability. Immediate mutation submission returns the journal
-kind needed by the atomic apply→submit boundary; unused write constructors,
-aggregate wrappers, and generic transition `Result` ceremony were deleted. The
-public `WriteOutcome.phase` remains `"staged" | "committed"`; hosts must not treat
-a staged success as durable. `discardedClaims` is returned directly by the owning
-committer and preserved by the server response owner.
-
-Every journal batch reports `"durable"` or `"staged"`. `MutationLifecycle`
-represents them structurally: only durable rows enter `journalCommitted`, while
-process-local thread-peer entries enter `journalStaged`. Staged failures return
-to `buffered`; they never enter durable-journal recovery.
+Every journal batch reports `"durable"` or `"staged"`. The owning commit attempt
+stores that one acceptance value: staged failures return to `buffered`, while
+durable failures enter journal recovery. The public `WriteOutcome.phase` remains
+`"staged" | "committed"`; hosts must not treat a staged success as durable.
+`discardedClaims` is returned directly by the owning committer and preserved by
+the server response owner.
 
 ### Tool concerns
 
