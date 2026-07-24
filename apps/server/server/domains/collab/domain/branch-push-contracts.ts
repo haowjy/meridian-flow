@@ -15,7 +15,7 @@ import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
-import type { NavigationTargetV1 } from "./trail-read-kernel.js";
+import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
 
 export type BranchJournalRow = {
   id: number;
@@ -167,9 +167,12 @@ export type PreparedPush = {
   blindConflictedBlocks: string[];
   conflicts: DraftApplyConflict[];
   beforeContentRef: number | null;
-  trailChanges: DurableTrailRecord["changes"];
+  trailChanges: RawTrailChange[];
   lockCutUpdate: Uint8Array;
-  prepared: Omit<PreparedPushCommit, "pushedByUserId" | "trail" | "pendingLiveSettlement">;
+  prepared: Omit<
+    PreparedPushCommit,
+    "pushedByUserId" | "trail" | "pendingLiveSettlement" | "receiptId"
+  > & { receiptId: string };
 };
 
 export type PendingLiveSettlement = {
