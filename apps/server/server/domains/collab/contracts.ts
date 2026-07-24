@@ -145,8 +145,6 @@ export type CollabTransport = {
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
-export type WriteMode = "direct" | "draft";
-
 export type AgentEditAccess = {
   agentEdit(): ThreadPeerAgentEditCore;
 };
