@@ -3,19 +3,28 @@ import {
   buildCleanupContext,
   type CleanupContext,
   createCleanupPlan,
+  executeCleanupPlan,
   resolveAutoTargets,
   resolveTarget,
 } from "./worktree-cleanup";
+import type { CleanupEligibility } from "./worktree-cleanup-eligibility";
 
 // Two worktrees: primary on the base branch, one feature worktree. The feature
-// branch is supplied as "merged" — standing in for a squash-merged PR, which
-// git ancestry (`git branch --merged`) would never report. The context takes
-// mergedBranches as data, so the pure resolver is agnostic to how mergedness
-// was determined (ancestry vs. PR state); that split lives in the shell.
-function makeContext(overrides?: {
-  mergedBranches?: readonly string[];
-  baseBranch?: string;
-}): CleanupContext {
+// carries exact PR evidence by default, standing in for a squash-merged tip
+// that git ancestry cannot authorize.
+function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): CleanupContext {
+  const baseBranch = overrides?.baseBranch ?? "main";
+  const eligibilityByBranch = new Map<string, CleanupEligibility>();
+  if (overrides?.eligible !== false) {
+    eligibilityByBranch.set("feature", {
+      kind: "pull-request",
+      branch: "feature",
+      plannedOid: "2222222222222222222222222222222222222222",
+      baseBranch,
+      repositoryOwner: "haowjy",
+      pullRequestNumber: 42,
+    });
+  }
   return buildCleanupContext({
     gitWorktreePorcelain: [
       "worktree /repo/main",
@@ -27,8 +36,8 @@ function makeContext(overrides?: {
       "branch refs/heads/feature",
       "",
     ].join("\n"),
-    mergedBranches: overrides?.mergedBranches ?? ["feature"],
-    baseBranch: overrides?.baseBranch ?? "main",
+    eligibilityByBranch,
+    baseBranch,
     meridianWorkItems: [],
     // Run "from" the primary so the feature worktree is neither primary nor current.
     currentWorktreePath: "/repo/main",
@@ -47,15 +56,15 @@ describe("worktree cleanup resolver", () => {
   });
 
   it("cleans a merged feature branch found only via PR state (not ancestry)", () => {
-    const context = makeContext({ mergedBranches: ["feature"] });
+    const context = makeContext();
     const targets = resolveAutoTargets(context);
     expect(targets.map((t) => t.branch)).toEqual(["feature"]);
   });
 
   it("refuses an unmerged branch with a base-agnostic, PR-aware message", () => {
-    const context = makeContext({ mergedBranches: [] });
+    const context = makeContext({ eligible: false });
     expect(() => resolveTarget(context, { kind: "direct", value: "feature" })).toThrow(
-      /not merged into 'main'.*merged pull request/s,
+      /current commit is not merged into 'main'.*exact merged pull request/s,
     );
   });
 
@@ -71,7 +80,17 @@ describe("worktree cleanup resolver", () => {
         "branch refs/heads/trunk",
         "",
       ].join("\n"),
-      mergedBranches: ["trunk"],
+      eligibilityByBranch: new Map([
+        [
+          "trunk",
+          {
+            kind: "ancestry" as const,
+            branch: "trunk",
+            plannedOid: "2222222222222222222222222222222222222222",
+            baseBranch: "trunk",
+          },
+        ],
+      ]),
       baseBranch: "trunk",
       meridianWorkItems: [],
       currentWorktreePath: "/repo/main",
@@ -81,5 +100,25 @@ describe("worktree cleanup resolver", () => {
     );
     // The base guard is now data-driven, so `trunk` is auto-skipped like `main` used to be.
     expect(resolveAutoTargets(context)).toEqual([]);
+  });
+
+  it("refuses every action after a post-plan ref movement", async () => {
+    const context = makeContext();
+    const plan = createCleanupPlan(context, [
+      resolveTarget(context, { kind: "direct", value: "feature" }),
+    ]);
+    let actionsRun = 0;
+
+    const result = await executeCleanupPlan(
+      plan,
+      () => ({ eligible: false, reason: "branch moved" }),
+      () => {
+        actionsRun += 1;
+        return { ok: true };
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false, eligibilityFailure: "branch moved" });
+    expect(actionsRun).toBe(0);
   });
 });
