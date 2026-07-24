@@ -6,6 +6,8 @@
   offsets so editor marks can render at the exact deletion site.
 - `apps/app`: render AI insert/replacement highlights, exact-site deletion
   ticks, and whole-block deletion seams with stable collaboration colors.
+- `apps/app`: peer marks open trail-backed detail with the originating request
+  and recovery action; Open conversation reveals and emphasizes the owning row.
 - `@meridian/contracts`: reject out-of-range Yjs identities, oversized live
   change excerpts, and cross-thread agent authorship on stateless change events;
   server encoding now validates the same schema as client parsing.
