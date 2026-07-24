@@ -8,9 +8,18 @@
 /**
  * Normalized token usage across providers.
  *
+ * `inputTokens` is the inclusive input total. `cacheReadTokens` and
+ * `cacheWriteTokens` are disjoint subsets of that total, so their sum must not
+ * exceed `inputTokens`. This shape keeps persisted totals and token displays
+ * comparable across providers and lets provider-agnostic pricing derive the
+ * uncached remainder. Adapters for providers such as Anthropic, which reports
+ * uncached input and cache counters as separate additive categories, must sum
+ * those categories at the gateway boundary.
+ *
  * Provider mapping:
- * - Anthropic: `usage.input_tokens` / `usage.output_tokens`, cache fields from
- *   `cache_read_input_tokens` / `cache_creation_input_tokens`, reasoning from
+ * - Anthropic: inclusive input is `input_tokens` +
+ *   `cache_read_input_tokens` + `cache_creation_input_tokens`; output and
+ *   reasoning come from `output_tokens` and
  *   `output_tokens_details.thinking_tokens`.
  * - OpenAI Responses: `usage.input_tokens` / `usage.output_tokens`, cache from
  *   `input_tokens_details.cached_tokens`, reasoning from
@@ -28,4 +37,28 @@ export interface Usage {
   reasoningTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+}
+
+/** Throws when a Usage value violates the canonical inclusive-total contract. */
+export function assertValidUsage(usage: Usage): void {
+  const counts = [
+    ["inputTokens", usage.inputTokens],
+    ["outputTokens", usage.outputTokens],
+    ["reasoningTokens", usage.reasoningTokens],
+    ["cacheReadTokens", usage.cacheReadTokens],
+    ["cacheWriteTokens", usage.cacheWriteTokens],
+  ] as const;
+
+  for (const [field, count] of counts) {
+    if (count !== undefined && (!Number.isInteger(count) || count < 0)) {
+      throw new Error(`Usage.${field} must be a non-negative integer; got ${count}`);
+    }
+  }
+
+  const cacheTokens = (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+  if (cacheTokens > usage.inputTokens) {
+    throw new Error(
+      "Usage invariant violated: cacheReadTokens + cacheWriteTokens must not exceed inputTokens",
+    );
+  }
 }

@@ -6,7 +6,7 @@
  * OpenRouter costs bypass token-rate lookup. 1 credit = 1¢ = 1,000 millicredits.
  */
 
-import type { Usage } from "@meridian/contracts/runtime";
+import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
 import type { JsonObject, PriceSource } from "@meridian/contracts/threads";
 import {
   extractPinnedRates,
@@ -295,6 +295,8 @@ export function computeModelCost(input: {
   providerData?: unknown;
   rateSource?: ModelTokenRateSource;
 }): ComputedModelCost {
+  assertValidUsage(input.usage);
+
   if (readMeteringStatusFromProviderData(input.providerData) === "missing_usage") {
     return computeMissingUsageCost({
       provider: input.provider,
@@ -334,10 +336,7 @@ export function computeModelCost(input: {
   const rate = findModelTokenRate(input.provider, input.model, input.rateSource);
   const cacheReadTokens = input.usage.cacheReadTokens ?? 0;
   const cacheWriteTokens = input.usage.cacheWriteTokens ?? 0;
-  const uncachedInputTokens = Math.max(
-    input.usage.inputTokens - cacheReadTokens - cacheWriteTokens,
-    0,
-  );
+  const uncachedInputTokens = input.usage.inputTokens - cacheReadTokens - cacheWriteTokens;
   const cachedInputRate = rate.cachedInputUsdPerMillionTokens ?? rate.inputUsdPerMillionTokens;
   const cacheWriteRate = rate.cacheWriteUsdPerMillionTokens ?? rate.inputUsdPerMillionTokens;
 

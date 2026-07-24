@@ -30,7 +30,7 @@
  *   provider-specific and outside the OpenAI SDK surface — it is accessed via
  *   untyped property access on the delta object.
  */
-import type { Usage } from "@meridian/contracts/runtime";
+import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
 import type {
   ContentPart,
   FinishReason,
@@ -273,6 +273,7 @@ export function* eventsFromOpenAIChunk(
       ...(reasoningTokens ? { reasoningTokens } : {}),
       ...(cacheReadTokens ? { cacheReadTokens } : {}),
     };
+    assertValidUsage(usage);
     applyUsage(acc, usage);
     yield { type: "usage", usage };
   }

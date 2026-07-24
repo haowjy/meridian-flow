@@ -100,8 +100,10 @@ facet.
   `COST_MULTIPLIER` when converting raw provider USD-micro cost into metered
   millicredits before ledger debits. Billing owns only ledger behavior and route
   display conversion.
-- `Usage` token counts are shared DTOs from `@meridian/contracts/runtime`; billing
-  owns ledger behavior in `domains/billing`.
+- `Usage` token counts are shared DTOs from `@meridian/contracts/runtime`.
+  `inputTokens` is the inclusive input total; cache-read and cache-write counts
+  are disjoint subsets normalized by gateway adapters. Billing owns ledger
+  behavior in `domains/billing`.
 
 ## Invariants
 
