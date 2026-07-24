@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Change-event broadcasts now identify pure in-block deletions and their splice
+  offsets so editor marks can render at the exact deletion site.
 - `@meridian/contracts`: reject out-of-range Yjs identities, oversized live
   change excerpts, and cross-thread agent authorship on stateless change events;
   server encoding now validates the same schema as client parsing.

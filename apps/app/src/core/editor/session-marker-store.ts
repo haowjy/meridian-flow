@@ -21,6 +21,7 @@ export type SessionMarker = {
   anchor: SessionMarkerAnchor;
   swept: boolean;
   excerpt: string | null;
+  pureDeletionOffset: number | null;
   projectionRevision: number;
   receivedAt: number;
   dismissed: boolean;
@@ -106,6 +107,7 @@ export class SessionMarkerStore {
           anchor: { type: "unresolved", raw: change.navigation },
           swept: change.swept,
           excerpt: change.excerpt,
+          pureDeletionOffset: change.pureDeletionOffset,
           projectionRevision: message.projectionRevision,
           receivedAt,
           dismissed: dismissed.get(change.changeId) ?? false,

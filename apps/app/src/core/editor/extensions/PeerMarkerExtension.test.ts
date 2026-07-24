@@ -51,6 +51,7 @@ function addMarker(kind: "range" | "boundary", from: number, to = from, suffix =
         navigation,
         swept: false,
         excerpt: null,
+        pureDeletionOffset: null,
       },
     ],
     truncated: false,

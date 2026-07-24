@@ -131,6 +131,7 @@ function changeEvent(documentId: string, admittedByUserId: string | null): Chang
         navigation: { kind: "unavailable", reason: "test" },
         swept: false,
         excerpt: null,
+        pureDeletionOffset: null,
       },
     ],
     truncated: false,
