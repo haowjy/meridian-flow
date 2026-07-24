@@ -16,8 +16,11 @@
  */
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { relativePositionToAbsolutePosition, ySyncPluginKey } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
+import {
+  relativePositionRuntimeFromState,
+  resolveRelativePosition,
+} from "../../relative-position-runtime";
 
 import type { InlineReviewOperationKind } from "./model";
 import {
@@ -303,34 +306,18 @@ export function resolverFromState(state: {
   // biome-ignore lint/suspicious/noExplicitAny: EditorState.field is typed via generics we can't parameterise here without pulling prosemirror-state.
   [key: string]: any;
 }): DecorationResolver | null {
-  const pluginState = ySyncPluginKey.getState(state as never) as
-    | {
-        doc?: Y.Doc;
-        type?: Y.XmlFragment;
-        binding?: { mapping: Map<Y.AbstractType<unknown>, PMNode> };
-      }
-    | undefined;
-  if (!pluginState?.doc || !pluginState.type || !pluginState.binding) return null;
+  const runtime = relativePositionRuntimeFromState(state as never);
+  if (!runtime) return null;
   return {
-    doc: state.doc,
-    yDoc: pluginState.doc,
-    yFragment: pluginState.type,
-    mapping: pluginState.binding.mapping,
+    doc: runtime.doc,
+    yDoc: runtime.yDoc,
+    yFragment: runtime.yFragment,
+    mapping: runtime.mapping,
   };
 }
 
 function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver): number | null {
-  const pos = relativePositionToAbsolutePosition(
-    resolver.yDoc,
-    resolver.yFragment,
-    anchor,
-    resolver.mapping,
-  );
-  if (pos == null) return null;
-  // A resolved anchor past the document size means the referenced item was
-  // deleted after the model was computed; skip until the next refresh.
-  if (pos < 0 || pos > resolver.doc.content.size) return null;
-  return pos;
+  return resolveRelativePosition(resolver, anchor);
 }
 
 function insertionClassName(

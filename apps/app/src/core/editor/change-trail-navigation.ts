@@ -1,9 +1,10 @@
 /** Authorize, open, sync, validate, and reveal a durable change-trail target. */
 import { decodeNavigationPosition, validateLiveBlockRange } from "@meridian/agent-edit";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import type { TrailChange } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "./document-session-registry";
 import { showLiveRangeInEditor } from "./live-range-navigation-runtime";
+import { relativePositionTargetsFragment } from "./relative-position-runtime";
 
 export type TrailNavigationResult =
   | { kind: "shown" }
@@ -54,8 +55,13 @@ export async function navigateToTrailChange(input: {
     } else {
       try {
         const position = decodeNavigationPosition(input.change.navigation.position);
-        const absolute = Y.createAbsolutePositionFromRelativePosition(position, session.document);
-        if (!absolute || absolute.type !== session.document.getXmlFragment("prosemirror")) {
+        if (
+          !relativePositionTargetsFragment(
+            position,
+            session.document,
+            session.document.getXmlFragment("prosemirror"),
+          )
+        ) {
           return { kind: "unavailable" };
         }
         range = { start: position, end: position };
