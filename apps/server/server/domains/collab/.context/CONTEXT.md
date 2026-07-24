@@ -15,7 +15,8 @@ and WebSocket callers.
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
-| Push plan + conflict policy | `domain/branch-push-plan.ts` |
+| Push materialization | `domain/branch-push-plan.ts` |
+| Immutable-base Manual Apply policy | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
 | Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
@@ -145,8 +146,10 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
   branch-id order, then live coordinator locks in document-id order.
 - **One push commit seam**: whole, selective, and companion pushes execute via
-  `branch-push-executor.ts`; `branch-push-transition.ts` alone orders capture
-  through fenced completion; a durable commit requires its trail bundle.
+  `branch-push-executor.ts`; immutable-base conflict preparation lives in
+  `branch-push-preparation.ts`, trail and notice projection live in
+  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders
+  capture through fenced completion. A durable commit requires its trail bundle.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
