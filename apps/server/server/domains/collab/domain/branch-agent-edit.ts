@@ -169,6 +169,9 @@ export function createBranchAgentEditCoordinator(input: {
                 const scope = entry.mutation?.semanticEditIr?.scope;
                 return scope && scope.length > 0 ? [scope] : [];
               });
+              const replacementScopesComplete = pendingBatch.every(
+                (entry) => entry.mutation?.replacementScopeRecorded === true,
+              );
               const sourceHasBranchDelta = await sourceDocHasBranchDelta(
                 input.branchCoordinator,
                 workDraftBranchId,
@@ -201,6 +204,7 @@ export function createBranchAgentEditCoordinator(input: {
                 updateMeta: branchUpdateMetaWithReplacementScopes(
                   pending?.meta ?? null,
                   replacementScopes,
+                  replacementScopesComplete,
                 ),
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });

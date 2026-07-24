@@ -7,7 +7,7 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
-import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { DocumentRenderer } from "./document-renderer.js";
@@ -195,6 +195,7 @@ export function createWriteCommands(deps: {
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     let touchedHashes = new Set<string>();
     let deletedHashes = new Set<string>();
+    let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -209,6 +210,7 @@ export function createWriteCommands(deps: {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
       validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+      semanticEditIr = resolved.ir;
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
@@ -257,6 +259,7 @@ export function createWriteCommands(deps: {
           touchedHashes,
           deletedHashes,
           preOwnSnapshot: preWriteSnapshot,
+          ...(semanticEditIr ? { semanticEditIr } : {}),
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
         if (rejected) {
@@ -313,6 +316,7 @@ export function createWriteCommands(deps: {
               ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
+              ...(semanticEditIr ? { semanticEditIr } : {}),
               ...mutationMode(context.interactionContext),
             },
           },

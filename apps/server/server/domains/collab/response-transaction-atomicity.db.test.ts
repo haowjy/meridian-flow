@@ -446,4 +446,88 @@ describe("change trail (postgres)", () => {
       "LEFT DRAFT\n\nWriter middle insertion.\n\nRIGHT DRAFT\n",
     );
   });
+
+  it("retains whole-document scope when a folded response refines an overwrite", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000838";
+    await harness.seedWriterDocument("First writer root.\n\nSecond writer root.", responseId);
+    const fixture = harness.crossWorkProbeFixture();
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+      createdDocument: false,
+    };
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "create",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          content: "WHOLE DRAFT\n\nDraft tail.",
+          overwrite: true,
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "WHOLE DRAFT",
+          content: "REFINED WHOLE DRAFT",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        last,
+        fixture.markupCodec.parse("Writer insertion after overwrite base."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: preview.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: preview.draftRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
+      }),
+    ).resolves.toMatchObject({
+      status: "concurrent_conflict",
+      reason: "draft_base_divergence",
+    });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain(
+      "Writer insertion after overwrite base.",
+    );
+  });
 });
