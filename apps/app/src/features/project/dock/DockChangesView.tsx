@@ -318,8 +318,6 @@ function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
       return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
     case "discard-failed":
       return <Trans>Couldn't discard. Try again.</Trans>;
-    case "discard-not-settled":
-      return <Trans>That change is still in the draft. Try again before applying the draft.</Trans>;
     case "change-restored":
       return <Trans>Change restored.</Trans>;
     case "undo-failed":

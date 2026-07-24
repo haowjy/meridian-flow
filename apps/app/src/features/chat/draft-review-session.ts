@@ -86,7 +86,6 @@ export type DraftCommandOutcome =
       refusal: DraftApplyRefusal;
     }
   | { kind: "discarded" }
-  | { kind: "discard-settling"; draftId: string; operationId: string }
   | { kind: "undone" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
@@ -180,7 +179,6 @@ export type InlineReviewMessageCode =
   | "discard-finalized"
   | "discard-offline"
   | "discard-failed"
-  | "discard-not-settled"
   | "change-restored"
   | "undo-failed";
 
@@ -280,8 +278,6 @@ export type DraftReviewSurface =
 export type DraftReviewState = {
   surface: DraftReviewSurface;
   staleDraft: DraftReviewSelection | null;
-  /** Operation ids awaiting their query-backed preview settle signal. */
-  pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   applyRefusal: DraftApplyRefusal | null;
@@ -299,9 +295,8 @@ export type DraftReviewAction =
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
   | { type: "operationUndoAcceptSucceeded"; message: InlineReviewMessage }
   | { type: "operationUndoAcceptFailed"; message: InlineReviewMessage }
-  | { type: "discardStarted"; draftId: string; operationId: string }
-  | { type: "discardSettled"; draftId: string; operationId: string }
-  | { type: "discardFailed"; draftId: string; operationId: string; code: InlineReviewMessageCode }
+  | { type: "discardStarted" }
+  | { type: "discardFailed"; code: InlineReviewMessageCode }
   | { type: "rejectSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
@@ -309,7 +304,6 @@ export type DraftReviewAction =
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
   staleDraft: null,
-  pendingDiscardIdsByDraft: new Map(),
   inlineReviewMessage: null,
   inlineDiscardError: null,
   applyRefusal: null,
@@ -360,16 +354,9 @@ export function draftReviewReducer(
       return {
         ...state,
         inlineDiscardError: null,
-        pendingDiscardIdsByDraft: addPendingDiscard(
-          state.pendingDiscardIdsByDraft,
-          action.draftId,
-          action.operationId,
-        ),
       };
-    case "discardSettled":
-      return settleDiscard(state, action.draftId, action.operationId, null);
     case "discardFailed":
-      return settleDiscard(state, action.draftId, action.operationId, action.code);
+      return { ...state, inlineDiscardError: action.code };
     case "rejectSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
@@ -388,39 +375,6 @@ export function draftReviewReducer(
     default:
       return state;
   }
-}
-
-export function inlineDiscardIsPending(state: DraftReviewState, draftId?: string | null): boolean {
-  if (draftId) return (state.pendingDiscardIdsByDraft.get(draftId)?.size ?? 0) > 0;
-  return state.pendingDiscardIdsByDraft.size > 0;
-}
-
-export function pendingDiscardIdsForDraft(
-  state: DraftReviewState,
-  draftId: string | null | undefined,
-): ReadonlySet<string> {
-  if (!draftId) return EMPTY_SET;
-  return state.pendingDiscardIdsByDraft.get(draftId) ?? EMPTY_SET;
-}
-
-export function pendingDiscardIdsMissingFromModel(
-  state: DraftReviewState,
-  draftId: string,
-  modelOperationIds: readonly string[],
-): string[] {
-  const pending = pendingDiscardIdsForDraft(state, draftId);
-  if (pending.size === 0) return [];
-  const present = new Set(modelOperationIds);
-  return [...pending].filter((operationId) => !present.has(operationId));
-}
-
-export function pendingDiscardIdsSettledByPreview(
-  state: DraftReviewState,
-  input: { documentId: string; draftId: string; operationIds?: readonly string[] },
-): string[] {
-  if (!surfaceMatchesDraft(state.surface, input)) return [];
-  if (!input.operationIds) return [];
-  return pendingDiscardIdsMissingFromModel(state, input.draftId, input.operationIds);
 }
 
 export function inlineReviewFromState(state: DraftReviewState): InlineDraftReview | null {
@@ -521,23 +475,6 @@ function clearInlineState(state: DraftReviewState): DraftReviewState {
   };
 }
 
-function settleDiscard(
-  state: DraftReviewState,
-  draftId: string,
-  operationId: string,
-  error: InlineReviewMessageCode | null,
-): DraftReviewState {
-  return {
-    ...state,
-    pendingDiscardIdsByDraft: removePendingDiscard(
-      state.pendingDiscardIdsByDraft,
-      draftId,
-      operationId,
-    ),
-    inlineDiscardError: error,
-  };
-}
-
 function surfaceMatchesDraft(
   surface: DraftReviewSurface,
   selection: DraftReviewSelection,
@@ -548,32 +485,3 @@ function surfaceMatchesDraft(
 function selectionMatches(left: DraftReviewSelection | null, right: DraftReviewSelection): boolean {
   return left?.documentId === right.documentId && left.draftId === right.draftId;
 }
-
-function addPendingDiscard(
-  pending: ReadonlyMap<string, ReadonlySet<string>>,
-  draftId: string,
-  operationId: string,
-): ReadonlyMap<string, ReadonlySet<string>> {
-  const current = pending.get(draftId) ?? EMPTY_SET;
-  if (current.has(operationId)) return pending;
-  const next = new Map(pending);
-  next.set(draftId, new Set([...current, operationId]));
-  return next;
-}
-
-function removePendingDiscard(
-  pending: ReadonlyMap<string, ReadonlySet<string>>,
-  draftId: string,
-  operationId: string,
-): ReadonlyMap<string, ReadonlySet<string>> {
-  const current = pending.get(draftId);
-  if (!current?.has(operationId)) return pending;
-  const nextDraftSet = new Set(current);
-  nextDraftSet.delete(operationId);
-  const next = new Map(pending);
-  if (nextDraftSet.size === 0) next.delete(draftId);
-  else next.set(draftId, nextDraftSet);
-  return next;
-}
-
-const EMPTY_SET = new Set<string>();

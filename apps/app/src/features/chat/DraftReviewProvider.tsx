@@ -120,11 +120,12 @@ export function DraftReviewProvider({
   }, [controller.inlineReview, drafts.status, groups, controller.exitReview, effectiveProjectId]);
 
   useEffect(() => {
-    const inline = controller.inlineReview;
-    if (!projectId || !workId || !inline) return;
-    const registry = getDocumentSessionRegistry();
+    const inlineDocumentId = controller.inlineReview?.documentId;
+    const inlineDraftId = controller.inlineReview?.draftId;
     const roomKey = controller.reviewRoomName;
-    if (!roomKey || !registry.has(roomKey)) return;
+    if (!projectId || !workId || !inlineDocumentId || !inlineDraftId || !roomKey) return;
+    const registry = getDocumentSessionRegistry();
+    if (!registry.has(roomKey)) return;
     const session = registry.getRoom(roomKey);
     let timer: number | null = null;
     const invalidateMountedDraft = () => {
@@ -138,8 +139,8 @@ export function DraftReviewProvider({
           queryKey: projectQueryKeys.workDraftPreview(
             projectId,
             workId,
-            inline.documentId,
-            inline.draftId,
+            inlineDocumentId,
+            inlineDraftId,
           ),
         });
       }, 50);
@@ -149,7 +150,14 @@ export function DraftReviewProvider({
       if (timer != null) window.clearTimeout(timer);
       session.document.off("update", invalidateMountedDraft);
     };
-  }, [controller.inlineReview, projectId, queryClient, workId]);
+  }, [
+    controller.inlineReview?.documentId,
+    controller.inlineReview?.draftId,
+    controller.reviewRoomName,
+    projectId,
+    queryClient,
+    workId,
+  ]);
 
   useEffect(() => {
     if (!threadId || !activeEditorDocumentId) return;

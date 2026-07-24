@@ -96,9 +96,9 @@ Inline review is the only draft review surface. Whole-draft "Apply all" runs the
 and a per-card Apply's "Change applied" receipt carries an Undo.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
-message target, inline messages, and per-draft discard pending state. Use
-controller transitions instead of pairing local `close` calls; `exitReview` is
-the single clear-all path.
+message target, and inline messages. The synchronous disposition lock is the
+only pending-command source. Use controller transitions instead of pairing
+local `close` calls; `exitReview` is the single clear-all path.
 
 Per-card Apply routes the closure-card `acceptDraft` mutation with
 `operationIds`; the server receives the vended closure class as one card, so
@@ -107,13 +107,14 @@ the session's synchronous lock (`controller.isDisposing`): while any whole-draft
 per-card Apply/Discard/Undo is in flight, all mutating controls disable and a
 second card click is ignored rather than clearing the in-flight card's pending
 state. Per-card Discard routes to the server discard mutation with
-`operationIds`; the server performs reversal-peer sync and the card settles when
-the next preview refetch drops the operation. Keep that pending state and timer
-in the controller/session path, keyed by draft id; do not add module-global or
-component-local review/discard state.
+`operationIds`; the server performs reversal-peer sync. The mutation awaits the
+draft-list and preview refreshes before the session releases its lock, so no
+second preview-settlement timer or local pending copy is needed.
 
 Bulk Apply/Discard is one controller command over a captured target list; the
-dock does not infer command completion from busy/idle render edges.
+dock does not infer command completion from busy/idle render edges. Direct
+inline Apply uses the exact preview the writer reviewed; bulk Apply acquires
+each captured draft's current preview while retaining the batch reservation.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns
