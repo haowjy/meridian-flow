@@ -172,12 +172,25 @@ AssistantTurn.tsx
               → CustomBlockRenderer (interrupts)
 ```
 
-`tool-renderers.tsx` is the registry for tool-name-specific presentation. Unknown
-tools fall back to the static default renderer; neutral tools such as `read`,
-`write`, `edit`, `search`, and `bash` get explicit titles/icons and may expose
-`streamOrOutput` or result rows without implying any external execution
-substrate. Adding a renderer is a presentation change only: append to the
-`RENDERERS` map and keep protocol pairing in `group-delivery-segments.ts`.
+`tool-renderers.tsx` is the registry for tool-name-specific presentation.
+Three conventions govern all renderers:
+
+- **Unknown tools show name only.** The default renderer displays the tool name
+  and, when present, a path — never raw arguments. Tool arguments are developer
+  detail that should not appear in the writer's chat surface.
+- **`toolVerb()` for status-aware tense.** Every registered renderer uses
+  `toolVerb(tool, completedNode, activeNode)` to conjugate the action label
+  by `tool.status` (`complete` vs `partial`). This keeps verb presentation
+  consistent and prevents missing-tense bugs when adding new tools.
+- **Curated expand content.** Inline expansions render result rows, stream tails,
+  or plain output — never raw JSON. If raw JSON is needed for debugging, it goes
+  behind a dev-only setting.
+
+Neutral tools (`read`, `write`, `edit`, `search`, `bash`, `invoke`) get
+explicit titles/icons and may expose `streamOrOutput` or result rows without
+implying any external execution substrate. Adding a renderer is a presentation
+change only: append to the `RENDERERS` map and keep protocol pairing in
+`group-delivery-segments.ts`.
 
 Key files:
 
@@ -188,7 +201,7 @@ Key files:
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle state |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts pass through `onRespondToInterrupt` |
-| `tool-renderers.tsx` | Tool renderer registry; unknown tools use the default renderer, known neutral tools can show streamed or settled output |
+| `tool-renderers.tsx` | Tool renderer registry; unknown tools show name only, registered tools use `toolVerb()` for tense and may show curated expand content |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `block-render-key.ts` | Positional render keys — `turnId::sequence` |
@@ -285,6 +298,45 @@ Turn edits line behavior in auto-apply mode:
   for design decisions and the
   [draft review lifecycle decision](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
   for architecture.
+
+## Composer placeholder rotation
+
+`placeholders.ts` owns per-page-load rotating prompts for the chat composer.
+Each pool (`COMPOSE_PLACEHOLDERS`, `INTERJECT_PLACEHOLDERS`) is an array of
+Lingui `msg` descriptors — locale-live but structurally pure. On module load,
+`selectPagePlaceholders()` advances the localStorage index by one and freezes
+the selection for the lifetime of the page. Components re-render without
+consuming another entry.
+
+SSR safety: `useSyncExternalStore` returns the first pool descriptor as the
+server snapshot and the rotated descriptor as the client snapshot. Locale
+resolution happens inside the hook (`i18n._(descriptor)`), after selection,
+so hydration shape is descriptor identity (stable) rather than resolved string
+(locale-dependent).
+
+Rotation is Composer-internal. The `placeholder` prop overrides the rotating
+default when set (the hero variant uses this path). The dormant `@ for
+reference` hint is gated off and tracked in [`.context/TODO.md`](TODO.md).
+
+## Composer field-sizing pitfall
+
+The base `Textarea` component applies `field-sizing-content` via Tailwind.
+Composer needs `field-sizing: fixed` so its JS auto-resize controls height.
+The override uses an **inline style** (`style={{ fieldSizing: "fixed" }}`),
+not a class, because `tailwind-merge` does not deduplicate `field-sizing-*`
+utilities — adding `field-sizing-fixed` alongside `field-sizing-content`
+leaves both in the class list and the last-in-source wins, which is
+non-deterministic after merge. Inline style is the reliable override.
+
+## Change-trail row suppression
+
+`ChangeViewRows` returns `null` (hiding all per-operation rows for a document)
+when every change in the trail is `kind: "insert"` without `writerProtection`.
+The card itself (`TurnEditsCard`) still renders — it carries the document line
+and whole-turn Undo. This is the pragmatic subset of
+[#321](https://github.com/haowjy/meridian-flow/issues/321): purely generative
+inserts produce no detail rows. Mixed turns or any protected change restore the
+full row list. Per-row filtering within mixed trails remains with #321.
 
 ## Don't
 
