@@ -13,12 +13,14 @@ import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
 import {
+  type BranchJournalReadStore,
   type BranchJournalRow,
   BranchPushCommitConflictError,
-  type BranchPushStore,
   type PreparedDiscardCommit,
   type PreparedPushCommit,
+  type PushCommitStore,
   type PushLineageRow,
+  type WorkPushPolicyStore,
 } from "../domain/branch-push-contracts.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
@@ -35,21 +37,15 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
 }
 
 async function persistRequiredTrail(
-  persistence: ChangeTrailPersistence | undefined,
+  persistence: ChangeTrailPersistence,
   prepared: PreparedPushCommit,
   push: PushLineageRow,
   notices?: NoticePort,
 ): Promise<void> {
-  if (!persistence) throw new Error("Branch push committer requires change-trail persistence");
   await persistDurableTrailRecord(prepared.trail, push, persistence, notices);
 }
 
-export function createDrizzleBranchPushStore(
-  db: Database,
-  stagePendingSettlementWithinTx: StagePendingSettlementWithinTx,
-  changeTrails?: ChangeTrailPersistence,
-  notices?: NoticePort,
-): BranchPushStore {
+export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
   return {
     async listActiveJournalRows(branchId, generation) {
       const rows = await db
@@ -197,7 +193,16 @@ export function createDrizzleBranchPushStore(
         .orderBy(desc(pushLineage.id));
       return rows.map(mapLineage);
     },
+  };
+}
 
+export function createDrizzlePushCommitStore(
+  db: Database,
+  stagePendingSettlementWithinTx: StagePendingSettlementWithinTx,
+  changeTrails: ChangeTrailPersistence,
+  notices?: NoticePort,
+): PushCommitStore {
+  return {
     async commitPush(input) {
       return runInDrizzleTransaction(db, async () => {
         const txDb = currentDrizzleDb(db);
@@ -224,8 +229,6 @@ export function createDrizzleBranchPushStore(
     async commitTurnRedo(input) {
       return runInDrizzleTransaction(db, async () => {
         await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
-        if (!changeTrails)
-          throw new Error("Branch push committer requires change-trail persistence");
         await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
       });
     },
@@ -254,6 +257,27 @@ export function createDrizzleBranchPushStore(
       });
     },
 
+    async markRollbackPending(input) {
+      const rows = await db
+        .update(branchWriteJournal)
+        .set({ status: "rollback_pending" })
+        .where(
+          and(
+            eq(branchWriteJournal.branchId, input.branchId),
+            eq(branchWriteJournal.threadId, input.threadId),
+            eq(branchWriteJournal.turnId, input.turnId),
+            eq(branchWriteJournal.generation, input.generation),
+            eq(branchWriteJournal.status, "active"),
+          ),
+        )
+        .returning({ id: branchWriteJournal.id });
+      return rows.length;
+    },
+  };
+}
+
+export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicyStore {
+  return {
     async countUnpushedRowsForWork(workId) {
       const [{ count } = { count: 0 }] = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -302,23 +326,6 @@ export function createDrizzleBranchPushStore(
           .set({ aiWriteMode: aiWriteModeProjection(policy), updatedAt: new Date() })
           .where(eq(works.id, workId));
       });
-    },
-
-    async markRollbackPending(input) {
-      const rows = await db
-        .update(branchWriteJournal)
-        .set({ status: "rollback_pending" })
-        .where(
-          and(
-            eq(branchWriteJournal.branchId, input.branchId),
-            eq(branchWriteJournal.threadId, input.threadId),
-            eq(branchWriteJournal.turnId, input.turnId),
-            eq(branchWriteJournal.generation, input.generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
-        )
-        .returning({ id: branchWriteJournal.id });
-      return rows.length;
     },
   };
 }

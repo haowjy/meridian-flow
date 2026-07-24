@@ -53,7 +53,11 @@ import {
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { createBranchAgentEditDiagnostics } from "./adapters/branch-agent-edit-observability.js";
-import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
+import {
+  createDrizzleBranchJournalReadStore,
+  createDrizzlePushCommitStore,
+  createDrizzleWorkPushPolicyStore,
+} from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import {
@@ -111,13 +115,16 @@ import { createBranchCriticalSections } from "./domain/branch-critical-sections.
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import type {
+  BranchJournalReadStore,
   BranchPushService,
-  BranchPushStore,
+  BranchReviewService,
   PushToLiveResult,
+  WorkPushPolicyStore,
 } from "./domain/branch-push-contracts.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
+import { createBranchReviewOperations } from "./domain/branch-review-operations.js";
 import {
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
@@ -343,7 +350,9 @@ export type CollabFacadeDeps = {
   branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
   branchPulls?: ReturnType<typeof createBranchPullService>;
   branchPush?: BranchPushService;
-  branchPushStore?: BranchPushStore;
+  branchReview?: BranchReviewService;
+  branchJournalReadStore?: BranchJournalReadStore;
+  workPushPolicyStore?: WorkPushPolicyStore;
   concurrentJournalWatermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>;
   offlineReconciliation?: OfflineReconciliation;
   trailForwardActions?: ReturnType<typeof createDrizzleTrailForwardActions>;
@@ -642,12 +651,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     changeTrails,
     deps.notices,
   );
-  const branchPushStore = createDrizzleBranchPushStore(
+  const branchJournalReadStore = createDrizzleBranchJournalReadStore(deps.db);
+  const pushCommitStore = createDrizzlePushCommitStore(
     deps.db,
     stagePendingSettlementWithinTx,
     changeTrails,
     deps.notices,
   );
+  const workPushPolicyStore = createDrizzleWorkPushPolicyStore(deps.db);
   let writerIngressBarrier: WriterIngressBarrier | undefined;
   const branchPushIngressBarrier: WriterIngressBarrier = {
     drain: (documentId) => writerIngressBarrier?.drain(documentId) ?? Promise.resolve(0),
@@ -657,7 +668,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
-    pushStore: branchPushStore,
+    journalReadStore: branchJournalReadStore,
+    commitStore: pushCommitStore,
+    workPushPolicyStore,
     settlementStore: pendingSettlementStore,
     branchCoordinator,
     journal,
@@ -668,6 +681,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     writerIngressBarrier: branchPushIngressBarrier,
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
+  });
+  const branchReview = createBranchReviewOperations({
+    branchStore,
+    journalReadStore: branchJournalReadStore,
+    commitStore: pushCommitStore,
+    branchCoordinator,
+    journal,
+    criticalSections: branchCriticalSections,
   });
   const trailForwardActions = createDrizzleTrailForwardActions({
     db: deps.db,
@@ -709,10 +730,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       branchCoordinator,
       branchPulls,
       branchPush,
+      branchReview,
       concurrentJournalWatermarks,
       offlineReconciliation,
       trailForwardActions,
-      branchPushStore,
+      branchJournalReadStore,
+      workPushPolicyStore,
       manifestMembership: branchStore,
       resolveWorkWriteMode: async (workId) => {
         const [row] = await deps.db
@@ -827,7 +850,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
     deps.branchStore && deps.branchCoordinator
       ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
       : null;
-  const listBranchRows = deps.branchPushStore?.listJournalRowsForBranch;
+  const listBranchRows = deps.branchJournalReadStore?.listJournalRowsForBranch;
   const agentEditCore: ThreadPeerAgentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
@@ -856,7 +879,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
               branches: branchAgentEdit.store,
               pendingJournalEntries,
               branchPush: deps.branchPush,
-              journalRows: deps.branchPushStore,
+              journalRows: deps.branchJournalReadStore,
               liveJournal: deps.journal,
               diagnostics: branchAgentEditDiagnostics,
               afterCommit(callback) {
@@ -923,18 +946,19 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
     workId: WorkId,
     projectId?: ProjectId,
   ): Promise<ReviewableDraft[]> {
-    if (!deps.branchStore || !deps.branchPushStore) return [];
+    if (!deps.branchStore || !deps.branchJournalReadStore || !deps.workPushPolicyStore) return [];
     const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
-    const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
+    const branchIds = await deps.workPushPolicyStore.listActiveWorkDraftBranchIdsForWork(workId);
     const drafts: ReviewableDraft[] = [];
     for (const branchId of branchIds) {
       const branch = await deps.branchStore.getBranch(branchId);
       if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
         continue;
       }
-      const rows = await (
-        deps.branchPushStore.listReviewableJournalRows ?? deps.branchPushStore.listActiveJournalRows
-      )(branch.branchId, branch.generation);
+      const rows = await deps.branchJournalReadStore.listReviewableJournalRows(
+        branch.branchId,
+        branch.generation,
+      );
       if (rows.length === 0) continue;
       const uri = (await deps.documentUriResolver?.(branch.documentId)) ?? null;
       drafts.push({
@@ -969,7 +993,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
     documentId: DocumentId;
     workId: WorkId;
   }) {
-    if (!deps.branchStore || !deps.branchCoordinator || !deps.branchPushStore) return null;
+    if (!deps.branchStore || !deps.branchCoordinator || !deps.branchJournalReadStore) return null;
     const liveState = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => ({
       state: Y.encodeStateAsUpdate(liveDoc),
       markdown: await markdownDocuments.serializeDocument(input.documentId, liveDoc),
@@ -1005,10 +1029,10 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
       }
       try {
         const draftUpdates = (
-          await (
-            deps.branchPushStore.listReviewableJournalRows ??
-            deps.branchPushStore.listActiveJournalRows
-          )(branch.branchId, branch.generation)
+          await deps.branchJournalReadStore.listReviewableJournalRows(
+            branch.branchId,
+            branch.generation,
+          )
         ).map((row) => ({
           id: row.id,
           actorTurnId: row.turnId,
@@ -1461,7 +1485,9 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
             branch.documentId === input.documentId
           ) {
             if (input.operationIds && input.operationIds.length > 0) {
-              if (!deps.branchPush || !deps.branchPushStore) throw new Error("draft_not_found");
+              if (!deps.branchReview || !deps.branchJournalReadStore) {
+                throw new Error("draft_not_found");
+              }
               const preview = await previewWorkDraftBranch({
                 projectId: input.projectId,
                 documentId: input.documentId,
@@ -1481,7 +1507,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
                 if (!operationIds.has(operation.operationId)) continue;
                 for (const id of operation.directionalClosure.reject.updateIds) updateIds.add(id);
               }
-              await deps.branchPush.discardSelected({
+              await deps.branchReview.discardSelected({
                 branchId: branch.branchId,
                 journalIds: [...updateIds],
                 reviewedByUserId: input.userId,
@@ -1638,8 +1664,8 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
       return mapResult(result);
     },
     async finalizeResponseRollback(responseId, ctx) {
-      const activeBranchRows = deps.branchPushStore?.listJournalRowsForTurn
-        ? await deps.branchPushStore.listJournalRowsForTurn({
+      const activeBranchRows = deps.branchJournalReadStore
+        ? await deps.branchJournalReadStore.listJournalRowsForTurn({
             threadId: ctx.threadId,
             turnId: ctx.turnId,
             statuses: ["active"],
@@ -1647,7 +1673,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
         : [];
       const result = await agentEditCore.rollbackResponse(responseId);
 
-      if (deps.branchPush && deps.branchStore) {
+      if (deps.branchReview && deps.branchStore) {
         for (const branchId of [...new Set(activeBranchRows.map((row) => row.branchId))]) {
           const branch = await deps.branchStore.getBranch(branchId);
           if (
@@ -1659,7 +1685,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
           ) {
             continue;
           }
-          await deps.branchPush.markFailedResponseRollbackPending({
+          await deps.branchReview.markFailedResponseRollbackPending({
             branchId,
             threadId: ctx.threadId,
             turnId: ctx.turnId,
@@ -1703,9 +1729,9 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
         },
         input,
       );
-      if (!deps.branchPush || !deps.branchPushStore?.listJournalRowsForTurn) return liveOutcome;
+      if (!deps.branchReview || !deps.branchJournalReadStore) return liveOutcome;
       const statuses = input.direction === "undo" ? ["active" as const] : ["discarded" as const];
-      const rows = await deps.branchPushStore.listJournalRowsForTurn({
+      const rows = await deps.branchJournalReadStore.listJournalRowsForTurn({
         threadId: input.threadId,
         turnId: input.turnId,
         statuses,
@@ -1716,7 +1742,7 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
       for (const branchId of branchIds) {
         const branch = await deps.branchStore?.getBranch(branchId);
         if (!branch) continue;
-        const result = await deps.branchPush.reverseBranchTurn({
+        const result = await deps.branchReview.reverseBranchTurn({
           branchId,
           threadId: input.threadId,
           turnId: input.turnId,
@@ -1758,8 +1784,8 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
       return deps.branchPush.pushSelectedToLive(input);
     },
     countUnpushedRowsForWork(workId) {
-      if (!deps.branchPushStore) return Promise.resolve(0);
-      return deps.branchPushStore.countUnpushedRowsForWork(workId);
+      if (!deps.workPushPolicyStore) return Promise.resolve(0);
+      return deps.workPushPolicyStore.countUnpushedRowsForWork(workId);
     },
 
     setWorkPushPolicy(input) {
@@ -1768,8 +1794,8 @@ export function createFacade(deps: CollabFacadeDeps, runtime: FacadeRuntime): Co
     },
 
     markFailedResponseRollbackPending(input) {
-      if (!deps.branchPush) throw new Error("Branch push service is not configured");
-      return deps.branchPush.markFailedResponseRollbackPending(input);
+      if (!deps.branchReview) throw new Error("Branch review service is not configured");
+      return deps.branchReview.markFailedResponseRollbackPending(input);
     },
 
     pullThreadPeer(input) {

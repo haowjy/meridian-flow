@@ -12,10 +12,10 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
-  BranchPushStore,
   CompletionFenceResult,
   PendingLiveSettlement,
   PreparedPushCommit,
+  PushCommitStore,
   PushSweptTrail,
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
@@ -35,7 +35,7 @@ export class PendingLiveSettlementError extends Error {
 }
 
 export function createBranchPushTransition(input: {
-  pushStore: BranchPushStore;
+  commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
@@ -171,12 +171,9 @@ export function createBranchPushTransition(input: {
     };
   }
 
-  const commit = (prepared: PreparedPushCommit) => input.pushStore.commitPush(prepared);
-  const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) => {
-    if (!input.pushStore.commitPushBatch)
-      throw new Error("Branch push store does not support atomic companion pushes");
-    return input.pushStore.commitPushBatch(prepared);
-  };
+  const commit = (prepared: PreparedPushCommit) => input.commitStore.commitPush(prepared);
+  const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) =>
+    input.commitStore.commitPushBatch(prepared);
 
   /** Classifies destructive effects from durable provenance and the current before/after state. */
   function classify(

@@ -30,6 +30,17 @@ export class BranchPushCommitConflictError extends Error {
   }
 }
 
+export class BranchPushRetryExhaustedError extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly maxRetries: number,
+    cause?: unknown,
+  ) {
+    super(`Branch ${branchId} push did not commit after ${maxRetries} CAS retries`, { cause });
+    this.name = "BranchPushRetryExhaustedError";
+  }
+}
+
 export type BranchJournalRow = {
   id: number;
   branchId: string;
@@ -230,48 +241,71 @@ export type PreparedDiscardCommit = {
   reviewedByUserId?: UserId;
 };
 
-export type BranchPushStore = {
+export type PushCandidate = {
+  branchId: string;
+  documentId: DocumentId;
+  rows: BranchJournalRow[];
+  kind: "content" | "manifest";
+  materialization: "whole" | "selected_rows";
+  conflictPolicy: "refuse" | "apply_and_trail";
+  sweepPolicy: "project" | "none";
+};
+
+export type CandidateBatch = {
+  candidates: PushCandidate[];
+  receiptId: string;
+  resetPolicy?: "auto";
+  pushedByUserId?: UserId;
+};
+
+export type BranchJournalReadStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listReviewableJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+  listReviewableJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   listConcurrentJournalRows(
     branchId: string,
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
-  latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
-  listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
-  commitPush(
-    input: PreparedPushCommit,
-  ): Promise<
-    { status: "inserted"; push: PushLineageRow } | { status: "conflict"; push: PushLineageRow }
-  >;
-  commitDiscard?(input: PreparedDiscardCommit): Promise<void>;
-  commitPushBatch?(input: { pushes: PreparedPushCommit[] }): Promise<{
-    pushes: PushLineageRow[];
-  }>;
-  countUnpushedRowsForWork(workId: WorkId): Promise<number>;
-  listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
-  updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
-  listJournalRowsForTurn?(input: {
+  latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
+  listPushesForDocument(documentId: DocumentId): Promise<PushLineageRow[]>;
+  listJournalRowsForTurn(input: {
     branchId?: string;
     generation?: number;
     threadId: ThreadId;
     turnId: TurnId;
     statuses?: readonly BranchJournalRow["status"][];
   }): Promise<BranchJournalRow[]>;
-  listJournalRowsForBranch?(input: {
+  listJournalRowsForBranch(input: {
     branchId: string;
     generation: number;
     throughJournalId?: number;
   }): Promise<BranchJournalRow[]>;
-  listPushLineageForTurn?(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
-  commitTurnRedo?(input: PreparedDiscardCommit): Promise<void>;
+  listPushLineageForTurn(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
+};
+
+export type PushCommitStore = {
+  commitPush(
+    input: PreparedPushCommit,
+  ): Promise<
+    { status: "inserted"; push: PushLineageRow } | { status: "conflict"; push: PushLineageRow }
+  >;
+  commitDiscard(input: PreparedDiscardCommit): Promise<void>;
+  commitPushBatch(input: { pushes: PreparedPushCommit[] }): Promise<{
+    pushes: PushLineageRow[];
+  }>;
+  commitTurnRedo(input: PreparedDiscardCommit): Promise<void>;
   markRollbackPending(input: {
     branchId: string;
     generation: number;
     threadId: ThreadId;
     turnId: TurnId;
   }): Promise<number>;
+};
+
+export type WorkPushPolicyStore = {
+  countUnpushedRowsForWork(workId: WorkId): Promise<number>;
+  listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
+  updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
 };
 
 export type PushUpdateComputer = (input: {
@@ -296,6 +330,7 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
     overlapPolicy?: "refuse" | "apply_and_trail";
+    resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
   pushSelectedToLive(input: {
     branchId: string;
@@ -303,6 +338,30 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
+  pushToLiveWithManifestEntry(input: {
+    branchId: string;
+    manifestBranchId: string;
+    manifestEntryDocumentId: DocumentId;
+    contentJournalIds?: readonly number[];
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
+    overlapPolicy?: "refuse" | "apply_and_trail";
+  }): Promise<PushToLiveResult>;
+  pushAutoBranchAfterThreadPeerWrite(
+    input: AutoPushAfterThreadPeerWriteInput,
+  ): Promise<AutoPushAfterThreadPeerWriteResult>;
+  setWorkPushPolicy(input: {
+    workId: WorkId;
+    policy: "manual" | "auto";
+    confirmedPush?: boolean;
+    pushedByUserId?: UserId;
+  }): Promise<
+    | { status: "updated"; policy: "manual" | "auto" }
+    | { status: "confirmation_required"; unpushedCount: number; reason: string }
+  >;
+};
+
+export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
     journalIds: readonly number[];
@@ -324,27 +383,6 @@ export type BranchPushService = {
         branchId: string;
         journalIds: number[];
       }
-  >;
-  pushToLiveWithManifestEntry(input: {
-    branchId: string;
-    manifestBranchId: string;
-    manifestEntryDocumentId: DocumentId;
-    contentJournalIds?: readonly number[];
-    pushedByUserId?: UserId;
-    signal?: AbortSignal;
-    overlapPolicy?: "refuse" | "apply_and_trail";
-  }): Promise<PushToLiveResult>;
-  pushAutoBranchAfterThreadPeerWrite(
-    input: AutoPushAfterThreadPeerWriteInput,
-  ): Promise<AutoPushAfterThreadPeerWriteResult>;
-  setWorkPushPolicy(input: {
-    workId: WorkId;
-    policy: "manual" | "auto";
-    confirmedPush?: boolean;
-    pushedByUserId?: UserId;
-  }): Promise<
-    | { status: "updated"; policy: "manual" | "auto" }
-    | { status: "confirmation_required"; unpushedCount: number; reason: string }
   >;
   markFailedResponseRollbackPending(input: {
     branchId: string;
@@ -370,9 +408,11 @@ export interface PushSweptTrail {
   reversible: boolean;
 }
 
-export type BranchPushExecutorInput = {
+export type BranchPushServiceInput = {
   branchStore: BranchStore;
-  pushStore: BranchPushStore;
+  journalReadStore: BranchJournalReadStore;
+  commitStore: PushCommitStore;
+  workPushPolicyStore: WorkPushPolicyStore;
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
