@@ -12,6 +12,8 @@ import {
   executeCleanupPlan,
   isPrNumberTarget,
   type MeridianWorkItem,
+  parseGitWorktreePorcelain,
+  parseMergedBranches,
   parseMeridianWorkList,
   parseMeridianWorkShow,
   parsePrNumber,
@@ -157,18 +159,71 @@ function collectMeridianWorkItems(cwd: string): MeridianWorkItem[] {
   return workItems;
 }
 
+// The trunk this repo integrates into. Detected from the remote's default
+// branch (`origin/HEAD`) so cleanup tracks a renamed trunk instead of a
+// hardcoded name; falls back to `main` when the symbolic ref isn't set.
+function resolveBaseBranch(cwd: string): string {
+  try {
+    const ref = runText(
+      "git",
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      cwd,
+    );
+    const slash = ref.indexOf("/");
+    if (slash >= 0 && slash < ref.length - 1) return ref.slice(slash + 1);
+  } catch {
+    // origin/HEAD unset (e.g. no remote); fall through to the default.
+  }
+  return "main";
+}
+
+// GitHub PR state is the squash-merge-aware signal: a squash-merged branch tip
+// is never an ancestor of the base, so `git branch --merged` can't see it, but
+// its PR is `merged`. Missing/failed gh is a *safe* no -- callers then fall back
+// to git ancestry, and unmerged branches keep being refused rather than deleted.
+function branchHasMergedPr(branch: string, cwd: string): boolean {
+  try {
+    const count = runText(
+      "gh",
+      ["pr", "list", "--head", branch, "--state", "merged", "--json", "number", "--jq", "length"],
+      cwd,
+    );
+    return Number.parseInt(count, 10) > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Merged = git ancestry (fast, offline) UNION merged-PR (squash-aware, online).
+// Only worktree branches missing from the ancestry set are probed via gh, so a
+// fully offline run degrades to the previous ancestry-only behaviour.
+function collectMergedBranches(
+  gitWorktreePorcelain: string,
+  baseBranch: string,
+  cwd: string,
+): Set<string> {
+  const ancestryMerged = parseMergedBranches(
+    runText("git", ["branch", "--format=%(refname:short)", "--merged", baseBranch], cwd),
+  );
+  const merged = new Set(ancestryMerged);
+  for (const worktree of parseGitWorktreePorcelain(gitWorktreePorcelain)) {
+    const branch = worktree.branch;
+    if (!branch || branch === baseBranch || merged.has(branch)) continue;
+    if (branchHasMergedPr(branch, cwd)) merged.add(branch);
+  }
+  return merged;
+}
+
 function buildPlan(options: CliOptions, cwd: string): CleanupPlan {
   const currentWorktreePath = runText("git", ["rev-parse", "--show-toplevel"], cwd);
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
-  const mergedBranches = runText(
-    "git",
-    ["branch", "--format=%(refname:short)", "--merged", "main"],
-    cwd,
-  );
+  const baseBranch = resolveBaseBranch(cwd);
+  const mergedBranches = collectMergedBranches(gitWorktreePorcelain, baseBranch, cwd);
   const meridianWorkItems = collectMeridianWorkItems(cwd);
   const context = buildCleanupContext({
     gitWorktreePorcelain,
     mergedBranches,
+    baseBranch,
     meridianWorkItems,
     currentWorktreePath,
   });
