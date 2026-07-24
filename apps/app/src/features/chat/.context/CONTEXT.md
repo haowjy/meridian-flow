@@ -174,7 +174,10 @@ AssistantTurn.tsx
 
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
-`apps/server/server/domains/runtime/tools/`. The current runtime surface is
+`apps/server/server/domains/runtime/tools/`. A mismatched key silently falls
+through to the tier-1 default (humanized name only) — this exact drift caused a
+writer-visible bug where the old v2 registry key didn't match the real v3 tool
+name and the renderer never activated. The current runtime surface is
 `write`, `ls`, `grep`, `invoke`, `ask_user`, `spawn`, and `return_result`;
 `ask_user` renders through component cards, while `spawn` and `return_result`
 intentionally use the humanized default renderer.
@@ -231,8 +234,6 @@ Implemented in `partition-turn-segments.ts`, `ProcessDisclosure.tsx`, and
 `foldRuns` contains all non-frontier runs and `frontier` contains the last
 activity run. `ProcessDisclosure` is a default-collapsed shell; callers compose
 reasoning rows and folded activity runs.
-
-Migration is tracked in `work/activity-thinking-model`.
 
 ## Turn edits card (`TurnEditsCard.tsx`)
 
