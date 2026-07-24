@@ -500,7 +500,10 @@ describe("createBranchPushService", () => {
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const record = vi.fn(async () => {});
-    const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
+    const service = harness.service(
+      { record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() },
+      { notices },
+    );
 
     const result =
       policy === "auto"
@@ -555,7 +558,7 @@ describe("createBranchPushService", () => {
       return { status: "inserted" as const, push };
     });
     await harness
-      .service({ record, reopenOwners: vi.fn() })
+      .service({ record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() })
       .pushToLive({ branchId: harness.branch.branchId });
 
     const trails = record.mock.calls[0]?.[0].trails;
@@ -608,7 +611,7 @@ describe("createBranchPushService", () => {
       return { status: "inserted" as const, push };
     });
     await harness
-      .service({ record, reopenOwners: vi.fn() })
+      .service({ record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() })
       .pushToLive({ branchId: harness.branch.branchId });
 
     expect(
@@ -638,10 +641,12 @@ describe("createBranchPushService", () => {
       await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    await harness.service({ record, reopenOwners: vi.fn() }).pushSelectedToLive({
-      branchId: harness.branch.branchId,
-      journalIds: [harness.row.id],
-    });
+    await harness
+      .service({ record, replacePushContribution: vi.fn(), reopenOwners: vi.fn() })
+      .pushSelectedToLive({
+        branchId: harness.branch.branchId,
+        journalIds: [harness.row.id],
+      });
 
     expect(record).toHaveBeenCalledOnce();
   });

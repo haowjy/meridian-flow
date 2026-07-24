@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  branchPushSettlementOutbox,
   changeTrailDeliveryOutbox,
   changeTrailDocumentDetails,
   changeTrailDocumentOccurrences,
@@ -96,7 +97,7 @@ function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
-  return {
+  const writer: ChangeTrailAggregateWriter = {
     async record(input) {
       const tx = currentDrizzleDb(db);
       const trails = [...input.trails].sort((left, right) =>
@@ -257,6 +258,94 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         }
       }
     },
+    async replacePushContribution(pushId, replacement) {
+      const tx = currentDrizzleDb(db);
+      const affected = await tx
+        .select({
+          trailId: changeTrailShells.id,
+          ownerKind: changeTrailShells.ownerKind,
+          threadId: changeTrailShells.threadId,
+          turnId: changeTrailShells.turnId,
+          documentId: changeTrailDocumentDetails.documentId,
+          documentTitle: changeTrailDocumentDetails.documentTitle,
+          changes: changeTrailDocumentDetails.changes,
+        })
+        .from(changeTrailDocumentDetails)
+        .innerJoin(changeTrailShells, eq(changeTrailShells.id, changeTrailDocumentDetails.trailId))
+        .where(sql`EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(${changeTrailDocumentDetails.changes}) AS change
+          WHERE change->>'pushId' = ${pushId}
+        )`);
+      if (affected.length === 0) return;
+      const [settlement] = await tx
+        .select({
+          joinVersion: branchPushSettlementOutbox.joinVersion,
+          classifiedJoinVersion: branchPushSettlementOutbox.classifiedJoinVersion,
+        })
+        .from(branchPushSettlementOutbox)
+        .where(eq(branchPushSettlementOutbox.pushId, Number(pushId)))
+        .limit(1);
+      if (!settlement) throw new Error(`Cannot replace missing push settlement ${pushId}`);
+
+      const classifications = replacement.kind === "refine" ? replacement.classifications : [];
+      const classificationByKey = new Map(
+        classifications.map((change) => [canonicalChangeKey(change), change]),
+      );
+      const grouped = new Map<
+        string,
+        {
+          owner: NormalizedTrail["owner"];
+          changes: TrailChangeV1[];
+          documentTitles: Map<string, string>;
+        }
+      >();
+      for (const row of affected) {
+        const owner =
+          row.ownerKind === "turn" && row.turnId
+            ? {
+                kind: "turn" as const,
+                threadId: row.threadId,
+                turnId: row.turnId,
+              }
+            : {
+                kind: "shared" as const,
+                threadId: row.threadId,
+                turnId: null,
+              };
+        const group = grouped.get(row.trailId) ?? {
+          owner,
+          changes: [],
+          documentTitles: new Map<string, string>(),
+        };
+        const pushChanges = (row.changes as TrailChangeV1[]).filter(
+          (change) => change.pushId === pushId,
+        );
+        for (const change of pushChanges) {
+          const classified = classificationByKey.get(canonicalChangeKey(change));
+          if (classified) group.changes.push(classified);
+        }
+        group.documentTitles.set(row.documentId, row.documentTitle);
+        grouped.set(row.trailId, group);
+      }
+      const trails = [...grouped.values()].map(({ owner, changes }) => ({
+        owner,
+        changes,
+        counts: {
+          changes: changes.length,
+          swept: changes.filter((change) => change.swept !== null).length,
+          documents: new Set(changes.map((change) => change.documentId)).size,
+        },
+      }));
+      await writer.record({
+        trails,
+        documentTitles: new Map(
+          [...grouped.values()].flatMap(({ documentTitles }) => [...documentTitles]),
+        ),
+        refineCurrentVersion: settlement.classifiedJoinVersion === settlement.joinVersion,
+        replacePushId: pushId,
+      });
+    },
     async reopenOwners(owners) {
       const tx = currentDrizzleDb(db);
       const sortedOwners = [
@@ -301,6 +390,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       await reconcileTerminalOwners(db);
     },
   };
+  return writer;
 }
 
 /** Advances turn trails only after the terminal turn policy has covered every owned row. */
