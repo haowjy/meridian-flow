@@ -4,7 +4,10 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
-import { createContextIdentityMutationService } from "./context-identity-mutation";
+import {
+  type ContextIdentityMutationService,
+  createContextIdentityMutationService,
+} from "./context-identity-mutation";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
 import { queueUntitledIdentity } from "./untitled-reconciler-browser";
 
@@ -75,6 +78,7 @@ export function useIdentityCommit({
   tab,
   defaultWorkId,
   onCommitted,
+  identityMutations: suppliedIdentityMutations,
 }: {
   projectId: string;
   tab: ContextTab;
@@ -84,9 +88,12 @@ export function useIdentityCommit({
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
+  /** Optional composition seam; app callers share the QueryClient-owned service. */
+  identityMutations?: ContextIdentityMutationService;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const queryClient = useQueryClient();
-  const identityMutations = createContextIdentityMutationService(queryClient);
+  const identityMutations =
+    suppliedIdentityMutations ?? createContextIdentityMutationService(queryClient);
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
     if (plan.kind === "queue") {

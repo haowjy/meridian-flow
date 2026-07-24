@@ -1,71 +1,37 @@
-/** Operation ownership coverage for asynchronous document identity commits. */
+/** Operation ownership coverage through the stateful untitled lifecycle rig. */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type ContextTab, useContextTabsStore } from "@/client/stores";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { DesiredIdentity } from "./identity-location";
+import {
+  lifecycleGate,
+  UNTITLED_TAB,
+  UntitledLifecycleRig,
+} from "./test-support/UntitledLifecycleRig";
+import { identityCommitMayNavigate, useIdentityCommit } from "./use-identity-commit";
 
-const { moveMock } = vi.hoisted(() => ({ moveMock: vi.fn() }));
-
-vi.mock("./context-identity-mutation", () => ({
-  createContextIdentityMutationService: () => {
-    let generation = 0;
-    let tail = Promise.resolve();
-    return {
-      move: (...args: unknown[]) => {
-        const current = ++generation;
-        const run = tail.then(() => moveMock(...args));
-        tail = run.then(
-          () => undefined,
-          () => undefined,
-        );
-        return run.then((result) => ({ result, isLatest: current === generation }));
-      },
-    };
-  },
-}));
-vi.mock("./untitled-reconciler-browser", () => ({ queueUntitledIdentity: vi.fn() }));
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
 }));
 
-const { identityCommitMayNavigate, useIdentityCommit } = await import("./use-identity-commit");
-
-const tab: ContextTab = {
-  kind: "tracked",
-  documentId: "doc-1",
-  scheme: "scratch",
-  path: "/Untitled.md",
-  name: "Untitled.md",
-  workId: "work-1",
-  editable: true,
-  filetype: "markdown",
-  schemaType: "document",
-  provisionalName: true,
-};
-
 describe("identity commit operation ownership", () => {
-  beforeEach(() => {
-    moveMock.mockReset();
-  });
-
   it.each([
     "stale-source",
     "stale-target",
   ] as const)("re-derives and retries a %s result once", async (reason) => {
-    useContextTabsStore.setState({
-      byProject: {
-        "project-1": { tabs: [tab], activeTabId: tab.documentId },
+    const rig = new UntitledLifecycleRig();
+    const tab = rig.seedTab();
+    rig.identityMove.enqueueResult(
+      { status: "retry", reason },
+      {
+        status: "moved",
+        scheme: "manuscript",
+        path: "Act 1/Opening.md",
+        name: "Opening.md",
       },
-    });
-    moveMock.mockResolvedValueOnce({ status: "retry", reason }).mockResolvedValueOnce({
-      status: "moved",
-      scheme: "manuscript",
-      path: "Act 1/Opening.md",
-      name: "Opening.md",
-    });
-    const onCommitted = vi.fn();
+    );
+    const committed: unknown[] = [];
     let commit!: (target: DesiredIdentity) => Promise<unknown>;
 
     function Harness() {
@@ -73,13 +39,14 @@ describe("identity commit operation ownership", () => {
         projectId: "project-1",
         tab,
         defaultWorkId: "work-1",
-        onCommitted,
+        identityMutations: rig.identityMutations,
+        onCommitted: (...receipt) => committed.push(receipt),
       });
       return null;
     }
 
     await withReactRoot(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={rig.queryClient}>
         <Harness />
       </QueryClientProvider>,
       async () => {
@@ -87,27 +54,29 @@ describe("identity commit operation ownership", () => {
       },
     );
 
-    expect(moveMock).toHaveBeenCalledTimes(2);
-    expect(onCommitted).toHaveBeenCalledOnce();
+    expect(rig.identityMove.calls).toHaveLength(2);
+    expect(committed).toHaveLength(1);
   });
 
   it("returns an actionable error when a fresh retry is still stale", async () => {
-    useContextTabsStore.setState({
-      byProject: { "project-1": { tabs: [tab], activeTabId: tab.documentId } },
-    });
-    moveMock.mockResolvedValue({ status: "retry", reason: "stale-source" });
+    const rig = new UntitledLifecycleRig();
+    const tab = rig.seedTab();
+    rig.identityMove.setFallback(async () => ({ status: "retry", reason: "stale-source" }));
     let commit!: (target: DesiredIdentity) => Promise<unknown>;
+
     function Harness() {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
         defaultWorkId: "work-1",
-        onCommitted: vi.fn(),
+        identityMutations: rig.identityMutations,
+        onCommitted: () => {},
       });
       return null;
     }
+
     await withReactRoot(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={rig.queryClient}>
         <Harness />
       </QueryClientProvider>,
       async () => {
@@ -119,17 +88,24 @@ describe("identity commit operation ownership", () => {
     );
   });
 
-  it("serializes overlapping commits and marks only the newest as navigation owner", async () => {
-    const finishes: Array<(name: string) => void> = [];
-    moveMock.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finishes.push((name) =>
-            resolve({ status: "moved", scheme: "manuscript", path: name, name }),
-          );
-        }),
-    );
-    const onCommitted = vi.fn();
+  it("serializes overlapping commits and gives navigation ownership only to the newest", async () => {
+    const rig = new UntitledLifecycleRig();
+    const tab = rig.seedTab();
+    const firstMove = lifecycleGate<{
+      status: "moved";
+      scheme: "manuscript";
+      path: string;
+      name: string;
+    }>();
+    rig.identityMove.enqueueHandler(() => firstMove.promise);
+    const secondMove = lifecycleGate<{
+      status: "moved";
+      scheme: "manuscript";
+      path: string;
+      name: string;
+    }>();
+    rig.identityMove.enqueueHandler(() => secondMove.promise);
+    const committed: Array<{ name: string; isLatest: boolean }> = [];
     let commit!: (target: DesiredIdentity) => Promise<unknown>;
 
     function Harness() {
@@ -137,45 +113,55 @@ describe("identity commit operation ownership", () => {
         projectId: "project-1",
         tab,
         defaultWorkId: "work-1",
-        onCommitted,
+        identityMutations: rig.identityMutations,
+        onCommitted: (_documentId, receipt, ownership) =>
+          committed.push({ name: receipt.name, isLatest: ownership.isLatest }),
       });
       return null;
     }
 
     await withReactRoot(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={rig.queryClient}>
         <Harness />
       </QueryClientProvider>,
       async () => {
         const first = commit(target("First.md"));
         const second = commit(target("Latest.md"));
         await Promise.resolve();
-        finishes[0]?.("First.md");
+        firstMove.resolve({
+          status: "moved",
+          scheme: "manuscript",
+          path: "First.md",
+          name: "First.md",
+        });
         await first;
-        await Promise.resolve();
-        finishes[1]?.("Latest.md");
+        await vi.waitFor(() => expect(rig.identityMove.calls).toHaveLength(2));
+        secondMove.resolve({
+          status: "moved",
+          scheme: "manuscript",
+          path: "Latest.md",
+          name: "Latest.md",
+        });
         await second;
-
-        expect(onCommitted).toHaveBeenNthCalledWith(
-          1,
-          "doc-1",
-          expect.objectContaining({ name: "First.md" }),
-          { isLatest: false },
-        );
-        expect(onCommitted).toHaveBeenNthCalledWith(
-          2,
-          "doc-1",
-          expect.objectContaining({ name: "Latest.md" }),
-          { isLatest: true },
-        );
       },
     );
+
+    expect(committed).toEqual([
+      { name: "First.md", isLatest: false },
+      { name: "Latest.md", isLatest: true },
+    ]);
   });
 
   it("refuses navigation after the writer switches tabs", () => {
-    expect(identityCommitMayNavigate({ isLatest: true }, "doc-2", "doc-1")).toBe(false);
-    expect(identityCommitMayNavigate({ isLatest: true }, "doc-1", "doc-1")).toBe(true);
-    expect(identityCommitMayNavigate({ isLatest: false }, "doc-1", "doc-1")).toBe(false);
+    expect(identityCommitMayNavigate({ isLatest: true }, "doc-2", UNTITLED_TAB.documentId)).toBe(
+      false,
+    );
+    expect(identityCommitMayNavigate({ isLatest: true }, "doc-1", UNTITLED_TAB.documentId)).toBe(
+      true,
+    );
+    expect(identityCommitMayNavigate({ isLatest: false }, "doc-1", UNTITLED_TAB.documentId)).toBe(
+      false,
+    );
   });
 });
 

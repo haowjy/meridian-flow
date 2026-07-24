@@ -1,183 +1,19 @@
-/**
- * ThreadRunController tests — protects direct transport run orchestration.
- *
- * These cases cover the direct controller contract without AG-UI client
- * machinery: submit/resume subscription startup, stale event filtering,
- * deferred cancel, teardown, and singleton gap snapshot recovery into store
- * actions.
- */
+/** Behavioral coverage for the stateful ThreadRunController lifecycle. */
 
 import type {
-  AGUIEvent,
   SendMessageResponse,
   Thread,
   ThreadSnapshotResponse,
   Turn,
 } from "@meridian/contracts/protocol";
-import { EventType, type SequencedEvent } from "@meridian/contracts/protocol";
-import { QueryClient } from "@tanstack/react-query";
+import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/meridian-error";
-import type { ThreadStoreActions } from "@/client/stores";
-import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
-import { createThreadStore } from "@/client/stores/thread-store/thread-store";
-import type {
-  ThreadTransport,
-  ThreadTransportHandlers,
-  ThreadTransportSubscribeOptions,
-} from "@/core/transport";
-
-import { ThreadRunController } from "./ThreadRunController";
-
-class FakeThreadTransport implements ThreadTransport {
-  handlers: ThreadTransportHandlers | null = null;
-  subscribeOptions: ThreadTransportSubscribeOptions | undefined;
-  subscribeThreadId: string | null = null;
-  unsubscribeCount = 0;
-  subscribeCount = 0;
-  respondInterrupt = vi.fn();
-  cancel = vi.fn().mockResolvedValue({
-    threadId: "thread_1",
-    turnId: "turn_1",
-    status: "cancelled",
-  });
-  connectionToken: string | undefined = "conn-test";
-  private connectionTokenWaiters = new Set<(token: string) => void>();
-
-  getConnectionToken(): string | undefined {
-    return this.connectionToken;
-  }
-
-  awaitConnectionToken(): Promise<string> {
-    if (this.connectionToken) return Promise.resolve(this.connectionToken);
-    return new Promise((resolve) => {
-      this.connectionTokenWaiters.add(resolve);
-    });
-  }
-
-  setConnectionToken(token: string): void {
-    this.connectionToken = token;
-    for (const resolve of this.connectionTokenWaiters) resolve(token);
-    this.connectionTokenWaiters.clear();
-  }
-
-  connect(): void {}
-
-  disconnect(): void {}
-
-  reconnect(): void {}
-
-  onConnectionState(): () => void {
-    return () => {};
-  }
-
-  subscribe(
-    threadId: string,
-    handlers: ThreadTransportHandlers,
-    opts?: ThreadTransportSubscribeOptions,
-  ): () => void {
-    this.handlers = handlers;
-    this.subscribeThreadId = threadId;
-    this.subscribeOptions = opts;
-    this.subscribeCount += 1;
-    return () => {
-      if (this.handlers === handlers) {
-        this.handlers = null;
-      }
-      this.unsubscribeCount += 1;
-    };
-  }
-
-  emit(event: AGUIEvent, seq = "1", sourceThreadId?: string) {
-    this.handlers?.onEvent({ seq, event, sourceThreadId } satisfies SequencedEvent);
-  }
-}
-
-async function waitForCancel(transport: FakeThreadTransport): Promise<void> {
-  await transport.cancel.mock.results.at(-1)?.value;
-}
-
-function makeActions(): ThreadStoreActions {
-  const turnsByThread: Record<string, Turn[]> = {};
-  let eventsApplied = 0;
-
-  const actions = {
-    turns: vi.fn((threadId: string) => turnsByThread[threadId]),
-    setStreamingThreadId: vi.fn(),
-    ensureThread: vi.fn(),
-    setThreadAttention: vi.fn(),
-    markHandoffPending: vi.fn(),
-    appendUserTurn: vi.fn(),
-    removeOptimisticUserTurn: vi.fn(),
-    acknowledgeUserTurn: vi.fn(),
-    ensureAssistantTurn: vi.fn((threadId: string, turnId: string) => {
-      const turns = turnsByThread[threadId] ?? [];
-      if (turns.some((turn) => turn.id === turnId)) return;
-      turnsByThread[threadId] = [
-        ...turns,
-        {
-          id: turnId,
-          threadId,
-          prevTurnId: turns.at(-1)?.id ?? null,
-          role: "assistant",
-          status: "streaming",
-          finishReason: null,
-          inputTokens: 0,
-          outputTokens: 0,
-          reasoningTokens: null,
-          cacheReadTokens: null,
-          cacheWriteTokens: null,
-          totalCostUsd: "0",
-          responseCount: 0,
-          usage: null,
-          error: null,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          completedAt: null,
-          blocks: [],
-          siblingIds: [],
-          responses: [],
-        },
-      ];
-    }),
-    upsertAssistantBlock: vi.fn((threadId: string, turnId: string, block) => {
-      const turns = turnsByThread[threadId] ?? [];
-      turnsByThread[threadId] = turns.map((turn) =>
-        turn.id === turnId
-          ? {
-              ...turn,
-              blocks: [
-                ...turn.blocks.filter((existing) => existing.sequence !== block.sequence),
-                block,
-              ].sort((a, b) => a.sequence - b.sequence),
-            }
-          : turn,
-      );
-    }),
-    patchTurnStatus: vi.fn((threadId: string, turnId: string, status, patch = {}) => {
-      const turns = turnsByThread[threadId] ?? [];
-      turnsByThread[threadId] = turns.map((turn) =>
-        turn.id === turnId ? { ...turn, ...patch, status } : turn,
-      );
-    }),
-    pruneStaleAssistantTurns: vi.fn((threadId: string) => {
-      const turns = turnsByThread[threadId] ?? [];
-      turnsByThread[threadId] = turns.filter(
-        (turn) => !(turn.role === "assistant" && turn.status === "streaming"),
-      );
-    }),
-    bumpEventsApplied: vi.fn(() => {
-      eventsApplied += 1;
-      return eventsApplied;
-    }),
-    applyThreadSnapshot: vi.fn(),
-    markPendingStream: vi.fn(),
-    consumePendingStream: vi.fn(),
-    markPendingCreation: vi.fn(),
-    clearPendingCreation: vi.fn(),
-  } satisfies ThreadStoreActions;
-
-  return actions;
-}
+import {
+  defaultSendResponse,
+  scenarioGate,
+  ThreadRunScenario,
+} from "./test-support/ThreadRunScenario";
 
 const thread: Thread = {
   id: "thread_1",
@@ -234,11 +70,11 @@ const waitingInterruptTurn: Turn = {
   completedAt: null,
 };
 
-function makeSnapshot(): ThreadSnapshotResponse {
+function snapshot(nextSeq = "10", turns: Turn[] = [assistantTurn]): ThreadSnapshotResponse {
   return {
     threadId: "thread_1",
     thread,
-    turns: [assistantTurn],
+    turns,
     liveState: {
       threadId: "thread_1",
       status: "active",
@@ -247,7 +83,7 @@ function makeSnapshot(): ThreadSnapshotResponse {
       resumeAfterSeq: "9",
     },
     attention: "none",
-    nextSeq: "10",
+    nextSeq,
   };
 }
 
@@ -263,485 +99,232 @@ function serverUserTurnFrom(optimisticTurn: Turn, serverTurnId: string): Turn {
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-function sendResponse(overrides: Partial<SendMessageResponse> = {}): SendMessageResponse {
-  return {
-    threadId: "thread_1",
-    userTurnId: "turn-user",
-    assistantTurnId: "turn_1",
-    resumeAfterSeq: "42",
-    snapshotFloorNextSeq: "43",
-    status: "accepted",
-    ...overrides,
-  };
-}
-
 describe("ThreadRunController", () => {
-  it("awaits the server connection token before submit", async () => {
-    const transport = new FakeThreadTransport();
-    transport.connectionToken = undefined;
-    const actions = makeActions();
-    const appendUserMessageFn = vi.fn().mockResolvedValue(sendResponse());
-    const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
+  it("waits for admission, subscribes from the receipt, and records the completed transcript", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.disconnectAdmission();
 
-    const submitPromise = controller.submit("thread_1", "Hello");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(appendUserMessageFn).not.toHaveBeenCalled();
+    const submit = scenario.submit("Hello");
+    await Promise.resolve();
+    expect(scenario.appendRequests).toEqual([]);
 
-    transport.setConnectionToken("conn-late");
-    await submitPromise;
-
-    expect(appendUserMessageFn).toHaveBeenCalledWith({
-      data: {
-        threadId: "thread_1",
-        text: "Hello",
-        connectionToken: "conn-late",
-      },
+    scenario.connect("conn-late");
+    await submit;
+    expect(scenario.appendRequests).toEqual([
+      { data: { threadId: "thread_1", text: "Hello", connectionToken: "conn-late" } },
+    ]);
+    expect(scenario.activeSubscription()).toMatchObject({
+      threadId: "thread_1",
+      options: { after: "42" },
     });
-  });
 
-  it("appends the user message, subscribes from resumeAfterSeq, applies events, and tears down on RUN_FINISHED", async () => {
-    const transport = new FakeThreadTransport();
-    transport.setConnectionToken("conn-test");
-    const actions = makeActions();
-    const appendUserMessageFn = vi.fn().mockResolvedValue(sendResponse());
-    const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
-
-    await controller.submit("thread_1", "Hello");
-
-    expect(appendUserMessageFn).toHaveBeenCalledWith({
-      data: {
-        threadId: "thread_1",
-        text: "Hello",
-        connectionToken: "conn-test",
-      },
-    });
-    expect(transport.subscribeThreadId).toBe("thread_1");
-    expect(transport.subscribeOptions).toEqual({ after: "42" });
-
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "43");
-    transport.emit(
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "43");
+    scenario.emit(
       { type: EventType.TEXT_MESSAGE_START, messageId: "msg_1", role: "assistant" },
       "44",
     );
-    transport.emit({ type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn_1" }, "45");
+    scenario.emit({ type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn_1" }, "45");
 
-    expect(actions.turns("thread_1")?.[0]).toMatchObject({
-      id: "turn_1",
-      status: "complete",
-    });
-    expect(transport.handlers).toBeNull();
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: "turn_1", status: "complete" }),
+    ]);
+    expect(scenario.activeSubscription()).toBeUndefined();
   });
 
-  it("keeps an acknowledged user turn while the snapshot projection catches up", async () => {
-    const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
-    const appendUserMessageFn = vi.fn().mockResolvedValue(
-      sendResponse({
-        userTurnId: "turn_user_server",
-      }),
-    );
-    const controller = new ThreadRunController({
-      transport,
-      actions: store.getState(),
-      appendUserMessageFn,
+  it("keeps an acknowledged optimistic turn until the ordered projection catches up", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => defaultSendResponse({ userTurnId: "turn_user_server" }),
     });
+    const optimistic = scenario.store.getState().appendUserTurn("thread_1", "Hello");
 
-    expect(
-      store
-        .getState()
-        .turns("thread_1")
-        ?.map((turn) => turn.id),
-    ).toEqual([optimisticTurn.id]);
-
-    await controller.submit("thread_1", "Hello", { optimisticUserTurnId: optimisticTurn.id });
-    store.getState().applyThreadSnapshot(thread, [], {
+    await scenario.submit("Hello", { optimisticUserTurnId: optimistic.id });
+    scenario.store.getState().applyThreadSnapshot(thread, [], {
       nextSeq: "42",
       lifecycle: { attention: "none", runningTurnId: null },
     });
+    expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_user_server"]);
 
-    expect(
-      store
-        .getState()
-        .turns("thread_1")
-        ?.map((turn) => turn.id),
-    ).toEqual(["turn_user_server"]);
-
-    store
+    scenario.store
       .getState()
-      .applyThreadSnapshot(thread, [serverUserTurnFrom(optimisticTurn, "turn_user_server")], {
+      .applyThreadSnapshot(thread, [serverUserTurnFrom(optimistic, "turn_user_server")], {
         nextSeq: "43",
         lifecycle: { attention: "none", runningTurnId: null },
       });
-
-    const userTurns = store
-      .getState()
-      .turns("thread_1")
-      ?.filter((turn) => turn.role === "user");
-    expect(userTurns?.map((turn) => turn.id)).toEqual(["turn_user_server"]);
-  });
-
-  it("rejects older ordered snapshots after the projector catches up", () => {
-    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    const optimisticTurn = store.getState().appendUserTurn("thread_1", "Hello");
-    store
-      .getState()
-      .acknowledgeUserTurn("thread_1", optimisticTurn.id, "turn_user_server", "9007199254740992");
-    const persistedTurn = serverUserTurnFrom(optimisticTurn, "turn_user_server");
-
-    store.getState().applyThreadSnapshot(thread, [persistedTurn], {
-      nextSeq: "9007199254740993",
+    scenario.store.getState().applyThreadSnapshot(thread, [], {
+      nextSeq: "42",
       lifecycle: { attention: "none", runningTurnId: null },
     });
-    store.getState().applyThreadSnapshot(thread, [], {
-      nextSeq: "9007199254740992",
-      lifecycle: { attention: "none", runningTurnId: null },
-    });
-
-    expect(
-      store
-        .getState()
-        .turns("thread_1")
-        ?.map((turn) => turn.id),
-    ).toEqual(["turn_user_server"]);
+    expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_user_server"]);
   });
 
-  it("resumes from a cursor without requiring RUN_STARTED first", () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const appendUserMessageFn = vi.fn();
-    const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
+  it("resumes a known run without waiting for RUN_STARTED", () => {
+    const scenario = new ThreadRunScenario();
+    scenario.resume({ after: "100", expectedTurnId: "turn_1" });
 
-    controller.resume("thread_1", { after: "100", expectedTurnId: "turn_1" });
-
-    expect(appendUserMessageFn).not.toHaveBeenCalled();
-    expect(transport.subscribeOptions).toEqual({ after: "100" });
-
-    transport.emit(
+    scenario.emit(
       { type: EventType.TEXT_MESSAGE_START, messageId: "tail_msg", role: "assistant" },
       "101",
     );
-    transport.emit({ type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn_1" }, "102");
+    scenario.emit({ type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn_1" }, "102");
 
-    expect(actions.ensureAssistantTurn).toHaveBeenCalledWith("thread_1", "turn_1");
-    expect(actions.turns("thread_1")?.[0]).toMatchObject({
-      id: "turn_1",
-      status: "complete",
-    });
+    expect(scenario.appendRequests).toEqual([]);
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: "turn_1", status: "complete" }),
+    ]);
   });
 
-  it("sends interrupt responses through the transport", () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const controller = new ThreadRunController({ transport, actions });
-
-    controller.respondInterrupt({
+  it("forwards interrupt responses and cancellation outcomes", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.resume({ after: "42", expectedTurnId: "turn_1" });
+    scenario.controller.respondInterrupt({
       threadId: "thread_1",
       turnId: "turn_1",
       interruptId: "interrupt_1",
       value: { value: "approved" },
     });
+    scenario.controller.cancel("thread_1");
+    await Promise.resolve();
 
-    expect(transport.respondInterrupt).toHaveBeenCalledWith({
-      threadId: "thread_1",
-      turnId: "turn_1",
-      interruptId: "interrupt_1",
-      value: { value: "approved" },
-    });
+    expect(scenario.transport.interruptResponses).toEqual([
+      {
+        threadId: "thread_1",
+        turnId: "turn_1",
+        interruptId: "interrupt_1",
+        value: { value: "approved" },
+      },
+    ]);
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn_1" }]);
   });
 
-  it("calls HTTP cancel for the active turn", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const controller = new ThreadRunController({ transport, actions });
+  it("holds an early stop until RUN_STARTED supplies the turn id", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.resume({ after: "42" });
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([]);
 
-    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
-    controller.cancel("thread_1");
-    await waitForCancel(transport);
-
-    expect(transport.cancel).toHaveBeenCalledWith("thread_1", "turn_1");
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "43");
+    await Promise.resolve();
+    expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn_1" }]);
   });
 
-  it("cancels when Stop is requested before RUN_STARTED reveals the turn id", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const controller = new ThreadRunController({ transport, actions });
-
-    controller.resume("thread_1", { after: "42" });
-    controller.cancel("thread_1");
-    expect(transport.cancel).not.toHaveBeenCalled();
-
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "43");
-    await waitForCancel(transport);
-
-    expect(transport.cancel).toHaveBeenCalledWith("thread_1", "turn_1");
-  });
-
-  it("drops cross-thread and superseded-run events before applying to the store", () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const controller = new ThreadRunController({ transport, actions });
-
-    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
-    transport.emit(
+  it("drops cross-thread and superseded-run events", () => {
+    const scenario = new ThreadRunScenario();
+    scenario.resume({ after: "42", expectedTurnId: "turn_1" });
+    scenario.emit(
       { type: EventType.RUN_STARTED, threadId: "thread_child", runId: "turn_child" },
       "43",
       "thread_child",
     );
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_old" }, "44");
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "45");
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_old" }, "44");
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "45");
 
-    expect(actions.ensureAssistantTurn).toHaveBeenCalledTimes(1);
-    expect(actions.ensureAssistantTurn).toHaveBeenLastCalledWith("thread_1", "turn_1", {
-      createdAt: expect.any(String),
-    });
+    expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_1"]);
   });
 
-  it("keeps one active subscription by tearing down the prior run before a new resume", () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const controller = new ThreadRunController({ transport, actions });
+  it("keeps one live subscription and ignores the disposed stream", () => {
+    const scenario = new ThreadRunScenario();
+    scenario.resume({ after: "1", expectedTurnId: "turn_1" });
+    scenario.resume({ after: "2", expectedTurnId: "turn_2" });
 
-    controller.resume("thread_1", { after: "1", expectedTurnId: "turn_1" });
-    const firstHandlers = transport.handlers;
-    controller.resume("thread_1", { after: "2", expectedTurnId: "turn_2" });
-
-    expect(transport.subscribeCount).toBe(2);
-    expect(transport.unsubscribeCount).toBe(1);
-
-    firstHandlers?.onEvent({
-      seq: "3",
-      event: { type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" },
-    });
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_2" }, "4");
-
-    expect(actions.ensureAssistantTurn).toHaveBeenCalledWith("thread_1", "turn_2", {
-      createdAt: expect.any(String),
-    });
-    expect(actions.turns("thread_1")?.map((turn) => turn.id)).toEqual(["turn_2"]);
-  });
-
-  it("keeps a waiting interrupt turn when submit fails before the server accepts a new run", async () => {
-    const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    store.setState({ turnsByThread: { thread_1: [waitingInterruptTurn] } });
-    const appendUserMessageFn = vi.fn().mockRejectedValue(new Error("Turn already running"));
-    const controller = new ThreadRunController({
-      transport,
-      actions: store.getState(),
-      appendUserMessageFn,
-    });
-
-    await expect(controller.submit("thread_1", "interrupt response")).rejects.toThrow(
-      "Turn already running",
+    scenario.transport.emitTo(
+      0,
+      { type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" },
+      "3",
     );
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_2" }, "4");
 
-    expect(store.getState().turns("thread_1")).toEqual([waitingInterruptTurn]);
-    expect(transport.subscribeCount).toBe(0);
+    expect(scenario.transport.subscriptions.map(({ active }) => active)).toEqual([false, true]);
+    expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_2"]);
   });
 
-  it("keeps the previous run subscribed when a new submit is rejected", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const append = deferred<never>();
-    const controller = new ThreadRunController({
-      transport,
-      actions,
-      appendUserMessageFn: vi.fn().mockReturnValue(append.promise),
-    });
+  it("does not disturb the active run when a new admission is rejected", async () => {
+    const admission = scenarioGate<SendMessageResponse>();
+    const scenario = new ThreadRunScenario({ append: () => admission.promise });
+    scenario.store.setState({ turnsByThread: { thread_1: [waitingInterruptTurn] } });
+    scenario.resume({ after: "42", expectedTurnId: "turn_interrupt" });
 
-    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
-    const submitPromise = controller.submit("thread_1", "too soon");
-    await vi.waitFor(() => expect(transport.unsubscribeCount).toBe(0));
+    const submit = scenario.submit("too soon");
+    admission.reject(new Error("Turn already running"));
+    await expect(submit).rejects.toThrow("Turn already running");
 
-    append.reject(new Error("Turn already running"));
-    await expect(submitPromise).rejects.toThrow("Turn already running");
-
-    expect(transport.unsubscribeCount).toBe(0);
-    expect(transport.handlers).not.toBeNull();
-    transport.emit({ type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn_1" }, "43");
-    expect(actions.turns("thread_1")?.[0]).toMatchObject({
-      id: "turn_1",
-      status: "complete",
-    });
-    expect(actions.pruneStaleAssistantTurns).not.toHaveBeenCalled();
+    expect(scenario.activeSubscription()).toBeDefined();
+    expect(scenario.turns()).toEqual([waitingInterruptTurn]);
   });
 
-  it("rejects a second submit while admission is pending", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const append = deferred<SendMessageResponse>();
-    const controller = new ThreadRunController({
-      transport,
-      actions,
-      appendUserMessageFn: vi.fn().mockReturnValue(append.promise),
-    });
+  it("rejects concurrent admission while Stop still targets the previous run", async () => {
+    const admission = scenarioGate<SendMessageResponse>();
+    const scenario = new ThreadRunScenario({ append: () => admission.promise });
+    scenario.resume({ after: "42", expectedTurnId: "turn_old" });
 
-    const firstSubmit = controller.submit("thread_1", "first");
-    await expect(controller.submit("thread_1", "second")).rejects.toThrow(
-      "submit already in flight",
-    );
-    append.resolve(sendResponse());
-    await firstSubmit;
+    const first = scenario.submit("first");
+    await expect(scenario.submit("second")).rejects.toThrow("submit already in flight");
+    scenario.controller.cancel("thread_1");
+    expect(scenario.transport.cancelRequests).toEqual([
+      { threadId: "thread_1", turnId: "turn_old" },
+    ]);
 
-    expect(transport.subscribeCount).toBe(1);
-    expect(transport.subscribeOptions).toEqual({ after: "42" });
+    admission.resolve(defaultSendResponse());
+    await first;
+    expect(scenario.transport.subscriptions).toHaveLength(2);
   });
 
-  it("keeps Stop targeting the previous run while a new submit is pending", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const append = deferred<never>();
-    const controller = new ThreadRunController({
-      transport,
-      actions,
-      appendUserMessageFn: vi.fn().mockReturnValue(append.promise),
-    });
-
-    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_old" });
-    const submitPromise = controller.submit("thread_1", "too soon");
-    controller.cancel("thread_1");
-    await waitForCancel(transport);
-
-    expect(transport.cancel).toHaveBeenCalledWith("thread_1", "turn_old");
-
-    append.reject(new Error("Turn already running"));
-    await expect(submitPromise).rejects.toThrow("Turn already running");
-  });
-
-  it("removes the optimistic user turn when submit is rejected", async () => {
-    const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    const optimisticTurn = store.getState().appendUserTurn("thread_1", "too soon");
-    const controller = new ThreadRunController({
-      transport,
-      actions: store.getState(),
-      appendUserMessageFn: vi.fn().mockRejectedValue(
-        new MeridianApiError({
-          code: "already_active",
-          message: "Turn already running",
-          retryable: false,
-          source: "system",
-        }),
-      ),
-    });
-
-    await expect(
-      controller.submit("thread_1", "too soon", { optimisticUserTurnId: optimisticTurn.id }),
-    ).rejects.toThrow("Turn already running");
-
-    expect(store.getState().turns("thread_1")).toEqual([]);
-  });
-
-  it("retains the optimistic user turn when submit fails ambiguously", async () => {
-    const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    const optimisticTurn = store.getState().appendUserTurn("thread_1", "possibly persisted");
-    const controller = new ThreadRunController({
-      transport,
-      actions: store.getState(),
-      appendUserMessageFn: vi.fn().mockRejectedValue(new TypeError("fetch failed")),
-    });
-
-    await expect(
-      controller.submit("thread_1", "possibly persisted", {
-        optimisticUserTurnId: optimisticTurn.id,
+  it.each([
+    {
+      label: "definitive API rejection",
+      error: new MeridianApiError({
+        code: "already_active",
+        message: "Turn already running",
+        retryable: false,
+        source: "system",
       }),
-    ).rejects.toThrow("fetch failed");
+      remaining: 0,
+    },
+    { label: "ambiguous network failure", error: new TypeError("fetch failed"), remaining: 1 },
+  ])("handles optimistic turns after $label", async ({ error, remaining }) => {
+    const scenario = new ThreadRunScenario({ append: async () => Promise.reject(error) });
+    const optimistic = scenario.store.getState().appendUserTurn("thread_1", "possibly persisted");
 
-    expect(store.getState().turns("thread_1")).toEqual([optimisticTurn]);
+    await expect(
+      scenario.submit("possibly persisted", { optimisticUserTurnId: optimistic.id }),
+    ).rejects.toThrow();
+    expect(scenario.turns()).toHaveLength(remaining);
   });
 
-  it("prunes an abandoned live assistant turn before submitting again after transport failure", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const appendUserMessageFn = vi
-      .fn()
-      .mockResolvedValueOnce(sendResponse())
-      .mockResolvedValueOnce(
-        sendResponse({
-          assistantTurnId: "turn_2",
-          resumeAfterSeq: "100",
-          snapshotFloorNextSeq: "101",
-        }),
-      );
-    const controller = new ThreadRunController({ transport, actions, appendUserMessageFn });
-
-    await controller.submit("thread_1", "first");
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "43");
-    transport.handlers?.onError?.(new Error("socket failed"));
-
-    await controller.submit("thread_1", "second");
-    transport.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_2" }, "101");
-
-    expect(actions.turns("thread_1")?.map((turn) => turn.id)).toEqual(["turn_2"]);
-    expect(actions.pruneStaleAssistantTurns).toHaveBeenCalledWith("thread_1");
-  });
-
-  it("fetches and applies one snapshot per thread while gap recovery is in flight", async () => {
-    const transport = new FakeThreadTransport();
-    const actions = makeActions();
-    const snapshot = deferred<ThreadSnapshotResponse>();
-    const getThreadSnapshotFn = vi.fn().mockReturnValue(snapshot.promise);
-    const controller = new ThreadRunController({ transport, actions, getThreadSnapshotFn });
-
-    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
-    transport.handlers?.onGap?.({ threadId: "thread_1", cause: "server_restart", gapCount: 1 });
-    transport.handlers?.onGap?.({ threadId: "thread_1", cause: "server_restart", gapCount: 2 });
-
-    expect(getThreadSnapshotFn).toHaveBeenCalledTimes(1);
-
-    snapshot.resolve(makeSnapshot());
-    await vi.waitFor(() => {
-      expect(actions.applyThreadSnapshot).toHaveBeenCalledWith(thread, [assistantTurn], {
-        lifecycle: { runningTurnId: "turn_1", attention: "none" },
-        nextSeq: "10",
-      });
+  it("prunes an abandoned assistant row only after a new submit is accepted", async () => {
+    let admission = 0;
+    const scenario = new ThreadRunScenario({
+      append: async () =>
+        defaultSendResponse(
+          admission++ === 0
+            ? {}
+            : { assistantTurnId: "turn_2", resumeAfterSeq: "100", snapshotFloorNextSeq: "101" },
+        ),
     });
-    expect(actions.ensureThread).not.toHaveBeenCalled();
+
+    await scenario.submit("first");
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_1" }, "43");
+    scenario.failStream(new Error("socket failed"));
+    await scenario.submit("second");
+    scenario.emit({ type: EventType.RUN_STARTED, threadId: "thread_1", runId: "turn_2" }, "101");
+
+    expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_2"]);
   });
 
-  it("rejects an older gap-recovery snapshot after a newer snapshot applies", async () => {
-    const transport = new FakeThreadTransport();
-    const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    store.getState().applyThreadSnapshot(thread, [assistantTurn], {
+  it("coalesces gap recovery and rejects an older recovery snapshot", async () => {
+    const recovery = scenarioGate<ThreadSnapshotResponse>();
+    const scenario = new ThreadRunScenario({ snapshot: () => recovery.promise });
+    scenario.store.getState().applyThreadSnapshot(thread, [assistantTurn], {
       nextSeq: "9007199254740993",
       lifecycle: { attention: "none", runningTurnId: null },
     });
-    const applyThreadSnapshot = vi.spyOn(store.getState(), "applyThreadSnapshot");
-    const snapshot = makeSnapshot();
-    const staleSnapshot = {
-      ...snapshot,
-      turns: [],
-      liveState: {
-        ...snapshot.liveState,
-        runningTurnId: null,
-      },
-      nextSeq: "9007199254740992",
-    };
-    const getThreadSnapshotFn = vi.fn().mockResolvedValue(staleSnapshot);
-    const controller = new ThreadRunController({
-      transport,
-      actions: store.getState(),
-      getThreadSnapshotFn,
-    });
+    scenario.resume({ after: "42", expectedTurnId: "turn_1" });
 
-    controller.resume("thread_1", { after: "42", expectedTurnId: "turn_1" });
-    transport.handlers?.onGap?.({ threadId: "thread_1", cause: "server_restart", gapCount: 1 });
+    scenario.reportGap();
+    scenario.reportGap();
+    expect(scenario.snapshotRequests).toEqual(["thread_1"]);
+    recovery.resolve(snapshot("9007199254740992", []));
 
-    await vi.waitFor(() => {
-      expect(applyThreadSnapshot).toHaveBeenCalledOnce();
-    });
-    expect(store.getState().turns("thread_1")).toEqual([assistantTurn]);
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(1));
+    expect(scenario.turns()).toEqual([assistantTurn]);
   });
 });
