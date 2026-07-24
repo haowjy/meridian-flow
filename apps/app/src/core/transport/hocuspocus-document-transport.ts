@@ -11,12 +11,17 @@ import {
   HocuspocusProviderWebsocket,
   type onAuthenticationFailedParameters,
   type onCloseParameters,
+  type onStatelessParameters,
   type onStatusParameters,
   type onSyncedParameters,
   type onUnsyncedChangesParameters,
   WebSocketStatus,
 } from "@hocuspocus/provider";
-import { yjsWsPath } from "@meridian/contracts/protocol";
+import {
+  type ChangeEventWsMessage,
+  parseYjsStatelessMessage,
+  yjsWsPath,
+} from "@meridian/contracts/protocol";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { DocumentSessionTransportProvider } from "@/core/editor/document-session";
@@ -96,6 +101,7 @@ export function createHocuspocusDocumentTransport({
   awareness,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: ConnectionState) => void>();
+  const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   let currentState = mapStatus(getSharedWebsocket().status);
   let terminal = false;
   let destroyed = false;
@@ -150,6 +156,12 @@ export function createHocuspocusDocumentTransport({
     }
   }
 
+  function handleStateless({ payload }: onStatelessParameters): void {
+    const message = parseYjsStatelessMessage(payload);
+    if (message?.type !== "change_event") return;
+    for (const listener of changeEventListeners) listener(message);
+  }
+
   const provider = new HocuspocusProvider({
     name: roomName,
     document,
@@ -160,6 +172,7 @@ export function createHocuspocusDocumentTransport({
     onUnsyncedChanges: handleUnsyncedChanges,
     onAuthenticationFailed: handleAuthenticationFailed,
     onClose: handleClose,
+    onStateless: handleStateless,
   });
   if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
     notifyYjsRoomAttached(roomName, document.clientID);
@@ -187,11 +200,16 @@ export function createHocuspocusDocumentTransport({
         listeners.delete(listener);
       };
     },
+    subscribeChangeEvents(listener) {
+      changeEventListeners.add(listener);
+      return () => changeEventListeners.delete(listener);
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       provider.destroy();
       listeners.clear();
+      changeEventListeners.clear();
     },
   };
 }

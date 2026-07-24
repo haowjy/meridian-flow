@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: add ephemeral live-session AI change markers with typed stateless
+  transport delivery, replace-set and bounded retry semantics, local-writer
+  self-clear, and a headless ProseMirror decoration projection.
 - `@meridian/contracts`, `apps/server`, `apps/app`: single-source the complete
   change-trail wire model and parsers, and add the validated Yjs `change_event`
   stateless contract for session change marks.
