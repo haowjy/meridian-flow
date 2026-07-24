@@ -14,7 +14,10 @@
   untouched writer prose or normalizing whitespace around deletions, and adjacent
   structural matches no longer fail on deleted predecessor anchors. Failed
   multi-edit applies and provenance-writer failures restore the session's pre-write
-  document; retained roots bypass continuation-fact rematerialization.
+  document; the host provenance writer now interprets retained roots per output run
+  while materializing facts for any remaining continuation or restoration runs.
+- `agent-edit`: post-write context echoes preserve literal spaces, tabs, and
+  non-breaking spaces so text copied from the echo resolves through the matcher.
 - `apps/server`: authentication now rejects cross-principal email collisions
   with a structured 409 instead of adopting the existing Meridian account.
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned

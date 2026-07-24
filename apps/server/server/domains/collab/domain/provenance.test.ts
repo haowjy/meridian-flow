@@ -1,5 +1,6 @@
 /** Contract tests for deterministic provenance replay and the reserved namespace. */
 
+import type { SemanticEditIRV1, SemanticOutputRun } from "@meridian/agent-edit";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -28,6 +29,317 @@ const emptyManifest = (): AttributionManifestV1 => ({
 });
 
 describe("provenance materialization", () => {
+  it("accepts retained output runs without rematerializing their visible roots", () => {
+    const doc = proseDoc("cat and cat");
+    const source = textRange(doc);
+    const retained = { ...source, clock: source.clock + 3, length: 5 };
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(8, 3);
+    text.insert(8, "kitten");
+    text.delete(0, 3);
+    text.insert(0, "kitten");
+
+    expect(() =>
+      createSemanticProvenanceWriter().writeCertifiedFacts(
+        doc as never,
+        mappedTextIr(proseBlock(doc), source, "kitten and kitten", [
+          { kind: "fresh", payload: "kitten", output: { from: 0, to: 6 } },
+          {
+            kind: "preserved",
+            source: retained,
+            output: { from: 6, to: 11 },
+            materialization: "retained",
+          },
+          { kind: "fresh", payload: "kitten", output: { from: 11, to: 17 } },
+        ]),
+        before,
+      ),
+    ).not.toThrow();
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: source, root: source, birthClass: "writer_protected" },
+    ]);
+    expect(visible).toContainEqual({
+      target: retained,
+      root: retained,
+      birthClass: "writer_protected",
+    });
+  });
+
+  it("writes restoration facts alongside a retained output run", () => {
+    const doc = proseDoc("cat and cat");
+    const source = textRange(doc);
+    const retained = { ...source, clock: source.clock + 3, length: 5 };
+    const restoredRoot = { ...source, clock: source.clock + 8, length: 3 };
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(8, 3);
+    text.insert(8, "cat");
+    text.delete(0, 3);
+    text.insert(0, "kit");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      mappedTextIr(proseBlock(doc), source, "kit and cat", [
+        { kind: "fresh", payload: "kit", output: { from: 0, to: 3 } },
+        {
+          kind: "preserved",
+          source: retained,
+          output: { from: 3, to: 8 },
+          materialization: "retained",
+        },
+        { kind: "restoration", root: restoredRoot, payload: "cat", output: { from: 8, to: 11 } },
+      ]),
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: source, root: source, birthClass: "writer_protected" },
+    ]);
+    const [fresh, retainedRun, restored] = visible;
+    expect(visible).toHaveLength(3);
+    expect(fresh).toEqual({
+      target: fresh?.target,
+      root: fresh?.target,
+      birthClass: "agent",
+    });
+    expect(retainedRun).toEqual({
+      target: retained,
+      root: retained,
+      birthClass: "writer_protected",
+    });
+    expect(restored).toMatchObject({
+      root: restoredRoot,
+      birthClass: "writer_protected",
+    });
+  });
+
+  it("materializes facts in output order when semantic runs are declared out of order", () => {
+    const doc = proseDoc("cat");
+    const source = textRange(doc);
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(0, 3);
+    text.insert(0, "catkit");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      mappedTextIr(proseBlock(doc), source, "catkit", [
+        { kind: "fresh", payload: "kit", output: { from: 3, to: 6 } },
+        { kind: "restoration", root: source, payload: "cat", output: { from: 0, to: 3 } },
+      ]),
+      before,
+    );
+
+    const [restored, fresh] = materializeCandidateProvenance(doc, [
+      { target: source, root: source, birthClass: "writer_protected" },
+    ]);
+    expect(restored).toMatchObject({
+      root: source,
+      birthClass: "writer_protected",
+    });
+    expect(fresh).toEqual({
+      target: fresh?.target,
+      root: fresh?.target,
+      birthClass: "agent",
+    });
+  });
+
+  it("rejects restoration output wider than its certified root at the writer boundary", () => {
+    const doc = proseDoc("a");
+    const source = textRange(doc);
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(0, 1);
+    text.insert(0, "XY");
+
+    expect(() =>
+      createSemanticProvenanceWriter().writeCertifiedFacts(
+        doc as never,
+        mappedTextIr(proseBlock(doc), source, "XY", [
+          { kind: "restoration", root: source, payload: "XY", output: { from: 0, to: 2 } },
+        ]),
+        before,
+      ),
+    ).toThrow(/length-for-length/);
+  });
+
+  it("maps reverse-declared edits through their insertion order before visible order", () => {
+    const doc = proseDoc("one");
+    const firstRoot = textRange(doc);
+    const secondRoot = appendVisibleText(doc, "two");
+    const fragment = doc.getXmlFragment("prosemirror");
+    const firstBlock = fragment.get(0) as Y.XmlElement;
+    const secondBlock = fragment.get(1) as Y.XmlElement;
+    const firstText = firstBlock.get(0) as Y.XmlText;
+    const secondText = secondBlock.get(0) as Y.XmlText;
+    const before = Y.encodeStateVector(doc);
+    secondText.delete(0, 3);
+    secondText.insert(0, "TWO");
+    firstText.delete(0, 3);
+    firstText.insert(0, "ONE");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [firstRoot, secondRoot],
+        deleted: [firstRoot, secondRoot],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: secondBlock as never,
+                span: { start: 0, end: 3 },
+                newText: "TWO",
+              },
+              outputRuns: [
+                {
+                  kind: "restoration",
+                  root: secondRoot,
+                  payload: "TWO",
+                  output: { from: 0, to: 3 },
+                },
+              ],
+            },
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: firstBlock as never,
+                span: { start: 0, end: 3 },
+                newText: "ONE",
+              },
+              outputRuns: [
+                {
+                  kind: "restoration",
+                  root: firstRoot,
+                  payload: "ONE",
+                  output: { from: 0, to: 3 },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
+      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
+    ]);
+    expect(visible.map(({ root }) => root)).toEqual([firstRoot, secondRoot]);
+  });
+
+  it("locates grouped same-block edits by their final output spans", () => {
+    const doc = proseDoc("one two");
+    const source = textRange(doc);
+    const firstRoot = { ...source, length: 3 };
+    const secondRoot = { ...source, clock: source.clock + 4, length: 3 };
+    const block = proseBlock(doc);
+    const text = proseText(doc);
+    const before = Y.encodeStateVector(doc);
+    text.delete(4, 3);
+    text.insert(4, "TWO");
+    text.delete(0, 3);
+    text.insert(0, "ONE!");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [firstRoot, secondRoot],
+        deleted: [firstRoot, secondRoot],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: block as never,
+                span: { start: 0, end: 3 },
+                newText: "ONE!",
+              },
+              outputRuns: [
+                {
+                  kind: "restoration",
+                  root: firstRoot,
+                  payload: "ONE",
+                  output: { from: 0, to: 3 },
+                },
+                { kind: "fresh", payload: "!", output: { from: 3, to: 4 } },
+              ],
+            },
+            restorationTextEdit(block, secondRoot, 4, "TWO"),
+          ],
+        },
+      },
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
+      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
+    ]);
+    expect(visible[0]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
+    expect(visible.at(-1)).toMatchObject({
+      root: secondRoot,
+      birthClass: "writer_protected",
+    });
+  });
+
+  it("locates equal-anchor insertions in their stable application order", () => {
+    const doc = proseDoc("abbase");
+    const source = textRange(doc);
+    const firstRoot = { ...source, length: 1 };
+    const secondRoot = { ...source, clock: source.clock + 1, length: 1 };
+    const block = proseBlock(doc);
+    const text = proseText(doc);
+    const before = Y.encodeStateVector(doc);
+    text.delete(0, 2);
+    text.insert(0, "A");
+    text.insert(0, "B");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [firstRoot, secondRoot],
+        deleted: [firstRoot, secondRoot],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            restorationInsertion(block, firstRoot, "A"),
+            restorationInsertion(block, secondRoot, "B"),
+          ],
+        },
+      },
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
+      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
+    ]);
+    expect(visible[0]).toMatchObject({ root: secondRoot, birthClass: "writer_protected" });
+    expect(visible[1]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
+  });
+
   it("encodes certified continuation facts in the same Yjs update as prose", () => {
     const doc = proseDoc("old");
     const initial = Y.encodeStateAsUpdate(doc);
@@ -59,7 +371,7 @@ describe("provenance materialization", () => {
                 kind: "text",
                 documentId: "document",
                 file: "document.md",
-                block: {} as never,
+                block: paragraph as never,
                 span: { start: 0, end: 3 },
                 newText: "new",
               },
@@ -325,6 +637,96 @@ function proseDoc(value: string): Y.Doc {
   return doc;
 }
 
+function proseText(doc: Y.Doc): Y.XmlText {
+  return proseBlock(doc).get(0) as Y.XmlText;
+}
+
+function proseBlock(doc: Y.Doc): Y.XmlElement {
+  return doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
+}
+
+function restorationTextEdit(
+  block: Y.XmlElement,
+  root: { clientID: number; clock: number; length: number },
+  start: number,
+  payload: string,
+) {
+  return {
+    edit: {
+      kind: "text" as const,
+      documentId: "document",
+      file: "document.md",
+      block: block as never,
+      span: { start, end: start + root.length },
+      newText: payload,
+    },
+    outputRuns: [
+      {
+        kind: "restoration" as const,
+        root,
+        payload,
+        output: { from: 0, to: payload.length },
+      },
+    ],
+  };
+}
+
+function restorationInsertion(
+  block: Y.XmlElement,
+  root: { clientID: number; clock: number; length: number },
+  payload: string,
+) {
+  return {
+    edit: {
+      kind: "text" as const,
+      documentId: "document",
+      file: "document.md",
+      block: block as never,
+      span: { start: 0, end: 0 },
+      newText: payload,
+    },
+    outputRuns: [
+      {
+        kind: "restoration" as const,
+        root,
+        payload,
+        output: { from: 0, to: payload.length },
+      },
+    ],
+  };
+}
+
+function mappedTextIr(
+  block: Y.XmlElement,
+  source: { clientID: number; clock: number; length: number },
+  output: string,
+  outputRuns: SemanticOutputRun[],
+): SemanticEditIRV1 {
+  return {
+    version: 1,
+    documentId: "document",
+    inputRevision: "revision" as never,
+    scope: [source],
+    deleted: [],
+    intent: {
+      kind: "mappedEdits",
+      edits: [
+        {
+          edit: {
+            kind: "text",
+            documentId: "document",
+            file: "document.md",
+            block: block as never,
+            span: { start: 0, end: source.length },
+            newText: output,
+          },
+          outputRuns,
+        },
+      ],
+    },
+  };
+}
+
 function appendCertifiedCarry(
   doc: Y.Doc,
   source: { clientID: number; clock: number; length: number },
@@ -353,7 +755,7 @@ function appendCertifiedCarry(
               kind: "text",
               documentId: "document",
               file: "document.md",
-              block: {} as never,
+              block: paragraph as never,
               span: { start: 0, end: source.length },
               newText: value,
             },

@@ -68,6 +68,21 @@ reactivation fence, or scope routing. Cold attribution uses persisted branch
 journal rows and live journal metadata; memory-only runtime maps are never an
 attribution authority.
 
+## Certified provenance materialization
+
+**Ordering invariant:** declaration order in `ir.intent.edits` is not application
+order. `applyEdits` sorts same-block Tier-1 edits right-to-left before execution;
+partitioning allocation-ordered strings by iterating declared edits swaps
+provenance roots between adjacent targets. The writer instead locates each edit
+by its final output span and intersects that span with newly inserted strings.
+
+**Regression trap:** hand-performing Yjs mutations in IR declaration order does
+not exercise this seam. Provenance ordering tests must compose the real
+`applyEdits`.
+
+Restoration length is validated independently at both the certification and the
+writer boundary; neither check assumes the other ran.
+
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the

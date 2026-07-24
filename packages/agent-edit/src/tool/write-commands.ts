@@ -635,7 +635,7 @@ export function createWriteCommands(deps: {
     beforeStateVector: Uint8Array,
     preWriteSnapshot: Uint8Array,
   ): void {
-    if (!options.semanticProvenance || hasRetainedOutput(ir)) return;
+    if (!options.semanticProvenance) return;
     try {
       options.semanticProvenance.writeCertifiedFacts(
         toDocHandle(runtime.doc),
@@ -647,15 +647,6 @@ export function createWriteCommands(deps: {
       throw error;
     }
   }
-}
-
-function hasRetainedOutput(ir: SemanticEditIRV1): boolean {
-  return (
-    ir.intent.kind === "mappedEdits" &&
-    ir.intent.edits.some(({ outputRuns }) =>
-      outputRuns.some((run) => run.kind === "preserved" && run.materialization === "retained"),
-    )
-  );
 }
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
