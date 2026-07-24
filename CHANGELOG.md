@@ -4,6 +4,19 @@
 
 - `apps/server`: authentication now rejects cross-principal email collisions
   with a structured 409 instead of adopting the existing Meridian account.
+- `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
+  branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
+  PR evidence, GitHub failures, and refs that move before execution are refused.
+- `tools/dev`: restart now terminates only its owned tmux session, waits for
+  fixed ports to become bindable, and refuses non-owned or uninspectable
+  listeners instead of killing processes discovered by port.
+- `tools/dev`: the app-boot smoke now uses an OS-assigned port reported by its
+  child, requires the child to remain alive, and enforces `/` 307 plus `/login`
+  200 with Meridian's login-page marker.
+- `tools/dev`: destructive and gate-critical scripts now compile under one
+  strict Nx typecheck target included in root `pnpm typecheck`.
+- `tools/dev`: startup failures now print the concrete portless log path, while
+  pre-launch port refusals identify the non-owned holder by PID and command.
 - `apps/app`: chat composer opens at its one-line height reliably and rotates
   short, localized placeholders per page load — a calmer interject pool shows
   while the AI is streaming.
