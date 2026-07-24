@@ -1,9 +1,7 @@
 # features/chat — Turn render surface + transcript viewport
 
-The chat frontend: how assistant turns render from `Block[]` onto the screen,
-including the `Thinking`/`ActivityBlock` composition model, tool rendering,
-interrupt interaction, and the live→settled transition — AND how the
-conversation transcript scrolls (the explicit `follow | free` policy).
+The chat frontend: assistant-turn rendering, transcript scrolling, and the
+conversation-attached composer chrome, including Work-scoped draft controls.
 
 ## Purpose
 
@@ -73,16 +71,18 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/CONTEXT.md`](.context/CONTEXT.md) §Turn edits card |
+| `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/draft-editing.md`](.context/draft-editing.md). |
 | `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
+| `ComposerWriteModeControl.tsx` | Compact Draft / Auto-apply selector beside the Writer pill. `ProjectView` resolves the thread's Work once for the provider and `ChatView`; the control reads and mutates only that Work, with server-authoritative confirmation before pushing pending drafts live. |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
+| `useDraftReviewController.ts` | One client review-session owner for UI state, editor coordination, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
+| `draft-apply-disposition.ts` | Shared revision acquisition and response policy for whole-draft and per-card Apply |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |

@@ -5,6 +5,12 @@
  *    started, so swapping is cost-gated for now (coming later). The tooltip
  *    says why.
  *
+ * The visible label is the bare agent name — everything in the composer is AI,
+ * so an "AI ·" prefix was noise. Screen readers still get the category via
+ * aria-label. The button yields width (`shrink` + truncate) so the composer
+ * footer never overflows at narrow widths — the name is the row's one
+ * flexible element.
+ *
  * Rendered as a real <button> so Radix `PopoverTrigger asChild` gets a focusable
  * host. Disabled uses `aria-disabled` (not the native attr) so the tooltip still
  * shows on hover.
@@ -41,7 +47,7 @@ export function AgentSelector({
       aria-label={t`Agent: ${agent.name}`}
       className={cn(
         buttonVariants({ variant: "outline", size: "sm" }),
-        "focus-ring max-w-[11rem] min-w-0 font-medium",
+        "focus-ring max-w-[11rem] min-w-0 shrink font-medium",
         disabled &&
           "cursor-default border-transparent bg-transparent text-muted-foreground opacity-60 shadow-none hover:border-transparent hover:bg-transparent",
         className,

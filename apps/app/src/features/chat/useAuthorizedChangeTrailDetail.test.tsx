@@ -51,7 +51,13 @@ afterEach(() => {
 describe("useAuthorizedChangeTrailDetail", () => {
   it("loads on disclosure and evicts detail when document access is revoked", async () => {
     mocks.readChangeTrail.mockResolvedValue([
-      { documentId: "document-1", documentTitle: "Chapter", unavailable: false, changes: [] },
+      {
+        trailId: "trail-1",
+        documentId: "document-1",
+        documentTitle: "Chapter",
+        anchorState: "available",
+        changes: [],
+      },
     ]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const host = document.createElement("div");

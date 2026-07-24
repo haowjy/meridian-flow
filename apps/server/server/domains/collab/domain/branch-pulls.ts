@@ -5,7 +5,7 @@ import {
   DocumentNotFoundError,
   type ReversalStore,
   yjsUpdateFromState,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
@@ -32,6 +32,7 @@ export type BranchPullService = {
     branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
+    attributionBaseline: Uint8Array;
   }>;
 };
 
@@ -119,6 +120,20 @@ export function createBranchPullService(input: {
     },
 
     async pullThreadPeer(inputPeer) {
+      const beforePullLive = await liveSnapshot(inputPeer.documentId);
+      const attributionBaseline = await (async () => {
+        try {
+          const existingPeer = await input.branches.ensureThreadPeerBranch({
+            ...inputPeer,
+            liveDoc: beforePullLive,
+          });
+          return input.branchCoordinator.readBranch(existingPeer.branchId, (doc) =>
+            Promise.resolve(Y.encodeStateAsUpdate(doc)),
+          );
+        } finally {
+          beforePullLive.destroy();
+        }
+      })();
       await run(inputPeer.documentId);
       const liveJournalSeq = input.liveJournal
         ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
@@ -150,7 +165,7 @@ export function createBranchPullService(input: {
         if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
         else await input.branchCoordinator.pullFromBranch(peer.branchId);
         const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-        return { branchGeneration, afterJournalId, liveJournalSeq };
+        return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
       } finally {
         liveDoc.destroy();
       }

@@ -1,5 +1,13 @@
 # collab TODO
 
+## Draft preview fails on empty paragraphs
+
+The real-stack adversarial-editing probe `p3511` saw the draft-preview endpoint return
+HTTP 500 four times when the draft contained empty paragraphs:
+`Cannot anchor text offset in block <id> (paragraph) without text`. Reproduce at the
+draft-preview anchoring seam and make empty text blocks a supported preview input; this
+is pre-existing and was not part of the loaded-room live-pull fix.
+
 ## Code files become a display lens; cross-schema rename becomes a metadata flip
 
 **Tracked:** [#212](https://github.com/haowjy/meridian-flow/issues/212) — direction
@@ -43,3 +51,17 @@ List CRDTs*, and Loro's `MovableList`). Deferred deliberately. Research notes:
 **Gate:** only pursue the primitive change if interaction telemetry shows reactivation-accept
 is common and its `cannot_place` rate is high enough to hurt writers. Blocked on product
 analytics (none exists yet) — see GH issue #127 (interaction-telemetry work item).
+
+## Fix adapter-contract fixture: change-trail persistence wiring
+
+**Affected:** `adapters/__conformance__/drizzle-branches.adapter-contract.test.ts`
+("pushes manifest membership journal rows with lineage receipt").
+
+Pre-existing failure (26/27) present at `3c67c3a0` (before the merge-mechanics
+branch): the branch-push committer now requires change-trail persistence
+(`drizzle-branch-push.ts` `persistRequiredTrail`), but this contract test's
+fixture never wires it, so the test throws instead of exercising the manifest
+membership path. Wire the change-trail store into the conformance fixture (see
+`test-support/change-trail-postgres-harness.ts` for the working pattern) or
+delete the case if the manifest path is covered elsewhere. Evidence:
+work `draft-simplify` → `mechanics/evidence/0a-baseline.md`.

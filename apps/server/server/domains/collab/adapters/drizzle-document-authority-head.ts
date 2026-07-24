@@ -1,4 +1,4 @@
-/** Allocates ordered journal admissions inside one durable document authority generation. */
+/** Allocates ordered journal admissions from the durable document authority head. */
 
 import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
@@ -8,18 +8,18 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { DocumentAuthorityHeads } from "../domain/ports/document-authority-heads.js";
 
-type AuthorityDb = Pick<Database, "insert" | "update" | "select">;
+type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
 
-export type DocumentAuthorityGeneration = {
+export type DocumentAuthorityHeadGeneration = {
   authorityId: DocumentAuthorityId;
   generation: bigint;
 };
 
 export async function allocateDocumentAdmission(
-  db: AuthorityDb,
+  db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentAuthorityGeneration & { admissionSequence: bigint }> {
-  await ensureDocumentAuthority(db, documentId);
+): Promise<DocumentAuthorityHeadGeneration & { admissionSequence: bigint }> {
+  await ensureDocumentAuthorityHead(db, documentId);
   const [row] = await db
     .update(documentYjsHeads)
     .set({
@@ -32,7 +32,7 @@ export async function allocateDocumentAdmission(
       generation: documentYjsHeads.authorityGeneration,
       nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
     });
-  if (!row) throw new Error("Failed to allocate document authority admission");
+  if (!row) throw new Error("Failed to allocate an admission from the durable authority head");
   return {
     authorityId: row.authorityId,
     generation: row.generation,
@@ -40,11 +40,11 @@ export async function allocateDocumentAdmission(
   };
 }
 
-export async function readDocumentAuthority(
-  db: AuthorityDb,
+export async function readDocumentAuthorityHead(
+  db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentAuthorityGeneration> {
-  await ensureDocumentAuthority(db, documentId);
+): Promise<DocumentAuthorityHeadGeneration> {
+  await ensureDocumentAuthorityHead(db, documentId);
   const [row] = await db
     .select({
       authorityId: documentYjsHeads.authorityId,
@@ -53,11 +53,11 @@ export async function readDocumentAuthority(
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, documentId as DocumentId))
     .limit(1);
-  if (!row) throw new Error("Failed to read document authority");
+  if (!row) throw new Error("Failed to read the durable document authority head");
   return row;
 }
 
-async function ensureDocumentAuthority(db: AuthorityDb, documentId: string): Promise<void> {
+async function ensureDocumentAuthorityHead(db: AuthorityHeadDb, documentId: string): Promise<void> {
   await db
     .insert(documentYjsHeads)
     .values({ documentId: documentId as DocumentId, schemaVersion: COLLAB_SCHEMA_VERSION })
@@ -87,7 +87,7 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
 
         const rows = await readAuthorityHeads(tx, uniqueIds);
         if (rows.length !== uniqueIds.length) {
-          throw new Error("Failed to read initialized document authority heads");
+          throw new Error("Failed to read initialized durable document authority heads");
         }
         return rows;
       });
@@ -95,7 +95,7 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
   };
 }
 
-async function readAuthorityHeads(db: AuthorityDb, documentIds: DocumentId[]) {
+async function readAuthorityHeads(db: AuthorityHeadDb, documentIds: DocumentId[]) {
   const rows = await db
     .select({
       documentId: documentYjsHeads.documentId,
@@ -115,16 +115,16 @@ async function readAuthorityHeads(db: AuthorityDb, documentIds: DocumentId[]) {
 }
 
 /**
- * Atomically installs a retained checkpoint as a new fenced authority generation.
+ * Atomically installs a retained checkpoint as a new fenced durable authority generation.
  * The source checkpoint is copied rather than applied to the current Y.Doc: Yjs apply
- * would merge old and new authority state and therefore is not snapshot replacement.
+ * would merge the checkpoint and current live-document state instead of replacing it.
  */
-export async function replaceDocumentAuthorityGeneration(
+export async function replaceDocumentAuthorityHeadGeneration(
   db: Database,
   input: { documentId: DocumentId; checkpointId: number; expectedGeneration: bigint },
 ): Promise<
   | { ok: true; generation: bigint; checkpointId: number }
-  | { ok: false; code: "authority_busy" | "checkpoint_incomplete" | "stale_generation" }
+  | { ok: false; code: "authority_head_busy" | "checkpoint_incomplete" | "stale_generation" }
 > {
   const { and, ne } = await import("drizzle-orm");
   const { branchPushSettlementOutbox, documentYjsCheckpoints } = await import("@meridian/database");
@@ -154,7 +154,7 @@ export async function replaceDocumentAuthorityGeneration(
         ),
       )
       .limit(1);
-    if (pending) return { ok: false as const, code: "authority_busy" as const };
+    if (pending) return { ok: false as const, code: "authority_head_busy" as const };
 
     const [checkpoint] = await txDb
       .select()
@@ -187,7 +187,7 @@ export async function replaceDocumentAuthorityGeneration(
         reason: `authority-replacement:${checkpoint.id}`,
       })
       .returning({ id: documentYjsCheckpoints.id });
-    if (!installed) throw new Error("Failed to install authority checkpoint");
+    if (!installed) throw new Error("Failed to install the durable authority checkpoint");
     const [updated] = await txDb
       .update(documentYjsHeads)
       .set({

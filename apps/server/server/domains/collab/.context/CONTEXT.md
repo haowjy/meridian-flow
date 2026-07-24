@@ -6,17 +6,31 @@ and WebSocket callers.
 
 ## Current shape
 
+| Concept | Canonical name | Code surface |
+|---|---|---|
+| Durable `document_yjs_heads` row and its fenced journal prefix | **document authority head** | `DocumentAuthorityHead`, `DocumentAuthorityId`, `document_yjs_heads` |
+| Operation-specific capabilities that validate and admit content-bearing mutations | **document mutation policy** | `admitFreshAuthorship`, `admitCertifiedMutation`, `replicateFrozenIdentity`, `replaceAuthorityGeneration` |
+| Mutable `Y.Doc` held by a loaded Hocuspocus room | **live document** | `liveDocument` / `liveDoc` in room and Hocuspocus surfaces |
+
+“Document authority” is reserved for the durable head and its identity/generation.
+Do not use it for the mutation policy or an in-memory `Y.Doc`. The policy uses
+the neutral `MutationTarget` for branch, scratch, and live inputs; only room-owned
+state is a live document.
+
 | Concern | Location |
 |---|---|
-| Document mutation policy and generation fencing | `domain/document-authority.ts`, `adapters/drizzle-document-authority.ts` |
+| Document mutation policy | `domain/document-mutation-policy.ts` |
+| Durable authority heads and generation fencing | `domain/ports/document-authority-heads.ts`, `adapters/drizzle-document-authority-head.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
-| Response observation snapshots | `adapters/drizzle-observation-snapshots.ts` |
+| Document projection and activity read-model writes | `adapters/drizzle-document-activity.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
+| Draft undo/redo history and Apply folding | `domain/branch-reversal-history.ts` |
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
-| Push plan + conflict policy | `domain/branch-push-plan.ts` |
+| Push materialization | `domain/branch-push-plan.ts` |
+| Immutable-base Manual Apply policy | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
 | Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
@@ -48,8 +62,7 @@ markdown-only seeding produced schema-invalid content that ProseMirror silently
 deleted on first open, then persisted that deletion. The current engine is
 schema-aware; all new seed and write paths must go through it rather than
 hand-building fragment content. A new document's first seed is installed as its
-generation-1 checkpoint (with no admitted journal mutations, so its initial
-causal cut is `admittedThrough: 0`). Seeding is strictly initialize-only: any
+generation-1 checkpoint with no admitted journal mutations. Seeding is strictly initialize-only: any
 existing admission or checkpoint makes later attempts successful no-ops. A seed
 is reconciled into an already-open live room before success returns, and a stale
 room checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
@@ -67,6 +80,30 @@ Propagation is sync-only: no basis reconstruction, draft projection, accept toke
 reactivation fence, or scope routing. Cold attribution uses persisted branch
 journal rows and live journal metadata; memory-only runtime maps are never an
 attribution authority.
+Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
+maximum), on branch review room open/reconnect, and at agent tool boundaries. The
+room trigger is fire-and-forget; Hocuspocus admission never waits for the pull. Once
+durable, pull deltas use the branch coordinator's existing update publisher so loaded
+Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
+persistence-only.
+
+**Branch mutations are durable before they reach a Hocuspocus room.** No branch-room
+`onStore` path may re-persist or re-checkpoint to make a mutation durable — it already
+   is. Live and branch writer frames use the same sequence: authority/generation
+   validation, exact-containment acknowledgement, fresh-authorship validation,
+   then durable append. Branch admission runs that sequence against one locked
+   branch snapshot through the awaited `beforeSync` hook, before Hocuspocus
+   apply/broadcast/ack. `onChange` does not own branch persistence.
+`admitBranchWriterUpdate` registers the
+whole admission with `trackAppend` before validation's first `await`, so a
+`storeHocuspocusBranch` or graceful-shutdown drain cannot miss an admission
+Hocuspocus is already processing — do not move registration after an `await`.
+`storeHocuspocusBranch` only drains pending branch admissions; calling
+`checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
+`AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`
+rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regression
+test; the prior redundant checkpoint surfaced only in a live loaded-room probe, not
+`pnpm check`.
 
 ## Live manifest membership
 
@@ -92,14 +129,11 @@ for the cross-domain port decision and self-healing rationale.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` records pushes to live and receipts.
-- `model_response_observation_snapshots` and its entry table store immutable,
-  full-Yjs-identity evidence sealed to successful model responses. Agent-authored
-  live journal, mutation, and reversal rows have an authoring-response FK seam.
 
 Human-origin edits produce one journal row per keystroke. A 50-character
 sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
 recovers storage, and journal row counts are not equivalent to semantic edits.
-Reconnect frames already contained by the live authority are acknowledged but
+Reconnect frames already contained by the live document are acknowledged but
 do not enter the journal or trigger post-persistence hooks.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
@@ -107,8 +141,8 @@ The deleted legacy draft tables (`document_yjs_drafts`,
 
 Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
-durable journal for origin and structural-delete attribution, and judges the
-removed canonical block identity through the response ObservationSnapshot.
+durable journal for origin and structural-delete attribution, and reports each
+removed writer-owned canonical block identity.
 Reports use the ordinary swept change-trail shape; missing ancestry/body/owner
 evidence emits degradation telemetry rather than guessing from update bytes.
 
@@ -117,20 +151,55 @@ evidence emits degradation telemetry rather than guessing from update bytes.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
+- **Draft write-command reversal is branch-scoped**: while the current Work-draft
+  generation has agent rows for the thread, `write(command="undo"|"redo")`
+  reconstructs and stages reversals exclusively from those rows. The staged
+  system row carries the Work-draft generation and becomes durable in the same
+  branch commit that projects its Yjs update; it never writes the live journal.
+  The command pins one branch scope from planning through persistence, and cold
+  replay is reconciled to the authoritative branch snapshot so selective review
+  remains represented even though reviewed rows stay in the generation history.
+  The commit also checks the planned branch-journal watermark and status revision
+  under the branch snapshot CAS, so appended rows and status-only Apply/review
+  transitions both reject the stale reversal for replanning.
+  After Apply advances to an empty generation, reversal lookup falls back to the
+  live store so pushed writes retain their normal undo path.
+- **Draft handles name durable response groups**: response buffering and branch
+  projection fold all same-document mutations in one response into one
+  `branch_write_journal` row. Every write in that group therefore receives the
+  same `w<N>` handle. Selectors operate on durable rows, not transient tool-call
+  boundaries; redo may further group handles that share one atomic reversal
+  update. This matches the folded, turn-scoped diff contract rather than
+  advertising per-write identity the journal does not retain.
+  Apply materializes only handles whose final branch state is active; handles
+  eliminated by Draft undo are squashed rather than recreated as active live
+  mutations for content that is absent. Because one Apply is one durable live
+  update, all handles materialized by that Apply form one live undo boundary:
+  selecting any of them expands to the full group and marks the group together.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
 the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
 inside the same transaction, under `lockDocumentMutation` advisory lock. There is
-no separate `ReversalCommitGuard` — the guard is intrinsic, never optional.
+no separate live `ReversalCommitGuard`. Draft reversal uses the generation and
+journal-watermark fence above.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
   branch-id order, then live coordinator locks in document-id order.
 - **One push commit seam**: whole, selective, and companion pushes execute via
-  `branch-push-executor.ts`; `branch-push-transition.ts` alone orders capture
-  through fenced completion; a durable commit requires its trail bundle.
+  `branch-push-executor.ts`; immutable-base conflict preparation lives in
+  `branch-push-preparation.ts`, trail and notice projection live in
+  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders
+  capture through fenced completion. A durable commit requires its trail bundle.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
+- **Trail detail authorization precedes detail materialization**: the reader
+  resolves each occurrence to `available`, `deleted`, or denied before selecting
+  manuscript-bearing title/prose. Denied occurrences disappear; authorized
+  deleted anchors retain evidence under an explicit `anchorState`. Forward
+  actions require an available anchor before loading evidence and hold the
+  document, source, work, and project authorization rows locked across guarded
+  live apply and journal finalization.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
@@ -141,20 +210,37 @@ history is preserved for attribution, echo, and undo dependency checking.
   rejected intents replan from current live state. Proven anchor loss settles
   `anchor_unavailable`; three live-state collisions settle the distinct
   `retry_exhausted` outcome. This same state machine recovers a crash between intent
-  commit, live apply, and journal finalization without bypassing the guard. Captured
-  bodies remain readable when the live document is unavailable; both terminal
-  outcomes degrade to the client Copy fallback.
+  commit, live apply, and journal finalization without bypassing the guard. After
+  durable ownership authorization, captured bodies remain readable when the live
+  document is unavailable; both terminal outcomes degrade to the client Copy fallback.
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and
-  never rebases rows after a click or refusal.
+  never rebases rows after a click or refusal. A writer root inserted after that
+  base conflicts when its live position falls inside the candidate's replaced
+  scope; unrelated insertions outside a selective edit remain mergeable.
+  Response folding therefore retains each write's semantic replacement scope;
+  never infer one enclosing scope from the union of a row's changed roots. The
+  folded metadata records completeness; incomplete scope capture falls back to
+  aggregate changed-root safety instead of silently weakening refusal.
 - **Push policy is the only mode difference**: manual Apply refuses protected
-  draft-base divergence. Auto-apply always merges; only blind destructive
-  effects are trailed, using the authoring response's sealed ObservationSnapshot
-  and the shared `observationCoversRendering` predicate. The response commit
-  kernel seals canonical swept-block identities and captured bodies into the
-  branch journal row's update metadata before persistence; push projection
-  consumes that evidence independently of the row's Apply-only draft base.
+  draft-base divergence; Auto-apply always merges. Protection derives from
+  durable journal attribution: `completeStagedPush` persists the live journal
+  row as `originType: "human"` with `actorUserId` when the push carries
+  `pushedByUserId` (writer-confirmed Apply); Auto-apply pushes (no
+  `pushedByUserId`) stay `system`. Both the push-time conflict classifier and
+  the agent-edit immediate-path lateSweep recheck derive protection from this
+  attribution, not from push-specific metadata or a separate protection table.
+  Auto-apply trails destructive writer-root effects from durable provenance.
+  This reporting classification is independent of the row's Apply-only draft
+  base.
+- **Writer Apply pins to the displayed preview**: `DraftAcceptRequest.operationIds`
+  is required (non-optional). The client pins Apply-all to the displayed preview
+  via a render-time ref, never a click-time refetch; post-preview rows stay
+  pending. Composition routes all writer Apply through `pushSelectedToLive`;
+  the `whole` push kind remains for Auto-apply/retry but is unreachable from
+  writer Apply. On `push_concurrent_conflict`, composition maps the result to
+  ordinary `concurrent_conflict` and the client re-reviews with a fresh preview.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
@@ -167,20 +253,16 @@ history is preserved for attribution, echo, and undo dependency checking.
   `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
   gate; cached containment must retain at least a 10x p50 advantage over rebuilding
   a history-sized Yjs snapshot.
-- **Push settlement authority**: the outbox stores binary `lock_cut_update` and
-  `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
+- **Push settlement state**: the outbox stores binary `lock_cut_update` and
+  `push_update`, validated trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the
   normalized `branch_push_outbox_updates` relation; admission association and
   `join_version` advancement share the document mutation transaction. Cold reads
-  resolve each sealed lineage item to its immutable response causal cut and
-  observation rows, memoize replay per distinct cut, and feed the resulting
-  provenance occurrences to the shared pointwise destructive-effect classifier.
+  reconstruct durable provenance for the final pre-push document and feed its
+  visible occurrences to the shared pointwise destructive-effect classifier.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
-  V3 tokens retain the affected writer roots regardless of observation; the
-  classifier alone grants per-response credit by requiring both causal-cut
-  inclusion and exact rendering coverage.
   Swept trail details retain the normalized final-pre-push target ranges and exact
   final-pre-push body. Settlement refines a complete provisional push trail in its
   existing aggregate version; only journal or staged-push authority joined after
@@ -190,14 +272,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
   Fixtures run a warm control, stop an identical subject at the durable commit
   boundary, destroy all warm Y.Docs/coordinators/facades, rebuild from PostgreSQL,
-  recover, and compare normalized trail, bodies, identities, causal membership,
-  eligible ranges, apply/completion, and forward actions. It is necessary but not
+  recover, and compare normalized trail, bodies, identities, eligible ranges,
+  apply/completion, and forward actions. It is necessary but not
   sufficient: `lib/compose.runtime-settlement.db.test.ts` must also drive the real
   `createProductionAppPorts` + `composeAppServices` + Hocuspocus + worker-drain chain
   with production-shaped sync-step-2 full-state updates, and S2/S10 release probes
   must verify the writer-visible Restore/Copy and trail flows. Fixture deltas once
-  passed the full oracle while the production observation adapter dropped causal
-  cuts and repeated full-state structs broke first-birth attribution.
+  passed the full oracle while repeated full-state structs broke first-birth
+  attribution.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
@@ -212,8 +294,8 @@ history is preserved for attribution, echo, and undo dependency checking.
   `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction
   context) to carry response-transaction enrollment through arbitrary call depth.
   Deep code calls `enlistResponseParticipant()` without explicit parameters;
-  settlement is bound to the real DB outcome via `deferUntilDrizzleCommit` /
-  `deferUntilDrizzleRollback`.
+  composition binds settlement to the real DB outcome through an injected
+  commit/rollback deferral capability.
 - **Participant settlement contract**: enrolled `ResponseCommitParticipant`s
   expose `commit()`, `abort()`, and optional best-effort
   `onCommitFailure(cause)`. Commit runs in enrollment order after DB commit;
@@ -222,18 +304,17 @@ history is preserved for attribution, echo, and undo dependency checking.
   durability is logged, offered to `onCommitFailure`, and never rethrown as a
   rollback-shaped response error; later participants still settle.
 - **Post-durability notice failures** are structured-logged and may emit a best-effort
-  `awareness_degraded` notice. They do not create process-local safety authority;
-  subsequent agent reversals rely on sealed response observations and fail closed when absent.
-- **Human-only gate classification**: the destructive-write safety gate
-  intersects the candidate's `deletedHashes` against concurrent
-  HUMAN-origin touched hashes only (`humanTouchedHashes`). Other-agent
-  edits do not trigger rejection — the safety promise is to prevent an agent
-  from silently deleting a writer's work.
-- **Observation-scoped agent reversal**: an agent undo/redo carries its successful
-  authoring response ID. Missing document evidence is the blind empty-snapshot case;
-  user reversals remain explicit current intent and do not use observation provenance.
-
-
+  `awareness_degraded` notice. They do not create process-local reporting authority.
+- **Report-only agent commits**: direct writes and reversals always merge through
+  Yjs. `materializeDestructiveProvenance` reconstructs exact durable writer/agent
+  lineage for the shared destructive-effect classifier. Checkpoint manifests
+  carry prior attribution across repeated compaction and floor-null authority
+  replacement. Under the same document-mutation lock as generation replacement,
+  compaction reads, folds, and deletes only the current authority generation;
+  retired-generation suffixes never enter restored authority. Thread-peer roots
+  absent from the live document are agent-owned branch content. Only writer-lineage
+  loss produces captured bodies, trail data, and Restore; agent-only loss is
+  silent.
 ## LOCK-WS boundary
 
 `withDocument()` serializes coordinator callers, not writer WebSocket updates:

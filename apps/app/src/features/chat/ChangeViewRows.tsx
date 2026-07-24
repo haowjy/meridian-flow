@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
-/** The open wording veto lives here: changing this one key changes every sweep row. */
-export const sweepWarningText = () =>
-  t`Removed a passage that included words the agent hadn't seen.`;
+/** The sweep label's wording veto lives here: changing this one key changes every sweep row. */
+export const sweepRemovedLabel = () => t`Removed`;
 
 export function ChangeViewRows({
   threadId,
@@ -88,6 +87,8 @@ function ChangeViewRow({
         (initiallyUnavailable ||
           (change.navigation.kind === "unavailable" && !hasCanonicalRestoreAnchor))),
   );
+  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const actionRequest = useRef<Promise<void> | null>(null);
   const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
   const body = protectedBody ?? (anchorUnavailable ? bodyFromHashline(change.beforeText) : null);
@@ -101,21 +102,40 @@ function ChangeViewRow({
   async function forward(action: TrailForwardAction) {
     if (actionState !== "idle" || actionRequest.current) return;
     setActionState("pending");
+    setRestoreFailed(false);
     const request = runAction({ threadId, trailId, changeId: change.changeId, action })
       .then((result) => {
-        if (result.status === "anchor_unavailable" || result.status === "retry_exhausted") {
+        if (result.status === "anchor_unavailable") {
           setAnchorUnavailable(true);
+          setActionState("idle");
+          return;
+        }
+        if (result.status === "retry_exhausted") {
+          setRestoreFailed(true);
           setActionState("idle");
           return;
         }
         setActionState("applied");
       })
-      .catch(() => setActionState("idle"))
+      .catch(() => {
+        setRestoreFailed(true);
+        setActionState("idle");
+      })
       .finally(() => {
         actionRequest.current = null;
       });
     actionRequest.current = request;
     await request;
+  }
+
+  async function copy(body: string) {
+    setCopyState("idle");
+    try {
+      await copyText(body);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
   }
 
   return (
@@ -129,15 +149,15 @@ function ChangeViewRow({
         onClick={() => void reveal()}
       >
         {protection?.kind === "resurrection" ? (
-          <Trans>↻ This edit brought back text you had deleted</Trans>
+          <Trans>↻ AI brought back text you deleted</Trans>
         ) : protection?.kind === "sweep" ? (
-          sweepWarningText()
+          sweepRemovedLabel()
         ) : change.kind === "insert" ? (
-          <Trans>Inserted text</Trans>
+          <Trans>AI added text</Trans>
         ) : change.kind === "modify" ? (
-          <Trans>Modified text</Trans>
+          <Trans>AI changed text</Trans>
         ) : (
-          <Trans>Deleted text</Trans>
+          <Trans>AI deleted text</Trans>
         )}
       </button>
       {body ? <p className="whitespace-pre-wrap text-prose-foreground">{body}</p> : null}
@@ -148,16 +168,31 @@ function ChangeViewRow({
       ) : null}
       {navigation?.kind === "could_not_open" ? (
         <p className="text-ink-muted">
-          <Trans>Couldn't open this location</Trans>
+          <Trans>That part of the chapter is no longer available. Copy the saved text below.</Trans>
+        </p>
+      ) : null}
+      {anchorUnavailable && body ? (
+        <p className="text-ink-muted">
+          <Trans>This passage can't be restored in place. Copy it instead.</Trans>
+        </p>
+      ) : null}
+      {restoreFailed ? (
+        <p className="text-destructive">
+          {action === "restore" ? (
+            <Trans>Couldn't restore the passage. Try again, or copy it instead.</Trans>
+          ) : (
+            <Trans>Couldn't delete the passage again. Try again.</Trans>
+          )}
         </p>
       ) : null}
       {body && (protection || anchorUnavailable) ? (
         <div className="flex items-center gap-2">
-          {anchorUnavailable ? (
-            <Button size="sm" onClick={() => void copyText(body)}>
+          {anchorUnavailable || (restoreFailed && action === "restore") ? (
+            <Button size="sm" onClick={() => void copy(body)}>
               <Trans>Copy</Trans>
             </Button>
-          ) : actionState === "applied" ? null : (
+          ) : null}
+          {!anchorUnavailable && actionState !== "applied" ? (
             <Button
               size="sm"
               disabled={actionState !== "idle"}
@@ -165,13 +200,23 @@ function ChangeViewRow({
             >
               {action === "delete-again" ? <Trans>Delete again</Trans> : <Trans>Restore</Trans>}
             </Button>
-          )}
+          ) : null}
           {actionState === "applied" ? (
             <span className="text-jade-text">
               {action === "delete-again" ? <Trans>Deleted again</Trans> : <Trans>Restored</Trans>}
             </span>
           ) : null}
+          {copyState === "copied" ? (
+            <span className="text-jade-text">
+              <Trans>Copied</Trans>
+            </span>
+          ) : null}
         </div>
+      ) : null}
+      {copyState === "failed" ? (
+        <p className="text-destructive">
+          <Trans>Couldn't copy. Select the saved text and copy it manually.</Trans>
+        </p>
       ) : null}
     </li>
   );

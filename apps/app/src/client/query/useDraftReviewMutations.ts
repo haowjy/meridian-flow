@@ -30,7 +30,7 @@ export function reviewRequestId(
   input: Pick<
     DraftReviewMutationInput,
     "projectId" | "workId" | "documentId" | "draftId" | "branchId" | "operationIds"
-  >,
+  > & { operationIds?: string[] },
 ): { draftId: string } | { branchId: string } {
   return input.branchId ? { branchId: input.branchId } : { draftId: input.draftId };
 }
@@ -83,6 +83,9 @@ export function useAcceptDraft() {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
       }
+      if (!operationIds || operationIds.length === 0) {
+        throw new Error("Previewed operation ids are required to accept a draft.");
+      }
       const reviewId = reviewRequestId({
         projectId,
         workId,
@@ -95,13 +98,13 @@ export function useAcceptDraft() {
         return acceptDraft(projectId, workId, documentId, {
           branchId: reviewId.branchId,
           draftRevisionToken,
-          ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
+          operationIds,
         });
       }
       return acceptDraft(projectId, workId, documentId, {
         draftId: reviewId.draftId,
         draftRevisionToken,
-        ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
+        operationIds,
       });
     },
     onSuccess: async (_response, variables) => {

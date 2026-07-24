@@ -46,6 +46,7 @@ export interface UseInlineReviewSyncOptions {
     documentId: string,
     draftId: string,
     operationIds: readonly string[],
+    revision: { draftRevisionToken: number; branchId?: string },
   ) => void;
   /** Fatal review-session invariant: active preview exists, but no inline model can be built. */
   onReviewSessionUnavailable?: () => void;
@@ -134,6 +135,10 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       documentId,
       reviewId,
       operations.map((operation) => operation.operationId),
+      {
+        draftRevisionToken: preview.draftRevisionToken,
+        ...(preview.branchId ? { branchId: preview.branchId } : {}),
+      },
     );
   }, [
     editor,

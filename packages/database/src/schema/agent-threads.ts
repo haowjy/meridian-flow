@@ -4,7 +4,6 @@ import type {
   EventJournalId,
   ModelResponseId,
   ProjectId,
-  ResponseCausalCutId,
   ThreadId,
   TurnBlockId,
   TurnId,
@@ -258,80 +257,6 @@ export const modelResponses = pgTable(
       "model_responses_price_source_valid",
       sql`${table.priceSource} IN ('computed', 'provider_reported', 'configured_rate', 'unknown')`,
     ),
-  ],
-);
-
-/** A successful response's immutable authority over exactly rendered document evidence. */
-export const modelResponseObservationSnapshots = pgTable("model_response_observation_snapshots", {
-  responseId: uuid("response_id")
-    .$type<ModelResponseId>()
-    .primaryKey()
-    .references(() => modelResponses.id, { onDelete: "cascade" }),
-  createdAt: createdAt(),
-});
-
-/** Immutable per-document journal prefix that was eligible to enter one model request. */
-export const modelResponseCausalCuts = pgTable(
-  "model_response_causal_cuts",
-  {
-    id: idColumn<ResponseCausalCutId>(),
-    responseId: uuid("response_id")
-      .$type<ModelResponseId>()
-      .notNull()
-      .references(() => modelResponseObservationSnapshots.responseId, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "restrict" }),
-    // A4.2 J1 replaces this document-scoped initial authority with its generation FK at merge.
-    authorityId: uuid("authority_id").$type<DocumentId>().notNull(),
-    generation: bigint("generation", { mode: "bigint" }).notNull().default(sql`1`),
-    admittedThrough: bigint("admitted_through", { mode: "bigint" }).notNull(),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    unique("model_response_causal_cuts_response_document_unique").on(
-      table.responseId,
-      table.documentId,
-    ),
-    check("model_response_causal_cuts_generation_positive", sql`${table.generation} > 0`),
-    check(
-      "model_response_causal_cuts_admitted_through_nonnegative",
-      sql`${table.admittedThrough} >= 0`,
-    ),
-    index("model_response_causal_cuts_document_idx").on(table.documentId),
-  ],
-);
-
-export const modelResponseObservationEntries = pgTable(
-  "model_response_observation_entries",
-  {
-    responseId: uuid("response_id")
-      .$type<ModelResponseId>()
-      .notNull()
-      .references(() => modelResponseObservationSnapshots.responseId, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "restrict" }),
-    clientId: bigint("client_id", { mode: "number" }).notNull(),
-    clock: bigint("clock", { mode: "number" }).notNull(),
-    kind: text("kind").notNull(),
-    contentDigest: text("content_digest"),
-    capturedDeletedBody: text("captured_deleted_body"),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.responseId, table.documentId, table.clientId, table.clock],
-      name: "model_response_observation_entries_pk",
-    }),
-    check("model_response_observation_entries_client_id_nonneg", sql`${table.clientId} >= 0`),
-    check("model_response_observation_entries_clock_nonneg", sql`${table.clock} >= 0`),
-    check(
-      "model_response_observation_entries_value_valid",
-      sql`(${table.kind} = 'rendered' AND ${table.contentDigest} IS NOT NULL AND ${table.capturedDeletedBody} IS NULL) OR (${table.kind} = 'explicit_deletion' AND ${table.contentDigest} IS NULL AND ${table.capturedDeletedBody} IS NOT NULL)`,
-    ),
-    index("model_response_observation_entries_document_idx").on(table.documentId),
   ],
 );
 

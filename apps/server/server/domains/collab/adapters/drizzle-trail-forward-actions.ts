@@ -1,6 +1,6 @@
 /** Journal-first forward Restore/Delete-again actions over retained trail evidence. */
 
-import type { AgentEditCodec } from "@meridian/agent-edit";
+import type { AgentEditCodec } from "@meridian/agent-edit/integration";
 import {
   type DocumentCoordinator,
   decodeNavigationPosition,
@@ -11,19 +11,20 @@ import {
   toRef,
   validateLiveBlockRange,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type {
   TrailForwardAction,
   TrailForwardActionResult,
   TrailForwardActionStateV1,
 } from "@meridian/contracts";
+import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
   changeTrailShells,
   documentYjsUpdates,
 } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
@@ -31,13 +32,22 @@ import {
   fullStateFingerprint,
 } from "../domain/branch-push-transition.js";
 import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
-import { allocateDocumentAdmission } from "./drizzle-document-authority.js";
+import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 type TerminalForwardActionResult = { status: "anchor_unavailable" } | { status: "retry_exhausted" };
 
+export type TrailDocumentAccess = {
+  lockDocumentAccessState(
+    tx: Pick<DrizzleDb, "select">,
+    userId: UserId,
+    documentId: string,
+  ): Promise<"available" | "deleted" | null>;
+};
+
 export function createDrizzleTrailForwardActions(input: {
   db: Database;
+  documentAccess: TrailDocumentAccess;
   coordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
@@ -50,7 +60,9 @@ export function createDrizzleTrailForwardActions(input: {
       action: TrailForwardAction;
       userId: string;
     }): Promise<TrailForwardActionResult> {
-      const detail = await loadChange(input.db, actionInput);
+      const detail = await input.db.transaction((tx) =>
+        loadLockedAuthorizedChange(tx, input.documentAccess, actionInput),
+      );
       if (!detail) return { status: "anchor_unavailable" };
       const durableState = detail.change.forwardActions?.[actionInput.action];
       if (durableState?.status === "applied") return { status: "already_applied" };
@@ -61,7 +73,13 @@ export function createDrizzleTrailForwardActions(input: {
           for (let attempt = 0; attempt < 3; attempt += 1) {
             const committed = await input.db.transaction(async (tx) => {
               await lockDocumentMutation(tx, detail.documentId);
-              const locked = await loadChange(tx, actionInput, true);
+              const accessState = await input.documentAccess.lockDocumentAccessState(
+                tx,
+                actionInput.userId as UserId,
+                detail.documentId,
+              );
+              if (accessState !== "available") return { status: "anchor_unavailable" as const };
+              const locked = await loadChangeForDocument(tx, actionInput, detail.documentId, true);
               if (!locked) return { status: "anchor_unavailable" as const };
               const state = locked.change.forwardActions?.[actionInput.action];
               if (state?.status === "applied") return { status: "already_applied" as const };
@@ -127,33 +145,17 @@ export function createDrizzleTrailForwardActions(input: {
               return committed;
             }
 
-            const alreadyApplied = updateAlreadyApplied(liveDoc, committed.update);
-            if (!alreadyApplied) {
-              const applied = applyCommittedTrailForwardAction({
-                liveDoc,
-                update: committed.update,
-                expectedLiveStateHash: committed.expectedLiveStateHash,
-                liveOrigin: {
-                  type: "user",
-                  userId: actionInput.userId,
-                  reason: `trail-${actionInput.action}`,
-                },
-              });
-              if (applied === "live_changed") {
-                if (attempt < 2) continue;
-                return await settleTerminalAction(
-                  input.db,
-                  { ...actionInput, documentId: detail.documentId },
-                  "retry_exhausted",
-                );
-              }
-            }
-
             const finalized = await input.db.transaction(async (tx) => {
               await lockDocumentMutation(tx, detail.documentId);
-              const locked = await loadChange(tx, actionInput, true);
-              const state = locked?.change.forwardActions?.[actionInput.action];
+              const accessState = await input.documentAccess.lockDocumentAccessState(
+                tx,
+                actionInput.userId as UserId,
+                detail.documentId,
+              );
+              if (accessState !== "available") return "anchor_unavailable" as const;
+              const locked = await loadChangeForDocument(tx, actionInput, detail.documentId, true);
               if (!locked) return "anchor_unavailable" as const;
+              const state = locked.change.forwardActions?.[actionInput.action];
               if (state?.status === "settled") return state.outcome;
               if (state?.status === "applied") return "already_applied" as const;
               if (state?.status !== "committed" || !sameIntent(state, committed)) {
@@ -168,14 +170,39 @@ export function createDrizzleTrailForwardActions(input: {
                 }
                 return "retry" as const;
               }
-              const authority = await allocateDocumentAdmission(tx, detail.documentId);
+              const alreadyApplied = updateAlreadyApplied(liveDoc, committed.update);
+              if (!alreadyApplied) {
+                const applied = applyCommittedTrailForwardAction({
+                  liveDoc,
+                  update: committed.update,
+                  expectedLiveStateHash: committed.expectedLiveStateHash,
+                  liveOrigin: {
+                    type: "user",
+                    userId: actionInput.userId,
+                    reason: `trail-${actionInput.action}`,
+                  },
+                });
+                if (applied === "live_changed") {
+                  if (attempt === 2) {
+                    await updateActionState(tx, {
+                      ...actionInput,
+                      documentId: detail.documentId,
+                      changes: locked.changes,
+                      state: { status: "settled", outcome: "retry_exhausted" },
+                    });
+                    return "retry_exhausted" as const;
+                  }
+                  return "retry" as const;
+                }
+              }
+              const authorityHead = await allocateDocumentAdmission(tx, detail.documentId);
               const [journalRow] = await tx
                 .insert(documentYjsUpdates)
                 .values({
                   documentId: detail.documentId as never,
-                  authorityId: authority.authorityId,
-                  authorityGeneration: authority.generation,
-                  admissionSequence: authority.admissionSequence,
+                  authorityId: authorityHead.authorityId,
+                  authorityGeneration: authorityHead.generation,
+                  admissionSequence: authorityHead.admissionSequence,
                   batchOrdinal: 0,
                   updateData: Buffer.from(committed.update),
                   originType: "human",
@@ -189,19 +216,17 @@ export function createDrizzleTrailForwardActions(input: {
                 changes: locked.changes,
                 state: { status: "applied", updateId: journalRow.id },
               });
-              return "applied" as const;
+              return alreadyApplied ? ("already_applied" as const) : ("applied" as const);
             });
             if (finalized === "retry") continue;
             if (finalized === "anchor_unavailable" || finalized === "retry_exhausted") {
               return { status: finalized };
             }
-            return {
-              status:
-                alreadyApplied || finalized === "already_applied" ? "already_applied" : "applied",
-            };
+            return { status: finalized };
           }
           return await settleTerminalAction(
             input.db,
+            input.documentAccess,
             { ...actionInput, documentId: detail.documentId },
             "retry_exhausted",
           );
@@ -210,6 +235,7 @@ export function createDrizzleTrailForwardActions(input: {
         if (isDocumentNotFoundError(cause)) {
           return await settleTerminalAction(
             input.db,
+            input.documentAccess,
             { ...actionInput, documentId: detail.documentId },
             "anchor_unavailable",
           );
@@ -230,18 +256,26 @@ function terminalResult(
 
 async function settleTerminalAction(
   db: Database,
+  documentAccess: TrailDocumentAccess,
   actionInput: {
     threadId: string;
     trailId: string;
     changeId: string;
     action: TrailForwardAction;
     documentId: string;
+    userId: string;
   },
   outcome: Extract<TrailForwardActionStateV1, { status: "settled" }>["outcome"],
 ): Promise<TrailForwardActionResult> {
   return db.transaction(async (tx) => {
     await lockDocumentMutation(tx, actionInput.documentId);
-    const locked = await loadChange(tx, actionInput, true);
+    const accessState = await documentAccess.lockDocumentAccessState(
+      tx,
+      actionInput.userId as UserId,
+      actionInput.documentId,
+    );
+    if (accessState !== "available") return { status: "anchor_unavailable" };
+    const locked = await loadChangeForDocument(tx, actionInput, actionInput.documentId, true);
     if (!locked) return { status: "anchor_unavailable" };
     const state = locked.change.forwardActions?.[actionInput.action];
     if (state?.status === "applied") return { status: "already_applied" };
@@ -374,9 +408,10 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
-async function loadChange(
+async function loadChangeForDocument(
   db: Pick<DrizzleDb, "select">,
   input: { threadId: string; trailId: string; changeId: string },
+  documentId: string,
   lock = false,
 ): Promise<{ documentId: string; changes: TrailChangeV1[]; change: TrailChangeV1 } | null> {
   let query = db
@@ -389,15 +424,63 @@ async function loadChange(
     .where(
       and(
         eq(changeTrailDocumentDetails.trailId, input.trailId),
+        eq(changeTrailDocumentDetails.documentId, documentId as never),
+        eq(changeTrailShells.threadId, input.threadId as never),
+      ),
+    );
+  if (lock) query = query.for("update") as typeof query;
+  const [row] = await query;
+  if (!row) return null;
+  const changes = parseTrailChangesV1(row.changes);
+  const change = changes.find((candidate) => candidate.changeId === input.changeId);
+  return change ? { documentId: row.documentId, changes, change } : null;
+}
+
+async function loadLockedAuthorizedChange(
+  db: Pick<DrizzleDb, "select">,
+  documentAccess: TrailDocumentAccess,
+  input: { threadId: string; trailId: string; changeId: string; userId: string },
+): Promise<{ documentId: string; changes: TrailChangeV1[]; change: TrailChangeV1 } | null> {
+  const documentRows = await db
+    .select({ documentId: changeTrailDocumentDetails.documentId })
+    .from(changeTrailDocumentDetails)
+    .innerJoin(changeTrailShells, eq(changeTrailShells.id, changeTrailDocumentDetails.trailId))
+    .where(
+      and(
+        eq(changeTrailDocumentDetails.trailId, input.trailId),
         eq(changeTrailShells.threadId, input.threadId as never),
       ),
     )
-    .limit(1);
-  if (lock) query = query.for("update") as typeof query;
-  const [row] = await query;
-  const changes = parseTrailChangesV1(row?.changes ?? []);
-  const change = changes.find((candidate) => candidate.changeId === input.changeId);
-  return row && change ? { documentId: row.documentId, changes, change } : null;
+    .orderBy(asc(changeTrailDocumentDetails.documentId));
+  const authorizedDocumentIds: string[] = [];
+  for (const { documentId } of documentRows) {
+    const accessState = await documentAccess.lockDocumentAccessState(
+      db,
+      input.userId as UserId,
+      documentId,
+    );
+    if (accessState === "available") authorizedDocumentIds.push(documentId);
+  }
+  if (authorizedDocumentIds.length === 0) return null;
+
+  const query = db
+    .select({
+      documentId: changeTrailDocumentDetails.documentId,
+      changes: changeTrailDocumentDetails.changes,
+    })
+    .from(changeTrailDocumentDetails)
+    .where(
+      and(
+        eq(changeTrailDocumentDetails.trailId, input.trailId),
+        inArray(changeTrailDocumentDetails.documentId, authorizedDocumentIds),
+      ),
+    );
+  for (const row of await query) {
+    const changes = parseTrailChangesV1(row.changes);
+    const change = changes.find((candidate) => candidate.changeId === input.changeId);
+    if (change) return { documentId: row.documentId, changes, change };
+  }
+  return null;
 }
 
 export function planTrailForwardAction(input: {

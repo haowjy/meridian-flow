@@ -1,15 +1,6 @@
 /** Production-composition regression for response credit and staged-push completion. */
 
 import { Hocuspocus } from "@hocuspocus/server";
-import {
-  createAgentEditCodec,
-  digestRenderedContent,
-  snapshotBlocks,
-  toDocHandle,
-  yProsemirrorModel,
-} from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -40,11 +31,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const TURN_ID = "00000000-0000-4000-8000-000000000906";
     const DOC_ID = "00000000-0000-4000-8000-000000000907";
     const RESPONSE_ID = "00000000-0000-4000-8000-000000000908";
-    const CUT_ID = "00000000-0000-4000-8000-000000000909";
     const db = createDb(DATABASE_URL, { max: 4 });
-    const documentSchema = buildDocumentSchema();
-    const model = yProsemirrorModel(documentSchema);
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
         schema.turnTrailWork,
@@ -127,10 +114,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("S2 Restore and S10 hard-delete evidence survive cold composition", () => runScenario(true));
 
-    it("does not warn when the production response observed the overwritten prose", () =>
-      runScenario(false));
+    it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
 
-    async function runScenario(writerAfterObservation: boolean): Promise<void> {
+    async function runScenario(writerAfterRead: boolean): Promise<void> {
       let runtime = await composeRuntime();
       let { ports, app } = runtime;
 
@@ -140,7 +126,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD_ID,
       });
-      await sealObservation();
+      await db.insert(schema.modelResponses).values({
+        id: RESPONSE_ID,
+        turnId: TURN_ID,
+        sequence: 1,
+        provider: "runtime-test",
+        model: "runtime-test",
+      });
       await ports.documentSync.agentEdit().write(
         { command: "read", file: "runtime-settlement.md", documentId: DOC_ID },
         {
@@ -153,7 +145,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const room = await runtime.hocuspocus.openDirectConnection(DOC_ID);
       if (!room.document) throw new Error("live production room is unavailable");
-      if (writerAfterObservation) {
+      if (writerAfterRead) {
         const writerReplica = new Y.Doc({ gc: false });
         Y.applyUpdate(writerReplica, Y.encodeStateAsUpdate(room.document));
         const fragment = writerReplica.getXmlFragment("prosemirror");
@@ -204,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           file: "runtime-settlement.md",
           documentId: DOC_ID,
           content: "Agent final.",
-          find: writerAfterObservation ? "Writer V2 unseen." : "Writer V1 observed.",
+          find: writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
           all: true,
         },
         {
@@ -228,7 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const trails = await db.select().from(schema.changeTrailShells);
       expect(trails).toHaveLength(1);
       const [trail] = trails;
-      expect(trail?.sweptChangeCount).toBe(writerAfterObservation ? 1 : 0);
+      expect(trail?.sweptChangeCount).toBe(1);
       const [details] = await db.select().from(schema.changeTrailDocumentDetails);
       const sweptBodies = (
         (details?.changes ?? []) as Array<{
@@ -239,15 +231,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ? [change.writerProtection.body?.markdown?.trim()]
           : [],
       );
-      expect(sweptBodies).toEqual(writerAfterObservation ? ["Writer V2 unseen."] : []);
-      const [branchRow] = await db.select().from(schema.branchWriteJournal);
-      expect(branchRow?.updateMeta).toMatchObject({
-        sealedWriterLineage: { responseCausalCutId: CUT_ID },
-      });
+      expect(sweptBodies).toEqual([writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed."]);
       await room.disconnect();
       await unloadRuntime(runtime.hocuspocus);
 
-      if (writerAfterObservation) {
+      if (writerAfterRead) {
         // Drop every warm composition object; the next assertions can only use
         // the journal, settlement, and trail rows in PostgreSQL.
         runtime = await composeRuntime();
@@ -313,7 +301,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
         });
         const retained = reloaded as {
-          unavailable?: boolean;
+          anchorState?: "available" | "deleted";
           changes?: Array<{
             writerProtection?: { kind?: string; body?: { markdown?: string } };
             forwardActions?: { restore?: { status?: string } };
@@ -322,7 +310,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const retainedSweep = retained.changes?.find(
           (candidate) => candidate.writerProtection?.kind === "sweep",
         );
-        expect(retained.unavailable).toBe(true);
+        expect(retained.anchorState).toBe("deleted");
         expect(retainedSweep?.writerProtection?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
         expect(retainedSweep?.forwardActions?.restore?.status).toBe("applied");
         await unloadRuntime(runtime.hocuspocus);
@@ -357,72 +345,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await Promise.all(server.unloadingDocuments.values());
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
-    }
-
-    async function sealObservation(): Promise<void> {
-      const state = await portsState();
-      const doc = new Y.Doc({ gc: false });
-      Y.applyUpdate(doc, state.update);
-      const blocks = snapshotBlocks(toDocHandle(doc), model, codec);
-      await db.insert(schema.modelResponses).values({
-        id: RESPONSE_ID,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "runtime-test",
-        model: "runtime-test",
-      });
-      await db.insert(schema.modelResponseObservationSnapshots).values({ responseId: RESPONSE_ID });
-      await db.insert(schema.modelResponseCausalCuts).values({
-        id: CUT_ID,
-        responseId: RESPONSE_ID,
-        documentId: DOC_ID,
-        authorityId: state.authorityId,
-        generation: state.generation,
-        admittedThrough: state.admittedThrough,
-      });
-      await db.insert(schema.modelResponseObservationEntries).values(
-        blocks.flatMap((block) =>
-          block.clientID === undefined || block.clock === undefined || !block.renderedContent
-            ? []
-            : [
-                {
-                  responseId: RESPONSE_ID,
-                  documentId: DOC_ID,
-                  clientId: block.clientID,
-                  clock: block.clock,
-                  kind: "rendered" as const,
-                  contentDigest: digestRenderedContent(block.renderedContent),
-                },
-              ],
-        ),
-      );
-      doc.destroy();
-    }
-
-    async function portsState() {
-      const [head] = await db
-        .select()
-        .from(schema.documentYjsHeads)
-        .where(eq(schema.documentYjsHeads.documentId, DOC_ID));
-      const [row] = await db
-        .select({ update: schema.documentYjsUpdates.updateData })
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, DOC_ID));
-      if (!head || !row) throw new Error("document authority was not initialized");
-      const update = await db
-        .select({ value: schema.documentYjsUpdates.updateData })
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, DOC_ID));
-      const doc = new Y.Doc({ gc: false });
-      for (const item of update) Y.applyUpdate(doc, item.value);
-      const state = Y.encodeStateAsUpdate(doc);
-      doc.destroy();
-      return {
-        update: state,
-        authorityId: head.authorityId,
-        generation: head.authorityGeneration,
-        admittedThrough: head.nextAdmissionSequence - 1n,
-      };
     }
   });
 }

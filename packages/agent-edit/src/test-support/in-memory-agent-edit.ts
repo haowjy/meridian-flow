@@ -68,6 +68,7 @@ export interface JournalEntry {
   nextSeq: number;
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
+  attributionUpdates: StoredUpdate[];
   reversals: Map<string, StoredReversal>;
   reversalOps: StoredReversalOp[];
   mutations: StoredAgentEditMutation[];
@@ -129,6 +130,13 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
 
   async read(docId: string, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {
     return this.readSync(docId, opts);
+  }
+
+  async readAttribution(docId: string): Promise<JournalSnapshot> {
+    return {
+      checkpoint: null,
+      updates: this.entry(docId).attributionUpdates.map(copyPersistedUpdate),
+    };
   }
 
   async readForReconstruction(docId: string): Promise<JournalSnapshot> {
@@ -420,11 +428,18 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     assertExpectedSeq(meta, seq);
 
     entry.nextSeq += 1;
-    entry.updates.push({
+    const stored = {
       seq,
       update: copyBytes(update),
       meta: { ...meta, seq },
       storedAt: copyDate(storedAt),
+    };
+    entry.updates.push(stored);
+    entry.attributionUpdates.push({
+      ...stored,
+      update: copyBytes(stored.update),
+      meta: { ...stored.meta },
+      storedAt: copyDate(stored.storedAt),
     });
     return seq;
   }
@@ -482,6 +497,12 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         nextSeq: entry.nextSeq,
         nextWIdByThread: new Map(entry.nextWIdByThread),
         updates: entry.updates.map((update) => ({
+          seq: update.seq,
+          update: copyBytes(update.update),
+          meta: { ...update.meta },
+          storedAt: copyDate(update.storedAt),
+        })),
+        attributionUpdates: entry.attributionUpdates.map((update) => ({
           seq: update.seq,
           update: copyBytes(update.update),
           meta: { ...update.meta },
@@ -630,6 +651,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         nextSeq: 1,
         nextWIdByThread: new Map(),
         updates: [],
+        attributionUpdates: [],
         reversals: new Map(),
         reversalOps: [],
         mutations: [],

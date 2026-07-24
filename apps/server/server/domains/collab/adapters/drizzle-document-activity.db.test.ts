@@ -19,7 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { and, eq } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { touchDocumentActivity, updateMarkdownProjection } = await import(
-      "./document-activity.js"
+      "./drizzle-document-activity.js"
     );
 
     const USER_ID = "00000000-0000-4000-8000-000000000401";

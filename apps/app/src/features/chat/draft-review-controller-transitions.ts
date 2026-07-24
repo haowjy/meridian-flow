@@ -1,5 +1,6 @@
 /** draft-review-controller-transitions — pure state machine for draft review sessions. */
 import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
+import { type DraftApplyRefusal, draftApplyRefusalFromResponse } from "./draft-apply-refusal";
 
 export type DraftReviewSelection = {
   documentId: string;
@@ -60,6 +61,7 @@ export type DraftReviewState = {
   acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
+  applyRefusal: DraftApplyRefusal | null;
   /** Conflicts survive navigation; only re-review or disposition removes their entry. */
   concurrentConflicts: ReadonlyMap<string, DraftReviewSelection & { conflictedBlocks: string[] }>;
 };
@@ -67,6 +69,7 @@ export type DraftReviewState = {
 export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
+  | { type: "applyStarted" }
   | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
   | { type: "operationAcceptStarted"; operationId: string }
   | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
@@ -88,6 +91,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   acceptingOperationId: null,
   inlineReviewMessage: null,
   inlineDiscardError: null,
+  applyRefusal: null,
   concurrentConflicts: new Map(),
 };
 
@@ -106,8 +110,14 @@ export function draftReviewReducer(
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
+    case "applyStarted":
+      return { ...state, applyRefusal: null };
     case "applySucceeded":
-      return { ...stateAfterAcceptResult(state, action), acceptingOperationId: null };
+      return {
+        ...stateAfterAcceptResult(state, action),
+        acceptingOperationId: null,
+        applyRefusal: draftApplyRefusalFromResponse(action.response),
+      };
     case "operationAcceptStarted":
       // A start can't preempt an accept already in flight — the in-flight one
       // owns `acceptingOperationId` until it terminates. (The controller also
@@ -118,6 +128,7 @@ export function draftReviewReducer(
         ...state,
         acceptingOperationId: action.operationId,
         inlineReviewMessage: null,
+        applyRefusal: null,
       };
     case "operationAcceptSucceeded":
       return { ...state, acceptingOperationId: null, inlineReviewMessage: action.message };

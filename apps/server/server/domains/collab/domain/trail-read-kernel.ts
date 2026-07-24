@@ -6,7 +6,7 @@ import {
   type LineageRange,
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
 import * as Y from "yjs";
 import { z } from "zod";
@@ -174,8 +174,8 @@ export type ChangeTrailDocumentDetailV1 = {
   documentId: string;
   documentTitle: string;
   changes: TrailChangeV1[];
-  /** The durable detail remains readable, but its live document cannot be opened. */
-  unavailable?: true;
+  /** Retained evidence stays readable after its authorized live anchor is deleted. */
+  anchorState: "available" | "deleted";
 };
 
 const ROOT_NAME = "prosemirror";

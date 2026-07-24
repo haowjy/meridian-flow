@@ -2,18 +2,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   type AgentEditCodec,
-  classifyDestructiveEffect,
+  classifyDestructiveSnapshotEffect,
   type DocumentCoordinator,
-  digestRenderedContent,
-  intersectLineageRanges,
-  type LineageRange,
   normalizeLineageRanges,
-  observationCoversRendering,
   snapshotBlocks,
   toDocHandle,
-  type VisibleProseOccurrence,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
@@ -184,33 +179,7 @@ export function createBranchPushTransition(input: {
     return input.pushStore.commitPushBatch(prepared);
   };
 
-  function occurrencesFor(
-    blocks: ReturnType<typeof snapshotBlocks>,
-    provenance: PendingLiveSettlement["provenanceView"],
-  ): VisibleProseOccurrence[] {
-    return blocks.flatMap((block) =>
-      block.renderedContent === undefined
-        ? []
-        : provenance.flatMap((run) =>
-            intersectLineageRanges(block.lineage ?? [], [run.target]).map((target) => ({
-              target,
-              root: {
-                clientID: run.root.clientID,
-                clock: run.root.clock + target.clock - run.target.clock,
-                length: target.length,
-              },
-              provenance: run.birthClass,
-              finalRendering: renderingKey(block),
-            })),
-          ),
-    );
-  }
-
-  function renderingKey(block: ReturnType<typeof snapshotBlocks>[number]): string {
-    return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
-  }
-
-  /** Response-scoped causal-cut algebra; every evidence item earns credit independently. */
+  /** Classifies destructive effects from durable provenance and the current before/after state. */
   function classify(
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
@@ -226,100 +195,43 @@ export function createBranchPushTransition(input: {
       Y.applyUpdate(afterDoc, pending.pushUpdate);
       const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.codec);
       const preProvenance = pending.provenanceView;
-      const beforeOccurrences = occurrencesFor(before, preProvenance);
       const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
-      const afterOccurrences = occurrencesFor(after, afterProvenance);
-      const evidenceById = new Map(pending.responseEvidence.map((item) => [item.evidenceId, item]));
-      const eligibleByRendering = new Map<string, LineageRange[]>();
-
-      // A selected row may legitimately predate response sealing. It contributes
-      // Ri = empty: no protected roots and no causal/observation credit. The shared
-      // classifier still derives Hi from writer roots outside that empty cut.
-      const evidenceItems =
-        pending.lineageEvidence.items.length > 0 ? pending.lineageEvidence.items : [null];
-      for (const item of evidenceItems) {
-        const response = item ? evidenceById.get(item.evidenceId) : undefined;
-        if (item && !response) {
-          throw new ProvenanceMaterializationError("Settlement response evidence is unavailable");
-        }
-        const coveredFinalRenderings = before.flatMap((block) => {
-          if (
-            block.clientID === undefined ||
-            block.clock === undefined ||
-            block.renderedContent === undefined
-          )
-            return [];
-          const observation = response?.observations.find(
-            (entry) =>
-              entry.documentId === pending.push.documentId &&
-              entry.clientID === block.clientID &&
-              entry.clock === block.clock,
-          );
-          return observationCoversRendering({
-            observation: observation?.value ?? null,
-            renderedContent: block.renderedContent,
-            digestRenderedContent,
-          })
-            ? [renderingKey(block)]
-            : [];
-        });
-        const effect = classifyDestructiveEffect({
-          before: beforeOccurrences,
-          afterCandidate: afterOccurrences,
-          protectionScope: item?.token.protectedRoots ?? [],
-          responseCut: {
-            ...(response?.responseCut ?? {
-              id: "unsealed-selection",
-              version: 1 as const,
-              documentId: pending.push.documentId,
-              authorityId: `unsealed:${pending.push.documentId}`,
-              generation: 0n,
-              admittedThrough: 0n,
-            }),
-            visible: (response?.visibleAtCut ?? []).map((run) => ({
-              target: run.target,
-              root: run.root,
-              provenance: run.birthClass,
-              finalRendering: "",
-            })),
-          },
-          observation: { coveredFinalRenderings },
-        });
-        for (const projection of effect.finalRenderingProjections) {
-          const ranges = eligibleByRendering.get(projection.finalRendering) ?? [];
-          ranges.push(...projection.ranges);
-          eligibleByRendering.set(projection.finalRendering, ranges);
-        }
-      }
-
-      if (eligibleByRendering.size === 0) {
+      const { affectedBefore: affected } = classifyDestructiveSnapshotEffect({
+        before,
+        afterCandidate: after,
+        beforeProvenance: preProvenance.map((run) => ({
+          target: run.target,
+          root: run.root,
+          provenance: run.birthClass,
+        })),
+        afterCandidateProvenance: afterProvenance.map((run) => ({
+          target: run.target,
+          root: run.root,
+          provenance: run.birthClass,
+        })),
+      });
+      if (affected.length === 0) {
         return { trail: pending.trail, refineToEmpty: true };
       }
-      const affected = before.filter((block) => {
-        return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
-      });
       const affectedByIdentity = new Map(
-        affected.flatMap((block) =>
-          block.clientID === undefined || block.clock === undefined
-            ? []
-            : [
-                [
-                  canonicalBlockKey({
-                    documentId: pending.push.documentId,
-                    clientID: block.clientID,
-                    clock: block.clock,
-                  }),
-                  block,
-                ] as const,
-              ],
+        affected.map(
+          (item) =>
+            [
+              canonicalBlockKey({
+                documentId: pending.push.documentId,
+                clientID: item.block.clientID,
+                clock: item.block.clock,
+              }),
+              item,
+            ] as const,
         ),
       );
       const lateChanges = pending.trail.changes.flatMap((change) => {
         if (!change.beforeBlockIdentity) return [];
-        const block = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
-        if (!block) return [];
-        const rendering = block.renderedContent as string;
-        const markdown = rendering.slice(rendering.indexOf("|") + 1);
+        const affectedItem = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
+        if (!affectedItem) return [];
+        const { block, ranges } = affectedItem;
+        const markdown = block.body;
         return [
           {
             ...change,
@@ -333,14 +245,14 @@ export function createBranchPushTransition(input: {
             writerProtection: {
               kind: "sweep" as const,
               body: { status: "available" as const, markdown },
-              ranges: normalizeLineageRanges(eligibleByRendering.get(renderingKey(block)) ?? []),
+              ranges: normalizeLineageRanges(ranges),
             },
           },
         ];
       });
       if (lateChanges.length === 0) return null;
       const swept: PushSweptTrail = {
-        affectedBlockHashes: affected.map((block) => block.hash).sort(),
+        affectedBlockHashes: affected.map(({ block }) => block.hash).sort(),
         capturedDeletedBodies: lateChanges.map((change) => ({
           hash: change.swept.affectedBlockHash,
           body: change.swept.removed.status === "available" ? change.swept.removed.markdown : "",
@@ -518,7 +430,7 @@ export function createBranchPushTransition(input: {
   return { execute, prepare, recover };
 }
 
-/** The only reconstruction path for settlement authority and provenance, warm or cold. */
+/** The only reconstruction path for settlement state and provenance, warm or cold. */
 export function materializeFinalPrePush(row: PendingLiveSettlement): {
   doc: Y.Doc;
   provenanceView: PendingLiveSettlement["provenanceView"];

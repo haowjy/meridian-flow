@@ -1,4 +1,5 @@
 /** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditCodec,
   bytesEqual,
@@ -15,21 +16,36 @@ import {
   type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
   yjsUpdateFromState,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { AutoBranchPushPort, BranchJournalRow } from "./branch-push-contracts.js";
+import {
+  type AutoBranchPushPort,
+  type BranchJournalRow,
+  branchUpdateMetaWithReplacementScopes,
+} from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
+import {
+  type BranchReversalScope,
+  type BranchReversalState,
+  branchRowAsPersistedUpdate,
+  buildBranchReversalState,
+  groupedOrdinalKey,
+  materializeSnapshot,
+  resolveBranchReversalScope,
+  serializeBranchReversalRecord,
+  stageBranchReversal,
+} from "./branch-reversal-history.js";
 import {
   docFromState,
   partitionByBlockCoverage,
   touchedHashesForCoverage,
 } from "./branch-update-attribution.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
+
+export { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
 
 export type BranchConcurrentJournalWatermarks = {
   current(threadId: ThreadId, documentId: DocumentId): number | undefined;
@@ -42,6 +58,21 @@ export type BranchConcurrentJournalWatermarks = {
   commitPending(threadId: ThreadId, documentId: DocumentId, attemptId?: string): void;
   clearPending(threadId: ThreadId, documentId: DocumentId): void;
 };
+
+export type BranchAgentEditDiagnostics = {
+  stagedWriteNoop(payload: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    branchId: string;
+    turnId: string | null;
+    writeId: string | null;
+  }): void;
+  mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
+  autoPushUnapplied(payload: { workDraftBranchId: string; result: unknown }): void;
+  autoPushFailed(payload: { workDraftBranchId: string; cause: unknown }): void;
+};
+
+export type AfterCommit = (callback: () => void | Promise<void>) => void;
 
 export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJournalWatermarks {
   const currentByThreadDocument = new Map<string, number>();
@@ -115,7 +146,8 @@ export function createBranchAgentEditCoordinator(input: {
     ): Promise<BranchJournalRow[]>;
   };
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
-  eventSink?: EventSink;
+  diagnostics?: BranchAgentEditDiagnostics;
+  afterCommit: AfterCommit;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
@@ -147,13 +179,20 @@ export function createBranchAgentEditCoordinator(input: {
               if (mutation?.mode !== "threadPeer") {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
+              const replacementScopes = pendingBatch.flatMap((entry) => {
+                const scope = entry.mutation?.semanticEditIr?.scope;
+                return scope && scope.length > 0 ? [scope] : [];
+              });
+              const replacementScopesComplete = pendingBatch.every(
+                (entry) => entry.mutation?.replacementScopeRecorded === true,
+              );
               const sourceHasBranchDelta = await sourceDocHasBranchDelta(
                 input.branchCoordinator,
                 workDraftBranchId,
                 doc,
               );
               if (!sourceHasBranchDelta) {
-                emitStagedWriteNoop(input.eventSink, {
+                input.diagnostics?.stagedWriteNoop({
                   documentId: docId as DocumentId,
                   threadId: input.threadId,
                   branchId: workDraftBranchId,
@@ -170,7 +209,17 @@ export function createBranchAgentEditCoordinator(input: {
                 threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
                 turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,
-                updateMeta: pending?.meta ?? null,
+                ...(mutation.branchJournalWatermark !== undefined
+                  ? { expectedJournalWatermark: mutation.branchJournalWatermark }
+                  : {}),
+                ...(mutation.branchJournalRevision !== undefined
+                  ? { expectedJournalRevision: mutation.branchJournalRevision }
+                  : {}),
+                updateMeta: branchUpdateMetaWithReplacementScopes(
+                  pending?.meta ?? null,
+                  replacementScopes,
+                  replacementScopesComplete,
+                ),
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
               if (!committed) return result;
@@ -179,12 +228,13 @@ export function createBranchAgentEditCoordinator(input: {
                 concurrentJournalWatermarks,
                 input.threadId,
                 docId as DocumentId,
+                input.afterCommit,
                 pending?.mutation?.writeId,
               );
             } else if (pendingBatch.length > 0) {
               const workDraftBranchId = snapshot.upstreamBranchId ?? snapshot.branchId;
               const pending = pendingBatch.at(-1);
-              emitStagedWriteNoop(input.eventSink, {
+              input.diagnostics?.stagedWriteNoop({
                 documentId: docId as DocumentId,
                 threadId: input.threadId,
                 branchId: workDraftBranchId,
@@ -204,7 +254,8 @@ export function createBranchAgentEditCoordinator(input: {
         scheduleAutoPushAfterCommit({
           workDraftBranchId: autoPushBranchId,
           branchPush: input.branchPush,
-          eventSink: input.eventSink,
+          diagnostics: input.diagnostics,
+          afterCommit: input.afterCommit,
         });
       }
       return result;
@@ -294,16 +345,65 @@ export function createBranchAgentEditJournal(input: {
   threadId: ThreadId;
   liveJournal: UpdateJournal & ReversalStore;
   pendingJournalEntries?: BranchPendingJournalEntries;
+  branches?: BranchLookupWithSnapshots;
+  branchRows?: {
+    listJournalRowsForBranch(input: {
+      branchId: string;
+      generation: number;
+    }): Promise<BranchJournalRow[]>;
+  };
 }): UpdateJournal & ReversalStore {
   let syntheticSeq = 0;
+  const groupedOrdinals = new Map<string, Promise<number>>();
+  const pinnedReversalScope = new AsyncLocalStorage<{
+    docId: string;
+    scope: BranchReversalScope;
+  }>();
+  const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
+    input.liveJournal,
+  );
+
+  const resolveBranchScope = async (docId: string): Promise<BranchReversalScope | null> => {
+    if (!input.branches) return null;
+    return resolveBranchReversalScope({
+      documentId: docId as DocumentId,
+      threadId: input.threadId,
+      branches: input.branches,
+      branchRows: input.branchRows,
+    });
+  };
+
+  const branchScope = async (docId: string): Promise<BranchReversalScope | null> => {
+    const pinned = pinnedReversalScope.getStore();
+    return pinned?.docId === docId ? pinned.scope : resolveBranchScope(docId);
+  };
+
+  const branchState = async (docId: string): Promise<BranchReversalState | null> => {
+    const scope = await branchScope(docId);
+    return scope ? buildBranchReversalState(input.threadId, scope.rows) : null;
+  };
+
   return {
+    async withReversalScope(docId, operation) {
+      const scope = await resolveBranchScope(docId);
+      if (!scope) {
+        throw new Error("Branch reversal authority changed before the command began");
+      }
+      return pinnedReversalScope.run({ docId, scope }, operation);
+    },
+
     async append(_docId, _update, _meta) {
       syntheticSeq += 1;
       return syntheticSeq;
     },
 
     async appendBatch(entries) {
-      for (const entry of entries) input.pendingJournalEntries?.push(entry);
+      for (const entry of entries) {
+        input.pendingJournalEntries?.push(entry);
+        const groupId = entry.meta.authoringResponseId ?? entry.mutation?.turnId;
+        if (groupId)
+          groupedOrdinals.delete(groupedOrdinalKey(entry.docId, input.threadId, groupId));
+      }
       return Promise.all(
         entries.map(async (entry): Promise<JournalBatchAppendResult> => {
           syntheticSeq += 1;
@@ -316,17 +416,24 @@ export function createBranchAgentEditJournal(input: {
       );
     },
 
-    async recordWriterProtectionScope({ docId, responseId, token }) {
-      input.pendingJournalEntries?.recordWriterProtectionScope({
-        documentId: docId,
-        responseId,
-        token,
-      });
-    },
-
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
       return Promise.resolve({ checkpoint: null, updates: [] });
     },
+
+    readAttribution(docId: string): Promise<JournalSnapshot> {
+      return input.liveJournal.readAttribution?.(docId) ?? input.liveJournal.read(docId);
+    },
+
+    ...(materializeDestructiveProvenance
+      ? {
+          materializeDestructiveProvenance: (request) =>
+            materializeDestructiveProvenance({
+              ...request,
+              // Roots absent from the live document were born on this agent-owned branch.
+              fallbackProvenance: "agent",
+            }),
+        }
+      : {}),
 
     checkpoint(_docId: string, _state: Uint8Array, _upToSeq: number): Promise<void> {
       return Promise.resolve();
@@ -336,44 +443,149 @@ export function createBranchAgentEditJournal(input: {
       return Promise.resolve({ updatesFolded: 0, reversalsExpired: 0 });
     },
 
-    reserveWriteOrdinal(documentId, threadId) {
-      return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
+    async reserveWriteOrdinal(documentId, threadId, groupId) {
+      if (!groupId) return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
+      const key = groupedOrdinalKey(documentId, threadId, groupId);
+      const existing = groupedOrdinals.get(key);
+      if (existing !== undefined) return existing;
+      const reservation = input.liveJournal.reserveWriteOrdinal(documentId, threadId);
+      groupedOrdinals.set(key, reservation);
+      try {
+        return await reservation;
+      } catch (cause) {
+        if (groupedOrdinals.get(key) === reservation) groupedOrdinals.delete(key);
+        throw cause;
+      }
     },
-    readForReconstruction(docId) {
-      return input.liveJournal.readForReconstruction(docId);
+    async readForReconstruction(docId) {
+      const scope = await branchScope(docId);
+      if (!scope) return input.liveJournal.readForReconstruction(docId);
+      const live = await input.liveJournal.readForReconstruction(docId);
+      const persistenceWatermark = scope.rows.at(-1)?.id ?? 0;
+      const checkpoint = materializeSnapshot(live);
+      const updates = scope.rows.map(branchRowAsPersistedUpdate);
+      const replayedState = materializeSnapshot({ checkpoint, updates });
+      const reconciled = new Y.Doc({ gc: false });
+      Y.applyUpdate(reconciled, replayedState);
+      Y.applyUpdate(reconciled, scope.state);
+      const authoritativeState = Y.encodeStateAsUpdate(reconciled);
+      reconciled.destroy();
+      const reconciliationUpdate = bytesEqual(replayedState, authoritativeState)
+        ? []
+        : [
+            {
+              seq: persistenceWatermark + 1,
+              update: scope.state,
+              meta: { origin: "system:branch-state", seq: persistenceWatermark + 1 },
+            },
+          ];
+      return {
+        checkpoint,
+        updates: [...updates, ...reconciliationUpdate],
+        persistenceWatermark,
+      };
     },
     documentsForTurn(threadId, turnId) {
       return input.liveJournal.documentsForTurn(threadId, turnId);
     },
-    latestActiveWrite(documentId, threadId) {
-      return input.liveJournal.latestActiveWrite(documentId, threadId);
+    async latestActiveWrite(documentId, threadId) {
+      const state = await branchState(documentId);
+      return state
+        ? state.activeWrites.at(-1)
+        : input.liveJournal.latestActiveWrite(documentId, threadId);
     },
-    activeWriteSummary(documentId, threadId) {
-      return input.liveJournal.activeWriteSummary(documentId, threadId);
+    async activeWriteSummary(documentId, threadId) {
+      const state = await branchState(documentId);
+      return state
+        ? state.activeWrites
+        : input.liveJournal.activeWriteSummary(documentId, threadId);
     },
-    writeMinCreatedSeq(documentId, threadId, handle) {
-      return input.liveJournal.writeMinCreatedSeq(documentId, threadId, handle);
+    async writeMinCreatedSeq(documentId, threadId, handle) {
+      const state = await branchState(documentId);
+      return state
+        ? state.mutationsByHandle.get(handle)?.[0]?.createdSeq
+        : input.liveJournal.writeMinCreatedSeq(documentId, threadId, handle);
     },
-    mutationsForWrite(documentId, threadId, handle) {
-      return input.liveJournal.mutationsForWrite(documentId, threadId, handle);
+    async mutationsForWrite(documentId, threadId, handle) {
+      const state = await branchState(documentId);
+      return state
+        ? (state.mutationsByHandle.get(handle) ?? [])
+        : input.liveJournal.mutationsForWrite(documentId, threadId, handle);
     },
-    mutationsForWrites(documentId, threadId, handles) {
-      return input.liveJournal.mutationsForWrites(documentId, threadId, handles);
+    async mutationsForWrites(documentId, threadId, handles) {
+      const state = await branchState(documentId);
+      if (!state) return input.liveJournal.mutationsForWrites(documentId, threadId, handles);
+      return new Map(handles.map((handle) => [handle, state.mutationsByHandle.get(handle) ?? []]));
     },
-    persistUndo(docId, undoUpdate, records, actor) {
-      return input.liveJournal.persistUndo(docId, undoUpdate, records, actor);
+    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
+      const scope = await branchScope(docId);
+      if (!scope) return input.liveJournal.persistUndo(docId, undoUpdate, records, actor);
+      stageBranchReversal({
+        pending: input.pendingJournalEntries,
+        docId,
+        threadId: input.threadId,
+        scope,
+        expectedJournalWatermark: records.reduce(
+          (watermark, record) => Math.min(watermark, record.persistGuardWatermark ?? 0),
+          Number.POSITIVE_INFINITY,
+        ),
+        update: undoUpdate,
+        actor,
+        operation: {
+          direction: "undo",
+          records: records.map(serializeBranchReversalRecord),
+        },
+      });
+      return { persisted: true, journalCommitKind: "staged" };
     },
-    persistRedo(docId, redoUpdate, ref, meta) {
-      return input.liveJournal.persistRedo(docId, redoUpdate, ref, meta);
+    async persistRedo(docId, redoUpdate, ref, meta) {
+      const result = await this.persistRedoBatch(docId, [{ update: redoUpdate, ref, meta }]);
+      return {
+        consumed: result.consumed,
+        seq: result.seqs?.[0],
+        journalCommitKind: result.journalCommitKind,
+      };
     },
-    persistRedoBatch(docId, entries) {
-      return input.liveJournal.persistRedoBatch(docId, entries);
+    async persistRedoBatch(docId, entries) {
+      const scope = await branchScope(docId);
+      if (!scope) return input.liveJournal.persistRedoBatch(docId, entries);
+      if (entries.length === 0) return { consumed: false };
+      stageBranchReversal({
+        pending: input.pendingJournalEntries,
+        docId,
+        threadId: input.threadId,
+        scope,
+        expectedJournalWatermark: entries.reduce(
+          (watermark, entry) => Math.min(watermark, entry.persistGuardWatermark ?? 0),
+          Number.POSITIVE_INFINITY,
+        ),
+        update: Y.mergeUpdates(entries.map((entry) => entry.update)),
+        actor: entries[0]?.meta.reversalActor ?? { type: "agent" },
+        operation: {
+          direction: "redo",
+          refs: entries.map((entry) => entry.ref),
+        },
+      });
+      return { consumed: true, journalCommitKind: "staged" };
     },
-    readReversals(docId, opts) {
-      return input.liveJournal.readReversals(docId, opts);
+    async readReversals(docId, opts) {
+      const state = await branchState(docId);
+      if (!state) return input.liveJournal.readReversals(docId, opts);
+      return state.reversals.filter(
+        (record) =>
+          (!opts?.threadId || record.threadId === opts.threadId) &&
+          (!opts?.status || opts.status.includes(record.status)),
+      );
     },
-    reversalOpSeqsForHandles(docId, threadId, handles) {
-      return input.liveJournal.reversalOpSeqsForHandles(docId, threadId, handles);
+    async reversalOpSeqsForHandles(docId, threadId, handles) {
+      const state = await branchState(docId);
+      if (!state) return input.liveJournal.reversalOpSeqsForHandles(docId, threadId, handles);
+      const selected = new Set(handles);
+      return new Set(
+        state.operationHandles.flatMap(({ seq, handles: operationHandles }) =>
+          operationHandles.some((handle) => selected.has(handle)) ? [seq] : [],
+        ),
+      );
     },
   };
 }
@@ -390,59 +602,29 @@ export class StagedBranchWriteNoopError extends Error {
   }
 }
 
-function emitStagedWriteNoop(
-  eventSink: EventSink | undefined,
-  payload: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    branchId: string;
-    turnId: string | null;
-    writeId: string | null;
-  },
-): void {
-  if (!eventSink) return;
-  emitEvent(eventSink, {
-    level: "error",
-    source: "collab.branch_agent_edit",
-    name: "staged_write.no_durable_journal_row",
-    payload,
-  });
-}
-
 export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch?(
       branchId: string,
-    ): Promise<{ upstreamBranchId: string | null; generation: number } | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "generation" | "state"> | null>;
   };
 
 type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
   shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
-  recordWriterProtectionScope(input: {
-    documentId: string;
-    responseId: string;
-    token: NonNullable<JournalBatchAppendEntry["meta"]["sealedWriterLineage"]>;
-  }): void;
 };
 
 export function createBranchPendingJournalEntries(
-  eventSink?: EventSink,
+  diagnostics?: Pick<BranchAgentEditDiagnostics, "mutationLessPendingEntry">,
 ): BranchPendingJournalEntries {
   const byDocument = new Map<string, JournalBatchAppendEntry[]>();
   return {
     push(entry) {
       if (!entry.mutation) {
-        if (eventSink)
-          emitEvent(eventSink, {
-            level: "warn",
-            source: "collab.branch_pending_journal",
-            name: "mutation_less_entry_dropped",
-            payload: {
-              documentId: entry.docId,
-              origin: entry.meta.origin,
-            },
-          });
+        diagnostics?.mutationLessPendingEntry({
+          documentId: entry.docId,
+          origin: entry.meta.origin,
+        });
         return;
       }
       const entries = byDocument.get(entry.docId) ?? [];
@@ -472,13 +654,6 @@ export function createBranchPendingJournalEntries(
       if (remaining.length > 0) byDocument.set(documentId, remaining);
       else byDocument.delete(documentId);
       return batch;
-    },
-    recordWriterProtectionScope({ documentId, responseId, token }) {
-      for (const entry of byDocument.get(documentId) ?? []) {
-        if (entry.mutation?.authoringResponseId === responseId) {
-          entry.meta.sealedWriterLineage = token;
-        }
-      }
     },
   };
 }
@@ -737,6 +912,7 @@ function advanceConcurrentJournalWatermark(
   watermarks: BranchConcurrentJournalWatermarks,
   threadId: ThreadId,
   documentId: DocumentId,
+  afterCommit: AfterCommit,
   attemptId?: string,
 ): void {
   if (
@@ -751,7 +927,7 @@ function advanceConcurrentJournalWatermark(
   ) {
     return;
   }
-  runAfterDrizzleCommit(() => {
+  afterCommit(() => {
     watermarks.commitPending(threadId, documentId, attemptId);
   });
 }
@@ -759,9 +935,10 @@ function advanceConcurrentJournalWatermark(
 function scheduleAutoPushAfterCommit(input: {
   workDraftBranchId: string;
   branchPush: AutoBranchPushPort;
-  eventSink?: EventSink;
+  diagnostics?: BranchAgentEditDiagnostics;
+  afterCommit: AfterCommit;
 }): void {
-  runAfterDrizzleCommit(() => {
+  input.afterCommit(() => {
     void input.branchPush
       .pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: input.workDraftBranchId })
       .then((result) => {
@@ -772,32 +949,13 @@ function scheduleAutoPushAfterCommit(input: {
         ) {
           return;
         }
-        const payload = { workDraftBranchId: input.workDraftBranchId, result };
-        if (input.eventSink) {
-          emitEvent(input.eventSink, {
-            level: "error",
-            source: "collab.branch_auto_push",
-            name: "auto_push.unapplied",
-            payload,
-          });
-          return;
-        }
-        console.error("Branch auto-push resolved without applying", payload);
+        input.diagnostics?.autoPushUnapplied({
+          workDraftBranchId: input.workDraftBranchId,
+          result,
+        });
       })
       .catch((cause: unknown) => {
-        if (input.eventSink) {
-          emitEvent(input.eventSink, {
-            level: "error",
-            source: "collab.branch_auto_push",
-            name: "auto_push.failed",
-            payload: {
-              workDraftBranchId: input.workDraftBranchId,
-              ...unknownToEventPayload(cause),
-            },
-          });
-          return;
-        }
-        console.error("Branch auto-push failed", {
+        input.diagnostics?.autoPushFailed({
           workDraftBranchId: input.workDraftBranchId,
           cause,
         });

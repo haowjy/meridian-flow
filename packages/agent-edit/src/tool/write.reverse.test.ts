@@ -8,7 +8,7 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
-  it("denies destructive agent reversals without a sealed observation snapshot", async () => {
+  it("commits a cold destructive agent reversal", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent block." },
@@ -29,19 +29,35 @@ describe("write host reverse", () => {
           },
         },
       ),
-    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
-    await expect(
-      scenario.ctx.core.reverse({
-        docId: "chapter.md",
-        threadId: THREAD_ID,
-        direction: "undo",
-        selection: { kind: "latest" },
-        actor: { type: "agent", responseId: undefined },
-      }),
-    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
+    ).resolves.toMatchObject({
+      status: "reversed",
+      isError: false,
+    });
 
-    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength);
-    expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength + 1);
+    expect(scenario.blockTexts()).toEqual(["Base."]);
+  });
+
+  it("flushes and reverses a blind buffered destructive write", async () => {
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Writer passage.\n\nKeep.",
+    });
+    const responseId = "response-buffered-undo";
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Writer passage.", content: "" },
+      { ...context, responseId, turnId: "turn-buffered-delete" },
+    );
+
+    const result = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md" },
+      { ...context, responseId, turnId: "turn-buffered-undo" },
+    );
+
+    expect(result).toMatchObject({
+      status: "reconciled",
+      text: expect.stringContaining("Writer passage."),
+    });
+    expect(scenario.blockTexts()).toEqual(["Writer passage.", "Keep."]);
   });
 
   it("persists each agent reversal's authoring response provenance", async () => {

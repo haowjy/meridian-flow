@@ -12,7 +12,7 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
 import type { AdmitLiveWriterUpdateResult, UpdateOrigin } from "../../domains/collab/index.js";
-import { emitEvent } from "../../domains/observability/index.js";
+import { emitEvent, unknownToEventPayload } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
 import {
@@ -216,7 +216,7 @@ export async function admitWriterSync(input: {
   syncType: number;
   payload: Uint8Array;
   userId: UserId;
-  closeTransport?(): void;
+  closeTransport?(input: { code: number; reason: string }): void;
   expectedGeneration?: bigint;
   context?: {
     branchSyncState?: Map<string, BranchHandshakeState>;
@@ -249,14 +249,16 @@ async function admitBranchSync(
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
   try {
-    await input.services.documentSync.validateBranchWriterUpdate({
+    await input.services.documentSync.admitBranchWriterUpdate({
       branchId: room.branchId,
       expectedGeneration: room.generation,
       update: input.payload,
+      origin: { type: "user", userId: input.userId },
+      document: input.document,
     });
     return;
   } catch {
-    input.closeTransport?.();
+    input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
     throw permissionDenied("branch-update-admission-failed", 1008);
   }
 }
@@ -279,7 +281,7 @@ async function admitLiveSync(
     }
     return admission;
   } catch {
-    input.closeTransport?.();
+    input.closeTransport?.({ code: 1013, reason: "writer-journal-admission-failed" });
     throw permissionDenied("writer-journal-admission-failed", 1013);
   }
 }
@@ -288,7 +290,7 @@ function updateIdentity(update: Uint8Array): string {
   return Buffer.from(update).toString("base64");
 }
 
-function createHocuspocus(services: YjsRouteServices): Hocuspocus {
+export function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   const documentsForId = async (documentId: string): Promise<WriterNoticeDocument[]> => {
     const matches: WriterNoticeDocument[] = [];
     for (const [roomName, document] of hocuspocus.documents) {
@@ -346,6 +348,17 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           documentId,
           await services.documentSync.currentLiveGeneration(documentId),
         );
+      } else {
+        // Do not delay room admission: a cold room may briefly render its persisted
+        // state before this pull arrives, then normal CRDT sync catches it up.
+        void services.documentSync.flushBranchLivePull(documentId).catch((cause: unknown) => {
+          emitEvent(services.eventSink, {
+            level: "warn",
+            source: "collab.hocuspocus",
+            name: "branch_review.live_pull_failed",
+            payload: { documentId, branchId: room.branchId, ...unknownToEventPayload(cause) },
+          });
+        });
       }
       setTimeout(() => {
         void deliverPendingWriterNotices(documentId).catch((cause) => {
@@ -372,7 +385,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         syncType: type,
         payload,
         userId,
-        closeTransport: context.closeWriterTransport as (() => void) | undefined,
+        closeTransport: context.closeWriterTransport as
+          | ((input: { code: number; reason: string }) => void)
+          | undefined,
         expectedGeneration: context.liveGenerations?.get(documentName),
         context,
       });
@@ -402,28 +417,6 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           reconcileOffline:
             connection?.context.offlineSyncUpdates?.delete(updateIdentity(update)) ?? false,
         });
-        return;
-      }
-      try {
-        await services.documentSync.persistBranchConnectionUpdate({
-          branchId: room.branchId,
-          update,
-          origin: origin.origin,
-          document,
-          expectedGeneration: room.generation,
-        });
-      } catch (cause) {
-        if (cause instanceof Error && cause.name === "BranchStaleUpdateError") {
-          emitEvent(services.eventSink, {
-            level: "warn",
-            source: "collab.hocuspocus",
-            name: "branch_update.stale_generation",
-            payload: { branchId: room.branchId, generation: room.generation },
-          });
-          connection?.close({ code: 4205, reason: "branch-generation-stale" });
-          return;
-        }
-        throw cause;
       }
     },
     async onStoreDocument({ documentName, document }) {
@@ -505,7 +498,8 @@ export function createYjsWebSocketHooks() {
         offlineSyncUpdates:
           context?.kind === "authenticated" ? context.offlineSyncUpdates : undefined,
         liveGenerations: context?.kind === "authenticated" ? context.liveGenerations : undefined,
-        closeWriterTransport: () => wsPeer.close(1013, "writer-journal-admission-failed"),
+        closeWriterTransport: ({ code, reason }: { code: number; reason: string }) =>
+          wsPeer.close(code, reason),
       });
     },
 

@@ -1,4 +1,4 @@
-// Immediate-write safety matrix at the public tool boundary.
+// Immediate destructive-reporting matrix at the public tool boundary.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -8,7 +8,7 @@ import { context, harness, type WriteToolHarness } from "./test-support/write-to
 
 const DOC_ID = "chapter.md";
 
-describe("immediate destructive-write safety gate", () => {
+describe("immediate destructive reporting", () => {
   it("journals a human mutation without creating agent turn metadata", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha." });
     const outcome = await ctx.core.write(
@@ -85,7 +85,7 @@ describe("immediate destructive-write safety gate", () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
     const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
     const session: ActorSession = {
-      id: "session-reject",
+      id: "session-report",
       threadId: "thread-a",
       documents: new Map(),
     };
@@ -93,7 +93,7 @@ describe("immediate destructive-write safety gate", () => {
 
     const outcome = await ctx.core.write(
       { command: "replace", file: DOC_ID, find: "Alpha.\n\nBeta.", content: "" },
-      { ...context, session, turnId: "turn-rejected-delete" },
+      { ...context, session, turnId: "turn-reported-delete" },
     );
 
     expectOutcome(outcome, "success");

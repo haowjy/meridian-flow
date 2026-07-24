@@ -10,8 +10,6 @@ const ERROR_STATUSES = {
   document_not_found: true,
   partial_failure: true,
   cant_undo_dependent: true,
-  destructive_write_rejected: true,
-  rejected_response_requires_reread: true,
   internal_error: true,
 } satisfies Record<WriteErrorStatus, true>;
 

@@ -1,7 +1,7 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 
-import type { SemanticEditIRV1 } from "@meridian/agent-edit";
-import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit";
+import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
+import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -12,7 +12,12 @@ import {
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import { BranchCorruptError } from "./branch-resolver.js";
-import { createDocumentAuthority } from "./document-authority.js";
+import { createDocumentContainment } from "./document-containment.js";
+import {
+  admitCertifiedMutation,
+  admitWriterUpdate,
+  replicateFrozenIdentity,
+} from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
@@ -52,6 +57,10 @@ export type CommitBranchMutationInput = PersistBranchInput & {
 export type AppendBranchJournalInput = {
   branchId: string;
   generation: number;
+  /** Rejects a staged reversal if branch history advanced after planning. */
+  expectedJournalWatermark?: number;
+  /** Rejects status-only Apply/discard/redo transitions after planning. */
+  expectedJournalRevision?: string;
   updateData: Uint8Array;
   source: "agent" | "writer";
   wId?: number | null;
@@ -144,6 +153,13 @@ export type BranchCoordinator = {
   commitUpdate(
     input: Omit<AppendBranchJournalInput, "generation"> & { expectedGeneration?: number },
   ): Promise<void>;
+  commitWriterUpdate(input: {
+    branchId: string;
+    expectedGeneration: number;
+    updateData: Uint8Array;
+    actorUserId?: string;
+    roomDocument: Y.Doc;
+  }): Promise<{ admitted: boolean }>;
   commitSyncFromDoc(
     input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
       sourceDoc: Y.Doc;
@@ -162,6 +178,7 @@ export function createBranchCoordinator(input: {
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
 }): BranchCoordinator {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
+  const documentContainment = createDocumentContainment();
   const cached = new Map<string, CachedBranchDoc>();
   const pendingTransients = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
@@ -245,6 +262,7 @@ export function createBranchCoordinator(input: {
     snapshot: BranchSnapshot,
     doc: Y.Doc,
     journal?: AppendBranchJournalInput,
+    publishUpdate?: Uint8Array,
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
@@ -269,8 +287,8 @@ export function createBranchCoordinator(input: {
     const publish = () => {
       dirtyTransientBranches.delete(snapshot.branchId);
       cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
-      if (journal)
-        input.onBranchUpdate?.({ branchId: snapshot.branchId, update: journal.updateData });
+      const update = journal?.updateData ?? publishUpdate;
+      if (update) input.onBranchUpdate?.({ branchId: snapshot.branchId, update });
     };
     if (currentResponseTransactionId()) {
       enlistResponseParticipant({ commit: publish, abort() {} });
@@ -295,7 +313,7 @@ export function createBranchCoordinator(input: {
       throw new Error("Branch store does not support branch reset");
     }
     const resetDoc = createCollabYDoc({ gc: false });
-    await replicateFrozenCut(upstream, resetDoc);
+    await replicateFrozenSource(upstream, resetDoc);
     const state = Y.encodeStateAsUpdate(resetDoc);
     const stateVector = Y.encodeStateVector(resetDoc);
     const ok = await input.store.resetBranchSnapshot({
@@ -327,6 +345,7 @@ export function createBranchCoordinator(input: {
   async function runWithRetry<T>(
     branchId: string,
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
+    updateToPublish?: (result: T) => Uint8Array,
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -338,7 +357,7 @@ export function createBranchCoordinator(input: {
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
-          await persist(snapshot, doc);
+          await persist(snapshot, doc, undefined, updateToPublish?.(result));
           return result;
         });
       } catch (cause) {
@@ -347,51 +366,43 @@ export function createBranchCoordinator(input: {
     }
   }
 
-  async function replicateFrozenCut(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
+  async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
     let admittedUpdate: Uint8Array | undefined;
-    const cutState = Y.encodeStateAsUpdate(source);
     const frozenSource = cloneDoc(source);
     try {
-      const authority = createDocumentAuthority({
-        readMutableAuthority: () => ({ documentId: "branch", generation: 0n, doc: target }),
-        readFrozenCut: async (cutId) =>
-          cutId === "captured-upstream"
-            ? {
-                cutId,
-                documentId: "branch",
-                authorityId: "captured-upstream",
-                generation: 0n,
-                doc: frozenSource,
-              }
-            : null,
-        admitImmediate: async ({ update }) => {
+      await replicateFrozenIdentity({
+        source: { documentId: "branch", doc: frozenSource },
+        target: { documentId: "branch", generation: 0n, doc: target },
+        plan: { kind: "wholeDocument" },
+        admit: async ({ update }) => {
           admittedUpdate = update;
           Y.applyUpdate(target, update);
           return { sequence: 0n, joined: 0 };
         },
-        readCurrentRevision: unsupportedAuthorityOperation,
-        lowerCertifiedMutation: unsupportedAuthorityOperation,
-        loadCheckpoint: unsupportedAuthorityOperation,
-        unresolvedSettlements: unsupportedAuthorityOperation,
-        replaceGeneration: unsupportedAuthorityOperation,
-        disconnectGeneration: unsupportedAuthorityOperation,
-        stagePush: unsupportedAuthorityOperation,
-        completePush: unsupportedAuthorityOperation,
-      });
-      await authority.mutate({
-        kind: "identityReplication",
-        sourceAuthorityCutId: "captured-upstream",
-        plan: { kind: "wholeDocument" },
       });
       if (!admittedUpdate) throw new Error("Identity replication produced no branch update");
-      // Prove the aggregate used the immutable cut rather than rereading its mutable caller.
-      if (!bytesEqual(cutState, Y.encodeStateAsUpdate(frozenSource))) {
-        throw new Error("Captured authority cut changed during replication");
-      }
       return admittedUpdate;
     } finally {
       frozenSource.destroy();
     }
+  }
+
+  async function persistJournaledUpdate(
+    snapshot: BranchSnapshot,
+    inputJournal: Omit<AppendBranchJournalInput, "generation">,
+    currentDocument?: Y.Doc,
+  ): Promise<boolean> {
+    const cachedDoc = currentDocument ?? (await materialize(snapshot)).doc;
+    // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
+    // failed CAS/rollback must never mutate the cached branch doc.
+    const doc = cloneDoc(cachedDoc);
+    const beforeState = Y.encodeStateAsUpdate(doc);
+    Y.applyUpdate(doc, inputJournal.updateData);
+    if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
+      throw new BranchStaleUpdateError(inputJournal.branchId);
+    }
+    await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
+    return true;
   }
 
   function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
@@ -470,7 +481,11 @@ export function createBranchCoordinator(input: {
     },
 
     pullFromDoc(branchId, upstream) {
-      return runWithRetry(branchId, async (_snapshot, doc) => replicateFrozenCut(upstream, doc));
+      return runWithRetry(
+        branchId,
+        async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
+        (update) => update,
+      );
     },
 
     async pullFromBranch(branchId, upstreamBranchId) {
@@ -575,40 +590,31 @@ export function createBranchCoordinator(input: {
             if (!updateData) return false;
             const semanticIr = inputJournal.semanticEditIr;
             if (inputJournal.source === "agent" && semanticIr) {
-              const authority = createDocumentAuthority({
-                readMutableAuthority: () => ({
-                  documentId: snapshot.documentId,
-                  generation: BigInt(snapshot.generation),
-                  doc,
-                }),
-                // A response may lower several certified IRs into one atomic branch delta.
-                // The package validated each IR against its chained runtime revision before
-                // the ambient response transaction began; rereading the pre-batch target here
-                // would reject every IR after the first and force the durable unit to split.
-                readCurrentRevision: async () => semanticIr.inputRevision,
-                lowerCertifiedMutation: async () => updateData,
-                admitImmediate: async ({ update }) => {
-                  Y.applyUpdate(doc, update);
-                  await persist(snapshot, doc, {
-                    ...inputJournal,
-                    updateData: update,
-                    generation: snapshot.generation,
-                  });
-                  return { sequence: 0n, joined: 0 };
+              await admitCertifiedMutation(
+                {
+                  readMutationTarget: () => ({
+                    documentId: snapshot.documentId,
+                    generation: BigInt(snapshot.generation),
+                    doc,
+                  }),
+                  // A response may lower several certified IRs into one atomic branch delta.
+                  // The package validated each IR against its chained runtime revision before
+                  // the ambient response transaction began; rereading the pre-batch target here
+                  // would reject every IR after the first and force the durable unit to split.
+                  readCurrentRevision: async () => semanticIr.inputRevision,
+                  lowerCertifiedMutation: async () => updateData,
+                  admitImmediate: async ({ update }) => {
+                    Y.applyUpdate(doc, update);
+                    await persist(snapshot, doc, {
+                      ...inputJournal,
+                      updateData: update,
+                      generation: snapshot.generation,
+                    });
+                    return { sequence: 0n, joined: 0 };
+                  },
                 },
-                readFrozenCut: unsupportedAuthorityOperation,
-                loadCheckpoint: unsupportedAuthorityOperation,
-                unresolvedSettlements: unsupportedAuthorityOperation,
-                replaceGeneration: unsupportedAuthorityOperation,
-                disconnectGeneration: unsupportedAuthorityOperation,
-                stagePush: unsupportedAuthorityOperation,
-                completePush: unsupportedAuthorityOperation,
-              });
-              await authority.mutate({
-                kind: "certifiedSemanticMutation",
-                actor: "agent",
-                ir: semanticIr,
-              });
+                { ir: semanticIr },
+              );
             } else {
               Y.applyUpdate(doc, updateData);
               await persist(snapshot, doc, {
@@ -637,16 +643,49 @@ export function createBranchCoordinator(input: {
             ) {
               throw new BranchStaleUpdateError(inputJournal.branchId);
             }
-            const { doc: cachedDoc } = await materialize(snapshot);
-            // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
-            // failed CAS/rollback must never mutate the cached branch doc.
-            const doc = cloneDoc(cachedDoc);
-            const beforeState = Y.encodeStateAsUpdate(doc);
-            Y.applyUpdate(doc, inputJournal.updateData);
-            if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
-              throw new BranchStaleUpdateError(inputJournal.branchId);
-            }
-            await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
+            await persistJournaledUpdate(snapshot, inputJournal);
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        }
+      }
+    },
+
+    async commitWriterUpdate(inputWriter) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await criticalSections.withBranches([inputWriter.branchId], async () => {
+            const snapshot = await loadSnapshot(inputWriter.branchId);
+            const { doc: currentDocument } = await materialize(snapshot);
+            const admission = await admitWriterUpdate({
+              targetDocument: currentDocument,
+              update: inputWriter.updateData,
+              validateTarget() {
+                if (
+                  snapshot.kind !== "work_draft" ||
+                  snapshot.status !== "active" ||
+                  snapshot.generation !== inputWriter.expectedGeneration ||
+                  !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
+                ) {
+                  throw new BranchStaleUpdateError(inputWriter.branchId);
+                }
+              },
+              isContained: () =>
+                documentContainment.contains(currentDocument, inputWriter.updateData),
+              append: () =>
+                persistJournaledUpdate(
+                  snapshot,
+                  {
+                    branchId: inputWriter.branchId,
+                    updateData: inputWriter.updateData,
+                    source: "writer",
+                    actorUserId: inputWriter.actorUserId,
+                  },
+                  currentDocument,
+                ),
+            });
+            return { admitted: admission.admitted };
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
@@ -693,8 +732,4 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
 
 function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
   return yjsDeltaUpdate(from, to);
-}
-
-async function unsupportedAuthorityOperation(): Promise<never> {
-  throw new Error("Document authority strategy is unavailable for this branch operation");
 }

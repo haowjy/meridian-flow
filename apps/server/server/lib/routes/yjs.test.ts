@@ -1,10 +1,14 @@
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
+import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
+  createHocuspocus,
   createYjsWebSocketHooks,
   subscribeWriterNoticeTransport,
 } from "../../routes/ws/yjs.js";
@@ -20,26 +24,117 @@ function services(stale: boolean) {
     notices: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
-      validateBranchWriterUpdate: vi.fn(async () => undefined),
+      admitBranchWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
 }
 
 describe("Yjs branch handshake route guard", () => {
+  it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
+    const live = new Y.Doc({ gc: false });
+    live.getText("content").insert(0, "live advanced");
+    const loadedRoom = new Y.Doc({ gc: false });
+    let storedState = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
+    let releasePull: (() => void) | undefined;
+    const pullBlocked = new Promise<void>((resolve) => {
+      releasePull = resolve;
+    });
+    const branchCoordinator = createBranchCoordinator({
+      store: {
+        getBranch: async () => ({
+          branchId: "branch_1",
+          documentId: "document-1" as never,
+          kind: "work_draft",
+          upstreamBranchId: null,
+          workId: "work-1" as never,
+          threadId: null,
+          pushPolicy: "manual",
+          status: "active",
+          generation: 3,
+          state: storedState,
+          stateVector: Y.encodeStateVectorFromUpdate(storedState),
+          discardedStateVector: null,
+          schemaVersion: COLLAB_SCHEMA_VERSION,
+        }),
+        async updateBranchSnapshot(input) {
+          await pullBlocked;
+          storedState = input.state;
+          return true;
+        },
+        deferUntilCommit: () => false,
+      },
+      onBranchUpdate: ({ update }) => {
+        Y.applyUpdate(loadedRoom, update);
+      },
+    });
+    const branchPulls = createBranchPullService({
+      liveCoordinator: {
+        withDocument: async (_documentId, fn) => fn(live),
+        recover: async () => {},
+      },
+      branchCoordinator,
+      branches: {
+        listActiveWorkDraftBranchIds: async () => ["branch_1"],
+        ensureWorkDraftBranch: async () => ({ branchId: "branch_1" }),
+        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
+      },
+    });
+    const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
+    const hocuspocus = createHocuspocus({
+      documentAccess: {
+        canAccessDocument: vi.fn(async () => true),
+      } as never,
+      documentSync: {
+        bindHocuspocus: vi.fn(),
+        resolveBranchHocuspocusRoom: vi.fn(async () => ({
+          branchId: "branch_1",
+          documentId: "document-1",
+          generation: 3,
+          status: "active",
+        })),
+        flushBranchLivePull,
+      } as never,
+      eventSink: { emit() {} } as never,
+      notices: {
+        subscribeWriterVisible: () => () => {},
+        drainForWriter: async () => [],
+      } as never,
+    });
+
+    await expect(
+      hocuspocus.configuration.onConnect?.({
+        documentName,
+        context: { userId: "user-1" },
+      } as never),
+    ).resolves.toBeUndefined();
+    expect(flushBranchLivePull).toHaveBeenCalledWith("document-1");
+    expect(loadedRoom.getText("content").toString()).toBe("");
+
+    releasePull?.();
+    await flushBranchLivePull.mock.results[0]?.value;
+    await vi.waitFor(() => {
+      expect(loadedRoom.getText("content").toString()).toBe("live advanced");
+    });
+    const persisted = new Y.Doc({ gc: false });
+    Y.applyUpdate(persisted, storedState);
+    expect(persisted.getText("content").toString()).toBe("live advanced");
+  });
+
   it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
-    const validateBranchWriterUpdate = vi.fn(async () => {
+    const admitBranchWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
     const closeTransport = vi.fn();
+    const document = new Y.Doc();
 
     await expect(
       admitWriterSync({
         services: {
           ...services(false),
-          documentSync: { validateBranchWriterUpdate } as never,
+          documentSync: { admitBranchWriterUpdate } as never,
         },
         documentName,
-        document: new Y.Doc(),
+        document,
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
@@ -49,12 +144,53 @@ describe("Yjs branch handshake route guard", () => {
         },
       }),
     ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
-    expect(validateBranchWriterUpdate).toHaveBeenCalledWith({
+    expect(admitBranchWriterUpdate).toHaveBeenCalledWith({
       branchId: "branch_1",
       expectedGeneration: 3,
       update: new Uint8Array([1, 2, 3]),
+      origin: { type: "user", userId: "user-1" },
+      document,
     });
-    expect(closeTransport).toHaveBeenCalledOnce();
+    expect(closeTransport).toHaveBeenCalledWith({
+      code: 1008,
+      reason: "branch-update-admission-failed",
+    });
+  });
+
+  it("waits for branch durability before returning the update to Hocuspocus", async () => {
+    let commit: (() => void) | undefined;
+    const admitBranchWriterUpdate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          commit = resolve;
+        }),
+    );
+    const admission = admitWriterSync({
+      services: {
+        ...services(false),
+        documentSync: { admitBranchWriterUpdate } as never,
+      },
+      documentName,
+      document: new Y.Doc(),
+      syncType: messageYjsUpdate,
+      payload,
+      userId: "user-1" as never,
+      context: {
+        branchSyncState: new Map([["branch_1:3", "passed"]]),
+      },
+    });
+
+    await Promise.resolve();
+    let returned = false;
+    void admission.then(() => {
+      returned = true;
+    });
+    await Promise.resolve();
+    expect(returned).toBe(false);
+
+    commit?.();
+    await expect(admission).resolves.toBeUndefined();
+    expect(returned).toBe(true);
   });
 
   it("forwards writer-visible notice events as stateless WebSocket messages", async () => {
@@ -323,7 +459,10 @@ describe("Yjs live writer admission", () => {
       reason: "writer-journal-admission-failed",
       code: 1013,
     });
-    expect(closeTransport).toHaveBeenCalledOnce();
+    expect(closeTransport).toHaveBeenCalledWith({
+      code: 1013,
+      reason: "writer-journal-admission-failed",
+    });
     await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,
       joinedSettlement: false,

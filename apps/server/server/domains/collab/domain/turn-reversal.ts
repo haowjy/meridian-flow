@@ -1,5 +1,5 @@
 /** Turn-level reversal orchestration across every document a thread turn touched. */
-import type { ReversalActor, ReversalStore, WriteOutcome } from "@meridian/agent-edit";
+import type { ReversalActor, ReversalStore, WriteOutcome } from "@meridian/agent-edit/integration";
 import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { LiveAgentEditCore } from "./agent-edit-cores.js";

@@ -9,19 +9,16 @@ import {
 } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { snapshotBlocks } from "../../apply/echo.js";
 import { createAgentEditCodec } from "../../codec-adapter.js";
-import { toDocHandle } from "../../handles.js";
-import { createAgentEditCore, type ReversalNoticePort } from "../../index.js";
+import { createAgentEditCore } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
-import { digestRenderedContent } from "../../observation-snapshot.js";
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
-import type { ObservationSnapshotStore } from "../../ports/observation-snapshot.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
+import type { ReversalNoticePort } from "../write-reversal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -55,7 +52,6 @@ export function harness(
     >[0]["closedResponseTombstoneCap"];
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
-    observationSnapshots?: ObservationSnapshotStore;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -64,44 +60,12 @@ export function harness(
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
-  const initialObservationEntries = [...coordinator.docs].flatMap(([documentId, doc]) =>
-    snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
-      documentId,
-      clientID: block.clientID as number,
-      clock: block.clock as number,
-      value: {
-        kind: "rendered" as const,
-        digest: digestRenderedContent(block.renderedContent as string),
-      },
-    })),
-  );
-  const observationSnapshots: ObservationSnapshotStore = options.observationSnapshots ?? {
-    async seal() {},
-    async load(responseId) {
-      const entries =
-        responseId === "test-observed-response"
-          ? [...coordinator.docs].flatMap(([documentId, doc]) =>
-              snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
-                documentId,
-                clientID: block.clientID as number,
-                clock: block.clock as number,
-                value: {
-                  kind: "rendered" as const,
-                  digest: digestRenderedContent(block.renderedContent as string),
-                },
-              })),
-            )
-          : initialObservationEntries;
-      return { responseId, entries };
-    },
-  };
   const rawCore = createAgentEditCore({
     journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
     model,
-    observationSnapshots,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),

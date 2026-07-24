@@ -1,6 +1,6 @@
 /**
- * WorkspaceNavBody — shared project navigation for destination links, the AI
- * write-mode control, an optional desktop body, and the account row.
+ * WorkspaceNavBody — shared project navigation for destination links, an
+ * optional desktop body, and the account row.
  *
  * LeftSidebar (desktop persistent rail) and NavigationDrawer (phone Sheet) both
  * compose this; each owns only its chrome — the collapse control / Sheet, the
@@ -12,18 +12,13 @@
  */
 import type { ReactNode } from "react";
 
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
 import { AccountMenu } from "@/features/account/AccountMenu";
-import { pendingDockedDraftCount } from "@/features/chat/docked-drafts";
 import { cn } from "@/lib/utils";
-import { AiWriteModeControl } from "./AiWriteModeControl";
 import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
 
 export type WorkspaceNavPresentation = "desktop" | "phone";
 
 export type WorkspaceNavBodyProps = {
-  projectId: string;
   activeScreen: ScreenKey;
   onSelectScreen: (screen: ScreenKey) => void;
   presentation: WorkspaceNavPresentation;
@@ -32,16 +27,11 @@ export type WorkspaceNavBodyProps = {
 };
 
 export function WorkspaceNavBody({
-  projectId,
   activeScreen,
   onSelectScreen,
   presentation,
   children,
 }: WorkspaceNavBodyProps) {
-  const { works } = useWorks(projectId);
-  const currentWork = works?.[0] ?? null;
-  const updateWriteMode = useUpdateWorkWriteMode(projectId, currentWork?.id ?? null);
-  const workDrafts = useWorkDrafts(projectId, currentWork?.id ?? null);
   const phone = presentation === "phone";
 
   return (
@@ -60,38 +50,6 @@ export function WorkspaceNavBody({
           />
         ))}
       </div>
-
-      <AiWriteModeControl
-        value={currentWork?.aiWriteMode ?? "direct"}
-        disabled={!currentWork || updateWriteMode.isPending || workDrafts.groups == null}
-        pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
-        presentation={presentation}
-        onChange={(aiWriteMode) =>
-          updateWriteMode.mutate(
-            aiWriteMode === "direct" ? { aiWriteMode, confirmedPush: true } : aiWriteMode,
-          )
-        }
-        onApplyAndSwitch={() =>
-          // §3.4 confirm-and-push. The S3 mode mutation performs the
-          // whole-branch push, then flips pushPolicy='auto' server-side (in that
-          // order); the client only reflects the outcome. `updated` = flipped;
-          // anything else (or a network error) means the push failed and the
-          // writer stays in Draft.
-          new Promise<boolean>((resolve) => {
-            if (!currentWork) {
-              resolve(false);
-              return;
-            }
-            updateWriteMode.mutate(
-              { aiWriteMode: "direct", confirmedPush: true },
-              {
-                onSuccess: (result) => resolve(result.status === "updated"),
-                onError: () => resolve(false),
-              },
-            );
-          })
-        }
-      />
 
       <div className="min-h-0 flex-1">{children}</div>
 

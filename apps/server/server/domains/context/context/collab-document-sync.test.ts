@@ -1,17 +1,17 @@
-/** ContextFS-to-collab write routing and structured rejection coverage. */
+/** ContextFS-to-collab write routing and structured error coverage. */
 import { describe, expect, it, vi } from "vitest";
 import { DocumentMutationRejectedError } from "../../collab/domain/markdown-document.js";
 import type { MarkdownDocumentStore } from "../../collab/index.js";
 import { writeCollabMarkdown } from "./collab-document-sync.js";
 
 describe("collab document sync", () => {
-  it("surfaces destructive gate rejection as a ContextFS conflict", async () => {
+  it("surfaces write rejection as a ContextFS invalid operation", async () => {
     const writeDocument = vi.fn<MarkdownDocumentStore["writeDocument"]>(async () => {
       throw new DocumentMutationRejectedError({
         command: "create",
-        status: "destructive_write_rejected",
+        status: "invalid_write",
         isError: true,
-        text: "status: destructive_write_rejected",
+        text: "status: invalid_write",
       });
     });
     const documentSync = { writeDocument } as unknown as MarkdownDocumentStore;
@@ -28,7 +28,7 @@ describe("collab document sync", () => {
       },
     });
 
-    expect(result).toEqual({ ok: false, error: { code: "conflict" } });
+    expect(result).toEqual({ ok: false, error: { code: "invalid_operation" } });
     expect(writeDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         documentId: "document-1",

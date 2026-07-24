@@ -1,4 +1,4 @@
-/** Postgres regression coverage for bootstrap-owned canonical document authority. */
+/** Postgres regression coverage for bootstrap-owned durable document authority head. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -6,11 +6,11 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("project bootstrap document authority (postgres)", () => {
+  describe.skip("project bootstrap document authority head (postgres)", () => {
     it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
   });
 } else {
-  describe("project bootstrap document authority (postgres)", async () => {
+  describe("project bootstrap document authority head (postgres)", async () => {
     const { Hocuspocus } = await import("@hocuspocus/server");
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
@@ -18,9 +18,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../collab/composition.js");
-    const { createDrizzleResponseObservations } = await import(
-      "../runtime/adapters/drizzle-response-observations.js"
-    );
+    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
@@ -36,7 +34,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     function createBoundCollab() {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
         onStoreDocument: ({ documentName, document }) =>
@@ -45,32 +47,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       return { collab, hocuspocus };
     }
-
-    it("freezes the initial authority cut repeatedly without a client opening the document", async () => {
-      const { collab } = createBoundCollab();
-      const bootstrap = await createDrizzleProjectBootstrapRepository({
-        db,
-        documents: collab,
-      }).ensureDefaultBootstrap(USER_ID as never);
-      const observations = createDrizzleResponseObservations(db, collab);
-
-      const [first] = await observations.freezeCausalCuts([bootstrap.documentId]);
-      const [second] = await observations.freezeCausalCuts([bootstrap.documentId]);
-      const markdown = await collab.readAsMarkdown(bootstrap.documentId);
-
-      expect(markdown).toEqual({ ok: true, value: "# Chapter 1\n" });
-      expect(first).toMatchObject({
-        documentId: bootstrap.documentId,
-        generation: 1n,
-        admittedThrough: 0n,
-      });
-      expect(second).toMatchObject({
-        documentId: bootstrap.documentId,
-        authorityId: first?.authorityId,
-        generation: first?.generation,
-        admittedThrough: first?.admittedThrough,
-      });
-    });
 
     it("treats repeated bootstrap as initialize-only and preserves writer content", async () => {
       const { collab } = createBoundCollab();

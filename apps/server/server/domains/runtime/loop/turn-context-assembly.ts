@@ -12,8 +12,6 @@
  *   send then fails or is cancelled; autoprune is the only future re-bake trigger.
  */
 
-import type { ObservationAuthority, ObservationCandidate } from "@meridian/agent-edit";
-import type { ResponseCausalCutV1 } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
@@ -42,10 +40,6 @@ export interface AssembleNextTurnContextInput {
     threadId: ThreadId,
     input: BakeComposedSystemPromptInput,
   ) => Promise<Thread>;
-  observationAuthority?: ObservationAuthority;
-  requestId?: string;
-  /** Already frozen before buildContext serializes any document evidence. */
-  responseCausalCuts?: readonly ResponseCausalCutV1[];
 }
 
 export interface AssembledNextTurnContext {
@@ -57,7 +51,6 @@ export interface AssembledNextTurnContext {
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   baked: boolean;
   generateRequest: Pick<GenerateRequest, "messages" | "tools" | "model" | "reasoning">;
-  observationCandidate?: ObservationCandidate;
 }
 
 function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
@@ -130,15 +123,7 @@ export async function assembleNextTurnContext(
       }
     }
 
-    const observationCandidate =
-      input.observationAuthority && input.requestId
-        ? input.observationAuthority.beginRequest(input.requestId, input.responseCausalCuts)
-        : undefined;
-    const {
-      messages,
-      tools: contextTools,
-      observationEvidence,
-    } = buildContext({
+    const { messages, tools: contextTools } = buildContext({
       thread,
       turns: input.turns,
       blocks: input.blocks,
@@ -147,14 +132,6 @@ export async function assembleNextTurnContext(
     });
 
     const gatewayParams = agentContext.gatewayParams;
-    for (const evidence of observationEvidence) {
-      if (evidence.kind === "rendered") {
-        observationCandidate?.observeRendered(evidence);
-      } else {
-        observationCandidate?.observeExplicitDeletion(evidence);
-      }
-    }
-
     return {
       thread,
       agentSlug: thread.currentAgent,
@@ -168,7 +145,6 @@ export async function assembleNextTurnContext(
         tools: contextTools,
         ...gatewayParams,
       },
-      ...(observationCandidate ? { observationCandidate } : {}),
     };
   }
 }

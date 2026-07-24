@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+- `apps/server`: collab domain policy no longer imports Drizzle or observability
+  adapters; composition supplies transaction and diagnostic capabilities (#345).
+- `apps/server`: removed draft review endpoints that could only return not found,
+  plus stale safety-era diagnostic naming (#345).
+- `apps/server`: collab mutation admission now exposes only supported operations;
+  journal attribution is the sole provenance birth-class authority (#345).
+- `packages/agent-edit`, `apps/server`: removed the inert low-level response
+  transaction hook and duplicate undo/redo aliases; response transactions now
+  own their callback explicitly (#344).
+- `packages/agent-edit`, `apps/server`: live and branch destructive receipts now
+  share one typed snapshot/provenance projection with complete block identity
+  and hashless bodies (#344).
+- `packages/agent-edit`: immediate creates and edits now submit one prepared
+  mutation shape through one journal/apply/recovery wrapper (#344).
+- `packages/agent-edit`: response commit attempts now own one acceptance value
+  and one settled-receipt promise instead of mirroring durability across
+  lifecycle records and unreachable rollback branches; empty settlements close
+  the response, while post-append failures preserve the accepted boundary and
+  disclose degraded destructive awareness after recovery (#344).
+- `packages/agent-edit`: cold reversal reconstruction now owns its prose-order
+  repair instead of hiding a second update synthesizer in tool orchestration
+  (#344).
+- `packages/agent-edit`, `apps/server`: the default package entry is now a
+  39-name core façade; host adapters use the explicit integration entry and
+  staged response documents are lent without exposing raw Yjs update bytes
+  (#344).
+- `apps/server`, `apps/app`: denied change-trail document access no longer
+  discloses retained titles/prose or permits forward actions; authorized deleted
+  anchors remain readable through an explicit state (#343).
+- `packages/agent-edit`, `apps/server`: staged write receipts now show the
+  settled document projection once instead of concatenating pulled and
+  post-write snapshots (#341).
+- `apps/server`: Manual Apply now refuses stale replacements that enclose
+  post-base writer insertions while retaining unrelated selective merges (#335).
+- `packages/agent-edit`, `apps/server`: destructive agent writes now always report
+  recoverable writer-lineage loss; observation no longer suppresses live,
+  offline, or auto-push reports (#333).
+- `packages/agent-edit`, `apps/server`, `packages/database`: removed the
+  response-observation/causal-cut hierarchy; durable provenance and current
+  settlement state are now the sole destructive-reporting authority (#333).
+- `apps/server`: live and branch writer frames now share one admission order:
+  authority/generation validation, containment acknowledgement, fresh-authorship
+  validation, then durable append (#334).
+- `packages/agent-edit`: immediate writes, local-runtime sync, and response
+  phase-C projection now share one journal-first, lock-scoped apply kernel
+  (#334).
+- `apps/server`: branch push orchestration now delegates immutable-base Manual
+  Apply preparation and trail/notice projection to typed modules (#334).
+- `packages/agent-edit`, `apps/server`: Draft-mode undo/redo now targets
+  generation-local, response-grouped branch handles atomically without writing
+  live reversal history; durable projection failures recover and report the
+  committed reversal honestly, and handles folded into one Apply reverse as one
+  durable live group (#332).
+- `apps/app`: project chat resolves one thread and Work for context hydration,
+  Draft Review, headers, and the conversation body (#334).
+- `apps/app`: per-card and whole-draft Apply now share one revision and response
+  disposition policy (#334).
+- `apps/server`: durable authority heads, document mutation policy, and live
+  documents now have distinct collab names and layer-specific failures (#320).
+- `packages/agent-edit`, `apps/server`: the model-facing write contract now
+  names whole-document overwrite, exact `find` replacement, hash anchors, and
+  hash/number scope ranges (#328).
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;
@@ -26,8 +88,7 @@
   re-executing the tool.
 - `apps/server`: fresh-project documents are now initialized exactly once in
   canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
-  warm collaboration rooms reconcile with the seed, and AI causal-cut capture
-  initializes missing authority heads without requiring an editor open (#317).
+  and warm collaboration rooms reconcile with the seed (#317).
 - `apps/app`: universal document identity bar — every open document shows a
   quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
   match the suggestion dropdown, with a permanent chip whose label graduates
@@ -63,7 +124,7 @@
 - `apps/server`: live writer sync admission now uses Hocuspocus's single decoded
   `beforeSync` payload, a mutation-aware exact containment cache with a
   state-vector novelty fast path, and a narrow reusable writer-ingress
-  capability instead of rebuilding a full document-authority facade per frame.
+  capability instead of rebuilding a full document-mutation-policy facade per frame.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening
@@ -107,6 +168,33 @@
   project ownership and register in the live project manifest, so their Yjs
   editors can connect; the works bootstrap response also exposes the project's
   single default Work for chat-independent Scratch surfaces.
+- `apps/server`: opening or reconnecting to a Review now catches its chapter
+  draft up with the live manuscript first, instead of leaving an inactive draft stale.
+- `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
+  protected — a conflicting stale cross-Work Apply refuses
+  (`push_concurrent_conflict`) and lands in ordinary re-review; any sweep of
+  approved text is captured with durable body, writer notice, and Restore.
+  Previously approved text was classified as ordinary AI text and could be
+  silently destroyed.
+- `apps/app`, `apps/server`: Apply (including Apply-all) submits exactly the
+  operations the writer previewed; AI changes landing after the preview stay
+  pending instead of riding along unreviewed. Malformed/empty operation-id
+  payloads now 400.
+- `packages/agent-edit`, `apps/server`: agent writes, undo, redo, and buffered
+  flushes always commit through ordinary Yjs merge. Concurrent-edit echo informs
+  the agent; writer-lineage destruction is captured for the trail and Restore;
+  agent-only destruction stays silent (#327).
+- `apps/server`: add a real-Postgres cross-Work merge probe covering stale
+  manual Apply refusal + re-review retry, `apply_and_trail` protected
+  settlement, agent echo, and cold Restore.
+- `apps/server`: protected sweeps that replace a document's only block via
+  split delete+insert operations now keep a restore anchor beside the
+  replacing block — the trail offers Restore instead of the Copy-only
+  fallback. The merge probe asserts actionable restore navigation, not just
+  that the swept body was captured.
+- `apps/app`: a lingering Apply-refusal notice now clears when the writer
+  re-reviews and applies — per-card Apply included (refusal state moved into
+  the review reducer alongside the other review transitions).
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane
@@ -125,13 +213,8 @@
 - `@meridian/yjs-inspect`: inspect complete Hocuspocus frames and summarize Yjs updates with merge-valid struct/delete spans and canonical correlation keys; invalid updates return safe identifying metadata, and the journal decoder rejects incomplete expanded records and handles CLI flags explicitly.
 - `@meridian/yjs-inspect`: classify Hocuspocus durable-sync acknowledgements and
   close/ping/pong controls without exposing close reasons.
-- `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
-  writes that would structurally delete blocks a human concurrently edited are
-  rejected before anything becomes durable (`rejected_response_requires_reread`);
-  a per-(session, document) READ-REQUIRED fence blocks further writes until the
-  agent re-reads. Other-agent edits never trip the gate.
-- `apps/server`: new `notices` domain — typed safety notices (rejection,
-  late sweep, checkpoint sweep, degraded awareness) drain into model context
+- `apps/server`: the `notices` domain drains typed late-sweep, checkpoint-sweep,
+  and degraded-awareness notices into model context
   before every model call and deliver writer receipts below the editor
   toolbar; notices are transient, never persisted turns.
 - `apps/server`: response commits settle process-local state (thread-peer
@@ -139,13 +222,12 @@
   transaction outcome via a response-commit unit-of-work; rollback leaves zero
   response-scoped residue and responses stay retryable. Proven by a
   real-Postgres 10-surface integration test.
-- `apps/server`, `packages/agent-edit`: every safety-relevant `Y.applyUpdate`
+- `apps/server`, `packages/agent-edit`: every reporting-relevant `Y.applyUpdate`
   (response phase C, immediate commits, branch pushes, reversals) re-checks a
   synchronous live-doc snapshot immediately before apply; concurrent WS edits
-  swept after durability are reported (late-sweep notice + fence), never silent.
+  swept after durability are reported with a late-sweep notice, never silent.
 - `packages/agent-edit`: agent mutations carry a `MutationActor`
-  (agent/human/system); undo/redo of agent writes gates on affected human
-  edits and fails closed without a baseline.
+  (agent/human/system); undo/redo attribution follows the initiating actor.
 - Schema: `pending_notices` + `pending_notice_deliveries` tables; actor
   columns on `agent_edit_mutations` and `document_yjs_updates`; legacy
   `pending_undo_notifications` dropped (migrations 0038–0041).

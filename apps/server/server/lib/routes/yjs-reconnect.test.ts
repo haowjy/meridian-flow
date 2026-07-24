@@ -1,7 +1,7 @@
 /** Real-provider regression coverage for reconnect writer admission. */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { Server } from "@hocuspocus/server";
-import type { UpdateJournal } from "@meridian/agent-edit";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
@@ -13,7 +13,7 @@ const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
 describe("Yjs reconnect writer admission", () => {
   it("syncs without journaling the provider's contained replay pair", async () => {
-    const authority = tombstoneBearingDoc();
+    const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const onLiveUpdatePersisted = vi.fn();
@@ -36,7 +36,7 @@ describe("Yjs reconnect writer admission", () => {
         port: 0,
         quiet: true,
         stopOnSignals: false,
-        onLoadDocument: async () => Y.encodeStateAsUpdate(authority),
+        onLoadDocument: async () => Y.encodeStateAsUpdate(liveDocument),
         beforeSync: async ({ documentName, document, type, payload }) => {
           const result = await admitWriterSync({
             services: { documentSync: persistence } as never,
@@ -71,7 +71,7 @@ describe("Yjs reconnect writer admission", () => {
       provider.attach();
       websocketProvider.connect();
 
-      Y.applyUpdate(client, Y.encodeStateAsUpdate(authority), "indexeddb");
+      Y.applyUpdate(client, Y.encodeStateAsUpdate(liveDocument), "indexeddb");
       await vi.waitFor(
         () => {
           expect(provider?.isSynced).toBe(true);

@@ -47,7 +47,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { mdxCodec } = await import("@meridian/markup");
-    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit");
+    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
     const { DrizzleContextDocumentStore } = await import(
       "../../../context/adapters/context-fs/drizzle-store.js"
@@ -912,8 +912,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             pushUpdate: update,
             postCutUpdates: [],
             provenanceView: [],
-            lineageEvidence: { version: 2, items: [] },
-            responseEvidence: [],
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
@@ -980,8 +978,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             pushUpdate: update,
             postCutUpdates: [],
             provenanceView: [],
-            lineageEvidence: { version: 2, items: [] },
-            responseEvidence: [],
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
@@ -1353,6 +1349,56 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(committed).toBe(false);
       expect(reloaded?.generation).toBe(branch.generation);
       expect(journalRows).toEqual([]);
+    });
+
+    it("rejects a staged reversal after Apply changes the planned row status", async () => {
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("seed"),
+      });
+      await store.appendJournal?.({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: new Uint8Array(),
+        source: "agent",
+      });
+      const [planned] = await db
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branch.branchId));
+      if (!planned) throw new Error("expected planned branch row");
+      await db
+        .update(branchWriteJournal)
+        .set({ status: "pushed" })
+        .where(eq(branchWriteJournal.id, planned.id));
+
+      const changed = docWithText("changed");
+      const committed = await store.commitBranchMutation?.({
+        branchId: branch.branchId,
+        expectedGeneration: branch.generation,
+        expectedStateVector: branch.stateVector,
+        expectedState: branch.state,
+        state: Y.encodeStateAsUpdate(changed),
+        stateVector: Y.encodeStateVector(changed),
+        journal: {
+          branchId: branch.branchId,
+          generation: branch.generation,
+          expectedJournalWatermark: planned.id,
+          expectedJournalRevision: `${planned.id}:active`,
+          updateData: Y.encodeStateAsUpdate(changed),
+          source: "agent",
+        },
+      });
+      const reloaded = await store.getBranch(branch.branchId);
+      const rows = await db
+        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branch.branchId));
+
+      expect(committed).toBe(false);
+      expect(reloaded?.state).toEqual(branch.state);
+      expect(rows).toEqual([{ id: planned.id, status: "pushed" }]);
     });
   });
 }

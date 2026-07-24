@@ -3,14 +3,18 @@ import type {
   AgentEditCodec,
   DocumentCoordinator,
   YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
-import { isDocumentNotFoundError, snapshotBlocks, toDocHandle } from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
+import {
+  isDocumentNotFoundError,
+  snapshotBlocks,
+  toDocHandle,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { NoticePort } from "../notices/index.js";
-import type { DocumentAuthority } from "./domain/document-authority.js";
+import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./index.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
@@ -51,7 +55,10 @@ type CheckpointServiceDeps = {
   notices?: NoticePort;
   model?: YProsemirrorDocumentModel;
   codec?: AgentEditCodec;
-  authority?(documentId: DocumentId): DocumentAuthority;
+  replaceAuthorityGeneration?(
+    documentId: DocumentId,
+    checkpointId: string,
+  ): ReturnType<AuthorityGenerationReplacement>;
 };
 
 export type CheckpointService = Pick<CollabDomain, "checkpoint" | "restore" | "listCheckpoints">;
@@ -90,12 +97,8 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
                 beforeContentRef: await deps.latestUpdateSeq(documentId),
               }))
             : null;
-        if (deps.authority) {
-          await deps.authority(documentId as DocumentId).mutate({
-            kind: "authoritySnapshotReplacement",
-            checkpointId,
-            replaceGeneration: true,
-          });
+        if (deps.replaceAuthorityGeneration) {
+          await deps.replaceAuthorityGeneration(documentId as DocumentId, checkpointId);
         } else {
           const result = await deps.markdownDocuments.restoreFromYDoc(
             documentId as DocumentId,

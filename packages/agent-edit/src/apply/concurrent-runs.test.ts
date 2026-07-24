@@ -11,6 +11,7 @@ function blocks(count: number): BlockSnapshot[] {
     clientID: 1,
     clock: index,
     renderedContent: `paragraph|block ${index}`,
+    body: `block ${index}`,
     serialized: `h${index}|block ${index}`,
     lineage: [{ clientID: 1, clock: index, length: 1 }],
   }));
@@ -26,7 +27,6 @@ describe("concurrent run rendering", () => {
 
     expect(runs).toHaveLength(1);
     expect(runs[0]?.blocks).toEqual(["h1|block 1", "h2|block 2", "h3|block 3"]);
-    expect(runs[0]?.observations).toHaveLength(3);
   });
 
   it("repeatedly gap-merges nearby hunks and includes every gap block", () => {

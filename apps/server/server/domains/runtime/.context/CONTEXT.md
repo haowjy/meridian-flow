@@ -125,22 +125,21 @@ facet.
 - **Safety notices** — before every provider stream, `runTurn` drains the single
   notice port for the thread and its active documents, then injects notices as a
   transient system message. Notices never enter the turn graph. Undo/redo uses
-  `kind: "undo"`; rejections and late sweeps recorded mid-turn therefore reach
-  the next model call in the same agentic loop.
+  `kind: "undo"`; late sweeps and degraded-awareness reports recorded mid-turn
+  therefore reach the next model call in the same agentic loop.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results
-  finalize in the same database transaction as that commit; a pending result
-  left by a pre-commit process failure is rejected before a later turn assembles
-  model context. Cancellation paths roll the response buffer back before
-  finalizing the turn as cancelled.
-- **Observation snapshots are request-derived** — tool results persist canonical
-  block identity plus the exact rendered source they exposed. Final context
-  assembly derives the response candidate only from unpruned serialized tool
-  results; omitted/pruned evidence earns no credit after restart or in-process.
-  A commit rejection rewrites the affected tool result as an explicit failure
-  before the next model call, so a discarded write cannot remain reported as
-  successful.
+  finalize in the same database transaction as that commit using the settled
+  receipts returned by agent-edit, never the speculative staged output. A
+  host-only settlement id correlates each tool call to its receipt; the
+  model-facing write handle is not unique within a response. A pending result
+  left by a pre-commit process failure is rejected before a later
+  turn assembles model context. Cancellation paths roll the response buffer back
+  before finalizing the turn as cancelled.
+- **Response write settlement is report-only** — ordinary Yjs merge always
+  commits. Destructive effects are echoed to the model and writer-lineage
+  sweeps are recorded for the trail and Restore.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.
@@ -154,8 +153,8 @@ facet.
   authorization.
 - **Depends on `domains/billing` and `@meridian/contracts/spawn`** — credit ledger
   and tree budgets.
-- **Depends on `domains/collab`** — `DocumentAuthorityHeads` port for
-  `freezeCausalCuts` (idempotent ensure + bulk read of authority heads).
+- **Depends on `domains/collab` at composition** — active-document resolution
+  and response-scoped write settlement are supplied through runtime ports.
 - **Consumed by `lib/` routes** — WS/HTTP handlers call
   `turnRunner.startTurn` / `turnRunner.cancel`; composition wires adapters.
 - **No direct dependency on `domains/context`** — context-using tools receive

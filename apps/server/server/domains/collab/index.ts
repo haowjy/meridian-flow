@@ -1,6 +1,9 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { ConcurrentEditInfo, ResponseCommitDocumentRejection } from "@meridian/agent-edit";
+import type {
+  ConcurrentEditInfo,
+  ResponseCommitWriteReceipt,
+} from "@meridian/agent-edit/integration";
 import type { TrailForwardActionResult } from "@meridian/contracts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type {
@@ -17,7 +20,6 @@ import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
   DraftAcceptResult,
-  DraftJournalSnapshot,
   DraftRejectResult,
   DraftReviewPreview,
   ReviewableDraft,
@@ -113,10 +115,12 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
-  validateBranchWriterUpdate(input: {
+  admitBranchWriterUpdate(input: {
     branchId: string;
-    expectedGeneration: number;
     update: Uint8Array;
+    origin: UpdateOrigin;
+    document: Y.Doc;
+    expectedGeneration: number;
   }): Promise<void>;
   writerIngressBarrier: WriterIngressBarrier;
   persistConnectionUpdate(input: {
@@ -127,13 +131,6 @@ export type CollabTransport = {
     /** True only for the client's initial sync-step-2 integration. */
     reconcileOffline?: boolean;
   }): void;
-  persistBranchConnectionUpdate(input: {
-    branchId: string;
-    update: Uint8Array;
-    origin: UpdateOrigin;
-    document: Y.Doc;
-    expectedGeneration: number;
-  }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
@@ -198,8 +195,9 @@ export type ResponseWriteStagedCreates = {
 export type ResponseWriteCommitDocument = {
   documentId: DocumentId;
   updateCount: number;
+  receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
-  lateSweep?: import("@meridian/agent-edit").DestructiveSweepReport;
+  lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
 };
 
 export type DraftClosedFinalizeResult = {
@@ -216,12 +214,6 @@ export type ResponseWriteCommitFinalizeResult =
       documents: ResponseWriteCommitDocument[];
       stagedCreates: ResponseWriteStagedCreates;
       awarenessDegraded?: boolean;
-    }
-  | {
-      status: "rejected";
-      responseId: string;
-      rejections: Array<ResponseCommitDocumentRejection & { documentName?: string }>;
-      stagedCreates: ResponseWriteStagedCreates;
     }
   | DraftClosedFinalizeResult;
 
@@ -263,12 +255,6 @@ export type DraftReviewApi = {
     | ({ status: "active"; draftId?: string; branchId?: string } & DraftReviewPreview)
     | { status: "gone"; live: string }
   >;
-  journal(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<DraftJournalSnapshot | { status: "not_found" }>;
   accept(input: {
     projectId?: ProjectId;
     workId?: WorkId;
@@ -278,7 +264,7 @@ export type DraftReviewApi = {
     branchId?: string;
     userId: UserId;
     draftRevisionToken?: number;
-    operationIds?: string[];
+    operationIds: string[];
     signal?: AbortSignal;
   }): Promise<DraftAcceptResult>;
   reject(input: {
@@ -291,24 +277,9 @@ export type DraftReviewApi = {
     userId?: UserId;
     operationIds?: string[];
   }): Promise<DraftRejectResult>;
-  undoAccept(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-    userId: UserId;
-    writeId?: string;
-  }): Promise<{ status: "not_found"; draftId: string }>;
-  undoReject(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<{ status: "not_found"; draftId: string }>;
 };
 
 export type DraftSessionStats = {
-  countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
 };
 

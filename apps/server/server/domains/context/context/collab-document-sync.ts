@@ -66,9 +66,7 @@ function threadIdFromProvenance(provenance: WriteProvenance | undefined): Thread
 
 function thrownFault(error: unknown): AdapterFault {
   if (error instanceof DocumentMutationRejectedError) {
-    return {
-      code: error.status === "destructive_write_rejected" ? "conflict" : "invalid_operation",
-    };
+    return { code: "invalid_operation" };
   }
   return {
     code: "io_error",

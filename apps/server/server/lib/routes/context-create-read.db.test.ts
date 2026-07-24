@@ -68,7 +68,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       { path: "script.py", schemaType: "code" },
     ] as const) {
       it(`creates and reads ${path} with the ${schemaType} schema`, async () => {
-        const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+        const collab = createCollabDomain({
+          db,
+          documentAccess: createDrizzleDocumentAccess(db),
+          threads: { findById: async () => null },
+        });
         const hocuspocus = new Hocuspocus({
           yDocOptions: { gc: false, gcFilter: () => true },
           async onLoadDocument({ documentName, document }) {
@@ -148,7 +152,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "cover.png",
       "report.pdf",
     ])("rejects binary-suffixed tracked create for %s without persisting a document", async (path) => {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       collab.bindHocuspocus(
         new Hocuspocus({
           yDocOptions: { gc: false, gcFilter: () => true },
@@ -182,7 +190,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
         async onLoadDocument({ documentName, document }) {
@@ -222,7 +234,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("registers kb and user documents and unregisters deleted documents", async () => {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
         async onLoadDocument({ documentName, document }) {
@@ -296,7 +312,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Scratch Work",
       });
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
         onStoreDocument: ({ documentName, document }) =>
@@ -363,7 +383,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Scratch Work",
       });
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       collab.bindHocuspocus(new Hocuspocus({ yDocOptions: { gc: false, gcFilter: () => true } }));
 
       await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });

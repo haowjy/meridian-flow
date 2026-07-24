@@ -25,6 +25,11 @@ msgstr "（已抓取）"
 msgid "(untitled)"
 msgstr "（未命名）"
 
+#. placeholder {0}: serverPendingCount ?? 0
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
+msgstr ""
+
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"
@@ -66,7 +71,7 @@ msgid "{remainingPercent}% remaining"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
-msgid "↻ This edit brought back text you had deleted"
+msgid "↻ AI brought back text you deleted"
 msgstr ""
 
 #. placeholder {0}: target.name
@@ -140,11 +145,31 @@ msgstr ""
 msgid "Agent: {0}"
 msgstr ""
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "AI added text"
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "AI changed text"
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "AI deleted text"
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "AI edited {count} chapters"
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "AI edited 1 chapter"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "AI edits wait here for your review."
 msgstr ""
 
-#: src/features/project/shell/AiWriteModeControl.tsx
+#: src/features/chat/ComposerWriteModeControl.tsx
 msgid "AI write mode"
 msgstr ""
 
@@ -173,16 +198,16 @@ msgstr ""
 msgid "Apply"
 msgstr ""
 
-#: src/features/project/shell/AiWriteModeControl.tsx
-msgid "Apply {pendingCount} and switch"
-msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
 msgstr ""
 
-#: src/features/project/shell/AiWriteModeControl.tsx
+#: src/features/chat/DraftDock.tsx
+msgid "Applying would bring back text you deleted:"
+msgstr ""
+
+#: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Applying…"
 msgstr ""
 
@@ -198,7 +223,7 @@ msgstr "随意提问…"
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
-#: src/features/project/shell/AiWriteModeControl.tsx
+#: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Auto-apply"
 msgstr ""
 
@@ -255,8 +280,12 @@ msgstr ""
 msgid "Buy extra usage"
 msgstr ""
 
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Can't undo"
+msgstr ""
+
+#: src/features/chat/ComposerWriteModeControl.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr ""
 
@@ -295,6 +324,10 @@ msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
+msgstr ""
+
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "Checking pending changes…"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -382,6 +415,7 @@ msgid "Context"
 msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
+#: src/features/chat/ChangeViewRows.tsx
 msgid "Copied"
 msgstr ""
 
@@ -393,20 +427,20 @@ msgstr ""
 msgid "Could not load files."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-msgid "Couldn't apply because this would bring back text you deleted."
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Couldn't apply because your live document changed since this draft was prepared."
-msgstr ""
-
-#: src/features/project/shell/AiWriteModeControl.tsx
+#: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't apply. Check your connection and try again."
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Couldn't copy. Select the saved text and copy it manually."
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Couldn't delete the passage again. Try again."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -469,12 +503,12 @@ msgstr ""
 msgid "Couldn't open this document."
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Couldn't open this location"
-msgstr ""
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Couldn't restore the passage. Try again, or copy it instead."
 msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
@@ -530,10 +564,6 @@ msgstr ""
 msgid "Deleted again"
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Deleted text"
-msgstr ""
-
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
 msgstr ""
@@ -580,10 +610,6 @@ msgstr ""
 msgid "Document name and location"
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
-msgid "Document no longer available"
-msgstr ""
-
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
 msgstr ""
@@ -592,7 +618,7 @@ msgstr ""
 msgid "Download {name}"
 msgstr ""
 
-#: src/features/project/shell/AiWriteModeControl.tsx
+#: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Draft"
 msgstr ""
 
@@ -626,14 +652,6 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
-msgstr ""
-
-#: src/features/chat/TurnEditsCard.tsx
-msgid "Edited {count} documents"
-msgstr ""
-
-#: src/features/chat/TurnEditsCard.tsx
-msgid "Edited 1 document"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -790,10 +808,6 @@ msgstr ""
 msgid "Inserted {0} as a figure."
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Inserted text"
-msgstr ""
-
 #: src/features/agents/AgentPicker.tsx
 msgid "Installed"
 msgstr ""
@@ -833,6 +847,10 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 msgid "Last name"
 msgstr "姓"
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Later edits build on this change."
+msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
@@ -957,10 +975,6 @@ msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "missing kind"
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Modified text"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -1109,6 +1123,10 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Not applied"
 msgstr ""
 
 #: src/routes/__root.tsx
@@ -1323,12 +1341,9 @@ msgstr ""
 msgid "remaining"
 msgstr ""
 
+#: src/features/chat/ChangeViewRows.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Removed a passage that included words the agent hadn't seen."
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
@@ -1583,7 +1598,7 @@ msgstr ""
 msgid "Switch screens or manage your account."
 msgstr ""
 
-#: src/features/project/shell/AiWriteModeControl.tsx
+#: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Switch to Auto-apply?"
 msgstr ""
 
@@ -1611,6 +1626,10 @@ msgstr ""
 msgid "That location does not exist"
 msgstr ""
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "That part of the chapter is no longer available. Copy the saved text below."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That skill isn't available in this chat."
 msgstr ""
@@ -1629,6 +1648,10 @@ msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "The changes moved on. Review the related changes and confirm again."
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "The chapter changed after this draft was written:"
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -1652,8 +1675,8 @@ msgstr "思考"
 msgid "Thinking part {0}"
 msgstr ""
 
-#: src/features/project/shell/AiWriteModeControl.tsx
-msgid "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "This applies all {serverPendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, Auto-apply puts each new AI change directly into your manuscript."
 msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
@@ -1662,6 +1685,18 @@ msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "This change is too old to undo."
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "This chapter is no longer available, so its change details can't be shown."
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "This chapter is no longer available. Copy any saved text you want to keep."
 msgstr ""
 
 #. placeholder {0}: agent.name
@@ -1681,12 +1716,12 @@ msgstr ""
 msgid "This document keeps changing elsewhere. Reopen it and try again."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-msgid "This draft changed. Review the latest version before applying."
-msgstr ""
-
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "This draft was updated after you opened it."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -1708,6 +1743,10 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "This passage can't be restored in place. Copy it instead."
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
@@ -1763,14 +1802,6 @@ msgstr ""
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "撤销"
-
-#: src/features/chat/TurnEditsCard.tsx
-msgid "Undo is no longer available"
-msgstr ""
-
-#: src/features/chat/TurnEditsCard.tsx
-msgid "Undo is unavailable because later edits depend on this change"
-msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"

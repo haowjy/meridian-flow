@@ -1,13 +1,20 @@
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import {
   ALPHA_ID,
   BETA_ID,
   closeDatabase,
   createHarness,
   db,
+  PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
+  schema,
   THREAD_ID,
+  TURN_ID,
+  USER_ID,
+  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -75,6 +82,35 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("positive-response");
   });
 
+  it("retains mixed provenance across repeated compaction and generation replacement", async () => {
+    const harness = createHarness();
+
+    await expect(harness.compactMixedProvenanceTwice()).resolves.toEqual({
+      retainedUpdateCount: 0,
+      warmProvenance: ["agent", "writer_protected"],
+      coldProvenance: ["agent", "writer_protected"],
+      rebasedBranchProvenance: ["agent", "writer_protected"],
+    });
+  });
+
+  it("does not compact a retired-generation suffix into the restored authority head", async () => {
+    const harness = createHarness();
+
+    await expect(harness.compactAfterAuthorityReplacement()).resolves.toEqual({
+      coldMarkdown: "Restored base.\n",
+      currentGenerationUpdateCount: 0,
+    });
+  });
+
+  it("serializes compaction with concurrent authority-head replacement", async () => {
+    const harness = createHarness();
+
+    await expect(harness.compactWhileAuthorityReplacementWaits()).resolves.toEqual({
+      coldMarkdown: "Restored base.\n",
+      currentGenerationUpdateCount: 0,
+    });
+  });
+
   it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
     const harness = createHarness();
     await harness.seedAndStage("outer-rollback-response");
@@ -140,7 +176,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("persists a writer edit journaled after the observation cut as swept", async () => {
+  it("persists a writer edit journaled after the response read as swept", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
     await harness.seedProbeTimelineSweep(responseId);
@@ -161,7 +197,7 @@ describe("change trail (postgres)", () => {
 
     const trail = await harness.trailRows();
     expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 1, changeCount: expect.any(Number) }),
+      expect.objectContaining({ sweptChangeCount: 3, changeCount: expect.any(Number) }),
     ]);
     expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
@@ -181,14 +217,18 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("S10 preserves a pulled writer edit as ordinary when the response observed it", async () => {
+  it("S10 reports a pulled writer edit that landed after the response read", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000822";
-    await harness.seedProbeTimelineObserved(responseId);
+    await harness.seedProbeTimelineAfterRead(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
-      documents: [expect.not.objectContaining({ lateSweep: expect.anything() })],
+      documents: [
+        expect.objectContaining({
+          lateSweep: expect.objectContaining({ affectedBlockHashes: expect.any(Array) }),
+        }),
+      ],
     });
     await harness.waitForAutoPushes();
     await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
@@ -199,7 +239,7 @@ describe("change trail (postgres)", () => {
     expect(trail.shells).toEqual([
       expect.objectContaining({
         state: "settled",
-        sweptChangeCount: 0,
+        sweptChangeCount: 3,
         changeCount: expect.any(Number),
         documentCount: 1,
       }),
@@ -209,11 +249,285 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({
         changes: expect.arrayContaining([
           expect.objectContaining({
-            swept: null,
+            swept: expect.objectContaining({
+              removed: expect.objectContaining({
+                status: "available",
+                markdown: expect.stringContaining("Writer concurrent edit"),
+              }),
+            }),
             beforeText: expect.stringContaining("Writer concurrent edit: Writer block."),
           }),
         ]),
       }),
     ]);
+  });
+
+  it("refuses a stale whole-document Apply that encloses a writer insertion", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000835";
+    await harness.seedWriterDocument("Writer-approved root.", responseId);
+    await harness.stageCertifiedReplace({
+      responseId,
+      find: "Writer-approved root.",
+      content: "STALE DRAFT PROPOSAL",
+    });
+
+    const [beforeRow] = await db.select().from(schema.branchWriteJournal);
+    if (!beforeRow) throw new Error("missing staged draft row");
+
+    const fixture = harness.crossWorkProbeFixture();
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        last,
+        fixture.markupCodec.parse("Writer concurrent insertion."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+
+    const beforeApply = await harness.liveMarkdown(ALPHA_ID);
+    const result = await fixture.collab.draftReview.accept({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      branchId: preview.branchId,
+      userId: USER_ID as never,
+      draftRevisionToken: preview.draftRevisionToken,
+      operationIds: preview.operations.map((operation) => operation.operationId),
+    });
+
+    const [afterRow] = await db.select().from(schema.branchWriteJournal);
+    expect(afterRow?.draftBaseUpdateSeq).toBe(beforeRow.draftBaseUpdateSeq);
+    expect(result).toMatchObject({
+      status: "concurrent_conflict",
+      reason: "draft_base_divergence",
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeApply);
+  });
+
+  it("applies a stale selective edit that does not enclose a writer insertion", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000836";
+    await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
+    await harness.stageCertifiedReplace({
+      responseId,
+      find: "Selected root.",
+      content: "SELECTIVE DRAFT PROPOSAL",
+    });
+
+    const fixture = harness.crossWorkProbeFixture();
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        last,
+        fixture.markupCodec.parse("Writer concurrent insertion."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: preview.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: preview.draftRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
+  });
+
+  it("does not join separate selective edits into an enclosing replacement scope", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000837";
+    await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
+    const fixture = harness.crossWorkProbeFixture();
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+    };
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "Left root.",
+          content: "LEFT DRAFT",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "Right root.",
+          content: "RIGHT DRAFT",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID,
+        turnId: context.turnId as never,
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const first = fixture.model.getBlocks(toDocHandle(doc))[0] ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        first,
+        fixture.markupCodec.parse("Writer middle insertion."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: preview.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: preview.draftRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toBe(
+      "LEFT DRAFT\n\nWriter middle insertion.\n\nRIGHT DRAFT\n",
+    );
+  });
+
+  it("retains whole-document scope when a folded response refines an overwrite", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000838";
+    await harness.seedWriterDocument("First writer root.\n\nSecond writer root.", responseId);
+    const fixture = harness.crossWorkProbeFixture();
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+      createdDocument: false,
+    };
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "create",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          content: "WHOLE DRAFT\n\nDraft tail.",
+          overwrite: true,
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "WHOLE DRAFT",
+          content: "REFINED WHOLE DRAFT",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      fixture.collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+
+    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
+      fixture.model.insertBlocks(
+        toDocHandle(doc),
+        last,
+        fixture.markupCodec.parse("Writer insertion after overwrite base."),
+      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+
+    const preview = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (preview.status !== "active" || !preview.branchId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: preview.branchId,
+        userId: USER_ID as never,
+        draftRevisionToken: preview.draftRevisionToken,
+        operationIds: preview.operations.map((operation) => operation.operationId),
+      }),
+    ).resolves.toMatchObject({
+      status: "concurrent_conflict",
+      reason: "draft_base_divergence",
+    });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain(
+      "Writer insertion after overwrite base.",
+    );
   });
 });

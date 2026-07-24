@@ -1,6 +1,10 @@
 /** Response unit-of-work settlement behavior. */
 import { describe, expect, it, vi } from "vitest";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { enlistResponseParticipant, runResponseTransaction } from "./response-transaction.js";
 
 describe("ResponseTransaction", () => {
@@ -52,6 +56,10 @@ describe("ResponseTransaction", () => {
               commit: () => void events.push("commit"),
               abort: () => void events.push("abort"),
             });
+          },
+          {
+            deferUntilCommit: deferUntilDrizzleCommit,
+            deferUntilRollback: deferUntilDrizzleRollback,
           },
         );
         events.push("operation returned");

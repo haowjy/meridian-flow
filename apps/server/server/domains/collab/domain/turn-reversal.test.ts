@@ -1,5 +1,5 @@
 /** Unit coverage for turn-level reversal safety handoff. */
-import type { ReversalStore } from "@meridian/agent-edit";
+import type { ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import { aggregateStatus, reverseTurn } from "./turn-reversal.js";
 

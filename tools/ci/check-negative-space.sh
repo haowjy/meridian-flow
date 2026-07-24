@@ -43,72 +43,97 @@ if (( ${#found[@]} > 0 )); then
   exit 1
 fi
 
-# DocumentAuthority is a capability, not a convention. Check its narrow
-# export/import/call boundary rather than exempting every line in large files.
-authority_callers=(
-  "apps/server/server/domains/collab/adapters/drizzle-branches.ts"
-  "apps/server/server/domains/collab/composition.ts"
-  "apps/server/server/domains/collab/domain/branch-coordinator.ts"
-  "apps/server/server/domains/collab/domain/markdown-document.ts"
-  "apps/server/server/domains/collab/hocuspocus-persistence.ts"
-)
-
-is_authority_caller() {
-  local candidate="$1"
-  local allowed
-  for allowed in "${authority_callers[@]}"; do
-    [[ "$candidate" == "$allowed" ]] && return 0
-  done
-  return 1
-}
-
-authority_violations=()
-while IFS=: read -r file line rest; do
-  [[ -z "$file" ]] && continue
-  if ! is_authority_caller "$file"; then
-    authority_violations+=("$file:$line:$rest")
-  fi
+# Content mutation operations are explicit capabilities, and journal attribution
+# is the sole birth-class authority. The old sum-interface, fake source-cut
+# lookup, unsupported arms, and explicit provenance-root policy must not return.
+mutation_policy_violations=()
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && mutation_policy_violations+=("$hit")
 done < <(
-  git grep -n -E '(import .*createDocumentAuthority|createDocumentAuthority\()' \
-    -- 'apps/server/server/domains/collab/**/*.ts' \
-    ':!apps/server/server/domains/collab/domain/document-authority.ts' \
+  git grep -n -E \
+    'createDocumentMutationPolicy|DocumentMutationPolicyPort|sourceCutId|unsupportedMutationPolicyOperation|stagePush|completePush|PROVENANCE_ROOTS_TYPE|ProvenanceRootFactV1|__meridian_provenance_roots_v1' \
+    -- \
+    'apps/server/server/domains/collab/*.ts' \
+    'apps/server/server/domains/collab/**/*.ts' \
+    'apps/server/scripts/*.ts' \
     ':!**/*.test.ts' ':!**/*.db.test.ts' ':!**/test-support/**' ':!**/__conformance__/**' \
     2>/dev/null || true
 )
 
-authority_exports="$(git grep -l -E 'export function createDocumentAuthority' -- \
-  'apps/server/server/domains/collab/**/*.ts' ':!**/*.test.ts' 2>/dev/null || true)"
-expected_authority_export='apps/server/server/domains/collab/domain/document-authority.ts'
-if [[ "$authority_exports" != "$expected_authority_export" ]]; then
-  authority_violations+=("DocumentAuthority must have one canonical production export: $authority_exports")
-fi
-
 # These permissive historical heuristics are forbidden specifically in the
-# settlement/provenance authority. Presentation and navigation code may still
+# settlement/provenance safety core. Presentation and navigation code may still
 # use text comparison or RelativePosition for their unrelated jobs.
-forbidden_authority_fallbacks=()
+forbidden_safety_fallbacks=()
 while IFS= read -r hit; do
-  [[ -n "$hit" ]] && forbidden_authority_fallbacks+=("$hit")
+  [[ -n "$hit" ]] && forbidden_safety_fallbacks+=("$hit")
 done < <(
   git grep -n -E \
     'blockOwner|block_owner|lastEditor|last_editor|Item\.redone|Y\.Snapshot|RelativePosition|diff-match-patch|diff_match_patch|textEquality|text_equality|textSimilarity|text_similarity' \
     -- \
-    'apps/server/server/domains/collab/domain/document-authority.ts' \
+    'apps/server/server/domains/collab/domain/document-mutation-policy.ts' \
     'apps/server/server/domains/collab/domain/branch-push-transition.ts' \
     'apps/server/server/domains/collab/domain/provenance.ts' \
     'apps/server/server/domains/collab/adapters/drizzle-provenance.ts' \
     2>/dev/null || true
 )
 
-if (( ${#authority_violations[@]} > 0 )); then
-  echo "ERROR: content mutation bypasses DocumentAuthority capability:"
-  printf '  %s\n' "${authority_violations[@]}"
+if (( ${#mutation_policy_violations[@]} > 0 )); then
+  echo "ERROR: obsolete document-mutation capability sediment returned:"
+  printf '  %s\n' "${mutation_policy_violations[@]}"
   exit 1
 fi
 
-if (( ${#forbidden_authority_fallbacks[@]} > 0 )); then
-  echo "ERROR: forbidden semantic fallback entered settlement/provenance authority:"
-  printf '  %s\n' "${forbidden_authority_fallbacks[@]}"
+report_only_sediment=()
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && report_only_sediment+=("$hit")
+done < <(
+  git grep -n -E \
+    'undoAccept|undoReject|countInFlightDraftSessionsByWork|collab\.safety_notices' \
+    -- \
+    'apps/server/server/domains/collab/*.ts' \
+    'apps/server/server/domains/collab/**/*.ts' \
+    ':!**/*.test.ts' ':!**/*.db.test.ts' ':!**/test-support/**' ':!**/__conformance__/**' \
+    2>/dev/null || true
+)
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && report_only_sediment+=("$hit")
+done < <(
+  git grep -n -E \
+    'historicalBodySchema|canonicalBlockIdentityV1Schema|navigationTargetV1Schema|changeTrailShellV1Schema' \
+    -- 'packages/contracts/src/**/*.ts' 2>/dev/null || true
+)
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && report_only_sediment+=("$hit")
+done < <(
+  git grep -n -E \
+    '@meridian/database|from "drizzle-orm"|shared/drizzle-transaction|observability/index|/adapters/' \
+    -- \
+    'apps/server/server/domains/collab/domain/*.ts' \
+    'apps/server/server/domains/collab/domain/**/*.ts' \
+    ':!**/*.test.ts' ':!**/*.db.test.ts' ':!**/__fixtures__/**' \
+    2>/dev/null || true
+)
+
+latest_database_snapshot="$(
+  printf '%s\n' packages/database/src/migrations/meta/*_snapshot.json | LC_ALL=C sort | tail -n 1
+)"
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && report_only_sediment+=("$latest_database_snapshot:$hit")
+done < <(
+  grep -n -E \
+    'public\.model_response_(causal_cuts|observation_entries|observation_snapshots)|"lineage_evidence"' \
+    "$latest_database_snapshot" 2>/dev/null || true
+)
+
+if (( ${#report_only_sediment[@]} > 0 )); then
+  echo "ERROR: report-only pivot sediment returned:"
+  printf '  %s\n' "${report_only_sediment[@]}"
+  exit 1
+fi
+
+if (( ${#forbidden_safety_fallbacks[@]} > 0 )); then
+  echo "ERROR: forbidden semantic fallback entered the settlement/provenance safety core:"
+  printf '  %s\n' "${forbidden_safety_fallbacks[@]}"
   exit 1
 fi
 

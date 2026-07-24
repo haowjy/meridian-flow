@@ -21,13 +21,27 @@ journal do).
 
 `ResponseCommitter` commits buffered response updates through `UpdateJournal.appendBatch`.
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
-`ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
-use the same store to plan against retained update rows and mutation metadata.
-Scope reversal is operation-atomic: every selected group is reconstructed and
-safety-preflighted before persistence. Multi-group redo is consumed by
+`ReversalStore.reserveWriteOrdinal`; a host may supply a durable group ID and
+reuse one ordinal for that group when its journal folds the mutations into one
+row. Each staged mutation also marks replacement-scope capture complete and
+carries certified semantic scope for replacements, including create-overwrite,
+so folding hosts can retain per-write scope without serializing live block
+handles. Undo/redo selection and availability then use the same store to plan
+against retained update rows and mutation metadata.
+Hosts with movable reversal authority implement `withReversalScope` so one
+command plans and persists against one pinned authority. A reconstruction that
+adds synthetic reconciliation updates exposes its durable
+`persistenceWatermark` separately from those synthetic sequence numbers.
+Scope reversal is operation-atomic: every selected group is reconstructed
+before persistence. Multi-group redo is consumed by
 `persistRedoBatch` in one store transaction, then the prepared updates are
-projected together. A policy rejection therefore leaves every selected group,
-the journal, and the live document untouched.
+projected together.
+
+Persistence results distinguish durable from staged commits. A failed staged
+projection restores or evicts the runtime before reporting failure. A failed
+projection after a durable reversal recovers from the journal and reports the
+committed outcome; diagnostics must not turn that committed effect into an
+`internal_error`.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
@@ -46,7 +60,7 @@ Optional host callback for reversal delivery. Agent-edit passes
 `threadId`, `docId`, a representative `turnId`, write handles, direction, and
 `writeHandleTurns` (the per-handle turn mapping) after a successful user-actor
 undo/redo persist; hosts resolve `docId` to any product URI outside the package.
-When a writer WebSocket edit lands after the safety gate but before a durable
+When a writer WebSocket edit lands after commit preflight but before a durable
 reversal applies, `recordLateSweep` reports the affected hashes, captured bodies,
 and before-content reference for both user and agent actors. Hosts without the
 port still apply the durable reversal but cannot deliver that receipt.
@@ -113,7 +127,10 @@ Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
 `renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
 `serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
 (`resolver/block-hash.ts`), and echo after-snapshots in
-`tool/mutation-commit.ts`. Response commits do not recompute per-write echoes.
+`tool/mutation-commit.ts`. Response settlement recomputes each staged write's
+receipt against the settled runtime projection before the host publishes it.
+Receipts carry a unique host-only settlement id because several tool calls may
+intentionally share one model-facing reversal handle.
 The Drizzle journal adapter commits a buffered response in one multi-row INSERT
 via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same
@@ -126,41 +143,16 @@ Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
 only. Optional — falls back to a local in-memory map when omitted.
 
-### ObservationSnapshotStore (`src/ports/observation-snapshot.ts`)
-
-Durable response-scoped observation authority. `createObservationAuthority`
-builds a request-local candidate only from exact rendered block bodies or
-explicit-deletion bodies, then seals it to a successful model response. Before
-any document bytes enter request serialization, the runtime freezes one
-`ResponseCausalCutV1` for every touched document, including documents with no
-observation entries. The cut identifies that document authority's contiguous
-admitted prefix; it seals atomically with the successful response and snapshot.
-Keys use the full document-scoped Yjs item identity (`documentId`, `clientID`,
-`clock`), never a display hash. Omitted and `sync_overflow` bodies deliberately
-create no entry.
-
-Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut against
-the authoring response snapshot. At that synchronous cut it seals a
-`SealedWriterLineageV3` protection scope containing normalized protected roots
-and the response causal-cut ID. Empty scopes are still sealed. State-vector
-frontiers and missing-client rules are not authority. Reversal uses its
-authoring response snapshot independently from the canonical dependency guard.
-
-Concurrent re-sync output is shaped as contiguous prose runs, independent of
-document sections: changed blocks receive one full anchor on each side, nearby
-runs gap-merge with `DEFAULT_CONCURRENT_RUN_GAP`, and rewrite-density coverage
-expands to the whole document. Deletions always carry captured bodies. The
-runtime applies one provider-registry-derived aggregate byte budget to the
-indivisible runs; omitted runs emit `sync_overflow`, earn no observation entry,
-and therefore make a later destructive write fail closed until a bounded read
-credits the exact target rendering. There is no parallel session-side fence.
-
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
+`withResponseDocument(...)`, `responseDocuments(...)`,
 `getAvailability(docId, threadId)`, `undo(docId, threadId)`,
-`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
-`redoTurn` remain host-compatible aliases. Host
+`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`.
+Raw staged Yjs bytes stay private; `withResponseDocument` lends the effective
+response view for the duration of one callback. Composition ports, concrete
+adapters, snapshots, provenance algebra, and Yjs utilities live on the explicit
+`@meridian/agent-edit/integration` entry instead of the default façade. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
 `getAvailability` is the source of truth for whether write-level undo/redo will
@@ -171,31 +163,36 @@ eligibility check. `invalidateThread` evicts cached runtime state and drops buff
 response updates for a document/thread so the next access rebuilds runtime state
 from the live document and journal.
 
-Agent reversals require a trustworthy pre-sync baseline: either an explicit
-`InteractionContext.baselineSnapshot` or a session runtime acknowledged by a
-prior read/write. Cold/restart/hosted agent calls without one fail closed with
-`rejected_response_requires_reread`; they never sync live state and then call it
-the baseline. User reversals remain ungated and capture a best-effort pre-sync
-baseline. `InteractionContext.liveJournalSeq` is the live-journal watermark
-paired with that baseline; `afterJournalId` remains a host attribution floor and
-must not be used as a reconstruction reference.
+Cold/restart/hosted reversals derive their live-journal watermark from durable
+reconstruction when the host does not supply an `InteractionContext`.
+`InteractionContext.liveJournalSeq` remains the reconstruction reference;
+`afterJournalId` remains a host attribution floor and must not be used as one.
+`InteractionContext.attributionBaseline` is the thread peer's CRDT state
+captured before the host pulls concurrent upstream changes. It feeds provenance
+classification, not the document echo: a success echo renders only the
+post-write projection, while pulled or settlement-time changes use the typed
+concurrent-edit report.
 
-Reversal application snapshots the live Y.Doc synchronously before persistence,
-then diffs it after persistence and combines that result with the mutation
-committer's final synchronous recheck. This LOCK-WS pairing catches both edits
-inside the durable-write window and edits inside the final concurrent-detection
-window; the committed update still applies, then the host receives a late-sweep
-report (durable-then-report).
+Reversal application captures commit preflight before persistence, then the
+mutation committer's final recheck resumes from that immutable detection after
+persistence. This catches both edits inside the durable-write window and edits
+inside the final concurrent-detection window; the shared classifier alone
+decides whether the committed update produces a late-sweep report
+(durable-then-report).
 
-Every normal live projection also returns an immutable atomic observation cut:
-block snapshots immediately before and immediately after the synchronous Yjs
-apply. The final recheck, apply, and after capture have no await between them.
-The shared lifecycle-neutral classifier consumes before/after visible
-occurrences, the writer-protection scope, response cut, and observation credit.
-It returns eligible ranges plus final-rendering projections. The tool-time gate
-denies an uninformed destructive write before the journal boundary; the same
-classifier output remains available to later settlement without a second
-interval implementation.
+Every normal live projection classifies the coordinated document immediately
+before and after the synchronous Yjs apply. The final recheck and apply have no
+await between them. The shared lifecycle-neutral classifier consumes those
+visible occurrences and durable writer/agent provenance, returning eligible
+ranges plus final-rendering projections. Agent writes always commit through Yjs
+merge; classification controls only writer-facing sweep capture and trails. The
+echo informs the agent, the trail informs the writer, and agent-only destruction
+stays silent.
+
+Immediate writes, local-runtime synchronization, and response phase-C projection
+compose the same lock-scoped apply kernel. When journal entries are supplied,
+the kernel appends them before its final concurrent recheck; already-durable
+response commits enter through the same kernel without re-appending.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
@@ -214,7 +211,6 @@ its concern. Production modules (excluding colocated tests) are:
 | `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
 | `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
 | `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
-| `response-lifecycle.ts` | Defines response transition values used by the committer and observability. |
 | `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
 | `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
 | `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
@@ -225,7 +221,8 @@ its concern. Production modules (excluding colocated tests) are:
 | `write-helpers.ts` | Shared parsing, identity, and error helpers. |
 | `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
 | `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
-| `write-reversal.ts` | Executes write-level undo/redo from durable journal reconstruction. |
+| `write-reversal.ts` | Selects, submits, persists, and reports write-level undo/redo. |
+| `undo/reversal-reconstruction.ts` | Synthesizes one cold undo/redo update, including plain-text order repair. |
 | `write.ts` | Wires the modules into the public `WriteTool`; it contains no command implementation. |
 | `test-support/` | Shared package-test journals, harnesses, scenarios, and assertions. |
 
@@ -313,6 +310,10 @@ expansion, seq ownership, dependency evaluation) are private implementation
 details.
 
 **Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
+
+Multiple handles backed by the same durable journal update are one reversal
+boundary. Selecting any member expands to every handle sharing that update, so
+content and mutation status cannot diverge after a folded branch Apply.
 
 
 ### CRDT-neutral seam, ProseMirror content currency
@@ -423,10 +424,10 @@ going blind to a concurrent human edit.
   changed from `v_pre` to `v_post` → full `hash|content`; identical context →
   first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
   structural changes are not separate modes.
-- **Tool results use two content blocks.** Successful writes and undo/redo return
-  metadata in block 1 (`status`, write id or reversal count, concurrent edits)
-  and echo `hash|content` lines in block 2 when there are echo lines. Hosts should
-  prefer structured `content` over the joined `text`.
+- **Tool results use two content blocks.** Successful writes and undo/redo
+  return metadata in block 1 (`status`, write id or reversal count, concurrent
+  edits) and echo `hash|content` lines in block 2 when there are echo lines.
+  Hosts should prefer structured `content` over the joined `text`.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
   Whole-document overwrite preserves this behavior for positional same-type
@@ -471,46 +472,53 @@ write.
 Passing `WriteContext.responseId` makes `create` / `insert` / `replace` apply to
 the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
-reflect cumulative response-local state. Without a response id, the same command
-path appends and projects immediately. Undo/redo never buffer: a tool reversal
-first commits any buffered writes for that response so durable order matches tool
-order.
+initially reflect cumulative response-local state; `commitResponse` returns
+receipts recomputed against the settled projection for host publication. Without
+a response id, the same command path appends and projects immediately. Undo/redo
+never buffer: a tool reversal first commits any buffered writes for that response
+so durable order matches tool order.
 
 Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 
 - **`Buffered`:** owns the mutable response buffer. Only this state may stage or
   drop writes. `commitResponse` atomically snapshots the buffer and transfers
   ownership to `Committing` before any asynchronous work begins.
-- **`Committing`:** owns one immutable snapshot and one promise across journal
+- **`Committing`:** owns one immutable attempt and one promise across journal
   append, live projection, and recovery. Concurrent commit callers join that
-  promise even after append has completed. Its observable operational phase moves
-  from `buffered` to `journalStaged`/`journalCommitted` to `liveProjected` without replacing the
-  owner. Rollback is rejected while this owner exists; reporting rollback success
-  while a commit can still persist would make the caller's cancellation contract
-  dishonest.
+  promise even after append has completed. The attempt records one acceptance
+  value (`none | staged | durable`); observability phases derive from it instead
+  of carrying a parallel lifecycle. Rollback is rejected while this owner exists;
+  reporting rollback success while a commit can still persist would make the
+  caller's cancellation contract dishonest.
 - **`Closed`:** records a bounded `committed` or `rolledBack` tombstone. Further
-  stage/commit/rollback calls fail; an unknown response id remains a valid empty
-  commit/rollback because a model response may have issued no mutations.
+  stage/commit/rollback calls fail. An unknown response id remains a valid empty
+  commit/rollback because a model response may have issued no mutations, and
+  that settlement still installs a tombstone so a late tool handler cannot
+  reopen the response.
 
-Journal append throws directly. Live projection returns a narrow outcome carrying
-its accepted journal kind, which lets the write boundary restore speculative
-runtime state before acceptance or route durable projection failure through
-journal recovery. State transitions verify the current owner before changing the
-map, preventing stale async work from reopening or overwriting a closed response.
+The mutation submission attempt records journal acceptance immediately after
+append, before concurrency classification or live-projection reporting can fail.
+The write boundary therefore restores speculative runtime state before
+acceptance, but routes every failure after durable acceptance through journal
+recovery. If destructive reporting cannot be rebuilt, the committed tool result
+explicitly reports degraded awareness instead of presenting ordinary success.
+State transitions verify the current owner before changing the map, preventing
+stale async work from reopening or overwriting a closed response.
 
 **Rollback and recovery follow the journal boundary.** While still `buffered`,
 commit failure evicts speculative runtimes but leaves the response retryable;
 rollback restores existing runtimes from live (and evicts runtime-only creates),
-then closes `rolledBack`. After any accepted journal batch, rollback is
-recover-and-close rather than buffer discard. For `"durable"`, those rows cannot
-be undone by lifecycle rollback: projection failure triggers journal recovery and
-runtime reconstruction. Successful recovery is reported as a successful commit;
-failed recovery evicts runtimes, marks live state stale, closes the durable
-response as committed, and still reports the projection failure to the caller.
-When last-resort durable recovery succeeds, the committer rechecks the captured
-destructive hashes before reporting success. A detected loss is returned as a
-late sweep; an unavailable recheck returns `awarenessDegraded`, grants no
-observation credit, and can never be laundered into plain committed.
+then closes `rolledBack`. Once a commit attempt owns the response, rollback is
+rejected. A durable projection failure is therefore recovered by that commit
+attempt through journal replay and runtime reconstruction. Successful recovery
+is reported as a successful commit; failed recovery evicts runtimes, marks live
+state stale, closes the durable response as committed, and still reports the
+projection failure to the caller.
+When last-resort durable recovery succeeds, the committer compares its immutable
+pre-recovery snapshot with the recovered document through the same provenance
+classifier used by normal projection. A detected writer-lineage loss is returned
+with captured bodies as a late sweep; an unavailable recheck returns
+`awarenessDegraded` and can never be laundered into plain committed.
 
 Phase-C apply snapshots the coordinated Y.Doc before its awaited concurrent
 detection and diffs it again immediately before apply. The final snapshot check
@@ -529,18 +537,12 @@ their path, while only pre-commit discards are cleanup candidates.
 
 ### Mutation outcomes
 
-`response-lifecycle.ts` contains only the response transition values used by the
-committer and observability. Immediate mutation submission returns the journal
-kind needed by the atomic apply→submit boundary; unused write constructors,
-aggregate wrappers, and generic transition `Result` ceremony were deleted. The
-public `WriteOutcome.phase` remains `"staged" | "committed"`; hosts must not treat
-a staged success as durable. `discardedClaims` is returned directly by the owning
-committer and preserved by the server response owner.
-
-Every journal batch reports `"durable"` or `"staged"`. `MutationLifecycle`
-represents them structurally: only durable rows enter `journalCommitted`, while
-process-local thread-peer entries enter `journalStaged`. Staged failures return
-to `buffered`; they never enter durable-journal recovery.
+Every journal batch reports `"durable"` or `"staged"`. The owning commit attempt
+stores that one acceptance value: staged failures return to `buffered`, while
+durable failures enter journal recovery. The public `WriteOutcome.phase` remains
+`"staged" | "committed"`; hosts must not treat a staged success as durable.
+`discardedClaims` is returned directly by the owning committer and preserved by
+the server response owner.
 
 ### Tool concerns
 
@@ -584,7 +586,7 @@ paths so accidental UUID interpolation fails loudly.
 Package tests cover block-hash stability, markup round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
-drift invariants, availability, and public turn seams), response
+drift invariants, and availability), response
 commit/recovery, and create lifecycle.
 
 ### Write handles and selective reversal

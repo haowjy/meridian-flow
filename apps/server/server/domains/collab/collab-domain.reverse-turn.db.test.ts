@@ -1,15 +1,5 @@
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
-import {
-  createAgentEditCodec,
-  digestRenderedContent,
-  type ObservationSnapshotStore,
-  snapshotBlocks,
-  toDocHandle,
-  yProsemirrorModel,
-} from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -48,6 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
+    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { checkDependentLaterLiveRows } = await import("./adapters/drizzle-live-dependencies.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { decodeUpdateForDependencies, deleteRanges, rangesOverlap, suppliedRanges } =
@@ -68,12 +59,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
-    const observationSnapshots = observationStoreFor(hocuspocus.documents);
     const createTestCollab = () =>
       createCollabDomain({
         db,
+        documentAccess: createDrizzleDocumentAccess(db),
         threads: { findById: async () => ({ id: THREAD_ID }) },
-        observationSnapshots,
       });
 
     beforeEach(async () => {
@@ -597,7 +587,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           draftRevisionToken: preview.draftRevisionToken,
           operationIds: [createOperation.operationId],
         }),
-      ).resolves.toMatchObject({ status: "partial_applied" });
+      ).resolves.toMatchObject({ status: "applied" });
 
       const liveMembership = await collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
@@ -708,6 +698,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: CREATED_DOC_B_ID as never,
         branchId: previewB.branchId,
         userId: USER_ID as never,
+        draftRevisionToken: previewB.draftRevisionToken,
+        operationIds: previewB.operations.map((operation) => operation.operationId),
       });
 
       const liveMembership = await collab.resolveManifestMembership({
@@ -1015,40 +1007,6 @@ function fakeHocuspocus() {
         documents.set(documentName, document);
       }
       return { document, disconnect: async () => undefined };
-    },
-  };
-}
-
-function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore {
-  const schema = buildDocumentSchema();
-  const model = yProsemirrorModel(schema);
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
-  const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
-
-  return {
-    async seal(snapshot) {
-      snapshots.set(snapshot.responseId, snapshot);
-    },
-    async load(responseId) {
-      const existing = snapshots.get(responseId);
-      if (existing !== undefined) return existing;
-
-      const entries = [...documents.entries()]
-        .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
-        .flatMap(([documentId, document]) =>
-          snapshotBlocks(toDocHandle(document), model, codec).map((block) => ({
-            documentId,
-            clientID: block.clientID as number,
-            clock: block.clock as number,
-            value: {
-              kind: "rendered" as const,
-              digest: digestRenderedContent(block.renderedContent as string),
-            },
-          })),
-        );
-      const snapshot = { responseId, entries };
-      snapshots.set(responseId, snapshot);
-      return snapshot;
     },
   };
 }
