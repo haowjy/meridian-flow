@@ -26,7 +26,7 @@ import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { useConversationReveal } from "./conversation-reveal";
+import { type ConversationReveal, useConversationReveal } from "./conversation-reveal";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -58,6 +58,7 @@ export function TurnEditsCard({
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
   const reveal = useConversationReveal(threadId);
+  const [activeReveal, setActiveReveal] = useState<ConversationReveal | null>(null);
   const [pending, setPending] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
@@ -67,7 +68,9 @@ export function TurnEditsCard({
   const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   useEffect(() => {
-    if (reveal?.turnId === turn.id) setExpanded(true);
+    if (reveal?.turnId !== turn.id) return;
+    setActiveReveal(reveal);
+    setExpanded(true);
   }, [reveal, turn.id]);
 
   async function reverseTurn() {
@@ -162,7 +165,7 @@ export function TurnEditsCard({
               threadId={threadId}
               shell={changeTrail}
               navigateToChange={navigateToChange}
-              reveal={reveal?.turnId === turn.id ? reveal : null}
+              reveal={activeReveal}
             />
           ) : null}
         </div>
