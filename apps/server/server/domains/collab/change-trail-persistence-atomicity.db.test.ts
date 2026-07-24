@@ -1,6 +1,8 @@
 /** Real-Postgres behavioral coverage for change-trail durability. */
 import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import type { TrailChangeV1 } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -21,6 +23,59 @@ if (!enabled || !process.env.DATABASE_URL) {
 describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
+
+  it("returns full committed replace-sets with durable revisions across refinement", async () => {
+    const persistence = createDrizzleChangeTrailPersistence(db);
+    const owner = { kind: "turn" as const, threadId: THREAD_ID, turnId: TURN_ID };
+    const change = {
+      changeId: "change-1",
+      ordinal: 0,
+      documentId: ALPHA_ID,
+      pushId: "push-1",
+      receiptId: null,
+      kind: "modify" as const,
+      beforeBlockId: "before",
+      afterBlockId: "after",
+      beforeBlockIdentity: { documentId: ALPHA_ID, clientID: 10, clock: 0 },
+      afterBlockIdentity: { documentId: ALPHA_ID, clientID: 10, clock: 0 },
+      beforeText: "hash|before",
+      afterTextAtReceipt: "hash|first",
+      navigation: { kind: "unavailable" as const, reason: "fixture" },
+      swept: null,
+      reversible: false as const,
+    } satisfies TrailChangeV1;
+    const trail = (changes: TrailChangeV1[]) => ({
+      owner,
+      changes,
+      counts: { changes: changes.length, swept: 0, documents: 1 },
+    });
+
+    const first = await persistence.record({
+      trails: [trail([change])],
+      documentTitles: new Map([[ALPHA_ID, "Alpha"]]),
+    });
+    const refined = await persistence.record({
+      trails: [trail([{ ...change, afterTextAtReceipt: "hash|refined" }])],
+      documentTitles: new Map([[ALPHA_ID, "Alpha"]]),
+      refineCurrentVersion: true,
+      replacePushId: "push-1",
+    });
+
+    expect(first).toMatchObject([
+      {
+        documentId: ALPHA_ID,
+        projectionRevision: 1,
+        changes: [{ afterTextAtReceipt: "hash|first" }],
+      },
+    ]);
+    expect(refined).toMatchObject([
+      {
+        documentId: ALPHA_ID,
+        projectionRevision: 2,
+        changes: [{ afterTextAtReceipt: "hash|refined" }],
+      },
+    ]);
+  });
 
   it("atomically persists an auto-push sweep trail and rolls the push back when trail recording fails", async () => {
     const success = createHarness();
