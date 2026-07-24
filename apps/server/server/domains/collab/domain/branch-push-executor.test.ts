@@ -34,15 +34,13 @@ import { createBranchCriticalSections } from "./branch-critical-sections.js";
 import { createBranchPushService } from "./branch-push.js";
 import {
   type BranchJournalRow,
+  BranchPushCommitConflictError,
   type BranchPushStore,
   branchJournalRevision,
   type PendingLiveSettlement,
   type PushLineageRow,
 } from "./branch-push-contracts.js";
-import {
-  BranchPushCommitConflictError,
-  BranchPushRetryExhaustedError,
-} from "./branch-push-executor.js";
+import { BranchPushRetryExhaustedError } from "./branch-push-executor.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";

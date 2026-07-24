@@ -27,16 +27,16 @@ import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
-import type {
-  BranchJournalRow,
-  BranchPushStore,
-  PendingLiveSettlement,
-  PreparedDiscardCommit,
-  PreparedPushCommit,
-  PushLineageRow,
-  SettlementClaim,
+import {
+  type BranchJournalRow,
+  BranchPushCommitConflictError,
+  type BranchPushStore,
+  type PendingLiveSettlement,
+  type PreparedDiscardCommit,
+  type PreparedPushCommit,
+  type PushLineageRow,
+  type SettlementClaim,
 } from "../domain/branch-push-contracts.js";
-import { BranchPushCommitConflictError } from "../domain/branch-push-executor.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";

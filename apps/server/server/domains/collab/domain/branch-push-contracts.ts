@@ -17,6 +17,13 @@ import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
 import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
 
+export class BranchPushCommitConflictError extends Error {
+  constructor(readonly branchId: string) {
+    super(`Branch ${branchId} changed before its push could commit`);
+    this.name = "BranchPushCommitConflictError";
+  }
+}
+
 export type BranchJournalRow = {
   id: number;
   branchId: string;
