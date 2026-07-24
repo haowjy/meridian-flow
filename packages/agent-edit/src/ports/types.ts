@@ -16,8 +16,6 @@ export interface UpdateMeta {
   actorTurnId?: string;
   /** Successful model response that authored an agent mutation or reversal. */
   authoringResponseId?: string;
-  /** Commit-sealed writer ancestry removed without observation coverage. */
-  sealedWriterLineage?: import("../lineage/range-set.js").SealedWriterLineageV3;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
   reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */

@@ -18,9 +18,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../collab/composition.js");
-    const { createDrizzleResponseObservations } = await import(
-      "../runtime/adapters/drizzle-response-observations.js"
-    );
     const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
@@ -45,32 +42,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       return { collab, hocuspocus };
     }
-
-    it("freezes the initial authority cut repeatedly without a client opening the document", async () => {
-      const { collab } = createBoundCollab();
-      const bootstrap = await createDrizzleProjectBootstrapRepository({
-        db,
-        documents: collab,
-      }).ensureDefaultBootstrap(USER_ID as never);
-      const observations = createDrizzleResponseObservations(db, collab);
-
-      const [first] = await observations.freezeCausalCuts([bootstrap.documentId]);
-      const [second] = await observations.freezeCausalCuts([bootstrap.documentId]);
-      const markdown = await collab.readAsMarkdown(bootstrap.documentId);
-
-      expect(markdown).toEqual({ ok: true, value: "# Chapter 1\n" });
-      expect(first).toMatchObject({
-        documentId: bootstrap.documentId,
-        generation: 1n,
-        admittedThrough: 0n,
-      });
-      expect(second).toMatchObject({
-        documentId: bootstrap.documentId,
-        authorityId: first?.authorityId,
-        generation: first?.generation,
-        admittedThrough: first?.admittedThrough,
-      });
-    });
 
     it("treats repeated bootstrap as initialize-only and preserves writer content", async () => {
       const { collab } = createBoundCollab();

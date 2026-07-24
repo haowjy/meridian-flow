@@ -6,5 +6,4 @@ export * from "./drafts/index.js";
 export * from "./enums";
 export * from "./ids";
 export * from "./jsonb";
-export * from "./observation.js";
 export * from "./usage";

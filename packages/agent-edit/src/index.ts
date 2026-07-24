@@ -55,11 +55,7 @@ export {
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";
-export type {
-  ConcurrentEditInfo,
-  ConcurrentEditRun,
-  ConcurrentRunObservation,
-} from "./apply/types.js";
+export type { ConcurrentEditInfo, ConcurrentEditRun } from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
@@ -74,22 +70,14 @@ export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export type {
   LineageRange,
-  ResponseCausalCutV1,
-  SealedWriterLineageV3,
-  SettlementLineageEvidenceV2,
   WriterLineageRange,
-  WriterProtectionRootView,
 } from "./lineage/range-set.js";
 export {
   groupLineageRanges,
   intersectLineageRanges,
   lineageRangesContain,
   normalizeLineageRanges,
-  parseSealedWriterLineageV3,
-  parseSettlementLineageEvidenceV2,
-  sealedWriterLineageV3,
   subtractLineageRanges,
-  validateWriterProtectionScope,
 } from "./lineage/range-set.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
@@ -103,17 +91,6 @@ export {
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
-  ExplicitDeletionObservation,
-  ObservationAuthority,
-  ObservationCandidate,
-  RenderedObservation,
-} from "./observation-snapshot.js";
-export {
-  createObservationAuthority,
-  digestRenderedContent,
-  observationCoversRendering,
-} from "./observation-snapshot.js";
-export type {
   ActorSession,
   ActorSessionDocumentState,
   ActorSessionStore,
@@ -124,15 +101,13 @@ export {
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
-export type { AgentEditModel, BlockLookup, DocumentModel, TextRun } from "./ports/model.js";
 export type {
+  AgentEditModel,
+  BlockLookup,
   CanonicalBlockIdentity,
-  ObservationEntry,
-  ObservationKey,
-  ObservationSnapshot,
-  ObservationSnapshotStore,
-  ObservationValue,
-} from "./ports/observation-snapshot.js";
+  DocumentModel,
+  TextRun,
+} from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
   CompactionResult,
@@ -200,7 +175,6 @@ export type {
   WriteErrorStatus,
   WriteFunction,
   WriteIdempotencyHitDetail,
-  WriteObservationEvidence,
   WriteOutcome,
   WriteResultBlock,
   WriteStatus,

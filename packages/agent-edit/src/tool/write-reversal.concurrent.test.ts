@@ -216,7 +216,7 @@ describe("write reversal under concurrent edits", () => {
     ).resolves.toMatchObject({ status: "success", isError: false });
   });
 
-  it("applies explicit user undo without observation provenance and restores agent content on redo", async () => {
+  it("applies explicit user undo and restores agent content on redo", async () => {
     const notifications: Array<{
       direction: "undo" | "redo";
       sweptContent: boolean;

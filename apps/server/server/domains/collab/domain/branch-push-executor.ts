@@ -4,12 +4,6 @@ import {
   createAgentEditCodec,
   type DocumentCoordinator,
   diffSnapshots,
-  lineageCovered,
-  type ObservationEntry,
-  type ObservationSnapshotStore,
-  parseSealedWriterLineageV3,
-  type ResponseCausalCutV1,
-  type SettlementLineageEvidenceV2,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -146,20 +140,11 @@ export type PendingLiveSettlement = {
   beforeContentRef: number | null;
   trail: DurableTrailRecord;
   provenanceView: readonly ProvenanceRun[];
-  lineageEvidence: SettlementLineageEvidenceV2;
-  responseEvidence: readonly SettlementResponseEvidence[];
   joinVersion: number;
   settledJoinVersion: number | null;
   claim: SettlementClaim;
   attemptCount: number;
   state: "pending";
-};
-
-export type SettlementResponseEvidence = {
-  evidenceId: string;
-  responseCut: ResponseCausalCutV1;
-  visibleAtCut: readonly ProvenanceRun[];
-  observations: readonly ObservationEntry[];
 };
 
 export type SettlementClaim = {
@@ -377,8 +362,6 @@ export type BranchPushExecutorInput = {
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   notices?: NoticePort;
-  /** Sealed authoring-response evidence used only to attribute automatic push reports. */
-  observations?: ObservationSnapshotStore;
   writerIngressBarrier?: WriterIngressBarrier;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };
@@ -671,42 +654,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         rows: phase.rows,
         model: input.model,
       });
-      const sealedLineage: SettlementLineageEvidenceV2["items"] = [];
-      const sealedTokens: ReturnType<typeof parseSealedWriterLineageV3>[] = [];
-      for (const row of phase.rows) {
-        const raw = (row.updateMeta as { sealedWriterLineage?: unknown } | null)
-          ?.sealedWriterLineage;
-        const authoringResponseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
-          ?.authoringResponseId;
-        try {
-          const token = parseSealedWriterLineageV3(raw);
-          if (token.documentId === phase.branch.documentId) sealedTokens.push(token);
-          if (
-            token.documentId === phase.branch.documentId &&
-            typeof authoringResponseId === "string" &&
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-              authoringResponseId,
-            )
-          ) {
-            sealedLineage.push({
-              evidenceId: `branch-journal:${row.id}`,
-              authoringResponseId,
-              token,
-            });
-          }
-        } catch {
-          // Invalid or stale metadata is not evidence.
-        }
-      }
-      const afterLineage = after.flatMap((block) => block.lineage ?? []);
-      const sealedSweptBlocks = before.filter((block) =>
-        sealedTokens.some((token) =>
-          token.protectedRoots.some(
-            (range) =>
-              lineageCovered(range, block.lineage ?? []) && !lineageCovered(range, afterLineage),
-          ),
-        ),
-      );
       const conflicts: DraftApplyConflict[] = allConflicts.map((blockId) => {
         const evidence = conflictEvidence.get(blockId) as NonNullable<
           ReturnType<typeof conflictEvidence.get>
@@ -738,12 +685,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               : "Apply would delete or overwrite live content changed by the writer after this draft began.",
         };
       });
-      const blindConflictedBlocks = [
-        ...new Set([
-          ...conflicts.map((conflict) => conflict.blockId),
-          ...sealedSweptBlocks.map((block) => block.hash),
-        ]),
-      ].sort();
+      const blindConflictedBlocks = conflicts.map((conflict) => conflict.blockId).sort();
       const conflictedBlocks = allConflicts;
       const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
       const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
@@ -755,7 +697,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       );
       const afterIds = new Set(after.map((block) => block.hash));
       const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
-      for (const block of sealedSweptBlocks) beforeBodies.set(block.hash, block.serialized);
       for (const [hash, block] of resurrectionBodies) beforeBodies.set(hash, block.serialized);
       const blockIdentities = new Map(
         [...before, ...after].flatMap((block) =>
@@ -809,7 +750,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         conflicts,
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
         trailChanges: changes,
-        lineageEvidence: { version: 2, items: sealedLineage },
         lockCutUpdate,
         prepared: {
           branch: phase.branch,
@@ -914,8 +854,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     return transition.prepare({
       documentTitle,
       provenanceView: [],
-      lineageEvidence: { version: 2 as const, items: prepared.lineageEvidence.items },
-      responseEvidence: [],
       lockCutUpdate: prepared.lockCutUpdate,
       pushUpdate: prepared.prepared.pushUpdate,
       beforeContentRef: prepared.beforeContentRef,

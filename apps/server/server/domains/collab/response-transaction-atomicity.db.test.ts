@@ -169,7 +169,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("persists a writer edit journaled after the observation cut as swept", async () => {
+  it("persists a writer edit journaled after the response read as swept", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
     await harness.seedProbeTimelineSweep(responseId);
@@ -210,10 +210,10 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("S10 reports a pulled writer edit even when the response observed it", async () => {
+  it("S10 reports a pulled writer edit that landed after the response read", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000822";
-    await harness.seedProbeTimelineObserved(responseId);
+    await harness.seedProbeTimelineAfterRead(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",

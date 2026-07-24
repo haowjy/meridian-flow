@@ -1,42 +1,15 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
 import { describe, expect, it, vi } from "vitest";
 import type * as Y from "yjs";
-import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
-import { digestRenderedContent } from "../observation-snapshot.js";
-import type { ObservationSnapshot } from "../ports/observation-snapshot.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
-import { codec, context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
+import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
-
-function emptyObservationStore() {
-  return {
-    async seal() {},
-    async load(responseId: string): Promise<ObservationSnapshot> {
-      return { responseId, entries: [] };
-    },
-  };
-}
-
-function observationSnapshot(responseId: string, doc: Y.Doc): ObservationSnapshot {
-  return {
-    responseId,
-    entries: snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
-      documentId: "chapter.md",
-      clientID: block.clientID as number,
-      clock: block.clock as number,
-      value: {
-        kind: "rendered",
-        digest: digestRenderedContent(block.renderedContent as string),
-      },
-    })),
-  };
-}
 
 describe("response committer", () => {
   it("commits a blind agent overwrite of agent-only content without a sweep", async () => {
-    const ctx = harness({}, { observationSnapshots: emptyObservationStore() });
+    const ctx = harness();
     await ctx.core.write(
       { command: "create", file: "chapter.md", content: "Agent-authored opening." },
       {
@@ -58,7 +31,7 @@ describe("response committer", () => {
   });
 
   it("commits a blind agent overwrite of writer content with a captured sweep", async () => {
-    const ctx = harness({}, { observationSnapshots: emptyObservationStore() });
+    const ctx = harness();
     await ctx.core.write(
       { command: "create", file: "chapter.md", content: "Writer-authored opening." },
       { ...context, actor: { kind: "human", userId: "writer-1" } },
@@ -80,7 +53,7 @@ describe("response committer", () => {
   });
 
   it("reports only writer lineage from a blind overwrite of mixed content", async () => {
-    const ctx = harness({}, { observationSnapshots: emptyObservationStore() });
+    const ctx = harness();
     await ctx.core.write(
       { command: "create", file: "chapter.md", content: "Writer-authored opening." },
       { ...context, actor: { kind: "human", userId: "writer-1" } },
@@ -107,7 +80,7 @@ describe("response committer", () => {
   });
 
   it("commits a blind human overwrite without a sweep", async () => {
-    const ctx = harness({}, { observationSnapshots: emptyObservationStore() });
+    const ctx = harness();
     const actor = { kind: "human", userId: "writer-1" } as const;
     await ctx.core.write(
       { command: "create", file: "chapter.md", content: "Writer opening." },
@@ -153,10 +126,7 @@ describe("response committer", () => {
   });
 
   it("commits a blind destructive response from the snapshot empty-case", async () => {
-    const ctx = harness(
-      { "chapter.md": "Unseen passage.\n\nKeep." },
-      { observationSnapshots: emptyObservationStore() },
-    );
+    const ctx = harness({ "chapter.md": "Unseen passage.\n\nKeep." });
     const responseId = "response-blind";
     await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "Unseen passage.", content: "" },
@@ -182,31 +152,13 @@ describe("response committer", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["", "Keep."]);
   });
 
-  it("keeps agent-only destruction silent even when a later response observed it", async () => {
-    const snapshots = new Map<string, ObservationSnapshot>();
-    const ctx = harness(
-      { "chapter.md": "Opening." },
-      {
-        observationSnapshots: {
-          async seal(snapshot) {
-            snapshots.set(snapshot.responseId, snapshot);
-          },
-          async load(responseId) {
-            return snapshots.get(responseId) ?? null;
-          },
-        },
-      },
-    );
+  it("keeps agent-only destruction silent", async () => {
+    const ctx = harness({ "chapter.md": "Opening." });
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Echoed passage." },
       { ...context, responseId: "response-prior", turnId: "turn-prior" },
     );
     await ctx.core.commitResponse("response-prior");
-    snapshots.set(
-      "response-after-echo",
-      observationSnapshot("response-after-echo", ctx.liveDoc("chapter.md")),
-    );
-
     await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "Echoed passage.", content: "" },
       { ...context, responseId: "response-after-echo", turnId: "turn-after-echo" },
@@ -538,7 +490,6 @@ describe("response committer", () => {
     const ctx = harness(
       { "chapter.md": "Writer body." },
       {
-        observationSnapshots: emptyObservationStore(),
         afterResponsePreflight: (currentResponseId) => {
           if (currentResponseId === responseId) remainingPhaseCFailures = 2;
         },

@@ -8,16 +8,10 @@ export type CanonicalSettlementIdentity = {
   clock: number;
 };
 
-export type CausalMembership = {
-  evidenceId: string;
-  included: readonly LineageRange[];
-};
-
 export type SettlementOracleOutput = {
   trailChanges: readonly unknown[];
   exactBodies: readonly string[];
   canonicalIdentities: readonly CanonicalSettlementIdentity[];
-  causalMembership: readonly CausalMembership[];
   eligibleRanges: readonly LineageRange[];
   applyResult: unknown;
   completionState: unknown;
@@ -71,23 +65,10 @@ export class DurableSettlementOracleMismatch extends Error {
 }
 
 export function normalizeSettlementOutput(output: SettlementOracleOutput): SettlementOracleOutput {
-  const causalMembership = [...output.causalMembership]
-    .map((membership) => ({
-      evidenceId: membership.evidenceId,
-      included: normalizeRanges(membership.included),
-    }))
-    .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId))
-    .map((membership, index) => ({
-      ...membership,
-      evidenceId: /^branch-journal:\d+$/.test(membership.evidenceId)
-        ? `branch-journal:${index}`
-        : membership.evidenceId,
-    }));
   return {
     trailChanges: output.trailChanges.map(normalizeStructuredValue),
     exactBodies: [...output.exactBodies],
     canonicalIdentities: [...output.canonicalIdentities].sort(compareIdentity),
-    causalMembership,
     eligibleRanges: normalizeRanges(output.eligibleRanges),
     applyResult: normalizeStructuredValue(output.applyResult),
     completionState: normalizeStructuredValue(output.completionState),

@@ -319,14 +319,6 @@ export function createBranchAgentEditJournal(input: {
       );
     },
 
-    async recordWriterProtectionScope({ docId, responseId, token }) {
-      input.pendingJournalEntries?.recordWriterProtectionScope({
-        documentId: docId,
-        responseId,
-        token,
-      });
-    },
-
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
       return Promise.resolve({ checkpoint: null, updates: [] });
     },
@@ -437,11 +429,6 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
 type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
   shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
-  recordWriterProtectionScope(input: {
-    documentId: string;
-    responseId: string;
-    token: NonNullable<JournalBatchAppendEntry["meta"]["sealedWriterLineage"]>;
-  }): void;
 };
 
 export function createBranchPendingJournalEntries(
@@ -490,13 +477,6 @@ export function createBranchPendingJournalEntries(
       if (remaining.length > 0) byDocument.set(documentId, remaining);
       else byDocument.delete(documentId);
       return batch;
-    },
-    recordWriterProtectionScope({ documentId, responseId, token }) {
-      for (const entry of byDocument.get(documentId) ?? []) {
-        if (entry.mutation?.authoringResponseId === responseId) {
-          entry.meta.sealedWriterLineage = token;
-        }
-      }
     },
   };
 }

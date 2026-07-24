@@ -8,7 +8,7 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
-  it("commits a cold destructive agent reversal without an observation snapshot", async () => {
+  it("commits a cold destructive agent reversal", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent block." },
@@ -39,17 +39,9 @@ describe("write host reverse", () => {
   });
 
   it("flushes and reverses a blind buffered destructive write", async () => {
-    const scenario = await ReversalScenario.read(
-      { "chapter.md": "Writer passage.\n\nKeep." },
-      {
-        observationSnapshots: {
-          async seal() {},
-          async load() {
-            return null;
-          },
-        },
-      },
-    );
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Writer passage.\n\nKeep.",
+    });
     const responseId = "response-buffered-undo";
     await scenario.ctx.core.write(
       { command: "replace", file: "chapter.md", find: "Writer passage.", content: "" },

@@ -89,34 +89,12 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    const selected = new Set(selection.blocks);
-    const observations = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec)
-      .filter((_, index) => selected.has(options.model.getBlocks(toDocHandle(runtime.doc))[index]))
-      .flatMap((block) =>
-        block.clientID !== undefined && block.clock !== undefined && block.renderedContent
-          ? [
-              {
-                kind: "rendered" as const,
-                clientID: block.clientID,
-                clock: block.clock,
-                renderedContent: block.renderedContent,
-                sourceText: block.serialized,
-              },
-            ]
-          : [],
-      );
     if (command.format === "outline") {
-      return {
-        ...readSuccess(
-          renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
-        ),
-        observations,
-      };
+      return readSuccess(
+        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+      );
     }
-    return {
-      ...readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks)),
-      observations,
-    };
+    return readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
   }
 
   async function create(

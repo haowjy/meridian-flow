@@ -3,12 +3,6 @@
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
 
-import {
-  createObservationAuthority,
-  type ObservationSnapshot,
-  type WriteCommand,
-} from "@meridian/agent-edit";
-import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -109,153 +103,6 @@ async function collectEvents(
 }
 
 describe("runtime orchestrator behavior", () => {
-  it("credits a real persisted read when the next response destructively writes", async () => {
-    const documentId = crypto.randomUUID();
-    const snapshots = new Map<string, ObservationSnapshot>();
-    const snapshotStore = {
-      async seal(snapshot: ObservationSnapshot) {
-        snapshots.set(snapshot.responseId, snapshot);
-      },
-      async load(responseId: string) {
-        return snapshots.get(responseId) ?? null;
-      },
-    };
-    const authority = createObservationAuthority({ store: snapshotStore });
-    const harness = createWriteToolHarness(
-      { [documentId]: "Original writer paragraph." },
-      { observationSnapshots: snapshotStore },
-    );
-    const requests: GenerateRequest[] = [];
-    const gateway: Gateway = {
-      ...gatewayStubDefaults,
-      async *stream(request) {
-        requests.push(request);
-        const callNumber = requests.length;
-        if (callNumber <= 2) {
-          yield {
-            type: "end",
-            result: {
-              content: [
-                {
-                  type: "tool_use",
-                  toolCallId: `call-${callNumber}`,
-                  toolName: "write",
-                  input:
-                    callNumber === 1
-                      ? { command: "read", file: documentId }
-                      : {
-                          command: "replace",
-                          file: documentId,
-                          find: "Original writer paragraph.",
-                          content: "Revised paragraph.",
-                        },
-                },
-              ],
-              toolCalls: [],
-              finishReason: "tool_use",
-              usage: { inputTokens: 1, outputTokens: 1 },
-              model: "stub-model",
-              provider: "stub",
-            },
-          };
-          return;
-        }
-        yield {
-          type: "end",
-          result: {
-            content: [{ type: "text", text: "done" }],
-            toolCalls: [],
-            finishReason: "end_turn",
-            usage: { inputTokens: 1, outputTokens: 1 },
-            model: "stub-model",
-            provider: "stub",
-          },
-        };
-      },
-      async generate() {
-        throw new Error("not used");
-      },
-    };
-    const projectRepo = createInMemoryProjectRepository();
-    const repos = createInMemoryRepositories({ projects: projectRepo });
-    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
-    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-    const creditLedger = createInMemoryCreditLedger();
-    await creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "1000000000",
-      reason: "test",
-    });
-    const toolExecutor: ToolExecutor = {
-      async executeTool(call, ctx) {
-        const outcome = await harness.core.write(call.arguments as WriteCommand, {
-          sessionId: ctx.threadId,
-          threadId: ctx.threadId,
-          turnId: ctx.turnId,
-          responseId: ctx.responseId,
-          tool_use_id: call.id,
-          actor: {
-            kind: "agent",
-            threadId: ctx.threadId,
-            turnId: ctx.turnId,
-            responseId: ctx.responseId ?? "missing-response",
-          },
-        });
-        return {
-          toolCallId: call.id,
-          output: JSON.parse(JSON.stringify(outcome.content ?? outcome.text)),
-          ...(outcome.isError ? { isError: true } : {}),
-          metadata: JSON.parse(
-            JSON.stringify({
-              documentId,
-              ...(outcome.observations ? { observationEvidence: outcome.observations } : {}),
-              ...(outcome.status === "success" && outcome.phase === "staged"
-                ? { stagedWrite: true }
-                : {}),
-            }),
-          ),
-        };
-      },
-    };
-    const deps = createTestOrchestratorDeps({
-      gateway,
-      repos,
-      eventWriter: createInMemoryEventJournalWriter(),
-      creditLedger,
-      interruptRegistry: createInterruptRegistry(),
-      toolExecutor,
-      observationRendering: { authority, budgetBytes: () => 10_000 },
-      responseWrites: {
-        async commitResponse(responseId, _context, beforeTransactionCommit) {
-          const result = await harness.core.commitResponse(responseId);
-          const mapped = {
-            status: "committed" as const,
-            concurrentEdits: result.documents.flatMap((document) =>
-              document.concurrentEdits
-                ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
-                : [],
-            ),
-          };
-          await beforeTransactionCommit(mapped);
-          return mapped;
-        },
-        async rollbackResponse(responseId) {
-          await harness.core.rollbackResponse(responseId);
-        },
-      },
-    });
-
-    const runtimeEvents = await collectEvents(
-      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "revise it" }),
-    );
-
-    expect(requests, JSON.stringify(runtimeEvents)).toHaveLength(3);
-    expect([...snapshots.values()].some((snapshot) => snapshot.entries.length > 0)).toBe(true);
-    const finalRead = await harness.core.write({ command: "read", file: documentId });
-    expect(finalRead.text).toContain("Revised paragraph.");
-  });
-
   it("keeps a committed write finalized when the process fails after the atomic commit unit", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
@@ -602,24 +449,13 @@ describe("runtime orchestrator behavior", () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
-    const snapshots = new Map<string, ObservationSnapshot>();
-    const authority = createObservationAuthority({
-      store: {
-        async seal(snapshot) {
-          snapshots.set(snapshot.responseId, snapshot);
-        },
-        async load(responseId) {
-          return snapshots.get(responseId) ?? null;
-        },
-      },
-    });
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
-      observationRendering: { authority, budgetBytes: () => 10_000 },
+      concurrentRenderBudgetBytes: () => 10_000,
       toolExecutor: {
         executeTool: async (call) => ({
           toolCallId: call.id,
@@ -642,14 +478,6 @@ describe("runtime orchestrator behavior", () => {
                       origin: "human" as const,
                       blocks: ["abcd|Human changed line."],
                       tombstones: [],
-                      observations: [
-                        {
-                          kind: "rendered" as const,
-                          clientID: 7,
-                          clock: 11,
-                          renderedContent: "paragraph|Human changed line.",
-                        },
-                      ],
                     },
                   ],
                 },
@@ -677,14 +505,6 @@ describe("runtime orchestrator behavior", () => {
     const secondRequest = JSON.stringify(requests[1]?.messages);
     expect(secondRequest).toContain("concurrent edits:\\n  human:");
     expect(secondRequest).toContain("abcd|Human changed line.");
-    expect([...snapshots.values()].at(-1)?.entries).toEqual([
-      {
-        documentId: "doc-1",
-        clientID: 7,
-        clock: 11,
-        value: expect.objectContaining({ kind: "rendered" }),
-      },
-    ]);
   });
 
   it("drains undo and newly recorded late-sweep notices before each model call", async () => {

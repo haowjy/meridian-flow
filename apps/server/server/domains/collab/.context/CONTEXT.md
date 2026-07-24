@@ -10,7 +10,6 @@ and WebSocket callers.
 |---|---|
 | Document mutation policy and generation fencing | `domain/document-authority.ts`, `adapters/drizzle-document-authority.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
-| Response observation snapshots | `adapters/drizzle-observation-snapshots.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
@@ -48,8 +47,7 @@ markdown-only seeding produced schema-invalid content that ProseMirror silently
 deleted on first open, then persisted that deletion. The current engine is
 schema-aware; all new seed and write paths must go through it rather than
 hand-building fragment content. A new document's first seed is installed as its
-generation-1 checkpoint (with no admitted journal mutations, so its initial
-causal cut is `admittedThrough: 0`). Seeding is strictly initialize-only: any
+generation-1 checkpoint with no admitted journal mutations. Seeding is strictly initialize-only: any
 existing admission or checkpoint makes later attempts successful no-ops. A seed
 is reconciled into an already-open live room before success returns, and a stale
 room checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
@@ -116,9 +114,6 @@ for the cross-domain port decision and self-healing rationale.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` records pushes to live and receipts.
-- `model_response_observation_snapshots` and its entry table store immutable,
-  full-Yjs-identity evidence sealed to successful model responses. Agent-authored
-  live journal, mutation, and reversal rows have an authoring-response FK seam.
 
 Human-origin edits produce one journal row per keystroke. A 50-character
 sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
@@ -131,8 +126,8 @@ The deleted legacy draft tables (`document_yjs_drafts`,
 
 Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
-durable journal for origin and structural-delete attribution, and judges the
-removed canonical block identity through the response ObservationSnapshot.
+durable journal for origin and structural-delete attribution, and reports each
+removed writer-owned canonical block identity.
 Reports use the ordinary swept change-trail shape; missing ancestry/body/owner
 evidence emits degradation telemetry rather than guessing from update bytes.
 
@@ -180,12 +175,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   `pushedByUserId`) stay `system`. Both the push-time conflict classifier and
   the agent-edit immediate-path lateSweep recheck derive protection from this
   attribution, not from push-specific metadata or a separate protection table.
-  Auto-apply trails only blind destructive effects, using the authoring
-  response's sealed ObservationSnapshot and the shared
-  `observationCoversRendering` predicate. The response commit kernel seals
-  canonical swept-block identities and captured bodies into the branch journal
-  row's update metadata before persistence; push projection consumes that
-  evidence independently of the row's Apply-only draft base.
+  Auto-apply trails destructive writer-root effects from durable provenance.
+  This reporting classification is independent of the row's Apply-only draft
+  base.
 - **Writer Apply pins to the displayed preview**: `DraftAcceptRequest.operationIds`
   is required (non-optional). The client pins Apply-all to the displayed preview
   via a render-time ref, never a click-time refetch; post-preview rows stay
@@ -206,19 +198,15 @@ history is preserved for attribution, echo, and undo dependency checking.
   gate; cached containment must retain at least a 10x p50 advantage over rebuilding
   a history-sized Yjs snapshot.
 - **Push settlement authority**: the outbox stores binary `lock_cut_update` and
-  `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
+  `push_update`, validated trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the
   normalized `branch_push_outbox_updates` relation; admission association and
   `join_version` advancement share the document mutation transaction. Cold reads
-  resolve each sealed lineage item to its immutable response causal cut and
-  observation rows, memoize replay per distinct cut, and feed the resulting
-  provenance occurrences to the shared pointwise destructive-effect classifier.
+  reconstruct durable provenance for the final pre-push document and feed its
+  visible occurrences to the shared pointwise destructive-effect classifier.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
-  V3 tokens retain the affected writer roots regardless of observation; the
-  classifier alone grants per-response credit by requiring both causal-cut
-  inclusion and exact rendering coverage.
   Swept trail details retain the normalized final-pre-push target ranges and exact
   final-pre-push body. Settlement refines a complete provisional push trail in its
   existing aggregate version; only journal or staged-push authority joined after
@@ -228,14 +216,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
   Fixtures run a warm control, stop an identical subject at the durable commit
   boundary, destroy all warm Y.Docs/coordinators/facades, rebuild from PostgreSQL,
-  recover, and compare normalized trail, bodies, identities, causal membership,
-  eligible ranges, apply/completion, and forward actions. It is necessary but not
+  recover, and compare normalized trail, bodies, identities, eligible ranges,
+  apply/completion, and forward actions. It is necessary but not
   sufficient: `lib/compose.runtime-settlement.db.test.ts` must also drive the real
   `createProductionAppPorts` + `composeAppServices` + Hocuspocus + worker-drain chain
   with production-shaped sync-step-2 full-state updates, and S2/S10 release probes
   must verify the writer-visible Restore/Copy and trail flows. Fixture deltas once
-  passed the full oracle while the production observation adapter dropped causal
-  cuts and repeated full-state structs broke first-birth attribution.
+  passed the full oracle while repeated full-state structs broke first-birth
+  attribution.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
@@ -271,11 +259,6 @@ history is preserved for attribution, echo, and undo dependency checking.
   absent from live authority are agent-owned branch content. Only writer-lineage
   loss produces captured bodies, trail data, and Restore; agent-only loss is
   silent.
-- **Observation-scoped reporting**: an agent write or reversal carries its
-  successful authoring response ID. Exact covered renderings receive reporting
-  credit; missing evidence never blocks the write.
-
-
 ## LOCK-WS boundary
 
 `withDocument()` serializes coordinator callers, not writer WebSocket updates:

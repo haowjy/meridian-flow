@@ -11,52 +11,6 @@ export type LineageRange = {
 /** Kept as a vocabulary alias for callers that describe safety provenance. */
 export type WriterLineageRange = LineageRange;
 
-export type { ResponseCausalCutV1 } from "@meridian/contracts";
-
-export type SealedWriterLineageV3 = {
-  version: 3;
-  documentId: string;
-  protectedRoots: LineageRange[];
-  responseCausalCutId: string;
-};
-
-export type WriterProtectionRootView = {
-  provenanceOf(documentId: string, root: LineageRange): "writer_protected" | "agent" | null;
-};
-
-export type SettlementLineageEvidenceV2 = {
-  version: 2;
-  items: Array<{
-    evidenceId: string;
-    authoringResponseId: string;
-    token: SealedWriterLineageV3;
-  }>;
-};
-
-/** Total durable-boundary parser; unknown versions and malformed authority IDs fail closed. */
-export function parseSettlementLineageEvidenceV2(value: unknown): SettlementLineageEvidenceV2 {
-  if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.items)) {
-    throw new Error("Invalid settlement lineage evidence v2");
-  }
-  const items = value.items.map((item) => {
-    if (
-      !isRecord(item) ||
-      typeof item.evidenceId !== "string" ||
-      item.evidenceId.length === 0 ||
-      typeof item.authoringResponseId !== "string" ||
-      !isUuid(item.authoringResponseId)
-    ) {
-      throw new Error("Settlement lineage item requires valid evidence and response IDs");
-    }
-    return {
-      evidenceId: item.evidenceId,
-      authoringResponseId: item.authoringResponseId,
-      token: parseSealedWriterLineageV3(item.token),
-    };
-  });
-  return { version: 2, items };
-}
-
 export function normalizeLineageRanges(ranges: readonly ContentLineage[]): LineageRange[] {
   const sorted = ranges.map(validateRange).sort(compareRanges);
   const normalized: LineageRange[] = [];
@@ -137,75 +91,6 @@ export function subtractLineageRanges(
   return normalizeLineageRanges(remaining);
 }
 
-export function sealedWriterLineageV3(input: {
-  documentId: string;
-  protectedRoots: readonly ContentLineage[];
-  responseCausalCutId: string;
-}): SealedWriterLineageV3 {
-  if (input.documentId.length === 0) throw new Error("Lineage token documentId must not be empty");
-  if (input.responseCausalCutId.length === 0) {
-    throw new Error("Lineage token responseCausalCutId must not be empty");
-  }
-  return {
-    version: 3,
-    documentId: input.documentId,
-    protectedRoots: normalizeLineageRanges(input.protectedRoots),
-    responseCausalCutId: input.responseCausalCutId,
-  };
-}
-
-export function parseSealedWriterLineageV3(value: unknown): SealedWriterLineageV3 {
-  if (
-    !isRecord(value) ||
-    value.version !== 3 ||
-    typeof value.documentId !== "string" ||
-    typeof value.responseCausalCutId !== "string"
-  ) {
-    throw new Error("Invalid sealed writer lineage v3 token");
-  }
-  if (
-    value.documentId.length === 0 ||
-    value.responseCausalCutId.length === 0 ||
-    !Array.isArray(value.protectedRoots)
-  ) {
-    throw new Error("Lineage token requires a document, causal cut, and protected roots");
-  }
-  const protectedRoots = value.protectedRoots.map(validateRange);
-  assertNormalized(protectedRoots);
-  return {
-    version: 3,
-    documentId: value.documentId,
-    responseCausalCutId: value.responseCausalCutId,
-    protectedRoots: protectedRoots.map((range) => ({ ...range })),
-  };
-}
-
-/** Fail closed unless every claimed protection root is classified by the canonical view. */
-export function validateWriterProtectionScope(
-  token: SealedWriterLineageV3,
-  view: WriterProtectionRootView,
-): SealedWriterLineageV3 {
-  for (const root of token.protectedRoots) {
-    if (view.provenanceOf(token.documentId, root) !== "writer_protected") {
-      throw new Error("Writer protection scope contains an unresolved or non-writer root");
-    }
-  }
-  return token;
-}
-
-function assertNormalized(ranges: readonly LineageRange[]): void {
-  for (let index = 1; index < ranges.length; index += 1) {
-    const previous = ranges[index - 1];
-    const current = ranges[index];
-    if (compareRanges(previous, current) >= 0) {
-      throw new Error("Lineage token ranges must be sorted and unique");
-    }
-    if (previous.clientID === current.clientID && current.clock <= rangeEnd(previous)) {
-      throw new Error("Lineage token ranges must be merged and non-overlapping");
-    }
-  }
-}
-
 function subtractRange(source: LineageRange, removed: readonly LineageRange[]): LineageRange[] {
   let segments = [source];
   for (const cut of removed) {
@@ -240,10 +125,6 @@ function validateRange(value: unknown): LineageRange {
     throw new Error("Lineage ranges require non-negative safe integers and positive length");
   }
   return { clientID: clientID as number, clock: clock as number, length: length as number };
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function compareRanges(left: LineageRange, right: LineageRange): number {

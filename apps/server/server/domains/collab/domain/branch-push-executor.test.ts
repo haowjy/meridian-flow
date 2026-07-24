@@ -6,8 +6,6 @@ import {
   createAgentEditCodec,
   createAgentEditCore,
   type DocumentCoordinator,
-  digestRenderedContent,
-  type ObservationSnapshotStore,
   snapshotBlocks,
   toDocHandle,
   yProsemirrorModel,
@@ -316,10 +314,7 @@ class Harness {
     });
   }
 
-  service(
-    changeTrails?: ChangeTrailPersistence,
-    safety?: { notices?: NoticePort; observations?: ObservationSnapshotStore },
-  ) {
+  service(changeTrails?: ChangeTrailPersistence, safety?: { notices?: NoticePort }) {
     this.trailPersistence = changeTrails;
     return createBranchPushService({
       branchStore: this.branchStore,
@@ -330,7 +325,6 @@ class Harness {
       model,
       codec,
       notices: safety?.notices,
-      observations: safety?.observations,
     });
   }
 }
@@ -785,12 +779,10 @@ describe("createBranchPushService", () => {
     { origin: "human:user-2", pushKind: "whole", expected: "push_concurrent_conflict" },
     { origin: "human:user-2", pushKind: "selected", expected: "push_concurrent_conflict" },
     { origin: "human:user-2", pushKind: "auto", expected: "pushed" },
-    { origin: "human:user-2", pushKind: "auto", observed: true, expected: "pushed" },
     { origin: "agent:other-turn", pushKind: "whole", expected: "pushed" },
   ])("gates $pushKind destructive pushes on pre-existing $origin edits", async ({
     origin,
     pushKind,
-    observed,
     expected,
   }) => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
@@ -859,10 +851,6 @@ describe("createBranchPushService", () => {
         seq: 0,
       },
     );
-    const observedBlock = snapshotBlocks(toDocHandle(liveDoc), model, agentCodec)[0];
-    if (observed) {
-      row.updateMeta = { authoringResponseId: "response-observed-live-edit" };
-    }
     // The pull reaches the branch after the delete was authored; delete-wins
     // hides the inserted text there, which is exactly the destructive case.
     Y.applyUpdate(branchDoc, Y.encodeStateAsUpdate(liveDoc));
@@ -901,26 +889,6 @@ describe("createBranchPushService", () => {
       },
       model,
       codec,
-      observations:
-        observed && observedBlock
-          ? {
-              seal: async () => {},
-              load: async (responseId) => ({
-                responseId,
-                entries: [
-                  {
-                    documentId: DOCUMENT_ID,
-                    clientID: observedBlock.clientID as number,
-                    clock: observedBlock.clock as number,
-                    value: {
-                      kind: "rendered" as const,
-                      digest: digestRenderedContent(observedBlock.renderedContent as string),
-                    },
-                  },
-                ],
-              }),
-            }
-          : undefined,
       notices,
       resolveDocumentTitle: async () => "The Ninefold Furnace",
     });
@@ -3926,25 +3894,6 @@ class ThreadPeerPushHarness {
   createThreadPeerCore() {
     const pending = createBranchPendingJournalEntries();
     const watermarks = createBranchConcurrentJournalWatermarks();
-    const observed = docFromUpdate(this.work.state);
-    const observationEntries = snapshotBlocks(toDocHandle(observed), model, agentCodec).map(
-      (block) => ({
-        documentId: DOCUMENT_ID,
-        clientID: block.clientID as number,
-        clock: block.clock as number,
-        value: {
-          kind: "rendered" as const,
-          digest: digestRenderedContent(block.renderedContent as string),
-        },
-      }),
-    );
-    observed.destroy();
-    const observationSnapshots: ObservationSnapshotStore = {
-      async seal() {},
-      async load(responseId) {
-        return { responseId, entries: observationEntries };
-      },
-    };
     const createCoreForCoordinator = (coordinator: DocumentCoordinator) =>
       createAgentEditCore({
         journal: createBranchAgentEditJournal({
@@ -3958,7 +3907,6 @@ class ThreadPeerPushHarness {
         },
         codec: agentCodec,
         model,
-        observationSnapshots,
         defaultThreadId: THREAD_ID,
         createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       });
