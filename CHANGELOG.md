@@ -13,6 +13,9 @@
 - `packages/agent-edit`: response commit attempts now own one acceptance value
   and one settled-receipt promise instead of mirroring durability across
   lifecycle records and unreachable rollback branches (#344).
+- `packages/agent-edit`: cold reversal reconstruction now owns its prose-order
+  repair instead of hiding a second update synthesizer in tool orchestration
+  (#344).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).

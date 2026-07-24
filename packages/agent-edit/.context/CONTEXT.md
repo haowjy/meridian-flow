@@ -218,7 +218,8 @@ its concern. Production modules (excluding colocated tests) are:
 | `write-helpers.ts` | Shared parsing, identity, and error helpers. |
 | `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
 | `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
-| `write-reversal.ts` | Executes write-level undo/redo from durable journal reconstruction. |
+| `write-reversal.ts` | Selects, submits, persists, and reports write-level undo/redo. |
+| `undo/reversal-reconstruction.ts` | Synthesizes one cold undo/redo update, including plain-text order repair. |
 | `write.ts` | Wires the modules into the public `WriteTool`; it contains no command implementation. |
 | `test-support/` | Shared package-test journals, harnesses, scenarios, and assertions. |
 
