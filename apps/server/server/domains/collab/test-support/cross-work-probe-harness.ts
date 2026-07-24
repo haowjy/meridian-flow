@@ -23,7 +23,7 @@ export const WORK_B_ID = "00000000-0000-4000-8000-000000000820" as WorkId;
 export const THREAD_B_ID = "00000000-0000-4000-8000-000000000821" as ThreadId;
 export const TURN_B_ID = "00000000-0000-4000-8000-000000000822" as TurnId;
 
-export type CrossWorkProbeObservation = {
+export type CrossWorkProbeResult = {
   case: "manual" | "auto";
   aApply: {
     status: string;
@@ -80,7 +80,7 @@ function serializeMarkdown(fixture: CrossWorkProbeFixture, doc: Y.Doc): string {
 export async function runCrossWorkProbe(
   fixture: CrossWorkProbeFixture,
   probeCase: "manual" | "auto",
-): Promise<CrossWorkProbeObservation> {
+): Promise<CrossWorkProbeResult> {
   const {
     db,
     schema,
