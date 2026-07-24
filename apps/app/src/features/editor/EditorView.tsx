@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
+import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -164,6 +165,23 @@ function SessionEditorView({
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
+  const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
+
+  const openPeerMark = useCallback(
+    (eventTarget: EventTarget | null): boolean => {
+      if (inReview || !(eventTarget instanceof Element)) return false;
+      const element = eventTarget.closest<HTMLElement>("[data-peer-mark]");
+      const changeId = element?.dataset.peerMark;
+      if (!element || !changeId) return false;
+      const marker = session.markerStore
+        .getSnapshot()
+        .find((candidate) => candidate.changeId === changeId && !candidate.dismissed);
+      if (!marker) return false;
+      setPeerMarkTarget({ marker, element });
+      return true;
+    },
+    [inReview, session.markerStore],
+  );
 
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
@@ -271,6 +289,14 @@ function SessionEditorView({
             return true;
           },
           handleDOMEvents: {
+            click(_view, event) {
+              return openPeerMark(event.target);
+            },
+            keydown(_view, event) {
+              if (event.key !== "Enter" || !openPeerMark(event.target)) return false;
+              event.preventDefault();
+              return true;
+            },
             dragenter(_view, event) {
               if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
               return false;
@@ -306,6 +332,7 @@ function SessionEditorView({
       ariaLabel,
       showCollaborationDecorations,
       inReview,
+      openPeerMark,
     ],
   );
 
@@ -449,6 +476,14 @@ function SessionEditorView({
           ) : undefined
         }
         uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+      />
+      <PeerMarkPopover
+        key={peerMarkTarget?.marker.changeId ?? "closed"}
+        target={peerMarkTarget}
+        markerStore={session.markerStore}
+        onOpenChange={(open) => {
+          if (!open) setPeerMarkTarget(null);
+        }}
       />
     </section>
   );

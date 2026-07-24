@@ -19,6 +19,10 @@ Yjs document session. It must stay structurally aligned with
 - Live sessions may use versioned IndexedDB persistence. Draft review sessions
   do not: the draft Hocuspocus room is server-persisted and short-lived, and a
   local draft cache risks stale recovery across review sessions.
+- Live peer marks are the session projection of durable trail changes. Their
+  anchored popover lazy-reads trail detail and the originating thread snapshot;
+  recovery uses the trail forward-action endpoint and removes the session mark
+  only after success.
 - Live `DocumentSession`s own an ephemeral `SessionMarkerStore` sidecar.
   Change-event replace sets survive editor remounts during the registry's
   retention window but are never persisted or projected into branch rooms.

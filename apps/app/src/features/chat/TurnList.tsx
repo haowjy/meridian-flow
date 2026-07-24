@@ -37,6 +37,7 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { useConversationReveal } from "./conversation-reveal";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
@@ -72,6 +73,7 @@ export function TurnList({
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
+  const conversationReveal = useConversationReveal(threadId);
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
@@ -107,6 +109,12 @@ export function TurnList({
   //      exactly what "was it above the viewport" should be judged against.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
+
+  useEffect(() => {
+    if (!conversationReveal?.turnId) return;
+    const index = visibleTurns.findIndex((turn) => turn.id === conversationReveal.turnId);
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
+  }, [conversationReveal, virtualizer, visibleTurns]);
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
   // append, on measured streaming-row growth, and on composer-inset change — and
