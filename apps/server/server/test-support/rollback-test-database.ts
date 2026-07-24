@@ -15,7 +15,11 @@ export interface RollbackTestDatabase {
  */
 export function useRollbackTestDatabase(
   databaseUrl: string,
-  options?: { max?: number; prepareSuite?: (db: Database) => Promise<void> },
+  options?: {
+    max?: number;
+    /** Durable worker baseline; must be safe for later suites sharing the worker DB. */
+    prepareSuite?: (db: Database) => Promise<void>;
+  },
 ): RollbackTestDatabase {
   const root = createDb(databaseUrl, options);
   let current = root;

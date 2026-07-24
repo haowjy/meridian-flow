@@ -11,7 +11,7 @@ if (!enabled || !databaseUrl) {
   });
 } else {
   describe("fresh database migrations (postgres)", () => {
-    it("applies the complete migration chain to an empty database", async () => {
+    it("exposes the expected catalog on the runner-migrated database", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       try {
         const rows = await target<{ table_name: string }[]>`

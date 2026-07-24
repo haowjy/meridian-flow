@@ -25,14 +25,17 @@ import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 export type RuntimeGate<T = void> = {
   promise: Promise<T>;
   open(value: T): void;
+  reject(reason?: unknown): void;
 };
 
 export function runtimeGate<T = void>(): RuntimeGate<T> {
   let open!: (value: T) => void;
-  const promise = new Promise<T>((resolve) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolve, onReject) => {
     open = resolve;
+    reject = onReject;
   });
-  return { promise, open };
+  return { promise, open, reject };
 }
 
 type RuntimeTestRigOptions = {
