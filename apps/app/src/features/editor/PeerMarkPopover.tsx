@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { TrailChangeV1 } from "@meridian/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { applyTrailForwardAction, readChangeTrail } from "@/client/change-trails";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -11,9 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { changeMarkLabel } from "@/core/editor/change-mark-labels";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
 import { trailChangeForwardAction, trailChangeLabel } from "@/features/chat/ChangeViewRows";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
+import { changeTrailDetailKey } from "@/features/chat/useAuthorizedChangeTrailDetail";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
 
@@ -36,10 +38,14 @@ export function PeerMarkPopover({
   const queryClient = useQueryClient();
   const [actionState, setActionState] = useState<"idle" | "pending" | "applied" | "failed">("idle");
   const detail = useQuery({
-    queryKey: ["change-trail-detail", agentAuthor?.threadId, marker?.group.trailId, "peer-mark"],
+    queryKey: [
+      ...changeTrailDetailKey(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
+      "peer-mark",
+    ],
     queryFn: () => readChangeTrail(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
     enabled: Boolean(marker && agentAuthor),
     staleTime: 0,
+    gcTime: 0,
   });
   const snapshot = useQuery({
     queryKey: agentAuthor ? threadQueryKeys.snapshot(agentAuthor.threadId) : ["peer-mark-writer"],
@@ -67,6 +73,24 @@ export function PeerMarkPopover({
   virtualAnchor.current.getBoundingClientRect = () =>
     target?.element.getBoundingClientRect() ?? new DOMRect();
 
+  useEffect(() => {
+    if (!marker || !agentAuthor) return;
+    const queryKey = changeTrailDetailKey(agentAuthor.threadId, marker.group.trailId);
+    const evict = () => {
+      void queryClient.removeQueries({ queryKey });
+    };
+    const unsubscribe = getDocumentSessionRegistry().observe(
+      marker.group.documentId,
+      (document) => {
+        if (document.status === "access-lost") evict();
+      },
+    );
+    return () => {
+      unsubscribe();
+      evict();
+    };
+  }, [agentAuthor, marker, queryClient]);
+
   if (!marker || !target) return null;
   const currentMarker = marker;
   const colorIdentity =
@@ -77,10 +101,7 @@ export function PeerMarkPopover({
       : t`Collaborator`;
   const action = change ? trailChangeForwardAction(change) : "restore";
   const durableAction = change?.forwardActions?.[action];
-  const canRecover = Boolean(
-    change &&
-      (change.kind !== "insert" || change.writerProtection || change.swept || durableAction),
-  );
+  const canRecover = Boolean(change && (change.writerProtection || change.swept || durableAction));
   const applied = actionState === "applied" || durableAction?.status === "applied";
   const removedText = change ? removedTextFor(change) : marker.excerpt;
 

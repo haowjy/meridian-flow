@@ -4,7 +4,8 @@ import { useCallback, useEffect } from "react";
 import { type ChangeTrailShell, readChangeTrail } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
-const detailKey = (threadId: string, trailId: string) => ["change-trail-detail", threadId, trailId];
+export const changeTrailDetailKey = (threadId: string, trailId: string) =>
+  ["change-trail-detail", threadId, trailId] as const;
 
 export function useAuthorizedChangeTrailDetail(
   threadId: string,
@@ -14,10 +15,10 @@ export function useAuthorizedChangeTrailDetail(
   const queryClient = useQueryClient();
   const settled = shell.state === "settled";
   const evict = useCallback(() => {
-    void queryClient.removeQueries({ queryKey: detailKey(threadId, shell.trailId) });
+    void queryClient.removeQueries({ queryKey: changeTrailDetailKey(threadId, shell.trailId) });
   }, [queryClient, shell.trailId, threadId]);
   const detail = useQuery({
-    queryKey: [...detailKey(threadId, shell.trailId), shell.version],
+    queryKey: [...changeTrailDetailKey(threadId, shell.trailId), shell.version],
     queryFn: () => readChangeTrail(threadId, shell.trailId),
     enabled: enabled && settled,
     staleTime: 0,
@@ -27,7 +28,9 @@ export function useAuthorizedChangeTrailDetail(
 
   useEffect(() => {
     if (!enabled) {
-      void queryClient.removeQueries({ queryKey: detailKey(threadId, shell.trailId) });
+      void queryClient.removeQueries({
+        queryKey: changeTrailDetailKey(threadId, shell.trailId),
+      });
       return;
     }
     const registry = getDocumentSessionRegistry();

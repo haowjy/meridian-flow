@@ -4,7 +4,7 @@ import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
-import { changeMarkLabel } from "../change-mark-labels";
+import { changeMarkLabel, collaboratorChangeLabel } from "../change-mark-labels";
 import { collaborationColorFor } from "../collaboration-colors";
 import {
   relativePositionRuntimeFromState,
@@ -31,7 +31,7 @@ function markerColor(marker: SessionMarker): string {
 function markerLabel(marker: SessionMarker): string {
   return marker.author.kind === "agent"
     ? changeMarkLabel(marker.kind, marker.pureDeletionOffset)
-    : "Collaborator edited text";
+    : collaboratorChangeLabel();
 }
 
 function interactiveAttributes(marker: SessionMarker): Record<string, string> {
@@ -164,8 +164,17 @@ export function markersClearedByWriterTransaction(
   const cleared: string[] = [];
   for (const marker of markers) {
     if (marker.dismissed) continue;
-    const resolved = resolvedMarkerPosition(marker, oldState);
-    if (!resolved) continue;
+    const markerPosition = resolvedMarkerPosition(marker, oldState);
+    if (!markerPosition) continue;
+    const resolved =
+      marker.kind === "modify" &&
+      marker.pureDeletionOffset !== null &&
+      markerPosition.type === "range"
+        ? {
+            type: "boundary" as const,
+            pos: pureDeletionPosition(oldState, markerPosition.from, marker.pureDeletionOffset),
+          }
+        : markerPosition;
     let from = resolved.type === "range" ? resolved.from : resolved.pos;
     let to = resolved.type === "range" ? resolved.to : resolved.pos;
     let clear = false;
