@@ -360,6 +360,11 @@ function writeCertifiedProvenanceFacts(
       const length = run.output.to - run.output.from;
       const targetRuns = sliceRanges(inserted, outputCursor, length);
       if (run.kind === "preserved" || run.kind === "restoration") {
+        if (run.kind === "restoration" && length !== run.root.length) {
+          throw new ProvenanceMaterializationError(
+            "Restoration output must map length-for-length to its certified root",
+          );
+        }
         const roots =
           run.kind === "preserved"
             ? resolvedRootUnits(existingAssignments, run.source)

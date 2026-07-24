@@ -146,6 +146,25 @@ describe("provenance materialization", () => {
     });
   });
 
+  it("rejects restoration output wider than its certified root at the writer boundary", () => {
+    const doc = proseDoc("a");
+    const source = textRange(doc);
+    const before = Y.encodeStateVector(doc);
+    const text = proseText(doc);
+    text.delete(0, 1);
+    text.insert(0, "XY");
+
+    expect(() =>
+      createSemanticProvenanceWriter().writeCertifiedFacts(
+        doc as never,
+        mappedTextIr(proseBlock(doc), source, "XY", [
+          { kind: "restoration", root: source, payload: "XY", output: { from: 0, to: 2 } },
+        ]),
+        before,
+      ),
+    ).toThrow(/length-for-length/);
+  });
+
   it("maps reverse-declared edits through their insertion order before visible order", () => {
     const doc = proseDoc("one");
     const firstRoot = textRange(doc);
