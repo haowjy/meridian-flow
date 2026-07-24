@@ -94,15 +94,21 @@ describe("provenance materialization", () => {
       before,
     );
 
-    const restored = materializeCandidateProvenance(doc, [
+    const visible = materializeCandidateProvenance(doc, [
       { target: source, root: source, birthClass: "writer_protected" },
-    ]).find(
-      (run) =>
-        run.root.clientID === restoredRoot.clientID &&
-        run.root.clock === restoredRoot.clock &&
-        run.root.length === restoredRoot.length &&
-        run.target.clock !== run.root.clock,
-    );
+    ]);
+    const [fresh, retainedRun, restored] = visible;
+    expect(visible).toHaveLength(3);
+    expect(fresh).toEqual({
+      target: fresh?.target,
+      root: fresh?.target,
+      birthClass: "agent",
+    });
+    expect(retainedRun).toEqual({
+      target: retained,
+      root: retained,
+      birthClass: "writer_protected",
+    });
     expect(restored).toMatchObject({
       root: restoredRoot,
       birthClass: "writer_protected",

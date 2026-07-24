@@ -324,13 +324,18 @@ function writeCertifiedProvenanceFacts(
   );
   const visibleProse = visibleProseStringRanges(doc);
   const allInserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
-  const inserted = allInserted.filter((range) =>
-    visibleProse.some(
-      (visible) =>
-        visible.clientID === range.clientID &&
-        visible.clock <= range.clock &&
-        end(visible) >= end(range),
-    ),
+  const inserted = visibleProse.flatMap((visible) =>
+    allInserted
+      .filter((range) => rangesOverlap(visible, range))
+      .map((range) => {
+        const clock = Math.max(visible.clock, range.clock);
+        return {
+          clientID: visible.clientID,
+          clock,
+          length: Math.min(end(visible), end(range)) - clock,
+        };
+      })
+      .sort((left, right) => left.clock - right.clock),
   );
   const declaredLength = materializedRuns.reduce(
     (sum, run) => sum + run.output.to - run.output.from,
