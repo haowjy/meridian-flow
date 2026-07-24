@@ -27,6 +27,7 @@ import {
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
@@ -176,6 +177,7 @@ describe("branch-push durable projection", () => {
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         durableProjectionSerializer,
+        createDrizzleDocumentProjectionEffects(db),
         changeTrails,
       ),
       branchCoordinator,
@@ -333,7 +335,12 @@ describe("branch-push durable projection", () => {
       changeTrails,
     );
     const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
-    const settlementStore = createDrizzlePendingSettlementStore(db, serializer, changeTrails);
+    const settlementStore = createDrizzlePendingSettlementStore(
+      db,
+      serializer,
+      createDrizzleDocumentProjectionEffects(db),
+      changeTrails,
+    );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
     const branch = await branchStore.ensureWorkDraftBranch({

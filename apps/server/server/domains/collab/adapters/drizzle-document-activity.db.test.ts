@@ -18,7 +18,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { and, eq } = await import("drizzle-orm");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-    const { touchDocumentActivity, updateMarkdownProjection } = await import(
+    const { createDrizzleDocumentProjectionEffects } = await import(
       "./drizzle-document-activity.js"
     );
 
@@ -105,8 +105,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("touches thread, work, project activity and updates the markdown projection", async () => {
-      await touchDocumentActivity(db, DOC_ID, THREAD_ID, NOW);
-      await updateMarkdownProjection(db, DOC_ID, "fresh projection", NOW);
+      await createDrizzleDocumentProjectionEffects(db).apply({
+        documentId: DOC_ID,
+        markdown: "fresh projection",
+        at: NOW,
+        threadDocuments: { kind: "thread", threadId: THREAD_ID },
+        work: { kind: "document_scope" },
+        project: {
+          kind: "document_scope",
+          includeWorkProject: true,
+          activeDocumentsOnly: false,
+        },
+      });
 
       const [threadDocument] = await db
         .select({ lastTouchedAt: threadDocuments.lastTouchedAt })
