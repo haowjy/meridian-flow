@@ -128,7 +128,7 @@ export async function provisionAuthenticatedUser(
     });
   }
 
-  await deps.projects.ensureDefaultBootstrap(userId);
+  await deps.projects.ensureDefaultBootstrapReady(userId);
 
   return userId;
 }

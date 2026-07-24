@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: authenticated request fan-out now reads a durable bootstrap-ready
+  flag instead of re-locking and re-seeding completed default workspaces; seed
+  failures stay repairable without failing unrelated requests (#358).
 - `apps/server`: concurrent turn starts now serialize on the thread row and
   return a 409 conflict instead of leaking PostgreSQL's single-root violation.
 - `agent-edit`: find-all now replaces exact same-block ranges without re-authoring
