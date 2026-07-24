@@ -507,7 +507,7 @@ describe("runtime orchestrator behavior", () => {
     expect(secondRequest).toContain("abcd|Human changed line.");
   });
 
-  it("drains undo and newly recorded late-sweep notices before each model call", async () => {
+  it("drains undo and newly recorded awareness notices before each model call", async () => {
     const requests: GenerateRequest[] = [];
     const gateway: Gateway = {
       ...gatewayStubDefaults,
@@ -567,15 +567,14 @@ describe("runtime orchestrator behavior", () => {
           uri: "manuscript://chapter-1.md",
           direction: "undo",
         },
-        writerVisible: false,
         createdAt: new Date("2026-06-27T00:00:00.000Z"),
       },
     ]);
     let drainCount = 0;
     const drain = notices.drainForModelContext.bind(notices);
-    notices.drainForModelContext = async (threadId, activeDocumentIds) => {
+    notices.drainForModelContext = async (threadId) => {
       drainCount += 1;
-      return drain(threadId, activeDocumentIds);
+      return drain(threadId);
     };
     const deps = createTestOrchestratorDeps({
       gateway,
@@ -589,17 +588,13 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse() {
           await notices.record({
-            kind: "late_sweep",
+            kind: "awareness_degraded",
             scope: { kind: "thread", threadId: thread.id },
-            message: "Content was modified — View change",
+            message: "Document awareness degraded",
             data: {
               documentId: "00000000-0000-4000-8000-000000000002",
               documentName: "chapter-2.md",
-              affectedBlockHashes: ["hash-swept"],
-              capturedDeletedBodies: [{ hash: "hash-swept", body: "Writer body." }],
-              beforeContentRef: 42,
             },
-            writerVisible: true,
           });
           return { status: "committed", concurrentEdits: [] };
         },
@@ -617,10 +612,9 @@ describe("runtime orchestrator behavior", () => {
     expect(JSON.stringify(requests[0]?.messages)).toContain(
       "The writer reversed the following edits before this message",
     );
-    expect(JSON.stringify(requests[1]?.messages)).not.toContain(
-      "Before-state journal reference: 42",
+    expect(JSON.stringify(requests[1]?.messages)).toContain(
+      "could not verify whether concurrent writer content was preserved",
     );
-    expect(JSON.stringify(requests[1]?.messages)).not.toContain("hash-swept");
   });
 
   it("does not let debug capture failure prevent a notice-bearing model call", async () => {

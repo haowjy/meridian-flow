@@ -34,11 +34,12 @@ state is a live document.
 | Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
 | Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
+| Post-apply live-room change events | `domain/ports/change-event-delivery.ts`, `adapters/hocuspocus-change-event-delivery.ts` |
 | Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
 | Offline late reconciliation | `domain/offline-reconciliation.ts` |
-| Safety-notice production + writer delivery | `composition.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
+| Model-context notice production + delivery | `composition.ts`, `domains/notices/` |
 
 ## Write codec and schema coherence
 
@@ -192,9 +193,22 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
+- **Committed projection delivery**: aggregate recording returns the persisted
+  post-fold replace-set with its durable occurrence revision. The push transition
+  may deliver it only after `completeUnderFence` reports applied/already-applied.
+  Message authorship comes from the trail shell owner. Each projected change,
+  rather than the cumulative message, carries the admitting user resolved from
+  its surviving `push_lineage` row inside the aggregate transaction; missing
+  lineage is explicitly `null`.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
+- **Replacement projection**: one journal row that replaces a block, or exactly
+  one delete row followed immediately by exactly one insert row at the same
+  block ordinal in one push, is one `modify` change anchored to the inserted
+  block. This is structural Yjs/journal evidence, never text similarity;
+  non-adjacent, multi-delete, and multi-insert effects remain independent
+  changes. The removed body remains the writer-protection payload.
 - **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.
@@ -256,10 +270,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
   Swept trail details retain the normalized final-pre-push target ranges and exact
-  final-pre-push body. Settlement refines a complete provisional push trail in its
-  existing aggregate version; only journal or staged-push authority joined after
-  the durable commit publishes another trail version. A complete empty
-  classification removes that push's provisional changes in the same version.
+  final-pre-push body. Settlement carries a typed refinement outcome: final
+  destructive classifications demote provisional sweep metadata while retaining
+  ordinary edit history; a genuinely empty contribution explicitly replaces that
+  push with an empty set. Same joined authority refines the existing aggregate
+  version; only journal or staged-push authority joined after the durable commit
+  publishes another trail version.
+  A surviving textblock whose non-empty body becomes empty projects as a deletion
+  at that block's boundary, not as a zero-width modification range.
 - **Settlement verification stack**: the shared killed-process oracle in
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
   Fixtures run a warm control, stop an identical subject at the durable commit

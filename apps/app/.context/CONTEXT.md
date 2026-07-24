@@ -23,12 +23,13 @@ false in production and requires `WORKOS_DEV_AUTOLOGIN=1` plus
 
 ## State + transport seams
 
-Hocuspocus stateless `safety_notice` messages enter through the existing
-document transport and are retained on `DocumentSession`. No production visual
-surface currently reads or dismisses that state. `beforeContentRef` is retained
-in the notice payload, but the client has no reconstruction endpoint keyed by
-that reference.
+Writer-facing AI change reporting uses the durable Trail/Restore surface and
+session change marks. `DocumentSession` owns collaboration state only; it does
+not retain a parallel safety-notice presentation model.
 
+Session change-mark self-suppression uses the canonical internal Meridian
+`UserId` from `/api/auth/me`, matching `change_event.admittedByUserId`. WorkOS
+external ids authenticate the shell but never identify collaboration records.
 Two interfaces are the only paths between the visual layer and the substrate:
 
 - **`ThreadStoreState` / `ThreadStoreActions`** (`src/client/stores/thread-store/types.ts`) —

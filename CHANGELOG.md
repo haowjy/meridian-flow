@@ -2,34 +2,7 @@
 
 ## [Unreleased]
 
-- `apps/server`: Manual Apply now refuses stale replacements that enclose
-  post-base writer insertions while retaining unrelated selective merges (#335).
-- `packages/agent-edit`, `apps/server`: destructive agent writes now always report
-  recoverable writer-lineage loss; observation no longer suppresses live,
-  offline, or auto-push reports (#333).
-- `packages/agent-edit`, `apps/server`, `packages/database`: removed the
-  response-observation/causal-cut hierarchy; durable provenance and current
-  settlement state are now the sole destructive-reporting authority (#333).
-- `apps/server`: live and branch writer frames now share one admission order:
-  authority/generation validation, containment acknowledgement, fresh-authorship
-  validation, then durable append (#334).
-- `packages/agent-edit`: immediate writes, local-runtime sync, and response
-  phase-C projection now share one journal-first, lock-scoped apply kernel
-  (#334).
-- `apps/server`: branch push orchestration now delegates immutable-base Manual
-  Apply preparation and trail/notice projection to typed modules (#334).
-- `packages/agent-edit`, `apps/server`: Draft-mode undo/redo now targets
-  generation-local, response-grouped branch handles atomically without writing
-  live reversal history; durable projection failures recover and report the
-  committed reversal honestly, and handles folded into one Apply reverse as one
-  durable live group (#332).
-- `apps/app`: project chat resolves one thread and Work for context hydration,
-  Draft Review, headers, and the conversation body (#334).
-- `apps/app`: per-card and whole-draft Apply now share one revision and response
-  disposition policy (#334).
-- `apps/server`: durable authority heads, document mutation policy, and live
-  documents now have distinct collab names and layer-specific failures (#320).
-- `packages/agent-edit`, `apps/server`: the model-facing write contract now
+B- `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
@@ -141,7 +114,7 @@
 - `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
   protected — a conflicting stale cross-Work Apply refuses
   (`push_concurrent_conflict`) and lands in ordinary re-review; any sweep of
-  approved text is captured with durable body, writer notice, and Restore.
+  approved text is captured in the durable Trail with its body and Restore.
   Previously approved text was classified as ordinary AI text and could be
   silently destroyed.
 - `apps/app`, `apps/server`: Apply (including Apply-all) submits exactly the

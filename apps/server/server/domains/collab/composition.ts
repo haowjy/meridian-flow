@@ -13,6 +13,7 @@ import {
   type ReversalNoticeFailedDetail,
   type ReversalNoticePort,
   type ReversalStore,
+  type TurnDiffQuery,
   toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
@@ -60,8 +61,10 @@ import {
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
+import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
+import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -158,30 +161,6 @@ function documentTitleFromUri(uri: string | null): string | null {
   return segment.replace(/\.[^.]+$/, "");
 }
 
-export async function recordLateSweepNotice(input: {
-  notices: NoticePort;
-  resolveDocumentUri: DocumentUriResolver;
-  threadId: string;
-  documentId: string;
-  lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
-}): Promise<void> {
-  const uri = await input.resolveDocumentUri(input.documentId);
-  await input.notices.record({
-    kind: "late_sweep",
-    scope: { kind: "thread", threadId: input.threadId },
-    message: "Content was modified — View change",
-    data: {
-      documentId: input.documentId,
-      documentName: documentTitleFromUri(uri) ?? input.documentId,
-      uri,
-      affectedBlockHashes: input.lateSweep.affectedBlockHashes,
-      capturedDeletedBodies: input.lateSweep.capturedDeletedBodies ?? [],
-      beforeContentRef: input.lateSweep.beforeContentRef,
-    },
-    writerVisible: true,
-  });
-}
-
 export async function recordAwarenessDegradedNotice(input: {
   notices: NoticePort;
   resolveDocumentUri: DocumentUriResolver;
@@ -200,7 +179,6 @@ export async function recordAwarenessDegradedNotice(input: {
     message:
       "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
     data: { documentIds: [...input.documentIds], documentNames },
-    writerVisible: false,
   });
 }
 
@@ -302,6 +280,7 @@ export type CollabFacadeDeps = {
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   documentAuthorityHeads: DocumentAuthorityHeads;
+  turnDiffQuery?: TurnDiffQuery;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
@@ -390,17 +369,11 @@ export function createReversalNoticePort(deps: {
           sweptContent: input.sweptContent,
           beforeContentRef: input.beforeContentRef,
         },
-        writerVisible: false,
       });
     },
-    async recordLateSweep(input) {
-      await recordLateSweepNotice({
-        notices: deps.notices,
-        resolveDocumentUri: deps.documentUriResolver,
-        threadId: input.threadId,
-        documentId: input.docId,
-        lateSweep: input.report,
-      });
+    recordLateSweep() {
+      // The mutation echo and durable trail already report this effect.
+      return Promise.resolve();
     },
   };
 }
@@ -483,7 +456,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       codec: mdxCodec({ schema: buildDocumentSchema() }),
     },
     changeTrails,
-    deps.notices,
   );
   let writerIngressBarrier: WriterIngressBarrier | undefined;
   const branchPushIngressBarrier: WriterIngressBarrier = {
@@ -500,8 +472,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
-    notices: deps.notices,
     writerIngressBarrier: branchPushIngressBarrier,
+    changeEventDelivery: createHocuspocusChangeEventDelivery({
+      hocuspocus,
+      eventSink: deps.eventSink,
+    }),
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });
@@ -518,6 +493,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lifecycle,
     initialDocumentSeeds: lifecycle,
     documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
+    turnDiffQuery: createDrizzleTurnDiffQuery(deps.db, journal.documentsForTurn.bind(journal)),
     store,
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
@@ -673,6 +649,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       codec,
       model,
       semanticProvenance,
+      turnDiffQuery: deps.turnDiffQuery,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       ...agentEditObservabilityOptions(deps),
@@ -719,6 +696,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             codec,
             model,
             semanticProvenance,
+            turnDiffQuery: deps.turnDiffQuery,
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
@@ -1103,9 +1081,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     store: deps.store,
     latestUpdateSeq,
     markdownDocuments,
-    notices: deps.notices,
-    model,
-    codec,
     ...(authorityHeadCallbacks
       ? {
           mutationPolicy: (documentId: DocumentId) =>
@@ -1514,36 +1489,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           );
       }
       for (const document of result.documents) {
-        const { lateSweep } = document;
-        if (lateSweep) {
-          if (deps.notices)
-            await recordNoticeAfterDurability(
-              {
-                notices: deps.notices,
-                eventSink: deps.eventSink,
-                threadId: ctx.threadId,
-                documentIds: [document.documentId],
-                kind: "late_sweep",
-                responseId,
-                affectedBlockHashes: lateSweep.affectedBlockHashes,
-                recordDegraded: () =>
-                  recordAwarenessDegradedNotice({
-                    notices: deps.notices as NoticePort,
-                    resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
-                    threadId: ctx.threadId,
-                    documentIds: [document.documentId],
-                  }),
-              },
-              () =>
-                recordLateSweepNotice({
-                  notices: deps.notices as NoticePort,
-                  resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
-                  threadId: ctx.threadId,
-                  documentId: document.documentId,
-                  lateSweep,
-                }),
-            );
-        }
         if (deps.branchStore && deps.branchCoordinator) {
           const peer = await deps.branchStore.resolveThreadBranch(
             document.documentId as DocumentId,

@@ -1,15 +1,33 @@
-/** Writer-protection rows inside the existing per-turn Changes view. */
+/** Peer-edit rows with recovery actions inside the existing per-turn Changes view. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
-import { useRef, useState } from "react";
-import { applyTrailForwardAction, type TrailChange } from "@/client/change-trails";
+import type {
+  TrailChangeV1 as TrailChange,
+  TrailForwardAction,
+  TrailForwardActionStateV1,
+} from "@meridian/contracts";
+import { useEffect, useRef, useState } from "react";
+import { applyTrailForwardAction } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
+import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { type ConversationReveal, completeConversationReveal } from "./conversation-reveal";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 /** The sweep label's wording veto lives here: changing this one key changes every sweep row. */
-export const sweepRemovedLabel = () => t`Removed`;
+export const sweepRowText = () => t`Replaced a passage, including edits the agent hadn't seen yet.`;
+
+export function trailChangeLabel(change: TrailChange): string {
+  const protection = protectionFor(change);
+  if (protection?.kind === "resurrection") return t`↻ AI brought back text you deleted`;
+  if (protection?.kind === "sweep") return sweepRowText();
+  return changeKindLabel(change.kind);
+}
+
+export function trailChangeForwardAction(change: TrailChange): TrailForwardAction {
+  return protectionFor(change)?.kind === "resurrection" ? "delete-again" : "restore";
+}
 
 export function ChangeViewRows({
   threadId,
@@ -20,6 +38,7 @@ export function ChangeViewRows({
   runAction = applyTrailForwardAction,
   copyText = copyToClipboard,
   anchorUnavailable = false,
+  reveal = null,
 }: {
   threadId: string;
   trailId: string;
@@ -29,6 +48,7 @@ export function ChangeViewRows({
   runAction?: typeof applyTrailForwardAction;
   copyText?: (text: string) => Promise<void>;
   anchorUnavailable?: boolean;
+  reveal?: ConversationReveal | null;
 }) {
   return (
     <ol className="space-y-2 px-3 pb-2 pl-9">
@@ -45,6 +65,8 @@ export function ChangeViewRows({
             runAction={runAction}
             copyText={copyText}
             anchorUnavailable={anchorUnavailable}
+            emphasized={reveal?.changeId === change.changeId}
+            reveal={reveal}
           />
         ))}
     </ol>
@@ -60,6 +82,8 @@ function ChangeViewRow({
   runAction,
   copyText,
   anchorUnavailable: initiallyUnavailable,
+  emphasized: shouldEmphasize,
+  reveal: conversationReveal,
 }: {
   threadId: string;
   trailId: string;
@@ -69,9 +93,11 @@ function ChangeViewRow({
   runAction: typeof applyTrailForwardAction;
   copyText: (text: string) => Promise<void>;
   anchorUnavailable: boolean;
+  emphasized: boolean;
+  reveal: ConversationReveal | null;
 }) {
   const protection = protectionFor(change);
-  const action = protection?.kind === "resurrection" ? "delete-again" : "restore";
+  const action = trailChangeForwardAction(change);
   const durableActionState: TrailForwardActionStateV1 | undefined = change.forwardActions?.[action];
   const hasCanonicalRestoreAnchor =
     action === "restore" &&
@@ -90,10 +116,19 @@ function ChangeViewRow({
   const [restoreFailed, setRestoreFailed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const actionRequest = useRef<Promise<void> | null>(null);
+  const rowRef = useRef<HTMLLIElement>(null);
+  const [emphasized, setEmphasized] = useState(shouldEmphasize);
   const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
   const body = protectedBody ?? (anchorUnavailable ? bodyFromHashline(change.beforeText) : null);
 
-  async function reveal() {
+  useEffect(() => {
+    if (!shouldEmphasize || !conversationReveal) return;
+    setEmphasized(true);
+    rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    completeConversationReveal(conversationReveal);
+  }, [conversationReveal, shouldEmphasize]);
+
+  async function revealInEditor() {
     const result = await navigateToChange(documentId, change);
     setNavigation(result);
     if (result.kind === "unavailable" && !hasCanonicalRestoreAnchor) setAnchorUnavailable(true);
@@ -116,6 +151,8 @@ function ChangeViewRow({
           return;
         }
         setActionState("applied");
+        const registry = getDocumentSessionRegistry();
+        registry.peek(documentId)?.markerStore.dismiss(change.changeId);
       })
       .catch(() => {
         setRestoreFailed(true);
@@ -140,25 +177,20 @@ function ChangeViewRow({
 
   return (
     <li
-      className="space-y-1.5 rounded-md bg-surface-subtle p-2 text-caption"
+      ref={rowRef}
+      className={`space-y-1.5 rounded-md bg-surface-subtle p-2 text-caption ${
+        emphasized ? "meridian-trail-row-emphasized" : ""
+      }`}
       data-change-view-row={protection?.kind ?? change.kind}
+      onPointerDown={() => setEmphasized(false)}
+      onKeyDown={() => setEmphasized(false)}
     >
       <button
         type="button"
         className="focus-ring text-left font-medium text-prose-foreground"
-        onClick={() => void reveal()}
+        onClick={() => void revealInEditor()}
       >
-        {protection?.kind === "resurrection" ? (
-          <Trans>↻ AI brought back text you deleted</Trans>
-        ) : protection?.kind === "sweep" ? (
-          sweepRemovedLabel()
-        ) : change.kind === "insert" ? (
-          <Trans>AI added text</Trans>
-        ) : change.kind === "modify" ? (
-          <Trans>AI changed text</Trans>
-        ) : (
-          <Trans>AI deleted text</Trans>
-        )}
+        {trailChangeLabel(change)}
       </button>
       {body ? <p className="whitespace-pre-wrap text-prose-foreground">{body}</p> : null}
       {protection && !body ? (

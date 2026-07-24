@@ -1,5 +1,6 @@
 /** Regression coverage for replacing pre-materialization authorization failures. */
 
+import type { AuthMeResponse, ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
@@ -33,6 +34,77 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 const { DocumentSessionRegistry } = await import("./document-session-registry");
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
+  it("uses the bootstrap's internal identity for self-suppression, never its external id", () => {
+    const authMe = {
+      user: {
+        userId: "cfeb7b0d-658d-4469-9d69-8aa381d8899f",
+        externalId: "user_01workos",
+        email: "writer@example.com",
+        name: "Writer",
+        avatarUrl: null,
+      },
+    } satisfies AuthMeResponse;
+    const registry = new DocumentSessionRegistry();
+    const session = registry.getDetached("document-before-auth");
+    registry.setOwnUserId(authMe.user.userId);
+    session.markerStore.replaceGroup({
+      type: "change_event",
+      documentId: "document-before-auth",
+      threadId: "thread-1",
+      trailId: "trail-external",
+      projectionRevision: 1,
+      author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+      changes: [
+        {
+          changeId: "change-external",
+          admittedByUserId: authMe.user.externalId,
+          kind: "delete",
+          navigation: {
+            kind: "deletion_boundary",
+            position: "invalid-but-lazily-decoded",
+            affinity: "before_next",
+          },
+          swept: false,
+          excerpt: null,
+          pureDeletionOffset: null,
+        },
+      ],
+      truncated: false,
+    } satisfies ChangeEventWsMessage);
+
+    expect(session.markerStore.getSnapshot()).toHaveLength(1);
+
+    session.markerStore.replaceGroup({
+      type: "change_event",
+      documentId: "document-before-auth",
+      threadId: "thread-1",
+      trailId: "trail-internal",
+      projectionRevision: 1,
+      author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+      changes: [
+        {
+          changeId: "change-internal",
+          admittedByUserId: authMe.user.userId,
+          kind: "delete",
+          navigation: {
+            kind: "deletion_boundary",
+            position: "invalid-but-lazily-decoded",
+            affinity: "before_next",
+          },
+          swept: false,
+          excerpt: null,
+          pureDeletionOffset: null,
+        },
+      ],
+      truncated: false,
+    } satisfies ChangeEventWsMessage);
+
+    expect(session.markerStore.getSnapshot().map((marker) => marker.group.trailId)).toEqual([
+      "trail-external",
+    ]);
+    registry.destroyAll();
+  });
+
   it("keeps a detached room and its Y.Doc intact until explicit attachment", async () => {
     providers.length = 0;
     const registry = new DocumentSessionRegistry();
@@ -78,6 +150,25 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     expect(session.getSnapshot().status).toBe("destroyed");
     registry.destroyAll();
     vi.useRealTimers();
+  });
+
+  it("peeks during the grace window without cancelling teardown", () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new DocumentSessionRegistry();
+      registry.retain("owner", ["document-peek"]);
+      const session = registry.get("document-peek");
+      registry.release("owner");
+
+      expect(registry.peek("document-peek")).toBe(session);
+      vi.advanceTimersByTime(3_000);
+
+      expect(registry.has("document-peek")).toBe(false);
+      expect(session.getSnapshot().status).toBe("destroyed");
+      registry.destroyAll();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps one session per room while branch rooms remain separate and attached", () => {

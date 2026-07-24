@@ -2,6 +2,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TrailChange } from "@/client/change-trails";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -10,6 +11,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
 const { ChangeViewRows } = await import("./ChangeViewRows");
+const SWEEP_ROW_TEXT = "Replaced a passage, including edits the agent hadn't seen yet.";
 
 // Captured from the G8 S2 durable detail before the diagnostic Restore. Keep
 // this wire-shaped instead of rebuilding the row through component props: the
@@ -44,6 +46,8 @@ const g8SweptDocument = {
       },
       navigation: { kind: "unavailable", reason: "capture_failed" },
       swept: {
+        affectedBlockHash: "7594",
+        beforeContentRef: null,
         removed: {
           status: "available",
           markdown:
@@ -76,7 +80,11 @@ const g8OrdinaryDocument = {
       changeId: "g8-s10-ordinary-change",
       ordinal: 0,
       documentId: "7a59f55a-ee6f-4659-99b4-17fde01a174c",
+      pushId: null,
+      receiptId: null,
       kind: "delete",
+      beforeBlockId: null,
+      afterBlockId: null,
       beforeText:
         "g8-s10-before|G8 S10 CAPTURED ORDINARY BODY: quiet dragons guarded the western gate.",
       afterTextAtReceipt: null,
@@ -92,7 +100,11 @@ function protectedChange(kind: "sweep" | "resurrection"): TrailChange {
     changeId: `change-${kind}`,
     ordinal: 1,
     documentId: "document-1",
+    pushId: null,
+    receiptId: null,
     kind: kind === "sweep" ? "delete" : "insert",
+    beforeBlockId: null,
+    afterBlockId: null,
     beforeText: null,
     afterTextAtReceipt: null,
     navigation: {
@@ -137,7 +149,7 @@ describe("ChangeViewRows", () => {
       async () => {
         expect(document.body.textContent).toContain("Restore");
         expect(document.body.textContent).not.toContain("Copy");
-        await click("Removed");
+        await click(SWEEP_ROW_TEXT);
         expect(document.body.textContent).toContain("Restore");
         expect(document.body.textContent).not.toContain("Copy");
       },
@@ -146,6 +158,28 @@ describe("ChangeViewRows", () => {
 
   it("shows captured sweep words and applies Restore only once", async () => {
     const runAction = vi.fn(async () => ({ status: "applied" as const }));
+    const registry = getDocumentSessionRegistry();
+    const session = registry.getDetached("document-1");
+    session.markerStore.replaceGroup({
+      type: "change_event",
+      documentId: "document-1",
+      threadId: "thread-1",
+      trailId: "trail-1",
+      projectionRevision: 1,
+      author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+      changes: [
+        {
+          admittedByUserId: null,
+          changeId: "change-sweep",
+          kind: "delete",
+          navigation: { kind: "unavailable", reason: "test" },
+          swept: true,
+          excerpt: null,
+          pureDeletionOffset: null,
+        },
+      ],
+      truncated: false,
+    });
     await withReactRoot(
       <ChangeViewRows
         threadId="thread-1"
@@ -156,7 +190,7 @@ describe("ChangeViewRows", () => {
         runAction={runAction}
       />,
       async () => {
-        expect(document.body.textContent).toContain("Removed");
+        expect(document.body.textContent).toContain(SWEEP_ROW_TEXT);
         expect(document.body.textContent).toContain("The writer's exact words.");
         await click("Restore");
         expect(document.body.textContent).toContain("Restored");
@@ -164,8 +198,10 @@ describe("ChangeViewRows", () => {
           [...document.querySelectorAll("button")].some((item) => item.textContent === "Restore"),
         ).toBe(false);
         expect(runAction).toHaveBeenCalledTimes(1);
+        expect(session.markerStore.getSnapshot()[0]?.dismissed).toBe(true);
       },
     );
+    await registry.destroyRoom("document-1");
   });
 
   it("degrades Restore to Copy when live-root validation rejects the anchor", async () => {

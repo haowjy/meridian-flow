@@ -7,13 +7,17 @@ import {
   changeTrailDocumentDetails,
   changeTrailDocumentOccurrences,
   changeTrailShells,
+  pushLineage,
 } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import type {
+  ChangeTrailPersistence,
+  CommittedChangeTrailProjection,
+} from "../domain/ports/change-trail-persistence.js";
 
 export type ChangeTrailAggregateWriter = ChangeTrailPersistence & {
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
@@ -99,6 +103,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
   return {
     async record(input) {
       const tx = currentDrizzleDb(db);
+      const committed: CommittedChangeTrailProjection[] = [];
       const trails = [...input.trails].sort((left, right) =>
         trailIdForOwner(left.owner).localeCompare(trailIdForOwner(right.owner)),
       );
@@ -115,13 +120,13 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailShells)
           .where(eq(changeTrailShells.id, trailId))
           .limit(1);
-        if (input.refineCurrentVersion && !existingShell) {
+        if (input.settlementRefinement?.currentVersion && !existingShell) {
           throw new Error(`Cannot refine missing change trail ${trailId}`);
         }
-        const version = input.refineCurrentVersion
+        const version = input.settlementRefinement?.currentVersion
           ? (existingShell?.version as number)
           : (existingShell?.version ?? 0) + 1;
-        if (!input.refineCurrentVersion) {
+        if (!input.settlementRefinement?.currentVersion) {
           await tx
             .insert(changeTrailShells)
             .values({
@@ -145,7 +150,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
         const incomingPushIds = new Set(trail.changes.map((change) => change.pushId));
-        if (input.replacePushId) incomingPushIds.add(input.replacePushId);
+        if (input.settlementRefinement) incomingPushIds.add(input.settlementRefinement.pushId);
         const persistedChanges = existingDetails.flatMap(
           (detail) => detail.changes as TrailChangeV1[],
         );
@@ -153,14 +158,16 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           incomingPushIds.has(change.pushId),
         );
         const incomingKeys = new Set(trail.changes.map(canonicalChangeKey));
-        const refinementIsComplete = input.replacePushId
+        const refinementIsComplete = input.settlementRefinement
           ? true
           : persistedPushChanges.length === incomingKeys.size &&
             persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
-        const replacement = input.replacePushId
-          ? refinePushChanges(persistedPushChanges, trail.changes)
+        const replacement = input.settlementRefinement
+          ? input.settlementRefinement.kind === "empty_contribution"
+            ? []
+            : refinePushChanges(persistedPushChanges, trail.changes)
           : trail.changes;
-        const changes = input.refineCurrentVersion
+        const changes = input.settlementRefinement?.currentVersion
           ? refinementIsComplete
             ? mergeTrailChanges(
                 persistedChanges.filter((change) => !incomingPushIds.has(change.pushId)),
@@ -168,21 +175,63 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
               )
             : persistedChanges
           : mergeTrailChanges(
-              input.replacePushId
-                ? persistedChanges.filter((change) => change.pushId !== input.replacePushId)
+              input.settlementRefinement
+                ? persistedChanges.filter(
+                    (change) => change.pushId !== input.settlementRefinement?.pushId,
+                  )
                 : persistedChanges,
               replacement,
             );
+        const pushIds = [
+          ...new Set(
+            changes.flatMap((change) =>
+              change.pushId !== null && /^\d+$/.test(change.pushId) ? [Number(change.pushId)] : [],
+            ),
+          ),
+        ];
+        const admitters =
+          pushIds.length === 0
+            ? []
+            : await tx
+                .select({ id: pushLineage.id, pushedByUserId: pushLineage.pushedByUserId })
+                .from(pushLineage)
+                .where(inArray(pushLineage.id, pushIds));
+        const admitterByPushId = new Map(
+          admitters.map((row) => [String(row.id), row.pushedByUserId ?? null]),
+        );
         const documentIds = new Set([
           ...existingDetails.map((detail) => detail.documentId),
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
         ]);
         for (const documentId of documentIds) {
-          await tx
+          const [occurrence] = await tx
             .insert(changeTrailDocumentOccurrences)
-            .values({ trailId, documentId })
-            .onConflictDoNothing();
+            .values({ trailId, documentId, projectionRevision: 1 })
+            .onConflictDoUpdate({
+              target: [
+                changeTrailDocumentOccurrences.trailId,
+                changeTrailDocumentOccurrences.documentId,
+              ],
+              set: {
+                projectionRevision: sql`${changeTrailDocumentOccurrences.projectionRevision} + 1`,
+              },
+            })
+            .returning({
+              projectionRevision: changeTrailDocumentOccurrences.projectionRevision,
+            });
+          if (!occurrence) throw new Error("Failed to advance change-trail projection revision");
           const documentChanges = changes.filter((change) => change.documentId === documentId);
+          committed.push({
+            trailId,
+            owner: trail.owner,
+            documentId,
+            projectionRevision: occurrence.projectionRevision,
+            changes: documentChanges.map((change) => ({
+              ...change,
+              admittedByUserId:
+                change.pushId === null ? null : (admitterByPushId.get(change.pushId) ?? null),
+            })),
+          });
           if (documentChanges.length === 0) {
             await tx
               .delete(changeTrailDocumentDetails)
@@ -234,7 +283,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
           documentCount: details.length,
         };
-        if (input.refineCurrentVersion) {
+        if (input.settlementRefinement?.currentVersion) {
           await tx
             .update(changeTrailDeliveryOutbox)
             .set(counts)
@@ -256,6 +305,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           });
         }
       }
+      return committed;
     },
     async reopenOwners(owners) {
       const tx = currentDrizzleDb(db);

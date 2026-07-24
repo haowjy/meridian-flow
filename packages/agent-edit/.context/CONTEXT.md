@@ -2,6 +2,13 @@
 
 ## Port interfaces
 
+### TurnDiffQuery (`src/ports/turn-diff-query.ts`)
+
+Read-only host seam for the current turn's folded, shell-state-aware change
+trail. Agent-edit renders prose windows and never reads collab tables or CRDT
+identities; shared-shell effects are flagged without attributing them to the
+turn.
+
 ### UpdateJournal / ReversalStore (`src/ports/update-journal.ts`)
 The persistence seam is split by concern:
 

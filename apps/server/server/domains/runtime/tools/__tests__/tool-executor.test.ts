@@ -1,5 +1,7 @@
+import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
 
+import { createCoreToolRegistrations } from "../core-tools.js";
 import { createToolExecutor } from "../tool-executor.js";
 import { createToolRegistry } from "../tool-registry.js";
 import type {
@@ -61,6 +63,68 @@ function delay(ms: number): Promise<void> {
 }
 
 describe("createToolExecutor", () => {
+  it("executes the real write diff command with turn-scoped context", async () => {
+    const received: Array<{
+      threadId: string;
+      turnId: string;
+      documentId?: string;
+    }> = [];
+    const harness = createWriteToolHarness(
+      {},
+      {
+        turnDiffQuery: {
+          async query(threadId, turnId, documentId) {
+            received.push({ threadId, turnId, documentId });
+            return {
+              trailState: "building",
+              sharedEffects: true,
+              changes: [
+                {
+                  kind: "modify",
+                  documentId: "doc-1",
+                  before: "Writer's opening.",
+                  after: "Agent's revised opening.",
+                  mergedOver: [{ body: "A concurrent sentence.", writerAuthored: true }],
+                },
+              ],
+            };
+          },
+        },
+      },
+    );
+    const registrations = createCoreToolRegistrations({
+      write: async (input: unknown, context: ToolHandlerContext) => {
+        const outcome = await harness.core.write(input as never, {
+          threadId: context.threadId,
+          turnId: context.turnId,
+          sessionId: context.threadId,
+        });
+        return { output: outcome.text };
+      },
+      ls: async () => ({}),
+      grep: async () => ({}),
+      ask_user: async () => ({}),
+    });
+    const registry = createToolRegistry();
+    const writeRegistration = registrations.find(
+      (registration) => registration.definition.name === "write",
+    );
+    if (!writeRegistration) throw new Error("write registration missing");
+    registry.register(writeRegistration);
+
+    const result = await createToolExecutor(registry).executeTool(
+      { id: "call-diff", name: "write", arguments: { command: "diff" } },
+      ctx,
+    );
+
+    expect(received).toEqual([{ threadId: "thread-1", turnId: "turn-1", documentId: undefined }]);
+    expect(result.output).toEqual(expect.stringContaining("Results are provisional"));
+    expect(result.output).toEqual(expect.stringContaining("Before:\nWriter's opening."));
+    expect(result.output).toEqual(
+      expect.stringContaining("Merged over writer-authored content:\nA concurrent sentence."),
+    );
+  });
+
   it("returns handler output on success", async () => {
     const registry = createToolRegistry();
     registry.register(serverTool("echo", async (input) => ({ echoed: input })));

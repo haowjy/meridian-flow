@@ -2,6 +2,9 @@
  * Purpose: Defines the Yjs WebSocket path and room-name wire contract shared by collaborative sync clients and server handlers.
  * Why independent: Path constants and room names are protocol primitives shared across the frontend editor and server WebSocket adapter.
  */
+
+import { z } from "zod";
+import { type TrailChangeV1, trailChangeV1Schema } from "../change-trails.js";
 import type { DocumentId } from "../runtime/index.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
@@ -12,16 +15,92 @@ export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }
   | { kind: "branch"; branchId: string; generation: number };
 
-export interface SafetyNoticeWsMessage {
-  type: "safety_notice";
+export type ChangeEventProjection = Pick<TrailChangeV1, "changeId" | "kind" | "navigation"> & {
+  admittedByUserId: string | null;
+  swept: boolean;
+  excerpt: string | null;
+  pureDeletionOffset: number | null;
+};
+
+export interface ChangeEventWsMessage {
+  type: "change_event";
   documentId: DocumentId;
-  kind: string;
-  message: string;
-  data: Record<string, unknown>;
+  threadId: string;
+  trailId: string;
+  /**
+   * Changes are a REPLACE-SET for `(trailId, documentId)`. Revisions increase
+   * monotonically for that key; clients replace the set and drop stale messages.
+   */
+  projectionRevision: number;
+  /**
+   * Authorship comes from durable trail ownership and drives identity and the
+   * conversation link. The writer arm is reserved for future writer-push
+   * broadcasts; current change-event producers emit only agent ownership.
+   */
+  author:
+    | { kind: "agent"; threadId: string; turnId: string | null }
+    | { kind: "writer"; userId: string };
+  changes: ChangeEventProjection[];
+  truncated: boolean;
 }
 
-export function encodeSafetyNoticeWsMessage(message: Omit<SafetyNoticeWsMessage, "type">): string {
-  return JSON.stringify({ type: "safety_notice", ...message } satisfies SafetyNoticeWsMessage);
+type YjsStatelessMessageByType = {
+  change_event: ChangeEventWsMessage;
+};
+
+export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMessageByType];
+
+const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChangeV1Schema
+  .pick({ changeId: true, kind: true, navigation: true })
+  .extend({
+    swept: z.boolean(),
+    admittedByUserId: z.string().nullable(),
+    excerpt: z.string().max(500).nullable(),
+    pureDeletionOffset: z.number().int().nonnegative().nullable(),
+  });
+
+const changeEventWsMessageSchema: z.ZodType<ChangeEventWsMessage> = z
+  .object({
+    type: z.literal("change_event"),
+    documentId: z.string() as z.ZodType<DocumentId>,
+    threadId: z.string(),
+    trailId: z.string(),
+    projectionRevision: z.number().int().nonnegative(),
+    author: z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("agent"),
+        threadId: z.string(),
+        turnId: z.string().nullable(),
+      }),
+      z.object({ kind: z.literal("writer"), userId: z.string() }),
+    ]),
+    changes: z.array(changeEventProjectionSchema),
+    truncated: z.boolean(),
+  })
+  .superRefine((message, context) => {
+    if (message.author.kind === "agent" && message.author.threadId !== message.threadId) {
+      context.addIssue({
+        code: "custom",
+        path: ["author", "threadId"],
+        message: "Agent author threadId must match the owning threadId",
+      });
+    }
+  });
+
+export function encodeChangeEventWsMessage(message: Omit<ChangeEventWsMessage, "type">): string {
+  return JSON.stringify(changeEventWsMessageSchema.parse({ type: "change_event", ...message }));
+}
+
+/** Parses the extensible stateless Yjs channel and rejects malformed payloads. */
+export function parseYjsStatelessMessage(payload: string): YjsStatelessMessage | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  const result = changeEventWsMessageSchema.safeParse(value);
+  return result.success ? result.data : null;
 }
 
 export function yjsWsPath(): string {

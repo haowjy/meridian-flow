@@ -2,6 +2,8 @@
 
 Reusable Yjs agent-edit core: model-facing document read/write, response-scoped
 commit buffering, write handles, and cold undo/redo over host-provided ports.
+`write(command: "diff")` reads the current turn's folded trail through a
+host-provided read-only query port.
 
 ## Mental model
 

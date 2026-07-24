@@ -48,6 +48,7 @@ describe("createToolRegistry core tools", () => {
     expect(writeSchema.oneOf?.map((variant) => variant.properties?.command)).toEqual([
       { type: "string", const: "create" },
       { type: "string", const: "read" },
+      { type: "string", const: "diff" },
       { type: "string", const: "insert" },
       { type: "string", const: "replace" },
       { type: "string", const: "undo" },
@@ -55,9 +56,14 @@ describe("createToolRegistry core tools", () => {
     ]);
     for (const variant of writeSchema.oneOf ?? []) {
       expect(variant.required).toContain("command");
-      expect(variant.required).toContain("path");
       expect(variant.additionalProperties).toBe(false);
-      expect(variant.properties).toHaveProperty("path");
+      if ((variant.properties?.command as { const?: string } | undefined)?.const === "diff") {
+        expect(variant.required).not.toContain("path");
+        expect(variant.properties).toHaveProperty("document_id");
+      } else {
+        expect(variant.required).toContain("path");
+        expect(variant.properties).toHaveProperty("path");
+      }
       expect(variant.properties).not.toHaveProperty("file");
       expect(variant.properties).not.toHaveProperty("documentId");
       expect(variant.properties).not.toHaveProperty("tool_use_id");
@@ -82,18 +88,18 @@ describe("createToolRegistry core tools", () => {
       around: { type: "string" },
       format: { enum: ["auto", "full", "outline"] },
     });
-    expect(writeSchema.oneOf?.[2]?.required).toContain("content");
-    expect(writeSchema.oneOf?.[2]?.properties).toMatchObject({
+    expect(writeSchema.oneOf?.[3]?.required).toContain("content");
+    expect(writeSchema.oneOf?.[3]?.properties).toMatchObject({
       before: { description: expect.stringContaining("Block hash") },
       after: { description: expect.stringContaining("Block hash") },
       in: { description: expect.stringContaining("inclusive [start, end] range") },
     });
-    expect(writeSchema.oneOf?.[3]?.required).toContain("content");
-    expect(writeSchema.oneOf?.[3]?.properties).toMatchObject({
+    expect(writeSchema.oneOf?.[4]?.required).toContain("content");
+    expect(writeSchema.oneOf?.[4]?.properties).toMatchObject({
       find: { description: expect.stringContaining("following text and blocks are not included") },
       in: { description: expect.stringContaining("inclusive [start, end] range") },
     });
-    expect(writeSchema.oneOf?.[4]?.properties).toMatchObject({
+    expect(writeSchema.oneOf?.[5]?.properties).toMatchObject({
       to: { type: "string" },
       from: { type: "string" },
       last: { type: "integer", minimum: 1 },

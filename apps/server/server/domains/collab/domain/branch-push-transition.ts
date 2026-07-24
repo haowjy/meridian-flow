@@ -11,6 +11,7 @@ import {
   type VisibleProseOccurrence,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
+import type { ChangeEventProjection, ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
@@ -20,9 +21,11 @@ import type {
   PreparedPushCommit,
   PushSweptTrail,
 } from "./branch-push-executor.js";
+import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
+import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
-import { canonicalBlockKey } from "./trail-read-kernel.js";
+import { bodyFromHashline, canonicalBlockKey } from "./trail-read-kernel.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
 
@@ -39,6 +42,7 @@ export function createBranchPushTransition(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   writerIngressBarrier?: WriterIngressBarrier;
+  changeEventDelivery?: ChangeEventDelivery;
 }) {
   type PreparedTransition<T> =
     | { kind: "return"; value: T }
@@ -212,9 +216,8 @@ export function createBranchPushTransition(input: {
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
   ): {
-    trail: PendingLiveSettlement["trail"];
+    refinement: import("./branch-push-executor.js").SettlementTrailRefinement;
     swept?: PushSweptTrail;
-    refineToEmpty?: boolean;
   } | null {
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
     const afterDoc = createCollabYDoc({ gc: false });
@@ -237,8 +240,41 @@ export function createBranchPushTransition(input: {
         ]),
       );
 
+      if (pending.trail.changes.length === 0) {
+        return {
+          refinement: {
+            kind: "empty_contribution",
+            trail: pending.trail,
+          },
+        };
+      }
+      if (
+        pending.trail.changes.every(
+          (change) =>
+            change.owner === null &&
+            change.kind === "modify" &&
+            change.beforeBlockIdentity !== null &&
+            change.beforeBlockIdentity !== undefined &&
+            change.afterBlockIdentity?.clientID === change.beforeBlockIdentity.clientID &&
+            change.afterBlockIdentity.clock === change.beforeBlockIdentity.clock &&
+            change.writerProtection?.kind !== "resurrection",
+        )
+      ) {
+        return {
+          refinement: {
+            kind: "empty_contribution",
+            trail: pending.trail,
+          },
+        };
+      }
       if (eligibleByRendering.size === 0) {
-        return { trail: pending.trail, refineToEmpty: true };
+        return {
+          refinement: {
+            kind: "refine_classifications",
+            trail: pending.trail,
+            classifications: [],
+          },
+        };
       }
       const affected = before.filter((block) => {
         return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
@@ -301,22 +337,10 @@ export function createBranchPushTransition(input: {
         reversible: false,
       };
       return {
-        trail: {
-          ...pending.trail,
-          changes: lateChanges,
-          transactionalNotice: {
-            kind: "push_swept",
-            scope: { kind: "document", documentId: pending.push.documentId },
-            writerVisible: true,
-            message:
-              "AI applied changes that removed words not yet synced to the agent — View change",
-            data: {
-              documentId: pending.push.documentId,
-              documentName: pending.documentTitle,
-              pushId: String(pending.push.id),
-              ...swept,
-            },
-          },
+        refinement: {
+          kind: "refine_classifications",
+          trail: pending.trail,
+          classifications: lateChanges,
         },
         swept,
       };
@@ -332,6 +356,7 @@ export function createBranchPushTransition(input: {
   }): Promise<PushSweptTrail | undefined> {
     let pending = inputSettlement.pending;
     let latest: PushSweptTrail | undefined;
+    let committedProjections: readonly CommittedChangeTrailProjection[] = [];
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
       inputSettlement.signal?.throwIfAborted();
       if (input.pushStore.renewSettlementClaim) {
@@ -352,13 +377,13 @@ export function createBranchPushTransition(input: {
         const settled = input.pushStore.settlePushTrail
           ? await input.pushStore.settlePushTrail({
               push: pending.push,
-              ...(cut ? { trail: cut.trail } : {}),
-              ...(cut?.refineToEmpty ? { refineToEmpty: true } : {}),
+              ...(cut ? { refinement: cut.refinement } : {}),
               claim: pending.claim,
               joinVersion: pending.joinVersion,
             })
           : true;
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
+        if (Array.isArray(settled)) committedProjections = settled;
         if (cut?.swept) latest = cut.swept;
 
         const completion = await completeUnderFence({
@@ -367,7 +392,18 @@ export function createBranchPushTransition(input: {
           finalPrePush: materialized.doc,
           ingressGeneration,
         });
-        if (completion === "applied" || completion === "already_applied") return latest;
+        if (completion === "applied" || completion === "already_applied") {
+          for (const projection of committedProjections) {
+            if (projection.documentId !== pending.push.documentId) continue;
+            try {
+              input.changeEventDelivery?.deliver(changeEventMessage(projection));
+            } catch {
+              // Delivery is an ephemeral session hint; durable push completion
+              // and the trail must never be reported as failed because it missed.
+            }
+          }
+          return latest;
+        }
       } finally {
         materialized.doc.destroy();
       }
@@ -378,6 +414,59 @@ export function createBranchPushTransition(input: {
       error: "live document changed during settlement",
     });
     throw new PendingLiveSettlementError(pending.push.id);
+  }
+
+  function changeEventMessage(
+    projection: CommittedChangeTrailProjection,
+  ): Omit<ChangeEventWsMessage, "type"> {
+    const capped = projection.changes.slice(0, 100);
+    return {
+      documentId: projection.documentId as ChangeEventWsMessage["documentId"],
+      threadId: projection.owner.threadId,
+      trailId: projection.trailId,
+      projectionRevision: projection.projectionRevision,
+      // Trail shells are agent-owned today. The wire contract retains its
+      // writer arm for a future writer-push broadcast producer.
+      author:
+        projection.owner.kind === "turn"
+          ? {
+              kind: "agent",
+              threadId: projection.owner.threadId,
+              turnId: projection.owner.turnId,
+            }
+          : {
+              kind: "agent",
+              threadId: projection.owner.threadId,
+              turnId: null,
+            },
+      changes: capped.map(projectChangeEvent),
+      truncated: projection.changes.length > capped.length,
+    };
+  }
+
+  function projectChangeEvent(
+    change: CommittedChangeTrailProjection["changes"][number],
+  ): ChangeEventProjection {
+    // Inserts/modifications show admitted text; deletes show what disappeared.
+    // The trail remains the authority for full bodies beyond this bounded cue.
+    const hashline = change.kind === "delete" ? change.beforeText : change.afterTextAtReceipt;
+    const body = bodyFromHashline(hashline);
+    const text = body.status === "available" ? body.markdown : null;
+    return {
+      changeId: change.changeId,
+      admittedByUserId: change.admittedByUserId,
+      kind: change.kind,
+      navigation: change.navigation,
+      swept: change.writerProtection !== undefined,
+      excerpt: text === null ? null : text.slice(0, 500),
+      pureDeletionOffset:
+        change.kind === "modify"
+          ? detectPureDeletionOffset(
+              renderedBodyText(change.beforeText, input.codec),
+              renderedBodyText(change.afterTextAtReceipt, input.codec),
+            )
+          : null,
+    };
   }
 
   async function completeUnderFence(inputFence: {
@@ -463,8 +552,39 @@ export function createBranchPushTransition(input: {
   return { execute, prepare, recover };
 }
 
-/** The only reconstruction path for settlement state and provenance, warm or cold. */
-export function materializeFinalPrePush(row: PendingLiveSettlement): {
+/** Returns the splice site when `after` is exactly `before` minus one contiguous span. */
+export function detectPureDeletionOffset(
+  before: string | null,
+  after: string | null,
+): number | null {
+  if (before === null || after === null || after.length >= before.length) return null;
+  let prefix = 0;
+  while (prefix < after.length && before[prefix] === after[prefix]) prefix++;
+
+  let suffix = 0;
+  while (
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  return before.slice(0, prefix) + before.slice(before.length - suffix) === after ? prefix : null;
+}
+
+export function renderedBodyText(hashline: string | null, codec: AgentEditCodec): string | null {
+  const body = bodyFromHashline(hashline);
+  if (body.status !== "available") return null;
+  try {
+    return codec.parse(body.markdown).blocks[0]?.textContent ?? null;
+  } catch {
+    // A malformed historical body must not suppress the rest of the marker set.
+    return null;
+  }
+}
+
+/** The only reconstruction path for settlement state and provenance, warm or cold. */ export function materializeFinalPrePush(
+  row: PendingLiveSettlement,
+): {
   doc: Y.Doc;
   provenanceView: PendingLiveSettlement["provenanceView"];
 } {

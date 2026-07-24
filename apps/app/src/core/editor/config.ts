@@ -16,6 +16,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { COLLABORATION_CURSOR_COLORS } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import {
@@ -38,9 +39,11 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import type { SessionMarkerStore } from "./session-marker-store";
 
 export type EditorUser = {
   name: string;
@@ -70,6 +73,10 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
+  /** Live-session sidecar; omitted for branch/draft rooms. */
+  markerStore?: SessionMarkerStore;
+  /** Resolve the writer-facing title for an agent-authored session mark. */
+  markerAgentName?: (threadId: string) => string | undefined;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -86,20 +93,9 @@ const lowlight = createLowlight(common);
  * CollaborationCaret writes these into inline styles, where `var()` still
  * resolves against the active theme.
  */
-const CURSOR_COLORS = [
-  "var(--color-collab-cursor-1)",
-  "var(--color-collab-cursor-2)",
-  "var(--color-collab-cursor-3)",
-  "var(--color-collab-cursor-4)",
-  "var(--color-collab-cursor-5)",
-  "var(--color-collab-cursor-6)",
-  "var(--color-collab-cursor-7)",
-  "var(--color-collab-cursor-8)",
-] as const;
-
 const DEFAULT_USER: EditorUser = {
   name: "Meridian Researcher",
-  color: CURSOR_COLORS[4],
+  color: COLLABORATION_CURSOR_COLORS[4],
 };
 
 export const COLLABORATION_Y_UNDO_TRACKED_ORIGINS = [
@@ -115,7 +111,19 @@ function pickCursorColor(awareness: Awareness): string {
       taken.add(state.user.color as string);
     }
   }
-  return CURSOR_COLORS.find((c) => !taken.has(c)) ?? CURSOR_COLORS[0];
+  const palette = COLLABORATION_CURSOR_COLORS.map(resolveCursorColor);
+  return palette.find((color) => !taken.has(color)) ?? palette[0];
+}
+
+/** CollaborationCaret validates awareness colors before placing them in CSS. */
+function resolveCursorColor(token: string): string {
+  if (typeof window === "undefined") return token;
+  const match = /^var\\((--[^)]+)\\)$/.exec(token);
+  if (!match?.[1]) return token;
+  return (
+    window.getComputedStyle(window.document.documentElement).getPropertyValue(match[1]).trim() ||
+    token
+  );
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
@@ -225,6 +233,8 @@ export function createEditorExtensions({
   figureRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
+  markerStore,
+  markerAgentName,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -237,6 +247,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
     ...collaboration,
+    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, markerAgentName })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
 }
@@ -289,6 +300,8 @@ export function createEditorConfig({
   figureRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
+  markerStore,
+  markerAgentName,
   editable = true,
   autofocus = false,
   placeholder,
@@ -311,6 +324,8 @@ export function createEditorConfig({
         figureRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
+        markerStore,
+        markerAgentName,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

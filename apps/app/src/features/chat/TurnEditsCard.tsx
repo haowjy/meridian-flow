@@ -4,7 +4,7 @@
  * INVARIANT: record, not control panel — no draft affordance may be added here.
  * Review / Apply / Discard belong to the composer-attached DraftDock. The only
  * draft control this card carries is Undo. Expanded trail rows may carry the
- * safety-specific forward actions Restore and Delete again.
+ * recovery actions Restore and Delete again.
  *
  * Shape: a collapsed card at the end of every turn that edited documents
  * (created files count — they produce mutation rows like any edit). The header
@@ -17,7 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReversalDirection } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
@@ -26,6 +26,7 @@ import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation } from "./ChatContextNavigation";
+import { type ConversationReveal, useConversationReveal } from "./conversation-reveal";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -56,6 +57,8 @@ export function TurnEditsCard({
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
+  const reveal = useConversationReveal(threadId);
+  const [activeReveal, setActiveReveal] = useState<ConversationReveal | null>(null);
   const [pending, setPending] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
@@ -63,6 +66,12 @@ export function TurnEditsCard({
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   const guardCopy = undoGuardCopy(receipt);
   const undoUnavailable = receipt == null || receipt.control === "view_change";
+
+  useEffect(() => {
+    if (reveal?.turnId !== turn.id) return;
+    setActiveReveal(reveal);
+    setExpanded(true);
+  }, [reveal, turn.id]);
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
@@ -156,6 +165,7 @@ export function TurnEditsCard({
               threadId={threadId}
               shell={changeTrail}
               navigateToChange={navigateToChange}
+              reveal={activeReveal}
             />
           ) : null}
         </div>
@@ -164,14 +174,16 @@ export function TurnEditsCard({
   );
 }
 
-function ChangeViewDetail({
+export function ChangeViewDetail({
   threadId,
   shell,
   navigateToChange,
+  reveal,
 }: {
   threadId: string;
   shell: ChangeTrailShell;
   navigateToChange: NavigateToTrailChange;
+  reveal: ReturnType<typeof useConversationReveal>;
 }) {
   const { detail } = useAuthorizedChangeTrailDetail(threadId, shell, true);
   if (shell.state !== "settled") return null;
@@ -188,13 +200,22 @@ function ChangeViewDetail({
     );
   }
   return detail.data?.map((document) => {
-    if (document.unavailable && !document.changes) {
-      return (
-        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
-          <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
-        </p>
-      );
-    }
+    const writerTouchingChanges = document.changes?.filter(
+      (change) => change.writerProtection != null,
+    );
+    const visibleChanges =
+      reveal && document.changes
+        ? [
+            ...(writerTouchingChanges ?? []),
+            ...document.changes.filter(
+              (change) =>
+                change.changeId === reveal.changeId &&
+                !writerTouchingChanges?.some((candidate) => candidate.changeId === change.changeId),
+            ),
+          ]
+        : writerTouchingChanges;
+    if (!visibleChanges || visibleChanges.length === 0) return null;
+
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
         {document.unavailable ? (
@@ -204,16 +225,15 @@ function ChangeViewDetail({
             </Trans>
           </p>
         ) : null}
-        {document.changes && document.changes.length > 0 ? (
-          <ChangeViewRows
-            threadId={threadId}
-            trailId={shell.trailId}
-            documentId={document.documentId}
-            changes={document.changes}
-            navigateToChange={navigateToChange}
-            anchorUnavailable={document.unavailable}
-          />
-        ) : null}
+        <ChangeViewRows
+          threadId={threadId}
+          trailId={shell.trailId}
+          documentId={document.documentId}
+          changes={visibleChanges}
+          navigateToChange={navigateToChange}
+          anchorUnavailable={document.unavailable}
+          reveal={reveal}
+        />
       </section>
     );
   });

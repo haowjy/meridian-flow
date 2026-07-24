@@ -280,32 +280,25 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function safetyNoticeSystemMessage(notices: readonly Notice[]): Message | null {
-  const content = formatSafetyNotices(notices);
+export function noticeSystemMessage(notices: readonly Notice[]): Message | null {
+  const content = formatNotices(notices);
   return content ? system(content) : null;
 }
 
-export function formatSafetyNotices(notices: readonly Notice[]): string {
+export function formatNotices(notices: readonly Notice[]): string {
   const sections: string[] = [];
   const undoNotices = notices.filter((notice) => notice.kind === "undo");
   if (undoNotices.length > 0) sections.push(formatUndoNotices(undoNotices));
   for (const notice of notices) {
     if (notice.kind === "undo") continue;
-    sections.push(formatSafetyNotice(notice));
+    sections.push(formatNotice(notice));
   }
   return sections.filter(Boolean).join("\n\n");
 }
 
-function formatSafetyNotice(notice: Notice): string {
+function formatNotice(notice: Notice): string {
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
-  if (
-    notice.kind === "late_sweep" ||
-    notice.kind === "push_swept" ||
-    notice.kind === "checkpoint_sweep"
-  ) {
-    return "";
-  }
   if (notice.kind === "awareness_degraded") {
     const documentNames = Array.isArray(notice.data.documentNames)
       ? notice.data.documentNames.filter(

@@ -1,4 +1,5 @@
 /** Thread-owned trail reads that retain captured evidence when the live document is unavailable. */
+import type { ChangeTrailDocumentDetailV1, ChangeTrailShellV1 } from "@meridian/contracts";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -8,10 +9,6 @@ import {
 } from "@meridian/database/schema";
 import { and, asc, eq } from "drizzle-orm";
 import type { DocumentAccessPort } from "../../../lib/document-access.js";
-import type {
-  ChangeTrailDocumentDetailV1,
-  ChangeTrailShellV1,
-} from "../domain/trail-read-kernel.js";
 import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 
 export type ChangeTrailReader = ReturnType<typeof createDrizzleChangeTrailReader>;
@@ -46,7 +43,7 @@ export function createDrizzleChangeTrailReader(
     threadId: string;
     trailId: string;
     userId: UserId;
-  }): Promise<Array<ChangeTrailDocumentDetailV1 | { documentId: string; unavailable: true }>> {
+  }): Promise<ChangeTrailDocumentDetailV1[]> {
     const rows = await db
       .select({
         documentId: changeTrailDocumentOccurrences.documentId,

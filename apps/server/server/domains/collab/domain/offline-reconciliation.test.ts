@@ -146,6 +146,7 @@ async function setup(input: {
       async record(record) {
         const incoming = record.trails.flatMap((trail: NormalizedTrail) => trail.changes);
         changes = mergeTrailChanges(changes, incoming);
+        return [];
       },
     },
     model,

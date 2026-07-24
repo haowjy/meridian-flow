@@ -46,6 +46,9 @@ propagation between them.
 - `domain/ports/change-trail-persistence.ts` is the persistence boundary.
   `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
   dispatcher, work processor, and reconciler remain separate lifecycle owners.
+- The aggregate writer returns the exact committed per-document replace-set.
+  `BranchPushTransition` delivers it only after fenced live apply completes;
+  Hocuspocus delivery targets connected bare-document rooms, never branch rooms.
 - `domain/draft-review-*` is the review diff/presentation pipeline over branch
   docs. The name is UI vocabulary; it is not the old persisted draft subsystem.
 - `adapters/drizzle-*` are production persistence adapters for live journal,

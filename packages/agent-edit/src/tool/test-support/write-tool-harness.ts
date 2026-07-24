@@ -17,6 +17,7 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { TurnDiffQuery } from "../../ports/turn-diff-query.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
@@ -51,6 +52,7 @@ export function harness(
     >[0]["closedResponseTombstoneCap"];
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
+    turnDiffQuery?: TurnDiffQuery;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -65,6 +67,7 @@ export function harness(
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
     model,
+    turnDiffQuery: options.turnDiffQuery,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),

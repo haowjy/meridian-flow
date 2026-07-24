@@ -11,7 +11,6 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { NoticePort } from "../../notices/index.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
@@ -31,7 +30,11 @@ import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { createBranchReviewOperations } from "./branch-review-operations.js";
 import { buildDurablePushTrail, projectPushSweep } from "./branch-trail-projection.js";
-import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
+import type {
+  CommittedChangeTrailProjection,
+  DurableTrailRecord,
+} from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
 import type { NavigationTargetV1 } from "./trail-read-kernel.js";
@@ -70,6 +73,7 @@ export type PushLineageRow = {
   receiptPayload: PushReceiptPayload | null;
   idempotencyKey: string;
   receiptId?: string | null;
+  pushedByUserId?: UserId | null;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
 };
@@ -184,11 +188,10 @@ export type BranchPushStore = {
   /** Adds a frozen post-commit cut through the same trail aggregate/outbox. */
   settlePushTrail?(input: {
     push: PushLineageRow;
-    trail?: DurableTrailRecord;
-    refineToEmpty?: boolean;
+    refinement?: SettlementTrailRefinement;
     claim: SettlementClaim;
     joinVersion: number;
-  }): Promise<boolean | undefined>;
+  }): Promise<boolean | readonly CommittedChangeTrailProjection[] | undefined>;
   listRecoverableSettlementIds?(): Promise<number[]>;
   loadLiveSettlement?(pushId: number): Promise<PendingLiveSettlement>;
   withCompletionFence?(
@@ -244,6 +247,19 @@ export type BranchPushStore = {
     turnId: TurnId;
   }): Promise<number>;
 };
+
+export type SettlementTrailRefinement =
+  | {
+      kind: "refine_classifications";
+      /** Final destructive classifications; ordinary persisted changes are retained. */
+      trail: DurableTrailRecord;
+      classifications: DurableTrailRecord["changes"];
+    }
+  | {
+      kind: "empty_contribution";
+      /** The push genuinely contributes no changes and replaces its contribution with empty. */
+      trail: DurableTrailRecord;
+    };
 
 export type PushUpdateComputer = (input: {
   branch: BranchSnapshot;
@@ -355,8 +371,8 @@ export type BranchPushExecutorInput = {
   pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
-  notices?: NoticePort;
   writerIngressBarrier?: WriterIngressBarrier;
+  changeEventDelivery?: ChangeEventDelivery;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };
 
@@ -370,6 +386,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     model: input.model,
     codec: attributionCodec,
     writerIngressBarrier: input.writerIngressBarrier,
+    changeEventDelivery: input.changeEventDelivery,
   });
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
@@ -515,7 +532,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       lockCutUpdate,
       receiptId,
     );
-
   function pendingLiveSettlement(
     prepared: Awaited<ReturnType<typeof preparePush>>,
     documentTitle: string,
@@ -668,9 +684,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
             const needsSweptTrail =
               inputPush.overlapPolicy === "apply_and_trail" &&
               gated.blindConflictedBlocks.length > 0;
-            if (needsSweptTrail && !input.notices) {
-              throw new Error("apply_and_trail requires a durable notice recorder");
-            }
             const swept = needsSweptTrail ? await projectPushSweep(gated) : undefined;
             const trailDocumentName = await resolveDocumentTitle(phase1.branch.documentId);
             const trail = buildDurablePushTrail({

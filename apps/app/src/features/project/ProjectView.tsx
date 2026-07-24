@@ -22,6 +22,7 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
+import { usePendingConversationReveal } from "@/features/chat/conversation-reveal";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -108,6 +109,13 @@ export function ProjectView(props: ProjectViewProps) {
   const activeWork = works?.find((work) => work.id === workId) ?? null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
+  const selectThreadRef = useRef(props.onSelectThread);
+  selectThreadRef.current = props.onSelectThread;
+  const pendingConversationReveal = usePendingConversationReveal();
+  useEffect(() => {
+    if (!pendingConversationReveal) return;
+    selectThreadRef.current(pendingConversationReveal.threadId);
+  }, [pendingConversationReveal]);
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {

@@ -10,13 +10,13 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
@@ -47,6 +47,7 @@ import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
+import type { TrailChangeV1 } from "./trail-read-kernel.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -316,7 +317,7 @@ class Harness {
     });
   }
 
-  service(changeTrails?: ChangeTrailPersistence, safety?: { notices?: NoticePort }) {
+  service(changeTrails?: ChangeTrailPersistence) {
     this.trailPersistence = changeTrails;
     return createBranchPushService({
       branchStore: this.branchStore,
@@ -326,7 +327,6 @@ class Harness {
       liveCoordinator: this.coordinator,
       model,
       codec,
-      notices: safety?.notices,
     });
   }
 }
@@ -492,14 +492,8 @@ describe("createBranchPushService", () => {
     model.insertBlocks(toDocHandle(harness.branchDoc), null, codec.parse("Base."));
     harness.branch.state = Y.encodeStateAsUpdate(harness.branchDoc);
     harness.branch.stateVector = Y.encodeStateVector(harness.branchDoc);
-    const notices = {
-      record: vi.fn(async () => {}),
-      drainForModelContext: vi.fn(async () => []),
-      drainForWriter: vi.fn(async () => []),
-      subscribeWriterVisible: vi.fn(() => () => {}),
-    } satisfies NoticePort;
-    const record = vi.fn(async () => {});
-    const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
+    const record = vi.fn(async () => []);
+    const service = harness.service({ record, reopenOwners: vi.fn() });
 
     const result =
       policy === "auto"
@@ -826,12 +820,7 @@ describe("createBranchPushService", () => {
           turnId: row.turnId,
         },
       };
-      await persistDurableTrailRecord(
-        prepared.trail,
-        result.push,
-        { record: async () => {} },
-        notices,
-      );
+      await persistDurableTrailRecord(prepared.trail, result.push, { record: async () => [] });
       row.status = "pushed";
       return result;
     });
@@ -859,12 +848,6 @@ describe("createBranchPushService", () => {
     branch.state = Y.encodeStateAsUpdate(branchDoc);
     branch.stateVector = Y.encodeStateVector(branchDoc);
     if (pushKind === "auto") branch.pushPolicy = "auto";
-    const notices = {
-      record: vi.fn(async () => {}),
-      drainForModelContext: vi.fn(async () => []),
-      drainForWriter: vi.fn(async () => []),
-      subscribeWriterVisible: vi.fn(() => () => {}),
-    } satisfies NoticePort;
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -891,7 +874,6 @@ describe("createBranchPushService", () => {
       },
       model,
       codec,
-      notices,
       resolveDocumentTitle: async () => "The Ninefold Furnace",
     });
 
@@ -931,17 +913,6 @@ describe("createBranchPushService", () => {
           },
         });
         expect(markdown(liveDoc)).not.toContain("Edited since this draft was written.");
-        expect(notices.record).toHaveBeenCalledWith(
-          expect.objectContaining({
-            kind: "push_swept",
-            writerVisible: true,
-            data: expect.objectContaining({
-              documentName: "The Ninefold Furnace",
-              threadId: THREAD_ID,
-              turnId: TURN_ID,
-            }),
-          }),
-        );
       }
     }
     branchDoc.destroy();
@@ -980,13 +951,8 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
-    const notices = {
-      record: vi.fn(async () => {}),
-      drainForModelContext: vi.fn(async () => []),
-      drainForWriter: vi.fn(async () => []),
-      subscribeWriterVisible: vi.fn(() => () => {}),
-    } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
+    const delivered: Array<Omit<ChangeEventWsMessage, "type">> = [];
     let durableSettlement: PendingLiveSettlement | null = null;
     const commitPush = vi.fn(async (prepared) => {
       const push = {
@@ -998,6 +964,7 @@ describe("createBranchPushService", () => {
         upstreamUpdateSeq: 2,
         receiptPayload: prepared.receiptPayload,
         idempotencyKey: prepared.idempotencyKey,
+        pushedByUserId: prepared.pushedByUserId ?? null,
       };
       durableSettlement = { ...prepared.pendingLiveSettlement, push };
       return {
@@ -1024,12 +991,27 @@ describe("createBranchPushService", () => {
           if (!durableSettlement) throw new Error("missing durable settlement");
           return withDurableWriterProvenance(durableSettlement);
         }),
-        settlePushTrail: vi.fn(async ({ trail }) => {
+        settlePushTrail: vi.fn(async ({ refinement }) => {
+          if (!refinement) throw new Error("missing trail refinement");
           // This is the durable aggregate/outbox boundary. The live delete must
           // not have happened yet when settlement commits.
           expect(markdown(liveDoc)).toContain("Unjournaled WS body.");
-          settlements.push(trail);
-          return true;
+          const changes =
+            refinement.kind === "refine_classifications" ? refinement.classifications : [];
+          settlements.push({ ...refinement.trail, changes });
+          return [
+            {
+              trailId: "trail-1",
+              owner: { kind: "turn" as const, threadId: THREAD_ID, turnId: TURN_ID },
+              documentId: DOCUMENT_ID,
+              projectionRevision: 2,
+              // The fake persistence seam returns its authoritative post-fold set.
+              changes: (changes as TrailChangeV1[]).map((change) => ({
+                ...change,
+                admittedByUserId: path === "whole" ? USER_ID : null,
+              })),
+            },
+          ];
         }),
         commitPushBatch: vi.fn(),
         countUnpushedRowsForWork: vi.fn(async () => 1),
@@ -1044,7 +1026,13 @@ describe("createBranchPushService", () => {
       },
       model,
       codec,
-      notices,
+      changeEventDelivery: {
+        deliver(message) {
+          // Delivery is downstream of the fenced live apply, not merely trail persistence.
+          expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
+          delivered.push(message);
+        },
+      },
       hooks: {
         afterDurableCommit: async () => {
           const beforeWriter = Y.encodeStateVector(liveDoc);
@@ -1067,7 +1055,7 @@ describe("createBranchPushService", () => {
 
     const result =
       path === "whole"
-        ? await service.pushToLive({ branchId: branch.branchId })
+        ? await service.pushToLive({ branchId: branch.branchId, pushedByUserId: USER_ID })
         : path === "selected"
           ? await service.pushSelectedToLive({ branchId: branch.branchId, journalIds: [row.id] })
           : await service.pushToLiveWithManifestEntry({
@@ -1079,6 +1067,25 @@ describe("createBranchPushService", () => {
     expect(result.status).toBe("pushed");
     expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
     expect(settlements).toHaveLength(1);
+    expect(delivered).toEqual([
+      expect.objectContaining({
+        documentId: DOCUMENT_ID,
+        threadId: THREAD_ID,
+        trailId: "trail-1",
+        projectionRevision: 2,
+        author: { kind: "agent", threadId: THREAD_ID, turnId: TURN_ID },
+        truncated: false,
+        changes: [
+          expect.objectContaining({
+            admittedByUserId: path === "whole" ? USER_ID : null,
+            changeId: expect.any(String),
+            kind: "delete",
+            swept: true,
+            excerpt: "Unjournaled WS body.",
+          }),
+        ],
+      }),
+    ]);
     expect(settlements[0]).toMatchObject(
       expect.objectContaining({
         changes: [
@@ -1091,18 +1098,6 @@ describe("createBranchPushService", () => {
             }),
           }),
         ],
-        transactionalNotice: expect.objectContaining({
-          kind: "push_swept",
-          data: expect.objectContaining({
-            affectedBlockHashes: [deletedHash],
-            capturedDeletedBodies: [
-              expect.objectContaining({
-                hash: deletedHash,
-                body: "Unjournaled WS body.",
-              }),
-            ],
-          }),
-        }),
       }),
     );
   });
@@ -1171,8 +1166,12 @@ describe("createBranchPushService", () => {
           if (!durableSettlement) throw new Error("missing durable settlement");
           return withDurableWriterProvenance(durableSettlement);
         }),
-        settlePushTrail: vi.fn(async ({ trail }) => {
-          settlements.push(trail);
+        settlePushTrail: vi.fn(async ({ refinement }) => {
+          if (!refinement) throw new Error("missing trail refinement");
+          settlements.push({
+            ...refinement.trail,
+            changes: refinement.kind === "refine_classifications" ? refinement.classifications : [],
+          });
           return true;
         }),
         countUnpushedRowsForWork: vi.fn(async () => 1),
@@ -1274,8 +1273,12 @@ describe("createBranchPushService", () => {
         pending = { ...prepared.pendingLiveSettlement, push };
         return { status: "inserted" as const, push };
       }),
-      settlePushTrail: vi.fn(async ({ trail }) => {
-        settlements.push(trail);
+      settlePushTrail: vi.fn(async ({ refinement }) => {
+        if (!refinement) throw new Error("missing trail refinement");
+        settlements.push({
+          ...refinement.trail,
+          changes: refinement.kind === "refine_classifications" ? refinement.classifications : [],
+        });
         return true;
       }),
       listRecoverableSettlementIds: vi.fn(async () => (pending ? [pending.push.id] : [])),

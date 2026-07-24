@@ -94,7 +94,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { safetyNoticeSystemMessage } from "./context-builder.js";
+import { noticeSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -928,10 +928,9 @@ async function* generateEvents(
       };
 
       {
-        const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
-        const notices = await deps.notices.drainForModelContext(input.threadId, activeDocumentIds);
+        const notices = await deps.notices.drainForModelContext(input.threadId);
         if (notices.length > 0) {
-          const noticeMessage = safetyNoticeSystemMessage(notices);
+          const noticeMessage = noticeSystemMessage(notices);
           if (noticeMessage) {
             const insertAt = request.messages.findIndex((message) => message.role !== "system");
             request.messages.splice(

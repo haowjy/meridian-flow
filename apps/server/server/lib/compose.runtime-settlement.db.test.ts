@@ -38,7 +38,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailDocumentDetails,
         schema.changeTrailShells,
-        schema.pendingNoticeDeliveries,
         schema.pendingNotices,
         schema.agentEditMutations,
         schema.branchWriteJournal,

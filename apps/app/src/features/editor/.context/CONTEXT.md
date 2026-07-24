@@ -80,6 +80,39 @@ makes remote collab cursors render as a phantom row between paragraphs.
 Presses on interactive or live-status children inside the scroller keep
 native behavior; both hosts opt in.
 
+## Peer mark popover
+
+`PeerMarkPopover.tsx` is the anchored detail-and-recovery surface for one live
+session peer mark. The marker projection itself (`SessionMarkerStore` +
+`PeerMarkerExtension`) lives in
+[`core/editor`](../../../core/editor/.context/CONTEXT.md); this component is
+editor-host chrome, not a ProseMirror plugin.
+
+`EditorView`'s click and keyboard handlers resolve the closest
+`[data-peer-mark]` element to a live `SessionMarker` from the session's
+`markerStore` and set it as the popover target; the popover is suppressed
+during inline draft review (`inReview`), since markers are a live-document
+surface and branch rooms have a different anchor space.
+
+Detail is lazy on open: it reads the trail detail endpoint and the originating
+thread snapshot, then renders the removed text, a one-line originating-request
+snippet, and the trail row's same `Restore` / `Delete again` forward action.
+Recovery calls `applyTrailForwardAction` and removes the session mark only after
+a successful `applied` / `already_applied` result; a failed action stays
+failed with a retry affordance. *Open conversation* routes through
+`requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
+popover closes and the chat side expands the owning turn Changes card, or the
+thread-tail shared Changes entry when the trail has no owning turn, then
+emphasizes the exact row.
+
+Trail-row navigation addresses a matching live session mark first, preserving
+its range/tick/seam anatomy and emphasis treatment. Generic temporary range
+navigation remains the fallback after that mark has cleared or expired.
+
+Popover focus follows activation. Pointer open prevents Radix autofocus and
+pointer close restores the captured editor selection and caret. Keyboard
+activation moves focus into the popover; Escape/close returns focus to the mark.
+
 ## Deferred
 
 - **Block-level `+` gutter handle** ("Turn into" / "Insert" menu on the

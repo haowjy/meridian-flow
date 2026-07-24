@@ -18,7 +18,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FolderDown, TriangleAlert } from "lucide-react";
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";

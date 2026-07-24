@@ -12,7 +12,6 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
-  boolean,
   check,
   index,
   integer,
@@ -320,6 +319,11 @@ export const changeTrailDocumentOccurrences = pgTable(
       .notNull()
       .references(() => changeTrailShells.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    /**
+     * Durable replace-set cursor for marker delivery. This lives on the
+     * non-sensitive occurrence so an empty refinement cannot reset the cursor.
+     */
+    projectionRevision: integer("projection_revision").notNull().default(0),
   },
   (table) => [primaryKey({ columns: [table.trailId, table.documentId] })],
 );
@@ -614,41 +618,15 @@ export const pendingNotices = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     kind: text("kind").notNull(),
-    scopeKind: text("scope_kind").$type<"thread" | "document">().notNull(),
-    scopeId: uuid("scope_id").notNull(),
-    writerDocumentId: uuid("writer_document_id")
-      .$type<DocumentId>()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    message: text("message").notNull(),
-    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
-    writerVisible: boolean("writer_visible").notNull().default(false),
-    writerConsumed: boolean("writer_consumed").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("pending_notices_writer").on(table.writerDocumentId, table.writerConsumed),
-    check("pending_notices_scope_valid", sql`${table.scopeKind} IN ('thread', 'document')`),
-  ],
-);
-
-export const pendingNoticeDeliveries = pgTable(
-  "pending_notice_deliveries",
-  {
-    noticeId: bigint("notice_id", { mode: "number" })
-      .notNull()
-      .references(() => pendingNotices.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .references(() => documents.id, { onDelete: "cascade" }),
+    message: text("message").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    createdAt: createdAt(),
   },
-  (table) => [
-    primaryKey({ columns: [table.noticeId, table.threadId] }),
-    index("pending_notice_deliveries_thread").on(table.threadId, table.documentId),
-  ],
+  (table) => [index("pending_notices_thread").on(table.threadId, table.createdAt, table.id)],
 );
 
 export const agentEditWidCounters = pgTable(

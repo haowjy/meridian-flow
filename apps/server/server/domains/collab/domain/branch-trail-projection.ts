@@ -3,12 +3,12 @@ import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edi
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { NoticeInput, NoticePort } from "../../notices/index.js";
 import type { BranchJournalRow, PushReceiptPayload, PushSweptTrail } from "./branch-push.js";
 import { blockTextMap } from "./branch-push-plan.js";
 import type { PreparedPush } from "./branch-push-preparation.js";
 import type {
   ChangeTrailPersistence,
+  CommittedChangeTrailProjection,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
 import {
@@ -43,14 +43,17 @@ export function journalAttributionByChangedBlock(input: {
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
-  const operations: Array<{
+  const journalOperations: Array<{
     removedBlockHashes: string[];
     insertedBlockIds: string[];
     ambiguous?: boolean;
+    removedIndex: number | null;
+    insertedIndex: number | null;
+    journalRowIndex: number;
   }> = [];
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
-    for (const row of input.rows) {
+    for (const [journalRowIndex, row] of input.rows.entries()) {
       const before = canonicalSnapshot(input.model, scratch);
       Y.applyUpdate(scratch, row.updateData);
       const after = canonicalSnapshot(input.model, scratch);
@@ -78,12 +81,43 @@ export function journalAttributionByChangedBlock(input: {
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
       if (deleted.length > 0 || inserted.length > 0) {
-        operations.push({
+        journalOperations.push({
           removedBlockHashes: deleted.map((block) => block.hash),
           insertedBlockIds: inserted.map((block) => block.hash),
           ambiguous: deleted.length !== 1 || inserted.length !== 1,
+          removedIndex:
+            deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
+          insertedIndex:
+            inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
+          journalRowIndex,
         });
       }
+    }
+    const operations: typeof journalOperations = [];
+    for (let index = 0; index < journalOperations.length; index += 1) {
+      const deletion = journalOperations[index];
+      const insertion = journalOperations[index + 1];
+      if (
+        deletion?.removedBlockHashes.length === 1 &&
+        deletion.insertedBlockIds.length === 0 &&
+        insertion?.removedBlockHashes.length === 0 &&
+        insertion.insertedBlockIds.length === 1 &&
+        insertion.journalRowIndex === deletion.journalRowIndex + 1 &&
+        deletion.removedIndex !== null &&
+        deletion.removedIndex === insertion.insertedIndex
+      ) {
+        operations.push({
+          removedBlockHashes: deletion.removedBlockHashes,
+          insertedBlockIds: insertion.insertedBlockIds,
+          ambiguous: false,
+          removedIndex: deletion.removedIndex,
+          insertedIndex: insertion.insertedIndex,
+          journalRowIndex: deletion.journalRowIndex,
+        });
+        index += 1;
+        continue;
+      }
+      operations.push(deletion as (typeof journalOperations)[number]);
     }
     return { ownersByBlock, operations };
   } finally {
@@ -134,6 +168,16 @@ export function preparedTrailChanges(input: {
     }
   }
   const replacementIds = new Set(provenReplacements.values());
+  const survivingAfterBlockByIdentity = new Map<
+    string,
+    { blockId: string; block: Y.XmlElement; identity: CanonicalBlockIdentityV1 }
+  >();
+  for (const [blockId, block] of input.afterById) {
+    const identity = input.blockIdentities.get(blockId);
+    if (identity) {
+      survivingAfterBlockByIdentity.set(canonicalBlockKey(identity), { blockId, block, identity });
+    }
+  }
   return input.receipt.changedBlocks.flatMap((block, sequence) => {
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
@@ -173,25 +217,61 @@ export function preparedTrailChanges(input: {
             previousSurvivor: previousId ? input.afterById.get(previousId) : null,
           })
         : null;
-    const replacementId =
-      sweptNavigation?.outcome === "modify" ? provenReplacements.get(block.blockId) : undefined;
+    const beforeIdentity =
+      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
+    const sameIdentityAfter =
+      block.beforeText !== null && block.afterText !== null && beforeIdentity
+        ? survivingAfterBlockByIdentity.get(canonicalBlockKey(beforeIdentity))
+        : undefined;
+    const replacementId = sameIdentityAfter?.blockId ?? provenReplacements.get(block.blockId);
     const replacement = replacementId
       ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
       : undefined;
+    const replacementBlock =
+      sameIdentityAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
+    const beforeBody = bodyFromHashline(block.beforeText);
+    const afterBody = bodyFromHashline(block.afterText);
+    // A textblock can retain its Yjs identity while its entire body is removed.
+    // Project that as a deletion at the surviving empty block, rather than as
+    // an invisible modification range over zero text.
+    const emptiedSurvivingBlock =
+      sameIdentityAfter !== undefined &&
+      block.beforeText !== null &&
+      beforeBody.status === "available" &&
+      beforeBody.markdown.length > 0 &&
+      block.afterText !== null &&
+      afterBody.status === "available" &&
+      afterBody.markdown.length === 0;
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
-    const beforeIdentity =
-      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
-    const afterIdentity =
-      block.afterText === null
-        ? null
-        : (input.blockIdentities.get(replacementId ?? block.blockId) ?? null);
+    const afterIdentity = emptiedSurvivingBlock
+      ? null
+      : (sameIdentityAfter?.identity ??
+        (replacementId !== undefined
+          ? (input.blockIdentities.get(replacementId) ?? null)
+          : block.afterText === null
+            ? null
+            : (input.blockIdentities.get(block.blockId) ?? null)));
     const location: TrailProjectionLocation = {
-      kind:
-        sweptNavigation?.outcome ??
-        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
+      kind: emptiedSurvivingBlock
+        ? "delete"
+        : replacementId !== undefined
+          ? "modify"
+          : (sweptNavigation?.outcome ??
+            (block.beforeText === null
+              ? "insert"
+              : block.afterText === null
+                ? "delete"
+                : "modify")),
       beforeIdentity,
       afterIdentity,
-      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
+      navigation: emptiedSurvivingBlock
+        ? deletionBoundaryTarget({ doc: input.afterDoc, next: sameIdentityAfter.block })
+        : sameIdentityAfter
+          ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
+          : (sweptNavigation?.navigation ??
+            (replacementBlock
+              ? liveBlockTarget(input.afterDoc, replacementBlock)
+              : ordinaryNavigation)),
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
@@ -202,11 +282,15 @@ export function preparedTrailChanges(input: {
       receiptId: input.receiptId,
       kind: location.kind,
       beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
+      afterBlockId: emptiedSurvivingBlock
+        ? null
+        : (replacementId ?? (block.afterText === null ? null : block.blockId)),
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,
-      afterTextAtReceipt: replacement?.afterText ?? block.afterText,
+      afterTextAtReceipt: sameIdentityAfter
+        ? block.afterText
+        : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
       swept: isSwept
         ? {
@@ -240,13 +324,14 @@ export async function persistDurableTrailRecord(
   record: DurableTrailRecord,
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
-  notices?: NoticePort,
   options: {
-    refineCurrentVersion?: boolean;
-    refineToEmpty?: boolean;
-    replacePushContribution?: boolean;
+    settlementRefinement?: {
+      kind: "refine_classifications" | "empty_contribution";
+      currentVersion: boolean;
+      classifications?: DurableTrailRecord["changes"];
+    };
   } = {},
-): Promise<void> {
+): Promise<readonly CommittedChangeTrailProjection[]> {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
   const normalized = normalizeTrailPushes(
@@ -258,29 +343,47 @@ export async function persistDurableTrailRecord(
       journalOwners: record.journalOwners,
     })),
   );
-  await persistence.record({
-    trails: options.refineToEmpty
-      ? normalized.map((trail) => ({
+  const classified =
+    options.settlementRefinement?.kind === "refine_classifications"
+      ? normalizeTrailPushes(
+          record.threadIds.map((threadId) => ({
+            pushId,
+            receiptId: record.receiptId,
+            threadId,
+            changes: (options.settlementRefinement?.classifications ?? []).map((change) => ({
+              ...change,
+              pushId,
+            })),
+            journalOwners: record.journalOwners,
+          })),
+        )
+      : [];
+  const classifiedByOwner = new Map(
+    classified.map((trail) => [JSON.stringify(trail.owner), trail]),
+  );
+  const refinementTrails = options.settlementRefinement
+    ? normalized.map((trail) => {
+        const final = classifiedByOwner.get(JSON.stringify(trail.owner));
+        return {
           ...trail,
-          changes: [],
-          counts: { changes: 0, swept: 0, documents: 0 },
-        }))
-      : normalized,
+          changes: final?.changes ?? [],
+          counts: final?.counts ?? { changes: 0, swept: 0, documents: 0 },
+        };
+      })
+    : normalized;
+  const committed = await persistence.record({
+    trails: refinementTrails,
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
-    ...(options.refineCurrentVersion ? { refineCurrentVersion: true } : {}),
-    ...(options.refineToEmpty || options.replacePushContribution ? { replacePushId: pushId } : {}),
+    ...(options.settlementRefinement
+      ? {
+          settlementRefinement: {
+            pushId,
+            ...options.settlementRefinement,
+          },
+        }
+      : {}),
   });
-  if (record.transactionalNotice && !options.refineCurrentVersion) {
-    await notices?.record({
-      ...record.transactionalNotice,
-      data: {
-        ...record.transactionalNotice.data,
-        pushId,
-        threadId: push.threadId ?? null,
-        turnId: push.turnId ?? null,
-      },
-    });
-  }
+  return committed;
 }
 
 export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
@@ -326,25 +429,5 @@ export function buildDurablePushTrail(input: {
     threadIds: [...threadIds],
     journalOwners,
     changes: input.prepared.trailChanges,
-    ...(input.swept
-      ? {
-          transactionalNotice: {
-            kind: "push_swept",
-            scope: {
-              kind: "document",
-              documentId: input.prepared.prepared.branch.documentId,
-            },
-            writerVisible: true,
-            message:
-              "AI applied changes that removed words not yet synced to the agent — View change",
-            data: {
-              documentId: input.prepared.prepared.branch.documentId,
-              documentName: input.documentTitle,
-              pushId: "pending",
-              ...input.swept,
-            },
-          } satisfies NoticeInput,
-        }
-      : {}),
   };
 }

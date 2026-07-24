@@ -1,7 +1,11 @@
 /** Domain port for atomically recording normalized change trails. */
 
-import type { NoticeInput } from "../../../notices/index.js";
-import type { NormalizedTrail, RawTrailChange, TrailOwner } from "../trail-read-kernel.js";
+import type {
+  NormalizedTrail,
+  RawTrailChange,
+  TrailChangeV1,
+  TrailOwner,
+} from "../trail-read-kernel.js";
 import { parseTrailChangesV1 } from "../trail-read-kernel.js";
 
 export type DurableTrailRecord = {
@@ -11,21 +15,12 @@ export type DurableTrailRecord = {
   threadIds: readonly string[];
   journalOwners: readonly (TrailOwner | null)[];
   changes: readonly RawTrailChange[];
-  transactionalNotice?: NoticeInput;
 };
 
 /** Total parser for the frozen settlement trail input stored in jsonb. */
 export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
   if (!isRecord(value)) throw new Error("Durable trail seed must be an object");
-  const {
-    documentId,
-    documentTitle,
-    receiptId,
-    threadIds,
-    journalOwners,
-    changes,
-    transactionalNotice,
-  } = value;
+  const { documentId, documentTitle, receiptId, threadIds, journalOwners, changes } = value;
   if (
     typeof documentId !== "string" ||
     !isUuid(documentId) ||
@@ -35,8 +30,7 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
     !Array.isArray(threadIds) ||
     !threadIds.every((id) => typeof id === "string" && isUuid(id)) ||
     !Array.isArray(journalOwners) ||
-    !Array.isArray(changes) ||
-    (transactionalNotice !== undefined && !isRecord(transactionalNotice))
+    !Array.isArray(changes)
   ) {
     throw new Error("Invalid durable trail seed v1");
   }
@@ -69,9 +63,6 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
     threadIds: [...threadIds] as string[],
     journalOwners: owners,
     changes: parsedChanges,
-    ...(transactionalNotice === undefined
-      ? {}
-      : { transactionalNotice: transactionalNotice as unknown as NoticeInput }),
   };
 }
 
@@ -96,13 +87,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export type ChangeTrailPersistence = {
+  /**
+   * Returns exactly the post-fold document replace-sets committed by this write.
+   * Revisions are durable and monotonic per (trailId, documentId).
+   */
   record(input: {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
-    /** Refines the current push's provisional trail without publishing a second version. */
-    refineCurrentVersion?: boolean;
-    /** Replaces this push's prior aggregate contribution with the supplied classification. */
-    replacePushId?: string;
-  }): Promise<void>;
+    settlementRefinement?: {
+      pushId: string;
+      kind: "refine_classifications" | "empty_contribution";
+      /** Same joined authority refines in place; later authority publishes a new version. */
+      currentVersion: boolean;
+    };
+  }): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
+};
+
+export type CommittedChangeTrailProjection = {
+  trailId: string;
+  owner: NormalizedTrail["owner"];
+  documentId: string;
+  projectionRevision: number;
+  changes: readonly (TrailChangeV1 & { admittedByUserId: string | null })[];
 };
