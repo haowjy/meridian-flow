@@ -8,6 +8,7 @@ function createService(input: {
   liveReverse?: ReturnType<typeof vi.fn>;
   lineage?: Array<{ documentId: string }>;
   allowed?: Set<string>;
+  resolvedDocumentId?: string | null;
 }) {
   const agentReverse =
     input.agentReverse ??
@@ -16,6 +17,9 @@ function createService(input: {
     input.liveReverse ??
     vi.fn(async () => ({ command: "undo", status: "reversed", isError: false, text: "ok" }));
   const refreshDocumentProjection = vi.fn(async () => undefined);
+  const resolveContextDocument = vi.fn(async () => ({
+    documentId: input.resolvedDocumentId === undefined ? "document-1" : input.resolvedDocumentId,
+  }));
   const service = createTurnReversalService({
     live: {
       reversalStore: { documentsForTurn: async () => [] } as unknown as ReversalStore,
@@ -37,10 +41,16 @@ function createService(input: {
     },
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
-      resolveContextDocument: async () => ({ documentId: "document-1" }),
+      resolveContextDocument,
     },
   });
-  return { service, agentReverse, liveReverse, refreshDocumentProjection };
+  return {
+    service,
+    agentReverse,
+    liveReverse,
+    refreshDocumentProjection,
+    resolveContextDocument,
+  };
 }
 
 const base = {
@@ -76,7 +86,9 @@ describe("reverseThreadContext", () => {
   });
 
   it("rejects invalid write handles before reversal dispatch", async () => {
-    const { service, agentReverse } = createService({});
+    const { service, agentReverse, resolveContextDocument } = createService({
+      resolvedDocumentId: null,
+    });
 
     await expect(
       service.reverseThreadContext({
@@ -88,6 +100,7 @@ describe("reverseThreadContext", () => {
       }),
     ).rejects.toEqual(new ReverseThreadContextError("invalid_write", "invalid_write"));
     expect(agentReverse).not.toHaveBeenCalled();
+    expect(resolveContextDocument).not.toHaveBeenCalled();
   });
 
   it("owner-gates and filters live lineage before turn reversal", async () => {

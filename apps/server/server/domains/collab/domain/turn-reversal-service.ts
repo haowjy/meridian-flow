@@ -121,6 +121,7 @@ export function createTurnReversalService(input: {
         });
       }
 
+      const selection = reversalSelection(command);
       const document = await services.threadContext.resolveContextDocument({
         threadId: command.threadId,
         userId: command.userId,
@@ -133,7 +134,7 @@ export function createTurnReversalService(input: {
         docId: document.documentId,
         threadId: command.threadId,
         direction: command.direction,
-        selection: reversalSelection(command),
+        selection,
         actor: { type: "user", userId: command.userId },
       });
       if (isSuccessfulReversal(outcome)) {
