@@ -3,6 +3,7 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { createDrizzleDocumentAccess } from "../../../lib/document-access.js";
 import {
   createDrizzleTrailForwardActions,
   planTrailForwardAction,
@@ -361,6 +362,7 @@ export async function runCrossWorkProbe(
       hocuspocus.documents.clear();
       const restored = await createDrizzleTrailForwardActions({
         db,
+        documentAccess: createDrizzleDocumentAccess(db),
         coordinator: liveCoordinator,
         model,
         codec: agentEditCodec,

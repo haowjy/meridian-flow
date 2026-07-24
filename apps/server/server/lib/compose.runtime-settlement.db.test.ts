@@ -301,7 +301,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
         });
         const retained = reloaded as {
-          unavailable?: boolean;
+          anchorState?: "available" | "deleted";
           changes?: Array<{
             writerProtection?: { kind?: string; body?: { markdown?: string } };
             forwardActions?: { restore?: { status?: string } };
@@ -310,7 +310,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const retainedSweep = retained.changes?.find(
           (candidate) => candidate.writerProtection?.kind === "sweep",
         );
-        expect(retained.unavailable).toBe(true);
+        expect(retained.anchorState).toBe("deleted");
         expect(retainedSweep?.writerProtection?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
         expect(retainedSweep?.forwardActions?.restore?.status).toBe("applied");
         await unloadRuntime(runtime.hocuspocus);

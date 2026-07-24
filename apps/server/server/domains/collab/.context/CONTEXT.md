@@ -193,6 +193,13 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
+- **Trail detail authorization precedes detail materialization**: the reader
+  resolves each occurrence to `available`, `deleted`, or denied before selecting
+  manuscript-bearing title/prose. Denied occurrences disappear; authorized
+  deleted anchors retain evidence under an explicit `anchorState`. Forward
+  actions require an available anchor before loading evidence and hold the
+  document, source, work, and project authorization rows locked across guarded
+  live apply and journal finalization.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
@@ -203,9 +210,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   rejected intents replan from current live state. Proven anchor loss settles
   `anchor_unavailable`; three live-state collisions settle the distinct
   `retry_exhausted` outcome. This same state machine recovers a crash between intent
-  commit, live apply, and journal finalization without bypassing the guard. Captured
-  bodies remain readable when the live document is unavailable; both terminal
-  outcomes degrade to the client Copy fallback.
+  commit, live apply, and journal finalization without bypassing the guard. After
+  durable ownership authorization, captured bodies remain readable when the live
+  document is unavailable; both terminal outcomes degrade to the client Copy fallback.
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and
