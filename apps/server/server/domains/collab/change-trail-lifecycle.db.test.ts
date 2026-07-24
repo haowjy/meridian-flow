@@ -183,6 +183,90 @@ describe("change trail (postgres)", () => {
     expect(journalRows[0]?.originType).toBe("human");
   });
 
+  it("does not apply a committed forward action after document access is revoked", async () => {
+    const documentSchema = buildDocumentSchema();
+    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const model = yProsemirrorModel(documentSchema);
+    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
+    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
+    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
+    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
+    if (!(nextBlock instanceof Y.XmlElement)) throw new Error("missing live anchor block");
+    const trailId = "00000000-0000-4000-8000-000000000812";
+    const changeId = "revoked-restore";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 1,
+      documentCount: 1,
+    });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Alpha",
+      changes: [
+        {
+          changeId,
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: "receipt-revoked",
+          kind: "delete",
+          beforeBlockId: "deleted-block",
+          afterBlockId: null,
+          beforeText: "deleted-block|Restored prose.",
+          afterTextAtReceipt: null,
+          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
+          swept: {
+            affectedBlockHash: "deleted-block",
+            removed: { status: "available", markdown: "Restored prose." },
+            beforeContentRef: null,
+          },
+          writerProtection: {
+            kind: "sweep",
+            body: { status: "available", markdown: "Restored prose." },
+          },
+          reversible: false,
+        },
+      ],
+    });
+    let accessLocks = 0;
+    const actions = createDrizzleTrailForwardActions({
+      db,
+      documentAccess: {
+        lockDocumentAccessState: async () => {
+          accessLocks += 1;
+          return accessLocks < 3 ? "available" : null;
+        },
+      },
+      coordinator,
+      model,
+      codec,
+    });
+
+    await expect(
+      actions.apply({
+        threadId: THREAD_ID,
+        trailId,
+        changeId,
+        action: "restore",
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "anchor_unavailable" });
+    expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc))).trim()).toBe(
+      "Surviving prose.",
+    );
+    expect(
+      await db
+        .select()
+        .from(schema.documentYjsUpdates)
+        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID)),
+    ).toEqual([]);
+  });
+
   it("recovers a committed forward action after a crash before live apply", async () => {
     const documentSchema = buildDocumentSchema();
     const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
@@ -311,30 +395,23 @@ describe("change trail (postgres)", () => {
       ],
     });
 
-    let transactionCount = 0;
-    const collisionDb = new Proxy(db, {
-      get(target, property, receiver) {
-        if (property === "transaction") {
-          return async (...args: Parameters<typeof db.transaction>) => {
-            const result = await target.transaction(...args);
-            transactionCount += 1;
-            if (transactionCount <= 3) {
-              model.insertBlocks(
-                toDocHandle(liveDoc),
-                null,
-                codec.parse(`Writer collision ${transactionCount}.`),
-              );
-            }
-            return result;
-          };
-        }
-        const value = Reflect.get(target, property, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
+    const documentAccess = createDrizzleDocumentAccess(db);
+    let accessLockCount = 0;
     const actions = createDrizzleTrailForwardActions({
-      db: collisionDb,
-      documentAccess: createDrizzleDocumentAccess(db),
+      db,
+      documentAccess: {
+        async lockDocumentAccessState(tx, userId, documentId) {
+          accessLockCount += 1;
+          if (accessLockCount > 1 && accessLockCount % 2 === 1) {
+            model.insertBlocks(
+              toDocHandle(liveDoc),
+              null,
+              codec.parse(`Writer collision ${(accessLockCount - 1) / 2}.`),
+            );
+          }
+          return documentAccess.lockDocumentAccessState(tx, userId, documentId);
+        },
+      },
       coordinator,
       model,
       codec,
@@ -569,6 +646,18 @@ describe("change trail (postgres)", () => {
         threadId: THREAD_ID,
         trailId,
         userId: "00000000-0000-4000-8000-000000000812" as never,
+      }),
+    ).resolves.toEqual([]);
+
+    const revokedAccess = {
+      documentAccessState: async () => "available" as const,
+      lockDocumentAccessState: async () => null,
+    };
+    await expect(
+      createDrizzleChangeTrailReader(db, revokedAccess).readDetails({
+        threadId: THREAD_ID,
+        trailId,
+        userId: USER_ID,
       }),
     ).resolves.toEqual([]);
 
