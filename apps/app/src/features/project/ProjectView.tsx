@@ -118,9 +118,9 @@ export function ProjectView(props: ProjectViewProps) {
   }, [props.projectId, workingSetHydration.status]);
 
   useEffect(() => {
-    if (!deskHydrated) return;
+    if (!deskHydrated || works === null) return;
     const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const reconciliationKey = `${props.projectId}:${reconciliation}`;
+    const reconciliationKey = `${props.projectId}:${reconciliation}:${activeWork?.id ?? "no-work"}`;
     if (reconciledDeskRef.current === reconciliationKey) return;
     reconciledDeskRef.current = reconciliationKey;
     if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
@@ -137,7 +137,7 @@ export function ProjectView(props: ProjectViewProps) {
       projectId: props.projectId,
       routeWorkId: activeWork?.id ?? null,
     });
-  }, [activeWork?.id, deskHydrated, props.projectId, queryClient, workingSetHydration]);
+  }, [activeWork?.id, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);
