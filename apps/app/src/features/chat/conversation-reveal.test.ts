@@ -27,11 +27,18 @@ describe("conversation reveal handshake", () => {
   });
 
   it("replays pending navigation when the project shell registers", () => {
-    const reveal = { threadId: "thread-2", turnId: null, changeId: "change-2" };
+    const reveal = { threadId: "thread-2", turnId: "turn-2", changeId: "change-2" };
     requestConversationReveal(reveal);
     const navigate = vi.fn();
     const unregister = registerConversationRevealNavigator(navigate);
     expect(navigate).toHaveBeenCalledWith("thread-2");
+    unregister();
+  });
+
+  it("completes a thread-only reveal once navigation is dispatched", () => {
+    const unregister = registerConversationRevealNavigator(vi.fn());
+    requestConversationReveal({ threadId: "thread-3", turnId: null, changeId: "change-3" });
+    expect(peekConversationReveal()).toBeNull();
     unregister();
   });
 });
