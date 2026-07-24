@@ -646,6 +646,22 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit twice" }),
     );
 
+    const persistedResults = (await repos.blocks.listByThread(thread.id))
+      .filter((block) => block.blockType === "tool_result")
+      .map((block) => {
+        const content = block.content as { toolCallId: string; output: unknown };
+        return { toolCallId: content.toolCallId, output: content.output };
+      });
+    expect(persistedResults).toEqual([
+      {
+        toolCallId: "write-first",
+        output: [{ type: "text", text: "settled write-first" }],
+      },
+      {
+        toolCallId: "write-second",
+        output: [{ type: "text", text: "settled write-second" }],
+      },
+    ]);
     const secondRequest = JSON.stringify(requests[1]?.messages);
     expect(secondRequest).toContain("settled write-first");
     expect(secondRequest).toContain("settled write-second");
