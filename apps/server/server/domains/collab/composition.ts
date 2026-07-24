@@ -1,5 +1,4 @@
 /** Production dependency graph for the server collab domain. */
-import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   deferUntilDrizzleCommit,
@@ -89,9 +88,6 @@ export type { DocumentWriteHook } from "./contracts.js";
 type CollabDomainDeps = {
   db: Database;
   documentAccess: TrailDocumentAccess;
-  threads: {
-    findById(threadId: ThreadId): Promise<unknown>;
-  };
   eventSink?: EventSink;
   notices?: NoticePort;
 };
