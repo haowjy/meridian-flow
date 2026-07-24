@@ -16,10 +16,11 @@ import { assertApiStartupGuards } from "../lib/startup-guards";
 import { getYjsGateway } from "../routes/ws/yjs";
 
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
+let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
 
 installApiProcessCrashPolicy({ eventSink });
 registerProcessShutdownCallback(async () => {
-  await getYjsGateway(await getApp()).drain();
+  await yjsGateway?.drain();
 });
 installObservabilityShutdownHooks();
 
@@ -34,7 +35,7 @@ export default async function startupPlugin() {
     });
   }
 
-  getYjsGateway(await getApp());
+  yjsGateway = getYjsGateway(await getApp());
 
   // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request.
   await validateAuthConfiguration();

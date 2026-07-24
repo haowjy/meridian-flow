@@ -340,6 +340,40 @@ describe("Yjs branch handshake route guard", () => {
     expect(handleClose).toHaveBeenCalledWith({ code: 1011, reason: "error" });
     expect(state.size).toBe(0);
   });
+
+  it("stops connection admission synchronously when drain starts", async () => {
+    let finishPersistenceDrain: (() => void) | undefined;
+    const persistenceDrain = new Promise<void>((resolve) => {
+      finishPersistenceDrain = resolve;
+    });
+    const gateway = createYjsGateway({
+      ...gatewayServices(),
+      eventSink: { emit: vi.fn() } as never,
+      documentSync: {
+        bindHocuspocus: () => undefined,
+        getPersistenceQueueMetrics: () => ({}),
+        drainHocuspocusPersistence: () => persistenceDrain,
+      } as never,
+    });
+    const drain = gateway.drain();
+    const close = vi.fn();
+
+    const connection = gateway.connect({
+      request: new Request("https://server.localhost/ws/yjs"),
+      userId: "user-1" as never,
+      close,
+      socket: {
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+      },
+    });
+
+    expect(connection).toBeUndefined();
+    expect(close).toHaveBeenCalledWith(1012, "server-shutdown");
+    finishPersistenceDrain?.();
+    await drain;
+  });
 });
 
 describe("Yjs live writer admission", () => {
