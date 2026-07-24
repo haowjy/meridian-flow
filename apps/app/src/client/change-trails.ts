@@ -1,5 +1,7 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
 import type {
+  ChangeTrailDetailResponseV1,
+  ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
   TrailChangeV1,
   TrailForwardAction,
@@ -9,6 +11,7 @@ import type {
 import { getJson, postJson } from "./api/http-client";
 
 export type {
+  ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
   TrailChangeV1,
   TrailForwardAction,
@@ -18,22 +21,7 @@ export type {
 
 export type ChangeTrailShell = ChangeTrailShellV1;
 export type TrailChange = TrailChangeV1;
-
-export type ChangeTrailDocument =
-  | {
-      documentId: string;
-      unavailable: true;
-      trailId?: string;
-      documentTitle?: string;
-      changes?: TrailChange[];
-    }
-  | {
-      trailId: string;
-      documentId: string;
-      documentTitle: string;
-      changes: TrailChange[];
-      unavailable?: false;
-    };
+export type ChangeTrailDocument = ChangeTrailDocumentDetailV1;
 export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPending: boolean };
 
 export const emptyTrailShellState = (): TrailShellState => ({ byId: {}, gapPending: false });
@@ -106,7 +94,7 @@ export async function readChangeTrail(
   threadId: string,
   trailId: string,
 ): Promise<ChangeTrailDocument[]> {
-  const result = await getJson<{ version: 1; trailId: string; documents: ChangeTrailDocument[] }>(
+  const result = await getJson<ChangeTrailDetailResponseV1>(
     `/api/threads/${threadId}/change-trails/${trailId}`,
   );
   return result.documents;
