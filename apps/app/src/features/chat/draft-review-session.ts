@@ -90,6 +90,7 @@ export type DraftCommandOutcome =
   | { kind: "failed"; code: InlineReviewMessageCode };
 
 export type DraftApplyScope = "draft" | "operation";
+export type DraftBatchErrorCode = "apply-failed" | "discard-offline";
 
 export type DraftApplyPreview = {
   documentId: string;
@@ -134,7 +135,11 @@ export type DraftReviewCommandPorts = {
     input: { branchId?: string; operationIds?: string[] },
   ) => Promise<void>;
   undo: (selection: DraftReviewSelection, writeId: string) => Promise<void>;
+  operationApplyStarted: (operationId: string) => void;
+  operationDiscardStarted: () => void;
   applyStarted: () => void;
+  batchStarted: () => void;
+  batchSettled: (error: DraftBatchErrorCode | null) => void;
   applySettled: (selection: DraftReviewSelection, outcome: DraftApplyOutcome) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
@@ -166,8 +171,9 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     return this.withReservation(
       { kind: "apply-operation", ...selection, operationId },
-      (reservation, ports) =>
-        this.applyRequest(
+      (reservation, ports) => {
+        ports.operationApplyStarted(operationId);
+        return this.applyRequest(
           selection,
           "operation",
           reservation,
@@ -185,7 +191,8 @@ export class DraftReviewSession {
               };
             },
           }),
-        ),
+        );
+      },
     );
   }
 
@@ -196,6 +203,7 @@ export class DraftReviewSession {
     return this.withReservation(
       { kind: "discard-operation", ...selection, operationId },
       async (reservation, ports) => {
+        ports.operationDiscardStarted();
         try {
           const preview = await ports.loadPreview(selection);
           this.disposition.advance(reservation, "mutating");
@@ -243,18 +251,18 @@ export class DraftReviewSession {
     if (!reservation) return [{ kind: "blocked" }];
     const ports = this.ports();
     const outcomes: DraftCommandOutcome[] = [];
+    ports.batchStarted();
     try {
       for (const draft of drafts) {
-        outcomes.push(
-          await (mode === "apply"
-            ? this.applyDraft(draft, reservation, ports, () =>
-                this.currentDraftRequest(draft, ports),
-              )
-            : this.discardDraftWithReservation(draft, reservation, ports)),
-        );
+        const outcome = await (mode === "apply"
+          ? this.applyDraft(draft, reservation, ports, () => this.currentDraftRequest(draft, ports))
+          : this.discardDraftWithReservation(draft, reservation, ports));
+        outcomes.push(outcome);
+        if (!batchOutcomeSucceeded(mode, outcome)) break;
       }
     } finally {
       this.disposition.release(reservation);
+      ports.batchSettled(batchErrorCode(mode, outcomes));
     }
     return outcomes;
   }
@@ -337,6 +345,23 @@ export class DraftReviewSession {
       this.disposition.release(reservation);
     }
   }
+}
+
+function batchOutcomeSucceeded(mode: "apply" | "discard", outcome: DraftCommandOutcome): boolean {
+  return mode === "apply"
+    ? outcome.kind === "applied" || outcome.kind === "partial-applied"
+    : outcome.kind === "discarded";
+}
+
+function batchErrorCode(
+  mode: "apply" | "discard",
+  outcomes: readonly DraftCommandOutcome[],
+): DraftBatchErrorCode | null {
+  return outcomes.at(-1)?.kind === "failed"
+    ? mode === "apply"
+      ? "apply-failed"
+      : "discard-offline"
+    : null;
 }
 
 export function acquireDraftApplyRequest(input: {
@@ -497,6 +522,7 @@ export type DraftReviewState = {
   staleDraft: DraftReviewSelection | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
+  dockDispositionError: DraftBatchErrorCode | null;
   applyRefusal: DraftApplyRefusal | null;
   /** Conflicts survive navigation; only re-review or disposition removes their entry. */
   concurrentConflicts: ReadonlyMap<string, DraftReviewSelection & { conflictedBlocks: string[] }>;
@@ -514,6 +540,8 @@ export type DraftReviewAction =
   | { type: "operationUndoAcceptFailed"; message: InlineReviewMessage }
   | { type: "discardStarted" }
   | { type: "discardFailed"; code: InlineReviewMessageCode }
+  | { type: "batchStarted" }
+  | { type: "batchSettled"; error: DraftBatchErrorCode | null }
   | { type: "rejectSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
@@ -523,6 +551,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   staleDraft: null,
   inlineReviewMessage: null,
   inlineDiscardError: null,
+  dockDispositionError: null,
   applyRefusal: null,
   concurrentConflicts: new Map(),
 };
@@ -574,6 +603,10 @@ export function draftReviewReducer(
       };
     case "discardFailed":
       return { ...state, inlineDiscardError: action.code };
+    case "batchStarted":
+      return { ...state, dockDispositionError: null };
+    case "batchSettled":
+      return { ...state, dockDispositionError: action.error };
     case "rejectSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":

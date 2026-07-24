@@ -35,6 +35,7 @@ import {
   type DraftApplyOutcome,
   type DraftApplyPreview,
   type DraftApplyRefusal,
+  type DraftBatchErrorCode,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
   type DraftReviewSelection,
@@ -92,6 +93,7 @@ export type DraftReviewController = {
   acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
+  dockDispositionError: DraftBatchErrorCode | null;
   needsRereview: boolean;
   conflictedBlocks: ReadonlySet<string>;
   applyRefusal: DraftApplyRefusal | null;
@@ -181,6 +183,7 @@ export function useDraftReviewController(
       : null;
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
+  const dockDispositionError = state.dockDispositionError;
   const applyRefusal = state.applyRefusal;
   const concurrentConflict = conflictForSelection(state, inlineReview);
   const needsRereview = concurrentConflict !== null;
@@ -327,8 +330,20 @@ export function useDraftReviewController(
         writeId,
       });
     },
+    operationApplyStarted: (operationId) => {
+      dispatch({ type: "operationAcceptStarted", operationId });
+    },
+    operationDiscardStarted: () => {
+      dispatch({ type: "discardStarted" });
+    },
     applyStarted: () => {
       dispatch({ type: "applyStarted" });
+    },
+    batchStarted: () => {
+      dispatch({ type: "batchStarted" });
+    },
+    batchSettled: (error) => {
+      dispatch({ type: "batchSettled", error });
     },
     applySettled: ({ documentId, draftId }, outcome) => {
       applyDisposition(documentId, draftId, outcome);
@@ -440,7 +455,6 @@ export function useDraftReviewController(
         });
         return { kind: "failed", code: "change-moved" };
       }
-      dispatch({ type: "operationAcceptStarted", operationId });
       const outcome = await reviewSession.applyOperation(inline, operationId);
       if (outcome.kind === "failed") {
         dispatch({
@@ -478,7 +492,6 @@ export function useDraftReviewController(
     async (operationId: string): Promise<DraftCommandOutcome> => {
       const runtime = inlineRuntimeRef.current;
       if (!runtime?.draftId) return { kind: "failed", code: "discard-failed" };
-      dispatch({ type: "discardStarted" });
       const outcome = await reviewSession.discardOperation(runtime, operationId);
       if (outcome.kind === "failed") {
         dispatch({
@@ -542,6 +555,7 @@ export function useDraftReviewController(
       acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
+      dockDispositionError,
       needsRereview,
       conflictedBlocks,
       applyRefusal,
@@ -579,6 +593,7 @@ export function useDraftReviewController(
       acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
+      dockDispositionError,
       needsRereview,
       conflictedBlocks,
       applyRefusal,

@@ -83,6 +83,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     isBusy: controller.isDisposing,
     needsRereview: controller.needsRereview,
     applyRefusal: controller.applyRefusal,
+    dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
     reviewFirst: () => {
@@ -90,7 +91,10 @@ export function useDraftDock({ generating }: { generating: boolean }) {
       if (first) reviewRow(first);
     },
     applyRow: applyDraft,
-    discardRow: (row: DockRow) => controller.reject(row.documentId, row.draft.draftId),
+    discardRow: (row: DockRow) =>
+      controller.disposeDrafts("discard", [
+        { documentId: row.documentId, draftId: row.draft.draftId },
+      ]),
     startApplyAll: () => {
       void controller.disposeDrafts(
         "apply",
@@ -249,6 +253,18 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       </div>
 
       {dock.applyRefusal ? <DraftApplyRefusalNotice refusal={dock.applyRefusal} /> : null}
+      {dock.dispositionError ? (
+        <p
+          className="border-border-subtle border-t px-3 py-2 text-destructive text-micro"
+          data-draft-dock-disposition-error={dock.dispositionError}
+        >
+          {dock.dispositionError === "apply-failed" ? (
+            <Trans>Couldn't apply. Check your connection and try again.</Trans>
+          ) : (
+            <Trans>Couldn't discard. Check your connection and try again.</Trans>
+          )}
+        </p>
+      ) : null}
 
       {multi && expanded ? (
         <div>
