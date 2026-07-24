@@ -174,6 +174,45 @@ export function createDrizzleTrailForwardActions(input: {
                 return "retry" as const;
               }
               const alreadyApplied = updateAlreadyApplied(liveDoc, committed.update);
+              let projectedDoc: Y.Doc = liveDoc;
+              let scratch: Y.Doc | undefined;
+              if (!alreadyApplied) {
+                scratch = new Y.Doc({ gc: false });
+                Y.applyUpdate(scratch, Y.encodeStateAsUpdate(liveDoc));
+                const projected = applyCommittedTrailForwardAction({
+                  liveDoc: scratch,
+                  update: committed.update,
+                  expectedLiveStateHash: committed.expectedLiveStateHash,
+                  liveOrigin: {
+                    type: "user",
+                    userId: actionInput.userId,
+                    reason: `trail-${actionInput.action}`,
+                  },
+                });
+                if (projected === "live_changed") {
+                  scratch.destroy();
+                  if (attempt === 2) {
+                    await updateActionState(tx, {
+                      ...actionInput,
+                      documentId: detail.documentId,
+                      changes: locked.changes,
+                      state: { status: "settled", outcome: "retry_exhausted" },
+                    });
+                    return "retry_exhausted" as const;
+                  }
+                  return "retry" as const;
+                }
+                projectedDoc = scratch;
+              }
+              let markdownProjection: string;
+              try {
+                markdownProjection = await input.durableProjectionSerializer.serializeDocument(
+                  detail.documentId as never,
+                  projectedDoc,
+                );
+              } finally {
+                scratch?.destroy();
+              }
               if (!alreadyApplied) {
                 const applied = applyCommittedTrailForwardAction({
                   liveDoc,
@@ -213,10 +252,6 @@ export function createDrizzleTrailForwardActions(input: {
                 })
                 .returning({ id: documentYjsUpdates.id });
               if (!journalRow) throw new Error("Failed to persist trail forward action");
-              const markdownProjection = await input.durableProjectionSerializer.serializeDocument(
-                detail.documentId as never,
-                liveDoc,
-              );
               await tx
                 .update(documents)
                 .set({ markdownProjection, updatedAt: new Date() })

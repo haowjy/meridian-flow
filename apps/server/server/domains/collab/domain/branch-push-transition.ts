@@ -18,7 +18,7 @@ import type {
   PreparedPushCommit,
   PushSweptTrail,
 } from "./branch-push-contracts.js";
-import { DurableProjectionSerializationError } from "./ports/durable-projection.js";
+import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";
@@ -338,7 +338,7 @@ export function createBranchPushTransition(input: {
             ingressGeneration,
           });
         } catch (cause) {
-          if (cause instanceof DurableProjectionSerializationError) {
+          if (isCorruptDurableProjectionError(cause)) {
             await input.pushStore.blockLiveSettlement?.({
               pushId: pending.push.id,
               claim: pending.claim,
