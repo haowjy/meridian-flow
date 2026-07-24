@@ -33,6 +33,7 @@ state is a live document.
 | Immutable-base Manual Apply policy | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
 | Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
+| Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
 | Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
 | Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
@@ -204,12 +205,13 @@ history is preserved for attribution, echo, and undo dependency checking.
   capture through fenced completion. A durable commit requires its trail bundle.
   Projection failure is classified: only the canonical `DocumentSyncError` with
   `code: "corrupt_state"` (a registered non-tracked filetype on a tracked
-  journal) permanently blocks live settlement via `blockLiveSettlement`;
+  journal) permanently blocks live settlement via `PendingSettlementStore.block`;
   transient serializer failures propagate but leave the settlement retryable.
   Do not block on every projection throw.
 - **One trail write seam**: recording and reconciliation delegate aggregate
-  mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
-  reconciliation do not duplicate aggregate SQL.
+  mutation to `drizzle-change-trail-aggregate.ts`. It is also the sole interpreter
+  of `TrailContributionReplacement`; settlement carries the replacement opaquely.
+  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -275,11 +277,15 @@ history is preserved for attribution, echo, and undo dependency checking.
   a history-sized Yjs snapshot.
 - **Push settlement state**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated trail JSON, fenced ownership fields, and typed
-  pending/blocked/completed state. Exact post-cut Yjs admissions live in the
-  normalized `branch_push_outbox_updates` relation; admission association and
-  `join_version` advancement share the document mutation transaction. Cold reads
-  reconstruct durable provenance for the final pre-push document and feed its
-  visible occurrences to the shared pointwise destructive-effect classifier.
+  pending/blocked/completed state. `PendingSettlementStore` is the required
+  persistence authority for settlement, claims, failure backoff, blocking, trail
+  refinement, and fenced completion. Exact post-cut Yjs admissions live in the
+  normalized `branch_push_outbox_updates` relation. Journal and staged-push
+  admission both call the single `joinAdmissionWithinTx` writer inside their
+  document-mutation transaction; source identity and completing-push exclusion
+  are parameters, while join-version advancement follows one SQL path. Cold
+  reads reconstruct durable provenance for the final pre-push document and feed
+  its visible occurrences to the shared pointwise destructive-effect classifier.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.

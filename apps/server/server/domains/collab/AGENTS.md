@@ -40,16 +40,21 @@ propagation between them.
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
   immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
   trail/notice projection. `branch-push-executor.ts` owns orchestration;
-  `branch-push-transition.ts` is the sole ordering owner for capture, prepare,
-  born-owned commit, settlement, fenced apply/completion, and recovery across
-  every push mode. `branch-review*.ts` owns discard/undo/redo.
+  `branch-push-transition.ts` is the sole ordering owner for settlement
+  drain/reload/materialization/classification/refinement/fenced completion and
+  delivery across every push mode. `branch-review*.ts` owns discard/undo/redo.
+- `domain/ports/pending-settlement-store.ts` is the required settlement
+  persistence boundary. `adapters/drizzle-pending-settlement.ts` owns the
+  settlement outbox, recovery claims, completion fence, and the one admission
+  join writer shared by journal and staged-push transactions.
 - `domain/ports/change-trail-persistence.ts` is the persistence boundary.
   `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
   dispatcher, work processor, and reconciler remain separate lifecycle owners.
 - `domain/draft-review-*` is the review diff/presentation pipeline over branch
   docs. The name is UI vocabulary; it is not the old persisted draft subsystem.
 - `adapters/drizzle-*` are production persistence adapters for live journal,
-  branches, branch pushes, turn lineage, receipts, and Hocuspocus coordination.
+  branches, push commit/lineage, pending settlement, turn lineage, receipts, and
+  Hocuspocus coordination.
 
 ## Rules
 
