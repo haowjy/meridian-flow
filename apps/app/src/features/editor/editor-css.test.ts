@@ -1,9 +1,17 @@
-/** Cascade-order contract for inline-review conflict modifiers. */
+/** Static contracts for editor content geometry and inline-review CSS. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { editorProseClass } from "./editor-column";
 
 const css = readFileSync(new URL("./editor.css", import.meta.url), "utf8");
 const finalModifiersStart = css.indexOf("Conflict is the final visual modifier");
+
+describe("editor content spacing", () => {
+  it("keeps half a viewport of typing room inside the ProseMirror content element", () => {
+    expect(editorProseClass("docked").split(" ")).toContain("pb-[50vh]");
+    expect(editorProseClass("none").split(" ")).toContain("pb-[50vh]");
+  });
+});
 
 describe("inline review conflict CSS", () => {
   it.each([
