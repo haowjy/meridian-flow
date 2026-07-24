@@ -32,7 +32,7 @@ state is a live document.
 | Push materialization | `domain/branch-push-plan.ts` |
 | Immutable-base Manual Apply policy | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
-| Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
+| Durable push execution | `domain/branch-push-candidates.ts`, `domain/branch-push.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
 | Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
@@ -198,11 +198,15 @@ journal-watermark fence above.
 history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
   branch-id order, then live coordinator locks in document-id order.
-- **One push commit seam**: whole, selective, and companion pushes execute via
-  `branch-push-executor.ts`; immutable-base conflict preparation lives in
+- **One push commit seam**: whole, selective, and companion builders produce a
+  `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
+  Candidate data carries whole-vs-selected materialization, conflict/sweep policy,
+  and the shared receipt; immutable-base conflict preparation lives in
   `branch-push-preparation.ts`, trail and notice projection live in
-  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders
-  capture through fenced completion. A durable commit requires its trail bundle.
+  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders capture
+  through fenced completion. A durable commit requires its trail bundle. Review
+  reversal is a separately composed
+  `branch-review-operations.ts` service.
   Projection failure is classified: only the canonical `DocumentSyncError` with
   `code: "corrupt_state"` (a registered non-tracked filetype on a tracked
   journal) permanently blocks live settlement via `PendingSettlementStore.block`;
