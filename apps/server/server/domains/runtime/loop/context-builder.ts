@@ -71,6 +71,7 @@ export function buildContext(input: BuildContextInput): {
   tools?: Tool[];
 } {
   const messages: Message[] = [];
+  const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
   const composed = input.thread.composedSystemPrompt;
   if (composed && isThreadPromptFrozen(input.thread)) {
@@ -130,7 +131,9 @@ export function buildContext(input: BuildContextInput): {
         // as a separate tool-role message.
         if (block.blockType === "tool_result") {
           if (assistantParts.length > 0) {
-            messages.push(assistant(assistantParts.slice()));
+            const message = assistant(assistantParts.slice());
+            messages.push(message);
+            sourceTurnStatusByMessage.set(message, turn.status);
             assistantParts.length = 0;
           }
           const content = block.content as {
@@ -148,15 +151,56 @@ export function buildContext(input: BuildContextInput): {
         if (part) assistantParts.push(part);
       }
       if (assistantParts.length > 0) {
-        messages.push(assistant(assistantParts.slice()));
+        const message = assistant(assistantParts.slice());
+        messages.push(message);
+        sourceTurnStatusByMessage.set(message, turn.status);
       }
     }
   }
 
   return {
-    messages,
+    messages: completeToolResultGroups(messages, sourceTurnStatusByMessage),
     tools: input.tools?.length ? input.tools : undefined,
   };
+}
+
+function completeToolResultGroups(
+  messages: readonly Message[],
+  sourceTurnStatusByMessage: ReadonlyMap<Message, Turn["status"]>,
+): Message[] {
+  const completed: Message[] = [];
+
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    completed.push(message);
+    if (message.role !== "assistant") continue;
+
+    const missingResultIds = new Set(
+      message.content.flatMap((part) => (part.type === "tool_use" ? [part.toolCallId] : [])),
+    );
+    if (missingResultIds.size === 0) continue;
+
+    let nextIndex = index + 1;
+    while (messages[nextIndex]?.role === "tool") {
+      const toolMessage = messages[nextIndex];
+      completed.push(toolMessage);
+      for (const part of toolMessage.content) {
+        if (part.type === "tool_result") missingResultIds.delete(part.toolCallId);
+      }
+      nextIndex++;
+    }
+    index = nextIndex - 1;
+
+    const missingResultMessage =
+      sourceTurnStatusByMessage.get(message) === "cancelled"
+        ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
+        : "Tool call interrupted by an error; no result recorded. Side effects unknown — re-read state before retrying.";
+    for (const toolCallId of missingResultIds) {
+      completed.push(toolResult(toolCallId, missingResultMessage, true));
+    }
+  }
+
+  return completed;
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {

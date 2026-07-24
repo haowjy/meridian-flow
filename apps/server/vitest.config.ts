@@ -2,7 +2,8 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, "**/*.db.test.ts"],
+    // .output is nitro's build artifact; its compiled *.test.mjs copies must not be collected.
+    exclude: [...configDefaults.exclude, "**/*.db.test.ts", "**/.output/**"],
     fileParallelism: false,
     testTimeout: 30_000,
   },
