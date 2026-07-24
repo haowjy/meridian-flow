@@ -163,7 +163,9 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           : persistedPushChanges.length === incomingKeys.size &&
             persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
         const replacement = input.replacePushId
-          ? refinePushChanges(persistedPushChanges, trail.changes)
+          ? trail.changes.length === 0
+            ? []
+            : refinePushChanges(persistedPushChanges, trail.changes)
           : trail.changes;
         const changes = input.refineCurrentVersion
           ? refinementIsComplete
