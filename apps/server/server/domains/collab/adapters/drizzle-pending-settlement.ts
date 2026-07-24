@@ -776,6 +776,7 @@ export async function joinAdmissionWithinTx(
       .set({
         joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
         settledJoinVersion: null,
+        // App-clock → DB-clock convergence for journal admissions is deliberate (2026-07-24 divergence decision).
         updatedAt: sql`clock_timestamp()`,
       })
       .where(eq(branchPushSettlementOutbox.pushId, target.pushId));
