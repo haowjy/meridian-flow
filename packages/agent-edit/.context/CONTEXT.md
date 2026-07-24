@@ -127,7 +127,8 @@ Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
 `renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
 `serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
 (`resolver/block-hash.ts`), and echo after-snapshots in
-`tool/mutation-commit.ts`. Response commits do not recompute per-write echoes.
+`tool/mutation-commit.ts`. Response settlement recomputes each staged write's
+receipt against the settled runtime projection before the host publishes it.
 The Drizzle journal adapter commits a buffered response in one multi-row INSERT
 via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same
@@ -161,10 +162,10 @@ reconstruction when the host does not supply an `InteractionContext`.
 `InteractionContext.liveJournalSeq` remains the reconstruction reference;
 `afterJournalId` remains a host attribution floor and must not be used as one.
 `InteractionContext.attributionBaseline` is the thread peer's CRDT state
-captured before the host pulls concurrent upstream changes. When present,
-`summarizeMutationEcho` computes a pulled-content echo (baseline vs pre-own
-snapshot) and prepends it to the own-write echo, so the agent sees pulled-in
-sibling content as concurrent edits.
+captured before the host pulls concurrent upstream changes. It feeds provenance
+classification, not the document echo: a success echo renders only the
+post-write projection, while pulled or settlement-time changes use the typed
+concurrent-edit report.
 
 Reversal application captures commit preflight before persistence, then the
 mutation committer's final recheck resumes from that immutable detection after
@@ -465,10 +466,11 @@ write.
 Passing `WriteContext.responseId` makes `create` / `insert` / `replace` apply to
 the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
-reflect cumulative response-local state. Without a response id, the same command
-path appends and projects immediately. Undo/redo never buffer: a tool reversal
-first commits any buffered writes for that response so durable order matches tool
-order.
+initially reflect cumulative response-local state; `commitResponse` returns
+receipts recomputed against the settled projection for host publication. Without
+a response id, the same command path appends and projects immediately. Undo/redo
+never buffer: a tool reversal first commits any buffered writes for that response
+so durable order matches tool order.
 
 Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 

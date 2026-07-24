@@ -45,7 +45,6 @@ export interface MutationEchoInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   afterSnapshot?: readonly BlockSnapshot[];
-  interactionContext?: InteractionContext;
 }
 
 export interface JournaledUpdate {
@@ -255,16 +254,8 @@ export function createMutationCommit(deps: {
       agentTouchedHashes: input.touchedHashes,
       agentDeletedHashes: input.deletedHashes,
     });
-    const pulledEcho = input.interactionContext?.attributionBaseline
-      ? computeEcho({
-          before: snapshotFromUpdate(input.interactionContext.attributionBaseline),
-          after: input.before,
-          agentTouchedHashes: input.touchedHashes,
-          agentDeletedHashes: input.deletedHashes,
-        })
-      : [];
     return {
-      echo: [...pulledEcho, ...echo],
+      echo,
       concurrentEdits: concurrent.info,
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
@@ -342,7 +333,6 @@ export function createMutationCommit(deps: {
             snapshotFromUpdate(input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc)),
           touchedHashes: input.touchedHashes,
           deletedHashes: input.deletedHashes,
-          interactionContext: input.interactionContext,
         },
         captured?.detection,
       ),

@@ -135,7 +135,7 @@ describe("runtime orchestrator behavior", () => {
           return {
             toolCallId: call.id,
             output: [{ type: "text" as const, text: "status: success" }],
-            metadata: { documentId: "doc-1", stagedWrite: true },
+            metadata: { documentId: "doc-1", stagedWrite: true, writeId: "w1" },
           };
         },
       },
@@ -145,7 +145,19 @@ describe("runtime orchestrator behavior", () => {
       gateway: firstGateway,
       responseWrites: {
         async commitResponse(_responseId, _context, beforeTransactionCommit) {
-          await beforeTransactionCommit({ status: "committed", concurrentEdits: [] });
+          await beforeTransactionCommit({
+            status: "committed",
+            receipts: [
+              {
+                documentId: "doc-1",
+                receipt: {
+                  writeId: "w1",
+                  content: [{ type: "text", text: "status: success" }],
+                },
+              },
+            ],
+            concurrentEdits: [],
+          });
           throw new Error("process failed after atomic response commit");
         },
         async rollbackResponse() {},
@@ -198,7 +210,7 @@ describe("runtime orchestrator behavior", () => {
           return {
             toolCallId: call.id,
             output: [{ type: "text" as const, text: "status: success" }],
-            metadata: { documentId: "doc-1", stagedWrite: true },
+            metadata: { documentId: "doc-1", stagedWrite: true, writeId: "w1" },
           };
         },
       },
@@ -377,7 +389,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse() {},
       },
@@ -459,14 +471,29 @@ describe("runtime orchestrator behavior", () => {
       toolExecutor: {
         executeTool: async (call) => ({
           toolCallId: call.id,
-          output: [{ type: "text", text: "status: success" }],
-          metadata: { documentId: "doc-1", stagedWrite: true },
+          output: [
+            { type: "text", text: "status: success\nwrite id: w1" },
+            { type: "text", text: "old1|Old speculative line.\nnew1|New speculative line." },
+          ],
+          metadata: { documentId: "doc-1", stagedWrite: true, writeId: "w1" },
         }),
       },
       responseWrites: {
         async commitResponse(_responseId, _context, beforeTransactionCommit) {
           const result = {
             status: "committed" as const,
+            receipts: [
+              {
+                documentId: "doc-1",
+                receipt: {
+                  writeId: "w1",
+                  content: [
+                    { type: "text" as const, text: "status: success\nwrite id: w1" },
+                    { type: "text" as const, text: "final1|Final settled line." },
+                  ],
+                },
+              },
+            ],
             concurrentEdits: [
               {
                 documentId: "doc-1",
@@ -505,6 +532,9 @@ describe("runtime orchestrator behavior", () => {
     const secondRequest = JSON.stringify(requests[1]?.messages);
     expect(secondRequest).toContain("concurrent edits:\\n  human:");
     expect(secondRequest).toContain("abcd|Human changed line.");
+    expect(secondRequest).toContain("final1|Final settled line.");
+    expect(secondRequest).not.toContain("Old speculative line.");
+    expect(secondRequest).not.toContain("New speculative line.");
   });
 
   it("drains undo and newly recorded late-sweep notices before each model call", async () => {
@@ -601,7 +631,7 @@ describe("runtime orchestrator behavior", () => {
             },
             writerVisible: true,
           });
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse() {},
       },
@@ -907,7 +937,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);
@@ -988,7 +1018,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);

@@ -5,6 +5,7 @@
 
 import type {
   ConcurrentEditInfo,
+  ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
   WriteCommand,
 } from "@meridian/agent-edit";
@@ -96,6 +97,7 @@ export interface AgentEditResponseWriteLifecycle {
 export type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
+      receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
@@ -324,6 +326,9 @@ export function createAgentEditResponseWriteLifecycle(
         }
         return {
           status: "committed",
+          receipts: result.documents.flatMap((document) =>
+            document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
+          ),
           concurrentEdits: result.documents.flatMap((document) =>
             document.concurrentEdits
               ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
@@ -440,6 +445,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               metadata: {
                 documentId: address.documentId,
                 stagedWrite: true,
+                ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
               },
             }
           : {}),

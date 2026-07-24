@@ -278,7 +278,6 @@ export function createWriteCommands(deps: {
         before,
         touchedHashes,
         deletedHashes,
-        interactionContext: context.interactionContext,
       });
       return formatApplySuccess({
         phase: "staged",

@@ -1,6 +1,6 @@
 // Response committer: explicit response lifecycle states and staged-write buffering.
 import * as Y from "yjs";
-import { snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
@@ -15,6 +15,7 @@ import { mutationMode, responseInteractionContext } from "./interaction-mode.js"
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { CommitPreflightInput, JournaledUpdate, MutationCommit } from "./mutation-commit.js";
+import { formatApplySuccess } from "./response-format.js";
 import {
   bufferedLifecycle,
   closedLifecycle,
@@ -100,12 +101,13 @@ export interface ResponseStageUpdateInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   /** Runtime state immediately before this staged update was applied. */
-  preOwnSnapshot?: Uint8Array;
+  preOwnSnapshot: Uint8Array;
   interactionContext?: InteractionContext;
   semanticEditIr?: SemanticEditIRV1;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
+  commandName: WriteCommand["command"];
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
   actor: Extract<MutationActor, { kind: "agent" }>;
@@ -115,7 +117,7 @@ interface StagedResponseUpdate extends JournaledUpdate {
   stageSeq: number;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
-  preOwnSnapshot?: Uint8Array;
+  preOwnSnapshot: Uint8Array;
 }
 
 interface ResponseDocumentBuffer {
@@ -469,6 +471,7 @@ export function createResponseCommitter(deps: {
         return {
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
+          receipts: settledWriteReceipts(docBuffer),
           ...(applied.concurrent.detection.info
             ? { concurrentEdits: applied.concurrent.detection.info }
             : {}),
@@ -594,6 +597,7 @@ export function createResponseCommitter(deps: {
           docBuffers,
           documents,
           liveResponseState(responseId),
+          settledWriteReceipts,
         );
         applyDiscardedClaims(buffer, result);
         finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
@@ -633,6 +637,7 @@ export function createResponseCommitter(deps: {
           docBuffers,
           recheckedDocuments ?? documents,
           liveResponseState(responseId),
+          settledWriteReceipts,
           awarenessDegraded ? { awarenessDegraded: true } : {},
         );
         assertRecoveryResultHonest(result, journalCommitKind);
@@ -685,6 +690,7 @@ export function createResponseCommitter(deps: {
       const current = documentsById.get(docBuffer.docId) ?? {
         documentId: docBuffer.docId,
         updateCount: docBuffer.updates.length,
+        receipts: settledWriteReceipts(docBuffer),
       };
       documentsById.set(docBuffer.docId, {
         ...current,
@@ -698,6 +704,52 @@ export function createResponseCommitter(deps: {
       const document = documentsById.get(docBuffer.docId);
       if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
       return document;
+    });
+  }
+
+  function settledWriteReceipts(
+    docBuffer: ResponseDocumentBuffer,
+  ): ResponseCommitDocumentResult["receipts"] {
+    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, deps.codec);
+    return docBuffer.updates.map((update) => {
+      const beforeDoc = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(beforeDoc, update.preOwnSnapshot);
+        const summary = mutationCommit.summarizeMutationEcho({
+          runtime: docBuffer.runtime,
+          before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, deps.codec),
+          touchedHashes: update.touchedHashes,
+          deletedHashes: update.deletedHashes,
+          afterSnapshot: after,
+        });
+        const echo =
+          summary.echo.length > 0
+            ? summary.echo
+            : update.commandName === "create"
+              ? [
+                  {
+                    mode: "truncated" as const,
+                    blocks: after.map((block) => truncateSerializedBlock(block.serialized)),
+                  },
+                ]
+              : [];
+        const receipt = formatApplySuccess({
+          phase: "committed",
+          writeId: update.writeId,
+          echo,
+          ...(update.commandName === "replace" && update.deletedHashes.size > 0
+            ? { deletedBlocks: [...update.deletedHashes] }
+            : {}),
+        });
+        if (!receipt.content) {
+          throw new Error(
+            `Settled receipt missing content for ${docBuffer.docId}:${update.writeId}.`,
+          );
+        }
+        return { writeId: update.writeId, content: receipt.content };
+      } finally {
+        beforeDoc.destroy();
+      }
     });
   }
 
@@ -931,6 +983,7 @@ export function createResponseCommitter(deps: {
       docBuffer.interactionContext = interactionContext;
     }
     docBuffer.updates.push({
+      commandName: input.commandName,
       update: input.update,
       meta: input.meta,
       mutation: {
@@ -956,7 +1009,7 @@ export function createResponseCommitter(deps: {
       stageSeq: buffer.nextStageSeq,
       touchedHashes: new Set(input.touchedHashes),
       deletedHashes: new Set(input.deletedHashes),
-      ...(input.preOwnSnapshot ? { preOwnSnapshot: input.preOwnSnapshot } : {}),
+      preOwnSnapshot: input.preOwnSnapshot,
     });
     buffer.nextStageSeq += 1;
     const stagedState = responses.get(input.responseId);
@@ -1267,6 +1320,9 @@ function responseCommitResult(
   docBuffers: readonly ResponseDocumentBuffer[],
   knownDocuments: readonly ResponseCommitDocumentResult[] = [],
   state: ResponseState | undefined,
+  settledWriteReceipts: (
+    docBuffer: ResponseDocumentBuffer,
+  ) => ResponseCommitDocumentResult["receipts"],
   flags: Pick<ResponseCommitSuccessResult, "awarenessDegraded"> = {},
 ): ResponseCommitSuccessResult {
   const documentsById = new Map(
@@ -1277,6 +1333,7 @@ function responseCommitResult(
     documentsById.set(docBuffer.docId, {
       documentId: docBuffer.docId,
       updateCount: docBuffer.updates.length,
+      receipts: settledWriteReceipts(docBuffer),
     });
   }
   return {

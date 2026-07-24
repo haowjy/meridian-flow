@@ -62,7 +62,11 @@
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
-import { applyConcurrentRenderBudget, type ConcurrentEditInfo } from "@meridian/agent-edit";
+import {
+  applyConcurrentRenderBudget,
+  type ConcurrentEditInfo,
+  type ResponseCommitWriteReceipt,
+} from "@meridian/agent-edit";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -172,9 +176,24 @@ export interface OrchestratorDeps {
 type ResponseWriteCommitOutcome =
   | {
       status: "committed";
+      receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
+
+function settledReceipt(
+  receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
+  documentId: string,
+  writeId: string,
+): ResponseCommitWriteReceipt {
+  const settled = receipts.find(
+    (entry) => entry.documentId === documentId && entry.receipt.writeId === writeId,
+  );
+  if (!settled) {
+    throw new Error(`Settled receipt missing for ${documentId}:${writeId}.`);
+  }
+  return settled.receipt;
+}
 
 function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
   return (
@@ -735,13 +754,12 @@ async function persistCommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   block: Block;
-  committedOutput: unknown;
+  output: unknown;
 }): Promise<{ block: Block; events: OrchestratorEvent[] }> {
   const content = input.block.content as {
     toolCallId?: string;
     metadata?: Record<string, unknown>;
   } | null;
-  const committedOutput = input.committedOutput;
   const metadata = content?.metadata ?? {};
   const toolCallId = content?.toolCallId ?? "";
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -751,7 +769,7 @@ async function persistCommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output: committedOutput, metadata }),
+      content: toJsonValue({ toolCallId, output: input.output, metadata }),
       provider: input.block.provider,
       status: "complete",
     });
@@ -759,7 +777,7 @@ async function persistCommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output: toJsonValue(committedOutput) },
+        { type: "tool.result", toolCallId, output: toJsonValue(input.output) },
       ],
     };
   });
@@ -1085,10 +1103,7 @@ async function* generateEvents(
           return;
         }
 
-        const writeBlocksByDocument = new Map<
-          string,
-          Array<{ block: Block; committedOutput: unknown }>
-        >();
+        const writeBlocksByDocument = new Map<string, Array<{ block: Block; writeId: string }>>();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
@@ -1166,10 +1181,15 @@ async function* generateEvents(
             dispatched.metadata?.stagedWrite === true &&
             typeof dispatched.metadata.documentId === "string"
           ) {
+            if (typeof dispatched.metadata.writeId !== "string") {
+              throw new Error(
+                `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
+              );
+            }
             const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
             blocks.push({
               block: dispatched.block,
-              committedOutput: dispatched.metadata.committedOutput,
+              writeId: dispatched.metadata.writeId,
             });
             writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
@@ -1205,7 +1225,7 @@ async function* generateEvents(
                         deps,
                         threadId: input.threadId,
                         block: write.block,
-                        committedOutput: write.committedOutput,
+                        output: settledReceipt(result.receipts, documentId, write.writeId).content,
                       })
                     : await persistUncommittedWriteResult({
                         deps,

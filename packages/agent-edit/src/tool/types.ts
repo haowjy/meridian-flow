@@ -212,8 +212,14 @@ export type TurnRedoResult = RedoResult;
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
+  receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+}
+
+export interface ResponseCommitWriteReceipt {
+  writeId: string;
+  content: WriteResultBlock[];
 }
 
 export interface ResponseStagedCreateOutcome {
