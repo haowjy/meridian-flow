@@ -47,7 +47,7 @@ import {
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
 
-export async function persistPendingSettlementWithinTx(
+export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
   prepared: PreparedPushCommit,
   push: PushLineageRow,
@@ -94,6 +94,8 @@ export async function persistPendingSettlementWithinTx(
       .where(eq(branchPushSettlementOutbox.pushId, push.id));
   }
 }
+
+export type StagePendingSettlementWithinTx = typeof stagePendingSettlementWithinTx;
 
 export function createDrizzlePendingSettlementStore(
   db: Database,
