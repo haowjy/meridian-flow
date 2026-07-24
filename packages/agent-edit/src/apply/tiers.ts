@@ -33,6 +33,13 @@ type PlannedEdit =
       blockId: string;
     }
   | {
+      kind: "textRanges";
+      tier: 2;
+      edit: Extract<ResolvedEdit, { kind: "textRanges" }>;
+      replacements: Array<{ span: Span; newText: string }>;
+      blockId: string;
+    }
+  | {
       kind: "text";
       tier: 2;
       edit: Extract<ResolvedEdit, { kind: "text" }>;
@@ -181,6 +188,8 @@ function preflightEdit(
   switch (edit.kind) {
     case "text":
       return preflightTextEdit(doc, model, codec, edit);
+    case "textRanges":
+      return preflightTextRangesEdit(doc, model, codec, edit);
     case "insert":
       return preflightInsert(doc, model, codec, edit);
     case "delete":
@@ -188,6 +197,52 @@ function preflightEdit(
     case "block":
       return preflightBlockReplacement(doc, model, edit);
   }
+}
+
+function preflightTextRangesEdit(
+  doc: DocHandle,
+  model: AgentEditModel,
+  codec: AgentEditCodec,
+  edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
+): ReturnType<typeof preflightEdit> {
+  const live = validateLiveBlock(doc, model, edit.block, "target");
+  if (!live.ok) return live;
+  if (edit.replacements.length < 2) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: "Multi-range text edits require at least two replacements",
+    };
+  }
+
+  const text = model.getText(edit.block);
+  const replacements: Array<{ span: Span; newText: string }> = [];
+  let previousEnd = -1;
+  for (const replacement of edit.replacements) {
+    const span = { from: replacement.span.start, to: replacement.span.end };
+    if (span.from < 0 || span.to < span.from || span.to > text.length || span.from < previousEnd) {
+      return {
+        ok: false,
+        code: "invalid_write",
+        message: `Invalid or overlapping text span ${span.from}..${span.to} for block length ${text.length}`,
+      };
+    }
+    const parsed = parseContent(codec, replacement.newText, "text");
+    if (!parsed.ok) return parsed;
+    replacements.push({ span, newText: replacement.newText });
+    previousEnd = span.to;
+  }
+
+  return {
+    ok: true,
+    plan: {
+      kind: "textRanges",
+      tier: 2,
+      edit,
+      replacements,
+      blockId: model.getBlockId(edit.block),
+    },
+  };
 }
 
 function preflightBlockReplacement(
@@ -323,6 +378,22 @@ function executePlans(
         accumulator.touchedHashes.add(plan.blockId);
         accumulator.applied.push({ kind: "text", tier: plan.tier, blockIds: [plan.blockId] });
         break;
+      case "textRanges": {
+        const applied = model.applyInlineReplacements(
+          doc,
+          plan.edit.block,
+          plan.replacements,
+          codec,
+        );
+        if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
+        accumulator.touchedHashes.add(plan.blockId);
+        accumulator.applied.push({
+          kind: "textRanges",
+          tier: 2,
+          blockIds: [plan.blockId],
+        });
+        break;
+      }
       case "insert": {
         const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
         const blockIds = inserted.map((block) => model.getBlockId(block));
@@ -413,6 +484,7 @@ function validateNoSameTurnTombstones(
 function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
     case "text":
+    case "textRanges":
     case "delete":
     case "block":
       return [edit.block];
