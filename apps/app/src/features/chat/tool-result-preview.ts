@@ -1,10 +1,6 @@
 /**
- * tool-result-preview — formats raw tool output into compact preview rows and
- * summaries for the activity-timeline tool renderers (`tool-renderers.tsx`).
- *
- * Pure, i18n-aware helpers that normalize heterogeneous tool JSON (search
- * results, fetched pages) into title/subtitle/snippet rows, summarize output,
- * and map tool names to friendly labels. Owns only display formatting.
+ * Pure, i18n-aware helpers for curated tool-result rows and bounded preview
+ * text. Owns only display formatting.
  */
 import { t } from "@lingui/core/macro";
 
@@ -13,7 +9,22 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 export type ToolResultRow = { title: string; subtitle?: string; snippet?: string };
 
 export function normalizeToolResultRows(output: JsonValue | undefined): ToolResultRow[] {
-  if (!output || typeof output !== "object" || Array.isArray(output)) return [];
+  if (Array.isArray(output)) {
+    return output.slice(0, 4).flatMap((entry): ToolResultRow[] => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const row = entry as Record<string, JsonValue>;
+      if (typeof row.uri !== "string" || typeof row.excerpt !== "string") return [];
+      return [
+        {
+          title: row.uri,
+          subtitle: typeof row.line === "number" ? t`Line ${row.line}` : undefined,
+          snippet: row.excerpt,
+        },
+      ];
+    });
+  }
+
+  if (!output || typeof output !== "object") return [];
   const obj = output as Record<string, JsonValue>;
 
   if (Array.isArray(obj.results)) {
@@ -50,20 +61,6 @@ export function normalizeToolResultRows(output: JsonValue | undefined): ToolResu
   }
 
   return [];
-}
-
-export function summarizeToolOutput(output: JsonValue | undefined): string {
-  if (output == null) return t`Completed.`;
-  if (typeof output === "string") return truncate(output, 200);
-  try {
-    return truncate(JSON.stringify(output), 200);
-  } catch {
-    return t`Completed.`;
-  }
-}
-
-export function friendlyToolName(toolName: string): string {
-  return toolName;
 }
 
 export function truncate(text: string, max: number): string {
