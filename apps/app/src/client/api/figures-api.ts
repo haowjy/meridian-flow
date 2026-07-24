@@ -44,6 +44,7 @@ type CachedSignedUrl = {
 };
 
 const signedUrlCache = new Map<string, CachedSignedUrl>();
+const inFlightSignedUrls = new Map<string, Promise<GetFigureSignedUrlResponse>>();
 
 function figurePath(projectId: string, documentId: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(
@@ -116,15 +117,27 @@ export async function getFigureSignedUrl(
     };
   }
 
-  const response = await fetch(signedUrlPath(input), { method: "GET" });
-  const payload = await readResponsePayload(response);
-  if (!response.ok) throw new Error(errorMessageFromPayload(payload, response.status));
+  const key = cacheKey(input);
+  const pending = inFlightSignedUrls.get(key);
+  if (pending) return pending;
 
-  const value = deserializeTransport<GetFigureSignedUrlResponse>(
-    payload as GetFigureSignedUrlResponse,
-  );
-  cacheSignedUrl({ ...input, ...value });
-  return value;
+  const request = (async () => {
+    const response = await fetch(signedUrlPath(input), { method: "GET" });
+    const payload = await readResponsePayload(response);
+    if (!response.ok) throw new Error(errorMessageFromPayload(payload, response.status));
+
+    const value = deserializeTransport<GetFigureSignedUrlResponse>(
+      payload as GetFigureSignedUrlResponse,
+    );
+    cacheSignedUrl({ ...input, ...value });
+    return value;
+  })();
+  inFlightSignedUrls.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (inFlightSignedUrls.get(key) === request) inFlightSignedUrls.delete(key);
+  }
 }
 
 function appendOptionalText(form: FormData, name: string, value: string | null | undefined): void {

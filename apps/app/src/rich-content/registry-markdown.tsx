@@ -181,14 +181,14 @@ function RegistryImage({ src, alt }: { src: string; alt: string }) {
 }
 
 function ResolvedImage({ src, alt, projectId }: { src: string; alt: string; projectId?: string }) {
-  const [state, retry] = useAssetImageRenderState({ projectId, src });
+  const [state, actions] = useAssetImageRenderState({ projectId, src });
   if (state.kind === "ready") {
     return (
       <img
         className="max-w-full rounded-md"
         src={state.url}
         alt={alt}
-        onError={assetDocumentIdFromSrc(src) ? retry : undefined}
+        onError={assetDocumentIdFromSrc(src) ? actions.imageLoadFailed : undefined}
       />
     );
   }
@@ -203,7 +203,7 @@ function ResolvedImage({ src, alt, projectId }: { src: string; alt: string; proj
       </span>
     );
   }
-  return <BrokenImage alt={alt} message={state.message} onRetry={retry} />;
+  return <BrokenImage alt={alt} message={state.message} onRetry={actions.retry} />;
 }
 
 function BrokenImage({

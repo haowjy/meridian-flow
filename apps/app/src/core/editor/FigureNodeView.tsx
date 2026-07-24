@@ -53,7 +53,7 @@ function getExtensionOptions(props: NodeViewProps): MeridianFigureExtensionOptio
 export function FigureNodeView(props: NodeViewProps) {
   const attrs = getFigureAttrs(props);
   const { projectId } = getExtensionOptions(props);
-  const [renderState, refreshRenderUrl] = useAssetImageRenderState({
+  const [renderState, renderActions] = useAssetImageRenderState({
     projectId,
     src: attrs.src,
   });
@@ -83,7 +83,7 @@ export function FigureNodeView(props: NodeViewProps) {
           <img
             src={renderUrl}
             alt={attrs.alt ?? ""}
-            onError={() => refreshRenderUrl()}
+            onError={renderActions.imageLoadFailed}
             draggable={false}
           />
         ) : (
@@ -108,7 +108,7 @@ export function FigureNodeView(props: NodeViewProps) {
           >
             <AlertCircle className="size-3" aria-hidden />
             <span>{renderState.message}</span>
-            <Button type="button" variant="ghost" size="xs" onClick={refreshRenderUrl}>
+            <Button type="button" variant="ghost" size="xs" onClick={renderActions.retry}>
               <RefreshCw className="size-3" aria-hidden />
               <Trans>Retry</Trans>
             </Button>
@@ -171,12 +171,12 @@ export function ImageNodeView(props: NodeViewProps) {
   const src = textAttr(props.node.attrs.src);
   const alt = nullableTextAttr(props.node.attrs.alt) ?? "";
   const { projectId } = getExtensionOptions(props);
-  const [state, refresh] = useAssetImageRenderState({ projectId, src });
+  const [state, actions] = useAssetImageRenderState({ projectId, src });
 
   return (
     <NodeViewWrapper as="span" className="meridian-image-node" data-type="image">
       {state.url ? (
-        <img src={state.url} alt={alt} draggable={false} onError={refresh} />
+        <img src={state.url} alt={alt} draggable={false} onError={actions.imageLoadFailed} />
       ) : (
         <span
           className="meridian-image-node__placeholder"
@@ -186,7 +186,13 @@ export function ImageNodeView(props: NodeViewProps) {
           {state.kind === "loading" ? (
             <Loader2 className="size-6 animate-spin" />
           ) : (
-            <ImageIcon className="size-6" />
+            <>
+              <ImageIcon className="size-6" />
+              <Button type="button" variant="ghost" size="xs" onClick={actions.retry}>
+                <RefreshCw className="size-3" aria-hidden />
+                <Trans>Retry</Trans>
+              </Button>
+            </>
           )}
         </span>
       )}

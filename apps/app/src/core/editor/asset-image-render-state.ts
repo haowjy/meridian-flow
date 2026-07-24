@@ -1,6 +1,6 @@
 /** Shared signed-URL lifecycle for asset-backed images rendered in React surfaces. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 
@@ -12,19 +12,66 @@ export type AssetImageRenderState =
   | { kind: "ready"; url: string; expiresAt?: string }
   | { kind: "error"; url: string | null; message: string };
 
+export type AssetImageRetryState = {
+  automaticRefreshUsed: boolean;
+};
+
+export type AssetImageLoadFailureTransition = {
+  state: AssetImageRetryState;
+  action: "refresh" | "error";
+};
+
+/** One media failure may refresh its signed URL automatically; the next stops. */
+export function reduceAssetImageLoadFailure(
+  state: AssetImageRetryState,
+): AssetImageLoadFailureTransition {
+  return state.automaticRefreshUsed
+    ? { state, action: "error" }
+    : { state: { automaticRefreshUsed: true }, action: "refresh" };
+}
+
+export type AssetImageRenderActions = {
+  retry: () => void;
+  imageLoadFailed: () => void;
+};
+
 export function useAssetImageRenderState(input: {
   projectId?: string;
   src: string;
-}): [AssetImageRenderState, () => void] {
+}): [AssetImageRenderState, AssetImageRenderActions] {
   const { projectId, src } = input;
   const assetDocumentId = assetDocumentIdFromSrc(src);
+  const assetIdentity = `${projectId ?? ""}\u0000${assetDocumentId ?? src}`;
+  const retryStateRef = useRef<{ identity: string; state: AssetImageRetryState }>({
+    identity: assetIdentity,
+    state: { automaticRefreshUsed: false },
+  });
+  if (retryStateRef.current.identity !== assetIdentity) {
+    retryStateRef.current = {
+      identity: assetIdentity,
+      state: { automaticRefreshUsed: false },
+    };
+  }
   const [refreshToken, setRefreshToken] = useState(0);
   const [state, setState] = useState<AssetImageRenderState>(() => {
     if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
     return assetDocumentId ? { kind: "loading", url: null } : { kind: "ready", url: src };
   });
 
-  const refresh = useCallback(() => setRefreshToken((token) => token + 1), []);
+  const retry = useCallback(() => setRefreshToken((token) => token + 1), []);
+  const imageLoadFailed = useCallback(() => {
+    if (!assetDocumentId) {
+      setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
+      return;
+    }
+    const transition = reduceAssetImageLoadFailure(retryStateRef.current.state);
+    retryStateRef.current.state = transition.state;
+    if (transition.action === "refresh") {
+      setRefreshToken((token) => token + 1);
+      return;
+    }
+    setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
+  }, [assetDocumentId]);
 
   useEffect(() => {
     if (!src) {
@@ -82,5 +129,5 @@ export function useAssetImageRenderState(input: {
     };
   }, [assetDocumentId, projectId, refreshToken, src]);
 
-  return [state, refresh];
+  return [state, { retry, imageLoadFailed }];
 }
