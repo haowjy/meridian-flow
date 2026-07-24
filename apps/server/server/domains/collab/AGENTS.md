@@ -37,8 +37,9 @@ propagation between them.
 - `composition.ts` is a wiring-only production root. Application behavior lives
   in the required review, effective-read, response-finalization, reversal,
   projection, and thread-peer services under `domain/`; `collab-facade.ts` only
-  assembles those services into the public surface. In-memory assembly and
-  declared unsupported behavior live under `adapters/in-memory/`.
+  assembles those services into the public surface. `adapters/declared-stubs.ts`
+  owns explicit unsupported behavior; production and in-memory compositions use it
+  rather than leaving optional runtime dependencies.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
   immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
