@@ -28,8 +28,6 @@ import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   agentEditWidCounters,
-  branchPushOutboxUpdates,
-  branchPushSettlementOutbox,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsReversalOps,
@@ -52,6 +50,7 @@ import {
 } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
+import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
 
 type JournalDb = Pick<
@@ -442,7 +441,11 @@ async function appendUpdate(
   if (!row) throw new Error("Failed to append Yjs update");
   // Every admitted content mutation invalidates an unresolved settlement cut.
   const joinedSettlement =
-    (await capturePendingSettlementAuthorityUpdate(db, documentId, row.id, update)) > 0;
+    (await joinAdmissionWithinTx(db, {
+      documentId: asDocumentId(documentId),
+      source: { kind: "journal", id: String(row.id) },
+      update,
+    })) > 0;
   return { seq: row.id, joinedSettlement };
 }
 
@@ -550,51 +553,6 @@ function replayKeyValueJson(row: {
     batchOrdinal: row.batchOrdinal,
     journalRowId: row.journalRowId.toString(),
   };
-}
-
-async function capturePendingSettlementAuthorityUpdate(
-  db: JournalDb,
-  documentId: string,
-  journalRowId: number,
-  update: Uint8Array,
-): Promise<number> {
-  const unresolved = await db
-    .select({
-      pushId: branchPushSettlementOutbox.pushId,
-      ordinal: branchPushSettlementOutbox.joinVersion,
-    })
-    .from(branchPushSettlementOutbox)
-    .where(
-      and(
-        eq(branchPushSettlementOutbox.documentId, asDocumentId(documentId)),
-        ne(branchPushSettlementOutbox.state, "completed"),
-      ),
-    );
-  let joined = 0;
-  for (const row of unresolved) {
-    const inserted = await db
-      .insert(branchPushOutboxUpdates)
-      .values({
-        pushId: row.pushId,
-        ordinal: row.ordinal,
-        sourceKind: "journal",
-        sourceId: journalRowId,
-        update: toBuffer(update),
-      })
-      .onConflictDoNothing()
-      .returning({ pushId: branchPushOutboxUpdates.pushId });
-    if (inserted.length === 0) continue;
-    await db
-      .update(branchPushSettlementOutbox)
-      .set({
-        joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
-        settledJoinVersion: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(branchPushSettlementOutbox.pushId, row.pushId));
-    joined += 1;
-  }
-  return joined;
 }
 
 async function hasLaterNonSystemJournalUpdateAfter(
@@ -876,12 +834,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         for (const [index, entry] of entries.entries()) {
           const updateRow = updateRows[index];
           if (!updateRow) throw new Error("Missing inserted journal row for settlement join");
-          await capturePendingSettlementAuthorityUpdate(
-            txDb,
-            entry.docId,
-            updateRow.id,
-            entry.update,
-          );
+          await joinAdmissionWithinTx(txDb, {
+            documentId: asDocumentId(entry.docId),
+            source: { kind: "journal", id: String(updateRow.id) },
+            update: entry.update,
+          });
         }
 
         // Reserve wIds for mutations that don't have one pre-allocated.

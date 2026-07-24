@@ -31,8 +31,8 @@ export type PendingSettlementStore = {
   }): Promise<boolean>;
   settlePushTrail(input: {
     push: PushLineageRow;
-    trail: DurableTrailRecord;
-    replacement: TrailContributionReplacement;
+    trail?: DurableTrailRecord;
+    replacement?: TrailContributionReplacement;
     claim: SettlementClaim;
     joinVersion: number;
   }): Promise<boolean>;

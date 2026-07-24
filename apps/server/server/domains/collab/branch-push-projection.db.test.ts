@@ -24,6 +24,7 @@ import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js"
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createDrizzlePendingSettlementStore } from "./adapters/drizzle-pending-settlement.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
@@ -152,12 +153,14 @@ describe("branch-push durable projection", () => {
       threadId: threadId as never,
       turnId: turnId as never,
     });
+    const changeTrails = createDrizzleChangeTrailPersistence(db);
     const branchPush = createBranchPushService({
       branchStore,
-      pushStore: createDrizzleBranchPushStore(
+      pushStore: createDrizzleBranchPushStore(db, changeTrails),
+      settlementStore: createDrizzlePendingSettlementStore(
         db,
         durableProjectionSerializer,
-        createDrizzleChangeTrailPersistence(db),
+        changeTrails,
       ),
       branchCoordinator,
       journal: persistence.journal,
@@ -306,11 +309,9 @@ describe("branch-push durable projection", () => {
         return engine.serializeDocument(resolvedDocumentId as never, doc);
       },
     };
-    const pushStore = createDrizzleBranchPushStore(
-      db,
-      serializer,
-      createDrizzleChangeTrailPersistence(db),
-    );
+    const changeTrails = createDrizzleChangeTrailPersistence(db);
+    const pushStore = createDrizzleBranchPushStore(db, changeTrails);
+    const settlementStore = createDrizzlePendingSettlementStore(db, serializer, changeTrails);
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
     const branch = await branchStore.ensureWorkDraftBranch({
@@ -330,6 +331,7 @@ describe("branch-push durable projection", () => {
     const branchPush = createBranchPushService({
       branchStore,
       pushStore,
+      settlementStore,
       branchCoordinator,
       journal: persistence.journal,
       liveCoordinator,
@@ -361,10 +363,10 @@ describe("branch-push durable projection", () => {
       .limit(1);
     expect(pending).toMatchObject({ state: "pending", lastErrorCode: null });
     if (!pending) throw new Error("missing pending settlement");
-    const liveSettlement = await pushStore.loadLiveSettlement?.(pending.pushId);
+    const liveSettlement = await settlementStore.loadLiveSettlement(pending.pushId);
     if (!liveSettlement) throw new Error("missing live settlement");
     await expect(
-      pushStore.handoffSettlementClaim?.({
+      settlementStore.handoffClaim({
         pushId: pending.pushId,
         claim: liveSettlement.claim,
       }),
