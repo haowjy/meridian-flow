@@ -500,8 +500,10 @@ The mutation submission attempt records journal acceptance immediately after
 append, before concurrency classification or live-projection reporting can fail.
 The write boundary therefore restores speculative runtime state before
 acceptance, but routes every failure after durable acceptance through journal
-recovery. State transitions verify the current owner before changing the map,
-preventing stale async work from reopening or overwriting a closed response.
+recovery. If destructive reporting cannot be rebuilt, the committed tool result
+explicitly reports degraded awareness instead of presenting ordinary success.
+State transitions verify the current owner before changing the map, preventing
+stale async work from reopening or overwriting a closed response.
 
 **Rollback and recovery follow the journal boundary.** While still `buffered`,
 commit failure evicts speculative runtimes but leaves the response retryable;

@@ -109,14 +109,15 @@ export type JournalBatchCommit = {
   journalCommitKind: JournalCommitKind;
 };
 
-type MutationSubmissionResult =
+type MutationSubmissionResult = (
   | {
       ok: true;
       summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind;
       lateSweep?: DestructiveSweepReport;
     }
-  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
+  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null }
+) & { awarenessDegraded?: true };
 
 export class AcceptedMutationSubmissionError extends Error {
   constructor(

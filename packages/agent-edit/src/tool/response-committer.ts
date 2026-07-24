@@ -153,7 +153,6 @@ type ResponseState =
   | {
       kind: "closed";
       outcome: ResponseLifecycleClosedState;
-      journalCommitKind: JournalCommitKind | null;
     };
 
 export class ResponseLifecycleError extends Error {
@@ -761,7 +760,7 @@ export function createResponseCommitter(deps: {
     responseId: string,
     owner: CommittingResponseState,
     journalBatch: JournalBatchAppendEntry[],
-  ): Promise<JournalCommitKind> {
+  ): Promise<void> {
     const threadId = bufferThreadId(owner.buffer);
     const committed = await mutationCommit.commitJournalBatch(journalBatch);
     assertOwner(responseId, owner);
@@ -775,7 +774,6 @@ export function createResponseCommitter(deps: {
         ...(threadId ? { threadId } : {}),
       },
     );
-    return committed.journalCommitKind;
   }
 
   function responsePhaseForAcceptance(
@@ -1094,7 +1092,7 @@ export function createResponseCommitter(deps: {
     threadId?: string,
   ): void {
     assertOwner(responseId, owner);
-    responses.set(responseId, { kind: "closed", outcome: closed, journalCommitKind });
+    responses.set(responseId, { kind: "closed", outcome: closed });
     emit("closed", responseId, "closed", {
       closedOutcome: closed,
       ...(journalCommitKind ? { journalCommitKind } : {}),
