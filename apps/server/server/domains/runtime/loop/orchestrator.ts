@@ -113,7 +113,11 @@ import {
   type InterruptRegistry,
 } from "./interrupts.js";
 import type { PermissionGate } from "./permissions/index.js";
-import { appendEvent, persistAndAppendEvents } from "./persistence.js";
+import {
+  appendEvent,
+  persistAndAppendEvents,
+  persistAndAppendTurnStartEvents,
+} from "./persistence.js";
 import type { RunTurnHandle, RunTurnInput, RunTurnPort } from "./run-turn-port.js";
 import {
   collectToolCalls,
@@ -136,6 +140,11 @@ export interface OrchestratorRepositories {
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  runTurnStartTransition<T>(
+    threadId: ThreadId,
+    expectedActiveLeafTurnId: TurnId | null,
+    operation: () => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface OrchestratorDeps {
@@ -417,8 +426,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
-  await reconcileOrphanedPendingWrites(deps, input.threadId);
-
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
@@ -428,53 +435,60 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     );
   }
 
-  const priorTurns = await repos.turns.listByThread(input.threadId);
-  const conversation = await loadThreadConversationContext(
-    { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
-    thread,
-  );
-  const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
-  const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
-  const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
-  const inheritedBlocks = conversation.blocks.filter((block) => inheritedTurnIds.has(block.turnId));
-  const lastTurn = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
-
   // The setup transaction mints both turns + the user text block.
   // The read-model projector creates turn/block rows from the emitted events.
-  const setup = await persistAndAppendEvents(deps, input.threadId, async () => {
-    const userTurn = createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: lastTurn?.id ?? null,
-      role: "user",
-      status: "complete",
-    });
-    const userBlock = contentForBlockInput({
-      turnId: userTurn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent: input.userText,
-      status: "complete",
-    });
+  const setup = await persistAndAppendTurnStartEvents(
+    deps,
+    input.threadId,
+    thread.activeLeafTurnId,
+    async () => {
+      await reconcileOrphanedPendingWrites(deps, input.threadId);
+      const priorTurns = await repos.turns.listByThread(input.threadId);
+      const conversation = await loadThreadConversationContext(
+        { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+        thread,
+      );
+      const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
+      const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
+      const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
+      const inheritedBlocks = conversation.blocks.filter((block) =>
+        inheritedTurnIds.has(block.turnId),
+      );
+      const lastTurn = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+      const userTurn = createLocalTurn({
+        threadId: input.threadId,
+        prevTurnId: lastTurn?.id ?? null,
+        role: "user",
+        status: "complete",
+      });
+      const userBlock = contentForBlockInput({
+        turnId: userTurn.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: input.userText,
+        status: "complete",
+      });
 
-    const assistantTurn = createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: userTurn.id,
-      role: "assistant",
-      status: "streaming",
-    });
-    await repos.threads.updateStatus(input.threadId, "active");
+      const assistantTurn = createLocalTurn({
+        threadId: input.threadId,
+        prevTurnId: userTurn.id,
+        role: "assistant",
+        status: "streaming",
+      });
+      await repos.threads.updateStatus(input.threadId, "active");
 
-    return {
-      result: { userTurn, assistantTurn },
-      events: [
-        { type: "turn.created", turn: userTurn },
-        { type: "block.upserted", block: userBlock },
-        { type: "turn.created", turn: assistantTurn },
-      ],
-    };
-  });
+      return {
+        result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
+        events: [
+          { type: "turn.created", turn: userTurn },
+          { type: "block.upserted", block: userBlock },
+          { type: "turn.created", turn: assistantTurn },
+        ],
+      };
+    },
+  );
 
-  const { userTurn, assistantTurn } = setup.result;
+  const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
