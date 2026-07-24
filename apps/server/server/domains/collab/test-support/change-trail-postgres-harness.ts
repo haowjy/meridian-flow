@@ -78,6 +78,7 @@ const { createResponseBranchFinalization, createResponseWriteFinalizer } = await
 const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
 const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
+const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
@@ -559,6 +560,20 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     resolveDocumentUri,
   });
+  const drafts = createWorkDraftReviewService({
+    branches: branchStore,
+    branchCoordinator,
+    branchJournal: durableBranchJournalReadStore,
+    branchPush,
+    branchReview,
+    workPushPolicy: durableWorkPushPolicyStore,
+    liveCoordinator,
+    documents: runtime.markdownDocuments,
+    model: runtime.model,
+    agentEdit,
+    resolveDocumentUri,
+    latestUpdateSeq: persistence.store.latestUpdateSeq,
+  });
   const collab = createCollabFacade({
     transport: {} as never,
     authorityHeads: createDrizzleDocumentAuthorityHeads(db),
@@ -590,7 +605,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },
     branchPeers: {} as never,
-    drafts: {} as never,
+    drafts,
   });
 
   async function seedAndStage(responseId: string) {
