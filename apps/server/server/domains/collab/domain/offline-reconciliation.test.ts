@@ -80,9 +80,27 @@ describe("offline reconciliation", () => {
       writerProtection: { kind: "sweep" },
     });
   });
+
+  it("reports an offline writer revision when the agent actor has no response", async () => {
+    const scenario = await setup({
+      origin: "human:writer",
+      editDeletedBlock: true,
+      authoringResponseId: null,
+    });
+    await scenario.reconcile();
+    expect(scenario.changes).toHaveLength(1);
+    expect(scenario.changes[0]).toMatchObject({
+      kind: "delete",
+      writerProtection: { kind: "sweep" },
+    });
+  });
 });
 
-async function setup(input: { origin: string; editDeletedBlock: boolean }) {
+async function setup(input: {
+  origin: string;
+  editDeletedBlock: boolean;
+  authoringResponseId?: string | null;
+}) {
   const journal = createInMemoryJournal();
   const initial = docFromMarkdown("Writer original");
   const initialUpdate = Y.encodeStateAsUpdate(initial);
@@ -97,7 +115,9 @@ async function setup(input: { origin: string; editDeletedBlock: boolean }) {
   await journal.append(DOCUMENT_ID, agentUpdate, {
     origin: `agent:${TURN_ID}`,
     actorTurnId: TURN_ID,
-    authoringResponseId: RESPONSE_ID,
+    ...(input.authoringResponseId === null
+      ? {}
+      : { authoringResponseId: input.authoringResponseId ?? RESPONSE_ID }),
     seq: 0,
   });
 

@@ -207,7 +207,7 @@ export function createBranchPushTransition(input: {
     return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
   }
 
-  /** Response-scoped causal-cut algebra; every evidence item earns credit independently. */
+  /** Classifies destructive effects from durable provenance and the current before/after state. */
   function classify(
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
