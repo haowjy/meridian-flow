@@ -12,6 +12,7 @@ import {
   dockRows,
   pendingDockedDraftCount,
   pendingReviewDraft,
+  pendingReviewDrafts,
 } from "./docked-drafts";
 
 const NOW = Date.parse("2026-07-07T12:00:00.000Z");
@@ -43,6 +44,27 @@ function group(drafts: ThreadDraftListItem[]): ThreadDraftGroup {
 }
 
 describe("pendingReviewDraft", () => {
+  it("exposes one canonical ordered pending collection for selection and counting", () => {
+    const older = draft({
+      draftId: "older",
+      updatedAt: "2026-07-07T11:57:00.000Z",
+      proposedOperationCount: 1,
+    });
+    const newest = draft({
+      draftId: "newest",
+      updatedAt: "2026-07-07T11:59:00.000Z",
+      proposedOperationCount: 2,
+    });
+    const contentless = draft({
+      draftId: "contentless",
+      proposedOperationCount: 0,
+      wordsAdded: 0,
+      wordsRemoved: 0,
+    });
+
+    expect(pendingReviewDrafts(group([older, contentless, newest]))).toEqual([newest, older]);
+  });
+
   it("returns the active draft that carries review content", () => {
     const active = draft({ proposedOperationCount: 3 });
     expect(pendingReviewDraft(group([active]), NOW)).toBe(active);
