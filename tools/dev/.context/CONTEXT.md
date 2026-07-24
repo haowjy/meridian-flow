@@ -45,7 +45,9 @@ tools/dev/
 ├── print-worktree-env.ts      eval'd by .envrc
 ├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
 ├── prune-worktrees.ts         Merged worktree + branch + DB + work-item cleanup
-└── migration-lint.ts
+├── migration-lint.ts
+├── project.json               Nx project; exposes the tools typecheck target
+└── tsconfig.json              Canonical strict TypeScript boundary for this directory
 ```
 
 ## Environment contract
@@ -148,6 +150,8 @@ Policy:
 ## Conventions
 
 - Top-level scripts stay thin; reusable logic in `lib/`.
+- `tools/dev/tsconfig.json` is the canonical strict type boundary; its Nx target
+  participates in the root `pnpm typecheck` / `pnpm check` gate.
 - URL transforms use `new URL()` — no regex surgery on connection strings.
 - Explicit errors over silent fallback.
 - Provider assumptions stay in dev tooling, not domain code.

@@ -11,6 +11,8 @@
 - `tools/dev`: the app-boot smoke now uses an OS-assigned port reported by its
   child, requires the child to remain alive, and enforces `/` 307 plus `/login`
   200 with Meridian's login-page marker.
+- `tools/dev`: destructive and gate-critical scripts now compile under one
+  strict Nx typecheck target included in root `pnpm typecheck`.
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;
