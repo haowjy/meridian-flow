@@ -21,7 +21,10 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 import { createBranchAgentEditDiagnostics } from "../adapters/branch-agent-edit-observability.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
-import { createInMemoryPendingSettlementStore } from "../test-support/in-memory-pending-settlement-store.js";
+import {
+  createInMemoryPendingSettlementStore,
+  type InMemoryPendingSettlementStore,
+} from "../test-support/in-memory-pending-settlement-store.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import {
   createBranchAgentEditCoordinator,
@@ -53,6 +56,11 @@ import type {
 } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
+type SettlementObserver = {
+  /** Observes the durable boundary; the stateful store always performs the settlement. */
+  settlePushTrail?: PendingSettlementStore["settlePushTrail"];
+};
+
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
@@ -64,26 +72,19 @@ const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
 
-type LegacySettlementCapabilities = {
-  loadLiveSettlement(pushId: number): Promise<PendingLiveSettlement>;
-  settlePushTrail: PendingSettlementStore["settlePushTrail"];
-  listRecoverableSettlementIds: PendingSettlementStore["listRecoverableSettlementIds"];
-  withCompletionFence: PendingSettlementStore["withCompletionFence"];
-  claimRecoverable: PendingSettlementStore["claimRecoverable"];
-};
-
 function createBranchPushService(
   input: Omit<BranchPushExecutorInput, "pushStore" | "settlementStore"> & {
-    pushStore: BranchPushStore & Partial<LegacySettlementCapabilities>;
+    pushStore: BranchPushStore & SettlementObserver;
+    settlementStore?: InMemoryPendingSettlementStore;
   },
 ) {
-  const inMemorySettlements = createInMemoryPendingSettlementStore();
+  const settlementStore = input.settlementStore ?? createInMemoryPendingSettlementStore();
   const pushStore: BranchPushStore = {
     ...input.pushStore,
     async commitPush(prepared) {
       const result = await input.pushStore.commitPush(prepared);
       if (result.status === "inserted") {
-        inMemorySettlements.stage({
+        settlementStore.stage({
           ...prepared.pendingLiveSettlement,
           push: result.push,
         });
@@ -98,7 +99,7 @@ function createBranchPushService(
             for (const [index, push] of result.pushes.entries()) {
               const candidate = prepared.pushes[index];
               if (!candidate) throw new Error("missing prepared batch settlement");
-              inMemorySettlements.stage({
+              settlementStore.stage({
                 ...candidate.pendingLiveSettlement,
                 push,
               });
@@ -108,30 +109,20 @@ function createBranchPushService(
         }
       : {}),
   };
-  const legacy = input.pushStore;
-  const settlementStore: PendingSettlementStore = {
-    ...inMemorySettlements,
-    loadLiveSettlement: legacy.loadLiveSettlement ?? inMemorySettlements.loadLiveSettlement,
-    async claimRecoverable(claimInput) {
-      if (!legacy.claimRecoverable) {
-        return inMemorySettlements.claimRecoverable(claimInput);
+  const observedSettlementStore: PendingSettlementStore = input.pushStore.settlePushTrail
+    ? {
+        ...settlementStore,
+        async settlePushTrail(settleInput) {
+          await input.pushStore.settlePushTrail?.(settleInput);
+          return settlementStore.settlePushTrail(settleInput);
+        },
       }
-      const claimed = await legacy.claimRecoverable(claimInput);
-      if (claimed) inMemorySettlements.stage(claimed);
-      return claimed;
-    },
-    async settlePushTrail(settleInput) {
-      if (legacy.settlePushTrail) {
-        const settled = await legacy.settlePushTrail(settleInput);
-        if (!settled) return false;
-      }
-      return inMemorySettlements.settlePushTrail(settleInput);
-    },
-    withCompletionFence: legacy.withCompletionFence ?? inMemorySettlements.withCompletionFence,
-    listRecoverableSettlementIds:
-      legacy.listRecoverableSettlementIds ?? inMemorySettlements.listRecoverableSettlementIds,
-  };
-  return createBranchPushServiceCore({ ...input, pushStore, settlementStore });
+    : settlementStore;
+  return createBranchPushServiceCore({
+    ...input,
+    pushStore,
+    settlementStore: observedSettlementStore,
+  });
 }
 
 function docFromMarkdown(markdown: string): Y.Doc {
@@ -1067,7 +1058,9 @@ describe("createBranchPushService", () => {
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
-    let durableSettlement: PendingLiveSettlement | null = null;
+    const settlementStore = createInMemoryPendingSettlementStore({
+      materialize: withDurableWriterProvenance,
+    });
     const commitPush = vi.fn(async (prepared) => {
       const push = {
         id: 1,
@@ -1079,11 +1072,9 @@ describe("createBranchPushService", () => {
         receiptPayload: prepared.receiptPayload,
         idempotencyKey: prepared.idempotencyKey,
       };
-      durableSettlement = { ...prepared.pendingLiveSettlement, push };
       return {
         status: "inserted" as const,
         push,
-        settlement: durableSettlement as PendingLiveSettlement,
       };
     });
     const service = createBranchPushService({
@@ -1100,10 +1091,6 @@ describe("createBranchPushService", () => {
         listConcurrentJournalRows: vi.fn(async () => []),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
-        loadLiveSettlement: vi.fn(async () => {
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          return withDurableWriterProvenance(durableSettlement);
-        }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           // This is the durable aggregate/outbox boundary. The live delete must
           // not have happened yet when settlement commits.
@@ -1117,6 +1104,7 @@ describe("createBranchPushService", () => {
         updateWorkDraftPushPolicy: vi.fn(),
         markRollbackPending: vi.fn(async () => 0),
       },
+      settlementStore,
       journal,
       liveCoordinator: {
         withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
@@ -1136,11 +1124,11 @@ describe("createBranchPushService", () => {
             { from: 0, to: model.getText(liveDoomed).length },
             "Unjournaled WS body.",
           );
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          durableSettlement = {
-            ...durableSettlement,
-            postCutUpdates: [Y.encodeStateAsUpdate(liveDoc, beforeWriter)],
-          };
+          await settlementStore.joinAdmission({
+            documentId: DOCUMENT_ID,
+            source: { kind: "journal", id: "3" },
+            update: Y.encodeStateAsUpdate(liveDoc, beforeWriter),
+          });
         },
       },
     });
@@ -1215,7 +1203,9 @@ describe("createBranchPushService", () => {
       seq: 0,
     });
     const settlements: DurableTrailRecord[] = [];
-    let durableSettlement: PendingLiveSettlement | null = null;
+    const settlementStore = createInMemoryPendingSettlementStore({
+      materialize: withDurableWriterProvenance,
+    });
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -1240,16 +1230,10 @@ describe("createBranchPushService", () => {
             receiptPayload: prepared.receiptPayload,
             idempotencyKey: prepared.idempotencyKey,
           };
-          durableSettlement = { ...prepared.pendingLiveSettlement, push };
           return {
             status: "inserted" as const,
             push,
-            settlement: durableSettlement as PendingLiveSettlement,
           };
-        }),
-        loadLiveSettlement: vi.fn(async () => {
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          return withDurableWriterProvenance(durableSettlement);
         }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           settlements.push(trail);
@@ -1260,6 +1244,7 @@ describe("createBranchPushService", () => {
         updateWorkDraftPushPolicy: vi.fn(),
         markRollbackPending: vi.fn(async () => 0),
       },
+      settlementStore,
       journal,
       liveCoordinator: {
         withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
@@ -1280,11 +1265,11 @@ describe("createBranchPushService", () => {
           );
           Y.applyUpdate(liveDoc, collisionUpdate);
           expect(model.getBlockId(liveDoomed)).not.toBe(initialTargetHash);
-          if (!durableSettlement) throw new Error("missing durable settlement");
-          durableSettlement = {
-            ...durableSettlement,
-            postCutUpdates: [Y.encodeStateAsUpdate(liveDoc, beforeWriter)],
-          };
+          await settlementStore.joinAdmission({
+            documentId: DOCUMENT_ID,
+            source: { kind: "journal", id: "3" },
+            update: Y.encodeStateAsUpdate(liveDoc, beforeWriter),
+          });
         },
       },
     });
@@ -1332,11 +1317,16 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
-    let pending: import("./branch-push-contracts.js").PendingLiveSettlement | null = null;
+    let committedSettlement: PendingLiveSettlement | null = null;
+    let crashWindowUpdate: Uint8Array | null = null;
     const settlements: DurableTrailRecord[] = [];
     const completed: number[] = [];
+    const settlementStore = createInMemoryPendingSettlementStore({
+      materialize: withDurableWriterProvenance,
+      onCompleted: (pushId) => completed.push(pushId),
+    });
     let activeDoc = liveDoc;
-    const pushStore: BranchPushStore & Partial<LegacySettlementCapabilities> = {
+    const pushStore: BranchPushStore & SettlementObserver = {
       listActiveJournalRows: vi.fn(async () => [row]),
       listConcurrentJournalRows: vi.fn(async () => []),
       latestPushForBranch: vi.fn(async () => null),
@@ -1351,22 +1341,12 @@ describe("createBranchPushService", () => {
           receiptPayload: prepared.receiptPayload,
           idempotencyKey: prepared.idempotencyKey,
         };
-        pending = { ...prepared.pendingLiveSettlement, push };
+        committedSettlement = { ...prepared.pendingLiveSettlement, push };
         return { status: "inserted" as const, push };
       }),
       settlePushTrail: vi.fn(async ({ trail }) => {
         settlements.push(trail);
         return true;
-      }),
-      listRecoverableSettlementIds: vi.fn(async () => (pending ? [pending.push.id] : [])),
-      claimRecoverable: vi.fn(async () => (pending ? withDurableWriterProvenance(pending) : null)),
-      withCompletionFence: vi.fn(async ({ pushId }, complete) => {
-        const result = complete();
-        if (result !== "retry") {
-          completed.push(pushId);
-          pending = null;
-        }
-        return result;
       }),
       countUnpushedRowsForWork: vi.fn(async () => 1),
       listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),
@@ -1383,6 +1363,7 @@ describe("createBranchPushService", () => {
         updateBranchSnapshot: vi.fn(),
       },
       pushStore,
+      settlementStore,
       journal,
       liveCoordinator: {
         withDocument: vi.fn(async (_documentId, fn) => fn(activeDoc)),
@@ -1401,9 +1382,14 @@ describe("createBranchPushService", () => {
             { from: 0, to: model.getText(liveDoomed).length },
             "Writer body in crash window.",
           );
-          const writerUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
-          if (!pending) throw new Error("push did not create settlement state");
-          pending = { ...pending, postCutUpdates: [writerUpdate] };
+          crashWindowUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
+          await settlementStore.joinAdmission({
+            documentId: DOCUMENT_ID,
+            source: { kind: "journal", id: "3" },
+            update: crashWindowUpdate,
+          });
+          const staged = await settlementStore.loadLiveSettlement(1);
+          await settlementStore.handoffClaim({ pushId: 1, claim: staged.claim });
           throw new Error("injected process crash");
         },
       },
@@ -1412,8 +1398,15 @@ describe("createBranchPushService", () => {
     await expect(service.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
       "injected process crash",
     );
-    const durable =
-      pending as unknown as import("./branch-push-contracts.js").PendingLiveSettlement;
+    const durableBase = committedSettlement as PendingLiveSettlement | null;
+    const durableWriterUpdate = crashWindowUpdate as Uint8Array | null;
+    if (!durableBase || !durableWriterUpdate) {
+      throw new Error("push did not create settlement state");
+    }
+    const durable: PendingLiveSettlement = {
+      ...durableBase,
+      postCutUpdates: [durableWriterUpdate],
+    };
     const coldDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(coldDoc, durable.lockCutUpdate);
     Y.applyUpdate(coldDoc, durable.pushUpdate);
