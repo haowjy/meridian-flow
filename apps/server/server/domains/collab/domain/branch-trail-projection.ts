@@ -40,7 +40,6 @@ export function journalAttributionByChangedBlock(input: {
     insertedBlockIds: string[];
     ambiguous?: boolean;
   }>;
-  authoringResponseIdsByBlock: Map<string, string[]>;
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
@@ -49,7 +48,6 @@ export function journalAttributionByChangedBlock(input: {
     insertedBlockIds: string[];
     ambiguous?: boolean;
   }> = [];
-  const authoringResponseIdsByBlock = new Map<string, string[]>();
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     for (const row of input.rows) {
@@ -60,14 +58,12 @@ export function journalAttributionByChangedBlock(input: {
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
       const owner =
         row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      const affectedBlockIds: string[] = [];
       for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
         const prior = beforeByIdentity.get(identity);
         const next = afterByIdentity.get(identity);
         if (prior?.serialized === next?.serialized) continue;
         const blockId = next?.hash ?? prior?.hash;
         if (!blockId) continue;
-        affectedBlockIds.push(blockId);
         const owners = ownersByBlock.get(blockId) ?? [];
         if (
           !owners.some(
@@ -81,15 +77,6 @@ export function journalAttributionByChangedBlock(input: {
       }
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
-      const responseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
-        ?.authoringResponseId;
-      if (typeof responseId === "string") {
-        for (const blockId of affectedBlockIds) {
-          const ids = authoringResponseIdsByBlock.get(blockId) ?? [];
-          if (!ids.includes(responseId)) ids.push(responseId);
-          authoringResponseIdsByBlock.set(blockId, ids);
-        }
-      }
       if (deleted.length > 0 || inserted.length > 0) {
         operations.push({
           removedBlockHashes: deleted.map((block) => block.hash),
@@ -98,7 +85,7 @@ export function journalAttributionByChangedBlock(input: {
         });
       }
     }
-    return { ownersByBlock, operations, authoringResponseIdsByBlock };
+    return { ownersByBlock, operations };
   } finally {
     scratch.destroy();
   }

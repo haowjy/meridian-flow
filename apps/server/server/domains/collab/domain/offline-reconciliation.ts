@@ -69,7 +69,7 @@ export function createOfflineReconciliation(deps: {
         const changed = changedBeforeBlocks(before, after);
 
         if (row.meta.origin.startsWith("human:")) continue;
-        if (!row.meta.origin.startsWith("agent:") || !row.meta.authoringResponseId) continue;
+        if (!row.meta.origin.startsWith("agent:")) continue;
 
         const preSync = createCollabYDoc({ gc: false });
         try {
