@@ -76,11 +76,19 @@ export function documentBasename(contextPath: string | null | undefined): string
  */
 export function pendingReviewDraft(
   group: ThreadDraftGroup | null | undefined,
-  nowMs: number,
+  _nowMs: number,
 ): ThreadDraftListItem | null {
-  if (!group) return null;
-  const { active } = reviewableDraftsFromGroup(group, nowMs);
-  return active.find(draftHasReviewContent) ?? null;
+  return pendingReviewDrafts(group)[0] ?? null;
+}
+
+/** The sole content/lifecycle filter for pending review state. */
+export function pendingReviewDrafts(
+  group: ThreadDraftGroup | null | undefined,
+): ThreadDraftListItem[] {
+  if (!group) return [];
+  return group.drafts
+    .filter((draft) => draft.status === "active" && draftHasReviewContent(draft))
+    .sort((left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0));
 }
 
 /** Groups that still carry an active draft — the dock exists iff this is non-empty. */
@@ -90,14 +98,12 @@ export function activeDockedDraftGroups(
   if (!groups || groups.length === 0) return [];
   return groups
     .flatMap((group) => {
-      const activeDrafts = group.drafts.filter(
-        (draft) => draft.status === "active" && draftHasReviewContent(draft),
-      );
-      return activeDrafts.length > 0
+      const pending = pendingReviewDrafts(group);
+      return pending.length > 0
         ? [
             {
               ...group,
-              drafts: activeDrafts,
+              drafts: pending,
             },
           ]
         : [];
@@ -113,10 +119,9 @@ export function pendingDockedDraftCount(groups: ThreadDraftGroup[] | null | unde
 /** How many active drafts with actual review content a single document has. */
 export function pendingReviewDraftCount(
   group: ThreadDraftGroup | null | undefined,
-  nowMs: number,
+  _nowMs: number,
 ): number {
-  const { active } = reviewableDraftsFromGroup(group, nowMs);
-  return active.filter(draftHasReviewContent).length;
+  return pendingReviewDrafts(group).length;
 }
 
 function newestUpdatedAt(group: ThreadDraftGroup): number {
