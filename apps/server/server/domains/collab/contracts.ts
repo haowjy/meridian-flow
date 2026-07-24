@@ -93,6 +93,7 @@ export type AdmitLiveWriterUpdateResult =
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
+  primeReservedNamespaceIndex(document: Y.Doc): void;
   resolveBranchHocuspocusRoom(
     branchId: string,
     generation: number,

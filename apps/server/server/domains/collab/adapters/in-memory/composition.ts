@@ -26,6 +26,7 @@ import {
   createDocumentWriteHookRunner,
 } from "../../domain/document-projection-refresher.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
+import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { reverseTurn } from "../../domain/turn-reversal.js";
@@ -118,6 +119,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   return createCollabFacade({
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
+      primeReservedNamespaceIndex,
       resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,

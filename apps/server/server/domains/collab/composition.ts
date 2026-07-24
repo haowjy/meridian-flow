@@ -64,6 +64,7 @@ import {
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -351,6 +352,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   return createCollabFacade({
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
+      primeReservedNamespaceIndex,
       resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,

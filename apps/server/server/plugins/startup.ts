@@ -12,13 +12,13 @@ import {
 } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
-import { drainYjsCollabPersistence, getYjsHocuspocus } from "../routes/ws/yjs";
+import { getYjsGateway } from "../routes/ws/yjs";
 
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 
 installApiProcessCrashPolicy({ eventSink });
 registerProcessShutdownCallback(async () => {
-  await drainYjsCollabPersistence();
+  await (await getYjsGateway()).drain();
 });
 installObservabilityShutdownHooks();
 
@@ -33,7 +33,7 @@ export default async function startupPlugin() {
     });
   }
 
-  await getYjsHocuspocus();
+  await getYjsGateway();
 
   // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request.
   await validateAuthConfiguration();
