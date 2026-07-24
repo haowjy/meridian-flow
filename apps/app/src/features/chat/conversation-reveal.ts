@@ -21,6 +21,7 @@ function emit(): void {
 export function requestConversationReveal(reveal: ConversationReveal): void {
   pending = reveal;
   navigator?.(reveal.threadId);
+  if (navigator && reveal.turnId === null) pending = null;
   emit();
 }
 
@@ -38,7 +39,13 @@ export function completeConversationReveal(reveal: ConversationReveal): void {
 
 export function registerConversationRevealNavigator(next: Navigator): () => void {
   navigator = next;
-  if (pending) next(pending.threadId);
+  if (pending) {
+    next(pending.threadId);
+    if (pending.turnId === null) {
+      pending = null;
+      emit();
+    }
+  }
   return () => {
     if (navigator === next) navigator = null;
   };
