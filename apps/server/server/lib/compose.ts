@@ -298,6 +298,7 @@ export async function createProductionAppPorts(input: {
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const documentSync = createCollabDomain({
     db,
+    documentAccess,
     eventSink,
     notices,
     threads: threadRepos.threads,
@@ -876,6 +877,9 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentAccess: {
       async documentAccessState() {
+        return "available";
+      },
+      async lockDocumentAccessState() {
         return "available";
       },
       async canAccessDocument() {

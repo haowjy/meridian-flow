@@ -14,6 +14,7 @@ import {
 } from "@meridian/database/schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleDocumentAccess } from "../../../../lib/document-access.js";
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
 import { createCollabDomain } from "../../../collab/index.js";
 import { ContextFS } from "./context-fs.js";
@@ -65,7 +66,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     it("persists and reloads a live document with zero CRDT structs", async () => {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+        threads: { findById: async () => null },
+      });
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
         store,
