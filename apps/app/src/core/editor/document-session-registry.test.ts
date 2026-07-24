@@ -80,6 +80,25 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     vi.useRealTimers();
   });
 
+  it("peeks during the grace window without cancelling teardown", () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new DocumentSessionRegistry();
+      registry.retain("owner", ["document-peek"]);
+      const session = registry.get("document-peek");
+      registry.release("owner");
+
+      expect(registry.peek("document-peek")).toBe(session);
+      vi.advanceTimersByTime(3_000);
+
+      expect(registry.has("document-peek")).toBe(false);
+      expect(session.getSnapshot().status).toBe("destroyed");
+      registry.destroyAll();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps one session per room while branch rooms remain separate and attached", () => {
     providers.length = 0;
     const registry = new DocumentSessionRegistry();

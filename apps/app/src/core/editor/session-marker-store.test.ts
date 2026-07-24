@@ -1,5 +1,5 @@
 import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
   SESSION_MARKER_CAP,
@@ -29,8 +29,8 @@ function message(
     trailId: "trail-1",
     projectionRevision: revision,
     author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    admittedByUserId: null,
     changes: changes.map(({ id, swept }) => ({
+      admittedByUserId: null,
       changeId: id,
       kind: "modify",
       navigation: {
@@ -65,7 +65,23 @@ describe("SessionMarkerStore", () => {
 
   it("suppresses a change admitted by the current writer", () => {
     const store = new SessionMarkerStore("me");
-    store.replaceGroup(message(1, undefined, { admittedByUserId: "me" }));
+    const selfAdmitted = message(1);
+    const [change] = selfAdmitted.changes;
+    if (!change) throw new Error("invalid fixture");
+    change.admittedByUserId = "me";
+    store.replaceGroup(selfAdmitted);
+    expect(store.getSnapshot()).toHaveLength(0);
+  });
+
+  it("advances the cursor before per-change suppression and rejects a delayed stale set", () => {
+    const store = new SessionMarkerStore("me");
+    store.replaceGroup(message(1, [{ id: "old" }]));
+    const suppressed = message(3, [{ id: "self" }]);
+    const [change] = suppressed.changes;
+    if (!change) throw new Error("invalid fixture");
+    change.admittedByUserId = "me";
+    store.replaceGroup(suppressed);
+    store.replaceGroup(message(2, [{ id: "delayed" }]));
     expect(store.getSnapshot()).toHaveLength(0);
   });
 
@@ -83,6 +99,37 @@ describe("SessionMarkerStore", () => {
     expect(store.getSnapshot()).toHaveLength(SESSION_MARKER_CAP);
     expect(store.getSnapshot().some((marker) => marker.changeId === "old-swept")).toBe(true);
     expect(store.getSnapshot().some((marker) => marker.changeId === "plain-0")).toBe(false);
+  });
+
+  it("evicts dismissed tombstones before a newly visible marker", () => {
+    const store = new SessionMarkerStore("me");
+    for (let index = 0; index < SESSION_MARKER_CAP; index++) {
+      store.replaceGroup(message(1, [{ id: `dismissed-${index}` }], { trailId: `trail-${index}` }));
+      store.dismiss(`dismissed-${index}`);
+    }
+    store.replaceGroup(message(1, [{ id: "visible" }], { trailId: "visible-trail" }));
+    expect(store.getSnapshot()).toHaveLength(SESSION_MARKER_CAP);
+    expect(store.getSnapshot().some((marker) => marker.changeId === "visible")).toBe(true);
+    expect(store.getSnapshot().filter((marker) => marker.dismissed)).toHaveLength(
+      SESSION_MARKER_CAP - 1,
+    );
+  });
+
+  it("expires an unresolved anchor while the editor is idle and cancels teardown timers", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(100);
+      const store = new SessionMarkerStore("me");
+      store.replaceGroup(message(1));
+      vi.advanceTimersByTime(SESSION_MARKER_RESOLUTION_WINDOW_MS);
+      expect(store.getSnapshot()).toHaveLength(0);
+
+      store.replaceGroup(message(2));
+      store.clear();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("retries unresolved anchors and evicts them after the reorder window", () => {

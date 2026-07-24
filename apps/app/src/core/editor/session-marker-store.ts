@@ -32,6 +32,7 @@ type Listener = () => void;
 
 export const SESSION_MARKER_CAP = 200;
 export const SESSION_MARKER_RESOLUTION_WINDOW_MS = 30_000;
+const REVISION_TOMBSTONE_CAP = 50;
 
 function groupKey(group: MarkerGroup): string {
   return `${group.trailId}\u0000${group.documentId}`;
@@ -70,6 +71,7 @@ export class SessionMarkerStore {
   private markers: SessionMarker[] = [];
   private readonly revisions = new Map<string, number>();
   private readonly listeners = new Set<Listener>();
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly ownUserId: string | null,
@@ -84,7 +86,6 @@ export class SessionMarkerStore {
   };
 
   replaceGroup(message: ChangeEventWsMessage): void {
-    if (message.admittedByUserId !== null && message.admittedByUserId === this.ownUserId) return;
     const group = { trailId: message.trailId, documentId: message.documentId };
     const key = groupKey(group);
     const priorRevision = this.revisions.get(key);
@@ -98,24 +99,33 @@ export class SessionMarkerStore {
     const receivedAt = this.now();
     this.markers = [
       ...this.markers.filter((marker) => groupKey(marker.group) !== key),
-      ...message.changes.map(
-        (change): SessionMarker => ({
-          changeId: change.changeId,
-          group,
-          author: message.author,
-          kind: change.kind,
-          anchor: { type: "unresolved", raw: change.navigation },
-          swept: change.swept,
-          excerpt: change.excerpt,
-          pureDeletionOffset: change.pureDeletionOffset,
-          projectionRevision: message.projectionRevision,
-          receivedAt,
-          dismissed: dismissed.get(change.changeId) ?? false,
-        }),
-      ),
+      ...message.changes
+        .filter(
+          (change) =>
+            change.admittedByUserId === null || change.admittedByUserId !== this.ownUserId,
+        )
+        .map(
+          (change): SessionMarker => ({
+            changeId: change.changeId,
+            group,
+            author: message.author,
+            kind: change.kind,
+            anchor: { type: "unresolved", raw: change.navigation },
+            swept: change.swept,
+            excerpt: change.excerpt,
+            pureDeletionOffset: change.pureDeletionOffset,
+            projectionRevision: message.projectionRevision,
+            receivedAt,
+            dismissed: dismissed.get(change.changeId) ?? false,
+          }),
+        ),
     ];
+    // Advance even for an empty/self-admitted replace-set so superseded marks
+    // disappear and a delayed older delivery cannot resurrect them.
     this.revisions.set(key, message.projectionRevision);
     this.evict(false);
+    this.pruneRevisions();
+    this.scheduleExpiry();
     this.emit();
   }
 
@@ -126,7 +136,10 @@ export class SessionMarkerStore {
       changed = true;
       return { ...marker, dismissed: true };
     });
-    if (changed) this.emit();
+    if (changed) {
+      this.scheduleExpiry();
+      this.emit();
+    }
   }
 
   dismissGroup(group: MarkerGroup): void {
@@ -137,7 +150,10 @@ export class SessionMarkerStore {
       changed = true;
       return { ...marker, dismissed: true };
     });
-    if (changed) this.emit();
+    if (changed) {
+      this.scheduleExpiry();
+      this.emit();
+    }
   }
 
   /** Whole-mark removal is used by writer edits and successful forward actions. */
@@ -145,6 +161,7 @@ export class SessionMarkerStore {
     const next = this.markers.filter((marker) => marker.changeId !== changeId);
     if (next.length === this.markers.length) return;
     this.markers = next;
+    this.scheduleExpiry();
     this.emit();
   }
 
@@ -188,20 +205,68 @@ export class SessionMarkerStore {
       .map((marker, index) => ({ marker, index }))
       .sort(
         (a, b) =>
+          Number(b.marker.dismissed) - Number(a.marker.dismissed) ||
           Number(a.marker.swept) - Number(b.marker.swept) ||
           a.marker.receivedAt - b.marker.receivedAt ||
           a.index - b.index,
       );
     const removed = new Set(candidates.slice(0, excess).map(({ marker }) => marker));
     this.markers = this.markers.filter((marker) => !removed.has(marker));
+    this.pruneRevisions();
+    this.scheduleExpiry();
     if (emit) this.emit();
   }
 
   clear(): void {
-    if (this.markers.length === 0) return;
+    this.cancelExpiry();
+    if (this.markers.length === 0 && this.revisions.size === 0) return;
     this.markers = [];
     this.revisions.clear();
     this.emit();
+  }
+
+  private scheduleExpiry(): void {
+    this.cancelExpiry();
+    const unresolved = this.markers.filter((marker) => marker.anchor.type === "unresolved");
+    if (unresolved.length === 0) return;
+    const deadline = Math.min(
+      ...unresolved.map((marker) => marker.receivedAt + SESSION_MARKER_RESOLUTION_WINDOW_MS),
+    );
+    this.expiryTimer = setTimeout(
+      () => {
+        this.expiryTimer = null;
+        const now = this.now();
+        const next = this.markers.filter(
+          (marker) =>
+            marker.anchor.type !== "unresolved" ||
+            now - marker.receivedAt < SESSION_MARKER_RESOLUTION_WINDOW_MS,
+        );
+        if (next.length !== this.markers.length) {
+          this.markers = next;
+          this.pruneRevisions();
+          this.emit();
+        }
+        this.scheduleExpiry();
+      },
+      Math.max(0, deadline - this.now()),
+    );
+  }
+
+  private cancelExpiry(): void {
+    if (this.expiryTimer === null) return;
+    clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
+  }
+
+  private pruneRevisions(): void {
+    const liveKeys = new Set(this.markers.map((marker) => groupKey(marker.group)));
+    const tombstones = [...this.revisions.keys()].filter((key) => !liveKeys.has(key));
+    for (const key of tombstones.slice(
+      0,
+      Math.max(0, tombstones.length - REVISION_TOMBSTONE_CAP),
+    )) {
+      this.revisions.delete(key);
+    }
   }
 
   private emit(): void {
