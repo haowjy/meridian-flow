@@ -3,6 +3,7 @@ import type * as Y from "yjs";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
+import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
@@ -21,6 +22,46 @@ export interface ApplySuccessResponseInput {
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
+}
+
+export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult {
+  if (!diff || diff.changes.length === 0) {
+    const provisional =
+      diff && diff.trailState !== "settled"
+        ? "\nResults are provisional until the turn's change trail settles."
+        : "";
+    return result(
+      "success",
+      `status: success\n\nNo settled changes for this turn yet.${provisional}`,
+      { phase: "committed" },
+    );
+  }
+
+  const lines = ["status: success", `trail state: ${diff.trailState}`];
+  if (diff.trailState !== "settled") {
+    lines.push("Results are provisional until the turn's change trail settles.");
+  }
+  lines.push(
+    diff.sharedEffects
+      ? "Thread-shared effects also exist for these documents; they are not attributed to this turn."
+      : "Thread-shared effects: none for these documents.",
+  );
+
+  for (const [index, change] of diff.changes.entries()) {
+    lines.push("", `Change ${index + 1}: ${change.kind} in document ${change.documentId}`);
+    lines.push("Before:", change.before ?? "[no content]");
+    lines.push("After:", change.after ?? "[no content]");
+    for (const merged of change.mergedOver) {
+      lines.push(
+        merged.writerAuthored
+          ? "Merged over writer-authored content:"
+          : "Merged over agent content:",
+        merged.body,
+      );
+    }
+  }
+
+  return result("success", lines.join("\n"), { phase: "committed" });
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {

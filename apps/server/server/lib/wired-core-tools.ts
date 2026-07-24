@@ -65,11 +65,14 @@ export interface ToolWiringDeps {
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
-type ModelWriteCommand = {
-  [Command in WriteCommand as Command["command"]]: Omit<Command, "file" | "documentId"> & {
+type DiffWriteCommand = Extract<WriteCommand, { command: "diff" }>;
+type DocumentWriteCommand = Exclude<WriteCommand, DiffWriteCommand>;
+type ModelDocumentWriteCommand = {
+  [Command in DocumentWriteCommand as Command["command"]]: Omit<Command, "file" | "documentId"> & {
     path: string;
   };
-}[WriteCommand["command"]];
+}[DocumentWriteCommand["command"]];
+type ModelWriteCommand = DiffWriteCommand | ModelDocumentWriteCommand;
 
 type ResolvedDocumentAddress = DocumentAddress & { created?: boolean };
 
@@ -165,6 +168,15 @@ function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutpu
   const record = asRecord(input);
   if (!record) return toolError({ message: "write input must be an object" });
 
+  if (record.command === "diff") {
+    const parsed = WriteCommandSchema.safeParse(record);
+    if (!parsed.success) return toolError({ message: writeSchemaError(parsed.error) });
+    if (parsed.data.command !== "diff") {
+      return toolError({ message: "Invalid diff command" });
+    }
+    return parsed.data;
+  }
+
   const { path, ...packageInput } = record;
   if (typeof path !== "string" || path.length === 0) {
     return toolError({ message: "path is required" });
@@ -173,6 +185,7 @@ function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutpu
   const parsed = WriteCommandSchema.safeParse({ ...packageInput, file: path });
   if (!parsed.success) return toolError({ message: writeSchemaError(parsed.error) });
 
+  if (parsed.data.command === "diff") return toolError({ message: "diff does not accept path" });
   const { file: _file, documentId: _documentId, tool_use_id: _toolUseId, ...command } = parsed.data;
   return { ...command, path } as ModelWriteCommand;
 }
@@ -199,7 +212,7 @@ function isToolError(value: unknown): value is ToolErrorOutput {
 
 async function resolveDocumentAddress(
   port: ContextPort,
-  input: ModelWriteCommand,
+  input: ModelDocumentWriteCommand,
   options: { deferTrackedDocumentSync?: boolean } = {},
 ): Promise<ResolvedDocumentAddress | ToolErrorOutput> {
   const { filePath: basePath, fragment } = splitDocumentFile(input.path);
@@ -261,6 +274,7 @@ function buildAgentWriteCommand(
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
 ): WriteCommand {
+  if (input.command === "diff") return input;
   const { path: _path, ...command } = input;
   return {
     ...command,
@@ -374,6 +388,19 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     write: async (input: unknown, ctx: ToolHandlerContext) => {
       const parsed = parseWriteToolInput(input);
       if (isToolError(parsed)) return parsed;
+
+      if (parsed.command === "diff") {
+        const outcome = await deps.documentSync.agentEdit().write(parsed, {
+          sessionId: ctx.threadId,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+          responseId: ctx.responseId,
+          tool_use_id: ctx.toolCallId,
+        });
+        return outcome.isError
+          ? toolError({ message: outcome.text })
+          : { output: outcome.content ?? outcome.text };
+      }
 
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;

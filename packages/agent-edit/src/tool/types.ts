@@ -31,12 +31,13 @@ export type WriteCommand = z.infer<typeof WriteCommandSchema>;
 export type WriteCommandName = WriteCommand["command"];
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
 export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
+export type DiffCommand = Extract<WriteCommand, { command: "diff" }>;
 export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
 export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 export type ReadFormat = ReadCommand["format"];
-export type QueryWriteCommand = ReadCommand;
+export type QueryWriteCommand = ReadCommand | DiffCommand;
 export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
 export type HistoryWriteCommand = UndoCommand | RedoCommand;
 
