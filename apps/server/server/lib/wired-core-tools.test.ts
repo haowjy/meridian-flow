@@ -108,6 +108,7 @@ describe("agent-edit response write lifecycle", () => {
           receipts: [
             {
               writeId: "w1",
+              settlementId: "write-1",
               content: [{ type: "text", text: "status: success\nwrite id: w1" }],
             },
           ],
@@ -155,6 +156,7 @@ describe("agent-edit response write lifecycle", () => {
           documentId: "doc-1",
           receipt: {
             writeId: "w1",
+            settlementId: "write-1",
             content: [{ type: "text", text: "status: success\nwrite id: w1" }],
           },
         },

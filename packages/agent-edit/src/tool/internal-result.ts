@@ -12,6 +12,7 @@ export type InternalWriteResult = InternalWriteResultBase &
 interface InternalWriteResultBase {
   text: string;
   writeId?: string;
+  settlementId?: string;
   error?: WriteErrorDetail;
   /** Multi-block content for structured tool_result. Block 1 = metadata, Block 2 = echo. */
   content?: WriteResultBlock[];

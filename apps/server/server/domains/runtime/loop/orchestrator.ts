@@ -184,13 +184,13 @@ type ResponseWriteCommitOutcome =
 function settledReceipt(
   receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
   documentId: string,
-  writeId: string,
+  settlementId: string,
 ): ResponseCommitWriteReceipt {
   const settled = receipts.find(
-    (entry) => entry.documentId === documentId && entry.receipt.writeId === writeId,
+    (entry) => entry.documentId === documentId && entry.receipt.settlementId === settlementId,
   );
   if (!settled) {
-    throw new Error(`Settled receipt missing for ${documentId}:${writeId}.`);
+    throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
   }
   return settled.receipt;
 }
@@ -1103,7 +1103,10 @@ async function* generateEvents(
           return;
         }
 
-        const writeBlocksByDocument = new Map<string, Array<{ block: Block; writeId: string }>>();
+        const writeBlocksByDocument = new Map<
+          string,
+          Array<{ block: Block; writeId: string; settlementId: string }>
+        >();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
@@ -1186,10 +1189,16 @@ async function* generateEvents(
                 `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
               );
             }
+            if (typeof dispatched.metadata.settlementId !== "string") {
+              throw new Error(
+                `Staged write result missing settlement id for ${dispatched.metadata.documentId}.`,
+              );
+            }
             const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
             blocks.push({
               block: dispatched.block,
               writeId: dispatched.metadata.writeId,
+              settlementId: dispatched.metadata.settlementId,
             });
             writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
@@ -1225,7 +1234,8 @@ async function* generateEvents(
                         deps,
                         threadId: input.threadId,
                         block: write.block,
-                        output: settledReceipt(result.receipts, documentId, write.writeId).content,
+                        output: settledReceipt(result.receipts, documentId, write.settlementId)
+                          .content,
                       })
                     : await persistUncommittedWriteResult({
                         deps,

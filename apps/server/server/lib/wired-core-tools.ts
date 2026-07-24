@@ -446,6 +446,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 documentId: address.documentId,
                 stagedWrite: true,
                 ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
+                ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
               },
             }
           : {}),

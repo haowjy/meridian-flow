@@ -132,7 +132,9 @@ facet.
   the orchestrator commits response-scoped agent-edit writes. Staged tool results
   finalize in the same database transaction as that commit using the settled
   receipts returned by agent-edit, never the speculative staged output. A
-  pending result left by a pre-commit process failure is rejected before a later
+  host-only settlement id correlates each tool call to its receipt; the
+  model-facing write handle is not unique within a response. A pending result
+  left by a pre-commit process failure is rejected before a later
   turn assembles model context. Cancellation paths roll the response buffer back
   before finalizing the turn as cancelled.
 - **Response write settlement is report-only** — ordinary Yjs merge always

@@ -41,6 +41,7 @@ describe("response staging", () => {
     );
 
     expectOutcome(receipt, "success");
+    expect(receipt.settlementId).toBeDefined();
     const text = outcomeText(receipt);
     expect(text).not.toContain("She still held the key.");
     expect(text.match(/# Chapter/g)).toHaveLength(1);
@@ -48,6 +49,7 @@ describe("response staging", () => {
     expect(text.match(/I let go\./g)).toHaveLength(1);
 
     const commit = await ctx.core.commitResponse("response-overwrite-after-pull");
+    expect(commit.documents[0]?.receipts[0]?.settlementId).toBe(receipt.settlementId);
     const settledText = commit.documents[0]?.receipts[0]?.content
       .map((block) => block.text)
       .join("\n\n");

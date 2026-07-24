@@ -746,7 +746,11 @@ export function createResponseCommitter(deps: {
             `Settled receipt missing content for ${docBuffer.docId}:${update.writeId}.`,
           );
         }
-        return { writeId: update.writeId, content: receipt.content };
+        return {
+          writeId: update.writeId,
+          settlementId: update.durableWriteId,
+          content: receipt.content,
+        };
       } finally {
         beforeDoc.destroy();
       }

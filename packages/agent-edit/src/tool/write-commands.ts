@@ -282,6 +282,7 @@ export function createWriteCommands(deps: {
       return formatApplySuccess({
         phase: "staged",
         writeId: writeIdentity.handle,
+        settlementId: writeIdentity.durableId,
         echo:
           summary.echo.length > 0
             ? summary.echo
@@ -474,6 +475,7 @@ export function createWriteCommands(deps: {
         const result = formatApplySuccess({
           phase: "staged",
           writeId: writeIdentity.handle,
+          settlementId: writeIdentity.durableId,
           echo: summary.echo,
           concurrentEdits: summary.concurrentEdits,
           deletedBlocks: applied.deletedBlocks,
