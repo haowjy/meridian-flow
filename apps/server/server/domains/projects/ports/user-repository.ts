@@ -12,10 +12,20 @@ export interface EnsureUserInput {
   avatarUrl: string | null;
 }
 
+/** An email belongs to a different provider identity and cannot be linked automatically. */
+export class AccountLinkConflictError extends Error {
+  readonly name = "AccountLinkConflictError";
+
+  constructor() {
+    super("Email is already associated with a different authentication identity");
+  }
+}
+
 /**
  * Idempotent local user provisioning for external-auth identities. Re-authentication
  * refreshes mutable profile fields and returns the internal domain user id for
- * project/thread/etc. writes that reference `users.id`.
+ * project/thread/etc. writes that reference `users.id`. The provider external id
+ * is the sole automatic identity key; email collisions never merge accounts.
  */
 export interface UserRepository {
   ensureUser(input: EnsureUserInput): Promise<UserId>;
