@@ -94,6 +94,7 @@ import {
   type PushToLiveResult,
 } from "./domain/branch-push.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
+import { resolveBranchReversalScope } from "./domain/branch-reversal-history.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import { createDocumentAuthority, DocumentAuthorityError } from "./domain/document-authority.js";
@@ -689,13 +690,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     deps.branchStore && deps.branchCoordinator
       ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
       : null;
+  const listBranchRows = deps.branchPushStore?.listJournalRowsForBranch;
   const agentEditCore: ThreadPeerAgentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
         commitThreadResponseAtomically: deps.commitThreadResponseAtomically,
         createThreadCore: (threadId) => {
           const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
-          const listBranchRows = deps.branchPushStore?.listJournalRowsForBranch;
           return createAgentEditCore({
             journal: createBranchAgentEditJournal({
               threadId,
@@ -733,6 +734,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             ...agentEditObservabilityOptions(deps),
           });
         },
+        shouldUseLiveReversal: listBranchRows
+          ? async ({ documentId, threadId }) =>
+              (await resolveBranchReversalScope({
+                documentId,
+                threadId,
+                branches: branchAgentEdit.store,
+                branchRows: {
+                  listJournalRowsForBranch: (input) => listBranchRows(input),
+                },
+              })) === null
+          : undefined,
         discardThreadPeerBranches: async (documentId, threadId) => {
           await deps.branchStore?.discardActiveThreadPeerBranches({
             documentId,
@@ -1854,6 +1866,7 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
+  shouldUseLiveReversal?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
   pullThreadPeer?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
     | {
@@ -1894,6 +1907,23 @@ export function createThreadPeerAgentEditCore(input: {
     const core = input.createThreadCore(id);
     cores.set(id, core);
     return core;
+  }
+
+  async function reversalCoreFor(
+    documentId: DocumentId,
+    threadId: string | undefined,
+  ): Promise<AgentEditCore> {
+    if (!threadId) return input.liveUtilityCore;
+    if (
+      input.shouldUseLiveReversal &&
+      (await input.shouldUseLiveReversal({
+        documentId,
+        threadId: threadId as ThreadId,
+      }))
+    ) {
+      return input.liveUtilityCore;
+    }
+    return coreFor(threadId);
   }
 
   async function evictIdleCores(): Promise<void> {
@@ -1948,39 +1978,60 @@ export function createThreadPeerAgentEditCore(input: {
     async write(command, context = {}) {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
-      trackResponse(context.threadId, context.responseId, threadCore);
       const responseAlreadyBufferedDocument = Boolean(
         context.responseId &&
           documentId &&
           threadCore.bufferedUpdatesForDoc(context.responseId, documentId).length > 0,
       );
+      let pulled:
+        | {
+            branchGeneration: number;
+            afterJournalId?: number;
+            liveJournalSeq?: number;
+            attributionBaseline: Uint8Array;
+          }
+        | undefined;
       if (
         documentId &&
         context.threadId &&
         input.pullThreadPeer &&
         !responseAlreadyBufferedDocument
       ) {
-        const pulled = await input.pullThreadPeer({
+        pulled = await input.pullThreadPeer({
           documentId,
           threadId: context.threadId as ThreadId,
         });
-        if (!context.responseId) await threadCore.invalidateThread(documentId, context.threadId);
-        return threadCore.write(command, {
-          ...context,
-          ...(pulled
-            ? {
-                interactionContext: {
-                  mode: "threadPeer" as const,
-                  branchGeneration: pulled.branchGeneration,
-                  afterJournalId: pulled.afterJournalId ?? 0,
-                  liveJournalSeq: pulled.liveJournalSeq,
-                  attributionBaseline: pulled.attributionBaseline,
-                },
-              }
-            : {}),
-        });
       }
-      return threadCore.write(command, context);
+      const owner = context.responseId ? responseOwners.get(context.responseId) : undefined;
+      if (owner && owner.threadId !== context.threadId) {
+        throw new Error(
+          `Response ${context.responseId} is already owned by thread ${owner.threadId ?? "live"}; cannot reuse it from thread ${context.threadId ?? "live"}.`,
+        );
+      }
+      const selectedCore =
+        owner?.core ??
+        (documentId && isReversalWriteCommand(command)
+          ? await reversalCoreFor(documentId, context.threadId)
+          : threadCore);
+      const useLiveReversal = selectedCore === input.liveUtilityCore;
+      trackResponse(context.threadId, context.responseId, selectedCore);
+      if (!context.responseId && pulled && !useLiveReversal) {
+        await threadCore.invalidateThread(documentId as DocumentId, context.threadId as ThreadId);
+      }
+      return selectedCore.write(command, {
+        ...context,
+        ...(pulled && !useLiveReversal
+          ? {
+              interactionContext: {
+                mode: "threadPeer" as const,
+                branchGeneration: pulled.branchGeneration,
+                afterJournalId: pulled.afterJournalId ?? 0,
+                liveJournalSeq: pulled.liveJournalSeq,
+                attributionBaseline: pulled.attributionBaseline,
+              },
+            }
+          : {}),
+      });
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
@@ -2029,22 +2080,25 @@ export function createThreadPeerAgentEditCore(input: {
       });
     },
     async getAvailability(docId, threadId) {
-      return (await coreFor(threadId)).getAvailability(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).getAvailability(
+        docId,
+        threadId,
+      );
     },
     async undo(docId, threadId) {
-      return (await coreFor(threadId)).undo(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).undo(docId, threadId);
     },
     async redo(docId, threadId) {
-      return (await coreFor(threadId)).redo(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).redo(docId, threadId);
     },
     reverse(inputReverse) {
       return input.liveUtilityCore.reverse(inputReverse);
     },
     async undoTurn(docId, threadId) {
-      return (await coreFor(threadId)).undoTurn(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).undoTurn(docId, threadId);
     },
     async redoTurn(docId, threadId) {
-      return (await coreFor(threadId)).redoTurn(docId, threadId);
+      return (await reversalCoreFor(docId as DocumentId, threadId)).redoTurn(docId, threadId);
     },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];
@@ -2097,6 +2151,12 @@ function documentIdFromWriteCommand(command: unknown): DocumentId | null {
     typeof documentId === "string" ? documentId : undefined,
   );
   return address.ok ? (address.documentId as DocumentId) : null;
+}
+
+function isReversalWriteCommand(command: unknown): boolean {
+  if (typeof command !== "object" || command === null) return false;
+  const name = (command as { command?: unknown }).command;
+  return name === "undo" || name === "redo";
 }
 
 function createInMemoryTurnLiveLineageStore(

@@ -698,6 +698,10 @@ export function createWriteReversal(deps: {
             {
               update: prepared.update,
               ref: { threadId: input.session.threadId, undoUpdateSeq },
+              persistGuardWatermark: prepared.plan.snapshot.updates.reduce(
+                (max, update) => Math.max(max, update.seq),
+                0,
+              ),
               meta: {
                 origin: "system",
                 reversalActor: input.actor,

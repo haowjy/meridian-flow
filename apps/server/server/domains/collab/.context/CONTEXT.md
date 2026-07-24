@@ -14,6 +14,7 @@ and WebSocket callers.
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
+| Draft undo/redo history and Apply folding | `domain/branch-reversal-history.ts` |
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
 | Push plan + conflict policy | `domain/branch-push-plan.ts` |
@@ -159,7 +160,9 @@ evidence emits degradation telemetry rather than guessing from update bytes.
   advertising per-write identity the journal does not retain.
   Apply materializes only handles whose final branch state is active; handles
   eliminated by Draft undo are squashed rather than recreated as active live
-  mutations for content that is absent.
+  mutations for content that is absent. Because one Apply is one durable live
+  update, all handles materialized by that Apply form one live undo boundary:
+  selecting any of them expands to the full group and marks the group together.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
 the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
 inside the same transaction, under `lockDocumentMutation` advisory lock. There is

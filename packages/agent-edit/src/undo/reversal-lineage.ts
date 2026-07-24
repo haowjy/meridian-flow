@@ -163,16 +163,18 @@ function expandActiveClosureToCompatibleBoundary(input: {
 
   for (const handle of selected) {
     const state = statesByHandle.get(handle);
-    if (state?.activeRedoSeq !== undefined) boundarySeqs.add(state.activeRedoSeq);
+    for (const seq of activeBoundarySeqs(state)) boundarySeqs.add(seq);
   }
 
   let changed = true;
   while (changed) {
     changed = false;
     for (const state of states) {
-      if (state.activeRedoSeq === undefined || !boundarySeqs.has(state.activeRedoSeq)) continue;
+      const stateBoundarySeqs = activeBoundarySeqs(state);
+      if (!stateBoundarySeqs.some((seq) => boundarySeqs.has(seq))) continue;
       if (!selected.has(state.handle)) {
         selected.add(state.handle);
+        for (const seq of stateBoundarySeqs) boundarySeqs.add(seq);
         changed = true;
       }
     }
@@ -185,6 +187,11 @@ function expandActiveClosureToCompatibleBoundary(input: {
     reversals: input.reversals,
   });
   return closure;
+}
+
+function activeBoundarySeqs(state: LineageHandleState | undefined): number[] {
+  if (!state) return [];
+  return state.activeRedoSeq === undefined ? state.forwardSeqs : [state.activeRedoSeq];
 }
 
 function compatibleLineageGroups(input: {

@@ -92,6 +92,8 @@ export interface PersistRedoEntry {
   update: Uint8Array;
   ref: { threadId: string; undoUpdateSeq: number };
   meta: UpdateMeta;
+  /** Journal high-watermark captured while planning this redo. */
+  persistGuardWatermark?: number;
 }
 
 export interface JournalReadOptions {
