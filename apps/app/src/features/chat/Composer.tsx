@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+import { useComposerPlaceholder } from "./placeholders";
+
 export type ComposerProps = {
   /** Called with the trimmed message text when the user submits a non-empty draft. */
   onSubmit: (text: string) => void;
@@ -78,9 +80,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   },
   ref,
 ) {
-  // Default placeholder is computed inside the component so the catalog lookup
-  // is locale-live (the default-value form would freeze it at parse time).
-  const resolvedPlaceholder = placeholder ?? t`Ask anything…`;
+  const rotatingPlaceholder = useComposerPlaceholder(streaming);
+  const resolvedPlaceholder = placeholder ?? rotatingPlaceholder;
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canSend = text.trim().length > 0;
