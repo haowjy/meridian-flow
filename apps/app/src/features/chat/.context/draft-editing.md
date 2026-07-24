@@ -11,7 +11,11 @@ documents: a default-collapsed card
 whose header carries the edit icon and chapter count — `✎ AI edited N chapter(s)` — expanding to
 the per-document list and authorized durable change-trail rows. Trail detail is
 writer-touching iff `writerProtection` is present: pure-generative changes render
-no detail rows, and mixed turns show only their writer-touching changes. The
+no detail rows, and mixed turns show only their writer-touching changes. A
+conversation reveal (`conversation-reveal.ts`, opened from an editor peer mark's
+*Open conversation*) additionally surfaces the targeted change row even when it
+is not writer-touching, so the jump can land on and emphasize the exact change;
+outside that reveal the filter is unchanged. The
 plain document line and whole-turn Undo remain regardless. Created files count like any edit (creation flows
 through the same agent-edit write path and produces mutation rows). Rows come
 from turn lineage in BOTH scopes (`live` + `draft` via `useTurnLiveLineage`),
