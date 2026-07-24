@@ -1,5 +1,10 @@
+import { createAgentEditCodec } from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-import { detectPureDeletionOffset } from "./branch-push-transition.js";
+import { detectPureDeletionOffset, renderedBodyText } from "./branch-push-transition.js";
+
+const codec = createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() }));
 
 describe("detectPureDeletionOffset", () => {
   it.each([
@@ -17,5 +22,11 @@ describe("detectPureDeletionOffset", () => {
     ["multiple splices", "abcdef", "ace"],
   ])("rejects %s", (_case, before, after) => {
     expect(detectPureDeletionOffset(before, after)).toBeNull();
+  });
+
+  it("computes the offset in rendered text rather than markdown syntax", () => {
+    const before = renderedBodyText("hash|A **bold brave** world", codec);
+    const after = renderedBodyText("hash|A **bold** world", codec);
+    expect(detectPureDeletionOffset(before, after)).toBe(7);
   });
 });

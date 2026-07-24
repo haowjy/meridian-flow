@@ -484,8 +484,8 @@ export function createBranchPushTransition(input: {
       swept: change.writerProtection !== undefined,
       excerpt: text === null ? null : text.slice(0, 500),
       pureDeletionOffset: detectPureDeletionOffset(
-        availableBodyText(change.beforeText),
-        availableBodyText(change.afterTextAtReceipt),
+        renderedBodyText(change.beforeText, input.codec),
+        renderedBodyText(change.afterTextAtReceipt, input.codec),
       ),
     };
   }
@@ -592,9 +592,15 @@ export function detectPureDeletionOffset(
   return before.slice(0, prefix) + before.slice(before.length - suffix) === after ? prefix : null;
 }
 
-function availableBodyText(hashline: string | null): string | null {
+export function renderedBodyText(hashline: string | null, codec: AgentEditCodec): string | null {
   const body = bodyFromHashline(hashline);
-  return body.status === "available" ? body.markdown : null;
+  if (body.status !== "available") return null;
+  try {
+    return codec.parse(body.markdown).blocks[0]?.textContent ?? null;
+  } catch {
+    // A malformed historical body must not suppress the rest of the marker set.
+    return null;
+  }
 }
 
 /** The only reconstruction path for settlement authority and provenance, warm or cold. */
