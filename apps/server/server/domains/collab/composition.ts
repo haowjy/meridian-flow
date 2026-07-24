@@ -88,10 +88,31 @@ export type { DocumentWriteHook } from "./contracts.js";
 
 type CollabDomainDeps = {
   db: Database;
-  documentAccess: TrailDocumentAccess;
+  documentAccess: TrailDocumentAccess & {
+    canAccessDocument(
+      userId: import("@meridian/contracts/runtime").UserId,
+      documentId: string,
+    ): Promise<boolean>;
+    canAccessProjectDocument(
+      userId: import("@meridian/contracts/runtime").UserId,
+      documentId: string,
+      projectId: import("@meridian/contracts/runtime").ProjectId,
+    ): Promise<boolean>;
+  };
+  threadContext?: import("./domain/turn-reversal-service.js").ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
 };
+
+const UNAVAILABLE_THREAD_CONTEXT_REVERSAL: import("./domain/turn-reversal-service.js").ThreadContextReversalResolver =
+  {
+    async requireThreadOwner() {
+      throw new Error("Thread context reversal is not configured");
+    },
+    async resolveContextDocument() {
+      throw new Error("Thread context reversal is not configured");
+    },
+  };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
@@ -280,19 +301,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     projections: projectionRefresher,
     notices: postDurabilityNotices,
   });
-  const turnReversal = createTurnReversalService({
-    live: {
-      reversalStore: persistence.journal,
-      agentEdit: runtime.liveUtilityCore,
-      resolveDocumentUri: documentUriResolver,
-      checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
-      refreshDocumentProjection: projectionRefresher.refresh,
-    },
-    branchReview,
-    branchJournal,
-    branches,
-    resolveDocumentUri: documentUriResolver,
-  });
   const drafts = createWorkDraftReviewService({
     branches,
     branchCoordinator,
@@ -339,6 +347,23 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: createDrizzleTurnLiveLineageStore(deps.db),
     receiptStore: createDrizzleTurnReceiptStore(deps.db),
     resolveDocumentUri: documentUriResolver,
+  });
+  const turnReversal = createTurnReversalService({
+    live: {
+      reversalStore: persistence.journal,
+      agentEdit: runtime.liveUtilityCore,
+      resolveDocumentUri: documentUriResolver,
+      checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
+      refreshDocumentProjection: projectionRefresher.refresh,
+    },
+    agentEdit,
+    branchReview,
+    branchJournal,
+    branches,
+    resolveDocumentUri: documentUriResolver,
+    listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
+    documentAccess: deps.documentAccess,
+    threadContext: deps.threadContext ?? UNAVAILABLE_THREAD_CONTEXT_REVERSAL,
   });
   const trailForwardActions = createDrizzleTrailForwardActions({
     db: deps.db,

@@ -4,6 +4,8 @@
 
 - `apps/server`: Yjs WebSocket routes now delegate collaboration lifecycle,
   writer admission, reconnect reconciliation, and graceful drain to one gateway.
+- `apps/server`: thread context reversal routes now validate and delegate one
+  facade command across live-turn lineage and context-document undo/redo.
 
 - `apps/server`: collab composition now assembles required review, response,
   reversal, effective-read, projection, and thread-peer services from explicit

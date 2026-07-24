@@ -154,6 +154,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
           },
           input,
         ),
+      async reverseThreadContext() {
+        throw new Error("Thread context reversal is not configured");
+      },
     },
     documents: {
       ensureDocument: lifecycle.ensureDocument,

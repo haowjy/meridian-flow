@@ -150,6 +150,25 @@ export type AgentEditAccess = {
   agentEdit(): ThreadPeerAgentEditCore;
 };
 
+export type ReverseThreadContextInput = {
+  threadId: ThreadId;
+  userId: UserId;
+  uri?: string;
+  direction: "undo" | "redo";
+  scope: "write" | "turn" | "thread";
+  selection?: string;
+  turnId: TurnId;
+};
+
+export class ReverseThreadContextError extends Error {
+  constructor(
+    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export type TurnReversalAccess = {
   reverseTurn(input: {
     threadId: ThreadId;
@@ -158,6 +177,7 @@ export type TurnReversalAccess = {
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
   }): Promise<ReversalOutcome>;
+  reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
 
 export type MarkdownDocumentStore = {
