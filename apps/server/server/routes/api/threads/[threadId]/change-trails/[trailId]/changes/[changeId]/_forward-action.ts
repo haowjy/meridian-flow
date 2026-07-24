@@ -11,13 +11,13 @@ export async function applyForwardAction(event: H3Event, action: TrailForwardAct
   const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
   const trailId = requireRequestId(getRouterParam(event, "trailId"), "trailId");
   const changeId = getRouterParam(event, "changeId") ?? "";
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: app.threadRepos.threads, projects: app.projectRepo },
     threadId,
     user.userId,
   );
   return app.documentSync.applyTrailForwardAction({
-    threadId,
+    threadId: thread.id as ThreadId,
     trailId,
     changeId,
     action,

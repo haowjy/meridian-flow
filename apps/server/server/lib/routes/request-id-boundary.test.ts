@@ -2,10 +2,13 @@
 
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseNullableRequestId } from "../request-id.js";
 import { createThreadWebSocketSession, type WsPeer } from "../ws-thread-handler.js";
 
 const VALID_ID = "00000000-0000-0000-0000-000000000001";
 const MALFORMED_ID = "not-a-uuid";
+const CANONICAL_THREAD_ID = "abcdef00-0000-0000-0000-000000000001";
+const CANONICAL_TURN_ID = "abcdef00-0000-0000-0000-000000000002";
 
 vi.mock("nitro/h3", async (importOriginal) => {
   const actual = await importOriginal<typeof import("nitro/h3")>();
@@ -39,7 +42,11 @@ const databaseCall = vi.fn(async () => {
   throw new Error("database boundary was reached");
 });
 
-function event(params: Record<string, string>, body?: unknown): TestEvent {
+function event(
+  params: Record<string, string>,
+  body?: unknown,
+  appOverrides: Record<string, unknown> = {},
+): TestEvent {
   const projectRepo = { findById: databaseCall, create: databaseCall };
   const repos = {
     threads: { findById: databaseCall, listByWork: databaseCall },
@@ -74,6 +81,7 @@ function event(params: Record<string, string>, body?: unknown): TestEvent {
         packageRepository: {},
         eventSink: {},
         journalWriter: {},
+        ...appOverrides,
       },
     },
   };
@@ -189,9 +197,19 @@ describe("malformed HTTP request IDs", () => {
       "global thread create client ID",
       () => createThread(event({}, { id: MALFORMED_ID, projectId: VALID_ID })),
     ],
+    ["global thread create project ID", () => createThread(event({}, { projectId: MALFORMED_ID }))],
+    [
+      "global thread create work ID",
+      () => createThread(event({}, { projectId: VALID_ID, workId: MALFORMED_ID })),
+    ],
     [
       "project-scoped thread create client ID",
       () => createProjectThread(event({ projectId: VALID_ID }, { id: MALFORMED_ID })),
+    ],
+    [
+      "project-scoped thread create work ID",
+      () =>
+        createProjectThread(event({ projectId: VALID_ID }, { id: VALID_ID, workId: MALFORMED_ID })),
     ],
     [
       "thread fork origin turn",
@@ -203,12 +221,54 @@ describe("malformed HTTP request IDs", () => {
   ])("%s returns 400 before a database call", async (_surface, invoke) => {
     await expectBadRequest(invoke());
   });
+
+  it("propagates normalized thread and turn IDs below the owner gate", async () => {
+    const cancel = vi.fn(async () => "cancelled");
+    const thread = {
+      id: CANONICAL_THREAD_ID,
+      projectId: VALID_ID,
+      userId: VALID_ID,
+      deletedAt: null,
+    };
+    const result = await cancelTurn(
+      event(
+        {
+          threadId: CANONICAL_THREAD_ID.toUpperCase(),
+          turnId: CANONICAL_TURN_ID.toUpperCase(),
+        },
+        undefined,
+        {
+          repos: { threads: { findById: vi.fn(async () => thread) } },
+          projectRepo: {
+            findById: vi.fn(async () => ({
+              id: VALID_ID,
+              userId: VALID_ID,
+              deletedAt: null,
+            })),
+          },
+          runner: { cancel },
+        },
+      ),
+    );
+
+    expect(cancel).toHaveBeenCalledWith(CANONICAL_THREAD_ID, CANONICAL_TURN_ID);
+    expect(result).toEqual({
+      threadId: CANONICAL_THREAD_ID,
+      turnId: CANONICAL_TURN_ID,
+      status: "cancelled",
+    });
+  });
+
+  it("preserves nullable fork origin semantics", () => {
+    expect(parseNullableRequestId(null, "originTurnId")).toBeNull();
+  });
 });
 
 describe("malformed WebSocket thread IDs", () => {
   it.each([
     { type: "subscribe", threadId: MALFORMED_ID },
     { type: "resume", subscriptions: [{ threadId: MALFORMED_ID, lastSeq: "0" }] },
+    { type: "unsubscribe", threadId: MALFORMED_ID },
     {
       type: "interrupt.respond",
       threadId: MALFORMED_ID,
@@ -216,9 +276,20 @@ describe("malformed WebSocket thread IDs", () => {
       interruptId: "interrupt-1",
       value: null,
     },
+    {
+      type: "interrupt.respond",
+      threadId: VALID_ID,
+      turnId: MALFORMED_ID,
+      interruptId: "interrupt-1",
+      value: null,
+    },
   ])("$type returns transport not-found before a database call", async (message) => {
     const sent: string[] = [];
     const requireOwnedThread = vi.fn();
+    const expectedThreadId =
+      message.type === "interrupt.respond" && message.threadId === VALID_ID
+        ? VALID_ID
+        : MALFORMED_ID;
     const peer = {
       request: new Request("https://app.localhost/api/threads/ws"),
       context: {
@@ -236,7 +307,40 @@ describe("malformed WebSocket thread IDs", () => {
     expect(parseWsServerMessage(sent[0] ?? "")).toMatchObject({
       type: "error",
       error: { code: "not_found" },
-      threadId: MALFORMED_ID,
+      threadId: expectedThreadId,
+    });
+  });
+
+  it("normalizes interrupt thread and turn IDs before registry correlation", async () => {
+    const resolve = vi.fn(() => ({ ok: true }));
+    const peer = {
+      request: new Request("https://app.localhost/api/threads/ws"),
+      context: {
+        userId: VALID_ID,
+        app: {
+          threadRuntime: { requireOwnedThread: vi.fn() },
+          interruptRegistry: { resolve },
+        },
+      },
+      send: vi.fn(),
+      close: vi.fn(),
+    } as unknown as WsPeer;
+
+    await createThreadWebSocketSession(peer).onMessage(
+      JSON.stringify({
+        type: "interrupt.respond",
+        threadId: CANONICAL_THREAD_ID.toUpperCase(),
+        turnId: CANONICAL_TURN_ID.toUpperCase(),
+        interruptId: "interrupt-1",
+        value: null,
+      }),
+    );
+
+    expect(resolve).toHaveBeenCalledWith({
+      threadId: CANONICAL_THREAD_ID,
+      turnId: CANONICAL_TURN_ID,
+      interruptId: "interrupt-1",
+      value: null,
     });
   });
 });

@@ -12,3 +12,10 @@ export function requireRequestId(value: unknown, field: string): ParsedRequestId
 export function parseOptionalRequestId(value: unknown, field: string): ParsedRequestId | undefined {
   return value === undefined ? undefined : requireRequestId(value, field);
 }
+
+export function parseNullableRequestId(
+  value: unknown,
+  field: string,
+): ParsedRequestId | null | undefined {
+  return value === null || value === undefined ? value : requireRequestId(value, field);
+}

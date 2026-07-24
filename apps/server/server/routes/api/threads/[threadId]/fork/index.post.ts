@@ -2,7 +2,7 @@
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
-import { parseOptionalRequestId, requireRequestId } from "../../../../../lib/request-id.js";
+import { parseNullableRequestId, requireRequestId } from "../../../../../lib/request-id.js";
 import { forkThreadAgent, type ThreadAgentSwapDeps } from "../../../../../lib/thread-agent-swap.js";
 import { AgentBindingNotFoundError } from "../../../../../lib/thread-creation.js";
 
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
         threadId,
         userId: user.userId,
         targetAgent: body.targetAgent ?? null,
-        originTurnId: parseOptionalRequestId(body.originTurnId, "originTurnId"),
+        originTurnId: parseNullableRequestId(body.originTurnId, "originTurnId"),
       },
     );
     event.res.status = 201;

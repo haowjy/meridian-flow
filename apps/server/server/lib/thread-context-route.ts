@@ -20,10 +20,9 @@ export async function resolveThreadContextPort(
   threadId: ThreadId,
   userId: UserId,
 ) {
-  const parsedThreadId = requireRequestId(threadId, "threadId") as ThreadId;
   const resolution = await resolveThreadContext(
     { threads: deps.threads, threadWorks: deps.threadWorks },
-    parsedThreadId,
+    threadId,
   );
   if (!resolution || resolution.thread.userId !== userId) {
     throw createError({ statusCode: 404, message: "Thread not found" });
@@ -35,7 +34,8 @@ export async function readThreadContextDocument(
   deps: ThreadContextRouteDeps,
   input: { threadId: ThreadId; userId: UserId; uri: string },
 ) {
-  const port = await resolveThreadContextPort(deps, input.threadId, input.userId);
+  const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
+  const port = await resolveThreadContextPort(deps, threadId, input.userId);
   const result = await port.read(input.uri);
   if (!result.ok) contextErrorToHttp(result.error);
   return {
@@ -49,9 +49,10 @@ export async function writeThreadContextDocument(
   deps: ThreadContextRouteDeps,
   input: { threadId: ThreadId; userId: UserId; uri: string; markdown: string },
 ) {
-  const port = await resolveThreadContextPort(deps, input.threadId, input.userId);
+  const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
+  const port = await resolveThreadContextPort(deps, threadId, input.userId);
   const result = await port.write(input.uri, input.markdown, {
-    origin: { type: "human", userId: input.userId, threadId: input.threadId },
+    origin: { type: "human", userId: input.userId, threadId },
   });
   if (!result.ok) contextErrorToHttp(result.error);
   return {

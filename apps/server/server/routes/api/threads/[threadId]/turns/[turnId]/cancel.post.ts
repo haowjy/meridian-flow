@@ -11,8 +11,12 @@ export default defineEventHandler(async (event) => {
   const threadId = getRouterParam(event, "threadId") ?? "";
   const turnId = requireRequestId(getRouterParam(event, "turnId"), "turnId");
 
-  await requireThreadOwner({ threads: repos.threads, projects: projectRepo }, threadId, userId);
-  const status = await runner.cancel(threadId, turnId);
+  const thread = await requireThreadOwner(
+    { threads: repos.threads, projects: projectRepo },
+    threadId,
+    userId,
+  );
+  const status = await runner.cancel(thread.id, turnId);
 
-  return { threadId, turnId, status };
+  return { threadId: thread.id, turnId, status };
 });

@@ -2,8 +2,16 @@
 import { type CreateThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../lib/auth-gate.js";
-import { parseOptionalRequestId } from "../../../lib/request-id.js";
-import { AgentBindingNotFoundError, createThreadForProject } from "../../../lib/thread-creation.js";
+import {
+  parseNullableRequestId,
+  parseOptionalRequestId,
+  requireRequestId,
+} from "../../../lib/request-id.js";
+import {
+  AgentBindingNotFoundError,
+  createThreadForProject,
+  InvalidWorkAttachmentError,
+} from "../../../lib/thread-creation.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -26,13 +34,13 @@ export default defineEventHandler(async (event) => {
         eventSink: app.eventSink,
       },
       {
-        projectId: body.projectId,
+        projectId: requireRequestId(body.projectId, "projectId"),
         userId,
         id: parseOptionalRequestId(body.id, "id"),
         title: body.title ?? null,
         systemPrompt: body.systemPrompt ?? null,
         currentAgent: body.currentAgent ?? null,
-        workId: body.workId ?? null,
+        workId: parseNullableRequestId(body.workId, "workId") ?? null,
       },
     );
 
@@ -40,7 +48,7 @@ export default defineEventHandler(async (event) => {
     return serializeTransport(thread);
   } catch (error) {
     // An unresolvable agent slug is a client error, not a server fault.
-    if (error instanceof AgentBindingNotFoundError) {
+    if (error instanceof AgentBindingNotFoundError || error instanceof InvalidWorkAttachmentError) {
       throw createError({ statusCode: 400, message: error.message });
     }
     throw error;

@@ -221,7 +221,11 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             }
             return;
           case "unsubscribe": {
-            const threadId = message.threadId as ThreadId;
+            const threadId = parseRequestId(message.threadId) as ThreadId | null;
+            if (!threadId) {
+              sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+              return;
+            }
             const state = getPeerState(peer);
             state.subscriptions.get(threadId)?.();
             state.subscriptions.delete(threadId);
@@ -234,6 +238,11 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
               return;
             }
+            const turnId = parseRequestId(message.turnId);
+            if (!turnId) {
+              sendError(peer, meridianError("not_found", "Turn not found"), threadId);
+              return;
+            }
             const context = peer.context;
             try {
               if (!context) throw new Error("Missing peer context");
@@ -244,7 +253,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             }
             const result = context.app.interruptRegistry.resolve({
               threadId,
-              turnId: message.turnId as never,
+              turnId: turnId as never,
               interruptId: message.interruptId,
               value: message.value as JsonValue,
             });

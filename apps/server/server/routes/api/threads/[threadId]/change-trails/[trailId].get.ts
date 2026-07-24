@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
   const trailId = requireRequestId(getRouterParam(event, "trailId"), "trailId");
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: app.threadRepos.threads, projects: app.projectRepo },
     threadId,
     user.userId,
@@ -17,6 +17,10 @@ export default defineEventHandler(async (event) => {
   return {
     version: 1,
     trailId,
-    documents: await app.changeTrails.readDetails({ threadId, trailId, userId: user.userId }),
+    documents: await app.changeTrails.readDetails({
+      threadId: thread.id as ThreadId,
+      trailId,
+      userId: user.userId,
+    }),
   };
 });

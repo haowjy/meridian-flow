@@ -33,7 +33,9 @@ vi.mock("../auth-gate.js", () => ({
     },
   }),
 }));
-vi.mock("../../domains/threads/index.js", () => ({ requireThreadOwner: vi.fn() }));
+vi.mock("../../domains/threads/index.js", () => ({
+  requireThreadOwner: vi.fn(async () => ({ id: THREAD_ID })),
+}));
 
 const handler = (await import("../../routes/api/threads/[threadId]/change-trails/[trailId].get.js"))
   .default as (event: unknown) => Promise<unknown>;
