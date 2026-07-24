@@ -35,7 +35,10 @@ export type InMemoryPendingSettlementStore = PendingSettlementStore & {
   stage(pending: PendingLiveSettlement): void;
 };
 
-export function createInMemoryPendingSettlementStore(): InMemoryPendingSettlementStore {
+export function createInMemoryPendingSettlementStore(options?: {
+  materialize?: (pending: PendingLiveSettlement) => PendingLiveSettlement;
+  onCompleted?: (pushId: number) => void;
+}): InMemoryPendingSettlementStore {
   const settlements = new Map<number, SettlementState>();
   const fences = new KeyedMutex();
 
@@ -102,7 +105,7 @@ export function createInMemoryPendingSettlementStore(): InMemoryPendingSettlemen
       if (!state.claim) {
         throw new Error(`Pending branch push settlement ${pushId} is not owned`);
       }
-      return snapshot(state);
+      return snapshot(state, options?.materialize);
     },
 
     async claimRecoverable(input) {
@@ -124,7 +127,7 @@ export function createInMemoryPendingSettlementStore(): InMemoryPendingSettlemen
         };
         state.claim = claim;
         state.claimEpoch = claim.epoch;
-        return snapshot(state);
+        return snapshot(state, options?.materialize);
       });
     },
 
@@ -208,6 +211,7 @@ export function createInMemoryPendingSettlementStore(): InMemoryPendingSettlemen
         if (result === "retry") return result;
         state.state = "completed";
         state.claim = null;
+        options?.onCompleted?.(input.pushId);
         return result;
       });
     },
@@ -243,14 +247,18 @@ function isOwned(
   );
 }
 
-function snapshot(state: SettlementState): PendingLiveSettlement {
+function snapshot(
+  state: SettlementState,
+  materialize?: (pending: PendingLiveSettlement) => PendingLiveSettlement,
+): PendingLiveSettlement {
   if (!state.claim)
     throw new Error(`Pending branch push settlement ${state.pending.push.id} is not owned`);
-  return {
+  const pending = {
     ...clonePending(state.pending, state.claim),
     settledJoinVersion: state.settledJoinVersion,
     attemptCount: state.attemptCount,
   };
+  return materialize?.(pending) ?? pending;
 }
 
 function clonePending(
