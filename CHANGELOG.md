@@ -20,6 +20,11 @@
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
   branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
   PR evidence, GitHub failures, and refs that move before execution are refused.
+- `tools/dev`: automatic worktree pruning now requires exact merged-PR evidence,
+  skips dirty or active worktrees, rechecks readiness before teardown, deletes
+  refs atomically, and batches discovery instead of pausing silently per lane.
+- `apps/server`: structured event writes under `logs/` no longer trigger Nitro
+  dev rebuilds or restart in-flight turns.
 - `tools/dev`: restart now terminates only its owned tmux session, waits for
   fixed ports to become bindable, and refuses non-owned or uninspectable
   listeners instead of killing processes discovered by port.
@@ -28,9 +33,6 @@
   `/login` 200 with Meridian's login-page marker.
 - CI now builds the app's production `.output`, passes validated fake config to
   the generated Nitro server, and enforces the same exact public-route contract.
-- `tools/dev`: the app-boot smoke now uses an OS-assigned port reported by its
-  child, requires the child to remain alive, and enforces `/` 307 plus `/login`
-  200 with Meridian's login-page marker.
 - `tools/dev`: destructive and gate-critical scripts now compile under one
   strict Nx typecheck target included in root `pnpm typecheck`.
 - `tools/dev`: startup failures now print the concrete portless log path, while

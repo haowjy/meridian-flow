@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "nitro/config";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoLogsGlob = `${path.join(repoRoot, "logs").replaceAll(path.sep, "/")}/**`;
 
 try {
   loadEnvFile(path.join(repoRoot, ".env"));
@@ -16,6 +17,11 @@ try {
 
 export default defineConfig({
   scanDirs: ["server"],
+  rolldownConfig: {
+    watch: {
+      exclude: [repoLogsGlob],
+    },
+  },
   // Interrupt envelope handler runs before Nitro's built-in JSON wrapper so HTTP bodies
   // match WS error frames for `throwHttpInterrupt*` failures.
   errorHandler: ["./server/lib/interrupt-error-handler.ts"],

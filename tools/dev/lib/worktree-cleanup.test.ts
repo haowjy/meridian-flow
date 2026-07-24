@@ -8,6 +8,7 @@ import {
   resolveTarget,
 } from "./worktree-cleanup";
 import type { CleanupEligibility } from "./worktree-cleanup-eligibility";
+import type { AutoCleanupReadinessDecision } from "./worktree-cleanup-readiness";
 
 // Two worktrees: primary on the base branch, one feature worktree. The feature
 // carries exact PR evidence by default, standing in for a squash-merged tip
@@ -25,6 +26,15 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
       pullRequestNumber: 42,
     });
   }
+  const autoReadinessByWorktree = new Map<string, AutoCleanupReadinessDecision>([
+    [
+      "/repo/wt/feature",
+      {
+        ready: true,
+        evidence: { worktreePath: "/repo/wt/feature" },
+      },
+    ],
+  ]);
   return buildCleanupContext({
     gitWorktreePorcelain: [
       "worktree /repo/main",
@@ -37,6 +47,7 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
       "",
     ].join("\n"),
     eligibilityByBranch,
+    autoReadinessByWorktree,
     baseBranch,
     meridianWorkItems: [],
     // Run "from" the primary so the feature worktree is neither primary nor current.
@@ -45,20 +56,65 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
 }
 
 describe("worktree cleanup resolver", () => {
-  it("force-deletes the branch (squash-merged tips fail `git branch -d`)", () => {
+  it("deletes the branch ref atomically at its planned OID", () => {
     const context = makeContext();
     const plan = createCleanupPlan(context, [
       resolveTarget(context, { kind: "direct", value: "feature" }),
     ]);
 
     const deleteBranch = plan.targets[0].actions.find((a) => a.kind === "delete-branch");
-    expect(deleteBranch?.command).toEqual(["git", "branch", "-D", "feature"]);
+    expect(deleteBranch?.command).toEqual([
+      "git",
+      "update-ref",
+      "-d",
+      "refs/heads/feature",
+      "2222222222222222222222222222222222222222",
+    ]);
   });
 
   it("cleans a merged feature branch found only via PR state (not ancestry)", () => {
     const context = makeContext();
     const targets = resolveAutoTargets(context);
     expect(targets.map((t) => t.branch)).toEqual(["feature"]);
+  });
+
+  it("skips an auto target with a live process in its worktree", () => {
+    const base = makeContext();
+    const context: CleanupContext = {
+      ...base,
+      autoReadinessByWorktree: new Map([
+        [
+          "/repo/wt/feature",
+          {
+            ready: false,
+            reasons: ["live processes have cwd under worktree: 1234"],
+          },
+        ],
+      ]),
+    };
+
+    expect(resolveAutoTargets(context)).toEqual([]);
+  });
+
+  it("does not use ancestry-only evidence for auto selection", () => {
+    const base = makeContext();
+    const context: CleanupContext = {
+      ...base,
+      eligibilityByBranch: new Map([
+        [
+          "feature",
+          {
+            kind: "ancestry",
+            branch: "feature",
+            plannedOid: "2222222222222222222222222222222222222222",
+            baseBranch: "main",
+          },
+        ],
+      ]),
+    };
+
+    expect(resolveAutoTargets(context)).toEqual([]);
+    expect(resolveTarget(context, { kind: "direct", value: "feature" }).branch).toBe("feature");
   });
 
   it("refuses an unmerged branch with a base-agnostic, PR-aware message", () => {
@@ -91,6 +147,7 @@ describe("worktree cleanup resolver", () => {
           },
         ],
       ]),
+      autoReadinessByWorktree: new Map(),
       baseBranch: "trunk",
       meridianWorkItems: [],
       currentWorktreePath: "/repo/main",
@@ -112,6 +169,7 @@ describe("worktree cleanup resolver", () => {
     const result = await executeCleanupPlan(
       plan,
       () => ({ eligible: false, reason: "branch moved" }),
+      () => ({ ready: true, evidence: { worktreePath: "/repo/wt/feature" } }),
       () => {
         actionsRun += 1;
         return { ok: true };
@@ -119,6 +177,31 @@ describe("worktree cleanup resolver", () => {
     );
 
     expect(result).toMatchObject({ ok: false, eligibilityFailure: "branch moved" });
+    expect(actionsRun).toBe(0);
+  });
+
+  it("revalidates auto readiness before teardown so a newly dirty worktree stays intact", async () => {
+    const context = makeContext();
+    const plan = createCleanupPlan(context, resolveAutoTargets(context));
+    let actionsRun = 0;
+
+    const result = await executeCleanupPlan(
+      plan,
+      () => ({
+        eligible: true,
+        evidence: plan.targets[0].eligibility,
+      }),
+      () => ({ ready: false, reasons: ["worktree has uncommitted changes"] }),
+      () => {
+        actionsRun += 1;
+        return { ok: true };
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      readinessFailure: "worktree has uncommitted changes",
+    });
     expect(actionsRun).toBe(0);
   });
 });

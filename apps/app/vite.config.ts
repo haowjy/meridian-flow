@@ -19,6 +19,7 @@ import {
 import { APP_SSR_EXTERNAL, APP_SSR_NO_EXTERNAL } from "./src/server/ssr-no-external";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoLogsDir = path.join(repoRoot, "logs");
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, repoRoot, "");
@@ -38,6 +39,10 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "127.0.0.1",
       port: Number(process.env.PORT) || 3000,
+      watch: {
+        ignored: (watchedPath) =>
+          watchedPath === repoLogsDir || watchedPath.startsWith(`${repoLogsDir}${path.sep}`),
+      },
       // Bind exactly the port portless proxies to (PORT), never Vite's silent
       // auto-increment fallback — drifting off it desyncs the proxy route on
       // restart (502) and orphans the listener. Fail fast if the port is held.

@@ -62,6 +62,9 @@ instead of `console.log`.
 - Stdout is authoritative and lands interleaved in `logs/portless.log` during
   local dev. `LOG_DIR` adds a best-effort daily JSONL mirror at
   `logs/events/YYYY-MM-DD.jsonl`; files are day-pruned, not an audit log.
+- The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
+  writes must not reload either process; a reload during a long-running turn is
+  a bug, not expected dev behavior.
 - The local output sink holds at most 5,000 pending events. Output backpressure
   drops oldest first; the next successful write prepends an
   `observability.sink.dropped` record with the loss count.

@@ -33,6 +33,7 @@ tools/dev/
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
+│   ├── worktree-cleanup-readiness.ts  Auto cleanup ownership/liveness gates
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
@@ -110,11 +111,13 @@ tools/dev/
 
 `pnpm dev:prune-worktrees` safely tears down merged worktree resources:
 
-- **Two modes:** `--auto` (all merged non-primary worktrees) or `--target <value>` (work id, worktree path, branch name, or PR number via `gh`).
+- **Two modes:** `--auto` (merged non-primary worktrees that pass the readiness gates below) or `--target <value>` (work id, worktree path, branch name, or PR number via `gh`).
 - **Resolver** (`lib/worktree-cleanup.ts`) correlates work item ↔ task dir/worktree ↔ branch ↔ PR head branch. Ambiguous matches (multiple worktrees for a target, multiple work items for a worktree) refuse to resolve with candidate lists.
-- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Planning resolves the local branch ref OID. Cleanup requires that exact OID to be either an ancestor of the base or the unique head OID of a merged PR matching the base, branch, and repository owner. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action.
-- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → mark Meridian work done → force-delete local branch (`git branch -D`; the exact squash-merge-aware evidence has just been revalidated, while `-d` is squash-blind).
-- **Safety gates:** refuses primary worktree, current worktree, the base branch, branches that are neither ancestry- nor PR-merged, detached worktrees.
+- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Planning resolves the local branch ref OID. Explicit `--target` cleanup requires that exact OID to be either an ancestor of the base or the unique head OID of a merged PR matching the base, branch, and repository owner. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action.
+- **Auto readiness is separate.** `--auto` accepts exact merged-PR evidence only—ancestry alone is not stale evidence—and skips dirty worktrees, active Meridian work items, live tmux dev sessions, and processes whose cwd is inside the worktree. These gates run during planning and again immediately before that target's first teardown action.
+- **Inspection uncertainty is unsafe.** A same-user process whose cwd cannot be inspected is an auto-cleanup blocker, not an ignorable unknown. `--auto` must fail closed rather than risk tearing down a checkout an active process owns.
+- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → mark Meridian work done → atomically delete the local ref with `git update-ref -d <ref> <plannedOid>`.
+- **Safety gates:** refuses primary worktree, current worktree, the base branch, branches that lack mode-appropriate commit evidence, detached worktrees, and auto targets with ownership or liveness evidence.
 - **Confirmation:** dry-run prints every planned action and target; destructive cleanup requires interactive `[y/N]` or `--yes`.
 - **`--dry-run`** prints the plan without executing it.
 

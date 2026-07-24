@@ -26,6 +26,7 @@ describe("decideCleanupEligibility", () => {
       baseBranch: "main",
       repositoryOwner: "haowjy",
       isAncestor: false,
+      allowAncestry: true,
       pullRequestDiscovery: {
         ok: true,
         pullRequests: [
@@ -44,6 +45,7 @@ describe("decideCleanupEligibility", () => {
       baseBranch: "main",
       repositoryOwner: "haowjy",
       isAncestor: false,
+      allowAncestry: true,
       pullRequestDiscovery: { ok: true, pullRequests: [mergedPullRequest()] },
     });
 
@@ -67,10 +69,38 @@ describe("decideCleanupEligibility", () => {
       baseBranch: "main",
       repositoryOwner: "haowjy",
       isAncestor: false,
+      allowAncestry: true,
       pullRequestDiscovery: { ok: false, error: "gh unavailable" },
     });
 
     expect(decision).toMatchObject({ eligible: false });
+  });
+
+  it("requires exact merged-PR evidence for auto even when the commit is an ancestor", () => {
+    const ancestryOnly = decideCleanupEligibility({
+      branch: "feature",
+      plannedOid,
+      baseBranch: "main",
+      repositoryOwner: "haowjy",
+      isAncestor: true,
+      allowAncestry: false,
+      pullRequestDiscovery: { ok: true, pullRequests: [] },
+    });
+    const exactPr = decideCleanupEligibility({
+      branch: "feature",
+      plannedOid,
+      baseBranch: "main",
+      repositoryOwner: "haowjy",
+      isAncestor: true,
+      allowAncestry: false,
+      pullRequestDiscovery: { ok: true, pullRequests: [mergedPullRequest()] },
+    });
+
+    expect(ancestryOnly).toMatchObject({ eligible: false });
+    expect(exactPr).toMatchObject({
+      eligible: true,
+      evidence: { kind: "pull-request", pullRequestNumber: 42 },
+    });
   });
 });
 
