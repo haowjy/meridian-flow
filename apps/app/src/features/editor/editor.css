@@ -207,6 +207,82 @@
   opacity: 0.2;
 }
 
+/* Peer marks are session presence: jade insertion anatomy plus each
+   conversation's stable collaboration-cursor hue. */
+.meridian-editor .ProseMirror .meridian-peer-mark--range {
+  background: var(--color-review-added-tint);
+  box-shadow: inset 0 -1px 0 0 var(--color-review-added-border);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--range:focus-visible {
+  background: var(--color-review-added-emphasis);
+  outline: 2px solid var(--color-review-added-ring);
+  outline-offset: 1px;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick {
+  position: relative;
+  display: inline-block;
+  width: 2px;
+  height: 1.15em;
+  margin-inline: -1px;
+  border-radius: var(--radius-sm);
+  background: var(--peer-mark-color);
+  cursor: pointer;
+  opacity: 0.72;
+  vertical-align: text-bottom;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick::before {
+  position: absolute;
+  top: -2px;
+  left: -1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--peer-mark-color);
+  content: "";
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--seam {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin-block: -4px;
+  cursor: pointer;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--seam::before {
+  position: absolute;
+  inset: 5px 0;
+  border-radius: var(--radius-sm);
+  background: var(--peer-mark-color);
+  content: "";
+  opacity: 0.68;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark__label {
+  display: none;
+  background: var(--peer-mark-color);
+  pointer-events: none;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick:hover .meridian-peer-mark__label,
+.meridian-editor .ProseMirror .meridian-peer-mark--tick:focus .meridian-peer-mark__label,
+.meridian-editor .ProseMirror .meridian-peer-mark--seam:hover .meridian-peer-mark__label,
+.meridian-editor .ProseMirror .meridian-peer-mark--seam:focus .meridian-peer-mark__label {
+  display: block;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick:focus-visible,
+.meridian-editor .ProseMirror .meridian-peer-mark--seam:focus-visible {
+  outline: 2px solid var(--color-review-added-ring);
+  outline-offset: 2px;
+}
+
 /* Inline draft-review decorations — Track Changes for the manuscript.
    Highlights tint the background and underline the run; prose color stays
    at ink weight so long-form reading is not fought by the diff overlay.
@@ -583,4 +659,8 @@
   height: 1.2em;
   background: var(--color-review-added-border);
   vertical-align: text-bottom;
+}
+
+.meridian-trail-row-emphasized {
+  box-shadow: 0 0 0 2px var(--color-review-added-ring);
 }

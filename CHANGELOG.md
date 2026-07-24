@@ -4,6 +4,8 @@
 
 - Change-event broadcasts now identify pure in-block deletions and their splice
   offsets so editor marks can render at the exact deletion site.
+- `apps/app`: render AI insert/replacement highlights, exact-site deletion
+  ticks, and whole-block deletion seams with stable collaboration colors.
 - `@meridian/contracts`: reject out-of-range Yjs identities, oversized live
   change excerpts, and cross-thread agent authorship on stateless change events;
   server encoding now validates the same schema as client parsing.

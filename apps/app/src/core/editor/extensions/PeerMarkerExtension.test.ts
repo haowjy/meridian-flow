@@ -19,7 +19,13 @@ function encode(position: Y.RelativePosition): string {
   return btoa(binary);
 }
 
-function addMarker(kind: "range" | "boundary", from: number, to = from, suffix = ""): void {
+function addMarker(
+  kind: "range" | "boundary",
+  from: number,
+  to = from,
+  suffix = "",
+  pureDeletionOffset: number | null = null,
+): void {
   const start = relativePositionForEditorIndex(editor, from);
   const end = relativePositionForEditorIndex(editor, to);
   if (!start || !end) throw new Error("editor binding unavailable");
@@ -51,7 +57,7 @@ function addMarker(kind: "range" | "boundary", from: number, to = from, suffix =
         navigation,
         swept: false,
         excerpt: null,
-        pureDeletionOffset: null,
+        pureDeletionOffset,
       },
     ],
     truncated: false,
@@ -125,11 +131,18 @@ describe("peer marker writer self-clear", () => {
     expect(dismissed("range-mark")).toBe(false);
   });
 
-  it("projects range and boundary markers with placeholder classes", () => {
+  it("projects range and boundary markers with their final forms", () => {
     addMarker("range", 2, 5);
     addMarker("boundary", 6);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
     expect(editor.view.dom.querySelector(".meridian-peer-mark--range")?.textContent).toBe("ell");
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).not.toBeNull();
+  });
+
+  it("projects a pure deletion as an inline tick instead of a range", () => {
+    addMarker("range", 1, 6, "-deletion", 2);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
     expect(editor.view.dom.querySelector(".meridian-peer-mark--tick")).not.toBeNull();
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--range")).toBeNull();
   });
 });
