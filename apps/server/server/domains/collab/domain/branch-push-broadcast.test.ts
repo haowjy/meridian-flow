@@ -177,7 +177,15 @@ describe("branch push change-event broadcast", () => {
       projection({ revision: 1, changes: [projectedChange("auto", "1", null)] }),
       projection({
         revision: 2,
-        changes: [projectedChange("auto", "1", null), projectedChange("manual", "2", USER_W)],
+        changes: [
+          projectedChange("auto", "1", null),
+          {
+            ...projectedChange("manual", "2", USER_W),
+            kind: "modify",
+            beforeText: "manual|writer words remain",
+            afterTextAtReceipt: "manual|writer remain",
+          },
+        ],
       }),
       projection({
         revision: 3,
@@ -224,7 +232,7 @@ describe("branch push change-event broadcast", () => {
       author: { kind: "agent", threadId: THREAD_ID, turnId: TURN_ID },
       changes: [
         { changeId: "auto", admittedByUserId: null },
-        { changeId: "manual", admittedByUserId: USER_W },
+        { changeId: "manual", admittedByUserId: USER_W, pureDeletionOffset: null },
       ],
     });
     expect(delivered[2]).toMatchObject({
