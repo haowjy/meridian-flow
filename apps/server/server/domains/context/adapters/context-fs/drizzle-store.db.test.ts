@@ -1,15 +1,15 @@
 /** ContextFS Drizzle-store shadow observer behavior. */
-import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../../shared/result.js";
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { ContextFS } from "./context-fs.js";
 import {
@@ -39,10 +39,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
     const DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
 
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+    });
+    let db = database.current;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [documents, folders, contextSources, projects, users]);
+      db = database.current;
       await db.insert(users).values(conformanceUserValues(USER_ID, "contextfs-dispatch"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -58,10 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scope: "project",
         isPrimary: true,
       });
-    });
-
-    afterAll(async () => {
-      await db.$client.end();
     });
 
     async function insertDocument(id: string, name: string) {

@@ -12,6 +12,9 @@ if (process.env.RUN_DB_TESTS !== "1" || !DATABASE_URL) {
 assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
+  ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
+  : [];
 const expectedSuites = [
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-branches.manifest-race.db.test.ts",
@@ -77,7 +80,9 @@ export default defineProject({
     environment: "node",
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
-    fileParallelism: false,
+    setupFiles: [fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url))],
+    fileParallelism: workerDatabaseUrls.length > 0,
+    maxWorkers: workerDatabaseUrls.length || 1,
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
     // timed-out test's async DB work is NOT cancelled — it overlaps the next
     // test's destructive reset and corrupts it. 30s matches the server/database

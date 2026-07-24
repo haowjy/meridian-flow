@@ -5,6 +5,7 @@ import {
   isManualTestDatabase,
   managedTestDatabaseOwnerPid,
   managedTestDatabaseUrl,
+  managedTestDatabaseWorkerUrl,
 } from "./test-db-lifecycle";
 
 describe("managed DB test lifecycle", () => {
@@ -18,6 +19,12 @@ describe("managed DB test lifecycle", () => {
 
     expect(new URL(url).pathname).toBe("/meridian_test-run-1234-5678");
     expect(managedTestDatabaseOwnerPid("meridian_test-run-1234-5678", ["meridian"])).toBe(1234);
+
+    const workerUrl = managedTestDatabaseWorkerUrl(url, 2);
+    expect(new URL(workerUrl).pathname).toBe("/meridian_test-run-1234-5678-worker-2");
+    expect(managedTestDatabaseOwnerPid("meridian_test-run-1234-5678-worker-2", ["meridian"])).toBe(
+      1234,
+    );
   });
 
   it("recognizes only reserved managed and manual test namespaces", () => {

@@ -3,7 +3,7 @@
  * invariants: FIFO lot consumption, user-scoped balances, and replay-safe
  * model-call debit idempotency.
  */
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -14,18 +14,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("drizzle credit ledger (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const { creditLots, creditTransactions, users } = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { sql } = await import("drizzle-orm");
+    const { useRollbackTestDatabase } = await import(
+      "../../../../test-support/rollback-test-database.js"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleCreditLedger } = await import("../drizzle/credit-ledger.js");
     const { ensureFreeTier } = await import("../../domain/free-grants.js");
 
-    const db = createDb(DATABASE_URL, { max: 8 });
-    const ledger = createDrizzleCreditLedger(db);
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 8,
+      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+    });
+    let db = database.current;
+    let ledger = createDrizzleCreditLedger(db);
 
     const userId = "00000000-0000-4000-8000-000000000101";
     async function seedUser(): Promise<void> {
@@ -33,12 +39,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [creditTransactions, creditLots, users]);
+      db = database.current;
+      ledger = createDrizzleCreditLedger(db);
       await seedUser();
-    });
-
-    afterAll(async () => {
-      await db.close();
     });
 
     it("consumes granted lots FIFO and makes remaining lot balance the canonical balance", async () => {

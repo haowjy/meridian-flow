@@ -1,6 +1,6 @@
 /** Postgres regression coverage for canonical thread-head lifecycle projection. */
 
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { ThreadEventHub } from "../../thread-event-hub.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -21,19 +21,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("thread head projection (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const { eq } = await import("drizzle-orm");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
+    );
+    const { useRollbackTestDatabase } = await import(
+      "../../../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { buildThreadSnapshot } = await import("../../thread-snapshot.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
-    const db = createDb(DATABASE_URL, { max: 1 });
-    const repos = createDrizzleRepositories(db);
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 1,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
+    let repos = createDrizzleRepositories(db);
     const emptyHub: ThreadEventHub = {
       publishPersistedEvent: () => {},
       appendEvent: async () => {
@@ -53,7 +59,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     };
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      db = database.current;
+      repos = createDrizzleRepositories(db);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "thread-head"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -110,10 +117,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(schema.threads)
         .set({ activeLeafTurnId: ASSISTANT_TURN_ID })
         .where(eq(schema.threads.id, THREAD_ID));
-    });
-
-    afterAll(async () => {
-      await db.close();
     });
 
     it("converges project/work lists and snapshot when user and assistant timestamps tie", async () => {

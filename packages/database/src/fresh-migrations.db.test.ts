@@ -1,10 +1,7 @@
-/** Executable migration-chain proof against a newly created PostgreSQL database. */
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+/** Migration-chain catalog proof against the runner-owned fresh PostgreSQL database. */
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
-const run = promisify(execFile);
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
@@ -15,58 +12,38 @@ if (!enabled || !databaseUrl) {
 } else {
   describe("fresh database migrations (postgres)", () => {
     it("applies the complete migration chain to an empty database", async () => {
-      const source = new URL(databaseUrl);
-      const databaseName = `meridian_migrations_${process.pid}_${Date.now()}`;
-      const adminUrl = new URL(source);
-      adminUrl.pathname = "/postgres";
-      const targetUrl = new URL(source);
-      targetUrl.pathname = `/${databaseName}`;
-      const admin = postgres(adminUrl.toString(), { max: 1 });
+      const target = postgres(databaseUrl, { max: 1 });
       try {
-        await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
-        await run("pnpm", ["db:migrate"], {
-          cwd: new URL("..", import.meta.url),
-          env: { ...process.env, DATABASE_URL: targetUrl.toString() },
-        });
-        const target = postgres(targetUrl.toString(), { max: 1 });
-        try {
-          const rows = await target<{ table_name: string }[]>`
+        const rows = await target<{ table_name: string }[]>`
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
               AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
           `;
-          expect(rows.map((row) => row.table_name).sort()).toEqual([
-            "branch_write_journal",
-            "change_trail_document_occurrences",
-            "turn_trail_work",
-          ]);
-          const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
+        expect(rows.map((row) => row.table_name).sort()).toEqual([
+          "branch_write_journal",
+          "change_trail_document_occurrences",
+          "turn_trail_work",
+        ]);
+        const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name
             FROM information_schema.triggers
             WHERE trigger_schema = 'public'
               AND trigger_name IN ('enlist_turn_trail_work', 'complete_turn_trail_work')
             ORDER BY trigger_name
           `;
-          expect(triggers).toEqual([
-            {
-              event_object_table: "branch_write_journal",
-              trigger_name: "complete_turn_trail_work",
-            },
-            {
-              event_object_table: "branch_write_journal",
-              trigger_name: "enlist_turn_trail_work",
-            },
-          ]);
-        } finally {
-          await target.end();
-        }
+        expect(triggers).toEqual([
+          {
+            event_object_table: "branch_write_journal",
+            trigger_name: "complete_turn_trail_work",
+          },
+          {
+            event_object_table: "branch_write_journal",
+            trigger_name: "enlist_turn_trail_work",
+          },
+        ]);
       } finally {
-        await admin.unsafe(
-          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${databaseName}'`,
-        );
-        await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}"`);
-        await admin.end();
+        await target.end();
       }
-    }, 120_000);
+    });
   });
 }

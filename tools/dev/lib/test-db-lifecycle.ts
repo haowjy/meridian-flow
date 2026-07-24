@@ -16,6 +16,21 @@ export function managedTestDatabaseUrl(
   return url.toString();
 }
 
+export function managedTestDatabaseWorkerUrl(
+  templateDatabaseUrl: string,
+  workerIndex: number,
+): string {
+  if (!Number.isInteger(workerIndex) || workerIndex < 1) {
+    throw new Error(`DB test worker index must be a positive integer: ${workerIndex}`);
+  }
+  const url = new URL(templateDatabaseUrl);
+  const templateName = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  const workerName = `${templateName}-worker-${workerIndex}`;
+  validateDbName(workerName);
+  url.pathname = `/${workerName}`;
+  return url.toString();
+}
+
 export function managedTestDatabaseOwnerPid(
   databaseName: string,
   baseDatabaseNames: readonly string[],
@@ -23,7 +38,7 @@ export function managedTestDatabaseOwnerPid(
   for (const baseDatabaseName of baseDatabaseNames) {
     const managedPrefix = `${baseDatabaseName}_${MANAGED_TEST_SLUG_PREFIX}`;
     if (databaseName.startsWith(managedPrefix)) {
-      const match = databaseName.slice(managedPrefix.length).match(/^(\d+)-(\d+)$/);
+      const match = databaseName.slice(managedPrefix.length).match(/^(\d+)-(\d+)(?:-worker-\d+)?$/);
       return match ? Number(match[1]) : undefined;
     }
 
