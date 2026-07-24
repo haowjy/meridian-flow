@@ -1,5 +1,5 @@
 /** Headless ProseMirror projection and writer-edit reducer for session markers. */
-import { Extension } from "@tiptap/core";
+import { type Editor, Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -15,10 +15,23 @@ import type { SessionMarker, SessionMarkerStore } from "../session-marker-store"
 
 const peerMarkerPluginKey = new PluginKey<PeerMarkerPluginState>("peer-markers");
 const REBUILD_META = "peer-markers:rebuild";
+const EMPHASIZE_META = "peer-markers:emphasize";
+const EMPHASIS_DURATION_MS = 4_000;
+const clearTimers = new WeakMap<Editor, ReturnType<typeof setTimeout>>();
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    peerMarkers: {
+      showPeerMarker: (changeId: string) => ReturnType;
+      clearPeerMarkerEmphasis: () => ReturnType;
+    };
+  }
+}
 
 type PeerMarkerPluginState = {
   decorations: DecorationSet;
   pendingClearIds: readonly string[];
+  emphasizedId: string | null;
 };
 
 function markerColor(marker: SessionMarker): string {
@@ -28,14 +41,25 @@ function markerColor(marker: SessionMarker): string {
   return collaborationColorFor(identity);
 }
 
-function markerLabel(marker: SessionMarker): string {
+function markerLabel(
+  marker: SessionMarker,
+  markerAgentName?: (threadId: string) => string | undefined,
+): string {
   return marker.author.kind === "agent"
-    ? changeMarkLabel(marker.kind, marker.pureDeletionOffset)
+    ? changeMarkLabel(
+        marker.kind,
+        marker.pureDeletionOffset,
+        markerAgentName?.(marker.author.threadId),
+      )
     : collaboratorChangeLabel();
 }
 
-function interactiveAttributes(marker: SessionMarker): Record<string, string> {
-  const label = markerLabel(marker);
+function interactiveAttributes(
+  marker: SessionMarker,
+  emphasizedId: string | null,
+  markerAgentName?: (threadId: string) => string | undefined,
+): Record<string, string> {
+  const label = markerLabel(marker, markerAgentName);
   return {
     "data-peer-mark": marker.changeId,
     "data-peer-mark-label": label,
@@ -43,6 +67,7 @@ function interactiveAttributes(marker: SessionMarker): Record<string, string> {
     tabindex: "0",
     "aria-label": `${label}. Show change details.`,
     style: `--peer-mark-color: ${markerColor(marker)}`,
+    ...(marker.changeId === emphasizedId ? { "data-peer-mark-emphasized": "true" } : {}),
   };
 }
 
@@ -85,7 +110,12 @@ function pureDeletionPosition(state: EditorState, rangeStart: number, offset: nu
   return Math.min(resolved, blockEnd);
 }
 
-function buildMarkerDecorations(store: SessionMarkerStore, state: EditorState): DecorationSet {
+function buildMarkerDecorations(
+  store: SessionMarkerStore,
+  state: EditorState,
+  emphasizedId: string | null,
+  markerAgentName?: (threadId: string) => string | undefined,
+): DecorationSet {
   const decorations: Decoration[] = [];
   for (const marker of store.getSnapshot()) {
     if (marker.dismissed) continue;
@@ -97,7 +127,7 @@ function buildMarkerDecorations(store: SessionMarkerStore, state: EditorState): 
       decorations.push(
         Decoration.inline(position.from, position.to, {
           class: "meridian-peer-mark--range",
-          ...interactiveAttributes(marker),
+          ...interactiveAttributes(marker, emphasizedId, markerAgentName),
         }),
       );
       continue;
@@ -115,13 +145,15 @@ function buildMarkerDecorations(store: SessionMarkerStore, state: EditorState): 
           const mark = document.createElement(marker.kind === "delete" ? "div" : "span");
           mark.className =
             marker.kind === "delete" ? "meridian-peer-mark--seam" : "meridian-peer-mark--tick";
-          for (const [name, value] of Object.entries(interactiveAttributes(marker))) {
+          for (const [name, value] of Object.entries(
+            interactiveAttributes(marker, emphasizedId, markerAgentName),
+          )) {
             mark.setAttribute(name, value);
           }
           mark.setAttribute("contenteditable", "false");
           const label = document.createElement("span");
           label.className = "meridian-collab-cursor__label meridian-peer-mark__label";
-          label.textContent = markerLabel(marker);
+          label.textContent = markerLabel(marker, markerAgentName);
           mark.append(label);
           return mark;
         },
@@ -211,19 +243,62 @@ function anchorsResolve(store: SessionMarkerStore, state: EditorState): void {
   );
 }
 
-export const PeerMarkerExtension = Extension.create<{ markerStore: SessionMarkerStore | null }>({
+export const PeerMarkerExtension = Extension.create<{
+  markerStore: SessionMarkerStore | null;
+  markerAgentName?: (threadId: string) => string | undefined;
+}>({
   name: "peerMarkers",
   addOptions: () => ({ markerStore: null }),
+  addCommands() {
+    return {
+      showPeerMarker:
+        (changeId) =>
+        ({ editor, tr, dispatch }) => {
+          const store = this.options.markerStore;
+          if (
+            !store
+              ?.getSnapshot()
+              .some((marker) => marker.changeId === changeId && !marker.dismissed)
+          ) {
+            return false;
+          }
+          dispatch?.(tr.setMeta(EMPHASIZE_META, changeId));
+          requestAnimationFrame(() => {
+            editor.view.dom
+              .querySelector<HTMLElement>(`[data-peer-mark="${CSS.escape(changeId)}"]`)
+              ?.scrollIntoView({ block: "center", behavior: "smooth" });
+          });
+          const prior = clearTimers.get(editor);
+          if (prior) clearTimeout(prior);
+          clearTimers.set(
+            editor,
+            setTimeout(() => {
+              clearTimers.delete(editor);
+              if (!editor.isDestroyed) editor.commands.clearPeerMarkerEmphasis();
+            }, EMPHASIS_DURATION_MS),
+          );
+          return true;
+        },
+      clearPeerMarkerEmphasis:
+        () =>
+        ({ tr, dispatch }) => {
+          dispatch?.(tr.setMeta(EMPHASIZE_META, null));
+          return true;
+        },
+    };
+  },
   addProseMirrorPlugins() {
     const store = this.options.markerStore;
+    const markerAgentName = this.options.markerAgentName;
     if (!store) return [];
     return [
       new Plugin<PeerMarkerPluginState>({
         key: peerMarkerPluginKey,
         state: {
           init: (_config, state) => ({
-            decorations: buildMarkerDecorations(store, state),
+            decorations: buildMarkerDecorations(store, state, null, markerAgentName),
             pendingClearIds: [],
+            emphasizedId: null,
           }),
           apply(tr, previous, oldState, newState) {
             const pendingClearIds = markersClearedByWriterTransaction(
@@ -235,11 +310,16 @@ export const PeerMarkerExtension = Extension.create<{ markerStore: SessionMarker
               tr.getMeta(REBUILD_META) === true ||
               (tr.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined)
                 ?.isChangeOrigin === true;
+            const emphasizedMeta = tr.getMeta(EMPHASIZE_META) as string | null | undefined;
+            const emphasizedId =
+              emphasizedMeta === undefined ? previous.emphasizedId : emphasizedMeta;
             return {
-              decorations: rebuild
-                ? buildMarkerDecorations(store, newState)
-                : previous.decorations.map(tr.mapping, tr.doc),
+              decorations:
+                rebuild || emphasizedMeta !== undefined
+                  ? buildMarkerDecorations(store, newState, emphasizedId, markerAgentName)
+                  : previous.decorations.map(tr.mapping, tr.doc),
               pendingClearIds,
+              emphasizedId,
             };
           },
         },
