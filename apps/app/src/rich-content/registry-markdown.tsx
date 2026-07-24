@@ -8,9 +8,9 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeNode } from "@meridian/contracts/protocol";
 import {
   type AssetPathResolver,
-  builtInComponents,
   type ComponentRegistry,
   createAssetPathResolver,
+  documentComponentRegistry,
 } from "@meridian/markup";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
 import { type CSSProperties, createContext, type ReactNode, useContext, useMemo } from "react";
@@ -157,7 +157,7 @@ export function registryComponents(plan: readonly RegistryRenderPlanEntry[]): Co
   return Object.fromEntries(plan.map((entry) => [entry.tagName, componentFor(entry)]));
 }
 
-const renderPlan = registryRenderPlan(builtInComponents);
+const renderPlan = registryRenderPlan(documentComponentRegistry);
 export const documentMarkdownAllowedTags = registryAllowedTags(renderPlan);
 export const documentMarkdownComponents = registryComponents(renderPlan);
 

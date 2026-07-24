@@ -1,7 +1,7 @@
 import {
-  builtInComponents,
   type ComponentRegistry,
   createAssetPathResolver,
+  documentComponentRegistry,
 } from "@meridian/markup";
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +14,7 @@ import {
 describe("registry markdown mapping", () => {
   it("maps registry kinds and props into Streamdown's allowlist", () => {
     const registry = {
-      ...builtInComponents,
+      ...documentComponentRegistry,
       Aside: {
         name: "Aside",
         kind: "container",

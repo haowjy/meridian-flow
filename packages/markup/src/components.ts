@@ -52,3 +52,12 @@ export const builtInComponents = {
     },
   },
 } as const satisfies ComponentRegistry;
+
+/**
+ * Product document components consumed by every document codec and renderer.
+ * Reserved wire components remain in `builtInComponents`; add generic product
+ * components here so they enter every surface through one composition seam.
+ */
+export const documentComponentRegistry = {
+  ...builtInComponents,
+} as const satisfies ComponentRegistry;
