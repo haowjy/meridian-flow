@@ -101,6 +101,17 @@ done < <(
     'historicalBodySchema|canonicalBlockIdentityV1Schema|navigationTargetV1Schema|changeTrailShellV1Schema' \
     -- 'packages/contracts/src/**/*.ts' 2>/dev/null || true
 )
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && report_only_sediment+=("$hit")
+done < <(
+  git grep -n -E \
+    '@meridian/database|from "drizzle-orm"|shared/drizzle-transaction|observability/index|/adapters/' \
+    -- \
+    'apps/server/server/domains/collab/domain/*.ts' \
+    'apps/server/server/domains/collab/domain/**/*.ts' \
+    ':!**/*.test.ts' ':!**/*.db.test.ts' ':!**/__fixtures__/**' \
+    2>/dev/null || true
+)
 
 latest_database_snapshot="$(printf '%s\n' packages/database/src/migrations/meta/*_snapshot.json | sort -V | tail -n 1)"
 while IFS= read -r hit; do

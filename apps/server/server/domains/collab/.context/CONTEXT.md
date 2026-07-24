@@ -22,6 +22,7 @@ state is a live document.
 | Document mutation policy | `domain/document-mutation-policy.ts` |
 | Durable authority heads and generation fencing | `domain/ports/document-authority-heads.ts`, `adapters/drizzle-document-authority-head.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
+| Document projection and activity read-model writes | `adapters/drizzle-document-activity.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
@@ -286,8 +287,8 @@ history is preserved for attribution, echo, and undo dependency checking.
   `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction
   context) to carry response-transaction enrollment through arbitrary call depth.
   Deep code calls `enlistResponseParticipant()` without explicit parameters;
-  settlement is bound to the real DB outcome via `deferUntilDrizzleCommit` /
-  `deferUntilDrizzleRollback`.
+  composition binds settlement to the real DB outcome through an injected
+  commit/rollback deferral capability.
 - **Participant settlement contract**: enrolled `ResponseCommitParticipant`s
   expose `commit()`, `abort()`, and optional best-effort
   `onCommitFailure(cause)`. Commit runs in enrollment order after DB commit;

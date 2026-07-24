@@ -19,8 +19,6 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import {
@@ -60,6 +58,21 @@ export type BranchConcurrentJournalWatermarks = {
   commitPending(threadId: ThreadId, documentId: DocumentId, attemptId?: string): void;
   clearPending(threadId: ThreadId, documentId: DocumentId): void;
 };
+
+export type BranchAgentEditDiagnostics = {
+  stagedWriteNoop(payload: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    branchId: string;
+    turnId: string | null;
+    writeId: string | null;
+  }): void;
+  mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
+  autoPushUnapplied(payload: { workDraftBranchId: string; result: unknown }): void;
+  autoPushFailed(payload: { workDraftBranchId: string; cause: unknown }): void;
+};
+
+export type AfterCommit = (callback: () => void | Promise<void>) => void;
 
 export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJournalWatermarks {
   const currentByThreadDocument = new Map<string, number>();
@@ -133,7 +146,8 @@ export function createBranchAgentEditCoordinator(input: {
     ): Promise<BranchJournalRow[]>;
   };
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
-  eventSink?: EventSink;
+  diagnostics?: BranchAgentEditDiagnostics;
+  afterCommit: AfterCommit;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
@@ -178,7 +192,7 @@ export function createBranchAgentEditCoordinator(input: {
                 doc,
               );
               if (!sourceHasBranchDelta) {
-                emitStagedWriteNoop(input.eventSink, {
+                input.diagnostics?.stagedWriteNoop({
                   documentId: docId as DocumentId,
                   threadId: input.threadId,
                   branchId: workDraftBranchId,
@@ -214,12 +228,13 @@ export function createBranchAgentEditCoordinator(input: {
                 concurrentJournalWatermarks,
                 input.threadId,
                 docId as DocumentId,
+                input.afterCommit,
                 pending?.mutation?.writeId,
               );
             } else if (pendingBatch.length > 0) {
               const workDraftBranchId = snapshot.upstreamBranchId ?? snapshot.branchId;
               const pending = pendingBatch.at(-1);
-              emitStagedWriteNoop(input.eventSink, {
+              input.diagnostics?.stagedWriteNoop({
                 documentId: docId as DocumentId,
                 threadId: input.threadId,
                 branchId: workDraftBranchId,
@@ -239,7 +254,8 @@ export function createBranchAgentEditCoordinator(input: {
         scheduleAutoPushAfterCommit({
           workDraftBranchId: autoPushBranchId,
           branchPush: input.branchPush,
-          eventSink: input.eventSink,
+          diagnostics: input.diagnostics,
+          afterCommit: input.afterCommit,
         });
       }
       return result;
@@ -586,25 +602,6 @@ export class StagedBranchWriteNoopError extends Error {
   }
 }
 
-function emitStagedWriteNoop(
-  eventSink: EventSink | undefined,
-  payload: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    branchId: string;
-    turnId: string | null;
-    writeId: string | null;
-  },
-): void {
-  if (!eventSink) return;
-  emitEvent(eventSink, {
-    level: "error",
-    source: "collab.branch_agent_edit",
-    name: "staged_write.no_durable_journal_row",
-    payload,
-  });
-}
-
 export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch?(
@@ -618,22 +615,16 @@ type BranchPendingJournalEntries = {
 };
 
 export function createBranchPendingJournalEntries(
-  eventSink?: EventSink,
+  diagnostics?: Pick<BranchAgentEditDiagnostics, "mutationLessPendingEntry">,
 ): BranchPendingJournalEntries {
   const byDocument = new Map<string, JournalBatchAppendEntry[]>();
   return {
     push(entry) {
       if (!entry.mutation) {
-        if (eventSink)
-          emitEvent(eventSink, {
-            level: "warn",
-            source: "collab.branch_pending_journal",
-            name: "mutation_less_entry_dropped",
-            payload: {
-              documentId: entry.docId,
-              origin: entry.meta.origin,
-            },
-          });
+        diagnostics?.mutationLessPendingEntry({
+          documentId: entry.docId,
+          origin: entry.meta.origin,
+        });
         return;
       }
       const entries = byDocument.get(entry.docId) ?? [];
@@ -921,6 +912,7 @@ function advanceConcurrentJournalWatermark(
   watermarks: BranchConcurrentJournalWatermarks,
   threadId: ThreadId,
   documentId: DocumentId,
+  afterCommit: AfterCommit,
   attemptId?: string,
 ): void {
   if (
@@ -935,7 +927,7 @@ function advanceConcurrentJournalWatermark(
   ) {
     return;
   }
-  runAfterDrizzleCommit(() => {
+  afterCommit(() => {
     watermarks.commitPending(threadId, documentId, attemptId);
   });
 }
@@ -943,9 +935,10 @@ function advanceConcurrentJournalWatermark(
 function scheduleAutoPushAfterCommit(input: {
   workDraftBranchId: string;
   branchPush: AutoBranchPushPort;
-  eventSink?: EventSink;
+  diagnostics?: BranchAgentEditDiagnostics;
+  afterCommit: AfterCommit;
 }): void {
-  runAfterDrizzleCommit(() => {
+  input.afterCommit(() => {
     void input.branchPush
       .pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: input.workDraftBranchId })
       .then((result) => {
@@ -956,32 +949,13 @@ function scheduleAutoPushAfterCommit(input: {
         ) {
           return;
         }
-        const payload = { workDraftBranchId: input.workDraftBranchId, result };
-        if (input.eventSink) {
-          emitEvent(input.eventSink, {
-            level: "error",
-            source: "collab.branch_auto_push",
-            name: "auto_push.unapplied",
-            payload,
-          });
-          return;
-        }
-        console.error("Branch auto-push resolved without applying", payload);
+        input.diagnostics?.autoPushUnapplied({
+          workDraftBranchId: input.workDraftBranchId,
+          result,
+        });
       })
       .catch((cause: unknown) => {
-        if (input.eventSink) {
-          emitEvent(input.eventSink, {
-            level: "error",
-            source: "collab.branch_auto_push",
-            name: "auto_push.failed",
-            payload: {
-              workDraftBranchId: input.workDraftBranchId,
-              ...unknownToEventPayload(cause),
-            },
-          });
-          return;
-        }
-        console.error("Branch auto-push failed", {
+        input.diagnostics?.autoPushFailed({
           workDraftBranchId: input.workDraftBranchId,
           cause,
         });

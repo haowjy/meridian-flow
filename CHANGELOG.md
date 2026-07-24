@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: collab domain policy no longer imports Drizzle or observability
+  adapters; composition supplies transaction and diagnostic capabilities (#345).
 - `apps/server`: removed draft review endpoints that could only return not found,
   plus stale safety-era diagnostic naming (#345).
 - `apps/server`: collab mutation admission now exposes only supported operations;
