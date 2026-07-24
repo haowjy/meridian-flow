@@ -9,7 +9,10 @@ mode, and draft-review state. Turn rendering is documented separately in
 The existing per-turn Changes view below each assistant turn that edited
 documents: a default-collapsed card
 whose header carries only the count — `✎ Edited N documents` — expanding to
-the per-document list and authorized durable change-trail rows. Created files count like any edit (creation flows
+the per-document list and authorized durable change-trail rows. Trail detail is
+writer-touching iff `writerProtection` is present: pure-generative changes render
+no detail rows, and mixed turns show only their writer-touching changes. The
+plain document line and whole-turn Undo remain regardless. Created files count like any edit (creation flows
 through the same agent-edit write path and produces mutation rows). Rows come
 from turn lineage in BOTH scopes (`live` + `draft` via `useTurnLiveLineage`),
 while historical row evidence comes from the authorized trail reader. Undo is
@@ -59,6 +62,10 @@ and `ChatView`; the dock and composer control therefore share one binding. If
 either side of `thread → work` is absent, the control is not rendered. The
 independent chat composition root performs the same resolution for its thread.
 There is no first/default-Work fallback.
+
+When that server-authoritative Work is in Draft mode, `ChatView` also renders a
+quiet informational strip in the thread header. It disappears in Auto-apply and
+never mutates mode; the composer selector remains the only mode control.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an

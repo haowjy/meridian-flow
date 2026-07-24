@@ -4,7 +4,7 @@
  * INVARIANT: record, not control panel — no draft affordance may be added here.
  * Review / Apply / Discard belong to the composer-attached DraftDock. The only
  * draft control this card carries is Undo. Expanded trail rows may carry the
- * safety-specific forward actions Restore and Delete again.
+ * recovery actions Restore and Delete again.
  *
  * Shape: a collapsed card at the end of every turn that edited documents
  * (created files count — they produce mutation rows like any edit). The header
@@ -188,13 +188,11 @@ function ChangeViewDetail({
     );
   }
   return detail.data?.map((document) => {
-    if (document.unavailable && !document.changes) {
-      return (
-        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
-          <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
-        </p>
-      );
-    }
+    const writerTouchingChanges = document.changes?.filter(
+      (change) => change.writerProtection != null,
+    );
+    if (!writerTouchingChanges || writerTouchingChanges.length === 0) return null;
+
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
         {document.unavailable ? (
@@ -204,16 +202,14 @@ function ChangeViewDetail({
             </Trans>
           </p>
         ) : null}
-        {document.changes && document.changes.length > 0 ? (
-          <ChangeViewRows
-            threadId={threadId}
-            trailId={shell.trailId}
-            documentId={document.documentId}
-            changes={document.changes}
-            navigateToChange={navigateToChange}
-            anchorUnavailable={document.unavailable}
-          />
-        ) : null}
+        <ChangeViewRows
+          threadId={threadId}
+          trailId={shell.trailId}
+          documentId={document.documentId}
+          changes={writerTouchingChanges}
+          navigateToChange={navigateToChange}
+          anchorUnavailable={document.unavailable}
+        />
       </section>
     );
   });
