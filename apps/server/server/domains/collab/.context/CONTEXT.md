@@ -195,7 +195,9 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
-  deleted anchors retain evidence under an explicit `anchorState`.
+  deleted anchors retain evidence under an explicit `anchorState`. Forward
+  actions require an available anchor before loading evidence and recheck under
+  the mutation lock before changing trail or document state.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.

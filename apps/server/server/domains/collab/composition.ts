@@ -38,6 +38,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { Ok, type Result } from "../../shared/result.js";
 import {
@@ -507,6 +508,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const trailForwardActions = createDrizzleTrailForwardActions({
     db: deps.db,
+    documentAccess: createDrizzleDocumentAccess(deps.db),
     coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
