@@ -14,8 +14,8 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { NoticePort } from "../notices/index.js";
+import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
 import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
-import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./index.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 

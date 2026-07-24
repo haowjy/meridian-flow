@@ -32,7 +32,7 @@ import type {
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
-} from "../index.js";
+} from "../contracts.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 

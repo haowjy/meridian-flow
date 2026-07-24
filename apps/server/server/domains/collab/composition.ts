@@ -84,6 +84,12 @@ import {
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
 import { createCheckpointService } from "./checkpoints.js";
+import type {
+  CollabDomain,
+  DocumentWriteHook,
+  ResponseWriteCommitFinalizeResult,
+  WriteMode,
+} from "./contracts.js";
 import {
   asLiveAgentEditCore,
   asThreadPeerAgentEditCore,
@@ -142,14 +148,8 @@ import {
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { closeBranchRooms } from "./hocuspocus-rooms.js";
-import type {
-  CollabDomain,
-  DocumentWriteHook,
-  ResponseWriteCommitFinalizeResult,
-  WriteMode,
-} from "./index.js";
 
-export type { DocumentWriteHook } from "./index.js";
+export type { DocumentWriteHook } from "./contracts.js";
 
 type CollabDomainDeps = {
   db: Database;
