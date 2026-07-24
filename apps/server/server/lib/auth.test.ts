@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts/runtime";
+import { createApp, toWebHandler } from "nitro/h3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInMemoryUserRepository,
@@ -277,6 +278,7 @@ describe("WorkOS request auth", () => {
 
 describe("auth principal provisioning", () => {
   let provisionAuthenticatedUser: typeof import("./auth.js").provisionAuthenticatedUser;
+  let AccountLinkConflictError: typeof import("../domains/projects/index.js").AccountLinkConflictError;
 
   beforeAll(async () => {
     process.env.WORKOS_API_KEY = process.env.WORKOS_API_KEY ?? "dev-workos-key";
@@ -285,6 +287,8 @@ describe("auth principal provisioning", () => {
     process.env.WORKOS_REDIRECT_URI =
       process.env.WORKOS_REDIRECT_URI ?? "https://app.meridian.localhost/api/auth/callback";
     provisionAuthenticatedUser = (await import("./auth.js")).provisionAuthenticatedUser;
+    AccountLinkConflictError = (await import("../domains/projects/index.js"))
+      .AccountLinkConflictError;
   });
 
   it("maps external auth to an internal user idempotently", async () => {
@@ -313,6 +317,87 @@ describe("auth principal provisioning", () => {
     expect(secondUserId).toBe(firstUserId);
     expect(bootstrap.readinessChecks).toBe(2);
     expect(bootstrap.bootstrapCalls).toBe(1);
+  });
+
+  it("surfaces account-link conflicts as a structured 409 without bootstrapping", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    users.ensureUser = async () => {
+      throw new AccountLinkConflictError();
+    };
+
+    await expect(
+      provisionAuthenticatedUser(
+        {
+          externalId: "user_conflict",
+          email: "conflict@example.com",
+          name: "Conflict User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      data: { code: "account_link_conflict" },
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+    });
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("serializes account-link conflicts without provider or internal identities", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    users.ensureUser = async () => {
+      throw new AccountLinkConflictError();
+    };
+    const app = createApp();
+    app.use(async () => {
+      await provisionAuthenticatedUser(
+        {
+          externalId: "user_conflict",
+          email: "conflict@example.com",
+          name: "Conflict User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      );
+    });
+
+    const response = await toWebHandler(app)(new Request("https://server.localhost/api/test"));
+    const body = await response.text();
+    expect(response.status).toBe(409);
+    expect(JSON.parse(body)).toEqual({
+      status: 409,
+      message:
+        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
+      data: { code: "account_link_conflict" },
+    });
+    expect(body).not.toContain("user_conflict");
+    expect(body).not.toContain("conflict@example.com");
+    expect(bootstrap.bootstrapCalls).toBe(0);
+  });
+
+  it("preserves unrelated provisioning failures", async () => {
+    const bootstrap = createTestProjectBootstrap();
+    const users = createInMemoryUserRepository();
+    const failure = new Error("database unavailable");
+    users.ensureUser = async () => {
+      throw failure;
+    };
+
+    await expect(
+      provisionAuthenticatedUser(
+        {
+          externalId: "user_failure",
+          email: "failure@example.com",
+          name: "Failure User",
+          avatarUrl: null,
+        },
+        { users, projects: bootstrap.projects },
+      ),
+    ).rejects.toBe(failure);
+    expect(bootstrap.bootstrapCalls).toBe(0);
   });
 
   it("skips deep bootstrap after durable readiness completes", async () => {
