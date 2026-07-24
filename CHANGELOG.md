@@ -10,6 +10,9 @@
   and hashless bodies (#344).
 - `packages/agent-edit`: immediate creates and edits now submit one prepared
   mutation shape through one journal/apply/recovery wrapper (#344).
+- `packages/agent-edit`: response commit attempts now own one acceptance value
+  and one settled-receipt promise instead of mirroring durability across
+  lifecycle records and unreachable rollback branches (#344).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).
