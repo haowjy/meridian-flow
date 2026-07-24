@@ -1,4 +1,4 @@
-import { toDocHandle } from "@meridian/agent-edit";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";

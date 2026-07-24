@@ -9,7 +9,7 @@ import {
   snapshotBlocks,
   toDocHandle,
   yProsemirrorModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -3730,8 +3730,9 @@ describe("thread-peer auto-push wiring", () => {
         commitResponse: vi.fn(async () => {
           throw new Error("durable projection and recovery failed");
         }),
-        bufferedUpdatesForDoc: vi.fn(() => []),
-        stagedCreatedDocumentIds: vi.fn(() => []),
+        hasResponseDocument: vi.fn(() => false),
+        withResponseDocument: vi.fn(async () => null),
+        responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
         getAvailability: vi.fn(async () => ({ undo: false, redo: false })),
         invalidateThread: vi.fn(async (_docId: string, threadId: string) => {
           invalidated.push({ core, threadId });

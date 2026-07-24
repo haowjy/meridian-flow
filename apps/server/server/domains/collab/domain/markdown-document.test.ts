@@ -1,5 +1,5 @@
 /** Schema-aware read and restore contracts for the collab document engine. */
-import { yProsemirrorModel } from "@meridian/agent-edit";
+import { yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";

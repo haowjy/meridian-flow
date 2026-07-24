@@ -6,7 +6,7 @@ import {
   createAgentEditCore,
   type WriteContext,
   yProsemirrorModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";

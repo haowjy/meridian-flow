@@ -8,7 +8,7 @@ import {
   type WriteContext,
   type YProsemirrorDocumentModel,
   yProsemirrorModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import type { Schema } from "prosemirror-model";
 

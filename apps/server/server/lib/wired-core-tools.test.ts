@@ -1,4 +1,4 @@
-import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit";
+import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
@@ -28,8 +28,9 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): Age
       responseId: commitResult.responseId,
       stagedCreates: { committed: [], discarded: [] },
     }),
-    bufferedUpdatesForDoc: () => [],
-    stagedCreatedDocumentIds: () => [],
+    hasResponseDocument: () => false,
+    withResponseDocument: async () => null,
+    responseDocuments: () => ({ staged: [], created: [] }),
     getAvailability: async () => ({ undo: false, redo: false }),
     undo: async () => ({
       command: "undo",

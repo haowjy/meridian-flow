@@ -1,5 +1,9 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
-import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -1673,8 +1677,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
     stagedUpdates: (responseId: string) => [
-      [...collab.agentEdit().bufferedUpdatesForDoc(responseId, ALPHA_ID)],
-      [...collab.agentEdit().bufferedUpdatesForDoc(responseId, BETA_ID)],
+      collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID) ? [ALPHA_ID] : [],
+      collab.agentEdit().hasResponseDocument(responseId, BETA_ID) ? [BETA_ID] : [],
     ],
     pendingWatermarkDocuments: () => [...pendingWatermarks].sort(),
     responseEvents: (responseId: string) =>

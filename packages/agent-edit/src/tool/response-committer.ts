@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import { toDocHandle } from "../handles.js";
+import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -46,7 +46,17 @@ export interface ResponseCommitter {
   ): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
-  stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
+  hasResponseDocument(responseId: string, docId: string): boolean;
+  withResponseDocument<T>(
+    responseId: string,
+    docId: string,
+    base: DocHandle | null,
+    read: (doc: DocHandle) => T | Promise<T>,
+  ): Promise<T | null>;
+  responseDocuments(
+    responseId: string,
+    threadId?: string,
+  ): { staged: readonly string[]; created: readonly string[] };
   dropForThread(docId: string, threadId: string): void;
 }
 
@@ -282,7 +292,9 @@ export function createResponseCommitter(deps: {
     rollbackResponse,
     hasBufferedWrites,
     bufferedUpdatesForDoc,
-    stagedCreatedDocumentIds,
+    hasResponseDocument,
+    withResponseDocument,
+    responseDocuments,
     dropForThread,
   };
 
@@ -852,17 +864,46 @@ export function createResponseCommitter(deps: {
     );
   }
 
-  function stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[] {
+  function hasResponseDocument(responseId: string, docId: string): boolean {
+    return (activeBuffer(responseId)?.docs.get(docId)?.updates.length ?? 0) > 0;
+  }
+
+  async function withResponseDocument<T>(
+    responseId: string,
+    docId: string,
+    base: DocHandle | null,
+    read: (doc: DocHandle) => T | Promise<T>,
+  ): Promise<T | null> {
+    const updates = bufferedUpdatesForDoc(responseId, docId);
+    if (updates.length === 0) return null;
+    const effective = new Y.Doc({ gc: false });
+    try {
+      if (base)
+        Y.applyUpdate(effective, Y.encodeStateAsUpdate(unwrapDoc(base)), { type: "system" });
+      for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
+      return await read(toDocHandle(effective));
+    } finally {
+      effective.destroy();
+    }
+  }
+
+  function responseDocuments(
+    responseId: string,
+    threadId?: string,
+  ): { staged: readonly string[]; created: readonly string[] } {
     const buffer = activeBuffer(responseId);
-    if (!buffer) return [];
-    return [...buffer.docs.values()]
-      .filter(
-        (docBuffer) =>
-          docBuffer.createdDocumentBeforeCommit &&
-          !docBuffer.discardedBeforeCommit &&
-          (!threadId || docBuffer.session.threadId === threadId),
-      )
-      .map((docBuffer) => docBuffer.docId);
+    if (!buffer) return { staged: [], created: [] };
+    const docs = [...buffer.docs.values()].filter(
+      (docBuffer) => !threadId || docBuffer.session.threadId === threadId,
+    );
+    return {
+      staged: docs.filter((docBuffer) => docBuffer.updates.length > 0).map((doc) => doc.docId),
+      created: docs
+        .filter(
+          (docBuffer) => docBuffer.createdDocumentBeforeCommit && !docBuffer.discardedBeforeCommit,
+        )
+        .map((docBuffer) => docBuffer.docId),
+    };
   }
 
   function assertCanStage(input: ResponseStagePreflightInput): void {

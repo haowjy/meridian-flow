@@ -1,6 +1,6 @@
 /** Pure document preparation, receipt, conflict, and effect-verification primitives for branch pushes. */
 import { createHash } from "node:crypto";
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
 import * as Y from "yjs";

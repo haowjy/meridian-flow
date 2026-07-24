@@ -8,7 +8,7 @@ import {
   toDocHandle,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DraftApplyConflict } from "@meridian/contracts";
 import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";

@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import type { UpdateJournal } from "@meridian/agent-edit";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import {
   buildDocumentSchema,

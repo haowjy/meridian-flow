@@ -1,5 +1,5 @@
 /** Branded agent-edit core types for live-vs-branch compile-time separation. */
-import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit";
+import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit/integration";
 
 type ResponseTransactionOptions = Parameters<AgentEditCore["commitResponse"]>[1] & {
   beforeTransactionCommit?(result: ResponseCommitSuccessResult): void | Promise<void>;

@@ -17,7 +17,7 @@ import {
   type UpdateMeta,
   type WriteOutcome,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";

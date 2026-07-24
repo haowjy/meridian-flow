@@ -1,7 +1,7 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 
-import type { SemanticEditIRV1 } from "@meridian/agent-edit";
-import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit";
+import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
+import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";

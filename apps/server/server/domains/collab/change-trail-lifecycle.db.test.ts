@@ -1,4 +1,9 @@
-import { createAgentEditCodec, toDocHandle, toRef, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  toDocHandle,
+  toRef,
+  yProsemirrorModel,
+} from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";

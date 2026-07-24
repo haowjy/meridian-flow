@@ -16,6 +16,10 @@
 - `packages/agent-edit`: cold reversal reconstruction now owns its prose-order
   repair instead of hiding a second update synthesizer in tool orchestration
   (#344).
+- `packages/agent-edit`, `apps/server`: the default package entry is now a
+  39-name core façade; host adapters use the explicit integration entry and
+  staged response documents are lent without exposing raw Yjs update bytes
+  (#344).
 - `packages/agent-edit`, `apps/server`: staged write receipts now show the
   settled document projection once instead of concatenating pulled and
   post-write snapshots (#341).
