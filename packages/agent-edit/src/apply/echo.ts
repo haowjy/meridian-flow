@@ -627,18 +627,16 @@ export function truncateSerializedBlock(serialized: string): string {
   const separator = serialized.indexOf("|");
   if (separator < 0) return truncateWords(serialized);
   const hash = serialized.slice(0, separator);
-  const body = serialized
-    .slice(separator + 1)
-    .replace(/^\n/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const body = serialized.slice(separator + 1).replace(/^\n/, "");
   return `${hash}|${truncateWords(body)}`;
 }
 
 function truncateWords(text: string, maxWords = 8): string {
-  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  const words = [...text.matchAll(/\S+/g)];
   if (words.length <= maxWords) return text;
-  return `${words.slice(0, maxWords).join(" ")}...`;
+  const lastWord = words[maxWords - 1];
+  const end = (lastWord?.index ?? 0) + (lastWord?.[0].length ?? 0);
+  return `${text.slice(0, end)}...`;
 }
 
 function orderedHashes(

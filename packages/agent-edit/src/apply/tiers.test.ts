@@ -9,7 +9,12 @@ import { createAgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
-import { applyConcurrentUpdates, computeEcho, snapshotBlocks } from "./echo.js";
+import {
+  applyConcurrentUpdates,
+  computeEcho,
+  snapshotBlocks,
+  truncateSerializedBlock,
+} from "./echo.js";
 import { applyEdits } from "./tiers.js";
 import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
 
@@ -557,6 +562,10 @@ describe("computeEcho", () => {
       { mode: "full", blocks: ["B|new center"] },
       { mode: "truncated", blocks: ["C|short context stays unchanged"] },
     ]);
+  });
+
+  it("does not normalize tabs or non-breaking spaces in echo context", () => {
+    expect(truncateSerializedBlock("A|left\tmiddle\u00a0right")).toBe("A|left\tmiddle\u00a0right");
   });
 });
 

@@ -1495,6 +1495,49 @@ describe("write tool dispatch", () => {
     expect(block ? model.getText(block) : undefined).toBe(expected);
   });
 
+  it("round-trips literal whitespace from an echo window through the matcher", async () => {
+    const ctx = harness({ "chapter.md": "A cat and cat barked.\n\nMiddle target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const deleted = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "", find: "cat", all: true },
+      context,
+    );
+    expectOutcome(deleted, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["A  and  barked.", "Middle target."]);
+
+    const whitespaceHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const neighboringWrite = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "Updated target.",
+        find: "Middle target.",
+      },
+      context,
+    );
+    expectOutcome(neighboringWrite, "success");
+    const echoedLine = outcomeText(neighboringWrite)
+      .split("\n")
+      .find((line) => line.startsWith(`${whitespaceHash}|`));
+    if (!echoedLine) throw new Error("missing neighboring echo line");
+    const echoedBody = echoedLine.slice(whitespaceHash.length + 1);
+
+    const roundTrip = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        content: "Round trip matched.",
+        find: echoedBody,
+      },
+      context,
+    );
+
+    expect(echoedBody).toBe("A  and  barked.");
+    expectOutcome(roundTrip, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toContain("Round trip matched.");
+  });
+
   it("replaces adjacent structural find-all groups without stale predecessor anchors", async () => {
     const ctx = harness({ "chapter.md": "cat\n\ncat" });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
