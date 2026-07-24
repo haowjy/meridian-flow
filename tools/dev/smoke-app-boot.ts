@@ -43,6 +43,12 @@ const ASSERTED_ROUTES = ["/", "/login"];
  * env validation (NODE_ENV != production), so these let CI boot without WorkOS
  * secrets or a database — the smoke exercises the transform/render path, not
  * auth or persistence. DATABASE_URL is set but intentionally need not resolve.
+ *
+ * The WORKOS_* keys satisfy `@workos/authkit-session` ConfigurationProvider.validate,
+ * which runs unconditionally in `meridianAuthkitMiddleware` regardless of
+ * NODE_ENV — apiKey, clientId, redirectUri, and cookiePassword are all
+ * `requiredKeys`, and cookiePassword must be >= 32 chars. Values here are
+ * fake and never contact WorkOS: the smoke never authenticates.
  */
 const BOOT_ENV_DEFAULTS: Record<string, string> = {
   NODE_ENV: "development",
@@ -50,6 +56,7 @@ const BOOT_ENV_DEFAULTS: Record<string, string> = {
   WORKOS_API_KEY: "sk_test_app_boot_smoke",
   WORKOS_CLIENT_ID: "client_ci",
   WORKOS_COOKIE_PASSWORD: "app-boot-smoke-cookie-password-000000000000",
+  WORKOS_REDIRECT_URI: `http://${HOST}:1/api/auth/callback`,
   MERIDIAN_API_ORIGIN: `http://${HOST}:1`,
 };
 
