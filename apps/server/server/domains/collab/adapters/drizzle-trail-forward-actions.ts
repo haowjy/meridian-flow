@@ -31,7 +31,7 @@ import {
   fullStateFingerprint,
 } from "../domain/branch-push-transition.js";
 import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
-import { allocateDocumentAdmission } from "./drizzle-document-authority.js";
+import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 type TerminalForwardActionResult = { status: "anchor_unavailable" } | { status: "retry_exhausted" };
@@ -168,14 +168,14 @@ export function createDrizzleTrailForwardActions(input: {
                 }
                 return "retry" as const;
               }
-              const authority = await allocateDocumentAdmission(tx, detail.documentId);
+              const authorityHead = await allocateDocumentAdmission(tx, detail.documentId);
               const [journalRow] = await tx
                 .insert(documentYjsUpdates)
                 .values({
                   documentId: detail.documentId as never,
-                  authorityId: authority.authorityId,
-                  authorityGeneration: authority.generation,
-                  admissionSequence: authority.admissionSequence,
+                  authorityId: authorityHead.authorityId,
+                  authorityGeneration: authorityHead.generation,
+                  admissionSequence: authorityHead.admissionSequence,
                   batchOrdinal: 0,
                   updateData: Buffer.from(committed.update),
                   originType: "human",

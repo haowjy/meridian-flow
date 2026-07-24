@@ -43,9 +43,9 @@ if (( ${#found[@]} > 0 )); then
   exit 1
 fi
 
-# DocumentAuthority is a capability, not a convention. Check its narrow
+# DocumentMutationPolicy is a capability, not a convention. Check its narrow
 # export/import/call boundary rather than exempting every line in large files.
-authority_callers=(
+mutation_policy_callers=(
   "apps/server/server/domains/collab/adapters/drizzle-branches.ts"
   "apps/server/server/domains/collab/composition.ts"
   "apps/server/server/domains/collab/domain/branch-coordinator.ts"
@@ -53,62 +53,65 @@ authority_callers=(
   "apps/server/server/domains/collab/hocuspocus-persistence.ts"
 )
 
-is_authority_caller() {
+is_mutation_policy_caller() {
   local candidate="$1"
   local allowed
-  for allowed in "${authority_callers[@]}"; do
+  for allowed in "${mutation_policy_callers[@]}"; do
     [[ "$candidate" == "$allowed" ]] && return 0
   done
   return 1
 }
 
-authority_violations=()
-while IFS=: read -r file line rest; do
+mutation_policy_violations=()
+while IFS= read -r file; do
   [[ -z "$file" ]] && continue
-  if ! is_authority_caller "$file"; then
-    authority_violations+=("$file:$line:$rest")
+  if ! is_mutation_policy_caller "$file"; then
+    mutation_policy_violations+=("$file")
   fi
 done < <(
-  git grep -n -E '(import .*createDocumentAuthority|createDocumentAuthority\()' \
-    -- 'apps/server/server/domains/collab/**/*.ts' \
-    ':!apps/server/server/domains/collab/domain/document-authority.ts' \
+  git grep -l -F 'createDocumentMutationPolicy' \
+    -- 'apps/server/server/domains/collab/*.ts' \
+    'apps/server/server/domains/collab/**/*.ts' \
+    ':!apps/server/server/domains/collab/domain/document-mutation-policy.ts' \
     ':!**/*.test.ts' ':!**/*.db.test.ts' ':!**/test-support/**' ':!**/__conformance__/**' \
     2>/dev/null || true
 )
 
-authority_exports="$(git grep -l -E 'export function createDocumentAuthority' -- \
-  'apps/server/server/domains/collab/**/*.ts' ':!**/*.test.ts' 2>/dev/null || true)"
-expected_authority_export='apps/server/server/domains/collab/domain/document-authority.ts'
-if [[ "$authority_exports" != "$expected_authority_export" ]]; then
-  authority_violations+=("DocumentAuthority must have one canonical production export: $authority_exports")
+mutation_policy_exports="$(git grep -l -E 'export function createDocumentMutationPolicy' -- \
+  'apps/server/server/domains/collab/*.ts' \
+  'apps/server/server/domains/collab/**/*.ts' \
+  ':!**/*.test.ts' 2>/dev/null || true)"
+expected_mutation_policy_export='apps/server/server/domains/collab/domain/document-mutation-policy.ts'
+if [[ "$mutation_policy_exports" != "$expected_mutation_policy_export" ]]; then
+  mutation_policy_violations+=("DocumentMutationPolicy must have one canonical production export: $mutation_policy_exports")
 fi
 
 # These permissive historical heuristics are forbidden specifically in the
-# settlement/provenance authority. Presentation and navigation code may still
+# settlement/provenance safety core. Presentation and navigation code may still
 # use text comparison or RelativePosition for their unrelated jobs.
-forbidden_authority_fallbacks=()
+forbidden_safety_fallbacks=()
 while IFS= read -r hit; do
-  [[ -n "$hit" ]] && forbidden_authority_fallbacks+=("$hit")
+  [[ -n "$hit" ]] && forbidden_safety_fallbacks+=("$hit")
 done < <(
   git grep -n -E \
     'blockOwner|block_owner|lastEditor|last_editor|Item\.redone|Y\.Snapshot|RelativePosition|diff-match-patch|diff_match_patch|textEquality|text_equality|textSimilarity|text_similarity' \
     -- \
-    'apps/server/server/domains/collab/domain/document-authority.ts' \
+    'apps/server/server/domains/collab/domain/document-mutation-policy.ts' \
     'apps/server/server/domains/collab/domain/branch-push-transition.ts' \
     'apps/server/server/domains/collab/domain/provenance.ts' \
     'apps/server/server/domains/collab/adapters/drizzle-provenance.ts' \
     2>/dev/null || true
 )
 
-if (( ${#authority_violations[@]} > 0 )); then
-  echo "ERROR: content mutation bypasses DocumentAuthority capability:"
-  printf '  %s\n' "${authority_violations[@]}"
+if (( ${#mutation_policy_violations[@]} > 0 )); then
+  echo "ERROR: content mutation bypasses DocumentMutationPolicy capability:"
+  printf '  %s\n' "${mutation_policy_violations[@]}"
   exit 1
 fi
 
-if (( ${#forbidden_authority_fallbacks[@]} > 0 )); then
-  echo "ERROR: forbidden semantic fallback entered settlement/provenance authority:"
-  printf '  %s\n' "${forbidden_authority_fallbacks[@]}"
+if (( ${#forbidden_safety_fallbacks[@]} > 0 )); then
+  echo "ERROR: forbidden semantic fallback entered the settlement/provenance safety core:"
+  printf '  %s\n' "${forbidden_safety_fallbacks[@]}"
   exit 1
 fi
 

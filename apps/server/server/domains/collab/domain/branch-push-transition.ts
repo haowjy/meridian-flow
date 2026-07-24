@@ -463,7 +463,7 @@ export function createBranchPushTransition(input: {
   return { execute, prepare, recover };
 }
 
-/** The only reconstruction path for settlement authority and provenance, warm or cold. */
+/** The only reconstruction path for settlement state and provenance, warm or cold. */
 export function materializeFinalPrePush(row: PendingLiveSettlement): {
   doc: Y.Doc;
   provenanceView: PendingLiveSettlement["provenanceView"];

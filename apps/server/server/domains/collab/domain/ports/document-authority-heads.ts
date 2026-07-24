@@ -1,4 +1,4 @@
-/** Collab-owned read boundary for durable document authority prefixes. */
+/** Collab-owned read boundary for durable document authority-head prefixes. */
 
 import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 

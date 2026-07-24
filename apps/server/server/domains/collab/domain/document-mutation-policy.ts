@@ -1,4 +1,4 @@
-/** The sole policy boundary for admitting content-bearing mutations to a document authority. */
+/** The sole policy boundary for admitting content-bearing document mutations. */
 
 import {
   type RestorationCertificatePort,
@@ -21,7 +21,7 @@ export type IdentityReplicationPlan =
   | { kind: "wholeDocument" }
   | { kind: "sharedTypes"; names: readonly string[] };
 
-export type AuthorityCheckpoint = {
+export type AuthorityHeadCheckpoint = {
   checkpointId: string;
   state: Uint8Array;
   attributionManifest: unknown;
@@ -39,11 +39,11 @@ export type DocumentMutation =
     }
   | {
       kind: "identityReplication";
-      sourceAuthorityCutId: string;
+      sourceCutId: string;
       plan: IdentityReplicationPlan;
     }
   | {
-      kind: "authoritySnapshotReplacement";
+      kind: "authorityHeadSnapshotReplacement";
       checkpointId: string;
       replaceGeneration: true;
     };
@@ -60,65 +60,69 @@ export class ReservedWriterClientIdError extends Error {
   }
 }
 
-export type FrozenAuthorityCut = {
+export type FrozenReplicationSource = {
   cutId: string;
   documentId: string;
-  authorityId: string;
-  generation: bigint;
+  sourceId: string;
+  version: bigint;
   doc: Y.Doc;
 };
 
-export type MutableAuthority = {
+export type MutationTarget = {
   documentId: string;
   generation: bigint;
   doc: Y.Doc;
 };
 
-export type DocumentAuthorityPort = {
+export type DocumentMutationPolicyPort = {
   /** Runs under lockDocumentMutation and atomically journals, joins every unresolved
    * same-generation settlement (incrementing join_version), and records the new head. */
   admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint; joined: number }>;
-  readMutableAuthority(): MutableAuthority | Promise<MutableAuthority>;
-  readFrozenCut(cutId: string): Promise<FrozenAuthorityCut | null>;
+  readMutationTarget(): MutationTarget | Promise<MutationTarget>;
+  readFrozenReplicationSource(cutId: string): Promise<FrozenReplicationSource | null>;
   readCurrentRevision(): Promise<DocumentRevision>;
   lowerCertifiedMutation(ir: SemanticEditIRV1): Promise<Uint8Array>;
-  loadCheckpoint(checkpointId: string): Promise<AuthorityCheckpoint | null>;
+  loadCheckpoint(checkpointId: string): Promise<AuthorityHeadCheckpoint | null>;
   unresolvedSettlements(generation: bigint): Promise<number>;
   /** Installs state and manifest in a fresh generation in the same transaction as the fence. */
-  replaceGeneration(checkpoint: AuthorityCheckpoint, expectedGeneration: bigint): Promise<bigint>;
+  replaceGeneration(
+    checkpoint: AuthorityHeadCheckpoint,
+    expectedGeneration: bigint,
+  ): Promise<bigint>;
   disconnectGeneration(generation: bigint): Promise<void>;
   stagePush(input: { update: Uint8Array; expectedGeneration: bigint }): Promise<string>;
   completePush(input: { stagedPushId: string; expectedGeneration: bigint }): Promise<void>;
 };
 
-export class DocumentAuthorityError extends Error {
+export class DocumentMutationPolicyError extends Error {
   constructor(
     readonly code:
       | "invalid_mutation"
-      | "stale_source_authority"
-      | "authority_busy"
+      | "stale_target_generation"
+      | "stale_replication_source"
+      | "authority_head_busy"
       | "checkpoint_incomplete",
     message: string,
   ) {
     super(message);
-    this.name = "DocumentAuthorityError";
+    this.name = "DocumentMutationPolicyError";
   }
 }
 
-export type DocumentAuthority = ReturnType<typeof createDocumentAuthority>;
+export type DocumentMutationPolicy = ReturnType<typeof createDocumentMutationPolicy>;
 
-/** Shared authority → containment → authorship → append sequence for writer frames. */
+/** Shared target validation → containment → authorship → append sequence for writer frames. */
 export async function admitWriterUpdate<T>(input: {
-  authority: Y.Doc;
+  targetDocument: Y.Doc;
   update: Uint8Array;
-  validateAuthority(): void | Promise<void>;
+  validateTarget(): void | Promise<void>;
   isContained(): boolean;
   append(): Promise<T>;
 }): Promise<{ admitted: false } | { admitted: true; value: T }> {
-  const validation = input.validateAuthority();
+  const validation = input.validateTarget();
   if (validation) await validation;
   if (input.isContained()) return { admitted: false };
-  const admission = validateFreshAuthorship(input.authority, input.update, { kind: "writer" });
+  const admission = validateFreshAuthorship(input.targetDocument, input.update, { kind: "writer" });
   if (admission.reservedClientId !== null) {
     throw new ReservedWriterClientIdError(admission.reservedClientId);
   }
@@ -129,7 +133,7 @@ export async function admitWriterUpdate<T>(input: {
  * Owns strategy validation and update production. Persistence owns the transaction,
  * but never accepts producer-supplied replication or certified-mutation bytes.
  */
-export function createDocumentAuthority(port: DocumentAuthorityPort) {
+export function createDocumentMutationPolicy(port: DocumentMutationPolicyPort) {
   return {
     async mutate(
       mutation: DocumentMutation,
@@ -141,21 +145,21 @@ export function createDocumentAuthority(port: DocumentAuthorityPort) {
           return admitCertified(port, mutation);
         case "identityReplication":
           return admitReplication(port, mutation);
-        case "authoritySnapshotReplacement":
+        case "authorityHeadSnapshotReplacement":
           return replaceSnapshot(port, mutation);
       }
     },
 
     async stagePush(input: { update: Uint8Array; expectedGeneration: bigint }): Promise<string> {
       assertNonEmptyUpdate(input.update);
-      const authority = await port.readMutableAuthority();
-      if (authority.generation !== input.expectedGeneration) {
-        throw new DocumentAuthorityError(
-          "stale_source_authority",
-          "Target authority generation changed",
+      const target = await port.readMutationTarget();
+      if (target.generation !== input.expectedGeneration) {
+        throw new DocumentMutationPolicyError(
+          "stale_target_generation",
+          "Durable authority head generation changed before push staging",
         );
       }
-      validatePostUpdateProvenance(authority.doc, input.update);
+      validatePostUpdateProvenance(target.doc, input.update);
       return port.stagePush(input);
     },
 
@@ -167,12 +171,12 @@ export function createDocumentAuthority(port: DocumentAuthorityPort) {
 }
 
 async function admitFresh(
-  port: DocumentAuthorityPort,
+  port: DocumentMutationPolicyPort,
   mutation: Extract<DocumentMutation, { kind: "attributedFreshAuthorship" }>,
 ): Promise<{ sequence: bigint; joined: number }> {
-  const authorityValue = port.readMutableAuthority();
-  const authority = isPromise(authorityValue) ? await authorityValue : authorityValue;
-  const admission = validateFreshAuthorship(authority.doc, mutation.update, mutation.source);
+  const targetValue = port.readMutationTarget();
+  const target = isPromise(targetValue) ? await targetValue : targetValue;
+  const admission = validateFreshAuthorship(target.doc, mutation.update, mutation.source);
   if (admission.reservedClientId !== null)
     invalid("Reserved server client IDs cannot author fresh prose");
   const admitted = await port.admitImmediate({
@@ -183,7 +187,7 @@ async function admitFresh(
 }
 
 function validateFreshAuthorship(
-  authority: Y.Doc,
+  targetDocument: Y.Doc,
   update: Uint8Array,
   source: AuthorshipSource,
 ): ReturnType<typeof validateClientUpdateAdmission> {
@@ -191,22 +195,26 @@ function validateFreshAuthorship(
   assertNonEmptyUpdate(update);
   let admission: ReturnType<typeof validateClientUpdateAdmission>;
   try {
-    admission = validateClientUpdateAdmission(authority, update);
+    admission = validateClientUpdateAdmission(targetDocument, update);
   } catch (cause) {
-    invalid(cause instanceof Error ? cause.message : "Client update failed authority validation");
+    invalid(
+      cause instanceof Error
+        ? cause.message
+        : "Document mutation policy could not validate the client update",
+    );
   }
   return admission;
 }
 
 async function admitCertified(
-  port: DocumentAuthorityPort,
+  port: DocumentMutationPolicyPort,
   mutation: Extract<DocumentMutation, { kind: "certifiedSemanticMutation" }>,
 ): Promise<{ sequence: bigint; joined: number }> {
   if (mutation.actor !== "agent") invalid("Certified semantic mutations require the agent actor");
-  const authority = await port.readMutableAuthority();
+  const target = await port.readMutationTarget();
   const revision = await port.readCurrentRevision();
   validateSemanticEditIRV1(mutation.ir, {
-    expectedDocumentId: authority.documentId,
+    expectedDocumentId: target.documentId,
     expectedInputRevision: revision,
     restorationCertificates: mutation.reversal,
   });
@@ -217,35 +225,35 @@ async function admitCertified(
 }
 
 async function admitReplication(
-  port: DocumentAuthorityPort,
+  port: DocumentMutationPolicyPort,
   mutation: Extract<DocumentMutation, { kind: "identityReplication" }>,
 ): Promise<{ sequence: bigint; joined: number }> {
-  if (!mutation.sourceAuthorityCutId) invalid("Identity replication requires a source cut");
+  if (!mutation.sourceCutId) invalid("Identity replication requires a source cut");
   validateReplicationPlan(mutation.plan);
-  const source = await port.readFrozenCut(mutation.sourceAuthorityCutId);
+  const source = await port.readFrozenReplicationSource(mutation.sourceCutId);
   if (!source) {
-    throw new DocumentAuthorityError(
-      "stale_source_authority",
-      "Source authority cut is unavailable",
+    throw new DocumentMutationPolicyError(
+      "stale_replication_source",
+      "Frozen replication source is unavailable",
     );
   }
-  const target = await port.readMutableAuthority();
+  const target = await port.readMutationTarget();
   if (source.documentId !== target.documentId) {
-    throw new DocumentAuthorityError(
-      "stale_source_authority",
-      "Source authority cut belongs to a different document",
+    throw new DocumentMutationPolicyError(
+      "stale_replication_source",
+      "Frozen replication source belongs to a different document",
     );
   }
-  const sourceAgain = await port.readFrozenCut(mutation.sourceAuthorityCutId);
+  const sourceAgain = await port.readFrozenReplicationSource(mutation.sourceCutId);
   if (
     !sourceAgain ||
     sourceAgain.documentId !== source.documentId ||
-    sourceAgain.authorityId !== source.authorityId ||
-    sourceAgain.generation !== source.generation
+    sourceAgain.sourceId !== source.sourceId ||
+    sourceAgain.version !== source.version
   ) {
-    throw new DocumentAuthorityError(
-      "stale_source_authority",
-      "Source authority changed while replication was prepared",
+    throw new DocumentMutationPolicyError(
+      "stale_replication_source",
+      "Frozen replication source changed while replication was prepared",
     );
   }
   const update = replicationUpdate(source.doc, target.doc, mutation.plan);
@@ -255,10 +263,10 @@ async function admitReplication(
   return { sequence: admitted.sequence, joined: admitted.joined };
 }
 
-function validatePostUpdateProvenance(authority: Y.Doc, update: Uint8Array): void {
+function validatePostUpdateProvenance(targetDocument: Y.Doc, update: Uint8Array): void {
   const candidate = new Y.Doc({ gc: false });
   try {
-    Y.applyUpdate(candidate, Y.encodeStateAsUpdate(authority));
+    Y.applyUpdate(candidate, Y.encodeStateAsUpdate(targetDocument));
     Y.applyUpdate(candidate, update);
     validateProvenanceGraph(candidate);
   } catch (cause) {
@@ -269,23 +277,23 @@ function validatePostUpdateProvenance(authority: Y.Doc, update: Uint8Array): voi
 }
 
 async function replaceSnapshot(
-  port: DocumentAuthorityPort,
-  mutation: Extract<DocumentMutation, { kind: "authoritySnapshotReplacement" }>,
+  port: DocumentMutationPolicyPort,
+  mutation: Extract<DocumentMutation, { kind: "authorityHeadSnapshotReplacement" }>,
 ): Promise<{ generation: bigint }> {
   if (mutation.replaceGeneration !== true) invalid("Snapshot replacement must replace generation");
   const checkpoint = await port.loadCheckpoint(mutation.checkpointId);
   if (!checkpoint) invalid("Checkpoint does not exist");
   if (!checkpoint.attributionManifest || checkpoint.state.byteLength === 0) {
-    throw new DocumentAuthorityError(
+    throw new DocumentMutationPolicyError(
       "checkpoint_incomplete",
-      "Checkpoint state and retained attribution manifest are both required",
+      "Durable checkpoint state and retained attribution manifest are both required",
     );
   }
-  const current = await port.readMutableAuthority();
+  const current = await port.readMutationTarget();
   if ((await port.unresolvedSettlements(current.generation)) > 0) {
-    throw new DocumentAuthorityError(
-      "authority_busy",
-      "Authority has unresolved old-generation settlements",
+    throw new DocumentMutationPolicyError(
+      "authority_head_busy",
+      "Durable authority head has unresolved old-generation settlements",
     );
   }
   // The port installs a new Y.Doc. Checkpoint bytes are deliberately never applied to current.doc.
@@ -302,7 +310,7 @@ function replicationUpdate(
   if (plan.kind === "wholeDocument") {
     return Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
   }
-  // Yjs updates cannot be safely filtered after encoding. Build the planned authority from
+  // Yjs updates cannot be safely filtered after encoding. Build the planned document from
   // named top-level types, then diff it against the target; canonical item identities remain
   // those from the frozen source cut because the source update is applied, not re-authored.
   const planned = new Y.Doc({ gc: false });
@@ -367,5 +375,8 @@ function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
 }
 
 function invalid(message: string): never {
-  throw new DocumentAuthorityError("invalid_mutation", message);
+  throw new DocumentMutationPolicyError(
+    "invalid_mutation",
+    `Document mutation policy rejected mutation: ${message}`,
+  );
 }

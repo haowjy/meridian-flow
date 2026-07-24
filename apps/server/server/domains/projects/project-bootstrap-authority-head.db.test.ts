@@ -1,4 +1,4 @@
-/** Postgres regression coverage for bootstrap-owned canonical document authority. */
+/** Postgres regression coverage for bootstrap-owned durable document authority head. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -6,11 +6,11 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("project bootstrap document authority (postgres)", () => {
+  describe.skip("project bootstrap document authority head (postgres)", () => {
     it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
   });
 } else {
-  describe("project bootstrap document authority (postgres)", async () => {
+  describe("project bootstrap document authority head (postgres)", async () => {
     const { Hocuspocus } = await import("@hocuspocus/server");
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");

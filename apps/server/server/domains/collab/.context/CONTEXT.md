@@ -6,9 +6,21 @@ and WebSocket callers.
 
 ## Current shape
 
+| Concept | Canonical name | Code surface |
+|---|---|---|
+| Durable `document_yjs_heads` row and its fenced journal prefix | **document authority head** | `DocumentAuthorityHead`, `DocumentAuthorityId`, `document_yjs_heads` |
+| Capability that validates and admits content-bearing mutations | **document mutation policy** | `DocumentMutationPolicy`, `createDocumentMutationPolicy`, `domain/document-mutation-policy.ts` |
+| Mutable `Y.Doc` held by a loaded Hocuspocus room | **live document** | `liveDocument` / `liveDoc` in room and Hocuspocus surfaces |
+
+“Document authority” is reserved for the durable head and its identity/generation.
+Do not use it for the mutation policy or an in-memory `Y.Doc`. The policy uses
+the neutral `MutationTarget` for branch, scratch, and live inputs; only room-owned
+state is a live document.
+
 | Concern | Location |
 |---|---|
-| Document mutation policy and generation fencing | `domain/document-authority.ts`, `adapters/drizzle-document-authority.ts` |
+| Document mutation policy | `domain/document-mutation-policy.ts` |
+| Durable authority heads and generation fencing | `domain/ports/document-authority-heads.ts`, `adapters/drizzle-document-authority-head.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
@@ -120,7 +132,7 @@ for the cross-domain port decision and self-healing rationale.
 Human-origin edits produce one journal row per keystroke. A 50-character
 sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
 recovers storage, and journal row counts are not equivalent to semantic edits.
-Reconnect frames already contained by the live authority are acknowledged but
+Reconnect frames already contained by the live document are acknowledged but
 do not enter the journal or trigger post-persistence hooks.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
@@ -233,7 +245,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
   gate; cached containment must retain at least a 10x p50 advantage over rebuilding
   a history-sized Yjs snapshot.
-- **Push settlement authority**: the outbox stores binary `lock_cut_update` and
+- **Push settlement state**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the
   normalized `branch_push_outbox_updates` relation; admission association and
@@ -292,7 +304,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   replacement. Under the same document-mutation lock as generation replacement,
   compaction reads, folds, and deletes only the current authority generation;
   retired-generation suffixes never enter restored authority. Thread-peer roots
-  absent from live authority are agent-owned branch content. Only writer-lineage
+  absent from the live document are agent-owned branch content. Only writer-lineage
   loss produces captured bodies, trail data, and Restore; agent-only loss is
   silent.
 ## LOCK-WS boundary
