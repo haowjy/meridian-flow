@@ -104,6 +104,14 @@ describe("peer marker writer self-clear", () => {
     expect(dismissed("range-mark")).toBe(false);
   });
 
+  it("keeps a range when normal editor typing inserts exactly at its start", () => {
+    addMarker("range", 2, 5, "-typed");
+    editor.commands.setTextSelection(2);
+    editor.commands.insertContent("x");
+    expect(dismissed("range-mark-typed")).toBe(false);
+    expect(editor.view.dom.querySelector('[data-peer-mark="range-mark-typed"]')).not.toBeNull();
+  });
+
   it("clears a range for an overlapping deletion but not caret movement", () => {
     addMarker("range", 2, 5);
     editor.commands.setTextSelection(3);

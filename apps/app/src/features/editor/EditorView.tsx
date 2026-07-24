@@ -200,6 +200,13 @@ function SessionEditorView({
             };
       setPeerMarkTarget({ marker, element, activation, editorSelection });
       pointerSelectionRef.current = null;
+      if (activation === "pointer") {
+        requestAnimationFrame(() => {
+          const activeEditor = editorRef.current;
+          if (!activeEditor || activeEditor.isDestroyed) return;
+          activeEditor.chain().setTextSelection(editorSelection).focus().run();
+        });
+      }
       return true;
     },
     [inReview, session.markerStore],

@@ -111,8 +111,18 @@ function pickCursorColor(awareness: Awareness): string {
       taken.add(state.user.color as string);
     }
   }
+  const palette = COLLABORATION_CURSOR_COLORS.map(resolveCursorColor);
+  return palette.find((color) => !taken.has(color)) ?? palette[0];
+}
+
+/** CollaborationCaret validates awareness colors before placing them in CSS. */
+function resolveCursorColor(token: string): string {
+  if (typeof window === "undefined") return token;
+  const match = /^var\\((--[^)]+)\\)$/.exec(token);
+  if (!match?.[1]) return token;
   return (
-    COLLABORATION_CURSOR_COLORS.find((color) => !taken.has(color)) ?? COLLABORATION_CURSOR_COLORS[0]
+    window.getComputedStyle(window.document.documentElement).getPropertyValue(match[1]).trim() ||
+    token
   );
 }
 

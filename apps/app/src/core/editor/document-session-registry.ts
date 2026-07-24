@@ -148,7 +148,14 @@ export class DocumentSessionRegistry {
     if (this.ownUserId === userId) return;
     // Sessions are process-local authenticated state; never retain a prior
     // account's marker suppression identity across an account switch.
-    if (this.ownUserId !== null) this.destroyAll();
+    if (this.ownUserId !== null) {
+      this.destroyAll();
+    } else {
+      // Warm hosts can materialize a session before the authenticated layout
+      // supplies its user. Bring those stores onto the authenticated identity
+      // instead of leaving self-admission suppression permanently disabled.
+      for (const session of this.sessions.values()) session.markerStore.setOwnUserId(userId);
+    }
     this.ownUserId = userId;
   }
 
