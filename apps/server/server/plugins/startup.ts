@@ -3,6 +3,7 @@
  * validation at boot, logging warnings through the process EventSink.
  */
 import { emitEvent } from "../domains/observability";
+import { getApp } from "../lib/app";
 import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
 import {
@@ -18,7 +19,7 @@ const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 
 installApiProcessCrashPolicy({ eventSink });
 registerProcessShutdownCallback(async () => {
-  await (await getYjsGateway()).drain();
+  await getYjsGateway(await getApp()).drain();
 });
 installObservabilityShutdownHooks();
 
@@ -33,7 +34,7 @@ export default async function startupPlugin() {
     });
   }
 
-  await getYjsGateway();
+  getYjsGateway(await getApp());
 
   // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request.
   await validateAuthConfiguration();

@@ -2,7 +2,6 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import { defineWebSocketHandler } from "nitro";
 import type { AppServices } from "../../lib/app.js";
-import { getApp } from "../../lib/app.js";
 import {
   deferWsClose,
   resolveWsUpgradeAuth,
@@ -16,7 +15,7 @@ import {
 } from "../../lib/yjs-ws-handler.js";
 
 type YjsRouteContext =
-  | { kind: "authenticated"; app: AppServices; userId: UserId }
+  | { kind: "authenticated"; app: AppServices; userId: UserId; gateway: YjsGateway }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
 type YjsRoutePeer = {
@@ -28,11 +27,11 @@ type YjsRoutePeer = {
   _yjs?: YjsGatewayConnection;
 };
 
-let gatewayPromise: Promise<YjsGateway> | null = null;
+let gateway: YjsGateway | null = null;
 
-export function getYjsGateway(): Promise<YjsGateway> {
-  gatewayPromise ??= getApp().then((app) => createYjsGateway(selectYjsGatewayServices(app)));
-  return gatewayPromise;
+export function getYjsGateway(app: AppServices): YjsGateway {
+  gateway ??= createYjsGateway(selectYjsGatewayServices(app));
+  return gateway;
 }
 
 export const yjsWebSocketHandler = defineWebSocketHandler({
@@ -45,17 +44,18 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
             kind: "authenticated",
             app: auth.app,
             userId: auth.userId,
+            gateway: getYjsGateway(auth.app),
           } satisfies YjsRouteContext,
         };
   },
-  async open(peer) {
+  open(peer) {
     const wsPeer = peer as unknown as YjsRoutePeer;
     if (wsPeer.context?.kind === "deferred-close") {
       wsPeer.close(wsPeer.context.close.code, wsPeer.context.close.reason);
       return;
     }
     if (wsPeer.context?.kind !== "authenticated") return;
-    wsPeer._yjs = (await getYjsGateway()).connect({
+    wsPeer._yjs = wsPeer.context.gateway.connect({
       request: wsPeer.request,
       userId: wsPeer.context.userId,
       close: (code, reason) => wsPeer.close(code, reason),
@@ -69,18 +69,21 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
       },
     });
   },
-  async message(peer, message) {
+  message(peer, message) {
     const wsPeer = peer as unknown as YjsRoutePeer;
-    (await getYjsGateway()).message(wsPeer._yjs, message.uint8Array());
+    if (wsPeer.context?.kind !== "authenticated") return;
+    wsPeer.context.gateway.message(wsPeer._yjs, message.uint8Array());
   },
-  async close(peer, event) {
+  close(peer, event) {
     const wsPeer = peer as unknown as YjsRoutePeer;
-    (await getYjsGateway()).close(wsPeer._yjs, event);
+    if (wsPeer.context?.kind !== "authenticated") return;
+    wsPeer.context.gateway.close(wsPeer._yjs, event);
     delete wsPeer._yjs;
   },
-  async error(peer) {
+  error(peer) {
     const wsPeer = peer as unknown as YjsRoutePeer;
-    (await getYjsGateway()).error(wsPeer._yjs);
+    if (wsPeer.context?.kind !== "authenticated") return;
+    wsPeer.context.gateway.error(wsPeer._yjs);
     delete wsPeer._yjs;
   },
 });
