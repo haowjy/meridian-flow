@@ -151,14 +151,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         placeholder={resolvedPlaceholder}
         rows={1}
         // Force field-sizing: fixed so our JS auto-resize has full control.
-        // The upstream shadcn Textarea uses field-sizing-content; tailwind-merge
-        // v2.6.1 does not merge the two classes so both end up on the element.
+        // Inline style intentionally overrides the base Textarea's
+        // field-sizing-content class.
         style={{ fieldSizing: "fixed" }}
         className={cn(
           // No focus treatment of its own: the composer box (focus-within
           // border above) is the field — the inner textarea must not add a
           // second indicator.
-          "composer-input field-sizing-fixed resize-none border-0 bg-transparent px-1.5 py-1 outline-none",
+          "composer-input resize-none border-0 bg-transparent px-1.5 py-1 outline-none",
           "max-h-60 overflow-y-auto placeholder:text-muted-foreground",
           variant === "hero" ? "min-h-[52px]" : "min-h-[40px]",
         )}
