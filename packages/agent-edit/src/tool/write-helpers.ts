@@ -19,9 +19,10 @@ export function createAutoTurnIdNonce(): string {
   return `${instanceId}-${randomId}`;
 }
 
-export function parseFileAddress(
-  command: Pick<WriteCommand, "file" | "documentId">,
-): ({ ok: true } & DocumentAddress) | { ok: false; message: string } {
+export function parseFileAddress(command: {
+  file: string;
+  documentId?: string;
+}): ({ ok: true } & DocumentAddress) | { ok: false; message: string } {
   return parseDocumentAddress(command.file, command.documentId);
 }
 
