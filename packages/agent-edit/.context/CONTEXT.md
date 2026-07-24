@@ -253,9 +253,11 @@ spans. The adapter adds those replacements back-to-front to one ProseMirror
 `Transform` and projects each exact step inside one Yjs transaction. Unmatched
 gaps therefore keep their CRDT items; the semantic IR partitions the replacement
 window into fresh payload and `materialization: "retained"` preserved runs.
-Retained runs need no continuation facts because the original roots remain
-visible, so the write façade does not send them to the inserted-prose
-materializer. Single-match output retains the existing `text` shape. Formatted
+No run in such an IR needs a continuation/restoration fact — retained gaps
+keep their original roots visible, and the fresh payloads are agent-born by
+normal insertion attribution — so the write façade skips provenance
+materialization for the whole `textRanges` IR rather than filtering runs.
+Single-match output retains the existing `text` shape. Formatted
 and cross-block finds keep the serialized-markdown reconciliation path.
 
 ### 3-tier apply (`src/apply/tiers.ts`)
