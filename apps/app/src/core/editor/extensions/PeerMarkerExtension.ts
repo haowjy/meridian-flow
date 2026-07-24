@@ -110,6 +110,11 @@ function pureDeletionPosition(state: EditorState, rangeStart: number, offset: nu
   return Math.min(resolved, blockEnd);
 }
 
+function textRangeStart(state: EditorState, position: number): number {
+  const $position = state.doc.resolve(position);
+  return $position.nodeAfter?.isTextblock ? position + 1 : position;
+}
+
 function buildMarkerDecorations(
   store: SessionMarkerStore,
   state: EditorState,
@@ -125,10 +130,15 @@ function buildMarkerDecorations(
       marker.kind === "modify" && marker.pureDeletionOffset !== null && position.type === "range";
     if (position.type === "range" && position.to > position.from && !pureDeletion) {
       decorations.push(
-        Decoration.inline(position.from, position.to, {
-          class: "meridian-peer-mark--range",
-          ...interactiveAttributes(marker, emphasizedId, markerAgentName),
-        }),
+        Decoration.inline(
+          position.from,
+          position.to,
+          {
+            class: "meridian-peer-mark--range",
+            ...interactiveAttributes(marker, emphasizedId, markerAgentName),
+          },
+          { changeId: marker.changeId },
+        ),
       );
       continue;
     }
@@ -162,6 +172,7 @@ function buildMarkerDecorations(
           // ProseMirror reuses keyed widget DOM. Include emphasis state so an
           // addressed tick/seam is rebuilt with its emphasis attribute.
           key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}`,
+          changeId: marker.changeId,
         },
       ),
     );
@@ -188,6 +199,10 @@ export function markersClearedByWriterTransaction(
   tr: Transaction,
   oldState: EditorState,
   markers: readonly SessionMarker[],
+  priorPositions: ReadonlyMap<
+    string,
+    { type: "range"; from: number; to: number } | { type: "boundary"; pos: number }
+  > = new Map(),
 ): string[] {
   if (
     !tr.docChanged ||
@@ -201,37 +216,48 @@ export function markersClearedByWriterTransaction(
   const cleared: string[] = [];
   for (const marker of markers) {
     if (marker.dismissed) continue;
-    const markerPosition = resolvedMarkerPosition(marker, oldState);
+    // Yjs has already advanced its shared document by the time ProseMirror
+    // applies a local typing transaction. Relative positions at an insertion
+    // boundary therefore describe the after-state. Prefer the decoration
+    // coordinates captured from the plugin's actual before-state.
+    const markerPosition =
+      priorPositions.get(marker.changeId) ?? resolvedMarkerPosition(marker, oldState);
     if (!markerPosition) continue;
+    const overlapPosition =
+      markerPosition.type === "range"
+        ? { ...markerPosition, from: textRangeStart(oldState, markerPosition.from) }
+        : markerPosition;
     const resolved =
       marker.kind === "modify" &&
       marker.pureDeletionOffset !== null &&
-      markerPosition.type === "range"
+      overlapPosition.type === "range"
         ? {
             type: "boundary" as const,
-            pos: pureDeletionPosition(oldState, markerPosition.from, marker.pureDeletionOffset),
+            pos: pureDeletionPosition(oldState, overlapPosition.from, marker.pureDeletionOffset),
           }
-        : markerPosition;
-    let from = resolved.type === "range" ? resolved.from : resolved.pos;
-    let to = resolved.type === "range" ? resolved.to : resolved.pos;
+        : overlapPosition;
+    const from = resolved.type === "range" ? resolved.from : resolved.pos;
+    const to = resolved.type === "range" ? resolved.to : resolved.pos;
     let clear = false;
-    for (const map of tr.mapping.maps) {
+    for (const [mapIndex, map] of tr.mapping.maps.entries()) {
+      const backToBefore = tr.mapping.slice(0, mapIndex).invert();
       map.forEach((oldStart, oldEnd, newStart, newEnd) => {
         if (clear) return;
+        const beforeStart = backToBefore.map(oldStart, -1);
+        const beforeEnd = backToBefore.map(oldEnd, 1);
         const insertion = oldStart === oldEnd && newEnd > newStart;
         const deletion = oldEnd > oldStart;
         if (resolved.type === "range") {
           clear =
-            (deletion && oldStart < to && oldEnd > from) ||
-            (insertion && oldStart > from && oldStart < to);
+            (deletion && beforeStart < to && beforeEnd > from) ||
+            (insertion && beforeStart > from && beforeStart < to);
         } else {
           clear =
-            (insertion && oldStart === from) || (deletion && oldStart <= from && oldEnd >= from);
+            (insertion && beforeStart === from) ||
+            (deletion && beforeStart <= from && beforeEnd >= from);
         }
       });
       if (clear) break;
-      from = map.map(from, -1);
-      to = map.map(to, 1);
     }
     if (clear) cleared.push(marker.changeId);
   }
@@ -307,10 +333,25 @@ export const PeerMarkerExtension = Extension.create<{
             emphasizedId: null,
           }),
           apply(tr, previous, oldState, newState) {
+            const priorPositions = new Map<
+              string,
+              { type: "range"; from: number; to: number } | { type: "boundary"; pos: number }
+            >();
+            for (const decoration of previous.decorations.find()) {
+              const changeId = decoration.spec.changeId as string | undefined;
+              if (!changeId) continue;
+              priorPositions.set(
+                changeId,
+                decoration.from === decoration.to
+                  ? { type: "boundary", pos: decoration.from }
+                  : { type: "range", from: decoration.from, to: decoration.to },
+              );
+            }
             const pendingClearIds = markersClearedByWriterTransaction(
               tr,
               oldState,
               store.getSnapshot(),
+              priorPositions,
             );
             const rebuild =
               tr.getMeta(REBUILD_META) === true ||
@@ -321,7 +362,7 @@ export const PeerMarkerExtension = Extension.create<{
               emphasizedMeta === undefined ? previous.emphasizedId : emphasizedMeta;
             return {
               decorations:
-                rebuild || emphasizedMeta !== undefined
+                rebuild || tr.docChanged || emphasizedMeta !== undefined
                   ? buildMarkerDecorations(store, newState, emphasizedId, markerAgentName)
                   : previous.decorations.map(tr.mapping, tr.doc),
               pendingClearIds,

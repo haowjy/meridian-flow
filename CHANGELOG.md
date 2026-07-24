@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- AI change marks now keep the writer's caret when opened, survive typing at
+  range edges, suppress the applying writer's own Draft changes, and render
+  whole-paragraph and single-splice deletions at their actual seams.
 - `write(command: "diff")` now reports thread-shared effects for a turn's
   documents even when no turn-owned trail shell exists.
 - Same-identity prose rewrites and structurally associated whole-block

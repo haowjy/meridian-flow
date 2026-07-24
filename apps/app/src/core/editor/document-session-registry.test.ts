@@ -1,5 +1,6 @@
 /** Regression coverage for replacing pre-materialization authorization failures. */
 
+import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
@@ -33,6 +34,39 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 const { DocumentSessionRegistry } = await import("./document-session-registry");
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
+  it("wires authenticated self-suppression into a session created before auth settles", () => {
+    const registry = new DocumentSessionRegistry();
+    const session = registry.getDetached("document-before-auth");
+    registry.setOwnUserId("writer-1");
+    session.markerStore.replaceGroup({
+      type: "change_event",
+      documentId: "document-before-auth",
+      threadId: "thread-1",
+      trailId: "trail-1",
+      projectionRevision: 1,
+      author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+      changes: [
+        {
+          changeId: "change-1",
+          admittedByUserId: "writer-1",
+          kind: "delete",
+          navigation: {
+            kind: "deletion_boundary",
+            position: "invalid-but-lazily-decoded",
+            affinity: "before_next",
+          },
+          swept: false,
+          excerpt: null,
+          pureDeletionOffset: null,
+        },
+      ],
+      truncated: false,
+    } satisfies ChangeEventWsMessage);
+
+    expect(session.markerStore.getSnapshot()).toHaveLength(0);
+    registry.destroyAll();
+  });
+
   it("keeps a detached room and its Y.Doc intact until explicit attachment", async () => {
     providers.length = 0;
     const registry = new DocumentSessionRegistry();

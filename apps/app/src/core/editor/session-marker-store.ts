@@ -74,9 +74,14 @@ export class SessionMarkerStore {
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    private readonly ownUserId: string | null,
+    private ownUserId: string | null,
     private readonly now: () => number = Date.now,
   ) {}
+
+  setOwnUserId(userId: string): void {
+    if (this.ownUserId === userId) return;
+    this.ownUserId = userId;
+  }
 
   getSnapshot = (): SessionMarkerSnapshot => this.markers;
 
