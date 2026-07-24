@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: request UUIDs now share one canonical hyphenated wire grammar,
+  normalize uppercase IDs, accept every UUID version/variant, and reject malformed
+  HTTP/WS IDs before Postgres can turn them into `22P02` 500s (#357).
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

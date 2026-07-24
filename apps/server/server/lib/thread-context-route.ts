@@ -7,6 +7,7 @@ import {
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp } from "./context-error-http.js";
+import { requireRequestId } from "./request-id.js";
 
 export interface ThreadContextRouteDeps {
   contextPorts: UnifiedContextPortFactory;
@@ -19,9 +20,10 @@ export async function resolveThreadContextPort(
   threadId: ThreadId,
   userId: UserId,
 ) {
+  const parsedThreadId = requireRequestId(threadId, "threadId") as ThreadId;
   const resolution = await resolveThreadContext(
     { threads: deps.threads, threadWorks: deps.threadWorks },
-    threadId,
+    parsedThreadId,
   );
   if (!resolution || resolution.thread.userId !== userId) {
     throw createError({ statusCode: 404, message: "Thread not found" });

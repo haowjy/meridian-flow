@@ -3,6 +3,8 @@
  * extracts Work authority for work-scoped schemes, and produces canonical form.
  * Owns the single source of truth for well-formed context URIs.
  */
+
+import { parseRequestId } from "../../../lib/uuid.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextError, ContextScheme } from "../ports/context-port.js";
 
@@ -14,8 +16,6 @@ const UNIFIED_SCHEMES: readonly ContextScheme[] = [
   "uploads",
 ];
 const AUTHORITY_SCHEMES: ReadonlySet<ContextScheme> = new Set(["scratch", "uploads"]);
-const UUID_AUTHORITY_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Full UUID *shape* (8-4-4-4-12 alphanumeric groups) regardless of hex/version
 // validity — used to tell a typo'd Work id from a legitimate short folder name.
 const UUID_SHAPE_PATTERN = /^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$/i;
@@ -24,7 +24,7 @@ function looksLikeMalformedWorkAuthority(segment: string): boolean {
   // Reject only segments that have the full UUID shape but fail strict UUID
   // validation (a real mistyped Work id). Legitimate short folder names like
   // "dead-beef" or "2024-assets" are not UUID-shaped and parse as path segments.
-  return UUID_SHAPE_PATTERN.test(segment) && !UUID_AUTHORITY_PATTERN.test(segment);
+  return UUID_SHAPE_PATTERN.test(segment) && !parseRequestId(segment);
 }
 
 export interface ParsedContextUri {
@@ -70,7 +70,8 @@ function parseAuthorityPrefix(
   }
 
   const [firstSegment = "", ...remainingSegments] = rawPath.split("/");
-  if (!UUID_AUTHORITY_PATTERN.test(firstSegment)) {
+  const authority = parseRequestId(firstSegment);
+  if (!authority) {
     if (
       AUTHORITY_SCHEMES.has(scheme) &&
       remainingSegments.length > 0 &&
@@ -93,7 +94,7 @@ function parseAuthorityPrefix(
     });
   }
 
-  return Ok({ authority: firstSegment, rawPath: remainingSegments.join("/") });
+  return Ok({ authority, rawPath: remainingSegments.join("/") });
 }
 
 /**

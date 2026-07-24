@@ -9,10 +9,11 @@ import {
 } from "nitro/h3";
 import { StaleConnectionTokenError } from "../../../../domains/runtime/loop/turn-runner.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
+import { requireRequestId } from "../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event): Promise<SendMessageResponse> => {
   const { app, user } = await requireAppUser(event);
-  const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
+  const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const body = (await readBody<SendMessageRequest>(event)) ?? { text: "" };
   if (typeof body.text !== "string" || body.text.length === 0) {
     throw createError({ statusCode: 400, message: "text is required" });

@@ -2,6 +2,7 @@
 import { type CreateThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { parseOptionalRequestId } from "../../../../../lib/request-id.js";
 import {
   AgentBindingNotFoundError,
   createThreadForProject,
@@ -28,7 +29,7 @@ export default defineEventHandler(async (event) => {
       {
         projectId,
         userId,
-        id: body.id,
+        id: parseOptionalRequestId(body.id, "id"),
         title: body.title ?? null,
         systemPrompt: body.systemPrompt ?? null,
         currentAgent: body.currentAgent ?? null,

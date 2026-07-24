@@ -12,6 +12,7 @@ import {
   filetypeForPath,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import { isUuid } from "../../../../lib/uuid.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BranchPeerShadowAccess,
@@ -63,7 +64,6 @@ export interface ContextFSDeps {
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
 const UNTITLED_ALLOCATION_ATTEMPTS = 32;
 
@@ -377,7 +377,7 @@ export class ContextFS implements ContextSchemeAdapter {
       AdapterFault
     >
   > {
-    if (!UUID_PATTERN.test(options.documentId)) {
+    if (!isUuid(options.documentId)) {
       return Err({ code: "invalid_operation", message: "documentId must be a UUID" });
     }
 
