@@ -75,7 +75,11 @@ export function isMainCheckout(repoRoot: string): boolean {
 export function loadMainEnvFile(repoRoot: string): Record<string, string> {
   const envPath = path.join(resolveMainCheckoutRoot(repoRoot), ".env");
   if (!existsSync(envPath)) return {};
-  return parseEnv(readFileSync(envPath, "utf8"));
+  return Object.fromEntries(
+    Object.entries(parseEnv(readFileSync(envPath, "utf8"))).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
 }
 
 function databaseNameFromUrl(databaseUrl: string): string {
