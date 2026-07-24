@@ -1,11 +1,10 @@
 /** Anchored detail and recovery surface for one session peer mark. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { TrailChangeV1 } from "@meridian/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
-import { applyTrailForwardAction, readChangeTrail } from "@/client/change-trails";
+import { changeTrailDetailKey, readChangeTrail } from "@/client/change-trails";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -13,9 +12,11 @@ import { changeMarkLabel } from "@/core/editor/change-mark-labels";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
-import { trailChangeForwardAction, trailChangeLabel } from "@/features/chat/ChangeViewRows";
+import {
+  trailChangeLabel,
+  useTrailForwardAction,
+} from "@/features/change-trail/trail-change-recovery";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
-import { changeTrailDetailKey } from "@/features/chat/useAuthorizedChangeTrailDetail";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
 
@@ -28,22 +29,16 @@ export type PeerMarkPopoverTarget = {
 
 export function PeerMarkPopover({
   target,
-  markerStore,
   onOpenChange,
 }: {
   target: PeerMarkPopoverTarget | null;
-  markerStore: { remove(changeId: string): void };
   onOpenChange: (open: boolean) => void;
 }) {
   const marker = target?.marker ?? null;
   const agentAuthor = marker?.author.kind === "agent" ? marker.author : null;
   const queryClient = useQueryClient();
-  const [actionState, setActionState] = useState<"idle" | "pending" | "applied" | "failed">("idle");
   const detail = useQuery({
-    queryKey: [
-      ...changeTrailDetailKey(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
-      "peer-mark",
-    ],
+    queryKey: changeTrailDetailKey(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
     queryFn: () => readChangeTrail(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
     enabled: Boolean(marker && agentAuthor),
     staleTime: 0,
@@ -65,6 +60,12 @@ export function PeerMarkPopover({
         ?.changes?.find((candidate) => candidate.changeId === marker?.changeId) ?? null,
     [detail.data, marker],
   );
+  const recovery = useTrailForwardAction({
+    threadId: agentAuthor?.threadId ?? "",
+    trailId: marker?.group.trailId ?? "",
+    documentId: marker?.group.documentId ?? "",
+    change,
+  });
   const requestSnippet = useMemo(
     () => originatingRequestSnippet(snapshot.data?.turns ?? [], agentAuthor?.turnId ?? null),
     [agentAuthor?.turnId, snapshot.data?.turns],
@@ -101,37 +102,7 @@ export function PeerMarkPopover({
     marker.author.kind === "agent"
       ? displayThreadTitle(snapshot.data?.thread.title)
       : t`Collaborator`;
-  const action = change ? trailChangeForwardAction(change) : "restore";
-  const durableAction = change?.forwardActions?.[action];
-  const canRecover = Boolean(change && (change.writerProtection || change.swept || durableAction));
-  const applied = actionState === "applied" || durableAction?.status === "applied";
-  const removedText = change ? removedTextFor(change) : marker.excerpt;
-
-  async function forward(): Promise<void> {
-    if (!change || !agentAuthor || actionState === "pending" || actionState === "applied") {
-      return;
-    }
-    setActionState("pending");
-    try {
-      const result = await applyTrailForwardAction({
-        threadId: agentAuthor.threadId,
-        trailId: currentMarker.group.trailId,
-        changeId: currentMarker.changeId,
-        action,
-      });
-      if (result.status !== "applied" && result.status !== "already_applied") {
-        setActionState("failed");
-        return;
-      }
-      setActionState("applied");
-      markerStore.remove(currentMarker.changeId);
-      await queryClient.invalidateQueries({
-        queryKey: ["change-trail-detail", agentAuthor.threadId, currentMarker.group.trailId],
-      });
-    } catch {
-      setActionState("failed");
-    }
-  }
+  const removedText = change ? recovery.body : marker.excerpt;
 
   function openConversation(): void {
     if (!agentAuthor) return;
@@ -216,14 +187,26 @@ export function PeerMarkPopover({
 
         {agentAuthor ? (
           <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
-            {canRecover && !applied ? (
-              <Button size="sm" disabled={actionState === "pending"} onClick={() => void forward()}>
-                {action === "delete-again" ? <Trans>Delete again</Trans> : <Trans>Restore</Trans>}
+            {recovery.canRecover && !recovery.applied ? (
+              <Button
+                size="sm"
+                disabled={recovery.isPending}
+                onClick={() => void recovery.execute()}
+              >
+                {recovery.action === "delete-again" ? (
+                  <Trans>Delete again</Trans>
+                ) : (
+                  <Trans>Restore</Trans>
+                )}
               </Button>
             ) : null}
-            {applied ? (
+            {recovery.applied ? (
               <span className="text-jade-text">
-                {action === "delete-again" ? <Trans>Deleted again</Trans> : <Trans>Restored</Trans>}
+                {recovery.action === "delete-again" ? (
+                  <Trans>Deleted again</Trans>
+                ) : (
+                  <Trans>Restored</Trans>
+                )}
               </span>
             ) : null}
             <Button size="sm" variant="quiet" onClick={openConversation}>
@@ -231,7 +214,7 @@ export function PeerMarkPopover({
             </Button>
           </div>
         ) : null}
-        {actionState === "failed" ? (
+        {recovery.failed ? (
           <p className="text-destructive">
             <Trans>Couldn't apply that recovery action. Try again.</Trans>
           </p>
@@ -247,21 +230,6 @@ function RemovedText({ text }: { text: string }) {
       <p className="whitespace-pre-wrap text-ink-muted line-through">{text}</p>
     </div>
   );
-}
-
-function removedTextFor(change: TrailChangeV1): string | null {
-  const protection = change.writerProtection ?? change.swept;
-  if (protection) {
-    const body = "body" in protection ? protection.body : protection.removed;
-    if (body.status === "available") return body.markdown;
-  }
-  return bodyFromHashline(change.beforeText);
-}
-
-function bodyFromHashline(serialized: string | null): string | null {
-  if (serialized === null) return null;
-  const separator = serialized.indexOf("|");
-  return separator < 0 ? serialized : serialized.slice(separator + 1);
 }
 
 function markerLabel(marker: SessionMarker): string {

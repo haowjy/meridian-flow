@@ -25,6 +25,8 @@ export type ChangeTrailDocument = ChangeTrailDocumentDetailV1;
 export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPending: boolean };
 
 export const emptyTrailShellState = (): TrailShellState => ({ byId: {}, gapPending: false });
+export const changeTrailDetailKey = (threadId: string, trailId: string) =>
+  ["change-trail-detail", threadId, trailId] as const;
 
 export type TrailShellTransition = {
   kind: "updated" | "settled";
@@ -111,4 +113,11 @@ export async function applyTrailForwardAction(input: {
     `/api/threads/${input.threadId}/change-trails/${input.trailId}/changes/${input.changeId}/${input.action}`,
     {},
   );
+}
+
+/** Decode the display body carried by the trail's hashline serialization. */
+export function bodyFromTrailHashline(serialized: string | null): string | null {
+  if (serialized === null) return null;
+  const separator = serialized.indexOf("|");
+  return separator < 0 ? serialized : serialized.slice(separator + 1);
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TrailChange } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -9,6 +9,13 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn(async () => {}) }),
+  };
+});
 
 const { ChangeViewRows } = await import("./ChangeViewRows");
 const SWEEP_ROW_TEXT = "Replaced a passage, including edits the agent hadn't seen yet.";
@@ -137,6 +144,38 @@ async function click(label: string): Promise<void> {
 }
 
 describe("ChangeViewRows", () => {
+  it("converges to refreshed durable forward-action status while the row stays mounted", async () => {
+    const initial = protectedChange("sweep");
+    let publishApplied: (() => void) | null = null;
+
+    function Harness() {
+      const [change, setChange] = useState(initial);
+      publishApplied = () =>
+        setChange({
+          ...initial,
+          forwardActions: { restore: { status: "applied", updateId: 42 } },
+        });
+      return (
+        <ChangeViewRows
+          threadId="thread-1"
+          trailId="trail-1"
+          documentId="document-1"
+          changes={[change]}
+          navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+        />
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      expect(document.body.textContent).toContain("Restore");
+      await act(async () => publishApplied?.());
+      expect(document.body.textContent).toContain("Restored");
+      expect(
+        [...document.querySelectorAll("button")].some((item) => item.textContent === "Restore"),
+      ).toBe(false);
+    });
+  });
+
   it("offers Restore for the durable G8 capture-failed row with retained canonical identity", async () => {
     await withReactRoot(
       <ChangeViewRows
