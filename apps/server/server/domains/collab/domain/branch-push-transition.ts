@@ -219,9 +219,8 @@ export function createBranchPushTransition(input: {
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
   ): {
-    trail: PendingLiveSettlement["trail"];
+    refinement: import("./branch-push-executor.js").SettlementTrailRefinement;
     swept?: PushSweptTrail;
-    refineToEmpty?: boolean;
   } | null {
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
     const afterDoc = createCollabYDoc({ gc: false });
@@ -296,8 +295,34 @@ export function createBranchPushTransition(input: {
         }
       }
 
+      if (pending.trail.changes.length === 0) {
+        return {
+          refinement: {
+            kind: "empty_contribution",
+            trail: pending.trail,
+          },
+        };
+      }
       if (eligibleByRendering.size === 0) {
-        return { trail: pending.trail, refineToEmpty: true };
+        if (
+          pending.trail.changes.every(
+            (change) => change.owner === null && change.writerProtection?.kind !== "resurrection",
+          )
+        ) {
+          return {
+            refinement: {
+              kind: "empty_contribution",
+              trail: pending.trail,
+            },
+          };
+        }
+        return {
+          refinement: {
+            kind: "refine_classifications",
+            trail: pending.trail,
+            classifications: [],
+          },
+        };
       }
       const affected = before.filter((block) => {
         return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
@@ -360,9 +385,10 @@ export function createBranchPushTransition(input: {
         reversible: false,
       };
       return {
-        trail: {
-          ...pending.trail,
-          changes: lateChanges,
+        refinement: {
+          kind: "refine_classifications",
+          trail: pending.trail,
+          classifications: lateChanges,
         },
         swept,
       };
@@ -399,8 +425,7 @@ export function createBranchPushTransition(input: {
         const settled = input.pushStore.settlePushTrail
           ? await input.pushStore.settlePushTrail({
               push: pending.push,
-              ...(cut ? { trail: cut.trail } : {}),
-              ...(cut?.refineToEmpty ? { refineToEmpty: true } : {}),
+              ...(cut ? { refinement: cut.refinement } : {}),
               claim: pending.claim,
               joinVersion: pending.joinVersion,
             })

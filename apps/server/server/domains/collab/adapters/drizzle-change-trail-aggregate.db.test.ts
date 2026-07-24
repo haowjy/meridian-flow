@@ -132,8 +132,11 @@ describe("change trail aggregate projections (postgres)", () => {
     const empty = await firstWriter.record({
       trails: [trail([])],
       documentTitles: titles,
-      refineCurrentVersion: true,
-      replacePushId: pushId,
+      settlementRefinement: {
+        pushId,
+        kind: "empty_contribution",
+        currentVersion: true,
+      },
     });
     expect(empty).toMatchObject([{ documentId: ALPHA_ID, projectionRevision: 2, changes: [] }]);
     expect(
@@ -147,14 +150,20 @@ describe("change trail aggregate projections (postgres)", () => {
     const restored = await restartedWriter.record({
       trails: [trail([{ ...initial, afterTextAtReceipt: "restored|after restart" }])],
       documentTitles: titles,
-      refineCurrentVersion: true,
-      replacePushId: pushId,
+      settlementRefinement: {
+        pushId,
+        kind: "refine_classifications",
+        currentVersion: true,
+      },
     });
     const updated = await restartedWriter.record({
       trails: [trail([{ ...initial, afterTextAtReceipt: "updated|fourth projection" }])],
       documentTitles: titles,
-      refineCurrentVersion: true,
-      replacePushId: pushId,
+      settlementRefinement: {
+        pushId,
+        kind: "refine_classifications",
+        currentVersion: true,
+      },
     });
 
     expect(

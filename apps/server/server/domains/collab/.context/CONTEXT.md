@@ -234,10 +234,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   classifier alone grants per-response credit by requiring both causal-cut
   inclusion and exact rendering coverage.
   Swept trail details retain the normalized final-pre-push target ranges and exact
-  final-pre-push body. Settlement refines a complete provisional push trail in its
-  existing aggregate version; only journal or staged-push authority joined after
-  the durable commit publishes another trail version. A complete empty
-  classification removes that push's provisional changes in the same version.
+  final-pre-push body. Settlement carries a typed refinement outcome: final
+  destructive classifications demote provisional sweep metadata while retaining
+  ordinary edit history; a genuinely empty contribution explicitly replaces that
+  push with an empty set. Same joined authority refines the existing aggregate
+  version; only journal or staged-push authority joined after the durable commit
+  publishes another trail version.
 - **Settlement verification stack**: the shared killed-process oracle in
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
   Fixtures run a warm control, stop an identical subject at the durable commit

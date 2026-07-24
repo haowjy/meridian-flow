@@ -94,10 +94,12 @@ export type ChangeTrailPersistence = {
   record(input: {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
-    /** Refines the current push's provisional trail without publishing a second version. */
-    refineCurrentVersion?: boolean;
-    /** Replaces this push's prior aggregate contribution with the supplied classification. */
-    replacePushId?: string;
+    settlementRefinement?: {
+      pushId: string;
+      kind: "refine_classifications" | "empty_contribution";
+      /** Same joined authority refines in place; later authority publishes a new version. */
+      currentVersion: boolean;
+    };
   }): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
 };

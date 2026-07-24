@@ -4,11 +4,12 @@
 
 - `write(command: "diff")` now reports thread-shared effects for a turn's
   documents even when no turn-owned trail shell exists.
-- Structurally associated whole-block replacements now project as one durable
-  modification with the removed body available to Restore and the replacement
-  block as its live highlight target.
-- Empty settlement refinements now clear the push's committed change-event
-  replace-set while preserving its monotonic projection revision.
+- Same-identity prose rewrites and structurally associated whole-block
+  replacements now project as one durable modification anchored to the surviving
+  or replacement block.
+- Settlement refinement now distinguishes final sweep classification from a
+  genuinely empty contribution, retaining ordinary edits while preserving empty
+  replace-set revision continuity.
 - Change-event attribution now follows durable trail ownership and each folded
   change's admitting push; self-admitted changes are suppressed without
   weakening replace-set revision ordering.
