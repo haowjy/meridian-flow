@@ -124,6 +124,8 @@ function editOutput(edit: ResolvedEdit): string {
     case "text":
     case "insert":
       return edit.newText;
+    case "textRanges":
+      return edit.output;
     case "block":
       return edit.replacement.textContent;
     case "delete":

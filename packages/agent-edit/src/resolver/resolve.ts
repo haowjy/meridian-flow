@@ -314,10 +314,6 @@ function lowerPlainTextFindMatches(
   command: WriteCommandName,
 ): ResolvedEdit[] | null {
   if (!isPlainTextContent(ctx, params.content)) return null;
-  // Collapse every match within a block into one reverse-spliced edit. Emitting
-  // one edit per match carried resolve-time absolute spans that drift once an
-  // earlier unequal-length replacement shifts the block, so later edits landed
-  // mid-word (#126). Grouping is per block because spans are block-local.
   const byBlock = new Map<BlockRef, TextFindMatch[]>();
   for (const match of matches) {
     if (match.elements.length !== 1) return null;
@@ -329,34 +325,54 @@ function lowerPlainTextFindMatches(
   }
   const edits: ResolvedEdit[] = [];
   for (const [element, blockMatches] of byBlock) {
-    const anchor = blockMatches[0];
-    const last = blockMatches.at(-1);
-    if (!anchor || !last) continue;
+    const replacements = blockMatches.map((match) => ({
+      span: {
+        start: command === "insert" ? match.matchEnd : match.matchStart,
+        end: match.matchEnd,
+      },
+      newText: params.content,
+    }));
+    const first = replacements[0];
+    if (!first) continue;
+    if (replacements.length === 1) {
+      edits.push({
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
+        kind: "text",
+        block: element,
+        span: first.span,
+        newText: first.newText,
+        semanticLowering: "prosemirror",
+      });
+      continue;
+    }
     const blockText = ctx.model.getText(element);
-    // Splice all of a block's matches into one edit whose span covers just the
-    // window from the first op position to the last match end. For a single
-    // match this reduces to the exact per-match span/newText the resolver
-    // emitted before; the reverse splice is what makes multi-match drift-free.
-    const windowStart = command === "insert" ? anchor.matchEnd : anchor.matchStart;
-    const windowEnd = last.matchEnd;
-    const newText = spliceFindMatches(
-      blockText.slice(windowStart, windowEnd),
-      blockMatches,
-      anchor.rangeStart + windowStart,
-      params.content,
-      command,
-    );
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
-      kind: "text",
+      kind: "textRanges",
       block: element,
-      span: { start: windowStart, end: windowEnd },
-      newText,
-      semanticLowering: "prosemirror",
+      replacements,
+      output: replacementWindowOutput(blockText, replacements),
     });
   }
   return edits;
+}
+
+function replacementWindowOutput(
+  source: string,
+  replacements: readonly { span: { start: number; end: number }; newText: string }[],
+): string {
+  const first = replacements[0];
+  if (!first) return "";
+  let sourceCursor = first.span.start;
+  let output = "";
+  for (const replacement of replacements) {
+    output += source.slice(sourceCursor, replacement.span.start);
+    output += replacement.newText;
+    sourceCursor = replacement.span.end;
+  }
+  return output;
 }
 
 function isPlainTextContent(ctx: ConcreteResolveContext, content: string): boolean {
@@ -557,6 +573,13 @@ function semanticIrForResolvedEdits(
           },
         ];
       }
+    } else if (edit.kind === "textRanges") {
+      const lineage = ctx.model.getVisibleContentLineage(edit.block);
+      scope.push(...lineage);
+      for (const replacement of edit.replacements) {
+        deleted.push(...sliceLineage(lineage, replacement.span.start, replacement.span.end));
+      }
+      outputRuns = semanticRunsForTextRanges(lineage, edit);
     } else if (edit.kind === "insert") {
       if (edit.newText.length > 0) {
         outputRuns = [
@@ -600,6 +623,37 @@ function semanticIrForResolvedEdits(
       : { kind: "mappedEdits", edits: mappedEdits },
     deleted: normalizedDeleted,
   };
+}
+
+function semanticRunsForTextRanges(
+  lineage: readonly LineageRange[],
+  edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
+): SemanticOutputRun[] {
+  const first = edit.replacements[0];
+  if (!first) return [];
+  const runs: SemanticOutputRun[] = [];
+  let sourceCursor = first.span.start;
+  let outputCursor = 0;
+  for (const replacement of edit.replacements) {
+    for (const source of sliceLineage(lineage, sourceCursor, replacement.span.start)) {
+      runs.push({
+        kind: "preserved",
+        source,
+        output: { from: outputCursor, to: outputCursor + source.length },
+      });
+      outputCursor += source.length;
+    }
+    if (replacement.newText.length > 0) {
+      runs.push({
+        kind: "fresh",
+        payload: replacement.newText,
+        output: { from: outputCursor, to: outputCursor + replacement.newText.length },
+      });
+      outputCursor += replacement.newText.length;
+    }
+    sourceCursor = replacement.span.end;
+  }
+  return runs;
 }
 
 function sameLineageRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {
