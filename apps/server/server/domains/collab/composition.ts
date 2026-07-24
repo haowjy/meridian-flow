@@ -2014,7 +2014,11 @@ export function createThreadPeerAgentEditCore(input: {
           ? await reversalCoreFor(documentId, context.threadId)
           : threadCore);
       const useLiveReversal = selectedCore === input.liveUtilityCore;
-      trackResponse(context.threadId, context.responseId, selectedCore);
+      // Live reversals commit immediately. They must not claim the response:
+      // a later forward write in the same response still belongs in Draft.
+      if (owner || !useLiveReversal || !isReversalWriteCommand(command)) {
+        trackResponse(context.threadId, context.responseId, selectedCore);
+      }
       if (!context.responseId && pulled && !useLiveReversal) {
         await threadCore.invalidateThread(documentId as DocumentId, context.threadId as ThreadId);
       }
