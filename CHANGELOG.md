@@ -2,64 +2,34 @@
 
 ## [Unreleased]
 
-- Authenticated editor sessions now use the canonical internal Meridian user id,
-  so a writer's own manually applied Draft changes stay self-suppressed while
-  remaining visible to peers.
-- AI change marks now keep the writer's caret when opened, survive typing at
-  range edges, suppress the applying writer's own Draft changes, and render
-  whole-paragraph and single-splice deletions at their actual seams.
-- `write(command: "diff")` now reports thread-shared effects for a turn's
-  documents even when no turn-owned trail shell exists.
-- Same-identity prose rewrites and structurally associated whole-block
-  replacements now project as one durable modification anchored to the surviving
-  or replacement block.
-- Settlement refinement now distinguishes final sweep classification from a
-  genuinely empty contribution, retaining ordinary edits while preserving empty
-  replace-set revision continuity.
-- Change-event attribution now follows durable trail ownership and each folded
-  change's admitting push; self-admitted changes are suppressed without
-  weakening replace-set revision ordering.
-- `apps/app`: bound peer-marker expiry, dismissal eviction, and revision
-  tombstones; Restore no longer acquires or prolongs a document session.
-- `write(command: "diff")` now distinguishes provisional missing trails from
-  settled empty trails and preserves the command name in malformed responses.
-- Change-event broadcasts now identify pure in-block deletions and their splice
-  offsets so editor marks can render at the exact deletion site.
-- `apps/app`: render AI insert/replacement highlights (replacement popovers
-  carry the removed text), deletion ticks, and whole-block deletion seams with
-  stable collaboration colors and agent identity.
-- `apps/app`: peer marks open trail-backed detail with the originating request
-  and recovery action; Open conversation reveals and emphasizes the owning turn
-  row or the thread-level shared Changes row.
-- `@meridian/contracts`: reject out-of-range Yjs identities, oversized live
-  change excerpts, and cross-thread agent authorship on stateless change events;
-  server encoding now validates the same schema as client parsing.
-- `apps/server`: remove dead checkpoint/push sweep notice producers and the
-  document fan-out queue; model-context notices are now thread-scoped and
-  checkpoint restore cannot fail after committing because of notice validation
-  (#336).
-- Broadcast committed, post-fold AI change projections to connected live document
-  rooms after fenced branch-push apply, with durable replace-set revisions.
-- `apps/app`: add ephemeral live-session AI change markers with typed stateless
-  transport delivery, replace-set and bounded retry semantics, local-writer
-  self-clear, and a headless ProseMirror decoration projection.
-- Add `write(command: "diff")` for turn-scoped, folded change-trail self-inspection.
-- `apps/app`: pure-generative AI writes no longer produce repetitive trail
-  detail rows; mixed turns show only writer-touching rows, with peer-edit
-  recovery copy. Draft threads now carry a quiet persistent mode indicator.
-- `@meridian/contracts`, `apps/server`, `apps/app`: single-source the complete
-  change-trail wire model and parsers, and add the validated Yjs `change_event`
-  stateless contract for session change marks.
-- `apps/app`, `apps/server`, `@meridian/contracts`: delete the dead, lossy
-  writer safety-notice transport and session state; model-context notices remain
-  durable while Trail/Restore is the writer-facing report (part of #333).
-- `packages/agent-edit`, `apps/server`: the model-facing write contract now
+B- `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
+- `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
+- `apps/server`: gateway calls now emit correlated open, first-output, retry,
+  and close lifecycle events with queryable terminal error codes;
+  development/test processes can opt into metadata-only chunk events with
+  UTF-8 byte counts through `OBS_VERBOSE=gateway.chunks`.
+- `apps/server`: local JSONL diagnostics now bound pending writes to 5,000
+  events, drop oldest under filesystem backpressure, and report loss through
+  `observability.sink.dropped`.
+- `apps/server`: observability events now receive stable IDs at emit time for
+  use as incremental debug-feed cursors.
+- `apps/server`: observability now provides a sanitized 5,000-record recent
+  events ring, filtered query/subscription port, and multi-sink tee adapter.
+- `apps/server`: authenticated development/test servers now expose filtered
+  recent events at `/api/debug/events` and a live SSE feed at
+  `/api/debug/events/stream`; production and disabled providers return 404.
+  The dev DebugOverlay can toggle that server feed into its existing Streams
+  trace ring, filters, and exports.
+- Server debugging guidance now distinguishes authoritative stdout from the
+  best-effort bounded JSONL mirror and documents query, SSE, and `jq` workflows.
+- `apps/server`: interrupted tool calls no longer poison later model retries;
+  rebuilt histories carry an explicit unknown-outcome error result without
+  re-executing the tool.
 - `apps/server`: fresh-project documents are now initialized exactly once in
   canonical Yjs storage, interrupted bootstrap seeding repairs on later entry,
-  warm collaboration rooms reconcile with the seed, and AI causal-cut capture
-  initializes missing authority heads without requiring an editor open (#317).
+  and warm collaboration rooms reconcile with the seed (#317).
 - `apps/app`: universal document identity bar — every open document shows a
   quiet breadcrumb (`Scratch › Untitled 4`) at the top of its canvas, sized to
   match the suggestion dropdown, with a permanent chip whose label graduates
@@ -95,7 +65,7 @@
 - `apps/server`: live writer sync admission now uses Hocuspocus's single decoded
   `beforeSync` payload, a mutation-aware exact containment cache with a
   state-vector novelty fast path, and a narrow reusable writer-ingress
-  capability instead of rebuilding a full document-authority facade per frame.
+  capability instead of rebuilding a full document-mutation-policy facade per frame.
 - `apps/server`: repeated project-manifest reads no longer append identical Yjs
   updates, stopping unbounded manifest history growth and eventual worker OOMs.
 - `apps/app`, `apps/server`: cross-device working-set sync — reopening

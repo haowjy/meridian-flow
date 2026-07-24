@@ -216,7 +216,7 @@ describe("write reversal under concurrent edits", () => {
     ).resolves.toMatchObject({ status: "success", isError: false });
   });
 
-  it("applies explicit user undo without observation provenance and restores agent content on redo", async () => {
+  it("applies explicit user undo and restores agent content on redo", async () => {
     const notifications: Array<{
       direction: "undo" | "redo";
       sweptContent: boolean;
@@ -313,7 +313,7 @@ describe("write reversal under concurrent edits", () => {
     expect(notifications).toEqual([{ sweptContent: false, beforeContentRef: null }]);
   });
 
-  it("allows an agent undo across another agent's edit", async () => {
+  it("reports an unjournaled peer edit conservatively during undo", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent block." },
@@ -339,7 +339,7 @@ describe("write reversal under concurrent edits", () => {
       { ...context, interactionContext: { mode: "live" } },
     );
 
-    expect(undo.status).toBe("reversed");
+    expect(undo.status).toBe("reconciled");
     expect(scenario.blockTexts()).toEqual(["Base."]);
   });
 

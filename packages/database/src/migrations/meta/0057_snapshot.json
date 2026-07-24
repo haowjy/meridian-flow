@@ -1,5 +1,5 @@
 {
-  "id": "071682e1-b5fd-4e62-bac6-0c9807e84815",
+  "id": "dcaf276b-d59a-435a-abee-71bb7c35432c",
   "prevId": "f3dc0d48-12aa-4d22-9dc0-3b8018fb8a6e",
   "version": "7",
   "dialect": "postgresql",
@@ -865,258 +865,6 @@
           "columnsFrom": ["turn_id"],
           "columnsTo": ["id"],
           "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.model_response_causal_cuts": {
-      "name": "model_response_causal_cuts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "response_id": {
-          "name": "response_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authority_id": {
-          "name": "authority_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "1"
-        },
-        "admitted_through": {
-          "name": "admitted_through",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "model_response_causal_cuts_document_idx": {
-          "name": "model_response_causal_cuts_document_idx",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "model_response_causal_cuts_response_id_model_response_observation_snapshots_response_id_fk": {
-          "name": "model_response_causal_cuts_response_id_model_response_observation_snapshots_response_id_fk",
-          "tableFrom": "model_response_causal_cuts",
-          "tableTo": "model_response_observation_snapshots",
-          "columnsFrom": ["response_id"],
-          "columnsTo": ["response_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "model_response_causal_cuts_document_id_documents_id_fk": {
-          "name": "model_response_causal_cuts_document_id_documents_id_fk",
-          "tableFrom": "model_response_causal_cuts",
-          "tableTo": "documents",
-          "columnsFrom": ["document_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "model_response_causal_cuts_response_document_unique": {
-          "name": "model_response_causal_cuts_response_document_unique",
-          "nullsNotDistinct": false,
-          "columns": ["response_id", "document_id"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "model_response_causal_cuts_generation_positive": {
-          "name": "model_response_causal_cuts_generation_positive",
-          "value": "\"model_response_causal_cuts\".\"generation\" > 0"
-        },
-        "model_response_causal_cuts_admitted_through_nonnegative": {
-          "name": "model_response_causal_cuts_admitted_through_nonnegative",
-          "value": "\"model_response_causal_cuts\".\"admitted_through\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.model_response_observation_entries": {
-      "name": "model_response_observation_entries",
-      "schema": "",
-      "columns": {
-        "response_id": {
-          "name": "response_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "clock": {
-          "name": "clock",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_digest": {
-          "name": "content_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "captured_deleted_body": {
-          "name": "captured_deleted_body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "model_response_observation_entries_document_idx": {
-          "name": "model_response_observation_entries_document_idx",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "model_response_observation_entries_response_id_model_response_observation_snapshots_response_id_fk": {
-          "name": "model_response_observation_entries_response_id_model_response_observation_snapshots_response_id_fk",
-          "tableFrom": "model_response_observation_entries",
-          "tableTo": "model_response_observation_snapshots",
-          "columnsFrom": ["response_id"],
-          "columnsTo": ["response_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "model_response_observation_entries_document_id_documents_id_fk": {
-          "name": "model_response_observation_entries_document_id_documents_id_fk",
-          "tableFrom": "model_response_observation_entries",
-          "tableTo": "documents",
-          "columnsFrom": ["document_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "model_response_observation_entries_pk": {
-          "name": "model_response_observation_entries_pk",
-          "columns": ["response_id", "document_id", "client_id", "clock"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "model_response_observation_entries_client_id_nonneg": {
-          "name": "model_response_observation_entries_client_id_nonneg",
-          "value": "\"model_response_observation_entries\".\"client_id\" >= 0"
-        },
-        "model_response_observation_entries_clock_nonneg": {
-          "name": "model_response_observation_entries_clock_nonneg",
-          "value": "\"model_response_observation_entries\".\"clock\" >= 0"
-        },
-        "model_response_observation_entries_value_valid": {
-          "name": "model_response_observation_entries_value_valid",
-          "value": "(\"model_response_observation_entries\".\"kind\" = 'rendered' AND \"model_response_observation_entries\".\"content_digest\" IS NOT NULL AND \"model_response_observation_entries\".\"captured_deleted_body\" IS NULL) OR (\"model_response_observation_entries\".\"kind\" = 'explicit_deletion' AND \"model_response_observation_entries\".\"content_digest\" IS NULL AND \"model_response_observation_entries\".\"captured_deleted_body\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.model_response_observation_snapshots": {
-      "name": "model_response_observation_snapshots",
-      "schema": "",
-      "columns": {
-        "response_id": {
-          "name": "response_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "model_response_observation_snapshots_response_id_model_responses_id_fk": {
-          "name": "model_response_observation_snapshots_response_id_model_responses_id_fk",
-          "tableFrom": "model_response_observation_snapshots",
-          "tableTo": "model_responses",
-          "columnsFrom": ["response_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -4875,12 +4623,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "lineage_evidence": {
-          "name": "lineage_evidence",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
         "trail_seed": {
           "name": "trail_seed",
           "type": "jsonb",
@@ -6788,6 +6530,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "writer_document_id": {
+          "name": "writer_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "message": {
           "name": "message",
           "type": "text",
@@ -6800,6 +6548,20 @@
           "primaryKey": false,
           "notNull": true
         },
+        "writer_visible": {
+          "name": "writer_visible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "writer_consumed": {
+          "name": "writer_consumed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6808,8 +6570,40 @@
           "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "pending_notices_writer": {
+          "name": "pending_notices_writer",
+          "columns": [
+            {
+              "expression": "writer_document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "writer_consumed",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_notices_writer_document_id_documents_id_fk": {
+          "name": "pending_notices_writer_document_id_documents_id_fk",
+          "tableFrom": "pending_notices",
+          "tableTo": "documents",
+          "columnsFrom": ["writer_document_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

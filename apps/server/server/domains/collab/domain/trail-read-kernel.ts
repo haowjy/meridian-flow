@@ -187,6 +187,7 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
     grouped.set(key, group);
   };
   for (const push of pushes) {
+    const hasOwnedChange = push.changes.some((change) => change.owner !== null);
     const distinctOwners = new Map(
       push.journalOwners.flatMap((owner) =>
         owner ? [[`${owner.threadId}:${owner.turnId}`, owner] as const] : [],
@@ -209,6 +210,8 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
         );
       } else if (change.owner) {
         append({ kind: "turn", ...change.owner }, change);
+      } else if (!hasOwnedChange) {
+        append({ kind: "shared", threadId: push.threadId, turnId: null }, change);
       }
     }
   }

@@ -22,6 +22,7 @@ streaming `Gateway` port.
 | OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
 | Cancel settlement | `Gateway.settleCancelledResult()` owns interrupted-call reconciliation and persist decisions. Generic token/missing-usage handling lives in `gateway/domain/cancel-settlement.ts`; OpenRouter-specific `/generation` settlement lives under `gateway/adapters/openrouter/`. The loop only asks the gateway to settle and then finalizes cancellation. |
 | Tool-arg JSON repair | `gateway/helpers/parse-tool-arguments.ts` repairs malformed provider JSON (e.g. unquoted hex hash `"in": 6c4a`) via `jsonrepair` before falling back to a typed `ToolArgsParseError` sentinel. Unrepairable input surfaces a clear model-actionable parse error instead of degrading into misleading downstream schema errors. See issue [#113](https://github.com/haowjy/meridian-flow/issues/113). |
+| Instrumentation | `instrumented-gateway.ts` decorates the `Gateway` port once in `createProductionAppPorts` (`lib/compose.ts`), emitting `gateway`-source lifecycle events (`stream.open`/`first_output`/`retry`/`close`; per-chunk only under `OBS_VERBOSE=gateway.chunks`, dev/test-only) keyed by `correlation.gatewayCallId`. A `Gateway` constructed outside that seam bypasses instrumentation — intentional for tests, wrong for production consumers. Verbosity is resolved from the injected environment at that seam (`resolveObsVerbose({ rawNodeEnv, obsVerbose })` in `lib/compose.ts`), not a module-level `process.env` read — tests inject `OBS_VERBOSE`; a module-level const would bypass them. |
 
 Canonical gateway types live in `gateway/domain/types.ts`.
 
@@ -117,6 +118,10 @@ facet.
 - **Tool execution** — parallel by default; registrations marked
   `sequential: true` run serially after parallel tools complete. Timeout and
   abort races are handled by the executor.
+- **Provider-history completeness** — canonical history projection preserves
+  persisted `tool_use` intent and synthesizes transient error results for calls
+  missing results in the immediately following tool-role group. Repairs are
+  never persisted and never rerun tools.
 - **Safety notices** — before every provider stream, `runTurn` drains the single
   notice port for the thread and its active documents, then injects notices as a
   transient system message. Notices never enter the turn graph. Undo/redo uses
@@ -129,16 +134,13 @@ facet.
   left by a pre-commit process failure is rejected before a later turn assembles
   model context. Cancellation paths roll the response buffer back before
   finalizing the turn as cancelled.
-- **Observation snapshots are request-derived** — tool results persist canonical
-  block identity plus the exact rendered source they exposed. Final context
-  assembly derives the response candidate only from unpruned serialized tool
-  results; omitted/pruned evidence earns no credit after restart or in-process.
-  Agent response commits are report-only: ordinary Yjs merge always commits;
-  destructive effects are echoed to the model and writer-lineage sweeps are
-  recorded for the trail and Restore.
+- **Response write settlement is report-only** — ordinary Yjs merge always
+  commits. Destructive effects are echoed to the model and writer-lineage
+  sweeps are recorded for the trail and Restore.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.
+- **Gateway terminal outcome needs causal evidence.** The instrumented `stream.close` `outcome` is `ok`/`error`/`cancelled`. A failure becomes `cancelled` only with causal abort evidence: the thrown error is `signal.reason` or an `AbortError`. Message text alone (`"Aborted"`, `"Request aborted"`) is **not** evidence — a provider failing independently after an abort stays `error`, and `sleep`/cancel paths reject with `signal.reason` (or a synthesized `AbortError`) so their failures carry identity. A thrown error's string `.code` populates both the `stream.close` payload `errorCode` and `correlation.errorCode`.
 
 ## Cross-domain dependencies
 
@@ -148,8 +150,8 @@ facet.
   authorization.
 - **Depends on `domains/billing` and `@meridian/contracts/spawn`** — credit ledger
   and tree budgets.
-- **Depends on `domains/collab`** — `DocumentAuthorityHeads` port for
-  `freezeCausalCuts` (idempotent ensure + bulk read of authority heads).
+- **Depends on `domains/collab` at composition** — active-document resolution
+  and response-scoped write settlement are supplied through runtime ports.
 - **Consumed by `lib/` routes** — WS/HTTP handlers call
   `turnRunner.startTurn` / `turnRunner.cancel`; composition wires adapters.
 - **No direct dependency on `domains/context`** — context-using tools receive

@@ -273,22 +273,6 @@ describe("runtime store", () => {
       lifecycle: restartedLifecycle,
       codec,
       model,
-      observationSnapshots: {
-        async seal() {},
-        async load(responseId) {
-          return {
-            responseId,
-            entries: [
-              {
-                documentId: "chapter.md",
-                clientID: 0,
-                clock: 0,
-                value: { kind: "rendered", digest: "unobserved" },
-              },
-            ],
-          };
-        },
-      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
     expect(
@@ -330,22 +314,6 @@ describe("runtime store", () => {
       lifecycle: restartedLifecycle,
       codec,
       model,
-      observationSnapshots: {
-        async seal() {},
-        async load(responseId) {
-          return {
-            responseId,
-            entries: [
-              {
-                documentId: "chapter.md",
-                clientID: 0,
-                clock: 0,
-                value: { kind: "rendered", digest: "unobserved" },
-              },
-            ],
-          };
-        },
-      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
     await secondRestart.write({ command: "read", file: "chapter.md" }, context);
@@ -375,22 +343,6 @@ describe("runtime store", () => {
       lifecycle: initial.lifecycle,
       codec,
       model,
-      observationSnapshots: {
-        async seal() {},
-        async load(responseId) {
-          return {
-            responseId,
-            entries: [
-              {
-                documentId: "chapter.md",
-                clientID: 0,
-                clock: 0,
-                value: { kind: "rendered", digest: "unobserved" },
-              },
-            ],
-          };
-        },
-      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
     const coreB = createAgentEditCore({
@@ -399,22 +351,6 @@ describe("runtime store", () => {
       lifecycle: initial.lifecycle,
       codec,
       model,
-      observationSnapshots: {
-        async seal() {},
-        async load(responseId) {
-          return {
-            responseId,
-            entries: [
-              {
-                documentId: "chapter.md",
-                clientID: 0,
-                clock: 0,
-                value: { kind: "rendered", digest: "unobserved" },
-              },
-            ],
-          };
-        },
-      },
       undoClientId: REVERSAL_CLIENT_ID,
     });
 

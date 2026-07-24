@@ -54,12 +54,18 @@ the viewer and agent API share one primary filter. Yjs closes map standard WebSo
 unknown codes remain numeric-only. Thread and Yjs closes retain `socketEpoch`,
 numeric `code`, and `wasClean`.
 
+## Server event feed
+
+The overlay's local **Server feed** toggle opens the same-origin
+`/api/debug/events/stream` SSE endpoint and appends each valid `EventRecord`
+into the shared trace ring. Native `EventSource` owns reconnection; the overlay
+only exposes its current connection state and closes it when disabled or
+unmounted. Server records already identify `observedAt: "server"`, so the
+viewer, filters, automation boundary, and exports need no server-specific path.
+
 ## Scope and deferred work
 
-Server-side collab operations still emit zero success-path structured events —
-the server half (S4: correlation receipts, SSE feed, and durability columns) is
-[#239](https://github.com/haowjy/meridian-flow/issues/239) in cluster
-[#235](https://github.com/haowjy/meridian-flow/issues/235). The current viewer
-is the client wire core, not the final multi-source surface: S6 adds the LLM
-calls lens only after S4's feed and S5's gateway events exist. Burst grouping
-is intentionally deferred beside the S4 viewer merge; see [FUTURE](FUTURE).
+Server-side collab operations still emit zero success-path structured events;
+the feed only exposes records that server domains emit. Burst grouping is
+intentionally deferred; see [FUTURE](FUTURE). Gateway call projection stays in
+the sibling [LLM Calls viewer](llm-calls.md), not in the trace ring.

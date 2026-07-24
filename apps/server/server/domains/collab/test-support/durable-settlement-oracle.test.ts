@@ -14,10 +14,6 @@ const output = (completionState: unknown = { state: "completed", revision: 3n })
       { documentId: "b", clientID: 2, clock: 4 },
       { documentId: "a", clientID: 9, clock: 1 },
     ],
-    causalMembership: [
-      { evidenceId: "response-b", included: [{ clientID: 2, clock: 4, length: 1 }] },
-      { evidenceId: "response-a", included: [{ clientID: 1, clock: 3, length: 2 }] },
-    ],
     eligibleRanges: [
       { clientID: 4, clock: 8, length: 1 },
       { clientID: 1, clock: 2, length: 3 },
@@ -47,7 +43,6 @@ describe("settlementOracle", () => {
         return {
           ...cold,
           canonicalIdentities: [...cold.canonicalIdentities].reverse(),
-          causalMembership: [...cold.causalMembership].reverse(),
           eligibleRanges: [...cold.eligibleRanges].reverse(),
         };
       },

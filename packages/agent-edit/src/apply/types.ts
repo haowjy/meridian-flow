@@ -109,13 +109,7 @@ export interface ConcurrentEditRun {
   blocks: string[];
   /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
   tombstones: Array<{ hash: string; capturedBody: string }>;
-  /** Exact identity-bearing evidence credited only if this complete run reaches a request. */
-  observations: ConcurrentRunObservation[];
 }
-
-export type ConcurrentRunObservation =
-  | { kind: "rendered"; clientID: number; clock: number; renderedContent: string }
-  | { kind: "explicit_deletion"; clientID: number; clock: number; capturedBody: string };
 
 export type ApplyResult =
   | {

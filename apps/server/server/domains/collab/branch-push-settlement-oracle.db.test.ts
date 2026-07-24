@@ -604,147 +604,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Writer root.".length);
   });
 
-  it.each([
-    {
-      name: "writer admission",
-      responseId: "00000000-0000-4000-8000-000000000901",
-      mutation: "writer_remint" as const,
-    },
-    {
-      name: "agent carry",
-      responseId: "00000000-0000-4000-8000-000000000902",
-      mutation: "agent_carry" as const,
-    },
-    {
-      name: "agent restoration",
-      responseId: "00000000-0000-4000-8000-000000000903",
-      mutation: "agent_restoration" as const,
-    },
-  ])("item 9 $name after the causal cut receives no observation credit", async ({
-    name,
-    responseId,
-    mutation,
-  }) => {
-    const result = await runMatrixOracle(`post-observation-${name}`, (harness) =>
-      harness.seedObservedCertifiedDelete({
-        responseId,
-        initialMarkdown: "Equal rendering.",
-        observation: { cut: "head", coverage: "current" },
-        postObservationMarkdown: "Equal rendering.",
-        postObservationMutation: mutation,
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(["Equal rendering."]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Equal rendering.".length);
-  });
-
-  it("item 9 stale branch: its authority prefix cannot borrow the newer global sequence", async () => {
-    const result = await runMatrixOracle("stale-branch-prefix", (harness) =>
-      harness.seedObservedCertifiedDelete({
-        responseId: "00000000-0000-4000-8000-000000000909",
-        initialMarkdown: "Writer durable before request.",
-        observation: { cut: "stale_prefix", coverage: "current" },
-      }),
-    );
-    const [cut] = await db.select().from(schema.modelResponseCausalCuts);
-    const [head] = await db
-      .select({ admissionSequence: schema.documentYjsUpdates.admissionSequence })
-      .from(schema.documentYjsUpdates)
-      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      .orderBy(schema.documentYjsUpdates.admissionSequence);
-
-    expect(cut?.admittedThrough).toBe(0n);
-    expect(head?.admissionSequence).toBe(1n);
-    expect(result.cold.exactBodies).toEqual(["Writer durable before request."]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe(
-      "Writer durable before request.".length,
-    );
-  });
-
-  it.each([
-    {
-      name: "both conjuncts",
-      responseId: "00000000-0000-4000-8000-000000002701",
-      observation: { cut: "head" as const, coverage: "current" as const },
-      reports: false,
-    },
-    {
-      name: "coverage without inclusion",
-      responseId: "00000000-0000-4000-8000-000000002702",
-      observation: { cut: "empty" as const, coverage: "current" as const },
-      reports: true,
-    },
-    {
-      name: "inclusion without coverage",
-      responseId: "00000000-0000-4000-8000-000000002703",
-      observation: { cut: "head" as const, coverage: "none" as const },
-      reports: true,
-    },
-  ])("item 27 $name: equal rendering requires causal inclusion and coverage", async ({
-    name,
-    responseId,
-    observation,
-    reports,
-  }) => {
-    const result = await runMatrixOracle(`equal-rendering-${name}`, (harness) =>
-      harness.seedObservedCertifiedDelete({
-        responseId,
-        initialMarkdown: "Observed writer prose.",
-        observation,
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(reports ? ["Observed writer prose."] : []);
-  });
-
-  it.each([
-    {
-      name: "coverage without inclusion",
-      cut: "empty" as const,
-      coverage: "current" as const,
-      includedLengths: [0, 1],
-      responseId: "00000000-0000-4000-8000-000000001202",
-    },
-    {
-      name: "inclusion without coverage",
-      cut: "head" as const,
-      coverage: "none" as const,
-      includedLengths: [1, 1],
-      responseId: "00000000-0000-4000-8000-000000001203",
-    },
-  ])("item 12 $name: evidence items keep response-local credit and durable IDs", async ({
-    name,
-    cut,
-    coverage,
-    includedLengths,
-    responseId,
-  }) => {
-    const result = await runMatrixOracle(`per-response-conjunctive-${name}`, async (harness) => {
-      const branchId = await harness.seedObservedCertifiedDelete({
-        responseId: "00000000-0000-4000-8000-000000001201",
-        initialMarkdown: "Shared writer root.",
-        observation: { cut: "head", coverage: "current" },
-      });
-      await harness.duplicateActiveEvidence({
-        responseId,
-        cut,
-        coverage,
-      });
-      return branchId;
-    });
-
-    expect(result.cold.exactBodies).toEqual(["Shared writer root."]);
-    expect(result.cold.causalMembership).toHaveLength(2);
-    expect(result.cold.causalMembership.map(({ evidenceId }) => evidenceId)).toEqual([
-      expect.stringMatching(/^branch-journal:/),
-      expect.stringMatching(/^branch-journal:/),
-    ]);
-    expect(result.cold.causalMembership.map(({ included }) => included.length).sort()).toEqual(
-      includedLengths,
-    );
-  });
-
   it("item 7 true S9: a prior settled fresh replacement makes the later candidate silent", async () => {
     const result = await runMatrixOracle(
       "true-s9",
@@ -826,7 +685,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(warm.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
-              code: "authority_busy",
+              code: "authority_head_busy",
             });
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
           },
@@ -843,7 +702,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(coldHarness?.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
-              code: "authority_busy",
+              code: "authority_head_busy",
             });
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
             throw new Error("fault after journal commit and settlement staging");
@@ -1119,17 +978,6 @@ async function observeSettlement(
   const [outbox] = await db.select().from(schema.branchPushSettlementOutbox);
   const [push] = await db.select().from(schema.pushLineage);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
-  const evidence = outbox.lineageEvidence as {
-    items?: Array<{
-      evidenceId: string;
-      token: {
-        responseCausalCutId: string;
-        protectedRoots: Array<{ clientID: number; clock: number; length: number }>;
-      };
-    }>;
-  };
-  const cuts = await db.select().from(schema.modelResponseCausalCuts);
-  const cutsById = new Map(cuts.map((cut) => [cut.id, cut]));
   return {
     trailChanges: swept.map((change) => ({
       kind: change.kind,
@@ -1139,13 +987,6 @@ async function observeSettlement(
     })),
     exactBodies: swept.map((change) => change.writerProtection.body.markdown as string),
     canonicalIdentities: swept.map((change) => change.beforeBlockIdentity),
-    causalMembership: (evidence.items ?? []).map((item) => ({
-      evidenceId: item.evidenceId,
-      included:
-        (cutsById.get(item.token.responseCausalCutId)?.admittedThrough ?? 0n) > 0n
-          ? item.token.protectedRoots
-          : [],
-    })),
     eligibleRanges: swept.flatMap((change) => change.writerProtection.ranges),
     applyResult: {
       status: push.upstreamUpdateSeq === null ? "not_applied" : "applied",
@@ -1167,7 +1008,6 @@ function emptyOutput(state: string): SettlementOracleOutput {
     trailChanges: [],
     exactBodies: [],
     canonicalIdentities: [],
-    causalMembership: [],
     eligibleRanges: [],
     applyResult: "applied",
     completionState: state,

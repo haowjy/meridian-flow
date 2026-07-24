@@ -3,8 +3,9 @@ import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edi
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchJournalRow, PushReceiptPayload } from "./branch-push.js";
+import type { BranchJournalRow, PushReceiptPayload, PushSweptTrail } from "./branch-push.js";
 import { blockTextMap } from "./branch-push-plan.js";
+import type { PreparedPush } from "./branch-push-preparation.js";
 import type {
   ChangeTrailPersistence,
   CommittedChangeTrailProjection,
@@ -39,7 +40,6 @@ export function journalAttributionByChangedBlock(input: {
     insertedBlockIds: string[];
     ambiguous?: boolean;
   }>;
-  authoringResponseIdsByBlock: Map<string, string[]>;
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
@@ -51,7 +51,6 @@ export function journalAttributionByChangedBlock(input: {
     insertedIndex: number | null;
     journalRowIndex: number;
   }> = [];
-  const authoringResponseIdsByBlock = new Map<string, string[]>();
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     for (const [journalRowIndex, row] of input.rows.entries()) {
@@ -62,14 +61,12 @@ export function journalAttributionByChangedBlock(input: {
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
       const owner =
         row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      const affectedBlockIds: string[] = [];
       for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
         const prior = beforeByIdentity.get(identity);
         const next = afterByIdentity.get(identity);
         if (prior?.serialized === next?.serialized) continue;
         const blockId = next?.hash ?? prior?.hash;
         if (!blockId) continue;
-        affectedBlockIds.push(blockId);
         const owners = ownersByBlock.get(blockId) ?? [];
         if (
           !owners.some(
@@ -83,15 +80,6 @@ export function journalAttributionByChangedBlock(input: {
       }
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
-      const responseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
-        ?.authoringResponseId;
-      if (typeof responseId === "string") {
-        for (const blockId of affectedBlockIds) {
-          const ids = authoringResponseIdsByBlock.get(blockId) ?? [];
-          if (!ids.includes(responseId)) ids.push(responseId);
-          authoringResponseIdsByBlock.set(blockId, ids);
-        }
-      }
       if (deleted.length > 0 || inserted.length > 0) {
         journalOperations.push({
           removedBlockHashes: deleted.map((block) => block.hash),
@@ -131,7 +119,7 @@ export function journalAttributionByChangedBlock(input: {
       }
       operations.push(deletion as (typeof journalOperations)[number]);
     }
-    return { ownersByBlock, operations, authoringResponseIdsByBlock };
+    return { ownersByBlock, operations };
   } finally {
     scratch.destroy();
   }
@@ -396,4 +384,50 @@ export async function persistDurableTrailRecord(
       : {}),
   });
   return committed;
+}
+
+export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
+  const sweptChanges = prepared.trailChanges.filter((change) => change.swept !== null);
+  return {
+    affectedBlockHashes: prepared.blindConflictedBlocks,
+    capturedDeletedBodies: sweptChanges.map((change) => ({
+      hash: change.swept?.affectedBlockHash as string,
+      body:
+        change.swept?.removed.status === "available"
+          ? change.swept.removed.markdown
+          : "body_unavailable",
+    })),
+    beforeContentRef: prepared.beforeContentRef,
+    receiptId: prepared.prepared.receiptId as string,
+    locations: sweptChanges.map((change) => ({
+      changeId: change.changeId,
+      affectedBlockHash: change.swept?.affectedBlockHash as string,
+      outcome: change.kind === "modify" ? "modify" : "delete",
+      navigation: change.navigation,
+    })),
+    // Push-target reversal is not an exposed contract yet. Retaining a
+    // baseline alone must never be presented as an undo affordance.
+    reversible: false,
+  };
+}
+
+export function buildDurablePushTrail(input: {
+  prepared: PreparedPush;
+  documentTitle: string;
+  swept?: PushSweptTrail;
+}): DurableTrailRecord {
+  const journalOwners = input.prepared.prepared.journalRows.map((row) =>
+    row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,
+  );
+  const threadIds = new Set(
+    input.prepared.prepared.journalRows.flatMap((row) => (row.threadId ? [row.threadId] : [])),
+  );
+  return {
+    documentId: input.prepared.prepared.branch.documentId,
+    documentTitle: input.documentTitle,
+    receiptId: input.prepared.prepared.receiptId as string,
+    threadIds: [...threadIds],
+    journalOwners,
+    changes: input.prepared.trailChanges,
+  };
 }

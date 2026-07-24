@@ -6,7 +6,7 @@ import { emitEvent } from "../domains/observability";
 import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
 import {
-  getOrBindProcessEventSink,
+  getOrBindProcessObservability,
   installObservabilityShutdownHooks,
   registerProcessShutdownCallback,
 } from "../lib/observability";
@@ -14,7 +14,7 @@ import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
 import { drainYjsCollabPersistence, getYjsHocuspocus } from "../routes/ws/yjs";
 
-const eventSink = getOrBindProcessEventSink(createEventSinkFromEnv);
+const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 
 installApiProcessCrashPolicy({ eventSink });
 registerProcessShutdownCallback(async () => {

@@ -29,8 +29,9 @@ export {
   MODEL_REGISTRY,
 } from "./config/registry.js";
 export { consumeStream, GatewayStreamError } from "./consume-stream.js";
-export { createGateway } from "./create-gateway.js";
+export { createGateway, isPartialOutputEvent } from "./create-gateway.js";
 export * from "./domain/index.js";
 export { assistant, image, system, text, toolResult, user } from "./helpers/messages.js";
+export { createInstrumentedGateway } from "./instrumented-gateway.js";
 export type { Gateway } from "./ports/gateway.js";
 export type { ProviderAdapter } from "./ports/provider-adapter.js";

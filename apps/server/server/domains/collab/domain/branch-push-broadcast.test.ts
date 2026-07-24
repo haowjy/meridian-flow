@@ -123,8 +123,6 @@ function preparedPush(
       beforeContentRef: null,
       trail,
       provenanceView: [],
-      lineageEvidence: { version: 2, items: [] },
-      responseEvidence: [],
     }),
   };
 }

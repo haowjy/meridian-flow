@@ -7,7 +7,7 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
-import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { DocumentRenderer } from "./document-renderer.js";
@@ -89,34 +89,12 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    const selected = new Set(selection.blocks);
-    const observations = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec)
-      .filter((_, index) => selected.has(options.model.getBlocks(toDocHandle(runtime.doc))[index]))
-      .flatMap((block) =>
-        block.clientID !== undefined && block.clock !== undefined && block.renderedContent
-          ? [
-              {
-                kind: "rendered" as const,
-                clientID: block.clientID,
-                clock: block.clock,
-                renderedContent: block.renderedContent,
-                sourceText: block.serialized,
-              },
-            ]
-          : [],
-      );
     if (command.format === "outline") {
-      return {
-        ...readSuccess(
-          renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
-        ),
-        observations,
-      };
+      return readSuccess(
+        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+      );
     }
-    return {
-      ...readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks)),
-      observations,
-    };
+    return readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
   }
 
   async function create(
@@ -217,6 +195,7 @@ export function createWriteCommands(deps: {
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     let touchedHashes = new Set<string>();
     let deletedHashes = new Set<string>();
+    let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -231,6 +210,7 @@ export function createWriteCommands(deps: {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
       validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+      semanticEditIr = resolved.ir;
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
@@ -279,6 +259,7 @@ export function createWriteCommands(deps: {
           touchedHashes,
           deletedHashes,
           preOwnSnapshot: preWriteSnapshot,
+          ...(semanticEditIr ? { semanticEditIr } : {}),
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
         if (rejected) {
@@ -335,6 +316,7 @@ export function createWriteCommands(deps: {
               ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
+              ...(semanticEditIr ? { semanticEditIr } : {}),
               ...mutationMode(context.interactionContext),
             },
           },
@@ -620,7 +602,11 @@ export function createWriteCommands(deps: {
     context: WriteContext,
     commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string }> {
-    const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
+    const ordinal = await reversalStore.reserveWriteOrdinal(
+      docId,
+      session.threadId,
+      context.responseId ?? context.turnId,
+    );
     const durableId =
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??

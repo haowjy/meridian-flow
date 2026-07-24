@@ -19,8 +19,8 @@ function document(markdown: string): Y.Doc {
   return doc;
 }
 
-describe("checkpoint restore", () => {
-  it("uses authority snapshot replacement instead of merging checkpoint bytes", async () => {
+describe("checkpoint restore notices", () => {
+  it("uses authority-head snapshot replacement instead of merging checkpoint bytes", async () => {
     const liveDoc = document("new generation");
     const checkpointDoc = document("checkpoint generation");
     const mutate = vi.fn(async () => ({ generation: 2n }));
@@ -52,12 +52,12 @@ describe("checkpoint restore", () => {
       },
       latestUpdateSeq: async () => 1,
       markdownDocuments: { restoreFromYDoc },
-      authority: () => ({ mutate }) as never,
+      mutationPolicy: () => ({ mutate }) as never,
     });
 
     await expect(service.restore(DOC_ID, "checkpoint-1")).resolves.toEqual(Ok(undefined));
     expect(mutate).toHaveBeenCalledWith({
-      kind: "authoritySnapshotReplacement",
+      kind: "authorityHeadSnapshotReplacement",
       checkpointId: "checkpoint-1",
       replaceGeneration: true,
     });

@@ -6,9 +6,11 @@
  * Apply/Discard, review closure, and editor focus state on one
  * path so review surfaces cannot drift. Per-card Apply routes the closure-aware
  * `acceptDraft` mutation with `operationIds`; per-card Discard routes through
- * the same server-backed discard mutation with `operationIds`.
+ * the same server-backed discard mutation with `operationIds`. Apply revision
+ * acquisition and response interpretation live in `draft-apply-disposition`.
  */
 
+import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -22,6 +24,13 @@ import {
 } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
+import {
+  acquireDraftApplyRequest,
+  type DraftApplyPreview,
+  type DraftApplyRequest,
+  type DraftApplyScope,
+  dispositionForDraftApply,
+} from "./draft-apply-disposition";
 import type { DraftApplyRefusal } from "./draft-apply-refusal";
 import {
   acceptIsBlocked,
@@ -113,7 +122,7 @@ export type DraftReviewController = {
    * can drive the manuscript without holding the editor handle itself.
    */
   focusReviewOperation: (operationId: string) => void;
-  acceptOperation: (operationId: string, model: InlineReviewModel) => void;
+  acceptOperation: (operationId: string, model: InlineReviewModel) => Promise<void>;
   undoAcceptOperation: () => void;
   discardOperation: (operationId: string) => Promise<void>;
   accept: (documentId: string, draftId: string) => Promise<void>;
@@ -138,14 +147,8 @@ export function useDraftReviewController(
   const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  const displayedPreviewRef = useRef<{
-    identity: string;
-    documentId: string;
-    draftId: string;
-    operationIds: readonly string[];
-    draftRevisionToken: number;
-    branchId?: string;
-  } | null>(null);
+  const applyInFlightRef = useRef(false);
+  const displayedPreviewRef = useRef<(DraftApplyPreview & { identity: string }) | null>(null);
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
     null,
@@ -180,7 +183,11 @@ export function useDraftReviewController(
   // all AND every per-card verb, including Undo) disables on this, so the writer
   // can never stack two overlapping dispositions against the same draft.
   const isDisposing =
-    isPending || isOperationAccepting || isInlineDiscardPending || isOperationUndoing;
+    isPending ||
+    isOperationAccepting ||
+    acceptingOperationId !== null ||
+    isInlineDiscardPending ||
+    isOperationUndoing;
 
   useEffect(() => {
     if (inlineReview) return;
@@ -227,6 +234,40 @@ export function useDraftReviewController(
         });
     },
     [projectId, queryClient, workId],
+  );
+
+  const applyDisposition = useCallback(
+    (
+      scope: DraftApplyScope,
+      documentId: string,
+      draftId: string,
+      response: DraftAcceptResponse,
+    ) => {
+      const disposition = dispositionForDraftApply(scope, response);
+      if (disposition.refreshDraftId) {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+        });
+        loadInlineReviewRoom(documentId, disposition.refreshDraftId);
+      }
+      if (disposition.transition.kind === "operation") {
+        dispatch({
+          type: "operationAcceptSucceeded",
+          message: disposition.transition.message,
+        });
+      } else {
+        dispatch({
+          type: "applySucceeded",
+          documentId,
+          draftId,
+          response: disposition.transition.response,
+        });
+      }
+      if (disposition.materializedDocument) {
+        useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
+      }
+    },
+    [loadInlineReviewRoom, projectId, queryClient, workId],
   );
 
   const enterInlineReview = useCallback(
@@ -340,7 +381,7 @@ export function useDraftReviewController(
       // A second Apply while one is already in flight is ignored — it must NOT
       // dispatch a failure, which would clear the real `acceptingOperationId`
       // and make the busy card look idle mid-mutation.
-      if (operationAcceptMutation.isPending) return;
+      if (applyInFlightRef.current || operationAcceptMutation.isPending) return;
       const operation = model.operations.find((candidate) => candidate.operationId === operationId);
       if (!operation) {
         void queryClient.invalidateQueries({
@@ -357,29 +398,31 @@ export function useDraftReviewController(
         });
         return;
       }
+      applyInFlightRef.current = true;
       dispatch({ type: "operationAcceptStarted", operationId });
-      let revisionTokens: DraftPreviewRevisionTokens;
+      let request: DraftApplyRequest;
       try {
-        revisionTokens = await latestPreviewRevisionTokens(
-          queryClient,
-          projectId,
-          workId,
-          inline.documentId,
-          inline.draftId,
-        );
+        request = await acquireDraftApplyRequest({
+          scope: "operation",
+          draftId: inline.draftId,
+          operationId,
+          loadLatestPreview: () =>
+            latestPreviewRevisionTokens(
+              queryClient,
+              projectId,
+              workId,
+              inline.documentId,
+              inline.draftId,
+            ),
+        });
       } catch {
+        applyInFlightRef.current = false;
         dispatch({
           type: "operationAcceptFailed",
           message: { code: "apply-failed", tone: "error" },
         });
         return;
       }
-      const request = operationAcceptRequest({
-        draftId: inline.draftId,
-        branchId: revisionTokens.branchId,
-        draftRevisionToken: revisionTokens.draftRevisionToken,
-        operationId,
-      });
       operationAcceptMutation.mutate(
         {
           projectId,
@@ -390,45 +433,11 @@ export function useDraftReviewController(
         },
         {
           onSuccess(response) {
-            if (response.status === "partial_applied") {
-              dispatch({
-                type: "operationAcceptSucceeded",
-                message: { code: "change-applied", writeId: response.writeId },
-              });
-              useContextTabsStore
-                .getState()
-                .resolveDraftOnlyTab(projectId, inline.documentId, "committed");
-            } else if (response.status === "stale_draft") {
-              loadInlineReviewRoom(inline.documentId, response.draftId);
-              dispatch({
-                type: "operationAcceptSucceeded",
-                message: { code: "changes-moved-refreshed" },
-              });
-            } else if (response.status === "applied") {
-              dispatch({
-                type: "applySucceeded",
-                documentId: inline.documentId,
-                draftId: inline.draftId,
-                response,
-              });
-              // The last per-card Apply committed the whole draft: a NEW
-              // document now has its real tree entry, so its tab sheds the
-              // draft-only marker. Must run before the workDrafts refetch
-              // lands — draft-group absence alone can't distinguish accept
-              // from discard.
-              useContextTabsStore
-                .getState()
-                .resolveDraftOnlyTab(projectId, inline.documentId, "committed");
-            } else if (response.status === "concurrent_conflict") {
-              dispatch({
-                type: "applySucceeded",
-                documentId: inline.documentId,
-                draftId: inline.draftId,
-                response,
-              });
-            }
+            applyDisposition("operation", inline.documentId, inline.draftId, response);
+            applyInFlightRef.current = false;
           },
           onError() {
+            applyInFlightRef.current = false;
             dispatch({
               type: "operationAcceptFailed",
               message: { code: "apply-failed", tone: "error" },
@@ -437,7 +446,7 @@ export function useDraftReviewController(
         },
       );
     },
-    [operationAcceptMutation, queryClient, projectId, workId, threadId, loadInlineReviewRoom],
+    [operationAcceptMutation, queryClient, projectId, workId, threadId, applyDisposition],
   );
 
   // Reverse the most recent per-card Apply. The `writeId` rides on the
@@ -528,6 +537,7 @@ export function useDraftReviewController(
 
   const accept = useCallback(
     async (documentId: string, draftId: string) => {
+      if (applyInFlightRef.current) return;
       if (
         acceptIsBlocked({
           isPending,
@@ -547,6 +557,11 @@ export function useDraftReviewController(
       ) {
         return;
       }
+      applyInFlightRef.current = true;
+      const request = acquireDraftApplyRequest({
+        scope: "draft",
+        preview: displayedPreview,
+      });
       dispatch({ type: "applyStarted" });
       acceptMutation.mutate(
         {
@@ -554,27 +569,15 @@ export function useDraftReviewController(
           workId,
           threadId,
           documentId,
-          draftId,
-          branchId: displayedPreview.branchId,
-          draftRevisionToken: displayedPreview.draftRevisionToken,
-          operationIds: [...displayedPreview.operationIds],
+          ...request,
         },
         {
           onSuccess(response) {
-            if (response.status === "stale_draft") {
-              void queryClient.invalidateQueries({
-                queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-              });
-              loadInlineReviewRoom(documentId, response.draftId);
-            }
-            dispatch({ type: "applySucceeded", documentId, draftId, response });
-            if (response.status === "applied") {
-              // Accepted NEW document now exists in the tree — keep its tab,
-              // drop the draft-only marker (see resolveDraftOnlyTab).
-              useContextTabsStore
-                .getState()
-                .resolveDraftOnlyTab(projectId, documentId, "committed");
-            }
+            applyDisposition("draft", documentId, draftId, response);
+            applyInFlightRef.current = false;
+          },
+          onError() {
+            applyInFlightRef.current = false;
           },
         },
       );
@@ -584,11 +587,10 @@ export function useDraftReviewController(
       isPending,
       operationAcceptMutation,
       undoAcceptMutation,
-      queryClient,
       projectId,
       workId,
       threadId,
-      loadInlineReviewRoom,
+      applyDisposition,
     ],
   );
 
@@ -739,23 +741,4 @@ function clearPendingDiscardTimer(
 
 function discardTimerKey(draftId: string, operationId: string): string {
   return `${draftId}:${operationId}`;
-}
-
-function operationAcceptRequest(input: {
-  draftId: string;
-  branchId?: string;
-  draftRevisionToken: number;
-  operationId: string;
-}): {
-  draftId: string;
-  branchId?: string;
-  draftRevisionToken: number;
-  operationIds: string[];
-} {
-  return {
-    draftId: input.draftId,
-    ...(input.branchId ? { branchId: input.branchId } : {}),
-    draftRevisionToken: input.draftRevisionToken,
-    operationIds: [input.operationId],
-  };
 }

@@ -211,6 +211,13 @@ export interface GenerateRequest {
   reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
   providerOptions?: ProviderOptions;
   signal?: AbortSignal;
+  /** Observability-only context; adapters must never map it into provider requests. */
+  correlation?: {
+    threadId?: string;
+    turnId?: string;
+    iteration?: number;
+    agentSlug?: string;
+  };
 }
 
 /**

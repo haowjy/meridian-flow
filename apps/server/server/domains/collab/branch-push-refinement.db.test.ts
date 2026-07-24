@@ -62,7 +62,7 @@ describe("branch push settlement refinement (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("demotes an observed rewrite's provisional sweep without erasing the modification", async () => {
+  it("retains a same-identity rewrite's protection and modification projection", async () => {
     const harness = createHarness();
     const branchId = await harness.seedAndStageDestructive(
       "00000000-0000-4000-8000-000000000821",
@@ -70,7 +70,6 @@ describe("branch push settlement refinement (postgres)", () => {
       true,
       "Writer original.",
       0,
-      true,
       true,
       true,
     );
@@ -86,20 +85,20 @@ describe("branch push settlement refinement (postgres)", () => {
     const trails = await harness.trailRows();
     const changes = trails.details.flatMap((detail) => detail.changes as ProjectedChange[]);
     expect(trails.shells).toEqual([
-      expect.objectContaining({ changeCount: 1, sweptChangeCount: 0, documentCount: 1 }),
+      expect.objectContaining({ changeCount: 1, sweptChangeCount: 1, documentCount: 1 }),
     ]);
     expect(changes).toEqual([
       expect.objectContaining({
         kind: "modify",
-        swept: null,
+        swept: expect.any(Object),
         navigation: expect.objectContaining({ kind: "live_block_range" }),
       }),
     ]);
-    expect(changes[0]).not.toHaveProperty("writerProtection");
+    expect(changes[0]).toHaveProperty("writerProtection");
     expect(harness.changeEvents()).toEqual([
       expect.objectContaining({
         projectionRevision: 2,
-        changes: [expect.objectContaining({ kind: "modify", swept: false })],
+        changes: [expect.objectContaining({ kind: "modify", swept: true })],
       }),
     ]);
     await expect(harness.diff()).resolves.toMatchObject({ command: "diff", status: "success" });
@@ -115,7 +114,6 @@ describe("branch push settlement refinement (postgres)", () => {
       true,
       "Writer original.",
       0,
-      true,
       true,
       true,
     );
