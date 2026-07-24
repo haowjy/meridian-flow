@@ -58,6 +58,13 @@ pnpm dev
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
 
+**First browser load after `pnpm install`** in a fresh worktree can hit a
+stale-Vite-deps crash: Vite's pre-bundled dependency cache may hold a
+duplicate React copy, causing `useContext` to return `null` in layout
+components (e.g. `AuthenticatedLayout`). A hard reload (Ctrl+Shift+R) clears
+the stale bundle and resolves it. This is a Vite dep-optimization artifact,
+not an app bug.
+
 ## Local database
 
 Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docker-compose.yml`). App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.

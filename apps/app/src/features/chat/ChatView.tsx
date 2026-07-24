@@ -160,7 +160,6 @@ export function ChatView({
           <Composer
             ref={composerRef}
             variant="pinned"
-            placeholder={t`Reply to the agent, or steer the analysis…`}
             streaming={isStreaming}
             onSubmit={handleSubmit}
             onStop={handleStop}

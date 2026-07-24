@@ -109,6 +109,20 @@ function protectedChange(kind: "sweep" | "resurrection"): TrailChange {
   };
 }
 
+function plainInsert(ordinal: number): TrailChange {
+  return {
+    changeId: `plain-insert-${ordinal}`,
+    ordinal,
+    documentId: "document-1",
+    kind: "insert",
+    beforeText: null,
+    afterTextAtReceipt: "New text.",
+    navigation: { kind: "unavailable", reason: "test fixture" },
+    swept: null,
+    reversible: true,
+  };
+}
+
 function button(label: string): HTMLButtonElement {
   const found = [...document.querySelectorAll("button")].find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -125,6 +139,40 @@ async function click(label: string): Promise<void> {
 }
 
 describe("ChangeViewRows", () => {
+  it("hides the operation breakdown when every change is a plain insert", async () => {
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[plainInsert(0), plainInsert(1)]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+      />,
+      async () => {
+        expect(document.querySelector("[data-change-view-row]")).toBeNull();
+        expect(document.body.textContent).not.toContain("Inserted text");
+      },
+    );
+  });
+
+  it("keeps writer-protection rows when an insert carries safety evidence", async () => {
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[plainInsert(0), protectedChange("resurrection")]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain(
+          "↻ This edit brought back text you had deleted",
+        );
+        expect(document.body.textContent).toContain("Delete again");
+      },
+    );
+  });
+
   it("offers Restore for the durable G8 capture-failed row with retained canonical identity", async () => {
     await withReactRoot(
       <ChangeViewRows

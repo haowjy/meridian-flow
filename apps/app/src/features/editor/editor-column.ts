@@ -38,11 +38,12 @@ export const editorColumnFill = "flex min-h-full flex-1 flex-col";
  * ProseMirror node classes (TipTap `editorProps.attributes.class`).
  * The top inset depends on the toolbar: the docked row already provides the
  * breathing room, so the prose trims its own reserve. Chosen at editor
- * creation — hosts don't toggle the toolbar after mount.
+ * creation — hosts don't toggle the toolbar after mount. The bottom inset
+ * keeps the active line away from the viewport edge in long manuscripts.
  */
 export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
-    "prose-tokens min-h-full px-6 pb-6 md:px-10 md:pb-8",
+    "prose-tokens min-h-full px-6 pb-[50vh] md:px-10",
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );
 }
