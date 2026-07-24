@@ -6,16 +6,17 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
-import type {
-  BranchJournalRow,
-  BranchPushConflictEcho,
-  BranchPushExecutorInput,
-  BranchPushService,
-  PendingLiveSettlement,
-  PushLineageRow,
-  PushReceiptPayload,
-  PushSweptTrail,
-  PushToLiveResult,
+import {
+  type BranchJournalRow,
+  BranchPushCommitConflictError,
+  type BranchPushConflictEcho,
+  type BranchPushExecutorInput,
+  type BranchPushService,
+  type PendingLiveSettlement,
+  type PushLineageRow,
+  type PushReceiptPayload,
+  type PushSweptTrail,
+  type PushToLiveResult,
 } from "./branch-push-contracts.js";
 import {
   assertNoPendingIntegration,
@@ -717,13 +718,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       return { status: "rollback_pending", rowsMarked };
     },
   };
-}
-
-export class BranchPushCommitConflictError extends Error {
-  constructor(readonly branchId: string) {
-    super(`Branch ${branchId} changed before its push could commit`);
-    this.name = "BranchPushCommitConflictError";
-  }
 }
 
 class NoActiveRowsExistingPush extends Error {
