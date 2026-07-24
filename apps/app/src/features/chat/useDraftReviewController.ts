@@ -83,6 +83,7 @@ export type DraftReviewController = {
   isOperationAccepting: boolean;
   /** True while a per-card Apply's Undo is in flight. */
   isOperationUndoing: boolean;
+  canAcceptReviewedDraft: boolean;
   /**
    * The global disposition lock: any accept/discard in flight in the session.
    * Every mutating control disables on it so dispositions can't overlap.
@@ -203,6 +204,12 @@ export function useDraftReviewController(
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isAccepting || isRejecting;
   const isDisposing = disposition.phase !== "idle";
+  const displayedPreview = displayedPreviewRef.current;
+  const canAcceptReviewedDraft =
+    inlineReview !== null &&
+    displayedPreview?.documentId === inlineReview.documentId &&
+    displayedPreview.draftId === inlineReview.draftId &&
+    displayedPreview.operationIds.length > 0;
   const pendingInlineDiscardIds = useCallback(
     (draftId: string | null | undefined): ReadonlySet<string> =>
       activeDisposition?.kind === "discard-operation" && activeDisposition.draftId === draftId
@@ -348,6 +355,9 @@ export function useDraftReviewController(
     applySettled: ({ documentId, draftId }, outcome) => {
       applyDisposition(documentId, draftId, outcome);
     },
+    draftFailed: (selection, code) => {
+      dispatch({ type: "draftCommandFailed", selection, code });
+    },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "rejectSucceeded", draftId });
       useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
@@ -356,6 +366,7 @@ export function useDraftReviewController(
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
+      displayedPreviewRef.current = null;
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },
@@ -550,6 +561,7 @@ export function useDraftReviewController(
       isInlineDiscardPending,
       isOperationAccepting,
       isOperationUndoing,
+      canAcceptReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
       acceptingOperationId,
@@ -588,6 +600,7 @@ export function useDraftReviewController(
       isInlineDiscardPending,
       isOperationAccepting,
       isOperationUndoing,
+      canAcceptReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
       acceptingOperationId,

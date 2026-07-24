@@ -19,6 +19,12 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
   const busy = controller.isDisposing;
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
+  const commandError =
+    controller.inlineReviewMessage?.tone === "error" &&
+    (controller.inlineReviewMessage.code === "apply-failed" ||
+      controller.inlineReviewMessage.code === "discard-offline")
+      ? controller.inlineReviewMessage.code
+      : null;
 
   return (
     <section
@@ -43,6 +49,15 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
           {staleMessage}
         </p>
       ) : null}
+      {commandError ? (
+        <p className="text-destructive text-xs" role="alert">
+          {commandError === "apply-failed" ? (
+            <Trans>Couldn't apply. Check your connection and try again.</Trans>
+          ) : (
+            <Trans>Couldn't discard. Check your connection and try again.</Trans>
+          )}
+        </p>
+      ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
@@ -55,7 +70,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         <button
           type="button"
           onClick={() => controller.accept(documentId, draftId)}
-          disabled={busy}
+          disabled={busy || !controller.canAcceptReviewedDraft}
           className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
         >
           {controller.isAccepting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}

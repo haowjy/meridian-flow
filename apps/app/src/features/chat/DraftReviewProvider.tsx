@@ -57,6 +57,24 @@ export function DraftReviewProvider({
   threadId = null,
   children,
 }: DraftReviewProviderProps) {
+  return (
+    <DraftReviewScope
+      key={`${projectId ?? ""}\0${workId ?? ""}`}
+      projectId={projectId}
+      workId={workId}
+      threadId={threadId}
+    >
+      {children}
+    </DraftReviewScope>
+  );
+}
+
+function DraftReviewScope({
+  projectId,
+  workId,
+  threadId = null,
+  children,
+}: DraftReviewProviderProps) {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";

@@ -138,6 +138,7 @@ function commandPorts(): DraftReviewCommandPorts {
     batchStarted: vi.fn(),
     batchSettled: vi.fn(),
     applySettled: vi.fn(),
+    draftFailed: vi.fn(),
     draftDiscarded: vi.fn(),
   };
 }
