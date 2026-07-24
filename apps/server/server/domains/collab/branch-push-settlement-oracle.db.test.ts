@@ -685,7 +685,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(warm.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
-              code: "authority_busy",
+              code: "authority_head_busy",
             });
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
           },
@@ -702,7 +702,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(coldHarness?.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
-              code: "authority_busy",
+              code: "authority_head_busy",
             });
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
             throw new Error("fault after journal commit and settlement staging");
