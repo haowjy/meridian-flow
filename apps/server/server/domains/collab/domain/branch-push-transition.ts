@@ -14,6 +14,7 @@ import {
   type VisibleProseOccurrence,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
+import type { ChangeEventProjection, ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
@@ -23,9 +24,11 @@ import type {
   PreparedPushCommit,
   PushSweptTrail,
 } from "./branch-push-executor.js";
+import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
+import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
-import { canonicalBlockKey } from "./trail-read-kernel.js";
+import { bodyFromHashline, canonicalBlockKey } from "./trail-read-kernel.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
 
@@ -42,6 +45,7 @@ export function createBranchPushTransition(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   writerIngressBarrier?: WriterIngressBarrier;
+  changeEventDelivery?: ChangeEventDelivery;
 }) {
   type PreparedTransition<T> =
     | { kind: "return"; value: T }
@@ -386,6 +390,7 @@ export function createBranchPushTransition(input: {
   }): Promise<PushSweptTrail | undefined> {
     let pending = inputSettlement.pending;
     let latest: PushSweptTrail | undefined;
+    let committedProjections: readonly CommittedChangeTrailProjection[] = [];
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
       inputSettlement.signal?.throwIfAborted();
       if (input.pushStore.renewSettlementClaim) {
@@ -413,6 +418,7 @@ export function createBranchPushTransition(input: {
             })
           : true;
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
+        if (Array.isArray(settled)) committedProjections = settled;
         if (cut?.swept) latest = cut.swept;
 
         const completion = await completeUnderFence({
@@ -421,7 +427,18 @@ export function createBranchPushTransition(input: {
           finalPrePush: materialized.doc,
           ingressGeneration,
         });
-        if (completion === "applied" || completion === "already_applied") return latest;
+        if (completion === "applied" || completion === "already_applied") {
+          for (const projection of committedProjections) {
+            if (projection.documentId !== pending.push.documentId) continue;
+            try {
+              input.changeEventDelivery?.deliver(changeEventMessage(projection, pending));
+            } catch {
+              // Delivery is an ephemeral session hint; durable push completion
+              // and the trail must never be reported as failed because it missed.
+            }
+          }
+          return latest;
+        }
       } finally {
         materialized.doc.destroy();
       }
@@ -432,6 +449,53 @@ export function createBranchPushTransition(input: {
       error: "live document changed during settlement",
     });
     throw new PendingLiveSettlementError(pending.push.id);
+  }
+
+  function changeEventMessage(
+    projection: CommittedChangeTrailProjection,
+    pending: PendingLiveSettlement,
+  ): Omit<ChangeEventWsMessage, "type"> {
+    const capped = projection.changes.slice(0, 100);
+    return {
+      documentId: projection.documentId as ChangeEventWsMessage["documentId"],
+      threadId: projection.owner.threadId,
+      trailId: projection.trailId,
+      projectionRevision: projection.projectionRevision,
+      author:
+        pending.push.threadId === null && pending.push.pushedByUserId
+          ? { kind: "writer", userId: pending.push.pushedByUserId }
+          : projection.owner.kind === "turn"
+            ? {
+                kind: "agent",
+                threadId: projection.owner.threadId,
+                turnId: projection.owner.turnId,
+              }
+            : {
+                kind: "agent",
+                threadId: projection.owner.threadId,
+                turnId: null,
+              },
+      admittedByUserId: pending.push.pushedByUserId ?? null,
+      changes: capped.map(projectChangeEvent),
+      truncated: projection.changes.length > capped.length,
+    };
+  }
+
+  function projectChangeEvent(
+    change: CommittedChangeTrailProjection["changes"][number],
+  ): ChangeEventProjection {
+    // Inserts/modifications show admitted text; deletes show what disappeared.
+    // The trail remains the authority for full bodies beyond this bounded cue.
+    const hashline = change.kind === "delete" ? change.beforeText : change.afterTextAtReceipt;
+    const body = bodyFromHashline(hashline);
+    const text = body.status === "available" ? body.markdown : null;
+    return {
+      changeId: change.changeId,
+      kind: change.kind,
+      navigation: change.navigation,
+      swept: change.writerProtection !== undefined,
+      excerpt: text === null ? null : text.slice(0, 500),
+    };
   }
 
   async function completeUnderFence(inputFence: {

@@ -4,7 +4,6 @@ import type { NoticePort } from "../notices/index.js";
 import {
   createReversalNoticePort,
   recordAwarenessDegradedNotice,
-  recordLateSweepNotice,
   recordNoticeAfterDurability,
 } from "./composition.js";
 
@@ -38,41 +37,6 @@ describe("collab safety notices", () => {
         data: expect.objectContaining({ writeHandles: ["w1"], direction: "undo" }),
       }),
     );
-  });
-
-  it("records late sweeps with captured bodies and before-state reference", async () => {
-    const record = vi.fn<NoticePort["record"]>(async () => {});
-    await recordLateSweepNotice({
-      notices: {
-        record,
-        async drainForModelContext() {
-          return [];
-        },
-      },
-      resolveDocumentUri: async () => "manuscript://arc/chapter-one.md",
-      threadId: "thread-1",
-      documentId: "document-1",
-      lateSweep: {
-        affectedBlockHashes: ["hash-a"],
-        capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-        sweptContent: true,
-        beforeContentRef: 42,
-      },
-    });
-
-    expect(record).toHaveBeenCalledWith({
-      kind: "late_sweep",
-      scope: { kind: "thread", threadId: "thread-1" },
-      message: "Content was modified — View change",
-      data: {
-        documentId: "document-1",
-        documentName: "chapter-one",
-        uri: "manuscript://arc/chapter-one.md",
-        affectedBlockHashes: ["hash-a"],
-        capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
-        beforeContentRef: 42,
-      },
-    });
   });
 
   it("records a model-only degraded-awareness notice for every committed document", async () => {

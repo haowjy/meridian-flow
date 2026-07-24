@@ -320,6 +320,11 @@ export const changeTrailDocumentOccurrences = pgTable(
       .notNull()
       .references(() => changeTrailShells.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    /**
+     * Durable replace-set cursor for marker delivery. This lives on the
+     * non-sensitive occurrence so an empty refinement cannot reset the cursor.
+     */
+    projectionRevision: integer("projection_revision").notNull().default(0),
   },
   (table) => [primaryKey({ columns: [table.trailId, table.documentId] })],
 );

@@ -8,6 +8,7 @@ import type { BranchJournalRow, PushReceiptPayload } from "./branch-push.js";
 import { blockTextMap } from "./branch-push-plan.js";
 import type {
   ChangeTrailPersistence,
+  CommittedChangeTrailProjection,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
 import {
@@ -258,7 +259,7 @@ export async function persistDurableTrailRecord(
     refineToEmpty?: boolean;
     replacePushContribution?: boolean;
   } = {},
-): Promise<void> {
+): Promise<readonly CommittedChangeTrailProjection[]> {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
   const normalized = normalizeTrailPushes(
@@ -270,7 +271,7 @@ export async function persistDurableTrailRecord(
       journalOwners: record.journalOwners,
     })),
   );
-  await persistence.record({
+  const committed = await persistence.record({
     trails: options.refineToEmpty
       ? normalized.map((trail) => ({
           ...trail,
@@ -293,4 +294,5 @@ export async function persistDurableTrailRecord(
       },
     });
   }
+  return committed;
 }

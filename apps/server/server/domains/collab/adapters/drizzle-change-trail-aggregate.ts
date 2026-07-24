@@ -13,7 +13,10 @@ import {
   currentDrizzleDb,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import type {
+  ChangeTrailPersistence,
+  CommittedChangeTrailProjection,
+} from "../domain/ports/change-trail-persistence.js";
 
 export type ChangeTrailAggregateWriter = ChangeTrailPersistence & {
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
@@ -99,6 +102,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
   return {
     async record(input) {
       const tx = currentDrizzleDb(db);
+      const committed: CommittedChangeTrailProjection[] = [];
       const trails = [...input.trails].sort((left, right) =>
         trailIdForOwner(left.owner).localeCompare(trailIdForOwner(right.owner)),
       );
@@ -178,11 +182,30 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
         ]);
         for (const documentId of documentIds) {
-          await tx
+          const [occurrence] = await tx
             .insert(changeTrailDocumentOccurrences)
-            .values({ trailId, documentId })
-            .onConflictDoNothing();
+            .values({ trailId, documentId, projectionRevision: 1 })
+            .onConflictDoUpdate({
+              target: [
+                changeTrailDocumentOccurrences.trailId,
+                changeTrailDocumentOccurrences.documentId,
+              ],
+              set: {
+                projectionRevision: sql`${changeTrailDocumentOccurrences.projectionRevision} + 1`,
+              },
+            })
+            .returning({
+              projectionRevision: changeTrailDocumentOccurrences.projectionRevision,
+            });
+          if (!occurrence) throw new Error("Failed to advance change-trail projection revision");
           const documentChanges = changes.filter((change) => change.documentId === documentId);
+          committed.push({
+            trailId,
+            owner: trail.owner,
+            documentId,
+            projectionRevision: occurrence.projectionRevision,
+            changes: documentChanges,
+          });
           if (documentChanges.length === 0) {
             await tx
               .delete(changeTrailDocumentDetails)
@@ -256,6 +279,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           });
         }
       }
+      return committed;
     },
     async reopenOwners(owners) {
       const tx = currentDrizzleDb(db);

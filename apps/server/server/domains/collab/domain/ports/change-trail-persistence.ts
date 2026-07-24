@@ -1,7 +1,12 @@
 /** Domain port for atomically recording normalized change trails. */
 
 import type { NoticeInput } from "../../../notices/index.js";
-import type { NormalizedTrail, RawTrailChange, TrailOwner } from "../trail-read-kernel.js";
+import type {
+  NormalizedTrail,
+  RawTrailChange,
+  TrailChangeV1,
+  TrailOwner,
+} from "../trail-read-kernel.js";
 import { parseTrailChangesV1 } from "../trail-read-kernel.js";
 
 export type DurableTrailRecord = {
@@ -96,6 +101,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export type ChangeTrailPersistence = {
+  /**
+   * Returns exactly the post-fold document replace-sets committed by this write.
+   * Revisions are durable and monotonic per (trailId, documentId).
+   */
   record(input: {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
@@ -103,6 +112,14 @@ export type ChangeTrailPersistence = {
     refineCurrentVersion?: boolean;
     /** Replaces this push's prior aggregate contribution with the supplied classification. */
     replacePushId?: string;
-  }): Promise<void>;
+  }): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
+};
+
+export type CommittedChangeTrailProjection = {
+  trailId: string;
+  owner: NormalizedTrail["owner"];
+  documentId: string;
+  projectionRevision: number;
+  changes: readonly TrailChangeV1[];
 };
