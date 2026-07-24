@@ -103,9 +103,9 @@ bound to the planned branch commit and revalidated before every action; exact
 merged-PR evidence must match the detected base, head commit, and repository
 owner. The resolver refuses primary/current worktrees, the detected base branch,
 unmerged commits, ambiguous evidence, and refs that move after planning.
-Automatic cleanup additionally requires a clean, inactive, unowned worktree;
-it skips any worktree with an active Meridian work item, live dev session, live
-process beneath it, or unreadable same-user process cwd.
+Automatic cleanup skips any worktree that is dirty, carries an active Meridian
+work item, has a live dev session, or has a process running beneath it — including
+one whose working directory it cannot read.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
