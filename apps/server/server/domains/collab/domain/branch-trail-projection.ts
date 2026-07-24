@@ -49,11 +49,12 @@ export function journalAttributionByChangedBlock(input: {
     ambiguous?: boolean;
     removedIndex: number | null;
     insertedIndex: number | null;
+    journalRowIndex: number;
   }> = [];
   const authoringResponseIdsByBlock = new Map<string, string[]>();
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
-    for (const row of input.rows) {
+    for (const [journalRowIndex, row] of input.rows.entries()) {
       const before = canonicalSnapshot(input.model, scratch);
       Y.applyUpdate(scratch, row.updateData);
       const after = canonicalSnapshot(input.model, scratch);
@@ -100,6 +101,7 @@ export function journalAttributionByChangedBlock(input: {
             deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
           insertedIndex:
             inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
+          journalRowIndex,
         });
       }
     }
@@ -112,6 +114,7 @@ export function journalAttributionByChangedBlock(input: {
         deletion.insertedBlockIds.length === 0 &&
         insertion?.removedBlockHashes.length === 0 &&
         insertion.insertedBlockIds.length === 1 &&
+        insertion.journalRowIndex === deletion.journalRowIndex + 1 &&
         deletion.removedIndex !== null &&
         deletion.removedIndex === insertion.insertedIndex
       ) {
@@ -121,6 +124,7 @@ export function journalAttributionByChangedBlock(input: {
           ambiguous: false,
           removedIndex: deletion.removedIndex,
           insertedIndex: insertion.insertedIndex,
+          journalRowIndex: deletion.journalRowIndex,
         });
         index += 1;
         continue;
