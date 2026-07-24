@@ -21,6 +21,7 @@ function validMessage(): Parameters<typeof encodeChangeEventWsMessage>[0] {
         },
         swept: true,
         excerpt: "Removed prose",
+        pureDeletionOffset: null,
       },
     ],
     truncated: false,
@@ -47,6 +48,7 @@ describe("Yjs stateless messages", () => {
           },
           swept: true,
           excerpt: "Removed prose",
+          pureDeletionOffset: null,
         },
       ],
       truncated: false,
@@ -71,6 +73,7 @@ describe("Yjs stateless messages", () => {
           },
           swept: true,
           excerpt: "Removed prose",
+          pureDeletionOffset: null,
         },
       ],
       truncated: false,
@@ -120,6 +123,17 @@ describe("Yjs stateless messages", () => {
     const change = message.changes[0];
     if (!change) throw new Error("invalid test fixture");
     change.excerpt = "x".repeat(501);
+
+    expect(
+      parseYjsStatelessMessage(JSON.stringify({ type: "change_event", ...message })),
+    ).toBeNull();
+  });
+
+  it("rejects invalid pure-deletion offsets", () => {
+    const message = validMessage();
+    const change = message.changes[0];
+    if (!change) throw new Error("invalid test fixture");
+    change.pureDeletionOffset = -1;
 
     expect(
       parseYjsStatelessMessage(JSON.stringify({ type: "change_event", ...message })),

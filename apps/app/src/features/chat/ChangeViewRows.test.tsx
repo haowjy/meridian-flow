@@ -175,6 +175,7 @@ describe("ChangeViewRows", () => {
           navigation: { kind: "unavailable", reason: "test" },
           swept: true,
           excerpt: null,
+          pureDeletionOffset: null,
         },
       ],
       truncated: false,

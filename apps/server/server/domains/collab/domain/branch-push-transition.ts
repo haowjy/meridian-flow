@@ -483,6 +483,10 @@ export function createBranchPushTransition(input: {
       navigation: change.navigation,
       swept: change.writerProtection !== undefined,
       excerpt: text === null ? null : text.slice(0, 500),
+      pureDeletionOffset: detectPureDeletionOffset(
+        availableBodyText(change.beforeText),
+        availableBodyText(change.afterTextAtReceipt),
+      ),
     };
   }
 
@@ -567,6 +571,30 @@ export function createBranchPushTransition(input: {
   }
 
   return { execute, prepare, recover };
+}
+
+/** Returns the splice site when `after` is exactly `before` minus one contiguous span. */
+export function detectPureDeletionOffset(
+  before: string | null,
+  after: string | null,
+): number | null {
+  if (before === null || after === null || after.length >= before.length) return null;
+  let prefix = 0;
+  while (prefix < after.length && before[prefix] === after[prefix]) prefix++;
+
+  let suffix = 0;
+  while (
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  return before.slice(0, prefix) + before.slice(before.length - suffix) === after ? prefix : null;
+}
+
+function availableBodyText(hashline: string | null): string | null {
+  const body = bodyFromHashline(hashline);
+  return body.status === "available" ? body.markdown : null;
 }
 
 /** The only reconstruction path for settlement authority and provenance, warm or cold. */

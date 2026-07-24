@@ -18,6 +18,7 @@ export type YjsRoomName =
 export type ChangeEventProjection = Pick<TrailChangeV1, "changeId" | "kind" | "navigation"> & {
   swept: boolean;
   excerpt: string | null;
+  pureDeletionOffset: number | null;
 };
 
 export interface ChangeEventWsMessage {
@@ -53,6 +54,7 @@ const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChang
   .extend({
     swept: z.boolean(),
     excerpt: z.string().max(500).nullable(),
+    pureDeletionOffset: z.number().int().nonnegative().nullable(),
   });
 
 const changeEventWsMessageSchema: z.ZodType<ChangeEventWsMessage> = z

@@ -41,6 +41,7 @@ function message(
       },
       swept: swept ?? false,
       excerpt: id,
+      pureDeletionOffset: null,
     })),
     truncated: false,
     ...overrides,
