@@ -21,6 +21,7 @@ import {
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { ObservationSnapshotStore } from "../../ports/observation-snapshot.js";
+import type { TurnDiffQuery } from "../../ports/turn-diff-query.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
@@ -56,6 +57,7 @@ export function harness(
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
     observationSnapshots?: ObservationSnapshotStore;
+    turnDiffQuery?: TurnDiffQuery;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -102,6 +104,7 @@ export function harness(
     codec,
     model,
     observationSnapshots,
+    turnDiffQuery: options.turnDiffQuery,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),
