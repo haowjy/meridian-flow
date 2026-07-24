@@ -23,7 +23,10 @@ journal do).
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
 `ReversalStore.reserveWriteOrdinal`; a host may supply a durable group ID and
 reuse one ordinal for that group when its journal folds the mutations into one
-row. Undo/redo selection and availability then use the same store to plan
+row. Each staged mutation also marks replacement-scope capture complete and
+carries certified semantic scope for replacements, including create-overwrite,
+so folding hosts can retain per-write scope without serializing live block
+handles. Undo/redo selection and availability then use the same store to plan
 against retained update rows and mutation metadata.
 Hosts with movable reversal authority implement `withReversalScope` so one
 command plans and persists against one pinned authority. A reconstruction that

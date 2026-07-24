@@ -130,20 +130,19 @@ export async function preparePushUnderLiveLock(
       baselineDoc.destroy();
       const baselineByHash = new Map(baselineBlocks.map((block) => [block.hash, block]));
       const persistedReplacementScopes = replacementScopesFromBranchRow(row);
-      const replacedBaselineHashScopes =
-        persistedReplacementScopes.length > 0
-          ? persistedReplacementScopes.map(
-              (scope) =>
-                new Set(
-                  baselineBlocks
-                    .filter(
-                      (block) =>
-                        block.lineage && intersectLineageRanges(scope, block.lineage).length > 0,
-                    )
-                    .map((block) => block.hash),
-                ),
-            )
-          : [replacementHashesFromRowUpdate(baselineState, baselineBlocks, row, input)];
+      const replacedBaselineHashScopes = persistedReplacementScopes.complete
+        ? persistedReplacementScopes.scopes.map(
+            (scope) =>
+              new Set(
+                baselineBlocks
+                  .filter(
+                    (block) =>
+                      block.lineage && intersectLineageRanges(scope, block.lineage).length > 0,
+                  )
+                  .map((block) => block.hash),
+              ),
+          )
+        : [replacementHashesFromRowUpdate(baselineState, baselineBlocks, row, input)];
       const baselineIdentities = new Set(
         baselineBlocks.flatMap((block) => {
           const identity = blockIdentity(block);

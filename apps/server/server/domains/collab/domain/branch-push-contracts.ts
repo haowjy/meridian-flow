@@ -30,23 +30,30 @@ export function branchJournalRevision(
 export function branchUpdateMetaWithReplacementScopes(
   updateMeta: unknown,
   replacementScopes: readonly (readonly LineageRange[])[],
+  replacementScopesComplete: boolean,
 ): unknown {
-  if (replacementScopes.length === 0) return updateMeta;
   return {
     ...(isRecord(updateMeta) ? updateMeta : {}),
     replacementScopes: replacementScopes.map((scope) => scope.map((range) => ({ ...range }))),
+    replacementScopesComplete,
   };
 }
 
-export function replacementScopesFromBranchRow(
-  row: Pick<BranchJournalRow, "updateMeta">,
-): LineageRange[][] {
-  if (!isRecord(row.updateMeta) || !Array.isArray(row.updateMeta.replacementScopes)) return [];
-  return row.updateMeta.replacementScopes.flatMap((scope) =>
-    Array.isArray(scope) && scope.length > 0 && scope.every(isLineageRange)
-      ? [scope.map((range) => ({ ...range }))]
-      : [],
-  );
+export function replacementScopesFromBranchRow(row: Pick<BranchJournalRow, "updateMeta">): {
+  complete: boolean;
+  scopes: LineageRange[][];
+} {
+  if (!isRecord(row.updateMeta) || !Array.isArray(row.updateMeta.replacementScopes)) {
+    return { complete: false, scopes: [] };
+  }
+  return {
+    complete: row.updateMeta.replacementScopesComplete === true,
+    scopes: row.updateMeta.replacementScopes.flatMap((scope) =>
+      Array.isArray(scope) && scope.length > 0 && scope.every(isLineageRange)
+        ? [scope.map((range) => ({ ...range }))]
+        : [],
+    ),
+  };
 }
 
 export type AutoBranchPushPort = {

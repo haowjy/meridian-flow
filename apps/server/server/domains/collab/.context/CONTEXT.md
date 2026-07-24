@@ -200,7 +200,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   base conflicts when its live position falls inside the candidate's replaced
   scope; unrelated insertions outside a selective edit remain mergeable.
   Response folding therefore retains each write's semantic replacement scope;
-  never infer one enclosing scope from the union of a row's changed roots.
+  never infer one enclosing scope from the union of a row's changed roots. The
+  folded metadata records completeness; incomplete scope capture falls back to
+  aggregate changed-root safety instead of silently weakening refusal.
 - **Push policy is the only mode difference**: manual Apply refuses protected
   draft-base divergence; Auto-apply always merges. Protection derives from
   durable journal attribution: `completeStagedPush` persists the live journal
