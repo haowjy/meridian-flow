@@ -23,15 +23,15 @@ export async function handleGetModelRequestDebugRecords(
     throwHttpInterruptForStatus(404, "Thread not found");
   }
 
-  await requireThreadOwner(
+  const thread = await requireThreadOwner(
     { threads: deps.repos.threads, projects: deps.projectRepo },
     input.threadId,
     input.userId,
   );
 
   const records: ModelRequestDebugRecord[] = input.turnId
-    ? deps.modelRequestDebug.listByTurn(input.threadId, input.turnId)
-    : deps.modelRequestDebug.listByThread(input.threadId);
+    ? deps.modelRequestDebug.listByTurn(thread.id, input.turnId)
+    : deps.modelRequestDebug.listByThread(thread.id);
 
   return { records };
 }

@@ -146,6 +146,15 @@ and surfaces as a retryable provider error when no output has been emitted.
 
 ## Route conventions
 
+### Request IDs
+
+Values backed by Postgres `uuid` columns use the request-ID grammar in
+`server/lib/uuid.ts`: canonical 36-character hyphenated hexadecimal, any UUID
+version/variant bits, case-insensitive on input and lowercase below the
+transport boundary. HTTP route cores use `server/lib/request-id.ts` so malformed
+IDs become 400 responses before any repository call; thread WebSocket messages
+use the same parser and deliberately report not-found.
+
 ### Route-core handlers
 
 Heavier routes keep testable route-core functions in `server/lib/*-route.ts`.

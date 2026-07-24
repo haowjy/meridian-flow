@@ -7,6 +7,7 @@ import {
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp } from "./context-error-http.js";
+import { requireRequestId } from "./request-id.js";
 
 export interface ThreadContextRouteDeps {
   contextPorts: UnifiedContextPortFactory;
@@ -33,7 +34,8 @@ export async function readThreadContextDocument(
   deps: ThreadContextRouteDeps,
   input: { threadId: ThreadId; userId: UserId; uri: string },
 ) {
-  const port = await resolveThreadContextPort(deps, input.threadId, input.userId);
+  const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
+  const port = await resolveThreadContextPort(deps, threadId, input.userId);
   const result = await port.read(input.uri);
   if (!result.ok) contextErrorToHttp(result.error);
   return {
@@ -47,9 +49,10 @@ export async function writeThreadContextDocument(
   deps: ThreadContextRouteDeps,
   input: { threadId: ThreadId; userId: UserId; uri: string; markdown: string },
 ) {
-  const port = await resolveThreadContextPort(deps, input.threadId, input.userId);
+  const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
+  const port = await resolveThreadContextPort(deps, threadId, input.userId);
   const result = await port.write(input.uri, input.markdown, {
-    origin: { type: "human", userId: input.userId, threadId: input.threadId },
+    origin: { type: "human", userId: input.userId, threadId },
   });
   if (!result.ok) contextErrorToHttp(result.error);
   return {

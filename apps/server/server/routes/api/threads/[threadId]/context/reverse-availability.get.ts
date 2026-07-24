@@ -2,6 +2,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import type { AppServices } from "../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { requireRequestId } from "../../../../../lib/request-id.js";
 import { readThreadContextDocument } from "../../../../../lib/thread-context-route.js";
 
 type AvailabilityRouteServices = {
@@ -23,7 +24,7 @@ function selectAvailabilityRouteServices(app: AppServices): AvailabilityRouteSer
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const services = selectAvailabilityRouteServices(app);
-  const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
+  const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const uri = getQuery(event).uri;
   if (typeof uri !== "string" || uri.length === 0) {
     throw createError({ statusCode: 400, message: "uri is required" });

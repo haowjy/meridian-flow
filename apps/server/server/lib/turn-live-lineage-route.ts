@@ -8,6 +8,7 @@ import { createError } from "nitro/h3";
 import { parseContextUri } from "../domains/context/context/uri.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
+import { requireRequestId } from "./request-id.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
@@ -29,24 +30,23 @@ export async function handleTurnLiveLineageRequest(
   deps: TurnLiveLineageRouteServices,
   input: { threadId: ThreadId; turnId: TurnId; userId: UserId },
 ): Promise<ListTurnLiveLineageResponse> {
+  const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
+  const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
   const thread = await requireThreadOwner(
     { threads: deps.threads, projects: deps.projects },
-    input.threadId,
+    threadId,
     input.userId,
   );
-  const documents = await deps.documentSync.listEditedDocumentsForTurn(
-    input.threadId,
-    input.turnId,
-  );
+  const documents = await deps.documentSync.listEditedDocumentsForTurn(threadId, turnId);
   const visibleDocuments = await filterAccessibleLiveLineageDocuments(deps, {
     documents,
     projectId: thread.projectId,
-    threadId: input.threadId,
+    threadId,
     userId: input.userId,
   });
   return {
     documents: visibleDocuments.map(serializeLiveLineageDocument),
-    receipt: await deps.documentSync.getTurnReceiptChip(input.threadId, input.turnId),
+    receipt: await deps.documentSync.getTurnReceiptChip(threadId, turnId),
   };
 }
 
