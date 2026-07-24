@@ -11,16 +11,4 @@ describe("cn — custom font-size tokens", () => {
     expect(cn("text-meta text-foreground")).toBe("text-meta text-foreground");
     expect(cn("text-body text-primary-foreground")).toBe("text-body text-primary-foreground");
   });
-
-  it("resolves two size roles by last-one-wins", () => {
-    expect(cn("text-meta text-body")).toBe("text-body");
-  });
-
-  it("lets a custom size token override a built-in size", () => {
-    expect(cn("text-sm text-meta")).toBe("text-meta");
-  });
-
-  it("still collapses conflicting real text colors", () => {
-    expect(cn("text-red-500 text-foreground")).toBe("text-foreground");
-  });
 });

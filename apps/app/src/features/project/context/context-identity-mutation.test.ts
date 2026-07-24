@@ -1,18 +1,21 @@
-/** Cache-receipt coverage for foreground and background identity mutations. */
+/** Converged cache and identity outcomes through the untitled lifecycle rig. */
 
-import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
-import type { moveContextEntry } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { createContextIdentityMutationService } from "./context-identity-mutation";
+import type { MoveContextEntryResult } from "@meridian/contracts/protocol";
+import { describe, expect, it } from "vitest";
+import { lifecycleGate, UntitledLifecycleRig } from "./test-support/UntitledLifecycleRig";
 
-describe("context identity mutation cache receipts", () => {
-  it("invalidates the canonical tree after background materialization", async () => {
-    const queryClient = new QueryClient();
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    const service = createContextIdentityMutationService(queryClient);
+const SOURCE = { scheme: "scratch", path: "/Untitled.md", workId: "work-1" } as const;
+const OPENING = {
+  name: "Opening.md",
+  destination: { scheme: "manuscript", folderPath: "/Act 1" },
+} as const;
 
-    await service.materialized("project-1", {
+describe("context identity mutation outcomes", () => {
+  it("invalidates the durable tree after materialization", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.seedTree("project-1", "scratch", "work-1");
+
+    await rig.identityMutations.materialized("project-1", {
       status: "created",
       documentId: "doc-1",
       scheme: "scratch",
@@ -21,84 +24,56 @@ describe("context identity mutation cache receipts", () => {
       workId: "work-1",
     });
 
-    expect(invalidate).toHaveBeenCalledOnce();
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: projectQueryKeys.contextTree("project-1", "scratch", "work-1"),
-    });
+    expect(rig.treeInvalidated("project-1", "scratch", "work-1")).toBe(true);
   });
 
-  it("invalidates both source and destination trees after a move", async () => {
-    const queryClient = new QueryClient();
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    const move = vi.fn<typeof moveContextEntry>().mockResolvedValue({
+  it("moves from the canonical source and invalidates both affected trees", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.seedTree("project-1", "scratch", "work-1");
+    rig.seedTree("project-1", "manuscript");
+
+    await rig.identityMutations.move("doc-1", "project-1", SOURCE, OPENING);
+
+    expect(rig.identityMove.calls).toEqual([
+      [
+        "project-1",
+        "scratch",
+        {
+          path: "Untitled.md",
+          sourceWorkId: "work-1",
+          destinationScheme: "manuscript",
+          destinationFolderPath: "Act 1",
+          newName: "Opening.md",
+        },
+      ],
+    ]);
+    expect(rig.treeInvalidated("project-1", "scratch", "work-1")).toBe(true);
+    expect(rig.treeInvalidated("project-1", "manuscript")).toBe(true);
+  });
+
+  it("serializes overlapping moves and rebases the newest intent on the receipt", async () => {
+    const rig = new UntitledLifecycleRig();
+    const firstMove = lifecycleGate<MoveContextEntryResult>();
+    rig.identityMove.enqueueHandler(() => firstMove.promise);
+    rig.identityMove.enqueueResult({
       status: "moved",
       scheme: "manuscript",
-      path: "Act 1/Opening.md",
-      name: "Opening.md",
+      path: "Final/Latest.md",
+      name: "Latest.md",
     });
-    const service = createContextIdentityMutationService(queryClient, move);
 
-    await service.move(
-      "doc-1",
-      "project-1",
-      { scheme: "scratch", path: "/Untitled", workId: "work-1" },
-      {
-        name: "Opening.md",
-        destination: { scheme: "manuscript", folderPath: "/Act 1" },
-      },
-    );
-
-    expect(move).toHaveBeenCalledWith("project-1", "scratch", {
-      path: "Untitled",
-      sourceWorkId: "work-1",
-      destinationScheme: "manuscript",
-      destinationFolderPath: "Act 1",
-      newName: "Opening.md",
+    const background = rig.identityMutations.move("doc-1", "project-1", SOURCE, {
+      name: "Background.md",
+      destination: { scheme: "manuscript", folderPath: "/Drafts" },
     });
-    expect(invalidate).toHaveBeenCalledTimes(2);
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: projectQueryKeys.contextTree("project-1", "scratch", "work-1"),
+    const foreground = rig.identityMutations.move("doc-1", "project-1", SOURCE, {
+      name: "Latest.md",
+      destination: { scheme: "manuscript", folderPath: "/Final" },
     });
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: projectQueryKeys.contextTree("project-1", "manuscript", undefined),
-    });
-  });
-
-  it("serializes one document's moves and rebases the newest intent on the canonical receipt", async () => {
-    const queryClient = new QueryClient();
-    let finishBackground!: (result: Awaited<ReturnType<typeof moveContextEntry>>) => void;
-    const move = vi
-      .fn<typeof moveContextEntry>()
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            finishBackground = resolve;
-          }),
-      )
-      .mockResolvedValueOnce({
-        status: "moved",
-        scheme: "manuscript",
-        path: "Final/Latest.md",
-        name: "Latest.md",
-      });
-    const service = createContextIdentityMutationService(queryClient, move);
-
-    const background = service.move(
-      "doc-1",
-      "project-1",
-      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
-      { name: "Background.md", destination: { scheme: "manuscript", folderPath: "/Drafts" } },
-    );
-    const foreground = service.move(
-      "doc-1",
-      "project-1",
-      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
-      { name: "Latest.md", destination: { scheme: "manuscript", folderPath: "/Final" } },
-    );
-
     await Promise.resolve();
-    expect(move).toHaveBeenCalledOnce();
-    finishBackground({
+    expect(rig.identityMove.calls).toHaveLength(1);
+
+    firstMove.resolve({
       status: "moved",
       scheme: "manuscript",
       path: "Drafts/Background.md",
@@ -107,106 +82,86 @@ describe("context identity mutation cache receipts", () => {
 
     await expect(background).resolves.toMatchObject({ isLatest: false });
     await expect(foreground).resolves.toMatchObject({ isLatest: true });
-    expect(move).toHaveBeenNthCalledWith(2, "project-1", "manuscript", {
-      path: "Drafts/Background.md",
-      destinationScheme: "manuscript",
-      destinationFolderPath: "Final",
-      newName: "Latest.md",
-    });
+    expect(rig.identityMove.calls[1]).toEqual([
+      "project-1",
+      "manuscript",
+      {
+        path: "Drafts/Background.md",
+        destinationScheme: "manuscript",
+        destinationFolderPath: "Final",
+        newName: "Latest.md",
+      },
+    ]);
   });
 
-  it("uses a fresh source after the prior queue settles and another device moves the document", async () => {
-    const queryClient = new QueryClient();
-    const move = vi
-      .fn<typeof moveContextEntry>()
-      .mockResolvedValueOnce({
+  it("uses a fresh source after a settled queue", async () => {
+    const rig = new UntitledLifecycleRig();
+    rig.identityMove.enqueueResult(
+      {
         status: "moved",
         scheme: "manuscript",
         path: "Drafts/First.md",
         name: "First.md",
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         status: "moved",
         scheme: "manuscript",
         path: "Final/Latest.md",
         name: "Latest.md",
-      });
-    const service = createContextIdentityMutationService(queryClient, move);
-
-    await service.move(
-      "doc-1",
-      "project-1",
-      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
-      { name: "First.md", destination: { scheme: "manuscript", folderPath: "/Drafts" } },
+      },
     );
-    await service.move(
+
+    await rig.identityMutations.move("doc-1", "project-1", SOURCE, {
+      name: "First.md",
+      destination: { scheme: "manuscript", folderPath: "/Drafts" },
+    });
+    await rig.identityMutations.move(
       "doc-1",
       "project-1",
       { scheme: "manuscript", path: "/External/Elsewhere.md" },
       { name: "Latest.md", destination: { scheme: "manuscript", folderPath: "/Final" } },
     );
 
-    expect(move).toHaveBeenNthCalledWith(2, "project-1", "manuscript", {
-      path: "External/Elsewhere.md",
-      destinationScheme: "manuscript",
-      destinationFolderPath: "Final",
-      newName: "Latest.md",
-    });
+    expect(rig.identityMove.calls[1]?.[2]).toMatchObject({ path: "External/Elsewhere.md" });
   });
 
   it("drops a queued canonical source after a stale outcome", async () => {
-    const queryClient = new QueryClient();
-    let finishFirst!: (result: Awaited<ReturnType<typeof moveContextEntry>>) => void;
-    const move = vi
-      .fn<typeof moveContextEntry>()
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            finishFirst = resolve;
-          }),
-      )
-      .mockResolvedValueOnce({ status: "retry", reason: "stale-source" })
-      .mockResolvedValueOnce({
+    const rig = new UntitledLifecycleRig();
+    const firstMove = lifecycleGate<MoveContextEntryResult>();
+    rig.identityMove.enqueueHandler(() => firstMove.promise);
+    rig.identityMove.enqueueResult(
+      { status: "retry", reason: "stale-source" },
+      {
         status: "moved",
         scheme: "manuscript",
         path: "Final/Latest.md",
         name: "Latest.md",
-      });
-    const service = createContextIdentityMutationService(queryClient, move);
+      },
+    );
 
-    const first = service.move(
-      "doc-1",
-      "project-1",
-      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
-      { name: "First.md", destination: { scheme: "manuscript", folderPath: "/Drafts" } },
-    );
-    const stale = service.move(
-      "doc-1",
-      "project-1",
-      { scheme: "scratch", path: "/Untitled.md", workId: "work-1" },
-      { name: "Stale.md", destination: { scheme: "manuscript", folderPath: "/Stale" } },
-    );
-    const fresh = service.move(
+    const first = rig.identityMutations.move("doc-1", "project-1", SOURCE, {
+      name: "First.md",
+      destination: { scheme: "manuscript", folderPath: "/Drafts" },
+    });
+    const stale = rig.identityMutations.move("doc-1", "project-1", SOURCE, {
+      name: "Stale.md",
+      destination: { scheme: "manuscript", folderPath: "/Stale" },
+    });
+    const fresh = rig.identityMutations.move(
       "doc-1",
       "project-1",
       { scheme: "manuscript", path: "/External/Elsewhere.md" },
       { name: "Latest.md", destination: { scheme: "manuscript", folderPath: "/Final" } },
     );
     await Promise.resolve();
-    finishFirst({
+    firstMove.resolve({
       status: "moved",
       scheme: "manuscript",
       path: "Drafts/First.md",
       name: "First.md",
     });
-
     await Promise.all([first, stale, fresh]);
 
-    expect(move).toHaveBeenNthCalledWith(3, "project-1", "manuscript", {
-      path: "External/Elsewhere.md",
-      destinationScheme: "manuscript",
-      destinationFolderPath: "Final",
-      newName: "Latest.md",
-    });
+    expect(rig.identityMove.calls[2]?.[2]).toMatchObject({ path: "External/Elsewhere.md" });
   });
 });

@@ -23,6 +23,18 @@
 - `apps/server`: branch pushes and trail actions now use the filetype-aware
   document projection engine; code files persist raw text and unsupported
   filetypes block settlement instead of storing markdown-shaped projections.
+- `apps/server`, `packages/database`: the PostgreSQL gate now runs every
+  registered non-collab DB contract instead of silently skipping 31 tests
+  (#377).
+- `apps/server`, `packages/database`, `tools/dev`: unit files run in parallel;
+  PostgreSQL tests clone four worker databases from one migrated template and
+  ordinary adapter/route cases roll back instead of truncating per test (#377).
+- Test suite: removed 235 declarations that pinned transient UI structure,
+  debug scaffolding, local store representation, thin delegates, or duplicate
+  adapter behavior (#377).
+- `apps/app`, `apps/server`: stateful thread, untitled-lifecycle, and runtime
+  rigs replace collaborator mock graphs and wall-clock polling with controlled
+  gates, event journals, real stores, and outcome queries (#377).
 - `apps/server`: collab domain policy no longer imports Drizzle or observability
   adapters; composition supplies transaction and diagnostic capabilities (#345).
 - `apps/server`: removed draft review endpoints that could only return not found,

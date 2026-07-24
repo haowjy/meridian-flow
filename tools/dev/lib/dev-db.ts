@@ -179,6 +179,32 @@ export async function ensureDatabaseForUrl(
   }
 }
 
+/** Clone a migrated local test database without replaying the migration chain. */
+export async function cloneDatabaseForUrl(
+  templateDatabaseUrl: string,
+  targetDatabaseUrl: string,
+): Promise<{ targetDb: string }> {
+  assertLocalDevPostgresEndpoint(templateDatabaseUrl, "clone test database");
+  assertLocalDevPostgresEndpoint(targetDatabaseUrl, "clone test database");
+  const template = parseTargetDatabase(templateDatabaseUrl);
+  const target = parseTargetDatabase(targetDatabaseUrl);
+  validateDbName(template.targetDb);
+  validateDbName(target.targetDb);
+  if (template.adminConnString !== target.adminConnString) {
+    throw new Error("Template and cloned test databases must use the same Postgres server.");
+  }
+
+  const adminSql = postgres(target.adminConnString, { max: 1 });
+  try {
+    await adminSql.unsafe(
+      `CREATE DATABASE "${target.targetDb}" WITH TEMPLATE "${template.targetDb}"`,
+    );
+    return { targetDb: target.targetDb };
+  } finally {
+    await adminSql.end();
+  }
+}
+
 export async function ensureExtensionsForUrl(
   databaseUrl: string,
   extensions: readonly string[],

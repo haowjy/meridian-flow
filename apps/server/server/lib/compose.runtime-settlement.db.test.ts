@@ -2,7 +2,7 @@
 
 import { Hocuspocus } from "@hocuspocus/server";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -14,11 +14,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("production-composed branch settlement (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
+    const { useRollbackTestDatabase } = await import("../test-support/rollback-test-database.js");
     const { truncateDrizzleTables } = await import("../test-support/drizzle-reset.js");
     const { createNoopEventSink } = await import("../domains/observability/index.js");
     const { composeAppServices, createProductionAppPorts } = await import("./compose.js");
@@ -31,32 +31,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const TURN_ID = "00000000-0000-4000-8000-000000000906";
     const DOC_ID = "00000000-0000-4000-8000-000000000907";
     const RESPONSE_ID = "00000000-0000-4000-8000-000000000908";
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+    });
+    let db = database.current;
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        schema.turnTrailWork,
-        schema.changeTrailDeliveryOutbox,
-        schema.changeTrailDocumentDetails,
-        schema.changeTrailShells,
-        schema.pendingNoticeDeliveries,
-        schema.pendingNotices,
-        schema.agentEditMutations,
-        schema.branchWriteJournal,
-        schema.pushLineage,
-        schema.documentBranches,
-        schema.documentYjsCheckpoints,
-        schema.documentYjsHeads,
-        schema.documentYjsUpdates,
-        schema.threadWorks,
-        schema.turns,
-        schema.threads,
-        schema.folders,
-        schema.documents,
-        schema.contextSources,
-        schema.works,
-        schema.projects,
-        schema.users,
-      ]);
+      db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "runtime-settlement"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -106,10 +87,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         isPrimary: true,
       });
-    });
-
-    afterAll(async () => {
-      await db.$client.end();
     });
 
     it("S2 Restore and S10 hard-delete evidence survive cold composition", () => runScenario(true));
