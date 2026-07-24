@@ -85,7 +85,9 @@ export function PeerMarkPopover({
   const removedText = change ? removedTextFor(change) : marker.excerpt;
 
   async function forward(): Promise<void> {
-    if (!change || !agentAuthor || actionState !== "idle") return;
+    if (!change || !agentAuthor || actionState === "pending" || actionState === "applied") {
+      return;
+    }
     setActionState("pending");
     try {
       const result = await applyTrailForwardAction({
