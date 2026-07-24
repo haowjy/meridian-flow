@@ -211,7 +211,6 @@ its concern. Production modules (excluding colocated tests) are:
 | `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
 | `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
 | `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
-| `response-lifecycle.ts` | Defines response transition values used by the committer and observability. |
 | `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
 | `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
 | `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
@@ -492,14 +491,17 @@ Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
   reporting rollback success while a commit can still persist would make the
   caller's cancellation contract dishonest.
 - **`Closed`:** records a bounded `committed` or `rolledBack` tombstone. Further
-  stage/commit/rollback calls fail; an unknown response id remains a valid empty
-  commit/rollback because a model response may have issued no mutations.
+  stage/commit/rollback calls fail. An unknown response id remains a valid empty
+  commit/rollback because a model response may have issued no mutations, and
+  that settlement still installs a tombstone so a late tool handler cannot
+  reopen the response.
 
-Journal append throws directly. Live projection returns a narrow outcome carrying
-its accepted journal kind, which lets the write boundary restore speculative
-runtime state before acceptance or route durable projection failure through
-journal recovery. State transitions verify the current owner before changing the
-map, preventing stale async work from reopening or overwriting a closed response.
+The mutation submission attempt records journal acceptance immediately after
+append, before concurrency classification or live-projection reporting can fail.
+The write boundary therefore restores speculative runtime state before
+acceptance, but routes every failure after durable acceptance through journal
+recovery. State transitions verify the current owner before changing the map,
+preventing stale async work from reopening or overwriting a closed response.
 
 **Rollback and recovery follow the journal boundary.** While still `buffered`,
 commit failure evicts speculative runtimes but leaves the response retryable;
