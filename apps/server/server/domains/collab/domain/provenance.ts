@@ -317,35 +317,33 @@ function writeCertifiedProvenanceFacts(
   beforeStateVector: Uint8Array,
 ): void {
   if (ir.intent.kind === "fullScopeFreshReplacement") return;
-  const runs = ir.intent.edits.flatMap(({ outputRuns }) =>
-    [...outputRuns].sort(
+  const edits = ir.intent.edits.map(({ outputRuns }) => {
+    const runs = [...outputRuns].sort(
       (left, right) => left.output.from - right.output.from || left.output.to - right.output.to,
-    ),
-  );
-  if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) return;
-  const materializedRuns = runs.filter(
-    (run) => run.kind !== "preserved" || run.materialization !== "retained",
-  );
+    );
+    return {
+      runs,
+      materializedRuns: runs.filter(
+        (run) => run.kind !== "preserved" || run.materialization !== "retained",
+      ),
+    };
+  });
+  if (
+    !edits.some(({ runs }) =>
+      runs.some(({ kind }) => kind === "preserved" || kind === "restoration"),
+    )
+  ) {
+    return;
+  }
   const visibleProse = visibleProseStringRanges(doc);
   const allInserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
-  const inserted = visibleProse.flatMap((visible) =>
-    allInserted
-      .filter((range) => rangesOverlap(visible, range))
-      .map((range) => {
-        const clock = Math.max(visible.clock, range.clock);
-        return {
-          clientID: visible.clientID,
-          clock,
-          length: Math.min(end(visible), end(range)) - clock,
-        };
-      })
-      .sort((left, right) => left.clock - right.clock),
-  );
-  const declaredLength = materializedRuns.reduce(
-    (sum, run) => sum + run.output.to - run.output.from,
+  const insertedByAllocation = intersectRangesInOrder(allInserted, visibleProse);
+  const declaredLength = edits.reduce(
+    (sum, { materializedRuns }) =>
+      sum + materializedRuns.reduce((editSum, run) => editSum + run.output.to - run.output.from, 0),
     0,
   );
-  const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
+  const insertedLength = insertedByAllocation.reduce((sum, range) => sum + range.length, 0);
   if (insertedLength !== declaredLength) {
     throw new ProvenanceMaterializationError(
       `Certified semantic output length ${declaredLength} does not match lowered prose insertion length ${insertedLength}`,
@@ -353,39 +351,49 @@ function writeCertifiedProvenanceFacts(
   }
   const targets: ProvenanceTargetFactV1[] = [];
   const existingAssignments = readTargetFacts(doc);
-  let cursor = 0;
-  for (const run of materializedRuns) {
-    const length = run.output.to - run.output.from;
-    const targetRuns = sliceRanges(inserted, cursor, length);
-    if (run.kind === "preserved" || run.kind === "restoration") {
-      const roots =
-        run.kind === "preserved"
-          ? resolvedRootUnits(existingAssignments, run.source)
-          : Array.from({ length }, (_, offset) => unit(run.root, offset));
-      const targetUnits = targetRuns.flatMap((target) =>
-        Array.from({ length: target.length }, (_, offset) => unit(target, offset)),
-      );
-      for (let index = 0; index < targetUnits.length; index += 1) {
-        const target = targetUnits[index];
-        const root = roots[index];
-        if (!target || !root)
-          throw blocked("Certified continuation length changed during lowering");
-        const previous = targets.at(-1);
-        if (
-          previous &&
-          previous.target.clientID === target.clientID &&
-          end(previous.target) === target.clock &&
-          previous.root.clientID === root.clientID &&
-          end(previous.root) === root.clock
-        ) {
-          previous.target.length += 1;
-          previous.root.length += 1;
-        } else {
-          targets.push({ version: 1, target: { ...target }, root: { ...root } });
+  let allocationCursor = 0;
+  for (const { materializedRuns } of edits) {
+    const editLength = materializedRuns.reduce(
+      (sum, run) => sum + run.output.to - run.output.from,
+      0,
+    );
+    const allocated = sliceRanges(insertedByAllocation, allocationCursor, editLength);
+    const inserted = intersectRangesInOrder(visibleProse, allocated);
+    let outputCursor = 0;
+    for (const run of materializedRuns) {
+      const length = run.output.to - run.output.from;
+      const targetRuns = sliceRanges(inserted, outputCursor, length);
+      if (run.kind === "preserved" || run.kind === "restoration") {
+        const roots =
+          run.kind === "preserved"
+            ? resolvedRootUnits(existingAssignments, run.source)
+            : Array.from({ length }, (_, offset) => unit(run.root, offset));
+        const targetUnits = targetRuns.flatMap((target) =>
+          Array.from({ length: target.length }, (_, offset) => unit(target, offset)),
+        );
+        for (let index = 0; index < targetUnits.length; index += 1) {
+          const target = targetUnits[index];
+          const root = roots[index];
+          if (!target || !root)
+            throw blocked("Certified continuation length changed during lowering");
+          const previous = targets.at(-1);
+          if (
+            previous &&
+            previous.target.clientID === target.clientID &&
+            end(previous.target) === target.clock &&
+            previous.root.clientID === root.clientID &&
+            end(previous.root) === root.clock
+          ) {
+            previous.target.length += 1;
+            previous.root.length += 1;
+          } else {
+            targets.push({ version: 1, target: { ...target }, root: { ...root } });
+          }
         }
       }
+      outputCursor += length;
     }
-    cursor += length;
+    allocationCursor += editLength;
   }
   appendProvenanceFacts(doc, { targets });
 }
@@ -410,6 +418,25 @@ function insertedStringRanges(update: Uint8Array): WriterLineageRange[] {
       ? [{ clientID: struct.id.client, clock: struct.id.clock, length: struct.length }]
       : [];
   });
+}
+
+function intersectRangesInOrder(
+  ordered: readonly WriterLineageRange[],
+  candidates: readonly WriterLineageRange[],
+): WriterLineageRange[] {
+  return ordered.flatMap((range) =>
+    candidates
+      .filter((candidate) => rangesOverlap(range, candidate))
+      .map((candidate) => {
+        const clock = Math.max(range.clock, candidate.clock);
+        return {
+          clientID: range.clientID,
+          clock,
+          length: Math.min(end(range), end(candidate)) - clock,
+        };
+      })
+      .sort((left, right) => left.clock - right.clock),
+  );
 }
 
 function sliceRanges(

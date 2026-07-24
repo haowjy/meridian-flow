@@ -146,6 +146,81 @@ describe("provenance materialization", () => {
     });
   });
 
+  it("maps reverse-declared edits through their insertion order before visible order", () => {
+    const doc = proseDoc("one");
+    const firstRoot = textRange(doc);
+    const secondRoot = appendVisibleText(doc, "two");
+    const fragment = doc.getXmlFragment("prosemirror");
+    const firstBlock = fragment.get(0) as Y.XmlElement;
+    const secondBlock = fragment.get(1) as Y.XmlElement;
+    const firstText = firstBlock.get(0) as Y.XmlText;
+    const secondText = secondBlock.get(0) as Y.XmlText;
+    const before = Y.encodeStateVector(doc);
+    secondText.delete(0, 3);
+    secondText.insert(0, "TWO");
+    firstText.delete(0, 3);
+    firstText.insert(0, "ONE");
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [firstRoot, secondRoot],
+        deleted: [firstRoot, secondRoot],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: secondBlock as never,
+                span: { start: 0, end: 3 },
+                newText: "TWO",
+              },
+              outputRuns: [
+                {
+                  kind: "restoration",
+                  root: secondRoot,
+                  payload: "TWO",
+                  output: { from: 0, to: 3 },
+                },
+              ],
+            },
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: firstBlock as never,
+                span: { start: 0, end: 3 },
+                newText: "ONE",
+              },
+              outputRuns: [
+                {
+                  kind: "restoration",
+                  root: firstRoot,
+                  payload: "ONE",
+                  output: { from: 0, to: 3 },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      before,
+    );
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
+      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
+    ]);
+    expect(visible.map(({ root }) => root)).toEqual([firstRoot, secondRoot]);
+  });
+
   it("encodes certified continuation facts in the same Yjs update as prose", () => {
     const doc = proseDoc("old");
     const initial = Y.encodeStateAsUpdate(doc);
