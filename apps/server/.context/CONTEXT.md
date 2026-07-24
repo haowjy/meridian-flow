@@ -66,8 +66,8 @@ canonical internal `UserId` values from `public.users`; route and WebSocket
 boundaries verify the sealed `wos-session` cookie and provision via
 `UserRepository.ensureUser` on first login.
 
-WorkOS user ID is the sole automatic account key. A verified email is mutable
-profile data, not a merge key: if it is already attached to another WorkOS
+WorkOS user ID is the sole automatic account key. Email is mutable profile
+data, not a merge key: if it is already attached to another WorkOS
 principal, HTTP auth gates return structured `409 account_link_conflict` and no
 account is provisioned or adopted.
 
