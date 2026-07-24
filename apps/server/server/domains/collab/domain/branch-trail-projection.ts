@@ -9,6 +9,7 @@ import type {
   PreparedPush,
   PushReceiptPayload,
   PushSweptTrail,
+  TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
 import type {
@@ -285,6 +286,26 @@ export async function persistDurableTrailRecord(
       },
     });
   }
+}
+
+export function trailContributionReplacement(
+  record: DurableTrailRecord,
+  push: { id: number },
+  kind: "refine" | "empty",
+): TrailContributionReplacement {
+  if (kind === "empty") return { kind: "empty" };
+  const pushId = String(push.id);
+  const changes = record.changes.map((change) => ({ ...change, pushId }));
+  const trails = normalizeTrailPushes(
+    record.threadIds.map((threadId) => ({
+      pushId,
+      receiptId: record.receiptId,
+      threadId,
+      changes,
+      journalOwners: record.journalOwners,
+    })),
+  );
+  return { kind: "refine", classifications: trails.flatMap((trail) => trail.changes) };
 }
 
 export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {

@@ -712,6 +712,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }
           await realChangeTrails.record(input);
         },
+        replacePushContribution: (
+          pushId: Parameters<typeof realChangeTrails.replacePushContribution>[0],
+          replacement: Parameters<typeof realChangeTrails.replacePushContribution>[1],
+        ) => realChangeTrails.replacePushContribution(pushId, replacement),
         reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
           realChangeTrails.reopenOwners(owners),
       };
