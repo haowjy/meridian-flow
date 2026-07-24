@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
@@ -30,6 +31,7 @@ export function HomeView() {
         <Composer
           variant="hero"
           autoFocus
+          placeholder={t`Start writing…`}
           onSubmit={(text) => handleSubmit(text, selectedAgentSlug)}
           toolbarLeft={
             <ComposerAgentControl

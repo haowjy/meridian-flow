@@ -3,7 +3,7 @@
  * timeline.
  *
  * Thin binding: it picks the registered renderer for the tool name, evaluates
- * the title/expand/click for the current view, and hands the result to the
+ * the title and optional expansion for the current view, and hands the result to the
  * shared `ActivityRow` primitive. Replaces the boxed `ToolCard`; one logical
  * tool invocation is now a single text-altitude row.
  *
@@ -30,16 +30,13 @@ export function ToolRow({ tool, draftWrite = false }: ToolRowProps) {
   const status: ActivityRowStatus =
     tool.status === "partial" ? "running" : tool.isError ? "error" : "done";
   const expand = renderer.expand ? (renderer.expand(tool) ?? undefined) : undefined;
-  const onClick = renderer.onClick ? () => renderer.onClick?.(tool) : undefined;
 
   return (
     <ActivityRow
       Icon={renderer.Icon}
-      iconTint={renderer.iconTint}
       title={renderer.title(tool, { writeMode: draftWrite ? "draft" : "direct" })}
       status={status}
       expand={expand}
-      onClick={onClick}
     />
   );
 }
