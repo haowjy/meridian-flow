@@ -3,6 +3,7 @@ import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
 import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { isUuid } from "../../../../lib/uuid.js";
 import type {
   CreateProjectInput,
   ListProjectsOptions,
@@ -55,6 +56,9 @@ export function createDrizzleProjectRepository(
       return mapProject(row);
     },
     async findById(id: ProjectId): Promise<Project | null> {
+      // A non-UUID id (e.g. a slug in a `:projectId` route) would reach the
+      // `uuid` column and raise a Postgres parse error; treat it as not-found.
+      if (!isUuid(id)) return null;
       const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
       return row ? mapProject(row) : null;
     },
