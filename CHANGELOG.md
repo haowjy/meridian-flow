@@ -20,6 +20,9 @@
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
   branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
   PR evidence, GitHub failures, and refs that move before execution are refused.
+- `tools/dev`: automatic worktree pruning now requires exact merged-PR evidence,
+  skips dirty or active worktrees, rechecks readiness before teardown, deletes
+  refs atomically, and batches discovery instead of pausing silently per lane.
 - `tools/dev`: restart now terminates only its owned tmux session, waits for
   fixed ports to become bindable, and refuses non-owned or uninspectable
   listeners instead of killing processes discovered by port.

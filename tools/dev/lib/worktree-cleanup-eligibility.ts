@@ -44,9 +44,10 @@ export function decideCleanupEligibility(input: {
   readonly baseBranch: string;
   readonly repositoryOwner: string;
   readonly isAncestor: boolean;
+  readonly allowAncestry: boolean;
   readonly pullRequestDiscovery: PullRequestDiscovery;
 }): EligibilityDecision {
-  if (input.isAncestor) {
+  if (input.allowAncestry && input.isAncestor) {
     return {
       eligible: true,
       evidence: {
@@ -77,8 +78,10 @@ export function decideCleanupEligibility(input: {
     return {
       eligible: false,
       reason:
-        `commit ${input.plannedOid} is not an ancestor of '${input.baseBranch}' ` +
-        "and has no exact merged pull request",
+        input.allowAncestry && !input.isAncestor
+          ? `commit ${input.plannedOid} is not an ancestor of '${input.baseBranch}' ` +
+            "and has no exact merged pull request"
+          : `commit ${input.plannedOid} has no exact merged pull request`,
     };
   }
   if (exactMatches.length > 1) {

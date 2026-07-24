@@ -1,5 +1,10 @@
 import path from "node:path";
 import type { CleanupEligibility, EligibilityDecision } from "./worktree-cleanup-eligibility";
+import {
+  type AutoCleanupReadiness,
+  type AutoCleanupReadinessDecision,
+  autoCleanupReadinessKey,
+} from "./worktree-cleanup-readiness";
 
 export interface GitWorktree {
   readonly path: string;
@@ -24,6 +29,7 @@ export interface CleanupContext {
   readonly primaryWorktreePath: string;
   readonly currentWorktreePath: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly autoReadinessByWorktree: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly workItems: readonly MeridianWorkItem[];
 }
@@ -37,6 +43,7 @@ export interface CleanupTarget {
   readonly branch: string;
   readonly workItem?: MeridianWorkItem;
   readonly eligibility: CleanupEligibility;
+  readonly autoReadiness?: AutoCleanupReadiness;
 }
 
 export type CleanupActionKind =
@@ -70,6 +77,7 @@ export interface CleanupExecutionResult {
   readonly failedTarget?: CleanupTargetPlan;
   readonly failedAction?: CleanupAction;
   readonly eligibilityFailure?: string;
+  readonly readinessFailure?: string;
 }
 
 export type CleanupActionRunner = (
@@ -80,6 +88,10 @@ export type CleanupActionRunner = (
 export type CleanupEligibilityValidator = (
   target: CleanupTargetPlan,
 ) => EligibilityDecision | Promise<EligibilityDecision>;
+
+export type AutoCleanupReadinessValidator = (
+  target: CleanupTargetPlan,
+) => AutoCleanupReadinessDecision | Promise<AutoCleanupReadinessDecision>;
 
 export interface CleanupExecutionHooks {
   readonly onTargetStart?: (target: CleanupTargetPlan) => void;
@@ -165,6 +177,7 @@ export function parseMeridianWorkShow(id: string, output: string): MeridianWorkI
 export function buildCleanupContext(input: {
   readonly gitWorktreePorcelain: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly autoReadinessByWorktree?: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly meridianWorkItems: readonly MeridianWorkItem[];
   readonly currentWorktreePath: string;
@@ -177,6 +190,7 @@ export function buildCleanupContext(input: {
     primaryWorktreePath: normalizePath(worktrees[0].path),
     currentWorktreePath: normalizePath(input.currentWorktreePath),
     eligibilityByBranch: input.eligibilityByBranch,
+    autoReadinessByWorktree: input.autoReadinessByWorktree ?? new Map(),
     baseBranch: input.baseBranch,
     workItems: input.meridianWorkItems,
   };
@@ -315,8 +329,14 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
     if (normalizePath(worktree.path) === context.currentWorktreePath) continue;
     if (!worktree.branch) continue;
     if (worktree.branch === context.baseBranch) continue;
-    if (!context.eligibilityByBranch.has(worktree.branch)) continue;
-    targets.push(targetForWorktree(context, worktree));
+    const eligibility = context.eligibilityByBranch.get(worktree.branch);
+    if (eligibility?.kind !== "pull-request") continue;
+    const readiness = context.autoReadinessByWorktree.get(autoCleanupReadinessKey(worktree.path));
+    if (!readiness?.ready) continue;
+    targets.push({
+      ...targetForWorktree(context, worktree),
+      autoReadiness: readiness.evidence,
+    });
   }
   return targets;
 }
@@ -342,10 +362,15 @@ function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): C
   actions.push({
     kind: "delete-branch",
     cwd: primaryWorktreePath,
-    // Force-delete is safe only because exact commit eligibility is revalidated
-    // immediately before every action. `git branch -d` is squash-blind and
-    // would refuse a squash-merged tip even after that proof.
-    command: ["git", "branch", "-D", target.branch],
+    // update-ref compares and deletes in one transaction; a ref move between
+    // the final validation and this action is therefore still a refusal.
+    command: [
+      "git",
+      "update-ref",
+      "-d",
+      `refs/heads/${target.branch}`,
+      target.eligibility.plannedOid,
+    ],
   });
 
   return actions;
@@ -375,11 +400,23 @@ export function parsePrNumber(value: string): string {
 export async function executeCleanupPlan(
   plan: CleanupPlan,
   validateEligibility: CleanupEligibilityValidator,
+  validateAutoReadiness: AutoCleanupReadinessValidator,
   runAction: CleanupActionRunner,
   hooks: CleanupExecutionHooks = {},
 ): Promise<CleanupExecutionResult> {
   for (const target of plan.targets) {
     hooks.onTargetStart?.(target);
+    if (target.autoReadiness) {
+      const readiness = await validateAutoReadiness(target);
+      if (!readiness.ready) {
+        return {
+          ok: false,
+          failedTarget: target,
+          failedAction: target.actions[0],
+          readinessFailure: readiness.reasons.join("; "),
+        };
+      }
+    }
     for (const action of target.actions) {
       const eligibility = await validateEligibility(target);
       if (!eligibility.eligible) {
