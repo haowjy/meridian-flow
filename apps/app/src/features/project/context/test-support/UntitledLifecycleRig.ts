@@ -297,6 +297,9 @@ export class UntitledLifecycleRig {
   }
 
   restart(): void {
+    // Browser disposal cannot retract a microtask already handed to the
+    // scheduler. Keep that stale callback so restart scenarios prove the
+    // disposed reconciler cannot mutate the rehydrated lifecycle.
     this.reconciler.dispose();
     this.reconciler = new UntitledReconciler(this.deps);
     this.reconciler.start();
