@@ -1,8 +1,11 @@
 /** Quiet thread-level status for a Work whose AI edits land as drafts. */
 import { Trans } from "@lingui/react/macro";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { ChatColumn } from "./ChatColumn";
 
-export function DraftModeIndicator() {
+export function DraftModeIndicator({ mode }: { mode: AiWriteMode | null }) {
+  if (mode !== "draft") return null;
+
   return (
     <div className="border-border-subtle border-b bg-dock-surface" data-thread-write-mode="draft">
       <ChatColumn className="flex min-h-7 items-center gap-1.5 overflow-hidden text-caption">

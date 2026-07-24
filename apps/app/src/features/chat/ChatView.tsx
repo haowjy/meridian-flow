@@ -153,7 +153,7 @@ export function ChatView({
     <ChatSurface
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
-      header={draftMode ? <DraftModeIndicator /> : null}
+      header={<DraftModeIndicator mode={activeWork?.aiWriteMode ?? null} />}
       footer={
         <div data-debug-composer={threadId} className="@container">
           {/* The dock strip sits BEHIND (below) the composer — narrower via
