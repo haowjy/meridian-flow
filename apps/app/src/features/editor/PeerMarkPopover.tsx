@@ -77,6 +77,10 @@ export function PeerMarkPopover({
       : t`Collaborator`;
   const action = change ? trailChangeForwardAction(change) : "restore";
   const durableAction = change?.forwardActions?.[action];
+  const canRecover = Boolean(
+    change &&
+      (change.kind !== "insert" || change.writerProtection || change.swept || durableAction),
+  );
   const applied = actionState === "applied" || durableAction?.status === "applied";
   const removedText = change ? removedTextFor(change) : marker.excerpt;
 
@@ -179,7 +183,7 @@ export function PeerMarkPopover({
 
         {agentAuthor ? (
           <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
-            {change && durableAction && !applied ? (
+            {canRecover && !applied ? (
               <Button size="sm" disabled={actionState === "pending"} onClick={() => void forward()}>
                 {action === "delete-again" ? <Trans>Delete again</Trans> : <Trans>Restore</Trans>}
               </Button>
