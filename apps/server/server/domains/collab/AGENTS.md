@@ -96,7 +96,8 @@ propagation between them.
   or reverse this order.
 - **Draft Apply safety is row-based**: each draft journal row owns an immutable
   live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
-  resurrection after that base. Auto-apply never gates and trails only effects
+  resurrection after that base, including writer insertions positioned inside
+  the candidate's replaced scope. Auto-apply never gates and trails only effects
   that destroy writer-owned roots according to durable provenance.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; writer-lineage sweeps are captured for the trail and

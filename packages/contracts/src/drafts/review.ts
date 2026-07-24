@@ -131,8 +131,12 @@ export type DraftApplyConflict = {
   blockId: string;
   journalIds: number[];
   draftBaseUpdateSeq: number;
-  effect: "overwrite" | "delete" | "resurrection";
-  evidence: "human_live_change" | "human_live_deletion" | "ambiguous_protected_divergence";
+  effect: "overwrite" | "delete" | "resurrection" | "enclosed_insertion";
+  evidence:
+    | "human_live_change"
+    | "human_live_deletion"
+    | "human_live_insertion"
+    | "ambiguous_protected_divergence";
   captured: {
     base: string | null;
     live: string | null;

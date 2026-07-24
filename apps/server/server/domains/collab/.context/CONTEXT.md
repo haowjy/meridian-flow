@@ -196,7 +196,9 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and
-  never rebases rows after a click or refusal.
+  never rebases rows after a click or refusal. A writer root inserted after that
+  base conflicts when its live position falls inside the candidate's replaced
+  scope; unrelated insertions outside a selective edit remain mergeable.
 - **Push policy is the only mode difference**: manual Apply refuses protected
   draft-base divergence; Auto-apply always merges. Protection derives from
   durable journal attribution: `completeStagedPush` persists the live journal
