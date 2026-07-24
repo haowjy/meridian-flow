@@ -155,7 +155,7 @@ Policy:
 - URL transforms use `new URL()` — no regex surgery on connection strings.
 - Explicit errors over silent fallback.
 - Provider assumptions stay in dev tooling, not domain code.
-- No file crosses 1,000 lines; `dev-tmux.ts` is the orchestrator (<550 lines), with session planning, readiness, tailscale, and output extracted behind clear interfaces.
+- No file crosses 1,000 lines; `dev-tmux.ts` owns orchestration only, with session planning, readiness, port lifecycle, Tailscale lifecycle, and output policy extracted behind clear interfaces.
 
 ## Related documentation
 
