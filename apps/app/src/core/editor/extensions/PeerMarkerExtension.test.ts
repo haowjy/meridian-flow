@@ -153,6 +153,19 @@ describe("peer marker writer self-clear", () => {
     expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).not.toBeNull();
   });
 
+  it("emphasizes an addressed live marker without creating a second decoration", () => {
+    addMarker("boundary", 3);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    expect(editor.commands.showPeerMarker("boundary-mark")).toBe(true);
+    expect(
+      editor.view.dom
+        .querySelector('[data-peer-mark="boundary-mark"]')
+        ?.getAttribute("data-peer-mark-emphasized"),
+    ).toBe("true");
+    expect(editor.view.dom.querySelector("[data-live-range-navigation]")).toBeNull();
+  });
+
   it("projects a pure deletion as an inline tick instead of a range", () => {
     addMarker("range", 1, 6, "-deletion", 2);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));

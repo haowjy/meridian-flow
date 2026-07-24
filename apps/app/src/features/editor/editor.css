@@ -661,6 +661,10 @@
   vertical-align: text-bottom;
 }
 
+.meridian-editor .ProseMirror [data-peer-mark-emphasized="true"] {
+  box-shadow: 0 0 0 3px var(--color-review-added-ring);
+}
+
 .meridian-trail-row-emphasized {
   box-shadow: 0 0 0 2px var(--color-review-added-ring);
 }

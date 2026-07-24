@@ -22,6 +22,8 @@ import { displayThreadTitle } from "@/lib/thread-title";
 export type PeerMarkPopoverTarget = {
   marker: SessionMarker;
   element: HTMLElement;
+  activation: "pointer" | "keyboard";
+  editorSelection: { from: number; to: number };
 };
 
 export function PeerMarkPopover({
@@ -149,6 +151,14 @@ export function PeerMarkPopover({
         sideOffset={8}
         className="w-80 space-y-3 p-3 text-caption"
         data-peer-mark-popover
+        onOpenAutoFocus={(event) => {
+          if (target.activation === "pointer") event.preventDefault();
+        }}
+        onCloseAutoFocus={(event) => {
+          // The virtual anchor cannot restore focus correctly. EditorView owns
+          // activation-aware restoration after this controlled popover closes.
+          event.preventDefault();
+        }}
       >
         <div className="flex items-start gap-2">
           <span

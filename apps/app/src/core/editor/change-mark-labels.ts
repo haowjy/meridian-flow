@@ -13,8 +13,9 @@ export function collaboratorChangeLabel(): string {
 export function changeMarkLabel(
   kind: "insert" | "modify" | "delete",
   pureDeletionOffset: number | null,
+  agentName?: string,
 ): string {
-  return kind === "modify" && pureDeletionOffset !== null
-    ? "AI deleted text"
-    : changeKindLabel(kind);
+  const verb =
+    kind === "modify" && pureDeletionOffset !== null ? "AI deleted text" : changeKindLabel(kind);
+  return agentName ? `${agentName} · ${verb}` : verb;
 }

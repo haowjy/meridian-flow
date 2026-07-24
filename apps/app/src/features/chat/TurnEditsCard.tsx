@@ -174,7 +174,7 @@ export function TurnEditsCard({
   );
 }
 
-function ChangeViewDetail({
+export function ChangeViewDetail({
   threadId,
   shell,
   navigateToChange,

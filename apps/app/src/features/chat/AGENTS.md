@@ -72,6 +72,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and recovery actions. No draft Review/Apply/Discard. Full model in [`.context/draft-editing.md`](.context/draft-editing.md). |
+| `ThreadChangesCard.tsx` | Quiet transcript-tail Changes record for shared trails with no owning turn. It reuses protected rows and recovery actions without inventing turn ownership. |
 | `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams |
 | `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, emphasize the exact row |
 | `block-render-key.ts` | Positional render keys |

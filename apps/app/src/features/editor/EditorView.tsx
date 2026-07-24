@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -36,6 +37,7 @@ import {
 } from "@/core/editor/figure-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
@@ -166,9 +168,20 @@ function SessionEditorView({
   const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
   const [dragActive, setDragActive] = useState(false);
   const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
+  const pointerSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const { threads: projectThreads } = useProjectThreads(projectId ?? "", {
+    enabled: Boolean(projectId) && !inReview,
+  });
+  const markerAgentName = useCallback(
+    (threadId: string) => {
+      const thread = projectThreads?.find((candidate) => candidate.id === threadId);
+      return thread ? displayThreadTitle(thread.title) : undefined;
+    },
+    [projectThreads],
+  );
 
   const openPeerMark = useCallback(
-    (eventTarget: EventTarget | null): boolean => {
+    (eventTarget: EventTarget | null, activation: "pointer" | "keyboard"): boolean => {
       if (inReview || !(eventTarget instanceof Element)) return false;
       const element = eventTarget.closest<HTMLElement>("[data-peer-mark]");
       const changeId = element?.dataset.peerMark;
@@ -177,7 +190,16 @@ function SessionEditorView({
         .getSnapshot()
         .find((candidate) => candidate.changeId === changeId && !candidate.dismissed);
       if (!marker) return false;
-      setPeerMarkTarget({ marker, element });
+      const currentSelection = editorRef.current?.state.selection;
+      const editorSelection =
+        activation === "pointer" && pointerSelectionRef.current
+          ? pointerSelectionRef.current
+          : {
+              from: currentSelection?.from ?? 0,
+              to: currentSelection?.to ?? currentSelection?.from ?? 0,
+            };
+      setPeerMarkTarget({ marker, element, activation, editorSelection });
+      pointerSelectionRef.current = null;
       return true;
     },
     [inReview, session.markerStore],
@@ -259,6 +281,7 @@ function SessionEditorView({
         showCollaborationDecorations,
         enableDraftInlineReview: inReview,
         markerStore: inReview ? undefined : session.markerStore,
+        markerAgentName,
         editorProps: {
           attributes: {
             class: editorProseClass(showToolbar ? "docked" : "none"),
@@ -289,11 +312,31 @@ function SessionEditorView({
             return true;
           },
           handleDOMEvents: {
+            pointerdown(view, event) {
+              if (
+                event.target instanceof Element &&
+                event.target.closest<HTMLElement>("[data-peer-mark]")
+              ) {
+                pointerSelectionRef.current = {
+                  from: view.state.selection.from,
+                  to: view.state.selection.to,
+                };
+                // A peer mark is an explanatory decoration, not a new caret
+                // destination. Keep the editor focused until the click opens
+                // the pointer-mode popover.
+                event.preventDefault();
+                return true;
+              }
+              return false;
+            },
             click(_view, event) {
-              return openPeerMark(event.target);
+              return openPeerMark(event.target, "pointer");
             },
             keydown(_view, event) {
-              if ((event.key !== "Enter" && event.key !== " ") || !openPeerMark(event.target)) {
+              if (
+                (event.key !== "Enter" && event.key !== " ") ||
+                !openPeerMark(event.target, "keyboard")
+              ) {
                 return false;
               }
               event.preventDefault();
@@ -335,6 +378,7 @@ function SessionEditorView({
       showCollaborationDecorations,
       inReview,
       openPeerMark,
+      markerAgentName,
     ],
   );
 
@@ -485,10 +529,16 @@ function SessionEditorView({
         markerStore={session.markerStore}
         onOpenChange={(open) => {
           if (open) return;
-          const mark = peerMarkTarget?.element;
+          const closingTarget = peerMarkTarget;
           setPeerMarkTarget(null);
           requestAnimationFrame(() => {
-            if (mark?.isConnected) mark.focus();
+            if (closingTarget?.activation === "keyboard") {
+              if (closingTarget.element.isConnected) closingTarget.element.focus();
+              return;
+            }
+            const activeEditor = editorRef.current;
+            if (!activeEditor || activeEditor.isDestroyed || !closingTarget) return;
+            activeEditor.chain().setTextSelection(closingTarget.editorSelection).focus().run();
           });
         }}
       />

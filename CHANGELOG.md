@@ -18,10 +18,12 @@
   settled empty trails and preserves the command name in malformed responses.
 - Change-event broadcasts now identify pure in-block deletions and their splice
   offsets so editor marks can render at the exact deletion site.
-- `apps/app`: render AI insert/replacement highlights, exact-site deletion
-  ticks, and whole-block deletion seams with stable collaboration colors.
+- `apps/app`: render AI insert/replacement highlights (replacement popovers
+  carry the removed text), deletion ticks, and whole-block deletion seams with
+  stable collaboration colors and agent identity.
 - `apps/app`: peer marks open trail-backed detail with the originating request
-  and recovery action; Open conversation reveals and emphasizes the owning row.
+  and recovery action; Open conversation reveals and emphasizes the owning turn
+  row or the thread-level shared Changes row.
 - `@meridian/contracts`: reject out-of-range Yjs identities, oversized live
   change excerpts, and cross-thread agent authorship on stateless change events;
   server encoding now validates the same schema as client parsing.
@@ -135,7 +137,7 @@
 - `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
   protected — a conflicting stale cross-Work Apply refuses
   (`push_concurrent_conflict`) and lands in ordinary re-review; any sweep of
-  approved text is captured with durable body, writer notice, and Restore.
+  approved text is captured in the durable Trail with its body and Restore.
   Previously approved text was classified as ordinary AI text and could be
   silently destroyed.
 - `apps/app`, `apps/server`: Apply (including Apply-all) submits exactly the
