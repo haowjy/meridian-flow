@@ -77,14 +77,16 @@ commands, and the lightweight hunk model used by the plugin.
   decoration construction so anchor handling can be unit-tested without a DOM.
 - Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
   RelativePositions. The editor is read-only; the extension has no local typing
-  or optimistic attribution path.
+  or optimistic attribution path. Review dispositions never use browser
+  mutation origins or collaborative history; Ctrl+Z is not a review restore
+  mechanism.
 - Editor-side click seam: mousedown on any decoration DOM
   (`[data-review-operations]`) dispatches
   `setInlineReviewActiveOperation` for the first listed operation. This is
   the editor→sidebar direction of bidirectional linking; the sidebar
   reads plugin state via `useEditorState` and reacts (scroll card into
-  view + emphasise). Pure deletions use an empty, visible seam whose DOM
-  contains no manuscript text.
+  view + emphasise). Pure deletions use an empty, visible navigation seam with
+  focused-operation emphasis; its DOM contains no manuscript text.
 
 Attribution → highlight color (agent = jade, writer = gold), review palette
 lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.

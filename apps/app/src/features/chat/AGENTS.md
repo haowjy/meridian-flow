@@ -89,82 +89,12 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 
-## Draft review lifecycle
+## Draft-review boundary
 
-Inline review is the only draft review surface. Whole-draft "Apply all" runs the
-`acceptDraft` path; each dock Changes card also carries per-card Apply/Discard,
-and a per-card Apply's "Change applied" receipt carries an Undo.
-The controller is the single client review-session owner. Its reducer owns
-`surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
-message target, and inline messages. The synchronous disposition lock is the
-only pending-command source. Use controller transitions instead of pairing
-local `close` calls; `exitReview` is the single clear-all path.
-`DraftReviewProvider` keys that owner by Project + Work so refusal, conflict,
-and dock-error state cannot cross a Work switch.
-
-Per-card Apply routes the closure-card `acceptDraft` mutation with
-`operationIds`; the server receives the vended closure class as one card, so
-there is no dependency confirmation state. Every disposition is serialized by
-the session's synchronous lock (`controller.isDisposing`): while any whole-draft or
-per-card Apply/Discard/Undo is in flight, all mutating controls disable and a
-second card click is ignored rather than clearing the in-flight card's pending
-state. Per-card Discard routes to the server discard mutation with
-`operationIds`; the server performs reversal-peer sync. The mutation awaits the
-draft-list and preview refreshes before the session releases its lock, so no
-second preview-settlement timer or local pending copy is needed.
-
-Bulk Apply/Discard is one controller command over a captured target list; the
-dock does not infer command completion from busy/idle render edges. Direct
-inline Apply uses the exact preview the writer reviewed; bulk Apply acquires
-each captured draft's current preview while retaining the batch reservation.
-A reviewed whole-draft Apply stays disabled until that exact preview is
-available; Apply/Discard failures are session outcomes rendered by the review
-header rather than ignored promises.
-A batch stops at its first refusal/failure so later targets cannot erase the
-explanation; transport failures surface through the dock's typed error state.
-Manual Apply refusals retain their document/draft target and the complete
-writer-conflict comparison (base, current manuscript, proposed draft, evidence,
-and explanation). The dock announces the conflict immediately, exposes the
-bounded comparison through a disclosure, clears it when review moves elsewhere
-or receives a genuinely new server preview (not a conflict-decoration-only
-refresh), and routes
-**Compare changes** through the same `useAiDraftLauncher` review entry as every
-other review control.
-
-On success, `applySucceeded` clears the active surface so the editor rebinds from
-the draft room back to the live manuscript room. If accept returns
-`status: "stale_draft"`, inline review reloads the refreshed draft id from the
-response. Whole-draft discard uses the same cleanup path.
-
-Review mode is a full-width editor plus the dock's `Changes` view — there is no
-in-editor review split. The editor's review chrome is
-`features/editor/DraftReviewHeader` (below the toolbar, review-only): LEFT
-"Back to live" exit, RIGHT whole-draft "Apply all" / "Discard all", all
-delegating to the controller. The dock's `DockChangesView` expands the reviewed
-document to operation cards read from the live preview; a card body click calls
-`controller.focusReviewOperation(operationId)`, which reads the review editor off
-the inline-review runtime and highlights + scrolls the manuscript span. Each card
-carries hover-revealed Apply/Discard verbs — the only mutating targets on the
-card — driving `controller.acceptOperation` / `controller.discardOperation`.
-
-The review editor is read-only. Draft content changes only through agent writes
-and explicit Apply/Discard commands; ordinary TipTap input is disabled and the
-server rejects client-authored branch-room updates.
-
-`useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
-the TipTap inline-review extension and reports model availability identities.
-The extension styles only text and blocks present in the server draft
-projection; removed live content stays in the dock's compare cards so old and
-proposed prose can never compose into one manuscript line. Pure deletions use
-empty positional anchors with a visible seam so their cards can still scroll
-the manuscript without adding text. An active preview without a model is an
-invariant violation, logged loudly and ignored safely.
-
-`reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
-keeps active drafts visible and hides older terminal undo receipts when a newer
-active draft exists in the same document group; the server reviewable list still
-contains the full lifecycle history so the `DraftDock` reviewed rows and the
-editor bar's minimal terminal Undo receipt can show undo where it remains useful.
+Inline review is the only draft-review surface. It uses server-backed
+Apply/Discard/Undo disposition commands; the read-only review editor never
+uses browser mutation history. See [`.context/draft-editing.md`](.context/draft-editing.md)
+for the lifecycle, session, preview, and projection contracts.
 
 ## Block type reference
 
@@ -195,9 +125,9 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 → TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
 → useChatFollowScroll.ts header comment (state machine invariants +
   re-armable 180ms guard + near-bottom-wins ordering)
-→ [KB: chat scroll follow-state decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/chat-scroll-follow-state.md)
+→ [KB: chat scroll follow-state decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat-scroll-follow-state.md)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
-→ [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
+→ [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
+→ [Draft review projection authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-projection-authority.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher

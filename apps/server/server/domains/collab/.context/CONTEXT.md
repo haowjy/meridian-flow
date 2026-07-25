@@ -114,10 +114,12 @@ Hocuspocus branch rooms converge and broadcast normally; unloaded branches remai
 persistence-only.
 
 **Review rooms are read-only.** The Yjs gateway admits branch handshake frames
-and exact snapshot-contained acknowledgements, but rejects any client frame
-that would mutate the branch document, including deletion sets for structs the
-room has not received yet. Branch mutations originate from server-side agent
-and disposition commands, not browser editing. No branch-room `onStore` path may
+and canonical V1 acknowledgements whose complete bytes are exactly contained by
+the current room snapshot. It rejects V2 updates, V1 frames with trailing bytes,
+malformed frames, and any update that would mutate the branch document,
+including deletion sets for structs the room has not received yet. Branch
+mutations originate from server-side agent and disposition commands, not
+browser editing. No branch-room `onStore` path may
 re-persist or re-checkpoint to make such a mutation durable — it already is.
 `onChange` does not own branch persistence.
 `storeHocuspocusBranch` only drains pending branch admissions; calling
