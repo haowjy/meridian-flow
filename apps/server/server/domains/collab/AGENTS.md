@@ -42,13 +42,14 @@ propagation between them.
   rather than leaving optional runtime dependencies.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts`
-  prepares writer-impact evidence, and `branch-trail-projection.ts` owns trail
+  prepares the immutable-base push, and `branch-trail-projection.ts` owns trail
   projection. `branch-push-candidates.ts` builds whole, selective,
   and companion candidate outcomes; `branch-push.ts` runs ready batches through
   their one shared pipeline;
   `branch-push-transition.ts` is the sole ordering owner for settlement
-  drain/reload/materialization/classification/refinement/fenced completion and
-  delivery across every push mode. `branch-review*.ts` is a separately composed
+  drain/reload/materialization/fenced completion and delivery across every push
+  mode. Its provenance-backed sweep detection is a best-effort live-session
+  overlay and can never block durable completion. `branch-review*.ts` is a separately composed
   service for discard/undo/redo.
 - `domain/ports/pending-settlement-store.ts` is the required settlement
   persistence boundary. `adapters/drizzle-pending-settlement.ts` owns the

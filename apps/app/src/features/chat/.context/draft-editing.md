@@ -121,9 +121,9 @@ available; Apply/Discard failures are session outcomes rendered by the review
 header rather than ignored promises.
 A batch stops at its first failure; transport failures surface through the
 dock's typed error state. Apply always merges through Yjs, including when the
-writer changed the same passage after the draft was cut. Provenance-classified
-sweeps are reported through the normal change-trail and mark surfaces rather
-than a separate refusal state.
+writer changed the same passage after the draft was cut. The durable receipt
+records every edit without classification; best-effort provenance only elevates
+a swept mark in the connected session.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns

@@ -647,7 +647,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("item 24: a checkpoint without its attribution manifest blocks instead of guessing", async () => {
+  it("item 24: a missing attribution manifest degrades sweep elevation without blocking", async () => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;
     const removeManifest = async () => {
       await db.update(schema.documentYjsCheckpoints).set({ attributionManifest: {} });
@@ -657,7 +657,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         await resetDatabase();
         const warm = createHarness({ afterDurableCommit: removeManifest });
         const branchId = await warm.seedDestructivePush("oracle-missing-manifest-warm");
-        await expect(warm.autoPush(branchId)).rejects.toThrow("attribution manifest");
+        await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+        expectUnsweptChangeEvent(warm);
         const observed = await observeSettlement(warm);
         warm.destroyWarmState();
         return observed;
@@ -680,15 +681,16 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       async recoverFromPostgres() {
         await expirePendingClaims();
         const cold = createHarness();
-        await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(0);
+        await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
+        expectUnsweptChangeEvent(cold);
         const observed = await observeSettlement(cold);
         cold.destroyWarmState();
         return observed;
       },
     });
 
-    expect(result.cold.completionState).toMatchObject({ state: "blocked" });
-    expect(result.cold.applyResult).toMatchObject({ status: "not_applied" });
+    expect(result.cold.completionState).toMatchObject({ state: "completed" });
+    expect(result.cold.applyResult).toMatchObject({ status: "applied" });
   });
 });
 
@@ -728,6 +730,16 @@ async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): P
       expect(change).not.toHaveProperty("writerProtection");
     }
   }
+}
+
+function expectUnsweptChangeEvent(harness: ReturnType<typeof createHarness>): void {
+  expect(harness.changeEvents()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        changes: expect.arrayContaining([expect.objectContaining({ swept: false })]),
+      }),
+    ]),
+  );
 }
 
 async function observeSettlement(

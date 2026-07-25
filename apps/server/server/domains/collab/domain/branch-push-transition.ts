@@ -10,6 +10,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type {
   CompletionFenceResult,
   PendingLiveSettlement,
@@ -23,7 +24,7 @@ import type { CommittedChangeTrailProjection } from "./ports/change-trail-persis
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
+import { materializeCandidateProvenance } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
@@ -43,6 +44,7 @@ export function createBranchPushTransition(input: {
   codec: AgentEditCodec;
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
+  eventSink?: EventSink;
 }) {
   type PreparedTransition<T> =
     | { kind: "return"; value: T }
@@ -81,23 +83,8 @@ export function createBranchPushTransition(input: {
         }
         const pushes = "status" in committed ? [committed.push] : committed.pushes;
         await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
-        for (const [index, push] of pushes.entries()) {
-          let durable: PendingLiveSettlement;
-          try {
-            durable = await input.settlementStore.loadLiveSettlement(push.id);
-          } catch (cause) {
-            if (cause instanceof ProvenanceMaterializationError) {
-              const preparedPush = prepared.pushes[index];
-              if (!preparedPush) throw new Error("Branch push transition lost its prepared push");
-              await input.settlementStore.block({
-                pushId: push.id,
-                claim: preparedPush.pendingLiveSettlement.claim,
-                code: "corrupt_settlement_authority",
-                error: cause.message,
-              });
-            }
-            throw cause;
-          }
+        for (const push of pushes) {
+          const durable = await input.settlementStore.loadLiveSettlement(push.id);
           const liveDoc = docs.get(push.documentId);
           if (!liveDoc) throw new Error("Branch push transition lost its live document lock");
           await settle({ pending: durable, liveDoc, signal: inputExecution.signal });
@@ -180,6 +167,7 @@ export function createBranchPushTransition(input: {
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
   ): ReadonlySet<string> {
+    if (!pending.provenanceView) return new Set();
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
     const afterDoc = createCollabYDoc({ gc: false });
     try {
@@ -228,6 +216,29 @@ export function createBranchPushTransition(input: {
     }
   }
 
+  function detectSweptChangesBestEffort(
+    pending: PendingLiveSettlement,
+    prePushDoc: Y.Doc,
+  ): ReadonlySet<string> {
+    try {
+      return detectSweptChanges(pending, prePushDoc);
+    } catch (cause) {
+      if (input.eventSink) {
+        emitEvent(input.eventSink, {
+          level: "warn",
+          source: "collab.change_event",
+          name: "sweep_projection.unavailable",
+          payload: {
+            pushId: pending.push.id,
+            documentId: pending.push.documentId,
+            ...unknownToEventPayload(cause),
+          },
+        });
+      }
+      return new Set();
+    }
+  }
+
   async function settle(inputSettlement: {
     pending: PendingLiveSettlement;
     liveDoc: Y.Doc;
@@ -245,9 +256,9 @@ export function createBranchPushTransition(input: {
       pending = { ...pending, claim: renewed };
       const ingressGeneration = await input.writerIngressBarrier?.drain(pending.push.documentId);
       pending = await input.settlementStore.loadLiveSettlement(pending.push.id);
-      const materialized = materializeFinalPrePush(pending);
+      const finalPrePush = materializeFinalPrePush(pending);
       try {
-        const sweep = detectSweptChanges(pending, materialized.doc);
+        const sweep = detectSweptChangesBestEffort(pending, finalPrePush);
         const settled = await input.settlementStore.settlePushTrail({
           push: pending.push,
           trail: pending.trail,
@@ -263,7 +274,7 @@ export function createBranchPushTransition(input: {
           completion = await completeUnderFence({
             pending,
             liveDoc: inputSettlement.liveDoc,
-            finalPrePush: materialized.doc,
+            finalPrePush,
             ingressGeneration,
           });
         } catch (cause) {
@@ -292,7 +303,7 @@ export function createBranchPushTransition(input: {
           return;
         }
       } finally {
-        materialized.doc.destroy();
+        finalPrePush.destroy();
       }
     }
     await input.settlementStore.recordFailure({
@@ -381,15 +392,12 @@ export function createBranchPushTransition(input: {
   return { execute, prepare, recover };
 }
 
-/** The only reconstruction path for settlement state and provenance, warm or cold. */
-export function materializeFinalPrePush(row: PendingLiveSettlement): {
-  doc: Y.Doc;
-  provenanceView: PendingLiveSettlement["provenanceView"];
-} {
+/** The only reconstruction path for final pre-push content, warm or cold. */
+export function materializeFinalPrePush(row: PendingLiveSettlement): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
   Y.applyUpdate(doc, row.lockCutUpdate);
   for (const update of row.postCutUpdates) Y.applyUpdate(doc, update);
-  return { doc, provenanceView: row.provenanceView };
+  return doc;
 }
 
 export function fullStateFingerprint(doc: Y.Doc): string {

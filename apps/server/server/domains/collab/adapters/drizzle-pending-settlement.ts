@@ -18,6 +18,7 @@ import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -35,7 +36,10 @@ import type {
   PendingSettlementStore,
   SettlementAdmission,
 } from "../domain/ports/pending-settlement-store.js";
-import { materializeProvenanceForDoc } from "../domain/provenance.js";
+import {
+  materializeProvenanceForDoc,
+  ProvenanceMaterializationError,
+} from "../domain/provenance.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
@@ -98,6 +102,7 @@ export function createDrizzlePendingSettlementStore(
   projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
   notices?: NoticePort,
+  eventSink?: EventSink,
 ): PendingSettlementStore {
   return {
     async joinAdmission(input) {
@@ -167,7 +172,7 @@ export function createDrizzlePendingSettlementStore(
     },
 
     async loadLiveSettlement(pushId) {
-      return readPendingSettlement(db, pushId);
+      return readPendingSettlement(db, pushId, eventSink);
     },
 
     async withCompletionFence(input, complete) {
@@ -306,7 +311,7 @@ export function createDrizzlePendingSettlementStore(
       });
       if (!claimed) return null;
       try {
-        return await readPendingSettlement(db, input.pushId);
+        return await readPendingSettlement(db, input.pushId, eventSink);
       } catch (cause) {
         await db
           .update(branchPushSettlementOutbox)
@@ -576,6 +581,7 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
 async function readPendingSettlement(
   db: DrizzleDb,
   pushId: number,
+  eventSink?: EventSink,
 ): Promise<PendingLiveSettlement> {
   const [row] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -598,71 +604,93 @@ async function readPendingSettlement(
   const provenanceDoc = createCollabYDoc({ gc: false });
   Y.applyUpdate(provenanceDoc, row.outbox.lockCutUpdate);
   for (const { update } of updates) Y.applyUpdate(provenanceDoc, update);
-  const authority = row.push.upstreamUpdateSeq
-    ? (
-        await db
-          .select({
-            authorityId: documentYjsUpdates.authorityId,
-            generation: documentYjsUpdates.authorityGeneration,
-          })
-          .from(documentYjsUpdates)
-          .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
-          .limit(1)
-      )[0]
-    : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
-  if (!authority) {
-    provenanceDoc.destroy();
-    throw new Error(`Pending branch push settlement ${pushId} has no authority admission`);
-  }
-  const attributedRows = await db
-    .select({
-      authorityId: documentYjsUpdates.authorityId,
-      generation: documentYjsUpdates.authorityGeneration,
-      admissionSequence: documentYjsUpdates.admissionSequence,
-      batchOrdinal: documentYjsUpdates.batchOrdinal,
-      journalRowId: documentYjsUpdates.id,
-      originType: documentYjsUpdates.originType,
-      actorUserId: documentYjsUpdates.actorUserId,
-      update: documentYjsUpdates.updateData,
-    })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, row.outbox.documentId),
-        eq(documentYjsUpdates.authorityId, authority.authorityId),
-        eq(documentYjsUpdates.authorityGeneration, authority.generation),
-      ),
-    )
-    .orderBy(
-      documentYjsUpdates.admissionSequence,
-      documentYjsUpdates.batchOrdinal,
-      documentYjsUpdates.id,
-    );
-  const watermarkRow = attributedRows.at(-1);
-  const retained = watermarkRow
-    ? await createDrizzleProvenanceReader(db).materialize({
-        documentId: row.outbox.documentId,
-        authorityId: authority.authorityId,
-        generation: authority.generation,
-        watermark: {
-          admissionSequence: watermarkRow.admissionSequence,
-          batchOrdinal: watermarkRow.batchOrdinal,
-          journalRowId: BigInt(watermarkRow.journalRowId),
-        },
+  let provenanceView: PendingLiveSettlement["provenanceView"] = null;
+  try {
+    const authority = row.push.upstreamUpdateSeq
+      ? (
+          await db
+            .select({
+              authorityId: documentYjsUpdates.authorityId,
+              generation: documentYjsUpdates.authorityGeneration,
+            })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
+            .limit(1)
+        )[0]
+      : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
+    if (!authority) {
+      throw new ProvenanceMaterializationError(
+        `Pending branch push settlement ${pushId} has no authority admission`,
+      );
+    }
+    const attributedRows = await db
+      .select({
+        authorityId: documentYjsUpdates.authorityId,
+        generation: documentYjsUpdates.authorityGeneration,
+        admissionSequence: documentYjsUpdates.admissionSequence,
+        batchOrdinal: documentYjsUpdates.batchOrdinal,
+        journalRowId: documentYjsUpdates.id,
+        originType: documentYjsUpdates.originType,
+        actorUserId: documentYjsUpdates.actorUserId,
+        update: documentYjsUpdates.updateData,
       })
-    : null;
-  const provenanceView = materializeProvenanceForDoc({
-    doc: provenanceDoc,
-    retainedAttributions: retained?.attributionManifest.attributions,
-    fallbackBirthClass: "writer_protected",
-    rows: attributedRows.map((attribution) => ({
-      ...attribution,
-      journalRowId: BigInt(attribution.journalRowId),
-      update: new Uint8Array(attribution.update),
-    })),
-  });
-  retained?.doc.destroy();
-  provenanceDoc.destroy();
+      .from(documentYjsUpdates)
+      .where(
+        and(
+          eq(documentYjsUpdates.documentId, row.outbox.documentId),
+          eq(documentYjsUpdates.authorityId, authority.authorityId),
+          eq(documentYjsUpdates.authorityGeneration, authority.generation),
+        ),
+      )
+      .orderBy(
+        documentYjsUpdates.admissionSequence,
+        documentYjsUpdates.batchOrdinal,
+        documentYjsUpdates.id,
+      );
+    const watermarkRow = attributedRows.at(-1);
+    const retained = watermarkRow
+      ? await createDrizzleProvenanceReader(db).materialize({
+          documentId: row.outbox.documentId,
+          authorityId: authority.authorityId,
+          generation: authority.generation,
+          watermark: {
+            admissionSequence: watermarkRow.admissionSequence,
+            batchOrdinal: watermarkRow.batchOrdinal,
+            journalRowId: BigInt(watermarkRow.journalRowId),
+          },
+        })
+      : null;
+    try {
+      provenanceView = materializeProvenanceForDoc({
+        doc: provenanceDoc,
+        retainedAttributions: retained?.attributionManifest.attributions,
+        fallbackBirthClass: "writer_protected",
+        rows: attributedRows.map((attribution) => ({
+          ...attribution,
+          journalRowId: BigInt(attribution.journalRowId),
+          update: new Uint8Array(attribution.update),
+        })),
+      });
+    } finally {
+      retained?.doc.destroy();
+    }
+  } catch (cause) {
+    if (!(cause instanceof ProvenanceMaterializationError)) throw cause;
+    if (eventSink) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.change_event",
+        name: "sweep_projection.unavailable",
+        payload: {
+          pushId,
+          documentId: row.outbox.documentId,
+          ...unknownToEventPayload(cause),
+        },
+      });
+    }
+  } finally {
+    provenanceDoc.destroy();
+  }
   return {
     push: mapLineage(row.push),
     documentTitle: row.outbox.documentTitle,

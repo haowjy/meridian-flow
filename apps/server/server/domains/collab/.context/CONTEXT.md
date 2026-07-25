@@ -30,7 +30,7 @@ state is a live document.
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
 | Push materialization | `domain/branch-push-plan.ts` |
-| Immutable-base writer-impact preparation | `domain/branch-push-preparation.ts` |
+| Immutable-base push preparation | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
 | Durable push execution | `domain/branch-push-candidates.ts`, `domain/branch-push.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
@@ -185,10 +185,9 @@ The deleted legacy draft tables (`document_yjs_drafts`,
 Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
 durable journal for origin and structural-delete attribution, and reports each
-removed writer-owned canonical block identity.
-Reports use the ordinary `writerImpact` change-trail shape; missing
-ancestry/body/owner evidence emits degradation telemetry rather than guessing
-from update bytes.
+removed writer-owned canonical block identity. Missing ancestry/body/owner
+evidence emits degradation telemetry rather than guessing from update bytes;
+it does not make the optional mark overlay authoritative.
 
 ## Undo guard and push safety
 
@@ -263,9 +262,9 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. It is also the sole interpreter
   of `TrailContributionReplacement`; settlement carries the replacement opaquely.
-  Each replacement carries its durable per-owner classifications and document-title
+  Each replacement carries its durable per-owner changes and document-title
   context. Never recover that context from surviving aggregate rows: an intervening
-  fold can remove every provisional row before final classification must restore the
+  fold can remove every provisional row before settlement must restore the
   push contribution. The aggregate counts inserted/deleted payloads and persists
   per-document word magnitudes; lightweight shells retain document ids/titles
   plus nullable totals so receipt headers never need manuscript-bearing detail.
@@ -295,19 +294,18 @@ history is preserved for attribution, echo, and undo dependency checking.
   live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes
   all integrate through Yjs. The immutable `draftBaseUpdateSeq` retained on each
-  journal row feeds report-only writer-impact classification; it does not gate
-  Apply. Protection derives from
+  journal row helps reconstruct the pre-push timeline; it does not gate Apply.
+  Authorship derives from
   durable journal attribution: `completeStagedPush` persists the live journal
   row as `originType: "human"` with `actorUserId` when the push carries
   `pushedByUserId` (writer-confirmed Apply). Otherwise it folds branch-local
   undo/redo and inspects the remaining active agent mutations: exactly one
   shared turn produces `originType: "agent"` with that `actorTurnId`; no active
   agent turn or multiple turns stays `system`. Representative push metadata is
-  not attribution evidence. Both the push-time writer-impact classifier and the
-  agent-edit immediate-path lateSweep recheck derive protection from durable
-  attribution, not from push-specific metadata or a separate protection table.
-  Every apply path trails destructive writer-root effects from durable
-  provenance.
+  not attribution evidence. Push-time and immediate-path sweep detection derive
+  their live-session hint from durable attribution, not from push-specific
+  metadata or a separate protection table. Trail rows persist every edit without
+  classification; missing provenance suppresses elevation and never blocks Apply.
 - **Writer Apply pins to the displayed preview**: `DraftAcceptRequest.operationIds`
   is required (non-optional). The client pins Apply-all to the displayed preview
   via a render-time ref, never a click-time refetch; post-preview rows stay
@@ -335,18 +333,17 @@ history is preserved for attribution, echo, and undo dependency checking.
   admission both call the single `joinAdmissionWithinTx` writer inside their
   document-mutation transaction; source identity and completing-push exclusion
   are parameters, while join-version advancement follows one SQL path. Cold
-  reads reconstruct durable provenance for the final pre-push document and feed
-  its visible occurrences to the shared pointwise destructive-effect classifier.
+  reads best-effort reconstruct provenance for the final pre-push document so a
+  connected editor can elevate swept marks.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
-  Swept trail details retain the normalized final-pre-push target ranges and exact
-  final-pre-push body. Settlement refines a complete provisional push trail in its
-  existing aggregate version; only journal or staged-push authority joined after
-  the durable commit publishes another trail version. If that admission's aggregate
-  fold cancels the provisional row, the next classification restores the push
-  contribution from the replacement's durable owner/title context. A complete empty
-  classification removes that push's provisional changes in the same version.
+  Provenance reconstruction failure emits diagnostics and yields no swept
+  elevation; it is never settlement authority. Settlement writes the complete
+  push trail in its existing aggregate version; only journal or staged-push
+  authority joined after the durable commit publishes another trail version. If
+  that admission's aggregate fold cancels a provisional row, settlement restores
+  the push contribution from the replacement's durable owner/title context.
 - **Settlement verification stack**: the killed-process oracle owns durable
   settlement risks—transaction boundaries, claims and leases, lock cuts, crash
   windows, and cold recovery. Pure provenance and policy semantics belong to their
@@ -388,23 +385,22 @@ history is preserved for attribution, echo, and undo dependency checking.
   `awareness_degraded` notice. They do not create process-local reporting authority.
 - **Report-only agent commits**: direct writes and reversals always merge through
   Yjs. `materializeDestructiveProvenance` reconstructs exact durable writer/agent
-  lineage for the shared destructive-effect classifier. Checkpoint manifests
+  lineage for best-effort live sweep detection. Checkpoint manifests
   carry prior attribution across repeated compaction and floor-null authority
   replacement. Under the same document-mutation lock as generation replacement,
   compaction reads, folds, and deletes only the current authority generation;
   retired-generation suffixes never enter restored authority. Thread-peer roots
-  absent from the live document are agent-owned branch content. Only writer-lineage
-  loss produces captured bodies, trail data, and Restore; agent-only loss is
-  silent.
+  absent from the live document are agent-owned branch content. Durable trails
+  retain the ordinary before/after record regardless of classification; writer
+  lineage only decides whether a connected session elevates the mark.
 ## LOCK-WS boundary
 
 `withDocument()` serializes coordinator callers, not writer WebSocket updates:
 Hocuspocus can mutate the same in-memory Y.Doc while a coordinator callback is
-awaiting journal or detection work. For any safety-relevant apply after an
-`await`, final classification must come from the durable settlement row and the
-live recheck and apply must share one synchronous fence. Writer admission is
-journal-first; unexplained live-only divergence is an invariant failure, not
-evidence that may be copied from memory.
+awaiting journal or detection work. Any content apply after an `await` must use
+the durable settlement row, and the live recheck and apply share one synchronous
+fence. Writer admission is journal-first; optional sweep detection may degrade
+to no elevation, but it never supplies apply authority.
 
 The response phase-C path enforces this in
 `@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also

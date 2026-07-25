@@ -199,6 +199,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     projectionEffects,
     changeTrails,
     deps.notices,
+    deps.eventSink,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(
@@ -226,6 +227,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       eventSink: deps.eventSink,
     }),
     writerIngressBarrier: writerIngress.barrier,
+    eventSink: deps.eventSink,
     resolveDocumentTitle: documentPresentation.resolveTitle,
   });
   const branchReview = createBranchReviewOperations({

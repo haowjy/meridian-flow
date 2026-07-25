@@ -3,8 +3,8 @@
 ## [Unreleased]
 
 - `apps/app`, `apps/server`: every draft Apply now merges through Yjs and
-  records writer sweeps; the conflict veto, refusal contracts, and refusal UI
-  are gone.
+  reports swept edits only to connected sessions; the conflict veto, durable
+  classification, refusal contracts, and refusal UI are gone.
 - `apps/app`: AI change marks now use localized passage verbs, clear AI
   attribution, readable removed prose, and warning treatment for swept edits.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
@@ -34,7 +34,7 @@
   settled turn effect with `write(command: "diff")`; auto-applied live updates
   retain that same authoring turn attribution, and receipts show the complete
   settled change set.
-- `apps/app`: swept editor marks vend trail-backed Restore while receipts remain
+- `apps/app`: live editor marks vend trail-backed Restore while receipts remain
   read-only records with Undo/Redo and Copy.
 - `apps/app`: draft chips, dock rows, and write-mode confirmation now project
   from one canonical pending-review collection.
