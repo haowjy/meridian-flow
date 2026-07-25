@@ -141,7 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual([expect.objectContaining({ workId, slug: "scratch", scope: "work" })]);
     });
 
-    it("repairs scratch manifest membership when the same document id is retried", async () => {
+    it("rolls back a failed scratch create so the same document id retries cleanly", async () => {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       let failNextMembershipWrite = true;
@@ -172,7 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(create()).rejects.toThrow("simulated manifest membership failure");
       await expect(create()).resolves.toMatchObject({
-        status: "already-materialized",
+        status: "created",
         documentId: REPAIR_DOCUMENT_ID,
         path: "Untitled 1.md",
         name: "Untitled 1.md",

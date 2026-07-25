@@ -156,6 +156,15 @@ setting an equal Y.Map value still creates Yjs history. See
 [KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
 for the cross-domain port decision and self-healing rationale.
 
+`domain/document-creation.ts` owns tracked-document materialization
+transactions. Context and bootstrap supply the row, initial-content, and
+manifest operations; the aggregate commits them together. Repair uses the same
+boundary so a row cannot become visible before its Yjs authority is usable.
+Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
+after the enclosing Drizzle transaction commits. Work/thread manifest mutations
+persist their branch state inside that transaction and defer the automatic live
+push until commit.
+
 ## Durable records
 
 - `document_yjs_updates` is the live update journal.

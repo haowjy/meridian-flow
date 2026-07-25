@@ -35,6 +35,7 @@ export function createEffectiveDocumentReader(input: {
   documents: Pick<MarkdownDocumentEngine, "readAsMarkdown" | "serializeDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
 }): BranchPeerShadowAccess {
   function readWithStagedResponseOverlay<T>(
     doc: Y.Doc,
@@ -134,9 +135,13 @@ export function createEffectiveDocumentReader(input: {
     mutation: { workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined,
   ): Promise<void> {
     if (mutation?.workDraftBranchId) {
-      await input.branchPush.pushAutoBranchAfterThreadPeerWrite({
-        workDraftBranchId: mutation.workDraftBranchId,
-      });
+      const workDraftBranchId = mutation.workDraftBranchId;
+      const push = async () => {
+        await input.branchPush.pushAutoBranchAfterThreadPeerWrite({
+          workDraftBranchId,
+        });
+      };
+      if (!input.deferUntilCommit?.(push)) await push();
     }
   }
 

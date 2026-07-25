@@ -75,7 +75,7 @@ describe("ContextFS createUntitledDocument", () => {
     );
   });
 
-  it("repairs finalization when retrying a row left by a failed create", async () => {
+  it("rolls back identity when Yjs initialization fails", async () => {
     const collab = createInMemoryCollabDomain();
     let failDurableHeadOnce = true;
     const documentSync = {
@@ -85,23 +85,22 @@ describe("ContextFS createUntitledDocument", () => {
           failDurableHeadOnce = false;
           throw new Error("durable document authority head unavailable");
         }
-        await collab.ensureDocument(documentId);
+        return collab.ensureDocument(documentId);
       },
     } satisfies MarkdownDocumentStore;
-    const { fs, store } = createFs({ documentSync });
-    const ensureMembership = vi.spyOn(store, "ensureDocumentMembership");
+    const { fs, backing } = createFs({ documentSync });
 
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).rejects.toThrow(
       "durable document authority head unavailable",
     );
+    expect(backing.documents.has(DOCUMENT_A)).toBe(false);
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
       {
         ok: true,
-        value: { status: "already-exists", documentId: DOCUMENT_A },
+        value: { status: "created", documentId: DOCUMENT_A },
       },
     );
 
-    expect(ensureMembership).toHaveBeenCalledTimes(2);
     await expect(collab.readAsMarkdown(DOCUMENT_A)).resolves.toMatchObject({ ok: true });
   });
 
@@ -150,13 +149,13 @@ describe("ContextFS createUntitledDocument", () => {
 
   it("returns a conflict after bounded allocation collisions", async () => {
     const { fs, store } = createFs({});
-    vi.spyOn(store, "createDocumentIfAbsent").mockResolvedValue(null);
+    vi.spyOn(store, "createDocumentRecordIfAbsent").mockResolvedValue(null);
 
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toEqual({
       ok: false,
       error: { code: "conflict" },
     });
-    expect(store.createDocumentIfAbsent).toHaveBeenCalledTimes(32);
+    expect(store.createDocumentRecordIfAbsent).toHaveBeenCalledTimes(32);
   });
 
   it("clears the provisional flag on basename change but keeps it on a path-only move", async () => {
@@ -190,7 +189,7 @@ describe("ContextFS createUntitledDocument", () => {
     expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(false);
   });
 
-  it("keeps tracked creates named and seeds their content through the collab writer", async () => {
+  it("keeps tracked creates named and seeds content without opening the live writer", async () => {
     const writeDocument = vi.fn(async ({ documentId, markdown }) => ({
       documentId,
       markdown,
@@ -204,7 +203,7 @@ describe("ContextFS createUntitledDocument", () => {
       ensureDocument: vi.fn(),
       writeDocument,
       readAsMarkdown: vi.fn(),
-      seedFromMarkdown: vi.fn(),
+      seedFromMarkdown: vi.fn().mockResolvedValue({ ok: true, value: null }),
       editDocument: vi.fn(),
     } satisfies MarkdownDocumentStore;
     const { fs, store } = createFs({ documentSync: sync });
@@ -214,11 +213,13 @@ describe("ContextFS createUntitledDocument", () => {
     });
     if (!created.ok) throw new Error(created.error.code);
 
-    expect(writeDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: created.value.documentId, markdown: "Opening line" }),
-    );
-    expect((await store.findDocumentById(created.value.documentId))?.document.provisionalName).toBe(
-      false,
-    );
+    expect(sync.seedFromMarkdown).toHaveBeenCalledWith(created.value.documentId, "Opening line", {
+      type: "system",
+    });
+    expect(writeDocument).not.toHaveBeenCalled();
+    expect((await store.findDocumentById(created.value.documentId))?.document).toMatchObject({
+      provisionalName: false,
+      markdown: "Opening line",
+    });
   });
 });

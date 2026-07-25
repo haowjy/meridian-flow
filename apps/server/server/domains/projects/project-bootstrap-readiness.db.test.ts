@@ -53,13 +53,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     it("provisions the cold path, then stays lock-free and out of collab when ready", async () => {
+      const collab = createBoundCollab();
       let seedCalls = 0;
       const coldRepository = createDrizzleProjectBootstrapRepository({
         db,
         documents: {
-          async seedFromMarkdown() {
+          ...collab,
+          async seedFromMarkdown(...args: Parameters<typeof collab.seedFromMarkdown>) {
             seedCalls += 1;
-            return { ok: true, value: null };
+            return collab.seedFromMarkdown(...args);
           },
         },
       });
@@ -77,28 +79,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.select({ id: schema.documents.id }).from(schema.documents),
           db.select({ id: schema.threads.id }).from(schema.threads),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([1, 1, 1, 1, 1, 1]);
+      ).resolves.toEqual([1, 1, 1, 1, 2, 1]);
 
       const [project] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })
         .from(schema.projects);
       expect(project?.ready).toBe(true);
 
-      let warmSeedCalls = 0;
-      const warmRepository = createDrizzleProjectBootstrapRepository({
-        db,
-        documents: {
-          async seedFromMarkdown() {
-            warmSeedCalls += 1;
-            return { ok: true, value: null };
-          },
-        },
-      });
-
       await lockClient`
         select pg_advisory_lock(hashtextextended(${USER_ID}, 0::bigint))
       `;
-      const warmCall = warmRepository.ensureDefaultBootstrapReady(USER_ID as never);
+      const warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
       try {
         const outcome = await Promise.race([
           warmCall.then(() => "completed" as const),
@@ -112,13 +103,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
 
       await expect(warmCall).resolves.toBe(true);
-      expect(warmSeedCalls).toBe(0);
+      expect(seedCalls).toBe(1);
     });
 
-    it("isolates seed failure and repairs canonical authority on a later request", async () => {
+    it("isolates atomic bootstrap failure and provisions cleanly on a later request", async () => {
+      const collab = createBoundCollab();
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
         documents: {
+          ...collab,
           async seedFromMarkdown() {
             throw new Error("transient seed failure");
           },
@@ -126,15 +119,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(interrupted.ensureDefaultBootstrapReady(USER_ID as never)).resolves.toBe(false);
-      const [unready] = await db
-        .select({
-          id: schema.projects.id,
-          ready: schema.projects.defaultBootstrapReady,
-        })
-        .from(schema.projects);
-      expect(unready).toMatchObject({ ready: false });
+      await expect(db.select().from(schema.projects)).resolves.toHaveLength(0);
+      await expect(db.select().from(schema.documents)).resolves.toHaveLength(0);
 
-      const collab = createBoundCollab();
       const repaired = createDrizzleProjectBootstrapRepository({
         db,
         documents: collab,
@@ -143,10 +130,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const [ready] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })
-        .from(schema.projects)
-        .where(eq(schema.projects.id, unready?.id as never));
+        .from(schema.projects);
       expect(ready?.ready).toBe(true);
-      const [document] = await db.select({ id: schema.documents.id }).from(schema.documents);
+      const [document] = await db
+        .select({ id: schema.documents.id })
+        .from(schema.documents)
+        .where(eq(schema.documents.kind, "content"));
       expect(await collab.readAsMarkdown(document?.id as never)).toEqual({
         ok: true,
         value: "# Chapter 1\n",

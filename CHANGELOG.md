@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: tracked document creation now commits the content row, initial
+  Yjs authority/content, and manifest membership atomically; bootstrap and
+  manifest-aware repair no longer leave ghost documents (#355).
 - `apps/server`: Yjs WebSocket routes now delegate collaboration lifecycle,
   writer admission, reconnect reconciliation, and graceful drain to one gateway.
 - `apps/server`: thread context reversal routes now validate and delegate one

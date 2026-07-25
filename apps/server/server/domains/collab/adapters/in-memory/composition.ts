@@ -21,6 +21,7 @@ import {
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
+import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import {
   createDocumentProjectionRefresher,
   createDocumentWriteHookRunner,
@@ -49,6 +50,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+  const documentCreation = createDocumentCreationAggregate({
+    atomic: (operation) => operation(),
+    ensureDocument: lifecycle.ensureDocument,
+  });
   const hocuspocusBinding = createHocuspocusBinding();
   const store = inMemoryStore(journal);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
@@ -58,7 +63,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const runtime = createAgentEditRuntime({
     journal,
     coordinator,
-    lifecycle,
+    lifecycle: documentCreation,
     initialDocumentSeeds: {
       async seedInitialDocument(documentId, state) {
         const snapshot = await journal.read(documentId);
@@ -190,6 +195,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.codec,
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
+    documentCreation,
   });
 }
 

@@ -198,8 +198,8 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.sourceStore()).findDocumentById(documentId);
   }
 
-  async ensureDocumentMembership(documentId: string) {
-    return (await this.sourceStore()).ensureDocumentMembership(documentId);
+  async recordDocumentMembership(documentId: string) {
+    return (await this.sourceStore()).recordDocumentMembership(documentId);
   }
 
   async updateDocumentProjection(documentId: string, markdown: string) {
@@ -210,8 +210,8 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.sourceStore()).upsertDocument(input);
   }
 
-  async createDocumentIfAbsent(input: UpsertDocumentInput) {
-    return (await this.sourceStore()).createDocumentIfAbsent(input);
+  async createDocumentRecordIfAbsent(input: UpsertDocumentInput) {
+    return (await this.sourceStore()).createDocumentRecordIfAbsent(input);
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput) {

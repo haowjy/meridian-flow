@@ -38,6 +38,7 @@ export function createAgentEditRuntime(input: {
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
@@ -68,6 +69,7 @@ export function createAgentEditRuntime(input: {
     coordinator: input.coordinator,
     lifecycle: input.lifecycle,
     initialDocumentSeeds: input.initialDocumentSeeds,
+    deferUntilCommit: input.deferUntilCommit,
     metaForOrigin,
     afterWrite: input.runDocumentWriteHook,
     identityPreservingWrite: ({ documentId, markdown, actor }) =>

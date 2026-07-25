@@ -127,7 +127,6 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const overwriting = command.overwrite === true;
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -139,6 +138,13 @@ export function createWriteCommands(deps: {
       );
     }
     const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
+    const bufferedResponseUpdates =
+      context.responseId && actor.kind === "agent"
+        ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
+        : [];
+    const overwriting =
+      command.overwrite === true ||
+      (deferNewDocumentCreation && bufferedResponseUpdates.length === 0);
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const liveCheck = await withLiveDocument(
       options.coordinator,
@@ -173,10 +179,7 @@ export function createWriteCommands(deps: {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
     if (context.responseId && actor.kind === "agent") {
-      for (const update of responseCommitter.bufferedUpdatesForDoc(
-        context.responseId,
-        address.documentId,
-      )) {
+      for (const update of bufferedResponseUpdates) {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
     }

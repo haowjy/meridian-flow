@@ -20,10 +20,24 @@ import {
   works,
 } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import type { MarkdownDocumentStore } from "../collab/index.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import type {
+  BranchPeerShadowAccess,
+  DocumentCreationAggregate,
+  MarkdownDocumentStore,
+} from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
+
+class BootstrapDocumentSeedError extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error ? cause.message : `Failed to seed chapter document: ${String(cause)}`,
+      { cause },
+    );
+  }
+}
 
 export type BootstrapProjectInput = {
   name?: string | null;
@@ -70,10 +84,13 @@ export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepo
 
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
-  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown">;
+  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
+    Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
+    Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
 }): ProjectBootstrapRepository {
   const { db } = deps;
-  type BootstrapDb = Pick<Database, "execute" | "insert" | "select">;
+  const repairedReadyUsers = new Set<UserId>();
+  type BootstrapDb = Pick<Database, "execute" | "insert" | "select" | "update">;
 
   async function lockBootstrap(tx: BootstrapDb, userId: UserId): Promise<void> {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`);
@@ -213,8 +230,22 @@ export function createDrizzleProjectBootstrapRepository(deps: {
 
   async function ensureDocument(
     tx: BootstrapDb,
+    projectId: ProjectId,
     contextSourceId: ContextSourceId,
   ): Promise<DocumentId> {
+    async function seedDocument(documentId: DocumentId): Promise<void> {
+      try {
+        const seeded = await deps.documents.seedFromMarkdown(documentId, "# Chapter 1\n\n", {
+          type: "system",
+        });
+        if (!seeded.ok) {
+          throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
+        }
+      } catch (cause) {
+        throw new BootstrapDocumentSeedError(cause);
+      }
+    }
+
     const [existing] = await tx
       .select({ id: documents.id })
       .from(documents)
@@ -227,20 +258,44 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         ),
       )
       .limit(1);
-    if (existing) return existing.id;
+    if (existing) {
+      await deps.documents.repairDocumentAtomically({
+        documentId: existing.id,
+        initializeContent: () => seedDocument(existing.id),
+        persistMembership: () =>
+          deps.documents.recordManifestDocumentCreated(existing.id, { projectId }),
+      });
+      return existing.id;
+    }
 
-    const [document] = await tx
-      .insert(documents)
-      .values({
-        contextSourceId,
-        name: "chapter-1",
-        extension: "md",
-        fileType: "markdown",
-        mimeType: "text/markdown",
-      })
-      .returning({ id: documents.id });
-    if (!document) throw new Error("Failed to create chapter document");
-    return document.id;
+    const documentId = randomUUID() as DocumentId;
+    const created = await deps.documents.createDocumentAtomically({
+      documentId,
+      persistIdentity: async () => {
+        const [document] = await tx
+          .insert(documents)
+          .values({
+            id: documentId,
+            contextSourceId,
+            name: "chapter-1",
+            extension: "md",
+            fileType: "markdown",
+            mimeType: "text/markdown",
+          })
+          .onConflictDoNothing()
+          .returning({ id: documents.id });
+        return Boolean(document);
+      },
+      persistMembership: () =>
+        deps.documents.recordManifestDocumentCreated(documentId, { projectId }),
+      initializeContent: async () => {
+        await seedDocument(documentId);
+      },
+    });
+    if (!created.created) {
+      throw new Error("Failed to claim default chapter document path");
+    }
+    return documentId;
   }
 
   async function ensureThread(
@@ -323,18 +378,15 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return project?.ready === true;
   }
 
-  type BootstrapAttempt =
-    | { ready: true; bootstrap: DefaultBootstrap }
-    | { ready: false; bootstrap: DefaultBootstrap; seedError: unknown };
-
-  async function attemptDefaultBootstrap(userId: UserId): Promise<BootstrapAttempt> {
-    const bootstrap = await db.transaction(async (tx) => {
+  async function attemptDefaultBootstrap(userId: UserId): Promise<DefaultBootstrap> {
+    const bootstrap = await runInDrizzleTransaction(db, async () => {
+      const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
       const agentDefinitionId = await ensureAgent(tx, projectId);
       const workId = await ensureWork(tx, projectId, userId);
       const contextSourceId = await ensureContextSource(tx, projectId);
-      const documentId = await ensureDocument(tx, contextSourceId);
+      const documentId = await ensureDocument(tx, projectId, contextSourceId);
       const threadId = await ensureThread(tx, {
         projectId,
         workId,
@@ -344,7 +396,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         agentSlug: "writer",
       });
 
-      return {
+      const result = {
         projectId,
         workId,
         threadId,
@@ -353,46 +405,33 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         agentDefinitionId,
         uri: DEFAULT_BOOTSTRAP_URI,
       } satisfies DefaultBootstrap;
+
+      const [updated] = await tx
+        .update(projects)
+        .set({ defaultBootstrapReady: true })
+        .where(eq(projects.id, projectId))
+        .returning({ id: projects.id });
+      if (!updated) throw new Error("Failed to mark default bootstrap ready");
+      return result;
     });
-
-    try {
-      const seeded = await deps.documents.seedFromMarkdown(
-        bootstrap.documentId,
-        "# Chapter 1\n\n",
-        { type: "system" },
-      );
-      if (!seeded.ok) {
-        return {
-          ready: false,
-          bootstrap,
-          seedError: new Error(`Failed to seed chapter document: ${seeded.error.code}`),
-        };
-      }
-    } catch (seedError) {
-      return { ready: false, bootstrap, seedError };
-    }
-
-    const [updated] = await db
-      .update(projects)
-      .set({ defaultBootstrapReady: true })
-      .where(eq(projects.id, bootstrap.projectId))
-      .returning({ id: projects.id });
-    if (!updated) throw new Error("Failed to mark default bootstrap ready");
-
-    return { ready: true, bootstrap };
+    repairedReadyUsers.add(userId);
+    return bootstrap;
   }
 
   return {
     findPersonalProjectId,
     async ensureDefaultBootstrapReady(userId) {
-      if (await isDefaultBootstrapReady(userId)) return true;
-      const attempt = await attemptDefaultBootstrap(userId);
-      return attempt.ready;
+      if ((await isDefaultBootstrapReady(userId)) && repairedReadyUsers.has(userId)) return true;
+      try {
+        await attemptDefaultBootstrap(userId);
+        return true;
+      } catch (cause) {
+        if (!(cause instanceof BootstrapDocumentSeedError)) throw cause;
+        return false;
+      }
     },
     async ensureDefaultBootstrap(userId) {
-      const attempt = await attemptDefaultBootstrap(userId);
-      if (!attempt.ready) throw attempt.seedError;
-      return attempt.bootstrap;
+      return attemptDefaultBootstrap(userId);
     },
   };
 }

@@ -63,6 +63,7 @@ type MarkdownDocumentEngineDeps = {
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
   identityPreservingWrite?(input: {
     documentId: DocumentId;
@@ -329,9 +330,10 @@ export function createMarkdownDocumentEngine(
         typedDocumentId,
         Y.encodeStateAsUpdate(seededDoc),
       );
-      // Both the winning initializer and concurrent no-op callers must wait for
-      // a room opened during bootstrap to converge with the durable journal.
-      await deps.coordinator.recover(typedDocumentId);
+      const recover = () => deps.coordinator.recover(typedDocumentId);
+      // An enclosing aggregate may still roll back after the checkpoint is
+      // written. Publish only after that durable boundary.
+      if (!deps.deferUntilCommit?.(recover)) await recover();
       if (seeded) {
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
