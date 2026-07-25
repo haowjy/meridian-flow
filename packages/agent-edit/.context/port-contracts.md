@@ -192,9 +192,9 @@ before and after the synchronous Yjs apply. The final recheck and apply have no
 await between them. The shared lifecycle-neutral classifier consumes those
 visible occurrences and durable writer/agent provenance, returning eligible
 ranges plus final-rendering projections. Agent writes always commit through Yjs
-merge; classification controls only writer-facing sweep capture and trails. The
-echo informs the agent, the trail informs the writer, and agent-only destruction
-stays silent.
+merge; classification controls only best-effort live-session swept elevation.
+The echo informs the agent, the durable trail records every edit for the writer,
+and missing provenance yields no elevation rather than blocking.
 
 Immediate writes, local-runtime synchronization, and response phase-C projection
 compose the same lock-scoped apply kernel. When journal entries are supplied,
