@@ -7,8 +7,6 @@
   classification, refusal contracts, and refusal UI are gone.
 - `apps/app`: AI change marks now use localized passage verbs, clear AI
   attribution, readable removed prose, and warning treatment for swept edits.
-- `apps/app`: inline review now steps through same-document drafts oldest-first
-  and advances to the nearest remaining draft after Apply or Discard.
 - `apps/app`: the Draft composer toggle now shows pending counts and routes a
   blocked Auto-apply switch to Review changes or Apply all and switch.
 - `apps/app`: full-paragraph AI deletions now render as crimson inline ticks

@@ -128,14 +128,6 @@ export function pendingDockedDraftCount(groups: ThreadDraftGroup[] | null | unde
   return activeDockedDraftGroups(groups).length;
 }
 
-/** How many active drafts with actual review content a single document has. */
-export function pendingReviewDraftCount(
-  group: ThreadDraftGroup | null | undefined,
-  _nowMs: number,
-): number {
-  return pendingReviewDrafts(group).length;
-}
-
 function newestUpdatedAt(group: ThreadDraftGroup): number {
   return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
 }

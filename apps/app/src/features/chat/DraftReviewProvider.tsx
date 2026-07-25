@@ -9,7 +9,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { isDraftUndoable } from "@/client/query/draft-undoable";
@@ -34,7 +33,6 @@ export type DraftReviewContextValue = {
   groups: ThreadDraftGroup[];
   drafts: ThreadDraftsStatus;
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
-  reviewableDraftsForDocument: (documentId: string | null | undefined) => ReviewableDrafts;
   reviewableDraftsForGroup: (group: ThreadDraftGroup | null | undefined) => ReviewableDrafts;
   reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
   nowMs: number;
@@ -82,30 +80,11 @@ function DraftReviewScope({
   const drafts = useWorkDrafts(projectId, workId);
   const nowMs = useThreadStore((state) => state.now);
   const groups = drafts.groups ?? [];
-  const nextDraftAfter = useCallback(
-    ({ documentId, draftId }: { documentId: string; draftId: string }) =>
-      nearestRemainingDraftId(
-        orderedActiveDrafts(groups.find((group) => group.documentId === documentId)?.drafts ?? []),
-        draftId,
-        orderedActiveDrafts(
-          groups
-            .find((group) => group.documentId === documentId)
-            ?.drafts.filter((draft) => draft.draftId !== draftId) ?? [],
-        ),
-      ),
-    [groups],
-  );
-  const controller = useDraftReviewController(
-    effectiveProjectId,
-    effectiveWorkId,
-    threadId,
-    nextDraftAfter,
-  );
+  const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId, threadId);
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.
   const [activeEditorDocumentId, setActiveEditorDocumentId] = useState<string | null>(null);
-  const priorActiveDrafts = useRef(new Map<string, ThreadDraftListItem[]>());
 
   useEffect(() => {
     controller.exitReview();
@@ -125,12 +104,6 @@ function DraftReviewScope({
     [nowMs],
   );
 
-  const reviewableDraftsForDocument = useCallback(
-    (documentId: string | null | undefined) =>
-      reviewableDraftsForGroup(groupForDocument(documentId)),
-    [groupForDocument, reviewableDraftsForGroup],
-  );
-
   const reviewRoomNameForDraft = useCallback(
     (documentId: string, draftId: string) =>
       controller.inlineReview?.documentId === documentId &&
@@ -147,8 +120,7 @@ function DraftReviewScope({
     if (controller.isDisposing) return;
     const documentDrafts =
       groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [];
-    const currentActive = orderedActiveDrafts(documentDrafts);
-    const activeDraft = currentActive.find((draft) => draft.draftId === activeSelection.draftId);
+    const activeDraft = documentDrafts.find((draft) => draft.draftId === activeSelection.draftId);
     if (activeDraft?.status === "active") return;
     const terminalDraft = documentDrafts.find(
       (draft) => draft.draftId === activeSelection.draftId && draft.status === "closed",
@@ -158,28 +130,13 @@ function DraftReviewScope({
       : terminalDraft?.discardedAt
         ? "discarded"
         : null;
-    if (terminalOutcome === "committed") {
-      useContextTabsStore
-        .getState()
-        .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, terminalOutcome);
-    }
-    const nextDraftId = nearestRemainingDraftId(
-      priorActiveDrafts.current.get(activeSelection.documentId) ?? [],
-      activeSelection.draftId,
-      currentActive,
-    );
-    if (nextDraftId) {
-      controller.enterInlineReview(activeSelection.documentId, nextDraftId);
-      return;
-    }
-    if (terminalOutcome === "discarded") {
+    if (terminalOutcome) {
       useContextTabsStore
         .getState()
         .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, terminalOutcome);
     }
     controller.exitReview();
   }, [
-    controller.enterInlineReview,
     controller.exitReview,
     controller.inlineReview,
     controller.isDisposing,
@@ -187,14 +144,6 @@ function DraftReviewScope({
     effectiveProjectId,
     groups,
   ]);
-
-  useEffect(() => {
-    const next = new Map<string, ThreadDraftListItem[]>();
-    for (const group of groups) {
-      next.set(group.documentId, orderedActiveDrafts(group.drafts));
-    }
-    priorActiveDrafts.current = next;
-  }, [groups]);
 
   useEffect(() => {
     const inlineDocumentId = controller.inlineReview?.documentId;
@@ -261,7 +210,6 @@ function DraftReviewScope({
       groups,
       drafts,
       groupForDocument,
-      reviewableDraftsForDocument,
       reviewableDraftsForGroup,
       reviewRoomNameForDraft,
       nowMs,
@@ -273,7 +221,6 @@ function DraftReviewScope({
       groups,
       drafts,
       groupForDocument,
-      reviewableDraftsForDocument,
       reviewableDraftsForGroup,
       reviewRoomNameForDraft,
       nowMs,
@@ -302,28 +249,8 @@ export function reviewableDraftsFromGroup(
     }) ?? [];
   return {
     visible,
-    active: orderedActiveDrafts(visible),
+    active: visible.filter((draft) => draft.status === "active"),
   };
-}
-
-export function orderedActiveDrafts(drafts: readonly ThreadDraftListItem[]): ThreadDraftListItem[] {
-  return drafts
-    .filter((draft) => draft.status === "active")
-    .sort(
-      (left, right) =>
-        (Date.parse(left.updatedAt) || 0) - (Date.parse(right.updatedAt) || 0) ||
-        left.draftId.localeCompare(right.draftId),
-    );
-}
-
-export function nearestRemainingDraftId(
-  prior: readonly ThreadDraftListItem[],
-  currentDraftId: string,
-  remaining: readonly ThreadDraftListItem[],
-): string | null {
-  const currentIndex = prior.findIndex((draft) => draft.draftId === currentDraftId);
-  if (currentIndex < 0 || remaining.length === 0) return null;
-  return remaining[currentIndex]?.draftId ?? remaining[currentIndex - 1]?.draftId ?? null;
 }
 
 export function useDraftReview(): DraftReviewContextValue {

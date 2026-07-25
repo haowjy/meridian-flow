@@ -486,13 +486,7 @@ export type DraftReviewState = {
 export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
-  | {
-      type: "applySucceeded";
-      documentId: string;
-      draftId: string;
-      outcome: DraftApplyOutcome;
-      nextDraftId: string | null;
-    }
+  | { type: "applySucceeded"; documentId: string; draftId: string; outcome: DraftApplyOutcome }
   | { type: "operationAcceptStarted"; operationId: string }
   | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
@@ -507,7 +501,7 @@ export type DraftReviewAction =
       selection: DraftReviewSelection;
       code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">;
     }
-  | { type: "rejectSucceeded"; documentId: string; draftId: string; nextDraftId: string | null }
+  | { type: "rejectSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
 
@@ -564,7 +558,7 @@ export function draftReviewReducer(
         ? { ...state, inlineReviewMessage: { code: action.code, tone: "error" } }
         : state;
     case "rejectSucceeded":
-      return stateAfterTerminalDisposition(state, action);
+      return clearDraftReviewState(state, action.draftId);
     case "exitInline":
       if (state.surface.kind !== "inline") return state;
       return clearInlineState({
@@ -597,14 +591,9 @@ function inlineSurfaceForEnter(
 
 function stateAfterAcceptResult(
   state: DraftReviewState,
-  input: {
-    documentId: string;
-    draftId: string;
-    outcome: DraftApplyOutcome;
-    nextDraftId: string | null;
-  },
+  input: { documentId: string; draftId: string; outcome: DraftApplyOutcome },
 ): DraftReviewState {
-  const { documentId, draftId, outcome, nextDraftId } = input;
+  const { documentId, draftId, outcome } = input;
   if (outcome.command.kind === "stale") {
     return {
       ...state,
@@ -615,30 +604,17 @@ function stateAfterAcceptResult(
   if (outcome.command.kind === "partial-applied") {
     return { ...state, staleDraft: null };
   }
-  return stateAfterTerminalDisposition(state, { documentId, draftId, nextDraftId });
+  return clearDraftReviewState(state, draftId);
 }
 
-function stateAfterTerminalDisposition(
-  state: DraftReviewState,
-  input: { documentId: string; draftId: string; nextDraftId: string | null },
-): DraftReviewState {
+function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {
   const currentDraftId = state.surface.kind === "none" ? null : state.surface.draftId;
-  const nextSurface =
-    currentDraftId === input.draftId && input.nextDraftId
-      ? {
-          kind: "inline" as const,
-          documentId: input.documentId,
-          draftId: input.nextDraftId,
-        }
-      : currentDraftId === input.draftId
-        ? ({ kind: "none" } as const)
-        : state.surface;
   return {
     ...state,
-    surface: nextSurface,
-    staleDraft: state.staleDraft?.draftId === input.draftId ? null : state.staleDraft,
-    inlineReviewMessage: currentDraftId === input.draftId ? null : state.inlineReviewMessage,
-    inlineDiscardError: currentDraftId === input.draftId ? null : state.inlineDiscardError,
+    surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
+    staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
+    inlineReviewMessage: currentDraftId === draftId ? null : state.inlineReviewMessage,
+    inlineDiscardError: currentDraftId === draftId ? null : state.inlineDiscardError,
   };
 }
 

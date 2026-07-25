@@ -1,12 +1,11 @@
 /**
  * DraftReviewHeader — the editor's chrome while a document is under inline
  * review. A thin strip above the identity bar: "Back to live" exit on the
- * left, same-document draft stepping beside it, and whole-draft Apply all /
- * Discard all on the right. Matches the dock strip's geometry.
+ * left, whole-draft Apply all / Discard all on the right. Matches the dock
+ * strip's geometry.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2 } from "lucide-react";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 
@@ -16,10 +15,8 @@ export type DraftReviewHeaderProps = {
 };
 
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
-  const { controller, reviewableDraftsForDocument } = useDraftReview();
+  const { controller } = useDraftReview();
   const busy = controller.isDisposing;
-  const drafts = reviewableDraftsForDocument(documentId).active;
-  const index = drafts.findIndex((draft) => draft.draftId === draftId);
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
   const commandError =
@@ -47,17 +44,6 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         <ChevronLeft className="size-3" aria-hidden />
         <Trans>Back to live</Trans>
       </button>
-      {drafts.length > 1 && index >= 0 ? (
-        <Stepper
-          index={index}
-          count={drafts.length}
-          disabled={busy}
-          onStep={(delta) => {
-            const target = drafts[index + delta];
-            if (target) controller.enterInlineReview(documentId, target.draftId);
-          }}
-        />
-      ) : null}
       {staleMessage ? (
         <p className="text-destructive text-xs" role="alert">
           {staleMessage}
@@ -92,45 +78,5 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         </button>
       </div>
     </section>
-  );
-}
-
-function Stepper({
-  index,
-  count,
-  disabled,
-  onStep,
-}: {
-  index: number;
-  count: number;
-  disabled: boolean;
-  onStep: (delta: -1 | 1) => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 text-ink-muted text-xs">
-      <button
-        type="button"
-        className="focus-ring grid size-6 place-items-center rounded-md hover:bg-surface-subtle hover:text-foreground disabled:opacity-40"
-        onClick={() => onStep(-1)}
-        disabled={disabled || index === 0}
-        aria-label={t`Previous draft`}
-      >
-        <ChevronLeft className="size-3.5" aria-hidden />
-      </button>
-      <span className="tabular-nums">
-        <Trans>
-          Draft {index + 1} of {count}
-        </Trans>
-      </span>
-      <button
-        type="button"
-        className="focus-ring grid size-6 place-items-center rounded-md hover:bg-surface-subtle hover:text-foreground disabled:opacity-40"
-        onClick={() => onStep(1)}
-        disabled={disabled || index >= count - 1}
-        aria-label={t`Next draft`}
-      >
-        <ChevronRight className="size-3.5" aria-hidden />
-      </button>
-    </div>
   );
 }

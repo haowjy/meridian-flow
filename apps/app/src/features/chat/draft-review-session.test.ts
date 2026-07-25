@@ -118,41 +118,6 @@ describe("draft review derived identity", () => {
     expect(repeated).toBe(loaded);
     expect(inlineReviewFromState(repeated)).toBe(selection);
   });
-
-  it("keeps inline review open on the next same-document draft after disposition", () => {
-    const entered = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
-      type: "enterInline",
-      documentId: "document-1",
-      draftId: "draft-1",
-    });
-    const advanced = draftReviewReducer(entered, {
-      type: "applySucceeded",
-      documentId: "document-1",
-      draftId: "draft-1",
-      nextDraftId: "draft-2",
-      outcome: {
-        command: { kind: "applied" },
-        message: null,
-        refreshDraftId: null,
-        materializedDocument: true,
-      },
-    });
-
-    expect(inlineReviewFromState(advanced)).toMatchObject({
-      documentId: "document-1",
-      draftId: "draft-2",
-    });
-    expect(
-      inlineReviewFromState(
-        draftReviewReducer(advanced, {
-          type: "rejectSucceeded",
-          documentId: "document-1",
-          draftId: "draft-2",
-          nextDraftId: null,
-        }),
-      ),
-    ).toBeNull();
-  });
 });
 
 function commandPorts(): DraftReviewCommandPorts {

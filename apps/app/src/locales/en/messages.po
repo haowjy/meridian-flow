@@ -107,8 +107,8 @@ msgid "{0} of {1} reviewed"
 msgstr "{0} of {1} reviewed"
 
 #: src/features/editor/DraftReviewChip.tsx
-msgid "{count, plural, one {Review draft} other {Review # drafts}}"
-msgstr "{count, plural, one {Review draft} other {Review # drafts}}"
+#~ msgid "{count, plural, one {Review draft} other {Review # drafts}}"
+#~ msgstr "{count, plural, one {Review draft} other {Review # drafts}}"
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -719,8 +719,8 @@ msgstr "Draft"
 
 #. placeholder {0}: index + 1
 #: src/features/editor/DraftReviewHeader.tsx
-msgid "Draft {0} of {count}"
-msgstr "Draft {0} of {count}"
+#~ msgid "Draft {0} of {count}"
+#~ msgstr "Draft {0} of {count}"
 
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
@@ -1223,8 +1223,8 @@ msgid "New tab"
 msgstr "New tab"
 
 #: src/features/editor/DraftReviewHeader.tsx
-msgid "Next draft"
-msgstr "Next draft"
+#~ msgid "Next draft"
+#~ msgstr "Next draft"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
@@ -1413,8 +1413,8 @@ msgid "Preview not available"
 msgstr "Preview not available"
 
 #: src/features/editor/DraftReviewHeader.tsx
-msgid "Previous draft"
-msgstr "Previous draft"
+#~ msgid "Previous draft"
+#~ msgstr "Previous draft"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
@@ -1606,6 +1606,7 @@ msgid "Review changes"
 msgstr "Review changes"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewChip.tsx
 msgid "Review draft"
 msgstr "Review draft"
 

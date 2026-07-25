@@ -137,21 +137,13 @@ to the live manuscript room. If accept returns `status: "stale_draft"`, inline
 review reloads the refreshed draft id from the response. Review never
 automatically hops to another document.
 
-The multi-row transition is a defensive client contract, not a state the
-current production server can create. The server owns one active Work-draft
-branch per `(documentId, workId)` and aggregates every contributing thread into
-that branch, so its review list contains at most one active row for a document.
-The same-document stepper and its synthetic tests remain unreachable until the
-review-identity architecture changes.
-
 Review mode is a full-width editor plus the dock's `Changes` view — there is no
 in-editor review split. The editor's review chrome is
 `features/editor/DraftReviewHeader` (above the identity bar, review-only): LEFT
-"Back to live" exit, an oldest-first same-document stepper when the client is
-given more than one active row, and RIGHT whole-draft "Apply all" / "Discard
-all", all delegating to the controller. The stepper swaps the selected
-`draftId`; it does not exit and re-enter review. Under the current one-Work-draft
-server invariant it does not render in production. The dock's `DockChangesView`
+"Back to live" exit and RIGHT whole-draft "Apply all" / "Discard all", all
+delegating to the controller. The server owns one active Work-draft branch per
+`(documentId, workId)` and aggregates every contributing thread into that
+branch, so review has one active row per document. The dock's `DockChangesView`
 expands the reviewed document to operation cards read from the live preview; a
 card body click calls
 `controller.focusReviewOperation(operationId)`, which reads the review editor off
@@ -235,11 +227,8 @@ never stored. The marker's lifecycle is event-based via
 - Whole-draft reject resolves `"discarded"` — close the tab.
 - A remotely closed selected row resolves the tab only when the refreshed list
   carries truthful terminal evidence: `appliedAt` means `"committed"` and
-  `discardedAt` means `"discarded"`. If another active same-document row
-  remains, review advances to it after resolving any committed tab state.
-  The current server normally returns active rows only, so disappearance
-  without terminal evidence must exit safely without closing or graduating a
-  draft-only tab.
+  `discardedAt` means `"discarded"`. Disappearance without terminal evidence
+  must exit safely without closing or graduating a draft-only tab.
 - `openTab`'s metadata merge deliberately never clears the marker (absent
   keys don't override); `saveLastContextRoute` skips draftOnly tabs so a
   discarded path can't replay on the next visit; `ContextPaneController`

@@ -129,7 +129,6 @@ export function useDraftReviewController(
   projectId: string,
   workId: string,
   threadId: string | null = null,
-  nextDraftAfter: (selection: DraftReviewSelection) => string | null = () => null,
 ): DraftReviewController {
   const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
@@ -251,22 +250,17 @@ export function useDraftReviewController(
 
   const applyDisposition = useCallback(
     (documentId: string, draftId: string, outcome: DraftApplyOutcome) => {
-      const nextDraftId =
-        outcome.command.kind === "applied" ? nextDraftAfter({ documentId, draftId }) : null;
       if (outcome.refreshDraftId) {
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
         });
         loadInlineReviewRoom(documentId, outcome.refreshDraftId);
-      } else if (nextDraftId) {
-        loadInlineReviewRoom(documentId, nextDraftId);
       }
       dispatch({
         type: "applySucceeded",
         documentId,
         draftId,
         outcome,
-        nextDraftId,
       });
       if (outcome.message) {
         dispatch({
@@ -278,7 +272,7 @@ export function useDraftReviewController(
         useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
       }
     },
-    [loadInlineReviewRoom, nextDraftAfter, projectId, queryClient, workId],
+    [loadInlineReviewRoom, projectId, queryClient, workId],
   );
 
   commandPortsRef.current = {
@@ -345,12 +339,8 @@ export function useDraftReviewController(
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      const nextDraftId = nextDraftAfter({ documentId, draftId });
-      if (nextDraftId) loadInlineReviewRoom(documentId, nextDraftId);
-      dispatch({ type: "rejectSucceeded", documentId, draftId, nextDraftId });
-      if (!nextDraftId) {
-        useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
-      }
+      dispatch({ type: "rejectSucceeded", draftId });
+      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
     },
   };
 
