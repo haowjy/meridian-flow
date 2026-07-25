@@ -327,6 +327,29 @@
     0 0 0 2px var(--color-review-writer-ring);
 }
 
+/* Pure deletions stay out of manuscript text. Their empty positional anchor
+   renders only a narrow seam so card navigation has a visible destination. */
+.meridian-editor .ProseMirror .meridian-review-deletion-anchor {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+}
+
+.meridian-editor .ProseMirror .meridian-review-deletion-anchor::after {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -1px;
+  width: 2px;
+  content: "";
+  background: var(--color-review-removed-border);
+}
+
+.meridian-editor .ProseMirror .meridian-review-deletion-anchor.meridian-review-emphasized::after {
+  box-shadow: 0 0 0 2px var(--color-review-removed-ring);
+}
+
 /* Merge-artifact seam — concurrent writer + AI edits the CRDT combined into
    one run. NOT an authorship tint: neutral fill + a DASHED underline (the
    solid-vs-dashed contrast against `.meridian-review-added` is the load-bearing

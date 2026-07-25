@@ -9,10 +9,16 @@ import {
 
 describe("draft review concurrent conflict", () => {
   it("keeps the draft pending in needs-re-review state", () => {
-    const reviewing = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
+    const entered = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
       type: "enterInline",
       documentId: "document-1",
       draftId: "draft-1",
+    });
+    const reviewing = draftReviewReducer(entered, {
+      type: "inlineModelAvailable",
+      documentId: "document-1",
+      draftId: "draft-1",
+      identity: "draft-1:live-1:draft-1",
     });
 
     const conflicted = draftReviewReducer(reviewing, {
@@ -34,6 +40,15 @@ describe("draft review concurrent conflict", () => {
       reason: "unsynced_live_edits",
       conflictedBlocks: ["block-a"],
     });
+
+    const conflictDecorated = draftReviewReducer(conflicted, {
+      type: "inlineModelAvailable",
+      documentId: "document-1",
+      draftId: "draft-1",
+      identity: "draft-1:live-1:draft-1",
+    });
+    expect(conflictDecorated).toBe(conflicted);
+    expect(conflictDecorated.applyRefusal).not.toBeNull();
     expect(
       conflictForSelection(conflicted, { documentId: "document-1", draftId: "draft-1" }),
     ).toEqual({
@@ -42,7 +57,7 @@ describe("draft review concurrent conflict", () => {
       conflictedBlocks: ["block-a"],
     });
 
-    const navigated = draftReviewReducer(conflicted, {
+    const navigated = draftReviewReducer(conflictDecorated, {
       type: "enterInline",
       documentId: "document-2",
       draftId: "draft-2",

@@ -126,7 +126,8 @@ Manual Apply refusals retain their document/draft target and the complete
 writer-conflict comparison (base, current manuscript, proposed draft, evidence,
 and explanation). The dock announces the conflict immediately, exposes the
 bounded comparison through a disclosure, clears it when review moves elsewhere
-or refreshes, and routes
+or receives a genuinely new server preview (not a conflict-decoration-only
+refresh), and routes
 **Compare changes** through the same `useAiDraftLauncher` review entry as every
 other review control.
 
@@ -155,9 +156,9 @@ the TipTap inline-review extension and reports model availability identities.
 The extension styles only text and blocks present in the server draft
 projection; removed live content stays in the dock's compare cards so old and
 proposed prose can never compose into one manuscript line. Pure deletions use
-empty positional anchors so their cards can still scroll the manuscript without
-adding text. An active preview without a model is an invariant violation, logged
-loudly and ignored safely.
+empty positional anchors with a visible seam so their cards can still scroll
+the manuscript without adding text. An active preview without a model is an
+invariant violation, logged loudly and ignored safely.
 
 `reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
 keeps active drafts visible and hides older terminal undo receipts when a newer

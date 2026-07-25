@@ -356,7 +356,13 @@ export function DraftApplyRefusalNotice({
               <Trans>Show evidence for {refusal.conflicts.length} conflicts</Trans>
             )}
           </summary>
-          <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pe-1">
+          <section
+            className="focus-ring mt-2 max-h-64 space-y-2 overflow-y-auto rounded-sm pe-1"
+            data-draft-apply-refusal-scroll
+            aria-label={t`Conflict evidence`}
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Safari needs an explicit focus stop to keyboard-scroll bounded evidence.
+            tabIndex={0}
+          >
             {refusal.conflicts.map((conflict) => (
               <div
                 key={`${conflict.blockId}:${conflict.effect}`}
@@ -385,7 +391,7 @@ export function DraftApplyRefusalNotice({
                 </dl>
               </div>
             ))}
-          </div>
+          </section>
         </details>
       ) : null}
     </div>

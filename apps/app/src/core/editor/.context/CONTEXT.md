@@ -58,7 +58,7 @@ Yjs document session. It must stay structurally aligned with
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
 
-## Draft review — view extension and reject runtime
+## Draft review — projection-only view extension
 
 Colocated under `extensions/inline-review/`. The extension is a ProseMirror
 plugin that owns a single `DecorationSet` describing every hunk in the current
@@ -75,40 +75,24 @@ commands, and the lightweight hunk model used by the plugin.
   extraction of the y-prosemirror binding (`ySyncPluginKey` state).
   `Y.RelativePosition` decode is separated from
   decoration construction so anchor handling can be unit-tested without a DOM.
-- Local edits map decorations via `DecorationSet.map`. Full re-resolution from
-  RelativePositions runs only when a new model arrives from
-  `useInlineReviewSync` (debounced refetch of `useDraftPreview`).
-- Fallback: when `reviewMode: "panel"` comes back from the server, callers
-  route the writer to the docked `DraftDiffPanel` — the plugin is passive here.
+- Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
+  RelativePositions. The editor is read-only; the extension has no local typing
+  or optimistic attribution path.
 - Editor-side click seam: mousedown on any decoration DOM
   (`[data-review-operations]`) dispatches
   `setInlineReviewActiveOperation` for the first listed operation. This is
   the editor→sidebar direction of bidirectional linking; the sidebar
   reads plugin state via `useEditorState` and reacts (scroll card into
-  view + emphasise). The event is not swallowed — the writer's caret
-  placement inside real editable text is preserved.
+  view + emphasise). Pure deletions use an empty, visible seam whose DOM
+  contains no manuscript text.
 
 Attribution → highlight color (agent = jade, writer = gold), review palette
 lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 
 The plugin paints **one decoration per `ReviewHunk.spans` entry** rather
 than one per hunk, so nested authorship (a writer edit inside an AI
-insertion) renders in each owner's own color — gold inside green, matching
-the mock. Hunks with no resolvable spans fall back to whole-hunk coloring
-via `hunkKind`. Alongside model decorations, the plugin owns an
-**optimistic writer overlay**: local user transactions (`!ySyncPluginKey.isChangeOrigin`
-+ not `addToHistory: false`) add gold spans to `optimisticDecorations`
-covering the just-typed ranges. `set-model` clears the overlay — the
-refreshed server model is authoritative and its own writer spans take
-over. `props.decorations` merges the overlay onto the model set.
-
-Operation rejection runtime lives next to the editor core in
-`core/editor/inline-review-runtime.ts`, not in the extension barrel. It decodes
-draft journals, reconstructs inverse Yjs updates, and applies the tracked reject
-origin. That code depends on persisted journal semantics and Yjs undo-manager
-runtime behavior, so keeping it outside `extensions/inline-review/` preserves the
-extension boundary: view model in the extension, reconstruction side effect in
-the runtime module.
+insertion) renders in each owner's own color — gold inside green. Hunks with no
+resolvable spans fall back to whole-hunk coloring via `hunkKind`.
 
 ## Change-trail navigation
 
@@ -123,22 +107,10 @@ validate, or map anchors itself.
 
 ## Per-operation discard (dock Changes cards)
 
-The dock Changes view's per-card **Discard** rejects one operation without
-re-editing the draft. The command fetches the immutable draft journal for the
-model's `draftRevisionToken` (cached per revision), decodes base64 bytes into a
-`JournalSnapshot`, reconstructs the inverse for that operation's server-provided
-`rejectSourceUpdateIds`, calls `undoManager.stopCapturing()`, then applies the
-inverse to the draft Y.Doc with `HUNK_REJECT_ORIGIN`. The inverse syncs through
-Hocuspocus as a normal draft update row; decorations disappear on the normal
-debounced preview refetch. A stale state-vector refetches preview and retries.
-The controller state machine owns pending/settling state by draft id; the card
-only names the operation.
-
-Collaboration passes `yUndoOptions.trackedOrigins = [HUNK_REJECT_ORIGIN]`
-uniformly for live and draft editors. TipTap/y-tiptap still adds its own
-`ySyncPluginKey` origin for typing; live editors never emit the reject origin,
-so the config is inert outside draft review, but Ctrl+Z can restore a discarded
-operation while it is under review.
+The dock Changes view's per-card **Apply** and **Discard** are server
+disposition commands. They never edit the review Y.Doc from the browser.
+The controller owns pending/settling state by draft id, and the normal preview
+refetch replaces the projection and decorations after settlement.
 
 ## Math extension decision
 

@@ -4,8 +4,8 @@
 
 Inline draft review is now live: the editor remounts into the `draft:<draftId>`
 room, `DraftInlineReviewExtension` owns decorations, the sidebar can activate
-and discard operation-scoped hunks, and hunk discard uses the tracked
-`HUNK_REJECT_ORIGIN` undo path.
+and dispose operation-scoped hunks through server commands, and the review
+editor remains a read-only projection.
 
 Open gaps:
 

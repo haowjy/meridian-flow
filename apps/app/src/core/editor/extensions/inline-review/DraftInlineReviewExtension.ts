@@ -31,8 +31,6 @@ export interface DraftInlineReviewOptions {
   initialModel: InlineReviewModel | null;
 }
 
-export const HUNK_REJECT_ORIGIN = Symbol("meridian:hunk-reject");
-
 /** A decoration DOM node carries operation attribution on `data-review-operations`. */
 const OPERATION_ATTR = "data-review-operations";
 

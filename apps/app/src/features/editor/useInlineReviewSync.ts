@@ -115,8 +115,9 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     if (!documentId) return;
 
     const conflictIdentity = [...(options.conflictedBlocks ?? [])].sort().join(",");
-    const identity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}:${conflictIdentity}`;
-    if (lastPushedIdentityRef.current === identity) return;
+    const previewIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
+    const modelIdentity = `${previewIdentity}:${conflictIdentity}`;
+    if (lastPushedIdentityRef.current === modelIdentity) return;
 
     const model = buildInlineReviewModel({
       liveRevisionToken: preview.liveRevisionToken,
@@ -126,10 +127,10 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       conflictedBlocks: options.conflictedBlocks,
     });
     editor.commands.setInlineReviewModel(model);
-    lastPushedIdentityRef.current = identity;
+    lastPushedIdentityRef.current = modelIdentity;
     lastFatalIdentityRef.current = null;
     onInlineModelAvailable?.(
-      identity,
+      previewIdentity,
       documentId,
       reviewId,
       operations.map((operation) => operation.operationId),

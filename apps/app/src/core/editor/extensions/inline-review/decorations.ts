@@ -46,6 +46,7 @@ const WRITER_CLASS = "meridian-review-writer";
 const MERGED_CLASS = "meridian-review-merged";
 const CONFLICT_CLASS = "meridian-review-conflict";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
+const DELETION_ANCHOR_CLASS = "meridian-review-deletion-anchor";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
 const HUNK_ATTR = "data-review-hunk";
@@ -220,12 +221,12 @@ function deletionAnchorDecoration(
       anchor.setAttribute("aria-hidden", "true");
       anchor.setAttribute(HUNK_ATTR, hunk.hunkId);
       anchor.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
-      if (focused) anchor.className = EMPHASIS_CLASS;
+      anchor.className = classNames(DELETION_ANCHOR_CLASS, focused && EMPHASIS_CLASS);
       return anchor;
     },
     {
       ...dataAttrs,
-      key: `deletion-anchor:${hunk.hunkId}`,
+      key: `deletion-anchor:${hunk.hunkId}:${focused ? "focused" : "idle"}`,
       side: -1,
     },
   );
@@ -317,4 +318,5 @@ export const inlineReviewClassNames = {
   emphasized: EMPHASIS_CLASS,
   block: BLOCK_CLASS,
   conflict: CONFLICT_CLASS,
+  deletionAnchor: DELETION_ANCHOR_CLASS,
 } as const;
