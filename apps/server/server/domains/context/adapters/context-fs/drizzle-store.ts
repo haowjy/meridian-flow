@@ -256,13 +256,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return mapDocument(row);
   }
 
-  async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
-    const row = await this.createDocumentRecordIfAbsent(input);
-    if (!row) return null;
-    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
-    return row;
-  }
-
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
     const [row] = await this.db
       .insert(documents)
@@ -310,10 +303,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       path: segments.join("/"),
       active: row.deletedAt === null && row.kind === "content",
     };
-  }
-
-  async ensureDocumentMembership(documentId: string): Promise<void> {
-    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", documentId);
   }
 
   async recordDocumentMembership(documentId: string): Promise<void> {

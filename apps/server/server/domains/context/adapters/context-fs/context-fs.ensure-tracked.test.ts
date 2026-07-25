@@ -10,15 +10,16 @@ import {
 
 function documentSyncProbe() {
   const ensured: string[] = [];
+  const seeded: string[] = [];
   const documentSync: MarkdownDocumentStore = {
     ensureDocument: async (documentId) => {
       ensured.push(documentId);
     },
-    readAsMarkdown: async (documentId) => ({ ok: false, error: { code: "not_found", documentId } }),
-    seedFromMarkdown: async (documentId) => ({
-      ok: false,
-      error: { code: "not_found", documentId },
-    }),
+    readAsMarkdown: async () => ({ ok: true, value: "" }),
+    seedFromMarkdown: async (documentId) => {
+      seeded.push(documentId);
+      return { ok: true, value: null };
+    },
     writeDocument: async () => {
       throw new Error("not used");
     },
@@ -26,7 +27,7 @@ function documentSyncProbe() {
       throw new Error("not used");
     },
   };
-  return { documentSync, ensured };
+  return { documentSync, ensured, seeded };
 }
 
 function contextFs(documentSync: MarkdownDocumentStore) {
@@ -41,13 +42,15 @@ function contextFs(documentSync: MarkdownDocumentStore) {
 }
 
 describe("ContextFS ensureTrackedDocument", () => {
-  it("defers live Yjs creation only for new staged documents", async () => {
-    const { documentSync, ensured } = documentSyncProbe();
+  it("materializes new tracked documents atomically even when response staging defers later writes", async () => {
+    const { documentSync, ensured, seeded } = documentSyncProbe();
     const fs = contextFs(documentSync);
 
     const created = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
-    expect(created.ok && created.value.created).toBe(true);
+    if (!created.ok) throw new Error(`create failed: ${created.error.code}`);
+    expect(created.value.created).toBe(true);
     expect(ensured).toEqual([]);
+    expect(seeded).toEqual([created.value.documentId]);
   });
 
   it("ensures live Yjs state for existing tracked documents even when response staging defers new docs", async () => {

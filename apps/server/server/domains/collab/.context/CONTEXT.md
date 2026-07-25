@@ -160,6 +160,8 @@ for the cross-domain port decision and self-healing rationale.
 transactions. Context and bootstrap supply the row, initial-content, and
 manifest operations; the aggregate commits them together. Repair uses the same
 boundary so a row cannot become visible before its Yjs authority is usable.
+Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
+after the enclosing Drizzle transaction commits.
 
 ## Durable records
 

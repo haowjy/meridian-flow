@@ -20,6 +20,7 @@ import type {
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
+import { createDocumentCreationAggregate } from "../../../collab/index.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
@@ -157,7 +158,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: MarkdownDocumentStore;
-  private readonly documentCreation: DocumentCreationAggregate | null;
+  private readonly documentCreation: DocumentCreationAggregate;
   private readonly manifestView?: ContextFSDeps["manifestView"];
 
   readonly tree: ContextTreeAdapter = {
@@ -171,7 +172,12 @@ export class ContextFS implements ContextSchemeAdapter {
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
     this.documentSync = deps.documentSync;
-    this.documentCreation = deps.documentCreation ?? null;
+    this.documentCreation =
+      deps.documentCreation ??
+      createDocumentCreationAggregate({
+        atomic: (operation) => deps.store.transaction(operation),
+        ensureDocument: (documentId) => deps.documentSync.ensureDocument(documentId),
+      });
     this.manifestView = deps.manifestView;
     this.name = deps.scheme;
   }
@@ -190,11 +196,6 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
-  private async finalizeUntitledDocument(documentId: string): Promise<void> {
-    await this.store.ensureDocumentMembership(documentId);
-    await this.documentSync.ensureDocument(documentId);
-  }
-
   private async createTrackedDocumentAtomically(input: {
     id?: string;
     folderId: string | null;
@@ -205,28 +206,6 @@ export class ContextFS implements ContextSchemeAdapter {
     provisionalName?: boolean;
     options?: ContextWriteOptions;
   }): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
-    if (!this.documentCreation) {
-      const document = await this.store.createDocumentIfAbsent({
-        id: input.id,
-        folderId: input.folderId,
-        name: input.name,
-        extension: input.extension,
-        markdown: "",
-        filetype: input.filetype,
-        provisionalName: input.provisionalName,
-      });
-      if (!document) return Err({ code: "conflict" });
-      const write = await writeCollabMarkdown({
-        documentSync: this.documentSync,
-        documentId: document.id,
-        content: input.content,
-        provenance: input.options?.origin,
-      });
-      if (!write.ok) return write;
-      const persisted = await this.persistProjection(document.id, write.markdown);
-      return persisted.ok ? Ok({ document, markdown: write.markdown }) : persisted;
-    }
-
     const documentId = input.id ?? crypto.randomUUID();
     let document: ContextDocument | null = null;
     try {
@@ -272,10 +251,6 @@ export class ContextFS implements ContextSchemeAdapter {
   private async repairTrackedDocument(
     document: ContextDocument,
   ): Promise<Result<void, AdapterFault>> {
-    if (!this.documentCreation) {
-      await this.finalizeUntitledDocument(document.id);
-      return Ok(undefined);
-    }
     try {
       await this.documentCreation.repairDocumentAtomically({
         documentId: document.id as never,
@@ -532,27 +507,6 @@ export class ContextFS implements ContextSchemeAdapter {
           : max;
       }, 0);
       const name = `Untitled ${maxNumber + 1}`;
-      if (!this.documentCreation) {
-        const document = await this.store.createDocumentIfAbsent({
-          id: options.documentId,
-          folderId,
-          name,
-          extension: "md",
-          markdown: "",
-          filetype: "markdown",
-          provisionalName: true,
-        });
-        if (document) {
-          await this.finalizeUntitledDocument(document.id);
-          return Ok({
-            status: "created",
-            documentId: document.id,
-            path: joinPath(path, renderFilename(document.name, document.extension)),
-            name: renderFilename(document.name, document.extension),
-          });
-        }
-        continue;
-      }
       const created = await this.createTrackedDocumentAtomically({
         id: options.documentId,
         folderId,
@@ -580,7 +534,8 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "conflict",
         });
       }
-      await this.finalizeUntitledDocument(collision.document.id);
+      const repaired = await this.repairTrackedDocument(collision.document);
+      if (!repaired.ok) return repaired;
       return Ok({
         status: "already-exists",
         documentId: collision.document.id,
@@ -618,18 +573,6 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok({ documentId: existing.id, created: false });
     }
 
-    if (!this.documentCreation) {
-      const document = await this.store.upsertDocument({
-        folderId,
-        name,
-        extension,
-        markdown: "",
-        filetype,
-      });
-      if (!options?.deferDocumentSync) await this.documentSync.ensureDocument(document.id);
-      return Ok({ documentId: document.id, created: true });
-    }
-
     const created = await this.createTrackedDocumentAtomically({
       folderId,
       name,
@@ -665,6 +608,10 @@ export class ContextFS implements ContextSchemeAdapter {
         ok: false,
         error: { code: "io_error", message: `Cannot edit binary file as markdown: ${path}` },
       };
+    }
+    if (!(await this.isVisibleDocument(doc.id))) {
+      const repaired = await this.repairTrackedDocument(doc);
+      if (!repaired.ok) return repaired;
     }
 
     const edited = await editCollabMarkdown({
@@ -849,9 +796,9 @@ export class ContextFS implements ContextSchemeAdapter {
       });
       return membership.documentId ? new Set(membership.members) : null;
     } catch {
-      // Fresh projects can race the tree route before manuscript context/manifest
-      // seeding finishes; list without manifest filtering instead of surfacing 502.
-      return null;
+      // Authority failure is not permission to expose raw rows. Creation paths
+      // can repair an occupied row; observations remain fail-closed.
+      return new Set();
     }
   }
 

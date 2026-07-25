@@ -198,10 +198,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.sourceStore()).findDocumentById(documentId);
   }
 
-  async ensureDocumentMembership(documentId: string) {
-    return (await this.sourceStore()).ensureDocumentMembership(documentId);
-  }
-
   async recordDocumentMembership(documentId: string) {
     return (await this.sourceStore()).recordDocumentMembership(documentId);
   }
@@ -212,10 +208,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 
   async upsertDocument(input: UpsertDocumentInput) {
     return (await this.sourceStore()).upsertDocument(input);
-  }
-
-  async createDocumentIfAbsent(input: UpsertDocumentInput) {
-    return (await this.sourceStore()).createDocumentIfAbsent(input);
   }
 
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput) {

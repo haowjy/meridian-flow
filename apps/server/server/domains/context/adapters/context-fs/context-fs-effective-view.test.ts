@@ -152,7 +152,7 @@ describe("ContextFS manuscript effective view", () => {
     );
   });
 
-  it("lists without manifest filtering when membership resolution is not ready yet", async () => {
+  it("fails closed when manifest membership resolution is unavailable", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
     await store.upsertDocument({
@@ -181,9 +181,7 @@ describe("ContextFS manuscript effective view", () => {
     const listed = await fs.list("");
     expect(listed.ok).toBe(true);
     if (listed.ok) {
-      expect(listed.value).toEqual([
-        expect.objectContaining({ documentId: LIVE_DOC_ID, path: "chapter-1.md" }),
-      ]);
+      expect(listed.value).toEqual([]);
     }
   });
 });

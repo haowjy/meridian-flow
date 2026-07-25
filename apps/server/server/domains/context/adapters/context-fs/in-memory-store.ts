@@ -112,8 +112,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.sourceId;
   }
 
-  async ensureDocumentMembership(_documentId: string): Promise<void> {}
-
   async recordDocumentMembership(_documentId: string): Promise<void> {}
 
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
@@ -235,10 +233,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     };
     this.backing.documents.set(doc.id, doc);
     return this.publicDocument(doc);
-  }
-
-  async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
-    return this.createDocumentRecordIfAbsent(input);
   }
 
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {

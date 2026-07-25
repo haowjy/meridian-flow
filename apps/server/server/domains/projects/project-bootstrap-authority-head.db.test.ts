@@ -121,19 +121,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("rolls back the whole bootstrap when document materialization is interrupted", async () => {
-      const { collab } = createBoundCollab();
+      const { collab, hocuspocus } = createBoundCollab();
+      let interruptedDocumentId: string | undefined;
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
         documents: {
           ...collab,
-          createDocumentAtomically: (input) =>
-            collab.createDocumentAtomically({
+          createDocumentAtomically: (input) => {
+            interruptedDocumentId = input.documentId;
+            return collab.createDocumentAtomically({
               ...input,
               async initializeContent() {
                 await input.initializeContent();
                 throw new Error("simulated interruption before document commit");
               },
-            }),
+            });
+          },
         },
       });
       await expect(interrupted.ensureDefaultBootstrap(USER_ID as never)).rejects.toThrow(
@@ -147,6 +150,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.select().from(schema.documentYjsUpdates),
         ]).then((rows) => rows.map((row) => row.length)),
       ).resolves.toEqual([0, 0, 0, 0]);
+      expect(interruptedDocumentId).toBeDefined();
+      expect(hocuspocus.documents.has(interruptedDocumentId as string)).toBe(false);
 
       const repaired = await createDrizzleProjectBootstrapRepository({
         db,
@@ -219,6 +224,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: false,
         error: { code: "not_found" },
       });
+      await expect(
+        port.edit(
+          "manuscript://chapter-1.md",
+          {
+            kind: "append",
+            content: "Recovered edit",
+          },
+          {
+            origin: {
+              type: "human",
+              userId: USER_ID,
+              threadId: bootstrap.threadId,
+            },
+          },
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      await collab.recordManifestDocumentDeleted(bootstrap.documentId, view);
 
       await expect(
         port.ensureTrackedDocument("manuscript://chapter-1.md", {
@@ -234,7 +256,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(port.read("manuscript://chapter-1.md")).resolves.toMatchObject({
         ok: true,
-        value: { documentId: bootstrap.documentId, content: "# Chapter 1\n" },
+        value: {
+          documentId: bootstrap.documentId,
+          content: expect.stringContaining("Recovered edit"),
+        },
       });
     });
 

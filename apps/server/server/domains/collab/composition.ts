@@ -176,6 +176,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     lifecycle: documentCreation,
     initialDocumentSeeds: persistence.lifecycle,
+    deferUntilCommit: deferUntilDrizzleCommit,
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,

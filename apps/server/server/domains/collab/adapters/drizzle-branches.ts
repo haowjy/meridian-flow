@@ -185,7 +185,6 @@ export function createDrizzleBranchStore(
   async function persistLiveManifestUpdate(
     documentId: DocumentId,
     validationDoc: Y.Doc,
-    liveDoc: Y.Doc,
     update: Uint8Array,
   ): Promise<void> {
     if (!live) {
@@ -199,7 +198,8 @@ export function createDrizzleBranchStore(
             origin: "system",
             seq: 0,
           });
-          Y.applyUpdate(liveDoc, admittedUpdate);
+          const publish = () => live.coordinator.recover(documentId);
+          if (!deferUntilDrizzleCommit(publish)) await publish();
           return { sequence: BigInt(sequence), joined: 0 };
         },
       },
@@ -214,27 +214,27 @@ export function createDrizzleBranchStore(
     if (!live) {
       throw new Error("DrizzleBranchStore manifest mutations require the collab live lifecycle");
     }
-    await live.coordinator.withDocument(documentId, async (liveDoc) => {
-      await runInDrizzleTransaction(db, async () => {
-        await lockDocumentMutation(currentDrizzleDb(db), documentId);
-        // Another replica may have committed while this process waited for the DB lock.
-        // Reconstruct inside both locks so the computed delta is against the durable live document.
-        const persistedLiveDocument = await ensureLiveManifestDocument(documentId);
-        const validationDoc = createCollabYDoc({ gc: false });
-        try {
-          const beforeState = Y.encodeStateAsUpdate(persistedLiveDocument);
-          Y.applyUpdate(validationDoc, beforeState);
-          const before = Y.encodeStateVector(persistedLiveDocument);
-          await mutate(persistedLiveDocument);
-          const update = Y.encodeStateAsUpdate(persistedLiveDocument, before);
-          if (updateChangesState(beforeState, update)) {
-            await persistLiveManifestUpdate(documentId, validationDoc, liveDoc, update);
-          }
-        } finally {
-          persistedLiveDocument.destroy();
-          validationDoc.destroy();
+    await runInDrizzleTransaction(db, async () => {
+      await lockDocumentMutation(currentDrizzleDb(db), documentId);
+      // The DB mutation lock serializes every journal admission, including
+      // updates from warm rooms on this or another replica. Reconstructing only
+      // from durable state avoids opening an empty room that Hocuspocus could
+      // checkpoint at the newly admitted sequence before the transaction commits.
+      const persistedLiveDocument = await ensureLiveManifestDocument(documentId);
+      const validationDoc = createCollabYDoc({ gc: false });
+      try {
+        const beforeState = Y.encodeStateAsUpdate(persistedLiveDocument);
+        Y.applyUpdate(validationDoc, beforeState);
+        const before = Y.encodeStateVector(persistedLiveDocument);
+        await mutate(persistedLiveDocument);
+        const update = Y.encodeStateAsUpdate(persistedLiveDocument, before);
+        if (updateChangesState(beforeState, update)) {
+          await persistLiveManifestUpdate(documentId, validationDoc, update);
         }
-      });
+      } finally {
+        persistedLiveDocument.destroy();
+        validationDoc.destroy();
+      }
     });
   }
 
