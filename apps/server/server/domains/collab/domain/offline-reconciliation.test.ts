@@ -9,7 +9,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { mergeTrailChanges } from "../adapters/drizzle-change-trail-aggregate.js";
-import { planTrailForwardAction } from "../adapters/drizzle-trail-forward-actions.js";
+import { planTrailRestore } from "../adapters/drizzle-trail-restore.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createOfflineReconciliation } from "./offline-reconciliation.js";
 import type { NormalizedTrail, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -41,10 +41,9 @@ describe("offline reconciliation", () => {
       reversible: false,
     });
     expect(
-      planTrailForwardAction({
+      planTrailRestore({
         liveDoc: scenario.liveDoc,
         change: scenario.changes[0] as TrailChangeV1,
-        action: "restore",
         model,
         codec: agentCodec,
       }),
@@ -59,10 +58,9 @@ describe("offline reconciliation", () => {
     await scenario.reconcile();
     expect(scenario.changes).toHaveLength(1);
     expect(
-      planTrailForwardAction({
+      planTrailRestore({
         liveDoc: scenario.liveDoc,
         change: scenario.changes[0] as TrailChangeV1,
-        action: "restore",
         model,
         codec: agentCodec,
       }),

@@ -108,9 +108,9 @@ during inline draft review (`inReview`), since markers are a live-document
 surface and branch rooms have a different anchor space.
 
 Detail is lazy on open: it reads the trail detail endpoint and the originating
-thread snapshot, then renders the removed text, a one-line originating-request
-snippet, and the trail row's same `Restore` / `Delete again` forward action.
-Recovery runs through `useTrailForwardAction` (shared in
+thread snapshot. Attribution and Restore stay visible; swept context, removed
+text with Copy, and the one-line originating-request snippet sit behind one
+Show details disclosure. Recovery runs through `useTrailRestore` (shared in
 [`features/change-trail`](../../change-trail/AGENTS.md)): eligibility, the
 idempotent command, and mark dismissal on a successful `applied` /
 `already_applied` outcome all live there; a failed action stays failed with a

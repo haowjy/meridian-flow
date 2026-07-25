@@ -182,8 +182,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    trailForwardActions: {
-      async applyTrailForwardAction() {
+    trailRestore: {
+      async restoreTrailChange() {
         return { status: "anchor_unavailable" };
       },
     },

@@ -10,14 +10,14 @@ the change's Before excerpt and navigation anchor; any eligible live mark may
 vend Restore, whether ordinary or swept. Receipt rows are read-only and offer
 Copy instead.
 
-Action eligibility is gated by the durable forward-action state on the trail
-change: a change already `applied` or `settled` is terminal and its verb is
-disabled. Recovery is idempotent by `changeId` — replaying the same action on a
+Restore eligibility is gated by the durable restore state on the trail change:
+a change already `applied` or `settled` is terminal and its verb is disabled.
+Recovery is idempotent by `changeId` — replaying Restore on a
 settled change is a no-op, and the hook short-circuits a pending repeat.
 
 ## Key rule
 
-`useTrailForwardAction` holds the command through to trail-detail query
+`useTrailRestore` holds the command through to trail-detail query
 invalidation (`idle → pending → settling → failed`) and dismisses the session
 mark only on a successful `applied` / `already_applied` outcome; a failed action
 stays `failed` with a retry affordance, never silently applied. The server's
@@ -29,10 +29,10 @@ draft-review React-Query-held settlement in `features/chat`.
 
 | File | What it does |
 |---|---|
-| `trail-change-recovery.ts` | `trailChangeRecovery(chg)` Restore eligibility; `useTrailForwardAction` React hook command state |
+| `trail-change-recovery.ts` | `trailChangeRecovery(chg)` Restore eligibility; `useTrailRestore` React hook command state |
 
-Backed by `@/client/change-trails.ts`: `applyTrailForwardAction` (server
-forward-action mutation), `changeTrailDetailKey` (the shared detail query key),
+Backed by `@/client/change-trails.ts`: `restoreTrailChange` (server
+Restore mutation), `changeTrailDetailKey` (the shared detail query key),
 `bodyFromTrailHashline` (decode the display body carried by trail hashline
 serialization).
 

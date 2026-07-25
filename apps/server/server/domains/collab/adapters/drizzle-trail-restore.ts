@@ -10,11 +10,7 @@ import {
   toRef,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type {
-  TrailForwardAction,
-  TrailForwardActionResult,
-  TrailForwardActionStateV1,
-} from "@meridian/contracts";
+import type { TrailRestoreResult, TrailRestoreStateV1 } from "@meridian/contracts";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -39,7 +35,7 @@ import {
 import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
-type TerminalForwardActionResult = { status: "anchor_unavailable" } | { status: "retry_exhausted" };
+type TerminalRestoreResult = { status: "anchor_unavailable" } | { status: "retry_exhausted" };
 
 export type TrailDocumentAccess = {
   lockDocumentAccessState(
@@ -49,7 +45,7 @@ export type TrailDocumentAccess = {
   ): Promise<"available" | "deleted" | null>;
 };
 
-export function createDrizzleTrailForwardActions(input: {
+export function createDrizzleTrailRestore(input: {
   db: Database;
   documentAccess: TrailDocumentAccess;
   coordinator: DocumentCoordinator;
@@ -58,18 +54,17 @@ export function createDrizzleTrailForwardActions(input: {
   durableProjectionSerializer: DurableProjectionSerializer;
 }) {
   return {
-    async apply(actionInput: {
+    async restore(restoreInput: {
       threadId: string;
       trailId: string;
       changeId: string;
-      action: TrailForwardAction;
       userId: string;
-    }): Promise<TrailForwardActionResult> {
+    }): Promise<TrailRestoreResult> {
       const detail = await input.db.transaction((tx) =>
-        loadLockedAuthorizedChange(tx, input.documentAccess, actionInput),
+        loadLockedAuthorizedChange(tx, input.documentAccess, restoreInput),
       );
       if (!detail) return { status: "anchor_unavailable" };
-      const durableState = detail.change.forwardActions?.[actionInput.action];
+      const durableState = detail.change.restore;
       if (durableState?.status === "applied") return { status: "already_applied" };
       if (durableState?.status === "settled") return terminalResult(durableState.outcome);
 
@@ -80,13 +75,13 @@ export function createDrizzleTrailForwardActions(input: {
               await lockDocumentMutation(tx, detail.documentId);
               const accessState = await input.documentAccess.lockDocumentAccessState(
                 tx,
-                actionInput.userId as UserId,
+                restoreInput.userId as UserId,
                 detail.documentId,
               );
               if (accessState !== "available") return { status: "anchor_unavailable" as const };
-              const locked = await loadChangeForDocument(tx, actionInput, detail.documentId, true);
+              const locked = await loadChangeForDocument(tx, restoreInput, detail.documentId, true);
               if (!locked) return { status: "anchor_unavailable" as const };
-              const state = locked.change.forwardActions?.[actionInput.action];
+              const state = locked.change.restore;
               if (state?.status === "applied") return { status: "already_applied" as const };
               if (state?.status === "settled") return terminalResult(state.outcome);
               if (state?.status === "committed") {
@@ -102,16 +97,15 @@ export function createDrizzleTrailForwardActions(input: {
               let persistedIntent:
                 | { update: Uint8Array; expectedLiveStateHash: string }
                 | undefined;
-              const result = await planAndPersistTrailForwardAction({
+              const result = await planAndPersistTrailRestore({
                 liveDoc,
                 change: locked.change,
-                action: actionInput.action,
                 model: input.model,
                 codec: input.codec,
                 persist: async (intent) => {
                   persistedIntent = intent;
-                  await updateActionState(tx, {
-                    ...actionInput,
+                  await updateRestoreState(tx, {
+                    ...restoreInput,
                     documentId: detail.documentId,
                     changes: locked.changes,
                     state: encodeIntent(intent),
@@ -119,8 +113,8 @@ export function createDrizzleTrailForwardActions(input: {
                 },
               });
               if (result === "anchor_unavailable") {
-                await updateActionState(tx, {
-                  ...actionInput,
+                await updateRestoreState(tx, {
+                  ...restoreInput,
                   documentId: detail.documentId,
                   changes: locked.changes,
                   state: { status: "settled", outcome: "anchor_unavailable" },
@@ -130,8 +124,8 @@ export function createDrizzleTrailForwardActions(input: {
               if (result === "live_changed") {
                 if (!persistedIntent) throw new Error("Forward action intent was not persisted");
                 if (attempt === 2) {
-                  await updateActionState(tx, {
-                    ...actionInput,
+                  await updateRestoreState(tx, {
+                    ...restoreInput,
                     documentId: detail.documentId,
                     changes: locked.changes,
                     state: { status: "settled", outcome: "retry_exhausted" },
@@ -154,19 +148,19 @@ export function createDrizzleTrailForwardActions(input: {
               await lockDocumentMutation(tx, detail.documentId);
               const accessState = await input.documentAccess.lockDocumentAccessState(
                 tx,
-                actionInput.userId as UserId,
+                restoreInput.userId as UserId,
                 detail.documentId,
               );
               if (accessState !== "available") return "anchor_unavailable" as const;
-              const locked = await loadChangeForDocument(tx, actionInput, detail.documentId, true);
+              const locked = await loadChangeForDocument(tx, restoreInput, detail.documentId, true);
               if (!locked) return "anchor_unavailable" as const;
-              const state = locked.change.forwardActions?.[actionInput.action];
+              const state = locked.change.restore;
               if (state?.status === "settled") return state.outcome;
               if (state?.status === "applied") return "already_applied" as const;
               if (state?.status !== "committed" || !sameIntent(state, committed)) {
                 if (attempt === 2 && state?.status === "committed") {
-                  await updateActionState(tx, {
-                    ...actionInput,
+                  await updateRestoreState(tx, {
+                    ...restoreInput,
                     documentId: detail.documentId,
                     changes: locked.changes,
                     state: { status: "settled", outcome: "retry_exhausted" },
@@ -181,21 +175,21 @@ export function createDrizzleTrailForwardActions(input: {
               if (!alreadyApplied) {
                 scratch = new Y.Doc({ gc: false });
                 Y.applyUpdate(scratch, Y.encodeStateAsUpdate(liveDoc));
-                const projected = applyCommittedTrailForwardAction({
+                const projected = applyCommittedTrailRestore({
                   liveDoc: scratch,
                   update: committed.update,
                   expectedLiveStateHash: committed.expectedLiveStateHash,
                   liveOrigin: {
                     type: "user",
-                    userId: actionInput.userId,
-                    reason: `trail-${actionInput.action}`,
+                    userId: restoreInput.userId,
+                    reason: "trail-restore",
                   },
                 });
                 if (projected === "live_changed") {
                   scratch.destroy();
                   if (attempt === 2) {
-                    await updateActionState(tx, {
-                      ...actionInput,
+                    await updateRestoreState(tx, {
+                      ...restoreInput,
                       documentId: detail.documentId,
                       changes: locked.changes,
                       state: { status: "settled", outcome: "retry_exhausted" },
@@ -216,20 +210,20 @@ export function createDrizzleTrailForwardActions(input: {
                 scratch?.destroy();
               }
               if (!alreadyApplied) {
-                const applied = applyCommittedTrailForwardAction({
+                const applied = applyCommittedTrailRestore({
                   liveDoc,
                   update: committed.update,
                   expectedLiveStateHash: committed.expectedLiveStateHash,
                   liveOrigin: {
                     type: "user",
-                    userId: actionInput.userId,
-                    reason: `trail-${actionInput.action}`,
+                    userId: restoreInput.userId,
+                    reason: "trail-restore",
                   },
                 });
                 if (applied === "live_changed") {
                   if (attempt === 2) {
-                    await updateActionState(tx, {
-                      ...actionInput,
+                    await updateRestoreState(tx, {
+                      ...restoreInput,
                       documentId: detail.documentId,
                       changes: locked.changes,
                       state: { status: "settled", outcome: "retry_exhausted" },
@@ -250,16 +244,16 @@ export function createDrizzleTrailForwardActions(input: {
                   batchOrdinal: 0,
                   updateData: Buffer.from(committed.update),
                   originType: "human",
-                  actorUserId: actionInput.userId as never,
+                  actorUserId: restoreInput.userId as never,
                 })
                 .returning({ id: documentYjsUpdates.id });
-              if (!journalRow) throw new Error("Failed to persist trail forward action");
+              if (!journalRow) throw new Error("Failed to persist trail Restore");
               await tx
                 .update(documents)
                 .set({ markdownProjection, updatedAt: new Date() })
                 .where(eq(documents.id, detail.documentId as never));
-              await updateActionState(tx, {
-                ...actionInput,
+              await updateRestoreState(tx, {
+                ...restoreInput,
                 documentId: detail.documentId,
                 changes: locked.changes,
                 state: { status: "applied", updateId: journalRow.id },
@@ -272,19 +266,19 @@ export function createDrizzleTrailForwardActions(input: {
             }
             return { status: finalized };
           }
-          return await settleTerminalAction(
+          return await settleTerminalRestore(
             input.db,
             input.documentAccess,
-            { ...actionInput, documentId: detail.documentId },
+            { ...restoreInput, documentId: detail.documentId },
             "retry_exhausted",
           );
         });
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) {
-          return await settleTerminalAction(
+          return await settleTerminalRestore(
             input.db,
             input.documentAccess,
-            { ...actionInput, documentId: detail.documentId },
+            { ...restoreInput, documentId: detail.documentId },
             "anchor_unavailable",
           );
         }
@@ -295,41 +289,40 @@ export function createDrizzleTrailForwardActions(input: {
 }
 
 function terminalResult(
-  outcome: Extract<TrailForwardActionStateV1, { status: "settled" }>["outcome"],
-): TerminalForwardActionResult {
+  outcome: Extract<TrailRestoreStateV1, { status: "settled" }>["outcome"],
+): TerminalRestoreResult {
   return outcome === "anchor_unavailable"
     ? { status: "anchor_unavailable" }
     : { status: "retry_exhausted" };
 }
 
-async function settleTerminalAction(
+async function settleTerminalRestore(
   db: Database,
   documentAccess: TrailDocumentAccess,
-  actionInput: {
+  restoreInput: {
     threadId: string;
     trailId: string;
     changeId: string;
-    action: TrailForwardAction;
     documentId: string;
     userId: string;
   },
-  outcome: Extract<TrailForwardActionStateV1, { status: "settled" }>["outcome"],
-): Promise<TrailForwardActionResult> {
+  outcome: Extract<TrailRestoreStateV1, { status: "settled" }>["outcome"],
+): Promise<TrailRestoreResult> {
   return db.transaction(async (tx) => {
-    await lockDocumentMutation(tx, actionInput.documentId);
+    await lockDocumentMutation(tx, restoreInput.documentId);
     const accessState = await documentAccess.lockDocumentAccessState(
       tx,
-      actionInput.userId as UserId,
-      actionInput.documentId,
+      restoreInput.userId as UserId,
+      restoreInput.documentId,
     );
     if (accessState !== "available") return { status: "anchor_unavailable" };
-    const locked = await loadChangeForDocument(tx, actionInput, actionInput.documentId, true);
+    const locked = await loadChangeForDocument(tx, restoreInput, restoreInput.documentId, true);
     if (!locked) return { status: "anchor_unavailable" };
-    const state = locked.change.forwardActions?.[actionInput.action];
+    const state = locked.change.restore;
     if (state?.status === "applied") return { status: "already_applied" };
     if (state?.status === "settled") return { status: state.outcome };
-    await updateActionState(tx, {
-      ...actionInput,
+    await updateRestoreState(tx, {
+      ...restoreInput,
       changes: locked.changes,
       state: { status: "settled", outcome },
     });
@@ -341,10 +334,9 @@ async function settleTerminalAction(
  * Plans and persists only after the mutation locks are held. It never mutates
  * the live document: the caller must wait for its transaction to commit first.
  */
-export async function planAndPersistTrailForwardAction(input: {
+export async function planAndPersistTrailRestore(input: {
   liveDoc: Y.Doc;
   change: TrailChangeV1;
-  action: TrailForwardAction;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   persist: (intent: { update: Uint8Array; expectedLiveStateHash: string }) => Promise<void>;
@@ -352,7 +344,7 @@ export async function planAndPersistTrailForwardAction(input: {
   { update: Uint8Array; expectedLiveStateHash: string } | "anchor_unavailable" | "live_changed"
 > {
   const liveBefore = liveStateFingerprint(input.liveDoc);
-  const planned = planTrailForwardAction(input);
+  const planned = planTrailRestore(input);
   if (!planned) return "anchor_unavailable";
   await input.persist({ update: planned.update, expectedLiveStateHash: liveBefore });
 
@@ -362,7 +354,7 @@ export async function planAndPersistTrailForwardAction(input: {
 }
 
 /** Applies durable intent after commit; replaying the same Yjs update is idempotent. */
-export function applyCommittedTrailForwardAction(input: {
+export function applyCommittedTrailRestore(input: {
   liveDoc: Y.Doc;
   update: Uint8Array;
   expectedLiveStateHash: string;
@@ -391,7 +383,7 @@ function updateAlreadyApplied(liveDoc: Y.Doc, update: Uint8Array): boolean {
 function encodeIntent(intent: {
   update: Uint8Array;
   expectedLiveStateHash: string;
-}): TrailForwardActionStateV1 {
+}): TrailRestoreStateV1 {
   return {
     status: "committed",
     update: Buffer.from(intent.update).toString("base64"),
@@ -399,7 +391,7 @@ function encodeIntent(intent: {
   };
 }
 
-function decodeIntent(state: Extract<TrailForwardActionStateV1, { status: "committed" }>) {
+function decodeIntent(state: Extract<TrailRestoreStateV1, { status: "committed" }>) {
   return {
     update: new Uint8Array(Buffer.from(state.update, "base64")),
     expectedLiveStateHash: state.expectedLiveStateHash,
@@ -407,7 +399,7 @@ function decodeIntent(state: Extract<TrailForwardActionStateV1, { status: "commi
 }
 
 function sameIntent(
-  state: Extract<TrailForwardActionStateV1, { status: "committed" }>,
+  state: Extract<TrailRestoreStateV1, { status: "committed" }>,
   intent: { update: Uint8Array; expectedLiveStateHash: string },
 ): boolean {
   const decoded = decodeIntent(state);
@@ -421,22 +413,21 @@ export function liveStateFingerprint(doc: Y.Doc): string {
   return fullStateFingerprint(doc);
 }
 
-async function updateActionState(
+async function updateRestoreState(
   tx: Pick<DrizzleDb, "update">,
   input: {
     trailId: string;
     changeId: string;
-    action: TrailForwardAction;
     documentId: string;
     changes: TrailChangeV1[];
-    state: TrailForwardActionStateV1;
+    state: TrailRestoreStateV1;
   },
 ) {
   const changes = input.changes.map((change) =>
     change.changeId === input.changeId
       ? {
           ...change,
-          forwardActions: { ...change.forwardActions, [input.action]: input.state },
+          restore: input.state,
         }
       : change,
   );
@@ -531,10 +522,9 @@ async function loadLockedAuthorizedChange(
   return null;
 }
 
-export function planTrailForwardAction(input: {
+export function planTrailRestore(input: {
   liveDoc: Y.Doc;
   change: TrailChangeV1;
-  action: TrailForwardAction;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 }): { update: Uint8Array } | null {

@@ -4,10 +4,7 @@ import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { createDrizzleDocumentAccess } from "../../../lib/document-access.js";
-import {
-  createDrizzleTrailForwardActions,
-  planTrailForwardAction,
-} from "../adapters/drizzle-trail-forward-actions.js";
+import { createDrizzleTrailRestore, planTrailRestore } from "../adapters/drizzle-trail-restore.js";
 import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
@@ -303,10 +300,9 @@ export async function runCrossWorkProbe(
     if (restorable) {
       restoreActionable = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
         Boolean(
-          planTrailForwardAction({
+          planTrailRestore({
             liveDoc: doc,
             change: restorable.change,
-            action: "restore",
             model,
             codec: agentEditCodec,
           }),
@@ -315,7 +311,7 @@ export async function runCrossWorkProbe(
       if (!restoreActionable) throw new Error("receipt row has no Restore action");
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
-      const restored = await createDrizzleTrailForwardActions({
+      const restored = await createDrizzleTrailRestore({
         db,
         documentAccess: createDrizzleDocumentAccess(db),
         coordinator: liveCoordinator,
@@ -326,11 +322,10 @@ export async function runCrossWorkProbe(
             return agentEditCodec.serialize(model.projectBlocks(toDocHandle(doc)));
           },
         },
-      }).apply({
+      }).restore({
         threadId: THREAD_B_ID,
         trailId: restorable.row.trailId,
         changeId: restorable.change.changeId,
-        action: "restore",
         userId: USER_ID as never,
       });
       restoreOutcome = restored.status;

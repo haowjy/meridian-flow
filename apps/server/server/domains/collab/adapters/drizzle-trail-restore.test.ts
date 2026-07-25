@@ -1,4 +1,4 @@
-/** Forward-action placement planning against live Yjs identities. */
+/** Trail Restore placement planning against live Yjs identities. */
 import {
   createAgentEditCodec,
   decodeNavigationPosition,
@@ -16,11 +16,11 @@ import {
   type TrailChangeV1,
 } from "../domain/trail-read-kernel.js";
 import {
-  applyCommittedTrailForwardAction,
+  applyCommittedTrailRestore,
   liveStateFingerprint,
-  planAndPersistTrailForwardAction,
-  planTrailForwardAction,
-} from "./drizzle-trail-forward-actions.js";
+  planAndPersistTrailRestore,
+  planTrailRestore,
+} from "./drizzle-trail-restore.js";
 
 it("plans Restore at a validated live-root boundary", () => {
   const schema = buildDocumentSchema();
@@ -54,10 +54,9 @@ it("plans Restore at a validated live-root boundary", () => {
   );
   expect(absolute?.type).toBe(scratchRoot);
 
-  const planned = planTrailForwardAction({
+  const planned = planTrailRestore({
     liveDoc: doc,
     change,
-    action: "restore",
     model,
     codec,
   });
@@ -95,7 +94,7 @@ it("restores before a fresh-replaced block when projection retained only its ide
     reversible: false,
   };
 
-  const planned = planTrailForwardAction({ liveDoc: doc, change, action: "restore", model, codec });
+  const planned = planTrailRestore({ liveDoc: doc, change, model, codec });
   expect(planned).not.toBeNull();
   if (planned) Y.applyUpdate(doc, planned.update);
   expect(codec.serialize(model.projectBlocks(toDocHandle(doc))).trim()).toBe(
@@ -126,10 +125,9 @@ it("does not apply a stale Restore when a WebSocket mutation lands during persis
     reversible: false,
   };
 
-  const result = await planAndPersistTrailForwardAction({
+  const result = await planAndPersistTrailRestore({
     liveDoc: doc,
     change,
-    action: "restore",
     model,
     codec,
     persist: async () => {
@@ -147,10 +145,9 @@ it("does not change the live document when committing durable intent fails", asy
   const { codec, model, doc, change } = restoreFixture();
 
   await expect(
-    planAndPersistTrailForwardAction({
+    planAndPersistTrailRestore({
       liveDoc: doc,
       change,
-      action: "restore",
       model,
       codec,
       persist: async () => {
@@ -164,17 +161,16 @@ it("does not change the live document when committing durable intent fails", asy
 
 it("replays committed intent idempotently after a crash before live apply", async () => {
   const { codec, model, doc, change } = restoreFixture();
-  const planned = planTrailForwardAction({
+  const planned = planTrailRestore({
     liveDoc: doc,
     change,
-    action: "restore",
     model,
     codec,
   });
   if (!planned) throw new Error("missing forward plan");
 
   expect(
-    applyCommittedTrailForwardAction({
+    applyCommittedTrailRestore({
       liveDoc: doc,
       update: planned.update,
       expectedLiveStateHash: liveStateFingerprint(doc),
@@ -187,17 +183,17 @@ it("replays committed intent idempotently after a crash before live apply", asyn
   expect(markdown.match(/Restored\./g)).toHaveLength(1);
 });
 
-it("rejects an unknown durable forward-action status", () => {
+it("rejects an unknown durable Restore status", () => {
   const { change } = restoreFixture();
 
   expect(() =>
     parseTrailChangesV1([
       {
         ...change,
-        forwardActions: { restore: { status: "mystery" } },
+        restore: { status: "mystery" },
       },
     ]),
-  ).toThrow(/Corrupt change-trail detail.*forwardActions\.restore\.status/s);
+  ).toThrow(/Corrupt change-trail detail.*restore\.status/s);
 });
 
 function restoreFixture() {

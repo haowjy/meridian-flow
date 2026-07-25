@@ -13,7 +13,7 @@ import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
-import { useTrailForwardAction } from "@/features/change-trail/trail-change-recovery";
+import { useTrailRestore } from "@/features/change-trail/trail-change-recovery";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -58,7 +58,7 @@ export function PeerMarkPopover({
     if (!document || "unavailable" in document) return null;
     return document.changes.find((candidate) => candidate.changeId === marker?.changeId) ?? null;
   }, [detail.data, marker]);
-  const recovery = useTrailForwardAction({
+  const recovery = useTrailRestore({
     threadId: agentAuthor?.threadId ?? "",
     trailId: marker?.group.trailId ?? "",
     documentId: marker?.group.documentId ?? "",

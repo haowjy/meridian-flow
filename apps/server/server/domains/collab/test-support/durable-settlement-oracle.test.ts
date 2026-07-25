@@ -20,7 +20,7 @@ const output = (completionState: unknown = { state: "completed", revision: 3n })
     ],
     applyResult: { status: "applied" },
     completionState,
-    forwardActions: [{ status: "committed", at: new Date("2026-01-02T03:04:05Z") }],
+    restoreStates: [{ status: "committed", at: new Date("2026-01-02T03:04:05Z") }],
   }) satisfies SettlementOracleOutput;
 
 describe("settlementOracle", () => {

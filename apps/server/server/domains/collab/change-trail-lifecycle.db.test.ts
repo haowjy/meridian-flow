@@ -11,9 +11,9 @@ import * as Y from "yjs";
 import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
 import {
-  createDrizzleTrailForwardActions,
+  createDrizzleTrailRestore,
   liveStateFingerprint,
-} from "./adapters/drizzle-trail-forward-actions.js";
+} from "./adapters/drizzle-trail-restore.js";
 import {
   createInMemoryCoordinator,
   createInMemoryJournal,
@@ -212,7 +212,7 @@ describe("change trail (postgres)", () => {
         },
       ],
     });
-    const actions = createDrizzleTrailForwardActions({
+    const actions = createDrizzleTrailRestore({
       db,
       documentAccess: createDrizzleDocumentAccess(db),
       coordinator,
@@ -224,11 +224,10 @@ describe("change trail (postgres)", () => {
       threadId: THREAD_ID,
       trailId,
       changeId,
-      action: "restore" as const,
       userId: USER_ID,
     };
     const liveBeforeProjectionFailure = Y.encodeStateAsUpdate(liveDoc);
-    const projectionFailure = createDrizzleTrailForwardActions({
+    const projectionFailure = createDrizzleTrailRestore({
       db,
       documentAccess: createDrizzleDocumentAccess(db),
       coordinator,
@@ -241,7 +240,7 @@ describe("change trail (postgres)", () => {
       },
     });
 
-    await expect(projectionFailure.apply(request)).rejects.toThrow("injected projection failure");
+    await expect(projectionFailure.restore(request)).rejects.toThrow("injected projection failure");
     expect(Y.encodeStateAsUpdate(liveDoc)).toEqual(liveBeforeProjectionFailure);
     await expect(
       db
@@ -249,8 +248,8 @@ describe("change trail (postgres)", () => {
         .from(schema.documentYjsUpdates)
         .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID)),
     ).resolves.toHaveLength(0);
-    await expect(actions.apply(request)).resolves.toEqual({ status: "applied" });
-    await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
+    await expect(actions.restore(request)).resolves.toEqual({ status: "applied" });
+    await expect(actions.restore(request)).resolves.toEqual({ status: "already_applied" });
     expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc)))).toContain("Restored prose.");
     const journalRows = await db
       .select()
@@ -260,7 +259,7 @@ describe("change trail (postgres)", () => {
     expect(journalRows[0]?.originType).toBe("human");
   });
 
-  it("does not apply a committed forward action after document access is revoked", async () => {
+  it("does not apply a committed Restore after document access is revoked", async () => {
     const documentSchema = buildDocumentSchema();
     const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
     const model = yProsemirrorModel(documentSchema);
@@ -301,7 +300,7 @@ describe("change trail (postgres)", () => {
       ],
     });
     let accessLocks = 0;
-    const actions = createDrizzleTrailForwardActions({
+    const actions = createDrizzleTrailRestore({
       db,
       documentAccess: {
         lockDocumentAccessState: async () => {
@@ -316,11 +315,10 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(
-      actions.apply({
+      actions.restore({
         threadId: THREAD_ID,
         trailId,
         changeId,
-        action: "restore",
         userId: USER_ID,
       }),
     ).resolves.toEqual({ status: "anchor_unavailable" });
@@ -335,7 +333,7 @@ describe("change trail (postgres)", () => {
     ).toEqual([]);
   });
 
-  it("recovers a committed forward action after a crash before live apply", async () => {
+  it("recovers a committed Restore after a crash before live apply", async () => {
     const documentSchema = buildDocumentSchema();
     const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
     const model = yProsemirrorModel(documentSchema);
@@ -377,18 +375,16 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Recovered once.",
           afterTextAtReceipt: null,
           navigation: { kind: "unavailable", reason: "crash_fixture" },
-          forwardActions: {
-            restore: {
-              status: "committed",
-              update: Buffer.from(committedUpdate).toString("base64"),
-              expectedLiveStateHash,
-            },
+          restore: {
+            status: "committed",
+            update: Buffer.from(committedUpdate).toString("base64"),
+            expectedLiveStateHash,
           },
           reversible: false,
         },
       ],
     });
-    const actions = createDrizzleTrailForwardActions({
+    const actions = createDrizzleTrailRestore({
       db,
       documentAccess: createDrizzleDocumentAccess(db),
       coordinator,
@@ -400,12 +396,11 @@ describe("change trail (postgres)", () => {
       threadId: THREAD_ID,
       trailId,
       changeId,
-      action: "restore" as const,
       userId: USER_ID,
     };
 
-    await expect(actions.apply(request)).resolves.toEqual({ status: "applied" });
-    await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
+    await expect(actions.restore(request)).resolves.toEqual({ status: "applied" });
+    await expect(actions.restore(request)).resolves.toEqual({ status: "already_applied" });
     const markdown = codec.serialize(model.projectBlocks(toDocHandle(liveDoc)));
     expect(markdown.match(/Recovered once\./g)).toHaveLength(1);
   });
@@ -454,7 +449,7 @@ describe("change trail (postgres)", () => {
 
     const documentAccess = createDrizzleDocumentAccess(db);
     let accessLockCount = 0;
-    const actions = createDrizzleTrailForwardActions({
+    const actions = createDrizzleTrailRestore({
       db,
       documentAccess: {
         async lockDocumentAccessState(tx, userId, documentId) {
@@ -476,11 +471,10 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(
-      actions.apply({
+      actions.restore({
         threadId: THREAD_ID,
         trailId,
         changeId,
-        action: "restore",
         userId: USER_ID,
       }),
     ).resolves.toEqual({ status: "retry_exhausted" });
@@ -491,9 +485,7 @@ describe("change trail (postgres)", () => {
     expect(detail?.changes).toEqual([
       expect.objectContaining({
         changeId,
-        forwardActions: {
-          restore: { status: "settled", outcome: "retry_exhausted" },
-        },
+        restore: { status: "settled", outcome: "retry_exhausted" },
       }),
     ]);
     expect(await db.select().from(schema.documentYjsUpdates)).toHaveLength(0);
@@ -618,7 +610,7 @@ describe("change trail (postgres)", () => {
       }),
     ).resolves.toEqual([]);
 
-    const actions = createDrizzleTrailForwardActions({
+    const actions = createDrizzleTrailRestore({
       db,
       documentAccess: createDrizzleDocumentAccess(db),
       coordinator,
@@ -627,11 +619,10 @@ describe("change trail (postgres)", () => {
       durableProjectionSerializer: durableProjectionSerializer(model, codec),
     });
     await expect(
-      actions.apply({
+      actions.restore({
         threadId: THREAD_ID,
         trailId,
         changeId: "protected-change",
-        action: "restore",
         userId: "00000000-0000-4000-8000-000000000812",
       }),
     ).resolves.toEqual({ status: "anchor_unavailable" });

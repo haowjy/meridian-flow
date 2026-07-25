@@ -140,9 +140,7 @@ if (!enabled || !databaseUrl) {
           expect(parseTrailChangesV1(row?.changes)).toEqual([
             {
               ...base,
-              forwardActions: {
-                restore: { status: "settled", outcome: "anchor_unavailable" },
-              },
+              restore: { status: "settled", outcome: "anchor_unavailable" },
             },
           ]);
           const removedColumns = await tx<{ column_name: string }[]>`

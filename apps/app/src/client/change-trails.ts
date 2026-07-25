@@ -4,9 +4,8 @@ import type {
   ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
   TrailChangeV1,
-  TrailForwardAction,
-  TrailForwardActionResult,
-  TrailForwardActionStateV1,
+  TrailRestoreResult,
+  TrailRestoreStateV1,
 } from "@meridian/contracts";
 import { getJson, postJson } from "./api/http-client";
 
@@ -14,9 +13,8 @@ export type {
   ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
   TrailChangeV1,
-  TrailForwardAction,
-  TrailForwardActionResult,
-  TrailForwardActionStateV1,
+  TrailRestoreResult,
+  TrailRestoreStateV1,
 };
 
 export type ChangeTrailShell = ChangeTrailShellV1;
@@ -113,14 +111,13 @@ export async function readChangeTrail(
 }
 
 /** Recovery actions are server-owned so validation and journal persistence share one lock. */
-export async function applyTrailForwardAction(input: {
+export async function restoreTrailChange(input: {
   threadId: string;
   trailId: string;
   changeId: string;
-  action: TrailForwardAction;
-}): Promise<TrailForwardActionResult> {
-  return postJson<TrailForwardActionResult>(
-    `/api/threads/${input.threadId}/change-trails/${input.trailId}/changes/${input.changeId}/${input.action}`,
+}): Promise<TrailRestoreResult> {
+  return postJson<TrailRestoreResult>(
+    `/api/threads/${input.threadId}/change-trails/${input.trailId}/changes/${input.changeId}/restore`,
     {},
   );
 }

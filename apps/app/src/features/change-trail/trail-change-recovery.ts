@@ -1,16 +1,15 @@
 /** Shared presentation and command policy for durable trail recovery actions. */
 import type {
   TrailChangeV1 as TrailChange,
-  TrailForwardAction,
-  TrailForwardActionResult,
-  TrailForwardActionStateV1,
+  TrailRestoreResult,
+  TrailRestoreStateV1,
 } from "@meridian/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
-  applyTrailForwardAction,
   bodyFromTrailHashline,
   changeTrailDetailKey,
+  restoreTrailChange,
 } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
@@ -27,19 +26,16 @@ type RecoveryCommandState =
   | { kind: "failed" };
 
 export type TrailChangeRecovery = {
-  action: TrailForwardAction;
   body: string | null;
   canExecute: boolean;
-  durableState: TrailForwardActionStateV1 | undefined;
+  durableState: TrailRestoreStateV1 | undefined;
 };
 
 export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
-  const action: TrailForwardAction = "restore";
-  const durableState = change.forwardActions?.[action];
+  const durableState = change.restore;
   const body = bodyFromTrailHashline(change.beforeText);
   const canExecute = body !== null || durableState?.status === "committed";
   return {
-    action,
     body,
     canExecute:
       canExecute && durableState?.status !== "applied" && durableState?.status !== "settled",
@@ -47,12 +43,12 @@ export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
   };
 }
 
-export function useTrailForwardAction(input: {
+export function useTrailRestore(input: {
   threadId: string;
   trailId: string;
   documentId: string;
   change: TrailChange | null;
-  runAction?: typeof applyTrailForwardAction;
+  runRestore?: typeof restoreTrailChange;
 }) {
   const queryClient = useQueryClient();
   const recovery = input.change ? trailChangeRecovery(input.change) : EMPTY_RECOVERY;
@@ -68,8 +64,6 @@ export function useTrailForwardAction(input: {
       (command.outcome.kind === "anchor-unavailable" ||
         command.outcome.kind === "retry-exhausted"));
   const canExecute = recovery.canExecute && !applied && !anchorUnavailable;
-  const canCopy = anchorUnavailable && Boolean(recovery.body);
-
   async function execute(): Promise<TrailRecoveryOutcome> {
     if (!input.change) return { kind: "failed" };
     if (command.kind === "pending" || applied) return { kind: "applied" };
@@ -77,11 +71,10 @@ export function useTrailForwardAction(input: {
     let outcome: TrailRecoveryOutcome;
     try {
       outcome = outcomeFromResult(
-        await (input.runAction ?? applyTrailForwardAction)({
+        await (input.runRestore ?? restoreTrailChange)({
           threadId: input.threadId,
           trailId: input.trailId,
           changeId: input.change.changeId,
-          action: recovery.action,
         }),
       );
     } catch {
@@ -106,7 +99,6 @@ export function useTrailForwardAction(input: {
   return {
     ...recovery,
     canExecute,
-    canCopy,
     applied,
     anchorUnavailable,
     isPending: command.kind === "pending",
@@ -115,7 +107,7 @@ export function useTrailForwardAction(input: {
   };
 }
 
-function outcomeFromResult(result: TrailForwardActionResult): TrailRecoveryOutcome {
+function outcomeFromResult(result: TrailRestoreResult): TrailRecoveryOutcome {
   switch (result.status) {
     case "applied":
     case "already_applied":
@@ -128,7 +120,6 @@ function outcomeFromResult(result: TrailForwardActionResult): TrailRecoveryOutco
 }
 
 const EMPTY_RECOVERY: TrailChangeRecovery = {
-  action: "restore",
   body: null,
   canExecute: false,
   durableState: undefined,

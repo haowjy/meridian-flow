@@ -11,7 +11,7 @@ import type {
   DocumentProjectionRefresher,
   MarkdownDocumentStore,
   ResponseWriteFinalizer,
-  TrailForwardActionAccess,
+  TrailRestoreAccess,
   TurnLiveLineageAccess,
   TurnReversalAccess,
 } from "./contracts.js";
@@ -29,7 +29,7 @@ export type CollabFacadeServices = {
   responses: ResponseWriteFinalizer;
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
-  trailForwardActions: TrailForwardActionAccess;
+  trailRestore: TrailRestoreAccess;
   branchPush: BranchPushAccess;
   branchPeers: BranchPeerShadowAccess;
   drafts: CollabDrafts;
@@ -48,7 +48,7 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.responses,
     ...services.checkpoints,
     ...services.attribution,
-    ...services.trailForwardActions,
+    ...services.trailRestore,
     ...services.branchPush,
     ...services.branchPeers,
     ...services.drafts,

@@ -58,8 +58,8 @@ branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
 
 **Durable whole-document projections route through this engine.** Push
-completion (`completeStagedPush` → `deriveDurableProjection`) and trail forward
-actions inject `DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
+completion (`completeStagedPush` → `deriveDurableProjection`) and trail Restore
+inject `DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
 a `Pick<MarkdownDocumentEngine, "serializeDocument">` narrow port), never a
 schema-blind `{model, codec}` bag. The old bag serialized code documents through
 the markdown codec, emitting fenced output into `documents.markdown_projection`;
@@ -279,7 +279,7 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
-- **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
+- **Trail Restore**: `drizzle-trail-restore.ts` validates retained
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.
   Only a guarded apply is promoted to a human-origin journal row and `applied`;
@@ -289,7 +289,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   commit, live apply, and journal finalization without bypassing the guard. After
   durable ownership authorization, captured bodies remain readable when the live
   document is unavailable; both terminal outcomes degrade to the client Copy fallback.
-  The markdown projection is serialized from a scratch `Y.Doc` the action applies
+  The markdown projection is serialized from a scratch `Y.Doc` that Restore applies
   the committed update to, before mutating the shared live document — never from the
   live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes

@@ -15,7 +15,7 @@ export type SettlementOracleOutput = {
   eligibleRanges: readonly LineageRange[];
   applyResult: unknown;
   completionState: unknown;
-  forwardActions: readonly unknown[];
+  restoreStates: readonly unknown[];
 };
 
 export type DurableSettlementFixture = {
@@ -72,7 +72,7 @@ export function normalizeSettlementOutput(output: SettlementOracleOutput): Settl
     eligibleRanges: normalizeRanges(output.eligibleRanges),
     applyResult: normalizeStructuredValue(output.applyResult),
     completionState: normalizeStructuredValue(output.completionState),
-    forwardActions: output.forwardActions.map(normalizeStructuredValue),
+    restoreStates: output.restoreStates.map(normalizeStructuredValue),
   };
 }
 

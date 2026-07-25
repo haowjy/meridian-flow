@@ -10,15 +10,13 @@ SET "changes" = (
 			(
 				CASE
 					WHEN jsonb_typeof("change"->'forwardActions') = 'object'
-						AND (("change"->'forwardActions') - 'delete-again'::text) = '{}'::jsonb
-						THEN "change" - 'forwardActions'
-					WHEN jsonb_typeof("change"->'forwardActions') = 'object'
+						AND ("change"->'forwardActions') ? 'restore'
 						THEN jsonb_set(
-							"change",
-							'{forwardActions}',
-							("change"->'forwardActions') - 'delete-again'::text
+							"change" - 'forwardActions',
+							'{restore}',
+							"change"->'forwardActions'->'restore'
 						)
-					ELSE "change"
+					ELSE "change" - 'forwardActions'
 				END
 			) - 'swept' - 'writerProtection' - 'writerImpact'
 			ORDER BY "ordinality"

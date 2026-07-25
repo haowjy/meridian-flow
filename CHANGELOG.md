@@ -17,6 +17,8 @@
   with swept context, removed prose, Copy, and the request behind Show details.
 - `apps/app`: writer-facing status, mark, and file metadata copy no longer uses
   middle-dot separators.
+- `apps/app`, `apps/server`: trail recovery now exposes one fixed Restore
+  contract instead of a generic one-action dispatch surface.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and expire with the live
   session or a writer edit.

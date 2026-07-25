@@ -253,13 +253,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           trailId: trail.id,
           changeId: change.changeId,
-          action: "restore" as const,
           userId: USER_ID,
         };
-        await expect(ports.documentSync.applyTrailForwardAction(action)).resolves.toEqual({
+        await expect(ports.documentSync.restoreTrailChange(action)).resolves.toEqual({
           status: "applied",
         });
-        await expect(ports.documentSync.applyTrailForwardAction(action)).resolves.toEqual({
+        await expect(ports.documentSync.restoreTrailChange(action)).resolves.toEqual({
           status: "already_applied",
         });
         const restored = await ports.documentSync.readAsMarkdown(DOC_ID);
@@ -284,14 +283,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           anchorState?: "available" | "deleted";
           changes?: Array<{
             beforeText?: string | null;
-            forwardActions?: { restore?: { status?: string } };
+            restore?: { status?: string };
           }>;
         };
         const retainedChange = retained.changes?.find((candidate) =>
           candidate.beforeText?.includes("Writer V2 unseen."),
         );
         expect(retained.anchorState).toBe("deleted");
-        expect(retainedChange?.forwardActions?.restore?.status).toBe("applied");
+        expect(retainedChange?.restore?.status).toBe("applied");
         await unloadRuntime(runtime.hocuspocus);
       }
     }

@@ -9,7 +9,6 @@ import {
   type CanonicalBlockIdentityV1,
   type ChangeTrailDocumentDetailV1,
   type ChangeTrailShellV1,
-  type HistoricalBody,
   type NavigationTargetV1,
   parseTrailChangesV1,
   type TrailChangeV1,
@@ -20,13 +19,16 @@ export type {
   CanonicalBlockIdentityV1,
   ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
-  HistoricalBody,
   NavigationTargetV1,
   TrailChangeV1,
 };
 export { parseTrailChangesV1 };
 
 const ROOT_NAME = "prosemirror";
+
+type HistoricalBody =
+  | { status: "available"; markdown: string }
+  | { status: "unavailable"; reason: string };
 
 export function encodeTrailPosition(position: Y.RelativePosition): string {
   return encodeNavigationPosition(position);

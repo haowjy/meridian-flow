@@ -45,9 +45,9 @@ import {
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
 import {
-  createDrizzleTrailForwardActions,
+  createDrizzleTrailRestore,
   type TrailDocumentAccess,
-} from "./adapters/drizzle-trail-forward-actions.js";
+} from "./adapters/drizzle-trail-restore.js";
 import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
@@ -380,7 +380,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
-  const trailForwardActions = createDrizzleTrailForwardActions({
+  const trailRestore = createDrizzleTrailRestore({
     db: deps.db,
     documentAccess: deps.documentAccess,
     coordinator: liveCoordinator,
@@ -428,8 +428,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     attribution: createDocumentAttribution({
       latestUpdate: persistence.store.latestUpdate,
     }),
-    trailForwardActions: {
-      applyTrailForwardAction: trailForwardActions.apply,
+    trailRestore: {
+      restoreTrailChange: trailRestore.restore,
     },
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,

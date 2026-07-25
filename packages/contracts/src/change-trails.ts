@@ -1,12 +1,10 @@
-/** Shared wire contracts for durable change trails and their forward actions. */
+/** Shared wire contracts for durable change trails and trail-backed Restore. */
 
 import { z } from "zod";
 
 const yjsIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
-export type TrailForwardAction = "restore";
-
-export type TrailForwardActionStateV1 =
+export type TrailRestoreStateV1 =
   | {
       status: "committed";
       update: string;
@@ -18,14 +16,10 @@ export type TrailForwardActionStateV1 =
       outcome: "anchor_unavailable" | "retry_exhausted";
     };
 
-export type TrailForwardActionResult =
+export type TrailRestoreResult =
   | { status: "applied" | "already_applied" }
   | { status: "anchor_unavailable" }
   | { status: "retry_exhausted" };
-
-export type HistoricalBody =
-  | { status: "available"; markdown: string }
-  | { status: "unavailable"; reason: string };
 
 /** Stable Yjs block identity. Display hashlines are deliberately excluded. */
 export type CanonicalBlockIdentityV1 = {
@@ -62,7 +56,7 @@ export type TrailChangeV1 = {
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation: NavigationTargetV1;
-  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
+  restore?: TrailRestoreStateV1;
   reversible: false;
 };
 
@@ -104,11 +98,6 @@ export type ChangeTrailDetailResponseV1 = {
   documents: ChangeTrailDocumentDetailV1[];
 };
 
-export const historicalBodySchema: z.ZodType<HistoricalBody> = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("available"), markdown: z.string() }),
-  z.object({ status: z.literal("unavailable"), reason: z.string() }),
-]);
-
 export const canonicalBlockIdentityV1Schema: z.ZodType<CanonicalBlockIdentityV1> = z.object({
   documentId: z.string(),
   clientID: yjsIntegerSchema,
@@ -133,21 +122,18 @@ export const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discrim
   ],
 );
 
-const trailForwardActionStateV1Schema: z.ZodType<TrailForwardActionStateV1> = z.discriminatedUnion(
-  "status",
-  [
-    z.object({
-      status: z.literal("committed"),
-      update: z.string(),
-      expectedLiveStateHash: z.string(),
-    }),
-    z.object({ status: z.literal("applied"), updateId: z.number().int() }),
-    z.object({
-      status: z.literal("settled"),
-      outcome: z.enum(["anchor_unavailable", "retry_exhausted"]),
-    }),
-  ],
-);
+const trailRestoreStateV1Schema: z.ZodType<TrailRestoreStateV1> = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("committed"),
+    update: z.string(),
+    expectedLiveStateHash: z.string(),
+  }),
+  z.object({ status: z.literal("applied"), updateId: z.number().int() }),
+  z.object({
+    status: z.literal("settled"),
+    outcome: z.enum(["anchor_unavailable", "retry_exhausted"]),
+  }),
+]);
 
 export const trailChangeV1Schema = z.object({
   changeId: z.string(),
@@ -163,11 +149,7 @@ export const trailChangeV1Schema = z.object({
   beforeText: z.string().nullable(),
   afterTextAtReceipt: z.string().nullable(),
   navigation: navigationTargetV1Schema,
-  forwardActions: z
-    .object({
-      restore: trailForwardActionStateV1Schema.optional(),
-    })
-    .optional(),
+  restore: trailRestoreStateV1Schema.optional(),
   reversible: z.literal(false),
 }) satisfies z.ZodType<TrailChangeV1>;
 

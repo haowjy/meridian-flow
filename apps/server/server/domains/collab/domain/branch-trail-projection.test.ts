@@ -9,7 +9,7 @@ import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import { planTrailForwardAction } from "../adapters/drizzle-trail-forward-actions.js";
+import { planTrailRestore } from "../adapters/drizzle-trail-restore.js";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
 import {
   journalAttributionByChangedBlock,
@@ -261,10 +261,9 @@ it("projects a structurally adjacent whole-block replacement as one modification
     navigation: { kind: "live_block_range" },
   });
   if (!change) throw new Error("missing projected change");
-  const planned = planTrailForwardAction({
+  const planned = planTrailRestore({
     liveDoc: afterDoc,
     change: { ...change, ordinal: 0, reversible: false },
-    action: "restore",
     model,
     codec,
   });

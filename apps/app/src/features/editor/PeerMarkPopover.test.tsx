@@ -19,12 +19,10 @@ const settledChange: TrailChange = {
   beforeText: "block-1|Writer text.",
   afterTextAtReceipt: null,
   navigation: { kind: "unavailable", reason: "test" },
-  forwardActions: {
-    restore: { status: "settled", outcome: "retry_exhausted" },
-  },
+  restore: { status: "settled", outcome: "retry_exhausted" },
   reversible: false,
 };
-const activeChange: TrailChange = { ...settledChange, forwardActions: undefined };
+const activeChange: TrailChange = { ...settledChange, restore: undefined };
 let currentChange = settledChange;
 let currentThreadTitle: string | null = "Agent thread";
 let currentTurns: Array<{
@@ -59,7 +57,7 @@ vi.mock("@/client/change-trails", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/client/change-trails")>();
   return {
     ...actual,
-    applyTrailForwardAction: vi.fn(async () => ({ status: "retry_exhausted" as const })),
+    restoreTrailChange: vi.fn(async () => ({ status: "retry_exhausted" as const })),
   };
 });
 vi.mock("@/components/ui/button", () => ({

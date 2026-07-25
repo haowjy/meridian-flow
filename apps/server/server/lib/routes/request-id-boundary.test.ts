@@ -91,7 +91,7 @@ function event(
         runner: { cancel: databaseCall },
         changeTrails: { readDetails: databaseCall },
         documentSync: {
-          applyTrailForwardAction: databaseCall,
+          restoreTrailChange: databaseCall,
           listEditedDocumentsForTurn: databaseCall,
         },
         figureAssets: {
