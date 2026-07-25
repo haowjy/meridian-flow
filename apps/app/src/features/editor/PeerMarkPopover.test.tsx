@@ -100,6 +100,16 @@ describe("PeerMarkPopover recovery", () => {
     });
   });
 
+  it("offers trail-backed Restore for an ordinary non-swept mark", async () => {
+    currentChange = activeChange;
+    const ordinaryTarget = target();
+    ordinaryTarget.marker = { ...ordinaryTarget.marker, swept: false };
+
+    await withReactRoot(<PeerMarkPopover target={ordinaryTarget} onOpenChange={vi.fn()} />, () => {
+      expect(buttonLabels()).toContain("Restore");
+    });
+  });
+
   it("attributes an untitled thread to AI rather than a bare chat title", async () => {
     currentThreadTitle = null;
     await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {

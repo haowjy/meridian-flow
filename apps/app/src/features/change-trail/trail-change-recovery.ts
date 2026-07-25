@@ -52,7 +52,6 @@ export function useTrailForwardAction(input: {
   trailId: string;
   documentId: string;
   change: TrailChange | null;
-  enabled?: boolean;
   runAction?: typeof applyTrailForwardAction;
 }) {
   const queryClient = useQueryClient();
@@ -68,8 +67,7 @@ export function useTrailForwardAction(input: {
     (command.kind === "settling" &&
       (command.outcome.kind === "anchor-unavailable" ||
         command.outcome.kind === "retry-exhausted"));
-  const canExecute =
-    (input.enabled ?? true) && recovery.canExecute && !applied && !anchorUnavailable;
+  const canExecute = recovery.canExecute && !applied && !anchorUnavailable;
   const canCopy = anchorUnavailable && Boolean(recovery.body);
 
   async function execute(): Promise<TrailRecoveryOutcome> {

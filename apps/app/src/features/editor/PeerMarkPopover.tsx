@@ -63,7 +63,6 @@ export function PeerMarkPopover({
     trailId: marker?.group.trailId ?? "",
     documentId: marker?.group.documentId ?? "",
     change,
-    enabled: marker?.swept ?? false,
   });
   const [copyReceipt, setCopyReceipt] = useState<{
     changeId: string;

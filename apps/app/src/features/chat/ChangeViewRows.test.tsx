@@ -75,6 +75,32 @@ describe("ChangeViewRows", () => {
     await act(async () => root.unmount());
   });
 
+  it("keeps intentionally blank Before and After sides visible", async () => {
+    const copyText = vi.fn(async () => {});
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ChangeViewRows
+          documentId="document-1"
+          changes={[{ ...change, beforeText: "block-1|", afterTextAtReceipt: "block-1|" }]}
+          navigateToChange={vi.fn()}
+          copyText={copyText}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Before");
+    expect(container.textContent).toContain("After");
+    expect(container.querySelectorAll(".whitespace-pre-wrap")).toHaveLength(2);
+    const copy = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Copy",
+    );
+    await act(async () => copy?.click());
+    expect(copyText).toHaveBeenCalledWith("");
+    await act(async () => root.unmount());
+  });
+
   it("emphasizes and completes an explicit reveal", async () => {
     const reveal = { threadId: "thread-1", turnId: "turn-1", changeId: "change-1" };
     requestConversationReveal(reveal);

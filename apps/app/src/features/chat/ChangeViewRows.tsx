@@ -117,10 +117,10 @@ function ChangeViewRow({
           <Trans>That part of the chapter is no longer available.</Trans>
         </p>
       ) : null}
-      {before ? (
+      {before !== null ? (
         <ExcerptBlock label="before" text={before} onCopy={() => void copy(before)} />
       ) : null}
-      {after ? <ExcerptBlock label="after" text={after} /> : null}
+      {after !== null ? <ExcerptBlock label="after" text={after} /> : null}
       {copyState === "copied" ? (
         <p className="text-jade-text">
           <Trans>Copied</Trans>
