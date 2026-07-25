@@ -33,6 +33,7 @@ tools/dev/
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
+│   ├── worktree-cleanup-readiness.ts  Auto cleanup ownership/liveness gates
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
@@ -108,13 +109,17 @@ tools/dev/
 
 ## Worktree cleanup contract
 
-`pnpm dev:prune-worktrees` safely tears down merged worktree resources:
+`pnpm dev:prune-worktrees` safely tears down merged worktree resources, one deliberate target at a time:
 
-- **Two modes:** `--auto` (all merged non-primary worktrees) or `--target <value>` (work id, worktree path, branch name, or PR number via `gh`).
+- **Target-first cleanup:** `--target <value>` accepts a work id, worktree path, branch name, or PR number via `gh`.
+- **Advanced batch cleanup:** `--auto` is not yet trusted for routine use and requires `--acknowledge-batch-risk`. The acknowledgement permits batch selection only; it bypasses no eligibility or readiness gate.
 - **Resolver** (`lib/worktree-cleanup.ts`) correlates work item ↔ task dir/worktree ↔ branch ↔ PR head branch. Ambiguous matches (multiple worktrees for a target, multiple work items for a worktree) refuse to resolve with candidate lists.
-- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Planning resolves the local branch ref OID. Cleanup requires that exact OID to be either an ancestor of the base or the unique head OID of a merged PR matching the base, branch, and repository owner. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action.
-- **Cleanup order per target:** stop dev stack → drop DB → remove git worktree → mark Meridian work done → force-delete local branch (`git branch -D`; the exact squash-merge-aware evidence has just been revalidated, while `-d` is squash-blind).
-- **Safety gates:** refuses primary worktree, current worktree, the base branch, branches that are neither ancestry- nor PR-merged, detached worktrees.
+- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Planning resolves the local branch ref OID. Explicit `--target` cleanup requires that exact OID to be either an ancestor of the base or the unique head OID of a merged PR matching the base, branch, and repository owner. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action.
+- **Target readiness.** `--target` refuses dirty or locked worktrees while planning and revalidates both gates before stopping dev and again immediately before database teardown. All refusal checks therefore finish before the first irreversible action.
+- **Auto readiness is separate.** `--auto` accepts exact merged-PR evidence only—ancestry alone is not stale evidence—and skips dirty or locked worktrees, active Meridian work items, live tmux dev sessions, and processes whose cwd is inside the worktree. A missing tmux server/socket with no live listener means no session; an existing but unqueryable server/socket remains an inspection failure. These gates run during planning, before stopping dev, and again immediately before database teardown.
+- **Process-location evidence is target-specific.** A readable cwd inside a worktree blocks that target. When cwd is unreadable, a cmdline reference to the worktree path blocks only that target; unattributed PIDs are surfaced once as a global caveat instead of poisoning every candidate. Residual risk: a process with an unreadable cwd inside the target and no target-path argument cannot be attributed, so `--auto` may miss that holder.
+- **Cleanup order:** targeted cleanup runs stop dev stack → drop DB → remove git worktree → mark linked Meridian work done → atomically delete the local ref with `git update-ref -d <ref> <plannedOid>`. Auto cleanup requires active work to be done before selection, so its reachable order omits the work-item action.
+- **Safety gates:** refuses primary worktree, current or locked worktrees, the base branch, branches that lack mode-appropriate commit evidence, detached worktrees, dirty targets, and auto targets with ownership or liveness evidence.
 - **Confirmation:** dry-run prints every planned action and target; destructive cleanup requires interactive `[y/N]` or `--yes`.
 - **`--dry-run`** prints the plan without executing it.
 

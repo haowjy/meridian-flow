@@ -4,10 +4,12 @@ import {
   type CleanupContext,
   createCleanupPlan,
   executeCleanupPlan,
+  parseGitWorktreePorcelain,
   resolveAutoTargets,
   resolveTarget,
 } from "./worktree-cleanup";
 import type { CleanupEligibility } from "./worktree-cleanup-eligibility";
+import type { AutoCleanupReadinessDecision } from "./worktree-cleanup-readiness";
 
 // Two worktrees: primary on the base branch, one feature worktree. The feature
 // carries exact PR evidence by default, standing in for a squash-merged tip
@@ -25,6 +27,15 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
       pullRequestNumber: 42,
     });
   }
+  const autoReadinessByWorktree = new Map<string, AutoCleanupReadinessDecision>([
+    [
+      "/repo/wt/feature",
+      {
+        ready: true,
+        evidence: { worktreePath: "/repo/wt/feature" },
+      },
+    ],
+  ]);
   return buildCleanupContext({
     gitWorktreePorcelain: [
       "worktree /repo/main",
@@ -37,6 +48,7 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
       "",
     ].join("\n"),
     eligibilityByBranch,
+    autoReadinessByWorktree,
     baseBranch,
     meridianWorkItems: [],
     // Run "from" the primary so the feature worktree is neither primary nor current.
@@ -45,20 +57,83 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
 }
 
 describe("worktree cleanup resolver", () => {
-  it("force-deletes the branch (squash-merged tips fail `git branch -d`)", () => {
+  it("preserves Git's locked worktree marker", () => {
+    expect(
+      parseGitWorktreePorcelain(
+        [
+          "worktree /repo/main",
+          "HEAD 1111111111111111111111111111111111111111",
+          "branch refs/heads/main",
+          "",
+          "worktree /repo/wt/feature",
+          "HEAD 2222222222222222222222222222222222222222",
+          "branch refs/heads/feature",
+          "locked maintenance",
+          "",
+        ].join("\n"),
+      )[1],
+    ).toMatchObject({ path: "/repo/wt/feature", branch: "feature", locked: true });
+  });
+
+  it("deletes the branch ref atomically at its planned OID", () => {
     const context = makeContext();
     const plan = createCleanupPlan(context, [
       resolveTarget(context, { kind: "direct", value: "feature" }),
     ]);
 
     const deleteBranch = plan.targets[0].actions.find((a) => a.kind === "delete-branch");
-    expect(deleteBranch?.command).toEqual(["git", "branch", "-D", "feature"]);
+    expect(deleteBranch?.command).toEqual([
+      "git",
+      "update-ref",
+      "-d",
+      "refs/heads/feature",
+      "2222222222222222222222222222222222222222",
+    ]);
   });
 
   it("cleans a merged feature branch found only via PR state (not ancestry)", () => {
     const context = makeContext();
     const targets = resolveAutoTargets(context);
     expect(targets.map((t) => t.branch)).toEqual(["feature"]);
+  });
+
+  it("skips an auto target with a live process in its worktree", () => {
+    const base = makeContext();
+    const context: CleanupContext = {
+      ...base,
+      autoReadinessByWorktree: new Map([
+        [
+          "/repo/wt/feature",
+          {
+            ready: false,
+            reasons: ["live processes have cwd under worktree: 1234"],
+          },
+        ],
+      ]),
+    };
+
+    expect(resolveAutoTargets(context)).toEqual([]);
+  });
+
+  it("does not use ancestry-only evidence for auto selection", () => {
+    const base = makeContext();
+    const context: CleanupContext = {
+      ...base,
+      eligibilityByBranch: new Map([
+        [
+          "feature",
+          {
+            kind: "ancestry",
+            branch: "feature",
+            plannedOid: "2222222222222222222222222222222222222222",
+            baseBranch: "main",
+          },
+        ],
+      ]),
+    };
+
+    expect(resolveAutoTargets(context)).toEqual([]);
+    expect(resolveTarget(context, { kind: "direct", value: "feature" }).branch).toBe("feature");
   });
 
   it("refuses an unmerged branch with a base-agnostic, PR-aware message", () => {
@@ -91,6 +166,7 @@ describe("worktree cleanup resolver", () => {
           },
         ],
       ]),
+      autoReadinessByWorktree: new Map(),
       baseBranch: "trunk",
       meridianWorkItems: [],
       currentWorktreePath: "/repo/main",
@@ -99,6 +175,21 @@ describe("worktree cleanup resolver", () => {
       /Refusing to delete base branch 'trunk'/,
     );
     // The base guard is now data-driven, so `trunk` is auto-skipped like `main` used to be.
+    expect(resolveAutoTargets(context)).toEqual([]);
+  });
+
+  it("refuses locked targeted worktrees and skips them in auto selection", () => {
+    const base = makeContext();
+    const context: CleanupContext = {
+      ...base,
+      worktrees: base.worktrees.map((worktree) =>
+        worktree.branch === "feature" ? { ...worktree, locked: true } : worktree,
+      ),
+    };
+
+    expect(() => resolveTarget(context, { kind: "direct", value: "feature" })).toThrow(
+      /Refusing to remove locked worktree/,
+    );
     expect(resolveAutoTargets(context)).toEqual([]);
   });
 
@@ -112,6 +203,7 @@ describe("worktree cleanup resolver", () => {
     const result = await executeCleanupPlan(
       plan,
       () => ({ eligible: false, reason: "branch moved" }),
+      () => ({ ready: true, evidence: { worktreePath: "/repo/wt/feature" } }),
       () => {
         actionsRun += 1;
         return { ok: true };
@@ -120,5 +212,91 @@ describe("worktree cleanup resolver", () => {
 
     expect(result).toMatchObject({ ok: false, eligibilityFailure: "branch moved" });
     expect(actionsRun).toBe(0);
+  });
+
+  it("revalidates auto readiness before teardown so a newly dirty worktree stays intact", async () => {
+    const context = makeContext();
+    const plan = createCleanupPlan(context, resolveAutoTargets(context));
+    let actionsRun = 0;
+
+    const result = await executeCleanupPlan(
+      plan,
+      () => ({
+        eligible: true,
+        evidence: plan.targets[0].eligibility,
+      }),
+      () => ({ ready: false, reasons: ["worktree has uncommitted changes"] }),
+      () => {
+        actionsRun += 1;
+        return { ok: true };
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      readinessFailure: "worktree has uncommitted changes",
+    });
+    expect(actionsRun).toBe(0);
+  });
+
+  it("revalidates targeted cleanup readiness before teardown", async () => {
+    const context = makeContext();
+    const plan = createCleanupPlan(context, [
+      resolveTarget(context, { kind: "direct", value: "feature" }),
+    ]);
+    let actionsRun = 0;
+
+    const result = await executeCleanupPlan(
+      plan,
+      () => ({
+        eligible: true,
+        evidence: plan.targets[0].eligibility,
+      }),
+      () => ({ ready: false, reasons: ["worktree has uncommitted changes"] }),
+      () => {
+        actionsRun += 1;
+        return { ok: true };
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      readinessFailure: "worktree has uncommitted changes",
+    });
+    expect(actionsRun).toBe(0);
+  });
+
+  it("revalidates readiness again before dropping the database", async () => {
+    const context = makeContext();
+    const plan = createCleanupPlan(context, [
+      resolveTarget(context, { kind: "direct", value: "feature" }),
+    ]);
+    const actionsRun: string[] = [];
+    let readinessChecks = 0;
+
+    const result = await executeCleanupPlan(
+      plan,
+      () => ({
+        eligible: true,
+        evidence: plan.targets[0].eligibility,
+      }),
+      () => {
+        readinessChecks += 1;
+        return readinessChecks === 1
+          ? { ready: true, evidence: { worktreePath: "/repo/wt/feature" } }
+          : { ready: false, reasons: ["worktree is locked"] };
+      },
+      (action) => {
+        actionsRun.push(action.kind);
+        return { ok: true };
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      failedAction: { kind: "drop-database" },
+      readinessFailure: "worktree is locked",
+    });
+    expect(actionsRun).toEqual(["stop-dev"]);
   });
 });
