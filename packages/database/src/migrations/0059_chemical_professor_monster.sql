@@ -1,0 +1,2 @@
+ALTER TABLE "turns" ADD COLUMN "ai_write_mode" text;--> statement-breakpoint
+ALTER TABLE "turns" ADD CONSTRAINT "turns_ai_write_mode_valid" CHECK ("turns"."ai_write_mode" IS NULL OR "turns"."ai_write_mode" IN ('direct', 'draft'));

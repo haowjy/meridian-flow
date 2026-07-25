@@ -88,6 +88,9 @@ export type ChangeTrailShellV1 = {
   changeCount: number;
   writerImpactCount: number;
   documentCount: number;
+  documents: Array<{ documentId: string; title: string }>;
+  wordsAdded: number | null;
+  wordsRemoved: number | null;
   updatedAt: string;
   settledAt: string | null;
 };
@@ -101,6 +104,8 @@ export type ChangeTrailDocumentDetailV1 =
       trailId: string;
       documentId: string;
       documentTitle: string;
+      wordsAdded: number | null;
+      wordsRemoved: number | null;
       changes: TrailChangeV1[];
       /** Retained evidence stays readable after its authorized live anchor is deleted. */
       anchorState: "available" | "deleted";
@@ -212,6 +217,9 @@ export const changeTrailShellV1Schema: z.ZodType<ChangeTrailShellV1> = z.object(
   changeCount: z.number().int(),
   writerImpactCount: z.number().int(),
   documentCount: z.number().int(),
+  documents: z.array(z.object({ documentId: z.string(), title: z.string() })),
+  wordsAdded: z.number().int().nullable(),
+  wordsRemoved: z.number().int().nullable(),
   updatedAt: z.string(),
   settledAt: z.string().nullable(),
 });

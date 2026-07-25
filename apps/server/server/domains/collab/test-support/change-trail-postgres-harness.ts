@@ -43,7 +43,7 @@ const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
-const { readDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
+const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
 const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
@@ -1067,7 +1067,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .orderBy(desc(schema.documentYjsCheckpoints.id))
         .limit(1);
       if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
       const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
@@ -1161,7 +1161,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
     const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
@@ -1177,7 +1177,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
     let releaseBlocker!: () => void;
     let blockerReady!: () => void;
     const blockerRelease = new Promise<void>((resolve) => {
@@ -1363,7 +1363,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         upToSeq,
       ),
     );
-    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
     const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
@@ -1711,7 +1711,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
       if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
-      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
       return replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,

@@ -46,7 +46,8 @@ import {
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import {
   allocateDocumentAdmission,
-  readDocumentAuthorityHead,
+  ensureAndReadDocumentAuthorityHead,
+  findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
@@ -360,7 +361,7 @@ async function insertCheckpoint(
   reason: string,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
-  const authorityHead = await readDocumentAuthorityHead(db, documentId);
+  const authorityHead = await ensureAndReadDocumentAuthorityHead(db, documentId);
   const attributionManifest = await checkpointAttributionManifest(
     db,
     documentId,
@@ -919,7 +920,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
     async materializeDestructiveProvenance(input) {
       const readDb = currentDrizzleDb(db as Database) as JournalDb;
-      const authorityHead = await readDocumentAuthorityHead(readDb, input.docId);
+      const authorityHead = await ensureAndReadDocumentAuthorityHead(readDb, input.docId);
       const rows = await readDb
         .select({
           authorityId: documentYjsUpdates.authorityId,
@@ -1153,7 +1154,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             authorityId: checkpoint.authorityId,
             generation: checkpoint.authorityGeneration,
           }
-        : await readDocumentAuthorityHead(readDb, docId);
+        : await findDocumentAuthorityHead(readDb, docId);
+      // A read of a never-admitted document must stay read-only. The
+      // coordinator interprets an empty snapshot as absence; creating a head
+      // here used to turn concurrent deletion into a raw FK failure.
+      if (!authorityHead) return { checkpoint: null, updates: [] };
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
@@ -1212,7 +1217,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const authorityHead = await readDocumentAuthorityHead(txDb, docId);
+        const authorityHead = await ensureAndReadDocumentAuthorityHead(txDb, docId);
         const [checkpoint] = await txDb
           .select()
           .from(documentYjsCheckpoints)

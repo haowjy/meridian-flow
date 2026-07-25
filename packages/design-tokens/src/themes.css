@@ -29,6 +29,8 @@
   --color-prose-foreground: oklch(0.86 0.012 88);
   --color-ink-muted: oklch(0.76 0.012 88);
   --color-ink-subtle: oklch(0.64 0.012 88);
+  --color-diff-added: oklch(0.74 0.09 160);
+  --color-diff-removed: oklch(0.72 0.12 27);
 
   --color-border: oklch(0.38 0.014 84);
   --color-border-subtle: oklch(0.335 0.012 84);

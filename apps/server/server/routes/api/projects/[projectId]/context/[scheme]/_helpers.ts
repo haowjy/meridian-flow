@@ -10,8 +10,8 @@ import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
 import {
+  isWorkScopedBrowseScheme,
   projectBrowseContextUri,
-  WORK_SCOPED_BROWSE_SCHEMES,
 } from "../../../../../../domains/context/browse-layer-scheme.js";
 import {
   contextPortForProjectBrowse,
@@ -49,7 +49,7 @@ export async function resolveContextRoute(
   const query = getQuery(event);
   const workId = typeof query.workId === "string" ? query.workId : null;
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme) && !workId) {
+  if (isWorkScopedBrowseScheme(scheme) && !workId) {
     throw createError({ statusCode: 400, message: "`workId` is required" });
   }
   const deps = { contextPorts: app.contextPorts, works: app.workRepo };

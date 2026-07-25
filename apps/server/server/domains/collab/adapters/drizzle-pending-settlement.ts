@@ -38,7 +38,7 @@ import type {
 import { materializeProvenanceForDoc } from "../domain/provenance.js";
 import {
   allocateDocumentAdmission,
-  readDocumentAuthorityHead,
+  ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
@@ -610,7 +610,7 @@ async function readPendingSettlement(
           .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
           .limit(1)
       )[0]
-    : await readDocumentAuthorityHead(db, row.outbox.documentId);
+    : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
   if (!authority) {
     provenanceDoc.destroy();
     throw new Error(`Pending branch push settlement ${pushId} has no authority admission`);

@@ -25,7 +25,12 @@ import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { NewBadge } from "@/components/app/NewBadge";
 import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
+import {
+  type DockRow,
+  dockRows,
+  documentBasename,
+  hasDockChanges,
+} from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import type {
@@ -40,10 +45,8 @@ export function DockChangesView({ className }: { className?: string }) {
   const { groups, nowMs, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
 
-  const rows = useMemo(
-    () => dockRows(groups, nowMs).filter((row) => row.state === "pending"),
-    [groups, nowMs],
-  );
+  const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
+  const hasChanges = hasDockChanges(groups, nowMs);
 
   const inlineReview = controller.inlineReview;
   const preview = useDraftPreview(
@@ -60,7 +63,7 @@ export function DockChangesView({ className }: { className?: string }) {
 
   return (
     <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
-      {rows.length === 0 ? (
+      {!hasChanges ? (
         // Empty-state form (slice-7 study): centered glyph + title + one-line
         // caption — no card, no border, no button. Calm, not a dead end.
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 pb-10 text-center">

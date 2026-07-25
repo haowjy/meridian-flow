@@ -78,6 +78,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { NoticePort } from "../../notices/index.js";
 import type { EventSink } from "../../observability/index.js";
@@ -155,6 +156,9 @@ export interface OrchestratorDeps {
   toolRegistry: ToolRegistry;
   projectPreferences: {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
+  };
+  workWriteMode: {
+    read(workId: string): Promise<AiWriteMode>;
   };
   permissionGate: PermissionGate;
   billingUsage: BillingUsagePolicy;
@@ -339,6 +343,7 @@ function createLocalTurn(input: {
   prevTurnId: TurnId | null;
   role: Turn["role"];
   status: Turn["status"];
+  writeMode?: Turn["writeMode"];
   metadata?: Turn["metadata"];
 }): Turn {
   return {
@@ -347,6 +352,7 @@ function createLocalTurn(input: {
     prevTurnId: input.prevTurnId,
     parentTurnId: input.prevTurnId,
     role: input.role,
+    writeMode: input.writeMode ?? null,
     status: input.status,
     finishReason: null,
     model: null,
@@ -432,6 +438,9 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         inheritedTurnIds.has(block.turnId),
       );
       const lastTurn = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+      // Read inside the setup transaction so the turn's durable write vocabulary
+      // matches the mode in effect at the moment the turn was minted.
+      const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
       const userTurn = createLocalTurn({
         threadId: input.threadId,
         prevTurnId: lastTurn?.id ?? null,
@@ -451,6 +460,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         prevTurnId: userTurn.id,
         role: "assistant",
         status: "streaming",
+        writeMode,
       });
       await repos.threads.updateStatus(input.threadId, "active");
 

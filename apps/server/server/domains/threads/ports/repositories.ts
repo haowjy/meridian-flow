@@ -25,6 +25,7 @@ import type {
   TurnStatus,
   WorkingState,
 } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreateDerivedPrimaryThreadInput } from "../domain/thread-create-derived-primary.js";
 import type { CreateSubagentThreadInput } from "../domain/thread-create-subagent.js";
 
@@ -176,6 +177,7 @@ export interface CreateTurnInput {
   createdAt?: string;
   prevTurnId?: TurnId | null;
   role: TurnRole;
+  writeMode?: AiWriteMode | null;
   status?: TurnStatus;
   requestParams?: JsonValue | null;
   metadata?: JsonValue | null;

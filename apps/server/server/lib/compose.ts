@@ -521,6 +521,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     packageRepository: ports.packageRepository,
     toolRegistry,
     projectPreferences: ports.preferences,
+    workWriteMode: {
+      async read(workId) {
+        const work = await ports.workRepo.findById(workId as import("@meridian/contracts").WorkId);
+        if (!work) throw new Error(`Work not found: ${workId}`);
+        return work.aiWriteMode;
+      },
+    },
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,

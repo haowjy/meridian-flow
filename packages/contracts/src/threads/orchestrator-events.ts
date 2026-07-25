@@ -178,6 +178,12 @@ export type OrchestratorEvent =
       trailId: string;
       turnId: string | null;
       version: number;
+      shell: {
+        counts: { changes: number; writerImpact: number; documents: number };
+        documents: Array<{ documentId: string; title: string }>;
+        wordsAdded: number | null;
+        wordsRemoved: number | null;
+      };
     }
   | { type: "turn.error"; turn: Turn; error: MeridianError };
 

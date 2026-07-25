@@ -4,6 +4,12 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
+import {
+  CONTEXT_URI_SCHEMES,
+  type ContextUriScheme,
+  WORK_SCOPED_CONTEXT_URI_SCHEMES,
+  type WorkScopedContextUriScheme,
+} from "../context-uri.js";
 import type { UserId, WorkId } from "../ids.js";
 import type { Project, ProjectStatsResponse } from "../projects/index.js";
 import type {
@@ -77,15 +83,9 @@ export type ListWorksResponse = {
   defaultWorkId: Work["id"];
 };
 
-export const PROJECT_CONTEXT_TREE_SCHEMES = [
-  "manuscript",
-  "kb",
-  "scratch",
-  "uploads",
-  "user",
-] as const;
+export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
-export type ProjectContextTreeScheme = (typeof PROJECT_CONTEXT_TREE_SCHEMES)[number];
+export type ProjectContextTreeScheme = ContextUriScheme;
 
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;
@@ -159,8 +159,7 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
 
 /** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
 export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
-  "scratch",
-  "uploads",
+  ...WORK_SCOPED_CONTEXT_URI_SCHEMES,
 ]);
 
 export function isWorkScopedProjectContextScheme(
@@ -169,7 +168,7 @@ export function isWorkScopedProjectContextScheme(
   return WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES.has(scheme);
 }
 
-export type WorkAuthorityScheme = "scratch" | "uploads";
+export type WorkAuthorityScheme = WorkScopedContextUriScheme;
 
 export type WorkingSetRoute =
   | {

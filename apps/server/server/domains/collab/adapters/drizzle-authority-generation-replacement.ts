@@ -7,7 +7,7 @@ import {
   replaceAuthorityGeneration,
 } from "../domain/document-mutation-policy.js";
 import {
-  readDocumentAuthorityHead,
+  ensureAndReadDocumentAuthorityHead,
   replaceDocumentAuthorityHeadGeneration,
 } from "./drizzle-document-authority-head.js";
 
@@ -33,7 +33,7 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
       {
         readMutationTarget: async () => ({
           documentId,
-          generation: (await readDocumentAuthorityHead(input.db, documentId)).generation,
+          generation: (await ensureAndReadDocumentAuthorityHead(input.db, documentId)).generation,
           doc: await input.coordinator.withDocument(documentId, async (doc) => doc),
         }),
         loadCheckpoint: async (id) => {

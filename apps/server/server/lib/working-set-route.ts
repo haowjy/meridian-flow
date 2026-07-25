@@ -2,6 +2,7 @@
 import {
   isWorkScopedProjectContextScheme,
   parseWorkingSetRouteList,
+  type WorkAuthorityScheme,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
@@ -29,7 +30,7 @@ export interface WorkingSetRouteDeps {
 
 function isWorkScopedRoute(
   route: WorkingSetRoute,
-): route is Extract<WorkingSetRoute, { scheme: "scratch" | "uploads" }> {
+): route is Extract<WorkingSetRoute, { scheme: WorkAuthorityScheme }> {
   return isWorkScopedProjectContextScheme(route.scheme);
 }
 

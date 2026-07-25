@@ -8,7 +8,10 @@ import {
   serializeTransport,
 } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler } from "nitro/h3";
-import { workScopedBrowseUri } from "../../../../../../domains/context/browse-layer-scheme.js";
+import {
+  isWorkScopedBrowseScheme,
+  workScopedBrowseUri,
+} from "../../../../../../domains/context/browse-layer-scheme.js";
 import type { FileEntry } from "../../../../../../domains/context/index.js";
 import type { ContextPort } from "../../../../../../domains/context/ports/context-port.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
@@ -22,7 +25,7 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
 };
 
 function rootUri(scheme: ProjectContextTreeScheme, workId: string | null): string {
-  if (scheme === "scratch" || scheme === "uploads") {
+  if (isWorkScopedBrowseScheme(scheme)) {
     if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
     return workScopedBrowseUri(scheme, workId);
   }

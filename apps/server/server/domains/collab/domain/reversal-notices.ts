@@ -1,7 +1,10 @@
 /** Notice construction for reversal and post-durability writer-awareness events. */
 import type { DestructiveSweepReport, ReversalNoticePort } from "@meridian/agent-edit/integration";
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
+
+export { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
 export type ReversalNoticeDiagnostics = {
   documentUriMissing(input: {
@@ -24,13 +27,6 @@ export type ReversalNoticeDiagnostics = {
     cause: unknown;
   }): void;
 };
-
-export function documentTitleFromUri(uri: string | null): string | null {
-  if (!uri) return null;
-  const segment = uri.split("/").filter(Boolean).at(-1);
-  if (!segment) return null;
-  return segment.replace(/\.[^.]+$/, "");
-}
 
 export function createDocumentPresentationResolver(resolveDocumentUri: DocumentUriResolver) {
   return {

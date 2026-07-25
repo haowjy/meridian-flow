@@ -92,18 +92,32 @@ prefixes are reserved from worktree slugs.
 Merged or finished work leaves several linked resources behind. `pnpm dev:prune-worktrees` tears them down safely:
 
 ```bash
-pnpm dev:prune-worktrees -- --auto             # plan cleanup for all merged worktrees
-pnpm dev:prune-worktrees -- --target <value>   # target by work id, path, branch, or PR number
-pnpm dev:prune-worktrees -- --auto --dry-run   # print plan without executing
-pnpm dev:prune-worktrees -- --auto --yes       # execute without confirmation
+pnpm dev:prune-worktrees -- --target <value> --dry-run # inspect one work id, path, branch, or PR
+pnpm dev:prune-worktrees -- --target <value>           # clean that target after confirmation
 ```
 
-Per target, cleanup runs in order: stop dev stack → drop database → remove git
-worktree → mark Meridian work done → delete the local branch. Eligibility is
-bound to the planned branch commit and revalidated before every action; exact
-merged-PR evidence must match the detected base, head commit, and repository
-owner. The resolver refuses primary/current worktrees, the detected base branch,
-unmerged commits, ambiguous evidence, and refs that move after planning.
+Targeted cleanup runs in order: stop dev stack → drop database → remove git
+worktree → optionally mark a linked Meridian work item done → delete the local
+branch. Eligibility is bound to the planned branch commit and revalidated before
+every action; exact merged-PR evidence must match the detected base, head commit,
+and repository owner. The resolver refuses primary/current or locked worktrees,
+the detected base branch, unmerged commits, dirty worktrees, ambiguous evidence,
+and refs that move after planning.
+
+Batch cleanup is advanced and not yet trusted for routine use. It requires an
+explicit acknowledgement:
+
+```bash
+pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk --dry-run
+```
+
+Automatic cleanup skips any worktree that is dirty, carries an active Meridian
+work item, has a live dev session, or has a process attributed to it. A readable
+process cwd inside the target blocks it; when cwd is unreadable, a cmdline
+reference to the target path blocks only that target. Because an active work
+item is a skip reason, mark it done before `--auto`; auto cleanup then runs four
+actions (stop dev, drop database, remove worktree, delete branch) rather than the
+targeted path's optional fifth `meridian work done` action.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 

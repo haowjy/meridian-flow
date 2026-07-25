@@ -12,14 +12,16 @@
  * view switch the same way it survives a collapsed dock, so it is hidden and
  * `inert` rather than unmounted. Changes overlays it, so nothing reflows.
  */
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { hasDockChanges } from "@/features/chat/docked-drafts";
 import { cn } from "@/lib/utils";
 
 import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
 import { DockHeader } from "./DockHeader";
-import { useDockView } from "./dock-view-store";
+import { useDockView, withoutEmptyChanges } from "./dock-view-store";
 
 export type DockShellProps = {
   /** `center` renders the passthrough; `dock` renders the tabbed header. */
@@ -35,10 +37,20 @@ export type DockShellProps = {
 };
 
 export function DockShell({ placement, screen, onClose, threadSelect, children }: DockShellProps) {
-  const { view, views, primaryView, setView } = useDockView(screen);
+  const dockView = useDockView(screen);
+  const { groups, nowMs } = useDraftReview();
+  const hasChanges = hasDockChanges(groups, nowMs);
+  const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
+  const { setView } = dockView;
   const inDock = placement === "dock";
   const showPrimary = !inDock || view === primaryView;
   const showChanges = inDock && view === "changes";
+
+  useEffect(() => {
+    if (!hasChanges && dockView.view === "changes") {
+      setView(primaryView);
+    }
+  }, [dockView.view, hasChanges, primaryView, setView]);
 
   return (
     <>

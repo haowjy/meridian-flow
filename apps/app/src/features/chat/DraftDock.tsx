@@ -225,9 +225,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               >
                 <Trans>Discard</Trans>
               </QuietButton>
-              <span aria-hidden className="text-ink-subtle">
-                ·
-              </span>
               <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
                 <Trans>Keep</Trans>
               </QuietButton>
@@ -464,7 +461,7 @@ function DockRowLine({
           ✓
         </span>
         <span className="min-w-0 flex-1 truncate">
-          <Trans>{name} · reviewed</Trans>
+          <Trans>Reviewed {name}</Trans>
         </span>
       </DockRowShell>
     );
@@ -482,9 +479,7 @@ function DockRowLine({
         {name}
         {stats ? (
           <>
-            <span className="text-ink-subtle" aria-hidden>
-              {" · "}
-            </span>
+            {" "}
             <DraftStatsLabel stats={stats} wordsSuffix={false} />
           </>
         ) : null}

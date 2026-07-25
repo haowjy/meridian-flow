@@ -1,5 +1,10 @@
 import path from "node:path";
 import type { CleanupEligibility, EligibilityDecision } from "./worktree-cleanup-eligibility";
+import {
+  type AutoCleanupReadiness,
+  type AutoCleanupReadinessDecision,
+  autoCleanupReadinessKey,
+} from "./worktree-cleanup-readiness";
 
 export interface GitWorktree {
   readonly path: string;
@@ -7,6 +12,7 @@ export interface GitWorktree {
   readonly branch?: string;
   readonly detached?: boolean;
   readonly bare?: boolean;
+  readonly locked?: boolean;
   readonly isPrimary: boolean;
 }
 
@@ -24,6 +30,7 @@ export interface CleanupContext {
   readonly primaryWorktreePath: string;
   readonly currentWorktreePath: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly autoReadinessByWorktree: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly workItems: readonly MeridianWorkItem[];
 }
@@ -37,6 +44,7 @@ export interface CleanupTarget {
   readonly branch: string;
   readonly workItem?: MeridianWorkItem;
   readonly eligibility: CleanupEligibility;
+  readonly autoReadiness?: AutoCleanupReadiness;
 }
 
 export type CleanupActionKind =
@@ -70,6 +78,7 @@ export interface CleanupExecutionResult {
   readonly failedTarget?: CleanupTargetPlan;
   readonly failedAction?: CleanupAction;
   readonly eligibilityFailure?: string;
+  readonly readinessFailure?: string;
 }
 
 export type CleanupActionRunner = (
@@ -80,6 +89,10 @@ export type CleanupActionRunner = (
 export type CleanupEligibilityValidator = (
   target: CleanupTargetPlan,
 ) => EligibilityDecision | Promise<EligibilityDecision>;
+
+export type CleanupReadinessValidator = (
+  target: CleanupTargetPlan,
+) => AutoCleanupReadinessDecision | Promise<AutoCleanupReadinessDecision>;
 
 export interface CleanupExecutionHooks {
   readonly onTargetStart?: (target: CleanupTargetPlan) => void;
@@ -117,6 +130,7 @@ export function parseGitWorktreePorcelain(output: string): GitWorktree[] {
       branch: record.branch,
       detached: record.detached,
       bare: record.bare,
+      locked: record.locked,
       isPrimary: worktrees.length === 0,
     });
     record = {};
@@ -136,6 +150,7 @@ export function parseGitWorktreePorcelain(output: string): GitWorktree[] {
       ...(key === "branch" ? { branch: stripRefPrefix(value) } : {}),
       ...(key === "detached" ? { detached: true } : {}),
       ...(key === "bare" ? { bare: true } : {}),
+      ...(key === "locked" ? { locked: true } : {}),
     };
   }
   flush();
@@ -165,6 +180,7 @@ export function parseMeridianWorkShow(id: string, output: string): MeridianWorkI
 export function buildCleanupContext(input: {
   readonly gitWorktreePorcelain: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly autoReadinessByWorktree?: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly meridianWorkItems: readonly MeridianWorkItem[];
   readonly currentWorktreePath: string;
@@ -177,6 +193,7 @@ export function buildCleanupContext(input: {
     primaryWorktreePath: normalizePath(worktrees[0].path),
     currentWorktreePath: normalizePath(input.currentWorktreePath),
     eligibilityByBranch: input.eligibilityByBranch,
+    autoReadinessByWorktree: input.autoReadinessByWorktree ?? new Map(),
     baseBranch: input.baseBranch,
     workItems: input.meridianWorkItems,
   };
@@ -227,6 +244,9 @@ function assertSafeTarget(
   }
   if (target.branch === context.baseBranch) {
     throw new CleanupResolverError(`Refusing to delete base branch '${context.baseBranch}'.`);
+  }
+  if (target.worktree.locked) {
+    throw new CleanupResolverError(`Refusing to remove locked worktree: ${target.worktree.path}`);
   }
   if (!context.eligibilityByBranch.has(target.branch)) {
     throw new CleanupResolverError(
@@ -315,8 +335,15 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
     if (normalizePath(worktree.path) === context.currentWorktreePath) continue;
     if (!worktree.branch) continue;
     if (worktree.branch === context.baseBranch) continue;
-    if (!context.eligibilityByBranch.has(worktree.branch)) continue;
-    targets.push(targetForWorktree(context, worktree));
+    if (worktree.locked) continue;
+    const eligibility = context.eligibilityByBranch.get(worktree.branch);
+    if (eligibility?.kind !== "pull-request") continue;
+    const readiness = context.autoReadinessByWorktree.get(autoCleanupReadinessKey(worktree.path));
+    if (!readiness?.ready) continue;
+    targets.push({
+      ...targetForWorktree(context, worktree),
+      autoReadiness: readiness.evidence,
+    });
   }
   return targets;
 }
@@ -342,10 +369,15 @@ function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): C
   actions.push({
     kind: "delete-branch",
     cwd: primaryWorktreePath,
-    // Force-delete is safe only because exact commit eligibility is revalidated
-    // immediately before every action. `git branch -d` is squash-blind and
-    // would refuse a squash-merged tip even after that proof.
-    command: ["git", "branch", "-D", target.branch],
+    // update-ref compares and deletes in one transaction; a ref move between
+    // the final validation and this action is therefore still a refusal.
+    command: [
+      "git",
+      "update-ref",
+      "-d",
+      `refs/heads/${target.branch}`,
+      target.eligibility.plannedOid,
+    ],
   });
 
   return actions;
@@ -375,12 +407,24 @@ export function parsePrNumber(value: string): string {
 export async function executeCleanupPlan(
   plan: CleanupPlan,
   validateEligibility: CleanupEligibilityValidator,
+  validateReadiness: CleanupReadinessValidator,
   runAction: CleanupActionRunner,
   hooks: CleanupExecutionHooks = {},
 ): Promise<CleanupExecutionResult> {
   for (const target of plan.targets) {
     hooks.onTargetStart?.(target);
     for (const action of target.actions) {
+      if (action.kind === "stop-dev" || action.kind === "drop-database") {
+        const readiness = await validateReadiness(target);
+        if (!readiness.ready) {
+          return {
+            ok: false,
+            failedTarget: target,
+            failedAction: action,
+            readinessFailure: readiness.reasons.join("; "),
+          };
+        }
+      }
       const eligibility = await validateEligibility(target);
       if (!eligibility.eligible) {
         return {

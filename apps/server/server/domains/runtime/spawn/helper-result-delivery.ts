@@ -58,6 +58,7 @@ function createLocalSystemTurn(input: { threadId: ThreadId; parentTurnId: TurnId
     prevTurnId: input.parentTurnId,
     parentTurnId: input.parentTurnId,
     role: "system",
+    writeMode: null,
     status: "complete",
     finishReason: "end_turn",
     model: null,

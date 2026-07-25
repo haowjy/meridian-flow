@@ -4,6 +4,7 @@
  * and identity icons.
  */
 import { t } from "@lingui/core/macro";
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
@@ -16,13 +17,7 @@ import { ScrollQuill } from "./scroll-quill-icon";
  * schemes come first, then the work-scoped ones (`scratch`, `uploads`) below the
  * work boundary divider the tree draws before the first work-scoped section.
  */
-export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
-  "manuscript",
-  "kb",
-  "user",
-  "scratch",
-  "uploads",
-];
+export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
 /** Schemes shown in the tree panel for the current work context. */
 export function visibleContextSchemes(workId: string | null): readonly ProjectContextTreeScheme[] {

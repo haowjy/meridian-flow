@@ -5,3 +5,15 @@
   Harmless at today's thread counts; if long-task violations appear during
   streaming with many threads, gate the derivation on `open` or memoize it.
   (Noted during slice-7 round-4 review, 2026-07-15.)
+
+- Expanded-fold rail polish, three items observed in the chat-surface rail
+  probe (2026-07-24), all cosmetic and deliberately left as-is:
+  - A 6px orphan rail tick below a fold whose last row is a tool row.
+    Inherent to the self-contained rail (every tool row paints the stub that
+    keeps the rail continuous); suppressing it on the last row needs the
+    sibling-aware CSS `ActivityRow` already tried and abandoned.
+  - Rail rhythm alternates 3px vs 7px gaps at run boundaries, from
+    `space-y-1` on the run wrapper.
+  - The icon chip fill (`bg-chip-muted-bg`) sits ~2% from the fold
+    background, so only the glyph reads and the rail's 26px interruption is
+    bridged by an icon rather than a solid chip. Token decision.

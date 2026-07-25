@@ -143,8 +143,9 @@ another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<n
 -b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
 
 Clean up merged or abandoned work with `pnpm dev:prune-worktrees` from a
-checkout you are not removing. Start with `--auto --dry-run` or
-`--target <work-id|path|branch|pr> --dry-run`.
+checkout you are not removing. Clean one deliberate lane at a time with
+`--target <work-id|path|branch|pr> --dry-run`; `--auto` is advanced and not yet
+trusted for routine batch use.
 
 ## Cross-repo linking
 

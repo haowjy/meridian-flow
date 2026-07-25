@@ -497,6 +497,15 @@ describe("change-trail event projection", () => {
         trailId: "trail-1",
         turnId: "turn-1",
         version: 4,
+        shell: {
+          counts: { changes: 4, writerImpact: 1, documents: 2 },
+          documents: [
+            { documentId: "document-1", title: "Chapter 1" },
+            { documentId: "document-2", title: "Chapter 2" },
+          ],
+          wordsAdded: 3,
+          wordsRemoved: 8,
+        },
       },
     ]);
 
@@ -522,10 +531,18 @@ describe("change-trail event projection", () => {
           trailId: "trail-1",
           turnId: "turn-1",
           version: 4,
+          shell: {
+            counts: { changes: 4, writerImpact: 1, documents: 2 },
+            documents: [
+              { documentId: "document-1", title: "Chapter 1" },
+              { documentId: "document-2", title: "Chapter 2" },
+            ],
+            wordsAdded: 3,
+            wordsRemoved: 8,
+          },
         },
       },
     ]);
-    expect(JSON.stringify(events)).not.toContain("documentTitle");
     expect(JSON.stringify(events)).not.toContain("beforeText");
   });
 });

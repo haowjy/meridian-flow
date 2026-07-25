@@ -6,9 +6,9 @@
  * draft control this card carries is Undo. Expanded trail rows may carry the
  * recovery actions Restore and Delete again.
  *
- * Shape: a collapsed card at the end of every turn that edited documents
- * (created files count — they produce mutation rows like any edit). The header
- * carries only the document count; expanding lists each document.
+ * Shape: a collapsed card at the end of every turn that edited live documents.
+ * The header names a single document when possible and carries durable word
+ * deltas; expanding lists each document.
  *
  * Turn lineage owns Undo authority. Authorized trail detail owns durable row
  * evidence, navigation, and forward-action identity.
@@ -27,6 +27,8 @@ import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { type ConversationReveal, useConversationReveal } from "./conversation-reveal";
+import { documentDisplayName } from "./document-display-name";
+import { DraftStatsLabel } from "./draft-stats";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -36,6 +38,16 @@ export type TurnEditDocument = {
   uri: string;
   scope: "live" | "draft";
 };
+
+export function hasTurnEditsCardDocuments(
+  documents: TurnEditDocument[],
+  changeTrail?: ChangeTrailShell,
+): boolean {
+  return (
+    documents.some((document) => document.scope === "live") ||
+    (changeTrail?.state === "settled" && changeTrail.documents.length > 0)
+  );
+}
 
 export type TurnEditsCardProps = {
   threadId: string;
@@ -62,9 +74,32 @@ export function TurnEditsCard({
   const [pending, setPending] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
-  const hasEditedDocuments = documents.length > 0 || Boolean(changeTrail);
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   const guardCopy = undoGuardCopy(receipt);
+  const liveDocuments = documents.filter((document) => document.scope === "live");
+  const trailDocuments = changeTrail?.documents ?? [];
+  // Asks the predicate about the full lineage, not the pre-filtered live subset.
+  // Both callers must hand it the same thing or it owns the "is there a committed
+  // receipt?" decision in name only — filtering first made its scope check dead
+  // here while `AssistantTurn` still depends on it.
+  const hasEditedDocuments = hasTurnEditsCardDocuments(documents, changeTrail);
+  const headerDocuments = trailDocuments.length > 0 ? trailDocuments : liveDocuments;
+  const headerDocumentCount = headerDocuments.length;
+  const singleDocumentTitle =
+    trailDocuments.length === 1
+      ? trailDocuments[0]?.title
+      : trailDocuments.length === 0 && liveDocuments.length === 1
+        ? documentDisplayName(liveDocuments[0]?.uri ?? "").title
+        : null;
+  const wordStats =
+    changeTrail &&
+    (typeof changeTrail.wordsAdded === "number" || typeof changeTrail.wordsRemoved === "number")
+      ? {
+          kind: "words" as const,
+          added: changeTrail.wordsAdded ?? 0,
+          removed: changeTrail.wordsRemoved ?? 0,
+        }
+      : null;
   const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   useEffect(() => {
@@ -72,6 +107,8 @@ export function TurnEditsCard({
     setActiveReveal(reveal);
     setExpanded(true);
   }, [reveal, turn.id]);
+
+  if (!hasEditedDocuments) return null;
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
@@ -119,18 +156,28 @@ export function TurnEditsCard({
           <span aria-hidden className="text-ink-subtle">
             ✎
           </span>
-          <span className="min-w-0 flex-1 truncate font-medium text-prose-foreground">
-            {documentCountLabel(Math.max(documents.length, changeTrail?.documentCount ?? 0))}
+          <span className="flex min-w-0 flex-1 items-baseline">
+            <span className="min-w-0 truncate font-medium text-prose-foreground">
+              {singleDocumentTitle
+                ? documentTitleLabel(singleDocumentTitle)
+                : documentCountLabel(headerDocumentCount)}
+            </span>
+            {wordStats ? (
+              <span className="ml-2 shrink-0">
+                {" "}
+                <DraftStatsLabel stats={wordStats} />
+              </span>
+            ) : null}
           </span>
         </button>
-        {hasEditedDocuments && undoUnavailable ? (
+        {undoUnavailable ? (
           <span
             className="shrink-0 rounded-full border border-border-subtle px-2 py-0.5 font-medium text-ink-muted"
             data-undo-unavailable
           >
             <Trans>Can't undo</Trans>
           </span>
-        ) : hasEditedDocuments ? (
+        ) : (
           <Button
             type="button"
             variant="quiet"
@@ -144,7 +191,7 @@ export function TurnEditsCard({
           >
             {receipt?.control === "redo" ? t`Redo` : t`Undo`}
           </Button>
-        ) : null}
+        )}
       </div>
       {guardCopy ? (
         <p className="px-3 pb-2 pl-9 text-ink-muted" data-undo-unavailable-reason>
@@ -154,7 +201,7 @@ export function TurnEditsCard({
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t py-1">
           <ul className="flex flex-col">
-            {documents.map((doc) => (
+            {liveDocuments.map((doc) => (
               <li key={doc.uri}>
                 <DocumentRow document={doc} onOpenContextUri={openContextUri} />
               </li>
@@ -286,6 +333,10 @@ function documentCountLabel(count: number) {
   ) : (
     <Trans>AI edited {count} chapters</Trans>
   );
+}
+
+function documentTitleLabel(title: string) {
+  return <Trans>Edited {title}</Trans>;
 }
 
 function basenameOf(document: TurnEditDocument): string {

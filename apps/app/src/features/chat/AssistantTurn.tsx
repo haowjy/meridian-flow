@@ -5,34 +5,40 @@
  * SAME `Block[]` model. There is no synthetic `"live-reasoning"` block and no
  * separate `thinkingStream`/`textStream`/`visibleTool` props — in-progress
  * frontiers are partial blocks in the same array. Block render keys derive
- * from `(turnId, sequence)`, so the live→settled swap is an in-place
- * block-content replace, not a remount.
+ * from `(turnId, sequence)`, so non-tool frontier blocks keep their identity
+ * across settlement. Tool rows may remount when they move into the process fold.
  *
  * Draft affordances live OFF the transcript now: pending AI changes are the
  * composer-attached DraftDock's job, and this turn only records what it edited
- * (see `TurnEditsCard`). `draftWrite` stays a per-turn hint so write tool rows
- * can read "Drafted" instead of "Wrote" when the turn produced a draft.
+ * (see `TurnEditsCard`). Write vocabulary comes from the mode frozen on the turn.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Block, Turn } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  blockPlainText,
+  isTerminalTurnStatus,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
+import { ACTIVITY_ROW_TEXT_INSET } from "./ActivityRow";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
-import { LiveTurnStatusBar } from "./LiveTurnStatusBar";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-turn-segments";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { TurnEditsCard } from "./TurnEditsCard";
+import { hasTurnEditsCardDocuments, TurnEditsCard } from "./TurnEditsCard";
+import { thinkingDigest } from "./thinking-digest";
+import { isToolViewVisible } from "./tool-view-visibility";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type AssistantTurnProps = {
@@ -40,8 +46,6 @@ export type AssistantTurnProps = {
   turn: Turn;
   isLatestAssistant?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  /** True when this turn produced an AI draft (write tool rows read "Drafted"). */
-  draftWrite?: boolean;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
 };
@@ -51,7 +55,6 @@ function AssistantTurnComponent({
   turn,
   isLatestAssistant = false,
   onRespondToInterrupt,
-  draftWrite = false,
   changeTrail,
   navigateToChange,
 }: AssistantTurnProps) {
@@ -59,12 +62,15 @@ function AssistantTurnComponent({
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
     [turn.blocks],
   );
-  const segments = useMemo(() => partitionTurnSegments(sortedBlocks), [sortedBlocks]);
+  const isSettled = isTerminalTurnStatus(turn.status);
+  const segments = useMemo(
+    () => partitionTurnSegments(sortedBlocks, isSettled),
+    [sortedBlocks, isSettled],
+  );
   const isErrored = turn.status === "error";
   const isCancelled = turn.status === "cancelled";
-  // A turn is "live" iff its current status is still streaming. Settled turns
-  // are anything terminal (`complete`/`cancelled`/`error`).
-  const isLive = turn.status === "streaming" || turn.status === "pending";
+  const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
+  const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
   const liveLineageDocuments = useMemo(
@@ -88,11 +94,11 @@ function AssistantTurnComponent({
           threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToInterrupt={onRespondToInterrupt}
-          draftWrite={draftWrite}
+          writeMode={turn.writeMode ?? "direct"}
         />
       ))}
 
-      {liveLineageDocuments.length > 0 || changeTrail?.state === "settled" ? (
+      {hasTurnEditsCardDocuments(liveLineageDocuments, changeTrail) ? (
         <TurnEditsCard
           threadId={resolvedThreadId}
           turn={turn}
@@ -103,36 +109,95 @@ function AssistantTurnComponent({
         />
       ) : null}
 
-      {isLive ? <LiveTurnStatusBar /> : null}
       {isErrored ? <ErrorBlock isLatest={isLatestAssistant} /> : null}
       {isCancelled ? (
         <p className="mt-2 text-caption text-muted-foreground italic">
-          <Trans>Turn cancelled.</Trans>
+          <Trans>Stopped.</Trans>
         </p>
       ) : null}
+      {showsInkDrop ? <InkDrop indented={lastVisibleSegmentElementIsTool(segments)} /> : null}
     </div>
   );
 }
 
-function dedupeTurnEditDocuments<T extends { uri: string }>(documents: readonly T[]): T[] {
-  const seen = new Set<string>();
-  const deduped: T[] = [];
-  for (const document of documents) {
-    if (seen.has(document.uri)) continue;
-    seen.add(document.uri);
-    deduped.push(document);
-  }
-  return deduped;
+function InkDrop({ indented }: { indented: boolean }) {
+  return (
+    <div
+      className={
+        indented
+          ? "mt-[7px] flex min-h-5 items-center pl-[3.5px]"
+          : "mt-[7px] flex min-h-5 items-center"
+      }
+      data-live-turn-ink
+    >
+      <span className="ink-drop" aria-hidden />
+    </div>
+  );
 }
 
-function TurnSegmentView({
+function lastVisibleSegmentElementIsTool(segments: TurnSegment[]): boolean {
+  const lastSegment = segments.at(-1);
+  if (!lastSegment) return false;
+
+  const deliverySegments = groupDeliverySegments(lastSegment.frontier);
+  for (let index = deliverySegments.length - 1; index >= 0; index -= 1) {
+    const segment = deliverySegments[index];
+    if (!segment) continue;
+    if (segment.kind === "tool") {
+      if (isToolViewVisible(segment.tool)) return true;
+      continue;
+    }
+    if (segment.kind === "tool-run") {
+      if (segment.tools.some(isToolViewVisible)) return true;
+      continue;
+    }
+    if (isVisibleDeliveryBlock(segment.block)) return false;
+  }
+  return false;
+}
+
+function isVisibleDeliveryBlock(block: Block): boolean {
+  if (block.blockType === ("activity" as Block["blockType"])) return false;
+  if (isImageBlock(block)) return imageContentForBlock(block) !== null;
+  if (block.blockType === "custom") return true;
+  if (block.blockType === "text") return Boolean(block.textContent?.trim());
+  const text = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
+  if (text) return true;
+  if (!block.content || typeof block.content !== "object" || Array.isArray(block.content)) {
+    return false;
+  }
+  const summary = (block.content as Record<string, unknown>).summary;
+  return typeof summary === "string" && summary.trim().length > 0;
+}
+
+/**
+ * One entry per document, preferring its committed (`live`) lineage.
+ *
+ * A turn that drafted an edit the writer later applied carries BOTH a `draft`
+ * and a `live` entry for the same URI, draft first. The card is a receipt for
+ * what happened to the manuscript, so the committed entry is the one that
+ * counts — keeping the draft would render an applied edit as if it never landed.
+ */
+function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft" }>(
+  documents: readonly T[],
+): T[] {
+  const byUri = new Map<string, T>();
+  for (const document of documents) {
+    const existing = byUri.get(document.uri);
+    if (existing && (existing.scope === "live" || document.scope !== "live")) continue;
+    byUri.set(document.uri, document);
+  }
+  return [...byUri.values()];
+}
+
+const TurnSegmentView = memo(function TurnSegmentView({
   segment,
   segmentIndex,
   segmentCount,
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  draftWrite,
+  writeMode,
 }: {
   segment: TurnSegment;
   segmentIndex: number;
@@ -140,13 +205,17 @@ function TurnSegmentView({
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  draftWrite: boolean;
+  writeMode: "direct" | "draft";
 }) {
+  const digest = useMemo(
+    () => thinkingDigest(toolViewsInFold(segment.foldRuns), writeMode),
+    [segment.foldRuns, writeMode],
+  );
   return (
     <div data-turn-segment={segmentIndex + 1}>
       {segment.foldRuns.length > 0 ? (
         <ProcessDisclosure
-          label={thinkingLabel()}
+          label={digest ?? thinkingLabel()}
           ariaLabel={thinkingAriaLabel(segmentIndex, segmentCount)}
         >
           {segment.foldRuns.map((run) => (
@@ -156,7 +225,7 @@ function TurnSegmentView({
               threadId={threadId}
               turnStatus={turnStatus}
               onRespondToInterrupt={onRespondToInterrupt}
-              draftWrite={draftWrite}
+              writeMode={writeMode}
             />
           ))}
         </ProcessDisclosure>
@@ -170,35 +239,45 @@ function TurnSegmentView({
             turnStatus={turnStatus}
             mode="frontier"
             onRespondToInterrupt={onRespondToInterrupt}
-            draftWrite={draftWrite}
+            writeMode={writeMode}
           />
         </div>
       ) : null}
     </div>
   );
-}
+});
 
 function thinkingLabel() {
   return <Trans>Thinking</Trans>;
 }
 
 function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string | undefined {
-  if (segmentCount <= 1) return undefined;
-  return t`Thinking part ${segmentIndex + 1}`;
+  return segmentCount <= 1 ? t`Thinking` : t`Thinking part ${segmentIndex + 1}`;
 }
 
-function FoldRun({
+function toolViewsInFold(runs: Run[]) {
+  return runs.flatMap((run) => {
+    if (run.kind !== "activity") return [];
+    return groupDeliverySegments(run.blocks).flatMap((segment) => {
+      if (segment.kind === "tool") return isToolViewVisible(segment.tool) ? [segment.tool] : [];
+      if (segment.kind === "tool-run") return segment.tools.filter(isToolViewVisible);
+      return [];
+    });
+  });
+}
+
+const FoldRun = memo(function FoldRun({
   run,
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  draftWrite,
+  writeMode,
 }: {
   run: Run;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  draftWrite: boolean;
+  writeMode: "direct" | "draft";
 }) {
   if (run.kind === "reasoning") {
     return (
@@ -218,11 +297,11 @@ function FoldRun({
         turnStatus={turnStatus}
         mode="fold"
         onRespondToInterrupt={onRespondToInterrupt}
-        draftWrite={draftWrite}
+        writeMode={writeMode}
       />
     </div>
   );
-}
+});
 
 function segmentRenderKey(segment: TurnSegment): string {
   const firstBlock = firstSegmentBlock(segment);
@@ -260,20 +339,20 @@ AssistantTurn.displayName = "AssistantTurn";
  */
 type DeliveryMode = "frontier" | "fold";
 
-function DeliverySegments({
+const DeliverySegments = memo(function DeliverySegments({
   blocks,
   threadId,
   turnStatus,
   mode,
   onRespondToInterrupt,
-  draftWrite,
+  writeMode,
 }: {
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
   mode: DeliveryMode;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  draftWrite: boolean;
+  writeMode: "direct" | "draft";
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
   return (
@@ -284,7 +363,7 @@ function DeliverySegments({
             <ToolRow
               key={blockRenderKey(segment.tool.keyBlock)}
               tool={segment.tool}
-              draftWrite={draftWrite}
+              writeMode={writeMode}
             />,
           ];
         }
@@ -293,7 +372,7 @@ function DeliverySegments({
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
           return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} draftWrite={draftWrite} />
+            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
           ));
         }
         return [
@@ -309,7 +388,7 @@ function DeliverySegments({
       })}
     </>
   );
-}
+});
 
 // Tool protocol blocks are normalized by `groupDeliverySegments` before this
 // branch. Keeping DeliveryBlock tool-free prevents `(tool_*)` placeholders from
@@ -329,9 +408,9 @@ function DeliveryBlock({
 }) {
   // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
   // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
-  // a non-canonical blockType. They're plumbing for the LiveTurnStatusBar —
-  // not deliverable content. Rendering them produces "(activity)" placeholder
-  // rows during streaming; hide them here so the turn frontier stays clean.
+  // a non-canonical blockType. They're transport-level liveness, not
+  // deliverable content. Rendering them produces "(activity)" placeholder rows
+  // during streaming; hide them here so the turn frontier stays clean.
   if (block.blockType === ("activity" as Block["blockType"])) return null;
 
   if (isImageBlock(block)) {
@@ -353,11 +432,20 @@ function DeliveryBlock({
     const text = block.textContent ?? "";
     if (!text.trim()) return null;
     // Text stays as full prose in both modes — it's the assistant's voice and
-    // shouldn't read like another process row. The `mode` arg is kept on the
-    // signature so future per-mode polish (e.g. fold-text size/tint shift) can
-    // dispatch here without re-plumbing the prop chain.
+    // shouldn't read like another process row, so it carries no icon and no
+    // rail segment.
     if (block.status === "partial" && mode === "frontier") {
       return <StreamingText text={text} />;
+    }
+    // Inside a fold it still shares a left edge with the rows around it.
+    // Breaking the rail is the intended signal; shifting the text 29px left
+    // as well made the same break read as a rendering fault.
+    if (mode === "fold") {
+      return (
+        <div className={ACTIVITY_ROW_TEXT_INSET}>
+          <Markdown>{text}</Markdown>
+        </div>
+      );
     }
     return <Markdown>{text}</Markdown>;
   }

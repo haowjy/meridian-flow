@@ -24,8 +24,7 @@
  * scroll position survive (Stream S3 convergence).
  *
  * Draft affordances are not in the transcript: pending AI changes live in the
- * composer-attached DraftDock. `draftTurnIds` (computed by ChatView) is only a
- * cosmetic hint so write tool rows in a draft-producing turn read "Drafted".
+ * composer-attached DraftDock.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
@@ -53,8 +52,6 @@ export type TurnListProps = {
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  /** Turn ids that produced an AI draft — write tool rows read "Drafted". */
-  draftTurnIds?: ReadonlySet<string>;
   changeTrails?: Record<string, ChangeTrailShell>;
 };
 
@@ -69,7 +66,6 @@ export function TurnList({
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
-  draftTurnIds,
   changeTrails = {},
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -156,13 +152,12 @@ export function TurnList({
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToInterrupt={onRespondToInterrupt}
-          draftWrite={draftTurnIds?.has(turn.id) ?? false}
           changeTrail={byTurnId.get(turn.id)}
           navigateToChange={navigateToChange}
         />
       );
     },
-    [byTurnId, draftTurnIds, lastAssistantIdx, navigateToChange, onRespondToInterrupt, threadId],
+    [byTurnId, lastAssistantIdx, navigateToChange, onRespondToInterrupt, threadId],
   );
 
   return (

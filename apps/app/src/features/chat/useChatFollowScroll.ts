@@ -86,11 +86,12 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
   const lastScrollTopRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
 
-  // Single write path for mode: ref for callbacks, state for rendering.
+  // Single write path for mode: ref for callbacks, state for rendering. Always
+  // offer the state update: React may still have an older queued render even
+  // when the imperative ref already holds `next`.
   const commitMode = useCallback((next: FollowMode) => {
-    if (modeRef.current === next) return;
     modeRef.current = next;
-    setMode(next);
+    setMode((current) => (current === next ? current : next));
   }, []);
 
   // Open (or re-arm) the self-scroll guard window before any programmatic write.

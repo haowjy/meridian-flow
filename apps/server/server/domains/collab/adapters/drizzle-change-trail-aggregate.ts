@@ -29,6 +29,20 @@ import {
   type NormalizedTrail,
   type TrailChangeV1,
 } from "../domain/trail-read-kernel.js";
+import { wordDeltaBetweenHashlines } from "../domain/word-count.js";
+
+function trailWordDelta(changes: readonly TrailChangeV1[]) {
+  return changes.reduce(
+    (total, change) => {
+      const delta = wordDeltaBetweenHashlines(change.beforeText, change.afterTextAtReceipt);
+      return {
+        wordsAdded: total.wordsAdded + delta.wordsAdded,
+        wordsRemoved: total.wordsRemoved + delta.wordsRemoved,
+      };
+    },
+    { wordsAdded: 0, wordsRemoved: 0 },
+  );
+}
 
 function deterministicUuid(namespace: string): string {
   const bytes = Buffer.from(createHash("sha256").update(namespace).digest().subarray(0, 16));
@@ -137,6 +151,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         const existingDetails = await tx
           .select({
             documentId: changeTrailDocumentDetails.documentId,
+            documentTitle: changeTrailDocumentDetails.documentTitle,
             changes: changeTrailDocumentDetails.changes,
           })
           .from(changeTrailDocumentDetails)
@@ -197,6 +212,10 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
         ]);
         for (const documentId of documentIds) {
+          const documentTitle =
+            input.documentTitles.get(documentId) ??
+            existingDetails.find((detail) => detail.documentId === documentId)?.documentTitle ??
+            "Untitled document";
           const [occurrence] = await tx
             .insert(changeTrailDocumentOccurrences)
             .values({ trailId, documentId, projectionRevision: 1 })
@@ -236,18 +255,21 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
               );
             continue;
           }
+          const wordDelta = trailWordDelta(documentChanges);
           await tx
             .insert(changeTrailDocumentDetails)
             .values({
               trailId,
               documentId,
-              documentTitle: input.documentTitles.get(documentId) ?? "Untitled document",
+              documentTitle,
+              ...wordDelta,
               changes: documentChanges,
             })
             .onConflictDoUpdate({
               target: [changeTrailDocumentDetails.trailId, changeTrailDocumentDetails.documentId],
               set: {
-                documentTitle: input.documentTitles.get(documentId) ?? "Untitled document",
+                documentTitle,
+                ...wordDelta,
                 changes: documentChanges,
                 updatedAt: new Date(),
               },
@@ -255,10 +277,22 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         }
 
         const details = await tx
-          .select({ changes: changeTrailDocumentDetails.changes })
+          .select({
+            documentId: changeTrailDocumentDetails.documentId,
+            documentTitle: changeTrailDocumentDetails.documentTitle,
+            wordsAdded: changeTrailDocumentDetails.wordsAdded,
+            wordsRemoved: changeTrailDocumentDetails.wordsRemoved,
+            changes: changeTrailDocumentDetails.changes,
+          })
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
         const allChanges = details.flatMap((detail) => detail.changes as TrailChangeV1[]);
+        const documents = details
+          .map((detail) => ({ documentId: detail.documentId, title: detail.documentTitle }))
+          .sort((left, right) => left.documentId.localeCompare(right.documentId));
+        const hasWordData = details.every(
+          (detail) => detail.wordsAdded !== null && detail.wordsRemoved !== null,
+        );
         await tx
           .update(changeTrailShells)
           .set({
@@ -268,6 +302,13 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             changeCount: allChanges.length,
             writerImpactCount: allChanges.filter((change) => change.writerImpact !== null).length,
             documentCount: details.length,
+            documents,
+            wordsAdded: hasWordData
+              ? details.reduce((sum, detail) => sum + (detail.wordsAdded ?? 0), 0)
+              : null,
+            wordsRemoved: hasWordData
+              ? details.reduce((sum, detail) => sum + (detail.wordsRemoved ?? 0), 0)
+              : null,
             updatedAt: new Date(),
           })
           .where(eq(changeTrailShells.id, trailId));
@@ -461,8 +502,9 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
     // This preserves a durable, observable settling version between RUN_FINISHED
     // and the terminal event instead of collapsing both states in one poll.
     const ready = await tx.execute(sql`
-      SELECT shell.id, shell.version, shell.change_count, shell.writer_impact_count,
-        shell.document_count
+      SELECT shell.id, shell.thread_id, shell.version, shell.change_count,
+        shell.writer_impact_count, shell.document_count, shell.documents,
+        shell.words_added, shell.words_removed
       FROM change_trail_shells AS shell
       WHERE shell.state = 'settling'
         AND (
@@ -489,10 +531,14 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
     `);
     for (const item of ready as unknown as Array<{
       id: string;
+      thread_id: string;
       version: number;
       change_count: number;
       writer_impact_count: number;
       document_count: number;
+      documents: Array<{ documentId: string; title: string }>;
+      words_added: number | null;
+      words_removed: number | null;
     }>) {
       const version = item.version + 1;
       await tx
@@ -503,10 +549,16 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
         .insert(changeTrailDeliveryOutbox)
         .values({
           eventId: deterministicUuid(`change-trail-event:${item.id}:${version}:settled`),
-          threadId: sql`(SELECT thread_id FROM change_trail_shells WHERE id = ${item.id})`,
+          threadId: item.thread_id as ThreadId,
           trailId: item.id,
           version,
           eventKind: "settled",
+          changeCount: item.change_count,
+          writerImpactCount: item.writer_impact_count,
+          documentCount: item.document_count,
+          documents: item.documents,
+          wordsAdded: item.words_added,
+          wordsRemoved: item.words_removed,
         })
         .onConflictDoNothing();
     }

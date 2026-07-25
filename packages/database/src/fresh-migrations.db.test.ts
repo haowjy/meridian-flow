@@ -13,6 +13,29 @@ if (!enabled || !databaseUrl) {
   });
 } else {
   describe("fresh database migrations (postgres)", () => {
+    it("keeps the renumbered migration tail eligible for incremental upgrades", async () => {
+      const journal = JSON.parse(
+        await readFile(new URL("./migrations/meta/_journal.json", import.meta.url), "utf8"),
+      ) as {
+        entries: Array<{ tag: string; when: number }>;
+      };
+      const tailStart = journal.entries.findIndex(
+        (entry) => entry.tag === "0060_cultured_cobalt_man",
+      );
+      const tail = journal.entries.slice(tailStart);
+
+      expect(tail.map((entry) => entry.tag)).toEqual([
+        "0060_cultured_cobalt_man",
+        "0061_milky_hedge_knight",
+        "0062_mature_prism",
+        "0063_milky_celestials",
+        "0064_writer_impact",
+      ]);
+      for (let index = 1; index < tail.length; index += 1) {
+        expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
+      }
+    });
+
     it("exposes the expected catalog on the runner-migrated database", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       try {
@@ -51,7 +74,7 @@ if (!enabled || !databaseUrl) {
     it("rewrites legacy trail evidence into one writer-impact authority", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       const migration = await readFile(
-        new URL("./migrations/0062_writer_impact.sql", import.meta.url),
+        new URL("./migrations/0064_writer_impact.sql", import.meta.url),
         "utf8",
       );
       const schema = "writer_impact_migration_fixture";
@@ -132,9 +155,12 @@ if (!enabled || !databaseUrl) {
             CREATE TABLE change_trail_document_details (changes jsonb NOT NULL);
             CREATE TABLE change_trail_delivery_outbox (
               event_kind text NOT NULL,
-              change_count integer,
-              swept_change_count integer,
-              document_count integer,
+              change_count integer NOT NULL,
+              swept_change_count integer NOT NULL,
+              document_count integer NOT NULL,
+              documents jsonb DEFAULT '[]'::jsonb NOT NULL,
+              words_added integer,
+              words_removed integer,
               CONSTRAINT change_trail_delivery_outbox_counts_valid CHECK (true)
             );
             CREATE TABLE change_trail_shells (

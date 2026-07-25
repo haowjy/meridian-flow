@@ -35,6 +35,12 @@ export type TrailShellTransition = {
   turnId: string | null;
   version: number;
   counts?: { changes: number; writerImpact: number; documents: number };
+  shell?: {
+    counts: { changes: number; writerImpact: number; documents: number };
+    documents: Array<{ documentId: string; title: string }>;
+    wordsAdded: number | null;
+    wordsRemoved: number | null;
+  };
 };
 
 /** Fold one ordered delivery fact into shell state without inventing missing counts. */
@@ -45,6 +51,7 @@ export function applyTrailShellTransition(
 ): TrailShellState {
   const prior = state.byId[transition.trailId];
   const counts =
+    transition.shell?.counts ??
     transition.counts ??
     (prior
       ? {
@@ -53,7 +60,9 @@ export function applyTrailShellTransition(
           documents: prior.documentCount,
         }
       : null);
-  if (!counts) return state;
+  // Delivery events carry lifecycle counts, not presentation metadata. A
+  // missing shell is reconciled through the lightweight shell endpoint.
+  if (!counts || !prior) return state;
   return upsertTrailShell(state, {
     trailId: transition.trailId,
     owner: transition.turnId
@@ -64,6 +73,9 @@ export function applyTrailShellTransition(
     changeCount: counts.changes,
     writerImpactCount: counts.writerImpact,
     documentCount: counts.documents,
+    documents: transition.shell?.documents ?? prior.documents,
+    wordsAdded: transition.shell ? transition.shell.wordsAdded : prior.wordsAdded,
+    wordsRemoved: transition.shell ? transition.shell.wordsRemoved : prior.wordsRemoved,
     updatedAt: occurredAt,
     settledAt: transition.kind === "settled" ? occurredAt : null,
   });

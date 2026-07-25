@@ -217,6 +217,9 @@
   --color-prose-foreground: oklch(0.3 0.012 80);
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
+  /* Compact magnitude labels, distinct from inline review highlighting. */
+  --color-diff-added: oklch(0.45 0.09 160);
+  --color-diff-removed: oklch(0.49 0.13 27);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
   --color-chip-muted-bg: var(--ink-jade-recess);
 

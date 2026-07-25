@@ -38,6 +38,9 @@ const shell = (version = 1): ChangeTrailShell => ({
   changeCount: 1,
   writerImpactCount: 0,
   documentCount: 1,
+  documents: [{ documentId: "document-1", title: "Chapter 1" }],
+  wordsAdded: null,
+  wordsRemoved: null,
   updatedAt: "2026-01-01T00:00:00.000Z",
   settledAt: "2026-01-01T00:00:00.000Z",
 });
@@ -52,9 +55,10 @@ describe("useAuthorizedChangeTrailDetail", () => {
   it("loads on disclosure and evicts detail when document access is revoked", async () => {
     mocks.readChangeTrail.mockResolvedValue([
       {
-        trailId: "trail-1",
         documentId: "document-1",
         documentTitle: "Chapter",
+        wordsAdded: 2,
+        wordsRemoved: 1,
         anchorState: "available",
         changes: [],
       },

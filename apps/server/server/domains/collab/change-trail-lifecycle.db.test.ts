@@ -101,9 +101,20 @@ describe("change trail (postgres)", () => {
         state: "settled",
         documentCount: 2,
         writerImpactCount: 2,
+        documents: [
+          { documentId: ALPHA_ID, title: "alpha" },
+          { documentId: BETA_ID, title: "beta" },
+        ],
+        wordsAdded: 0,
+        wordsRemoved: 10,
       }),
     ]);
-    expect(trails.details).toHaveLength(2);
+    expect(trails.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ documentId: ALPHA_ID, wordsAdded: 0, wordsRemoved: 5 }),
+        expect.objectContaining({ documentId: BETA_ID, wordsAdded: 0, wordsRemoved: 5 }),
+      ]),
+    );
     expect(
       trails.details.flatMap((detail) =>
         (
@@ -118,7 +129,49 @@ describe("change trail (postgres)", () => {
       expect.stringContaining("Writer captured body"),
       expect.stringContaining("Writer captured body"),
     ]);
+    const reader = createDrizzleChangeTrailReader(db, createDrizzleDocumentAccess(db));
+    await expect(reader.listShells(THREAD_ID)).resolves.toEqual([
+      expect.objectContaining({
+        documents: [
+          { documentId: ALPHA_ID, title: "alpha" },
+          { documentId: BETA_ID, title: "beta" },
+        ],
+        wordsAdded: 0,
+        wordsRemoved: 10,
+      }),
+    ]);
+    const trailId = trails.shells[0]?.id;
+    if (!trailId) throw new Error("missing settled trail");
+    await expect(
+      reader.readDetails({ threadId: THREAD_ID, trailId, userId: USER_ID }),
+    ).resolves.toEqual([
+      expect.objectContaining({ documentId: ALPHA_ID, wordsAdded: 0, wordsRemoved: 5 }),
+      expect.objectContaining({ documentId: BETA_ID, wordsAdded: 0, wordsRemoved: 5 }),
+    ]);
     cold.destroyWarmState();
+  });
+
+  it("persists prose-token deltas for a one-word substitution", async () => {
+    const harness = createHarness();
+    const branchId = await harness.seedMatrixPush({
+      responseId: "word-delta-substitution",
+      initialMarkdown: "The gate remained closed.",
+      steps: [{ source: "agent", markdown: "The gate opened." }],
+    });
+
+    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await harness.markTurnError();
+    await harness.pollTrails();
+    await harness.pollTrails();
+
+    const trails = await harness.trailRows();
+    expect(trails.shells).toEqual([
+      expect.objectContaining({ state: "settled", wordsAdded: 1, wordsRemoved: 2 }),
+    ]);
+    expect(trails.details).toEqual([
+      expect.objectContaining({ documentId: ALPHA_ID, wordsAdded: 1, wordsRemoved: 2 }),
+    ]);
+    harness.destroyWarmState();
   });
 
   it("restores captured prose journal-first against a live document and deduplicates retries", async () => {
@@ -1022,6 +1075,16 @@ describe("change trail (postgres)", () => {
       [6, "updated"],
       [7, "settled"],
     ]);
+    expect(
+      resettled.outbox.find((row) => row.version === 7 && row.eventKind === "settled"),
+    ).toMatchObject({
+      changeCount: 1,
+      writerImpactCount: 1,
+      documentCount: 1,
+      documents: [expect.objectContaining({ documentId: ALPHA_ID })],
+      wordsAdded: expect.any(Number),
+      wordsRemoved: expect.any(Number),
+    });
   });
 
   it("rebuilds an errored turn trail from surviving durable content", async () => {

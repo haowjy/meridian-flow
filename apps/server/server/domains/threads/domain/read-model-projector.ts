@@ -71,6 +71,7 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     createdAt: turn.createdAt,
     prevTurnId: turn.prevTurnId ?? turn.parentTurnId ?? null,
     role: turn.role,
+    writeMode: turn.writeMode,
     status: turn.status,
     requestParams: turn.requestParams ?? null,
     metadata: turn.metadata ?? null,

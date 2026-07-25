@@ -1,6 +1,6 @@
 {
-  "id": "a673bbe4-c175-4b95-a692-8d8e95e54a69",
-  "prevId": "071682e1-b5fd-4e62-bac6-0c9807e84815",
+  "id": "03c6ea96-2e59-47d4-834d-87f110820f3f",
+  "prevId": "91d9c762-b3db-4e7d-871c-4206e301d862",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1858,6 +1858,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "ai_write_mode": {
+          "name": "ai_write_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -2065,6 +2071,10 @@
         "turns_role_valid": {
           "name": "turns_role_valid",
           "value": "\"turns\".\"role\" IN ('user', 'assistant', 'system', 'compaction')"
+        },
+        "turns_ai_write_mode_valid": {
+          "name": "turns_ai_write_mode_valid",
+          "value": "\"turns\".\"ai_write_mode\" IS NULL OR \"turns\".\"ai_write_mode\" IN ('direct', 'draft')"
         },
         "turns_status_valid": {
           "name": "turns_status_valid",
@@ -5127,16 +5137,35 @@
           "name": "change_count",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "swept_change_count": {
           "name": "swept_change_count",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "document_count": {
           "name": "document_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "documents": {
+          "name": "documents",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "words_added": {
+          "name": "words_added",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "words_removed": {
+          "name": "words_removed",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -5230,7 +5259,7 @@
         },
         "change_trail_delivery_outbox_counts_valid": {
           "name": "change_trail_delivery_outbox_counts_valid",
-          "value": "(\"change_trail_delivery_outbox\".\"event_kind\" = 'settled' AND \"change_trail_delivery_outbox\".\"change_count\" IS NULL AND \"change_trail_delivery_outbox\".\"swept_change_count\" IS NULL AND \"change_trail_delivery_outbox\".\"document_count\" IS NULL) OR (\"change_trail_delivery_outbox\".\"event_kind\" = 'updated' AND \"change_trail_delivery_outbox\".\"change_count\" >= 0 AND \"change_trail_delivery_outbox\".\"swept_change_count\" >= 0 AND \"change_trail_delivery_outbox\".\"swept_change_count\" <= \"change_trail_delivery_outbox\".\"change_count\" AND \"change_trail_delivery_outbox\".\"document_count\" >= 0)"
+          "value": "\"change_trail_delivery_outbox\".\"change_count\" >= 0 AND \"change_trail_delivery_outbox\".\"swept_change_count\" >= 0 AND \"change_trail_delivery_outbox\".\"swept_change_count\" <= \"change_trail_delivery_outbox\".\"change_count\" AND \"change_trail_delivery_outbox\".\"document_count\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -5256,6 +5285,18 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "words_added": {
+          "name": "words_added",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "words_removed": {
+          "name": "words_removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "changes": {
           "name": "changes",
@@ -5318,13 +5359,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "projection_revision": {
-          "name": "projection_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         }
       },
       "indexes": {},
@@ -5409,6 +5443,25 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "documents": {
+          "name": "documents",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "words_added": {
+          "name": "words_added",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "words_removed": {
+          "name": "words_removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "settled_at": {
           "name": "settled_at",
@@ -6544,6 +6597,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "writer_document_id": {
+          "name": "writer_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "message": {
           "name": "message",
           "type": "text",
@@ -6556,6 +6615,20 @@
           "primaryKey": false,
           "notNull": true
         },
+        "writer_visible": {
+          "name": "writer_visible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "writer_consumed": {
+          "name": "writer_consumed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6564,8 +6637,40 @@
           "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "pending_notices_writer": {
+          "name": "pending_notices_writer",
+          "columns": [
+            {
+              "expression": "writer_document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "writer_consumed",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_notices_writer_document_id_documents_id_fk": {
+          "name": "pending_notices_writer_document_id_documents_id_fk",
+          "tableFrom": "pending_notices",
+          "tableTo": "documents",
+          "columnsFrom": ["writer_document_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

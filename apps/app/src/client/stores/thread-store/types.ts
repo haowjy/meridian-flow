@@ -48,6 +48,7 @@ export type LiveTurnMeta = {
 export type EnsureAssistantTurnOptions = {
   createdAt?: string;
   prevTurnId?: string | null;
+  writeMode?: Turn["writeMode"];
 };
 
 export type TurnStatusPatch = Partial<

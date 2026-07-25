@@ -2,9 +2,13 @@
  * Browse-layer helpers for project context HTTP routes.
  * Project routes use the same scheme names as the unified ContextPort.
  */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+  type WorkAuthorityScheme,
+} from "@meridian/contracts/protocol";
 
-export const WORK_SCOPED_BROWSE_SCHEMES = new Set<ProjectContextTreeScheme>(["scratch", "uploads"]);
+export const isWorkScopedBrowseScheme = isWorkScopedProjectContextScheme;
 
 export function projectBrowseContextUri(
   scheme: ProjectContextTreeScheme,
@@ -12,14 +16,14 @@ export function projectBrowseContextUri(
   workId?: string | null,
 ): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
-  if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
-    return workScopedBrowseUri(scheme as "scratch" | "uploads", workId ?? "", normalized);
+  if (isWorkScopedBrowseScheme(scheme)) {
+    return workScopedBrowseUri(scheme, workId ?? "", normalized);
   }
   return normalized ? `${scheme}://${normalized}` : `${scheme}://`;
 }
 
 export function workScopedBrowseUri(
-  scheme: "scratch" | "uploads",
+  scheme: WorkAuthorityScheme,
   workId: string,
   path = "",
 ): string {

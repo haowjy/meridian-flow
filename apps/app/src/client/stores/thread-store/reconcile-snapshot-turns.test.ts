@@ -35,6 +35,7 @@ function turn(id: string, blocks: Block[] = [], status: Turn["status"] = "comple
     threadId: "thread-1",
     prevTurnId: null,
     role: id.startsWith(OPTIMISTIC_TURN_ID_PREFIX) ? "user" : "assistant",
+    writeMode: null,
     status,
     finishReason: null,
     error: null,

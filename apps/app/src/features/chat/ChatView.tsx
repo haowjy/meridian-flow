@@ -10,8 +10,7 @@
  *
  * Pending AI changes live in the composer-attached `DraftDock` (a single,
  * work-scoped strip that shares the composer's border box), never in the
- * transcript. `draftTurnIds` is only a cosmetic hint so a draft-producing turn's
- * write tool rows read "Drafted".
+ * transcript.
  *
  * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
  * editor bar share one controller so preview selection cannot drift.
@@ -19,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
@@ -34,7 +33,6 @@ import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { DraftModeIndicator } from "./DraftModeIndicator";
-import { useDraftReview } from "./DraftReviewProvider";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
@@ -99,7 +97,6 @@ export function ChatView({
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
-  const { drafts } = useDraftReview();
   const draftMode = activeWork?.aiWriteMode === "draft";
   // Generating signal: the current thread's latest assistant turn is streaming
   // AND the Work is in draft mode. That is the cleanest "this streaming turn is
@@ -107,18 +104,6 @@ export function ChatView({
   // is a later server phase); auto-apply streams never light the dock.
   const generating = isStreaming && draftMode;
   const dock = useDraftDock({ generating });
-
-  // Cosmetic hint: turns that produced an AI draft render "Drafted" on write
-  // tool rows. Derived from the draft list's `lastActorTurnId`, keyed off the
-  // draft identities so streaming/block churn doesn't rebuild the set.
-  const draftTurnKey = (drafts.groups ?? [])
-    .flatMap((group) => group.drafts.map((draft) => draft.lastActorTurnId))
-    .filter((id): id is string => Boolean(id))
-    .join("|");
-  const draftTurnIds = useMemo<ReadonlySet<string>>(
-    () => new Set(draftTurnKey.length > 0 ? draftTurnKey.split("|") : []),
-    [draftTurnKey],
-  );
 
   async function handleSubmit(text: string) {
     requestTailFollow();
@@ -197,7 +182,6 @@ export function ChatView({
         tailFollowRevision={tailFollowRevision}
         ariaLabel={t`Chat`}
         onRespondToInterrupt={handleRespondToInterrupt}
-        draftTurnIds={draftTurnIds}
         changeTrails={changeTrails.byId}
       />
     </ChatSurface>

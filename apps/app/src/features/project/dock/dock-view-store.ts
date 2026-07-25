@@ -55,6 +55,19 @@ export type ResolvedDockView = {
   primaryView: DockView;
 };
 
+/** Remove the Changes destination when its model is empty. */
+export function withoutEmptyChanges(
+  resolved: ResolvedDockView,
+  hasChanges: boolean,
+): ResolvedDockView {
+  if (hasChanges) return resolved;
+  return {
+    ...resolved,
+    view: resolved.view === "changes" ? resolved.primaryView : resolved.view,
+    views: resolved.views.filter((view) => view !== "changes"),
+  };
+}
+
 /**
  * Pure resolution: the active view is the writer's stored choice when it is
  * still valid for this screen's set, otherwise the screen's default. Kept
