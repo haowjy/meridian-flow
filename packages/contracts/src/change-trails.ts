@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const yjsIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
-export type TrailForwardAction = "restore" | "delete-again";
+export type TrailForwardAction = "restore";
 
 export type TrailForwardActionStateV1 =
   | {
@@ -26,17 +26,6 @@ export type TrailForwardActionResult =
 export type HistoricalBody =
   | { status: "available"; markdown: string }
   | { status: "unavailable"; reason: string };
-
-export type WriterImpact =
-  | {
-      kind: "sweep";
-      affectedBlockHash: string;
-      affectedBlockIdentity?: CanonicalBlockIdentityV1;
-      body: HistoricalBody;
-      beforeContentRef: number | null;
-      ranges?: Array<{ clientID: number; clock: number; length: number }>;
-    }
-  | { kind: "resurrection"; body: HistoricalBody };
 
 /** Stable Yjs block identity. Display hashlines are deliberately excluded. */
 export type CanonicalBlockIdentityV1 = {
@@ -73,7 +62,6 @@ export type TrailChangeV1 = {
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation: NavigationTargetV1;
-  writerImpact: WriterImpact | null;
   forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
   reversible: false;
 };
@@ -86,7 +74,6 @@ export type ChangeTrailShellV1 = {
   state: "building" | "settling" | "settled";
   version: number;
   changeCount: number;
-  writerImpactCount: number;
   documentCount: number;
   documents: Array<{ documentId: string; title: string }>;
   wordsAdded: number | null;
@@ -176,31 +163,9 @@ export const trailChangeV1Schema = z.object({
   beforeText: z.string().nullable(),
   afterTextAtReceipt: z.string().nullable(),
   navigation: navigationTargetV1Schema,
-  writerImpact: z
-    .discriminatedUnion("kind", [
-      z.object({
-        kind: z.literal("sweep"),
-        affectedBlockHash: z.string(),
-        affectedBlockIdentity: canonicalBlockIdentityV1Schema.optional(),
-        body: historicalBodySchema,
-        beforeContentRef: z.number().int().nullable(),
-        ranges: z
-          .array(
-            z.object({
-              clientID: yjsIntegerSchema,
-              clock: yjsIntegerSchema,
-              length: z.number().int().positive(),
-            }),
-          )
-          .optional(),
-      }),
-      z.object({ kind: z.literal("resurrection"), body: historicalBodySchema }),
-    ])
-    .nullable(),
   forwardActions: z
     .object({
       restore: trailForwardActionStateV1Schema.optional(),
-      "delete-again": trailForwardActionStateV1Schema.optional(),
     })
     .optional(),
   reversible: z.literal(false),
@@ -215,7 +180,6 @@ export const changeTrailShellV1Schema: z.ZodType<ChangeTrailShellV1> = z.object(
   state: z.enum(["building", "settling", "settled"]),
   version: z.number().int(),
   changeCount: z.number().int(),
-  writerImpactCount: z.number().int(),
   documentCount: z.number().int(),
   documents: z.array(z.object({ documentId: z.string(), title: z.string() })),
   wordsAdded: z.number().int().nullable(),

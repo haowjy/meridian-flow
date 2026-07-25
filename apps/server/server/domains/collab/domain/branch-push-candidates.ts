@@ -30,7 +30,6 @@ export function buildWholeBranchCandidates(input: {
         rows: input.source.rows,
         kind: "content",
         materialization: "whole",
-        sweepPolicy: "project",
       },
     ],
     receiptId: randomUUID(),
@@ -53,7 +52,6 @@ export function buildSelectedRowCandidates(input: {
         rows: selected,
         kind: "content",
         materialization: "selected_rows",
-        sweepPolicy: "none",
       },
     ],
     receiptId: randomUUID(),
@@ -92,7 +90,6 @@ export function buildCompanionCandidates(input: {
           rows: contentRows,
           kind: "content",
           materialization: input.contentJournalIds ? "selected_rows" : "whole",
-          sweepPolicy: "project",
         },
         ...(manifestRows.length > 0
           ? [
@@ -102,7 +99,6 @@ export function buildCompanionCandidates(input: {
                 rows: manifestRows,
                 kind: "manifest" as const,
                 materialization: "selected_rows" as const,
-                sweepPolicy: "none" as const,
               },
             ]
           : []),

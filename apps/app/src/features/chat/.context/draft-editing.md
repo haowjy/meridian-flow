@@ -4,44 +4,31 @@ This page defines the chat contracts for turn edit receipts, Work-scoped write
 mode, and draft-review state. Turn rendering is documented separately in
 [turn composition](turn-composition.md).
 
-## Turn edits card (`TurnEditsCard.tsx`)
+## Turn edit receipt (`TurnEditsReceipt.tsx`)
 
-The per-turn Changes view is a default-collapsed record for committed document
-edits. Its header names one document or counts several and adds settled
+The per-turn receipt is a quiet, default-collapsed record for committed
+document edits. Its line names one document or counts several and adds settled
 `+added −removed words` totals when the trail shell has them. Live
 single-document headers derive the same URI title without inventing a delta.
 The shell carries header metadata, so collapse never triggers a detail fetch.
-Expanding shows live documents and authorized durable trail rows.
-
-Trail detail is writer-touching iff `writerImpact` is present:
-pure-generative changes render no detail rows, and mixed turns show only their
-writer-touching changes. A conversation reveal opened from an editor peer mark
-still surfaces and emphasizes its exact target row. The document line and
-whole-turn Undo remain regardless. Historical evidence comes from the
-authorized trail reader, and recovery actions remain visible after document
-loss even when their retained body is unavailable.
+Expanding shows live documents and every authorized durable trail row. Each row
+renders its retained Before and/or After excerpt; Copy is available on Before.
+A conversation reveal opened from an editor peer mark expands the receipt and
+emphasizes its exact target row.
 
 `AssistantTurn` combines server-owned facts: full turn lineage supplies document
 scope, the durable receipt supplies whole-turn Undo/Redo authority, and the
-settled trail supplies historical titles, word totals, and protected change
-rows. Both direct and draft lineage may produce the same card. A draft proposal
+settled trail supplies historical titles, word totals, and change rows. Both
+direct and draft lineage may produce the same receipt. A draft proposal
 with neither live lineage nor settled trail documents produces no card; after
 Apply, the committed receipt remains visible across reload.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `branch-active`, reversed, dependent, or expired) decides whether
-it is available. Unavailable actions render an explicit `Can't undo` notice and
-server-derived reason; the client does not invent local receipt state. Sweep and
-resurrection rows retain only forward human actions (`Restore` / `Delete again`),
-idempotent by `changeId`. Captured bodies remain visible after document loss and
-reload, and deleted live anchors degrade navigation without discarding evidence.
-Sweep rows use the warning-chip treatment so their severity survives outside the
-editor without becoming an alert banner.
-
-Every settled trail receipt exposes **Clear marks**, including receipts whose
-expanded detail has no writer-impact rows. It dismisses that trail's ephemeral
-session marks in every open document; it does not reverse prose, change durable
-trail evidence, or alter Restore/Delete-again state.
+it is available. Unavailable actions render a compact `Can't undo` pill; the
+server-derived reason appears only after expansion. Captured Before/After
+excerpts remain visible after document loss and reload, and deleted live anchors
+degrade navigation without discarding the receipt.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review
@@ -95,14 +82,11 @@ The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
 resize loop requires `field-sizing: fixed`. Keep that override inline:
 Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
-### Change-trail row suppression
+### Change-trail rows
 
-`TurnEditsCard` filters every document to changes with `writerImpact`;
-change kind is never the gate. A pure-generative document therefore has no
-detail rows, while a mixed document shows only its writer-touching rows. The
-card remains visible because it carries the document line and whole-turn Undo.
-The one-shot *Open conversation* reveal may additionally mount its exact
-targeted row as described above.
+`TurnEditsReceipt` renders every authorized trail change in ordinal order. The
+one-shot *Open conversation* reveal only expands the receipt and emphasizes the
+target row; it does not change which rows are mounted.
 
 ## Draft review architecture
 

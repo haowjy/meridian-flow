@@ -41,7 +41,6 @@ export function createDrizzleChangeTrailReader(
       state: row.state,
       version: row.version,
       changeCount: row.changeCount,
-      writerImpactCount: row.writerImpactCount,
       documentCount: row.documentCount,
       documents: row.documents,
       wordsAdded: row.wordsAdded,

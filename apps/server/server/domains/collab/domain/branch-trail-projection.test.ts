@@ -14,58 +14,7 @@ import type { BranchJournalRow } from "./branch-push-contracts.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
-  projectPushWriterImpact,
 } from "./branch-trail-projection.js";
-import type { RawTrailChange } from "./trail-read-kernel.js";
-
-it("projects push reporting only from finalized sweep impacts", () => {
-  const base: RawTrailChange = {
-    changeId: "sweep",
-    documentId: "document-1",
-    pushId: "push-1",
-    receiptId: "receipt-1",
-    kind: "delete",
-    beforeBlockId: "before",
-    afterBlockId: null,
-    beforeText: "before|Writer text.",
-    afterTextAtReceipt: null,
-    navigation: { kind: "unavailable", reason: "test" },
-    writerImpact: {
-      kind: "sweep",
-      affectedBlockHash: "writer-block",
-      body: { status: "available", markdown: "Writer text." },
-      beforeContentRef: 7,
-    },
-    owner: null,
-    sequence: 0,
-  };
-  const resurrection: RawTrailChange = {
-    ...base,
-    changeId: "resurrection",
-    receiptId: "unrelated-receipt",
-    writerImpact: {
-      kind: "resurrection",
-      body: { status: "available", markdown: "Writer-deleted text." },
-    },
-  };
-
-  expect(projectPushWriterImpact([resurrection, base])).toEqual({
-    affectedBlockHashes: ["writer-block"],
-    capturedDeletedBodies: [{ hash: "writer-block", body: "Writer text." }],
-    beforeContentRef: 7,
-    receiptId: "receipt-1",
-    locations: [
-      {
-        changeId: "sweep",
-        affectedBlockHash: "writer-block",
-        outcome: "delete",
-        navigation: { kind: "unavailable", reason: "test" },
-      },
-    ],
-    reversible: false,
-  });
-  expect(projectPushWriterImpact([resurrection])).toBeUndefined();
-});
 
 it("projects a same-identity whole-block rewrite as a live modification", () => {
   const schema = buildDocumentSchema();
@@ -134,17 +83,14 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
     receiptId: "receipt-same-identity",
     ownersByBlock: attribution.ownersByBlock,
     operations: [],
-    writerImpactBlocks: [beforeId],
     before: [{ hash: beforeId, serialized: "Writer text." }],
     blockIdentities: new Map([
       [beforeId, { documentId: "document-1", ...getBlockItemId(beforeBlock) }],
       [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
     ]),
-    beforeBodies: new Map([[beforeId, "Writer text."]]),
     afterIds: new Set([afterId]),
     afterById: new Map([[afterId, afterElement]]),
     afterDoc: branchDoc,
-    beforeContentRef: 1,
   });
 
   expect(changes).toHaveLength(1);
@@ -193,17 +139,14 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
     receiptId: "receipt-emptied-identity",
     ownersByBlock: new Map([[afterId, [null]]]),
     operations: [],
-    writerImpactBlocks: [],
     before: [{ hash: afterId, serialized: "Agent replacement." }],
     blockIdentities: new Map([
       [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
       [emptiedId, { documentId: "document-1", ...getBlockItemId(emptiedBlock) }],
     ]),
-    beforeBodies: new Map([[afterId, "Agent replacement."]]),
     afterIds: new Set([emptiedId]),
     afterById: new Map([[emptiedId, emptiedElement]]),
     afterDoc: branchDoc,
-    beforeContentRef: 1,
   });
 
   expect(emptiedChanges).toMatchObject([
@@ -300,17 +243,14 @@ it("projects a structurally adjacent whole-block replacement as one modification
         block: afterElement,
       })),
     })),
-    writerImpactBlocks: [beforeId],
     before: [{ hash: beforeId, serialized: "Writer text." }],
     blockIdentities: new Map([
       [beforeId, { documentId: "document-1", ...beforeIdentity }],
       [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
     ]),
-    beforeBodies: new Map([[beforeId, "Writer text."]]),
     afterIds: new Set([afterId]),
     afterById: new Map([[afterId, afterElement]]),
     afterDoc,
-    beforeContentRef: 1,
   });
 
   expect(change).toMatchObject({
@@ -319,10 +259,6 @@ it("projects a structurally adjacent whole-block replacement as one modification
     afterTextAtReceipt: "Agent replacement.",
     afterBlockIdentity: { documentId: "document-1" },
     navigation: { kind: "live_block_range" },
-    writerImpact: {
-      kind: "sweep",
-      body: { status: "available", markdown: "Writer text." },
-    },
   });
   if (!change) throw new Error("missing projected change");
   const planned = planTrailForwardAction({
@@ -427,7 +363,6 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
         block: insertedElement,
       })),
     })),
-    writerImpactBlocks: [deletedId],
     before: [
       { hash: deletedId, serialized: "Deleted." },
       { hash: survivorId, serialized: "Survivor." },
@@ -436,14 +371,12 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
       [deletedId, { documentId: "document-1", ...getBlockItemId(deleted) }],
       [insertedId, { documentId: "document-1", ...getBlockItemId(inserted) }],
     ]),
-    beforeBodies: new Map([[deletedId, "Deleted."]]),
     afterIds: new Set([survivorAfterId, insertedId]),
     afterById: new Map([
       [survivorAfterId, survivorElement],
       [insertedId, insertedElement],
     ]),
     afterDoc,
-    beforeContentRef: 1,
   });
 
   expect(changes).toHaveLength(2);
@@ -452,7 +385,7 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
   expect(changes[1]?.navigation.kind).toBe("live_block_range");
 });
 
-it("preserves proven-writer-impact replacement promotion", () => {
+it("preserves proven replacement promotion", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));
   const model = yProsemirrorModel(schema);
@@ -505,17 +438,14 @@ it("preserves proven-writer-impact replacement promotion", () => {
         ambiguous: false,
       },
     ],
-    writerImpactBlocks: [beforeId],
     before: [{ hash: beforeId, serialized: "Before." }],
     blockIdentities: new Map([
       [beforeId, { documentId: "document-1", ...getBlockItemId(beforeBlock) }],
       [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
     ]),
-    beforeBodies: new Map([[beforeId, "Before."]]),
     afterIds: new Set([afterId]),
     afterById: new Map([[afterId, afterElement]]),
     afterDoc,
-    beforeContentRef: 1,
   });
 
   expect(changes).toHaveLength(1);
@@ -524,6 +454,5 @@ it("preserves proven-writer-impact replacement promotion", () => {
     beforeText: "Before.",
     afterTextAtReceipt: "After.",
     navigation: { kind: "live_block_range" },
-    writerImpact: { kind: "sweep" },
   });
 });

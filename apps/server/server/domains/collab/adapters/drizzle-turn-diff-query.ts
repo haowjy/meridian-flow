@@ -11,18 +11,12 @@ export function mapTrailChangeToTurnDiff(
   change: TrailChangeV1,
   documentId: string,
 ): TurnDiffChange {
-  const impactBody = change.writerImpact?.body;
-  const capturedBody = impactBody?.status === "available" ? impactBody.markdown : null;
-  const mergedOver = capturedBody
-    ? [{ body: capturedBody, writerAuthored: change.writerImpact !== null }]
-    : [];
-
   return {
     kind: change.kind,
     documentId,
     before: change.beforeText,
     after: change.afterTextAtReceipt,
-    mergedOver,
+    mergedOver: [],
   };
 }
 

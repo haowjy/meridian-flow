@@ -8,7 +8,6 @@ import type {
   BranchJournalRow,
   PreparedPush,
   PushReceiptPayload,
-  PushWriterImpactReport,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
@@ -22,7 +21,6 @@ import {
   canonicalBlockKey,
   deletionBoundaryTarget,
   liveBlockTarget,
-  navigationForSweptBlock,
   normalizeTrailPushes,
   type RawTrailChange,
   type ReplacementOperation,
@@ -148,17 +146,12 @@ export function preparedTrailChanges(input: {
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
-  writerImpactBlocks: readonly string[];
   before: readonly { hash: string; serialized: string }[];
   blockIdentities: ReadonlyMap<string, CanonicalBlockIdentityV1>;
-  beforeBodies: ReadonlyMap<string, string>;
   afterIds: ReadonlySet<string>;
   afterById: ReadonlyMap<string, Y.XmlElement>;
   afterDoc: Y.Doc;
-  beforeContentRef: number | null;
-  resurrectionBodies?: ReadonlyMap<string, string>;
 }): RawTrailChange[] {
-  const impacted = new Set(input.writerImpactBlocks);
   const provenReplacements = new Map<string, string>();
   for (const operation of input.operations) {
     if (
@@ -192,36 +185,14 @@ export function preparedTrailChanges(input: {
     const previousId = [...input.before.slice(0, Math.max(0, beforeIndex))]
       .reverse()
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
-    const hasWriterImpact = impacted.has(block.blockId);
-    const resurrectionBody = input.resurrectionBodies?.get(block.blockId);
-    const wholeDocumentReplacement =
-      hasWriterImpact &&
-      input.before.length === 1 &&
-      input.before[0]?.hash === block.blockId &&
-      !nextId &&
-      !previousId
-        ? input.afterDoc.getXmlFragment("prosemirror").get(0)
-        : null;
-    const safeNextBoundary =
-      wholeDocumentReplacement instanceof Y.XmlElement ? wholeDocumentReplacement : null;
     const ordinaryNavigation =
       block.afterText !== null && input.afterById.get(block.blockId)
         ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
         : deletionBoundaryTarget({
             doc: input.afterDoc,
-            next: nextId ? input.afterById.get(nextId) : safeNextBoundary,
+            next: nextId ? input.afterById.get(nextId) : null,
             previous: previousId ? input.afterById.get(previousId) : null,
           });
-    const sweptNavigation =
-      hasWriterImpact && resurrectionBody === undefined
-        ? navigationForSweptBlock({
-            affectedBlockHash: block.blockId,
-            afterDoc: input.afterDoc,
-            operations: input.operations,
-            nextSurvivor: nextId ? input.afterById.get(nextId) : safeNextBoundary,
-            previousSurvivor: previousId ? input.afterById.get(previousId) : null,
-          })
-        : null;
     const beforeIdentity =
       block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
     const sameIdentityAfter =
@@ -261,22 +232,20 @@ export function preparedTrailChanges(input: {
         ? "delete"
         : replacementId !== undefined
           ? "modify"
-          : (sweptNavigation?.outcome ??
-            (block.beforeText === null
-              ? "insert"
-              : block.afterText === null
-                ? "delete"
-                : "modify")),
+          : block.beforeText === null
+            ? "insert"
+            : block.afterText === null
+              ? "delete"
+              : "modify",
       beforeIdentity,
       afterIdentity,
       navigation: emptiedSurvivingBlock
         ? deletionBoundaryTarget({ doc: input.afterDoc, next: sameIdentityAfter.block })
         : sameIdentityAfter
           ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
-          : (sweptNavigation?.navigation ??
-            (replacementBlock
-              ? liveBlockTarget(input.afterDoc, replacementBlock)
-              : ordinaryNavigation)),
+          : replacementBlock
+            ? liveBlockTarget(input.afterDoc, replacementBlock)
+            : ordinaryNavigation,
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
@@ -297,21 +266,6 @@ export function preparedTrailChanges(input: {
         ? block.afterText
         : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
-      writerImpact:
-        resurrectionBody !== undefined
-          ? {
-              kind: "resurrection" as const,
-              body: bodyFromHashline(resurrectionBody),
-            }
-          : hasWriterImpact
-            ? {
-                kind: "sweep" as const,
-                affectedBlockHash: block.blockId,
-                affectedBlockIdentity: stableIdentity,
-                body: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
-                beforeContentRef: input.beforeContentRef,
-              }
-            : null,
       owner,
       sequence: sequence * 1000 + ownerIndex,
     }));
@@ -354,8 +308,7 @@ export async function persistDurableTrailRecord(
 export function trailContributionReplacement(
   record: DurableTrailRecord,
   push: { id: number },
-  kind: "refine" | "empty",
-  classifications: DurableTrailRecord["changes"] = record.changes,
+  contribution: DurableTrailRecord["changes"] = record.changes,
 ): TrailContributionReplacement {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
@@ -368,59 +321,24 @@ export function trailContributionReplacement(
       journalOwners: record.journalOwners,
     })),
   );
-  const classified =
-    kind === "refine"
-      ? normalizeTrailPushes(
-          record.threadIds.map((threadId) => ({
-            pushId,
-            receiptId: record.receiptId,
-            threadId,
-            changes: classifications.map((change) => ({ ...change, pushId })),
-            journalOwners: record.journalOwners,
-          })),
-        )
-      : [];
-  const classifiedByOwner = new Map(
-    classified.map((trail) => [JSON.stringify(trail.owner), trail.changes]),
+  const normalizedContribution = normalizeTrailPushes(
+    record.threadIds.map((threadId) => ({
+      pushId,
+      receiptId: record.receiptId,
+      threadId,
+      changes: contribution.map((change) => ({ ...change, pushId })),
+      journalOwners: record.journalOwners,
+    })),
+  );
+  const contributionByOwner = new Map(
+    normalizedContribution.map((trail) => [JSON.stringify(trail.owner), trail.changes]),
   );
   return {
-    kind,
     targets: trails.map((trail) => ({
       owner: trail.owner,
-      classifications: classifiedByOwner.get(JSON.stringify(trail.owner)) ?? [],
+      changes: contributionByOwner.get(JSON.stringify(trail.owner)) ?? [],
     })),
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
-  };
-}
-
-export function projectPushWriterImpact(
-  changes: readonly RawTrailChange[],
-): PushWriterImpactReport | undefined {
-  const impactedChanges = changes.flatMap((change) =>
-    change.writerImpact?.kind === "sweep" ? [{ change, writerImpact: change.writerImpact }] : [],
-  );
-  const first = impactedChanges[0];
-  if (!first) return undefined;
-  return {
-    affectedBlockHashes: [
-      ...new Set(impactedChanges.map(({ writerImpact }) => writerImpact.affectedBlockHash)),
-    ],
-    capturedDeletedBodies: impactedChanges.map(({ writerImpact }) => ({
-      hash: writerImpact.affectedBlockHash,
-      body:
-        writerImpact.body.status === "available" ? writerImpact.body.markdown : "body_unavailable",
-    })),
-    beforeContentRef: first.writerImpact.beforeContentRef,
-    receiptId: first.change.receiptId as string,
-    locations: impactedChanges.map(({ change, writerImpact }) => ({
-      changeId: change.changeId,
-      affectedBlockHash: writerImpact.affectedBlockHash,
-      outcome: change.kind === "modify" ? "modify" : "delete",
-      navigation: change.navigation,
-    })),
-    // Push-target reversal is not an exposed contract yet. Retaining a
-    // baseline alone must never be presented as an undo affordance.
-    reversible: false,
   };
 }
 

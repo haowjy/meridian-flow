@@ -197,18 +197,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const trails = await db.select().from(schema.changeTrailShells);
       expect(trails).toHaveLength(1);
       const [trail] = trails;
-      expect(trail?.writerImpactCount).toBe(1);
+      expect(trail?.changeCount).toBeGreaterThan(0);
       const [details] = await db.select().from(schema.changeTrailDocumentDetails);
-      const writerImpactBodies = (
-        (details?.changes ?? []) as Array<{
-          writerImpact?: { kind: string; body?: { markdown?: string } };
-        }>
-      ).flatMap((change) =>
-        change.writerImpact?.kind === "sweep" ? [change.writerImpact.body?.markdown?.trim()] : [],
+      const beforeBodies = (
+        (details?.changes ?? []) as Array<{ beforeText?: string | null }>
+      ).flatMap((change) => {
+        if (!change.beforeText) return [];
+        const separator = change.beforeText.indexOf("|");
+        return [
+          (separator < 0 ? change.beforeText : change.beforeText.slice(separator + 1)).trim(),
+        ];
+      });
+      expect(beforeBodies).toContain(writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.");
+      expect(details?.changes).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ writerImpact: expect.anything() })]),
       );
-      expect(writerImpactBodies).toEqual([
-        writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
-      ]);
       await room.disconnect();
       await unloadRuntime(runtime.hocuspocus);
 
@@ -242,10 +245,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const change = (
           (details?.changes ?? []) as Array<{
             changeId: string;
-            writerImpact?: { kind: string };
+            beforeText?: string | null;
           }>
-        ).find((candidate) => candidate.writerImpact?.kind === "sweep");
-        if (!trail || !change) throw new Error("S2 trail has no restorable writer-impact change");
+        ).find((candidate) => candidate.beforeText?.includes("Writer V2 unseen."));
+        if (!trail || !change) throw new Error("S2 trail has no restorable receipt change");
         const action = {
           threadId: THREAD_ID,
           trailId: trail.id,
@@ -280,16 +283,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const retained = reloaded as {
           anchorState?: "available" | "deleted";
           changes?: Array<{
-            writerImpact?: { kind?: string; body?: { markdown?: string } };
+            beforeText?: string | null;
             forwardActions?: { restore?: { status?: string } };
           }>;
         };
-        const retainedImpact = retained.changes?.find(
-          (candidate) => candidate.writerImpact?.kind === "sweep",
+        const retainedChange = retained.changes?.find((candidate) =>
+          candidate.beforeText?.includes("Writer V2 unseen."),
         );
         expect(retained.anchorState).toBe("deleted");
-        expect(retainedImpact?.writerImpact?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
-        expect(retainedImpact?.forwardActions?.restore?.status).toBe("applied");
+        expect(retainedChange?.forwardActions?.restore?.status).toBe("applied");
         await unloadRuntime(runtime.hocuspocus);
       }
     }

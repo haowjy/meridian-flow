@@ -8,11 +8,13 @@
 - `apps/app`: AI change marks now use localized passage verbs, clear AI
   attribution, readable removed prose, and warning treatment for swept edits.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
-  underlines, reserve warning tint for swept edits, and can be cleared by trail.
+  underlines, reserve warning tint for swept edits, and expire with the live
+  session or a writer edit.
 - `apps/app`: collaboration awareness now publishes resolved cursor colors
   instead of unsupported CSS variable references.
-- `apps/app`, `apps/server`: change trails now use one writer-impact authority
-  for ownership, counts, marks, self-diffs, and Restore/Delete-again recovery.
+- `apps/app`, `apps/server`: compact turn receipts now retain every AI change
+  with Before/After excerpts and Copy, while swept status remains a live-only
+  mark elevation instead of durable trail classification.
 - `apps/app`: draft review manuscripts now render the server draft projection
   without splicing removed live text into proposed prose.
 - `apps/app`, `apps/server`: draft review rooms are read-only in TipTap and
@@ -28,12 +30,12 @@
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.
-- `apps/app`, `apps/server`, `packages/agent-edit`: change trails hide
-  pure-generative rows while retaining writer-touching changes, and agents can
-  inspect their settled turn effect with `write(command: "diff")`; auto-applied
-  live updates retain that same authoring turn attribution.
-- `apps/app`: Restore and Delete-again now share one query-backed recovery
-  command, so editor marks and mounted trail rows converge on durable status.
+- `apps/app`, `apps/server`, `packages/agent-edit`: agents can inspect their
+  settled turn effect with `write(command: "diff")`; auto-applied live updates
+  retain that same authoring turn attribution, and receipts show the complete
+  settled change set.
+- `apps/app`: swept editor marks vend trail-backed Restore while receipts remain
+  read-only records with Undo/Redo and Copy.
 - `apps/app`: draft chips, dock rows, and write-mode confirmation now project
   from one canonical pending-review collection.
 - `apps/app`: draft Apply, Discard, Undo, and bulk commands now share one
@@ -57,8 +59,8 @@
   candidate-batch pipeline and required persistence ports without changing
   selective error identity, empty companion results, or whole-only notice
   requirements.
-- `apps/server`: final branch-push classification now restores trail
-  contributions that provisional aggregate folding had cancelled away.
+- `apps/server`: final branch-push settlement restores receipt contributions
+  that provisional aggregate folding had cancelled away.
 - `apps/server`: branch pushes and trail actions now use the filetype-aware
   document projection engine; code files persist raw text and unsupported
   filetypes block settlement instead of storing markdown-shaped projections.

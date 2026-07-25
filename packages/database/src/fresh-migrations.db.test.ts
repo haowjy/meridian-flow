@@ -71,7 +71,7 @@ if (!enabled || !databaseUrl) {
       }
     });
 
-    it("rewrites legacy trail evidence into one writer-impact authority", async () => {
+    it("deletes branch-local writer-impact storage", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       const migration = await readFile(
         new URL("./migrations/0064_writer_impact.sql", import.meta.url),
@@ -95,56 +95,10 @@ if (!enabled || !databaseUrl) {
       const changes = [
         {
           ...base,
-          changeId: "sweep",
-          swept: {
-            affectedBlockHash: "hash",
-            affectedBlockIdentity: { documentId: "document", clientID: 1, clock: 2 },
-            removed: { status: "available", markdown: "fallback" },
-            beforeContentRef: null,
-          },
-          writerProtection: {
-            kind: "sweep",
-            body: { status: "available", markdown: "writer body" },
-            ranges: [{ clientID: 1, clock: 2, length: 3 }],
-          },
+          swept: { affectedBlockHash: "hash" },
+          writerProtection: { kind: "sweep" },
+          writerImpact: { kind: "sweep" },
         },
-        {
-          ...base,
-          changeId: "resurrection",
-          swept: {
-            affectedBlockHash: "superseded-hash",
-            removed: { status: "available", markdown: "superseded body" },
-            beforeContentRef: 9,
-          },
-          writerProtection: {
-            kind: "resurrection",
-            body: { status: "available", markdown: "restored" },
-          },
-        },
-        {
-          ...base,
-          changeId: "refined-sweep",
-          swept: {
-            affectedBlockHash: "refined-hash",
-            removed: { status: "unavailable", reason: "capture_failed" },
-            beforeContentRef: null,
-          },
-        },
-        {
-          ...base,
-          changeId: "empty-ranges",
-          swept: {
-            affectedBlockHash: "empty-ranges-hash",
-            removed: { status: "available", markdown: "fallback" },
-            beforeContentRef: 5,
-          },
-          writerProtection: {
-            kind: "sweep",
-            body: { status: "available", markdown: "protected" },
-            ranges: [],
-          },
-        },
-        { ...base, changeId: "ordinary", swept: null },
       ];
       try {
         await target.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
@@ -154,13 +108,9 @@ if (!enabled || !databaseUrl) {
           await tx.unsafe(`
             CREATE TABLE change_trail_document_details (changes jsonb NOT NULL);
             CREATE TABLE change_trail_delivery_outbox (
-              event_kind text NOT NULL,
               change_count integer NOT NULL,
               swept_change_count integer NOT NULL,
               document_count integer NOT NULL,
-              documents jsonb DEFAULT '[]'::jsonb NOT NULL,
-              words_added integer,
-              words_removed integer,
               CONSTRAINT change_trail_delivery_outbox_counts_valid CHECK (true)
             );
             CREATE TABLE change_trail_shells (
@@ -172,6 +122,7 @@ if (!enabled || !databaseUrl) {
               settled_at timestamptz,
               CONSTRAINT change_trail_shells_state_counts_valid CHECK (true)
             );
+            CREATE TABLE branch_push_settlement_outbox (before_content_ref bigint);
           `);
           await tx`
             INSERT INTO change_trail_document_details (changes)
@@ -182,66 +133,13 @@ if (!enabled || !databaseUrl) {
           const [row] = await tx<{ changes: unknown }[]>`
             SELECT changes FROM change_trail_document_details
           `;
-          const parsed = parseTrailChangesV1(row?.changes);
-          expect(parsed).toEqual([
-            {
-              ...base,
-              changeId: "sweep",
-              writerImpact: {
-                kind: "sweep",
-                affectedBlockHash: "hash",
-                affectedBlockIdentity: { documentId: "document", clientID: 1, clock: 2 },
-                body: { status: "available", markdown: "writer body" },
-                beforeContentRef: null,
-                ranges: [{ clientID: 1, clock: 2, length: 3 }],
-              },
-            },
-            {
-              ...base,
-              changeId: "resurrection",
-              writerImpact: {
-                kind: "resurrection",
-                body: { status: "available", markdown: "restored" },
-              },
-            },
-            {
-              ...base,
-              changeId: "refined-sweep",
-              writerImpact: {
-                kind: "sweep",
-                affectedBlockHash: "refined-hash",
-                body: { status: "unavailable", reason: "capture_failed" },
-                beforeContentRef: null,
-              },
-            },
-            {
-              ...base,
-              changeId: "empty-ranges",
-              writerImpact: {
-                kind: "sweep",
-                affectedBlockHash: "empty-ranges-hash",
-                body: { status: "available", markdown: "protected" },
-                beforeContentRef: 5,
-                ranges: [],
-              },
-            },
-            { ...base, changeId: "ordinary", writerImpact: null },
-          ]);
-          const columns = await tx<{ table_name: string; column_name: string }[]>`
-            SELECT table_name, column_name
-            FROM information_schema.columns
+          expect(parseTrailChangesV1(row?.changes)).toEqual([base]);
+          const removedColumns = await tx<{ column_name: string }[]>`
+            SELECT column_name FROM information_schema.columns
             WHERE table_schema = ${schema}
-              AND table_name IN ('change_trail_delivery_outbox', 'change_trail_shells')
-              AND column_name LIKE '%impact_count'
-            ORDER BY table_name
+              AND column_name IN ('swept_change_count', 'writer_impact_count', 'before_content_ref')
           `;
-          expect(columns).toEqual([
-            {
-              table_name: "change_trail_delivery_outbox",
-              column_name: "writer_impact_count",
-            },
-            { table_name: "change_trail_shells", column_name: "writer_impact_count" },
-          ]);
+          expect(removedColumns).toEqual([]);
         });
       } finally {
         await target.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);

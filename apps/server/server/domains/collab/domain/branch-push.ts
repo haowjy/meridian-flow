@@ -23,7 +23,6 @@ import {
   type PushLineageRow,
   type PushReceiptPayload,
   type PushToLiveResult,
-  type PushWriterImpactReport,
 } from "./branch-push-contracts.js";
 import {
   assertNoPendingIntegration,
@@ -35,7 +34,7 @@ import {
 } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
-import { buildDurablePushTrail, projectPushWriterImpact } from "./branch-trail-projection.js";
+import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
@@ -45,7 +44,6 @@ type ComputedCandidate = {
   pushUpdate: Uint8Array;
   receipt: PushReceiptPayload;
   idempotencyKey: string;
-  rowBaselineStates: ReadonlyMap<number, Uint8Array>;
   conflictEcho?: BranchPushConflictEcho;
 };
 
@@ -55,7 +53,6 @@ type BatchPipelineResult =
       kind: "committed";
       pushes: readonly PushLineageRow[];
       phases: readonly ComputedCandidate[];
-      writerImpacts: readonly (PushWriterImpactReport | undefined)[];
       liveAfterPush: ReadonlyMap<DocumentId, Uint8Array>;
       branchReset?: { branchId: string; fromGeneration: number };
     };
@@ -95,22 +92,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Promise<ComputedCandidate> {
     const rows = candidate.rows;
     const pushKind = candidate.materialization === "whole" ? "whole" : "selective";
-    const baselineSnapshots = new Map(
-      await Promise.all(
-        [...new Set(rows.map((row) => row.draftBaseUpdateSeq))].map(
-          async (seq) =>
-            [seq, await input.journal.read(branch.documentId, { until: seq })] as const,
-        ),
-      ),
-    );
-    const rowBaselineStates = new Map<number, Uint8Array>();
-    for (const [seq, snapshot] of baselineSnapshots) {
-      const doc = createCollabYDoc({ gc: false });
-      if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-      for (const journalRow of snapshot.updates) Y.applyUpdate(doc, journalRow.update);
-      rowBaselineStates.set(seq, Y.encodeStateAsUpdate(doc));
-      doc.destroy();
-    }
     const liveDoc = await loadLiveDoc(branch.documentId);
     const afterDoc = createCollabYDoc({ gc: false });
     let branchDoc: Y.Doc | null = null;
@@ -152,7 +133,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           journalIds: rows.map((row) => row.id),
           pushKind,
         }),
-        rowBaselineStates,
         ...(pushKind === "whole"
           ? {
               conflictEcho: conflictEchoFrom({
@@ -177,7 +157,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     receiptId: string,
   ) =>
     preparePushUnderLiveLock(
-      { journal: input.journal, model: input.model, attributionCodec },
+      { model: input.model, attributionCodec },
       {
         branch: phase.branch,
         rows: phase.candidate.rows,
@@ -185,7 +165,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         receipt: phase.receipt,
         idempotencyKey: phase.idempotencyKey,
         receiptId,
-        rowBaselineStates: phase.rowBaselineStates,
       },
       lockCutUpdate,
       receiptId,
@@ -201,7 +180,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       provenanceView: [],
       lockCutUpdate: prepared.lockCutUpdate,
       pushUpdate: prepared.prepared.pushUpdate,
-      beforeContentRef: prepared.beforeContentRef,
       trail,
     });
   }
@@ -236,13 +214,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         const titles = await Promise.all(
           phases.map((phase) => resolveDocumentTitle(phase.candidate.documentId)),
         );
-        const projectedImpacts = await Promise.all(
-          prepared.map(async (candidate, index) => {
-            const policy = phases[index]?.candidate.sweepPolicy;
-            if (policy !== "project") return undefined;
-            return projectPushWriterImpact(candidate.trailChanges);
-          }),
-        );
         const pushes = prepared.map((candidate, index) => {
           const phase = phases[index] as ComputedCandidate;
           const documentTitle = titles[index] ?? "Untitled document";
@@ -268,13 +239,10 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             push,
             phases,
           }),
-          finish: ({ pushes: committed, writerImpacts: lateWriterImpacts, docs }) => ({
+          finish: ({ pushes: committed, docs }) => ({
             kind: "committed" as const,
             pushes: committed,
             phases,
-            writerImpacts: lateWriterImpacts.map(
-              (lateWriterImpact, index) => lateWriterImpact ?? projectedImpacts[index],
-            ),
             liveAfterPush: new Map(
               phases.map((phase) => [
                 phase.candidate.documentId,
@@ -299,7 +267,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       kind: "committed",
       pushes: locked.pushes,
       phases,
-      writerImpacts: locked.writerImpacts,
       liveAfterPush: locked.liveAfterPush,
       ...(branchReset ? { branchReset } : {}),
     };
@@ -387,7 +354,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       update: phase.pushUpdate,
       ...(phase.conflictEcho ? { conflictEcho: phase.conflictEcho } : {}),
       ...(result.branchReset ? { branchReset: result.branchReset } : {}),
-      ...(result.writerImpacts[0] ? { writerImpact: result.writerImpacts[0] } : {}),
     };
   }
 

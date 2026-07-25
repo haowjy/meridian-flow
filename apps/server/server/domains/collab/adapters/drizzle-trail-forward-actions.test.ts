@@ -42,12 +42,6 @@ it("plans Restore at a validated live-root boundary", () => {
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    writerImpact: {
-      kind: "sweep",
-      affectedBlockHash: "before",
-      body: { status: "available", markdown: "Restored." },
-      beforeContentRef: null,
-    },
     reversible: false,
   };
   if (change.navigation.kind !== "deletion_boundary") throw new Error("missing boundary");
@@ -98,12 +92,6 @@ it("restores before a fresh-replaced block when projection retained only its ide
     beforeText: "writer|Writer V2.",
     afterTextAtReceipt: "agent|Agent replacement.",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    writerImpact: {
-      kind: "sweep",
-      affectedBlockHash: "writer",
-      body: { status: "available", markdown: "Writer V2." },
-      beforeContentRef: null,
-    },
     reversible: false,
   };
 
@@ -135,12 +123,6 @@ it("does not apply a stale Restore when a WebSocket mutation lands during persis
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    writerImpact: {
-      kind: "sweep",
-      affectedBlockHash: "before",
-      body: { status: "available", markdown: "Restored." },
-      beforeContentRef: null,
-    },
     reversible: false,
   };
 
@@ -238,12 +220,6 @@ function restoreFixture() {
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    writerImpact: {
-      kind: "sweep",
-      affectedBlockHash: "before",
-      body: { status: "available", markdown: "Restored." },
-      beforeContentRef: null,
-    },
     reversible: false,
   };
   return { codec, model, doc, change };

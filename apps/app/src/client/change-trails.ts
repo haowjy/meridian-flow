@@ -34,9 +34,9 @@ export type TrailShellTransition = {
   trailId: string;
   turnId: string | null;
   version: number;
-  counts?: { changes: number; writerImpact: number; documents: number };
+  counts?: { changes: number; documents: number };
   shell?: {
-    counts: { changes: number; writerImpact: number; documents: number };
+    counts: { changes: number; documents: number };
     documents: Array<{ documentId: string; title: string }>;
     wordsAdded: number | null;
     wordsRemoved: number | null;
@@ -56,7 +56,6 @@ export function applyTrailShellTransition(
     (prior
       ? {
           changes: prior.changeCount,
-          writerImpact: prior.writerImpactCount,
           documents: prior.documentCount,
         }
       : null);
@@ -71,7 +70,6 @@ export function applyTrailShellTransition(
     state: transition.kind === "settled" ? "settled" : "building",
     version: transition.version,
     changeCount: counts.changes,
-    writerImpactCount: counts.writerImpact,
     documentCount: counts.documents,
     documents: transition.shell?.documents ?? prior.documents,
     wordsAdded: transition.shell ? transition.shell.wordsAdded : prior.wordsAdded,

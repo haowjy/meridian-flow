@@ -108,39 +108,6 @@ export type ReplacementOperation = {
   ambiguous?: boolean;
 };
 
-export function navigationForSweptBlock(input: {
-  affectedBlockHash: string;
-  afterDoc: Y.Doc;
-  operations: readonly ReplacementOperation[];
-  nextSurvivor?: Y.XmlElement | null;
-  previousSurvivor?: Y.XmlElement | null;
-}): { outcome: "modify" | "delete"; navigation: NavigationTargetV1 } {
-  const candidates = input.operations.filter((operation) =>
-    operation.removedBlockHashes.includes(input.affectedBlockHash),
-  );
-  const operation = candidates.length === 1 ? candidates[0] : undefined;
-  if (
-    operation &&
-    !operation.ambiguous &&
-    operation.removedBlockHashes.length === 1 &&
-    operation.insertedBlocks.length === 1
-  ) {
-    const inserted = operation.insertedBlocks[0];
-    return {
-      outcome: "modify",
-      navigation: liveBlockTarget(input.afterDoc, inserted.block),
-    };
-  }
-  return {
-    outcome: "delete",
-    navigation: deletionBoundaryTarget({
-      doc: input.afterDoc,
-      next: input.nextSurvivor,
-      previous: input.previousSurvivor,
-    }),
-  };
-}
-
 export function bodyFromHashline(serialized: string | null): HistoricalBody {
   if (serialized === null) return { status: "unavailable", reason: "not_captured" };
   const separator = serialized.indexOf("|");
@@ -169,7 +136,7 @@ export type NormalizedTrail = {
     | { kind: "turn"; threadId: string; turnId: string }
     | { kind: "shared"; threadId: string; turnId: null };
   changes: TrailChangeV1[];
-  counts: { changes: number; writerImpact: number; documents: number };
+  counts: { changes: number; documents: number };
 };
 
 function ownerKey(owner: NormalizedTrail["owner"]): string {
@@ -188,27 +155,8 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
   };
   for (const push of pushes) {
     const hasOwnedChange = push.changes.some((change) => change.owner !== null);
-    const distinctOwners = new Map(
-      push.journalOwners.flatMap((owner) =>
-        owner ? [[`${owner.threadId}:${owner.turnId}`, owner] as const] : [],
-      ),
-    );
-    const writerImpactOwner =
-      push.journalOwners.length > 0 &&
-      !push.journalOwners.includes(null) &&
-      distinctOwners.size === 1
-        ? [...distinctOwners.values()][0]
-        : null;
     for (const change of push.changes) {
-      if (change.writerImpact !== null) {
-        const owner = writerImpactOwner;
-        append(
-          owner
-            ? { kind: "turn", threadId: owner.threadId, turnId: owner.turnId }
-            : { kind: "shared", threadId: push.threadId, turnId: null },
-          change,
-        );
-      } else if (change.owner) {
+      if (change.owner) {
         append({ kind: "turn", ...change.owner }, change);
       } else if (!hasOwnedChange) {
         append({ kind: "shared", threadId: push.threadId, turnId: null }, change);
@@ -224,7 +172,6 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
         changes: folded,
         counts: {
           changes: folded.length,
-          writerImpact: folded.filter((change) => change.writerImpact !== null).length,
           documents: new Set(
             folded.flatMap((change) => (change.documentId ? [change.documentId] : [])),
           ).size,
@@ -256,7 +203,6 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
             : "modify",
       beforeBlockId: previous.beforeBlockId,
       beforeText: previous.beforeText,
-      writerImpact: change.writerImpact ?? previous.writerImpact,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(identity);
     else folded.set(identity, combined);

@@ -110,11 +110,13 @@ propagation between them.
   (per `branchId`) then sorted live document coordinator locks. Never bypass it
   or reverse this order.
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes
-  all integrate through Yjs. Durable provenance classifies writer-root effects
-  for sweep trails and Restore; it never vetoes a push.
+  all integrate through Yjs. Settlement provenance detects swept writer-root
+  effects only for live-session marks; it never changes the durable receipt or
+  vetoes a push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
-  Echo informs the agent; writer-lineage sweeps are captured for the trail and
-  Restore; agent-only destruction is silent.
+  Echo informs the agent; swept changes elevate ephemeral marks, whose popover
+  vends Restore from the receipt's retained before-text. Agent-only destruction
+  is silent.
 - **Reversal availability is dependency-based**: canonical dependency checks may
   refuse a lossy undo. Destructive effects from an allowed agent reversal are
   reported without changing the reversal outcome.

@@ -1,12 +1,9 @@
 /**
- * TurnEditsCard — the existing per-turn Changes view for what a turn edited.
+ * TurnEditsReceipt — the compact per-turn receipt for what a turn edited.
  *
  * INVARIANT: record, not control panel — no draft affordance may be added here.
- * Review / Apply / Discard belong to the composer-attached DraftDock. The only
- * draft control this card carries is Undo. Expanded trail rows may carry the
- * recovery actions Restore and Delete again.
- *
- * Shape: a collapsed card at the end of every turn that edited live documents.
+ * Review / Apply / Discard belong to the composer-attached DraftDock. Undo/Redo
+ * is the only turn control. At rest, the receipt is one quiet borderless line.
  * The header names a single document when possible and carries durable word
  * deltas; expanding lists each document.
  *
@@ -22,7 +19,6 @@ import type { ReversalDirection } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
@@ -40,7 +36,7 @@ export type TurnEditDocument = {
   scope: "live" | "draft";
 };
 
-export function hasTurnEditsCardDocuments(
+export function hasTurnEditsReceiptDocuments(
   documents: TurnEditDocument[],
   changeTrail?: ChangeTrailShell,
 ): boolean {
@@ -50,7 +46,7 @@ export function hasTurnEditsCardDocuments(
   );
 }
 
-export type TurnEditsCardProps = {
+export type TurnEditsReceiptProps = {
   threadId: string;
   turn: Turn;
   documents: TurnEditDocument[];
@@ -59,14 +55,14 @@ export type TurnEditsCardProps = {
   navigateToChange?: NavigateToTrailChange;
 };
 
-export function TurnEditsCard({
+export function TurnEditsReceipt({
   threadId,
   turn,
   documents,
   receipt,
   changeTrail,
   navigateToChange,
-}: TurnEditsCardProps) {
+}: TurnEditsReceiptProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
@@ -83,7 +79,7 @@ export function TurnEditsCard({
   // Both callers must hand it the same thing or it owns the "is there a committed
   // receipt?" decision in name only — filtering first made its scope check dead
   // here while `AssistantTurn` still depends on it.
-  const hasEditedDocuments = hasTurnEditsCardDocuments(documents, changeTrail);
+  const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
   const headerDocuments = trailDocuments.length > 0 ? trailDocuments : liveDocuments;
   const headerDocumentCount = headerDocuments.length;
   const singleDocumentTitle =
@@ -122,31 +118,15 @@ export function TurnEditsCard({
       setPending(false);
     }
   }
-
-  function clearTrailMarks() {
-    if (!changeTrail) return;
-    const registry = getDocumentSessionRegistry();
-    for (const document of changeTrail.documents) {
-      registry.peek(document.documentId)?.markerStore.dismissGroup({
-        trailId: changeTrail.trailId,
-        documentId: document.documentId,
-      });
-    }
-  }
-
   return (
-    // overflow-hidden clips the header hover wash to the card radius.
-    <div
-      className="mt-3 overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
-      data-turn-edits-card
-    >
+    <div className="mt-3 min-h-7 rounded-md text-caption text-ink-muted" data-turn-receipt>
       {/* The WHOLE header row is the expand/collapse target — hover washes the
             full width, wrapping around the Undo chip, which fences its own click. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
+        className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted"
       >
         <button
           type="button"
@@ -204,43 +184,32 @@ export function TurnEditsCard({
             {receipt?.control === "redo" ? t`Redo` : t`Undo`}
           </Button>
         )}
-        {changeTrail?.state === "settled" && changeTrail.documents.length > 0 ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            onClick={(event) => {
-              event.stopPropagation();
-              clearTrailMarks();
-            }}
-            className="shrink-0"
-          >
-            <Trans>Clear marks</Trans>
-          </Button>
-        ) : null}
       </div>
-      {guardCopy ? (
-        <p className="px-3 pb-2 pl-9 text-ink-muted" data-undo-unavailable-reason>
-          {guardCopy}
-        </p>
-      ) : null}
       {expanded ? (
-        <div id={panelId} className="border-border-subtle border-t py-1">
-          <ul className="flex flex-col">
-            {liveDocuments.map((doc) => (
-              <li key={doc.uri}>
-                <DocumentRow document={doc} onOpenContextUri={openContextUri} />
-              </li>
-            ))}
-          </ul>
+        <div id={panelId} className="mt-1 border-border-subtle border-t py-1">
+          {guardCopy ? (
+            <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason>
+              {guardCopy}
+            </p>
+          ) : null}
           {changeTrail && navigateToChange ? (
             <ChangeViewDetail
               threadId={threadId}
               shell={changeTrail}
               navigateToChange={navigateToChange}
               reveal={activeReveal}
+              documents={liveDocuments}
+              onOpenContextUri={openContextUri}
             />
-          ) : null}
+          ) : (
+            <ul className="flex flex-col">
+              {liveDocuments.map((doc) => (
+                <li key={doc.uri}>
+                  <DocumentRow document={doc} onOpenContextUri={openContextUri} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       ) : null}
     </div>
@@ -252,11 +221,15 @@ export function ChangeViewDetail({
   shell,
   navigateToChange,
   reveal,
+  documents = [],
+  onOpenContextUri = null,
 }: {
   threadId: string;
   shell: ChangeTrailShell;
   navigateToChange: NavigateToTrailChange;
   reveal: ReturnType<typeof useConversationReveal>;
+  documents?: TurnEditDocument[];
+  onOpenContextUri?: ((uri: string) => void) | null;
 }) {
   const { detail } = useAuthorizedChangeTrailDetail(threadId, shell, true);
   if (shell.state !== "settled") return null;
@@ -280,21 +253,20 @@ export function ChangeViewDetail({
         </p>
       );
     }
-    const writerTouchingChanges = document.changes.filter((change) => change.writerImpact !== null);
-    const visibleChanges = reveal
-      ? [
-          ...writerTouchingChanges,
-          ...document.changes.filter(
-            (change) =>
-              change.changeId === reveal.changeId &&
-              !writerTouchingChanges.some((candidate) => candidate.changeId === change.changeId),
-          ),
-        ]
-      : writerTouchingChanges;
-    if (visibleChanges.length === 0) return null;
+    if (document.changes.length === 0) return null;
+    const liveDocument = documents.find(
+      (candidate) => candidate.documentId === document.documentId,
+    );
 
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
+        {liveDocument ? (
+          <DocumentRow document={liveDocument} onOpenContextUri={onOpenContextUri} />
+        ) : (
+          <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+            {document.documentTitle}
+          </span>
+        )}
         {document.anchorState === "deleted" ? (
           <p className="px-3 py-1 text-caption text-ink-muted">
             <Trans>
@@ -303,10 +275,8 @@ export function ChangeViewDetail({
           </p>
         ) : null}
         <ChangeViewRows
-          threadId={threadId}
-          trailId={shell.trailId}
           documentId={document.documentId}
-          changes={visibleChanges}
+          changes={document.changes}
           navigateToChange={navigateToChange}
           anchorUnavailable={document.anchorState === "deleted"}
           reveal={reveal}
@@ -354,11 +324,7 @@ function DocumentRow({
 }
 
 function documentCountLabel(count: number) {
-  return count === 1 ? (
-    <Trans>AI edited 1 chapter</Trans>
-  ) : (
-    <Trans>AI edited {count} chapters</Trans>
-  );
+  return count === 1 ? <Trans>Edited 1 chapter</Trans> : <Trans>Edited {count} chapters</Trans>;
 }
 
 function documentTitleLabel(title: string) {

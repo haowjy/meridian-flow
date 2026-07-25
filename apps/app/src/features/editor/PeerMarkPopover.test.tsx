@@ -19,12 +19,6 @@ const settledChange: TrailChange = {
   beforeText: "block-1|Writer text.",
   afterTextAtReceipt: null,
   navigation: { kind: "unavailable", reason: "test" },
-  writerImpact: {
-    kind: "sweep",
-    affectedBlockHash: "block-1",
-    body: { status: "available", markdown: "Writer text." },
-    beforeContentRef: null,
-  },
   forwardActions: {
     restore: { status: "settled", outcome: "retry_exhausted" },
   },
@@ -109,7 +103,7 @@ describe("PeerMarkPopover recovery", () => {
   it("attributes an untitled thread to AI rather than a bare chat title", async () => {
     currentThreadTitle = null;
     await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
-      expect(document.body.textContent).toContain("AI · New chat");
+      expect(document.body.textContent).toContain("AI assistant");
     });
   });
 
@@ -118,12 +112,7 @@ describe("PeerMarkPopover recovery", () => {
       "The archive doors opened into a corridor of ash where every footstep stirred the names of vanished kingdoms into the air.";
     currentChange = {
       ...settledChange,
-      writerImpact: {
-        kind: "sweep",
-        affectedBlockHash: "block-1",
-        body: { status: "available", markdown: longPassage },
-        beforeContentRef: null,
-      },
+      beforeText: `block-1|${longPassage}`,
     };
     await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
       const removedText = [...document.querySelectorAll("p")].find((element) =>
@@ -138,13 +127,11 @@ describe("PeerMarkPopover recovery", () => {
     currentChange = {
       ...settledChange,
       kind: "modify",
-      writerImpact: null,
     };
     const deletionTarget = target();
     deletionTarget.marker = {
       ...deletionTarget.marker,
       kind: "modify",
-      writerImpact: null,
       pureDeletionOffset: 4,
     };
 
@@ -163,7 +150,7 @@ function target(): PeerMarkPopoverTarget {
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
       kind: "delete",
       anchor: { type: "unresolved", raw: { kind: "unavailable", reason: "test" } },
-      writerImpact: { kind: "sweep" },
+      swept: true,
       excerpt: "Writer text.",
       pureDeletionOffset: null,
       projectionRevision: 1,

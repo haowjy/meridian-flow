@@ -26,7 +26,7 @@ function addMarker(
   to = from,
   suffix = "",
   pureDeletionOffset: number | null = null,
-  writerImpact: { kind: "sweep" | "resurrection" } | null = null,
+  swept = false,
 ): void {
   const start = relativePositionForEditorIndex(editor, from);
   const end = relativePositionForEditorIndex(editor, to);
@@ -57,7 +57,7 @@ function addMarker(
         changeId: `${kind}-mark${suffix}`,
         kind: kind === "range" ? "modify" : "delete",
         navigation,
-        writerImpact,
+        swept,
         excerpt: null,
         pureDeletionOffset,
       },
@@ -167,9 +167,9 @@ describe("peer marker writer self-clear", () => {
   });
 
   it("projects swept severity and deletion anatomy as semantic attributes", () => {
-    addMarker("range", 2, 5, "-swept", null, { kind: "sweep" });
-    addMarker("range", 1, 6, "-deletion", 2, { kind: "sweep" });
-    addMarker("boundary", 6, 6, "-swept", null, { kind: "sweep" });
+    addMarker("range", 2, 5, "-swept", null, true);
+    addMarker("range", 1, 6, "-deletion", 2, true);
+    addMarker("boundary", 6, 6, "-swept", null, true);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
 
     expect(

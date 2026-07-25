@@ -2,7 +2,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { changeTrailDetailKey, readChangeTrail } from "@/client/change-trails";
@@ -13,10 +12,7 @@ import { changeMarkLabel } from "@/core/editor/change-mark-labels";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
-import {
-  trailChangeLabel,
-  useTrailForwardAction,
-} from "@/features/change-trail/trail-change-recovery";
+import { useTrailForwardAction } from "@/features/change-trail/trail-change-recovery";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -67,6 +63,7 @@ export function PeerMarkPopover({
     trailId: marker?.group.trailId ?? "",
     documentId: marker?.group.documentId ?? "",
     change,
+    enabled: marker?.swept ?? false,
   });
   const [copyReceipt, setCopyReceipt] = useState<{
     changeId: string;
@@ -110,7 +107,7 @@ export function PeerMarkPopover({
     marker.author.kind === "agent"
       ? snapshot.data?.thread.title?.trim()
         ? displayThreadTitle(snapshot.data.thread.title)
-        : t`AI · New chat`
+        : t`AI assistant`
       : t`Collaborator`;
   const removedText = change ? recovery.body : marker.excerpt;
 
@@ -163,11 +160,7 @@ export function PeerMarkPopover({
             <p className="truncate font-medium text-prose-foreground">{title}</p>
             {marker.author.kind === "agent" ? (
               <p className="flex items-center gap-1 text-ink-muted">
-                {change?.writerImpact?.kind === "resurrection" ? (
-                  <RotateCcw className="size-3 shrink-0" aria-hidden />
-                ) : null}
-                {change?.writerImpact ? trailChangeLabel(change) : markerLabel(marker)}
-                <span aria-hidden> · </span>
+                {markerLabel(marker)}
                 {formatRelativeTime(new Date(marker.receivedAt), Date.now())}
               </p>
             ) : (
@@ -223,20 +216,12 @@ export function PeerMarkPopover({
                 disabled={recovery.isPending}
                 onClick={() => void recovery.execute()}
               >
-                {recovery.action === "delete-again" ? (
-                  <Trans>Delete again</Trans>
-                ) : (
-                  <Trans>Restore</Trans>
-                )}
+                <Trans>Restore</Trans>
               </Button>
             ) : null}
             {recovery.applied ? (
               <span className="text-jade-text">
-                {recovery.action === "delete-again" ? (
-                  <Trans>Deleted again</Trans>
-                ) : (
-                  <Trans>Restored</Trans>
-                )}
+                <Trans>Restored</Trans>
               </span>
             ) : null}
             {copyState === "copied" ? (

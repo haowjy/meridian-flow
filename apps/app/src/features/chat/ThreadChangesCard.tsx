@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { cn } from "@/lib/utils";
 import { useConversationReveal } from "./conversation-reveal";
-import { ChangeViewDetail } from "./TurnEditsCard";
+import { ChangeViewDetail } from "./TurnEditsReceipt";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export function ThreadChangesCard({
@@ -33,7 +33,7 @@ export function ThreadChangesCard({
   return (
     <div
       ref={cardRef}
-      className="overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
+      className="min-h-7 rounded-md text-caption text-ink-muted"
       data-thread-changes-card
     >
       <button
@@ -41,7 +41,7 @@ export function ThreadChangesCard({
         aria-expanded={expanded}
         aria-controls={panelId}
         onClick={() => setExpanded((value) => !value)}
-        className="focus-ring flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted"
+        className="focus-ring flex min-h-7 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-muted"
       >
         <ChevronDown
           className={cn(
@@ -58,7 +58,7 @@ export function ThreadChangesCard({
         </span>
       </button>
       {expanded ? (
-        <div id={panelId} className="border-border-subtle border-t py-1">
+        <div id={panelId} className="mt-1 border-border-subtle border-t py-1">
           {shells.map((shell) => (
             <ChangeViewDetail
               key={shell.trailId}

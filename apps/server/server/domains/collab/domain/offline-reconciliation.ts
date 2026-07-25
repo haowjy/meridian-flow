@@ -12,7 +12,6 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { ChangeTrailPersistence } from "./ports/change-trail-persistence.js";
 import {
-  bodyFromHashline,
   type CanonicalBlockIdentityV1,
   canonicalBlockKey,
   deletionBoundaryTarget,
@@ -158,13 +157,6 @@ export function createOfflineReconciliation(deps: {
       beforeText: input.writerBlock.serialized,
       afterTextAtReceipt: null,
       navigation: target,
-      writerImpact: {
-        kind: "sweep",
-        affectedBlockHash: input.writerBlock.hash,
-        affectedBlockIdentity: blockIdentity,
-        body: bodyFromHashline(input.writerBlock.serialized),
-        beforeContentRef: input.agentSeq - 1 || null,
-      },
       reversible: false,
     };
     await deps.changeTrails.record({
@@ -172,7 +164,7 @@ export function createOfflineReconciliation(deps: {
         {
           owner: { kind: "turn", threadId: input.threadId, turnId: input.turnId },
           changes: [change],
-          counts: { changes: 1, writerImpact: 1, documents: 1 },
+          counts: { changes: 1, documents: 1 },
         },
       ],
       documentTitles: new Map([

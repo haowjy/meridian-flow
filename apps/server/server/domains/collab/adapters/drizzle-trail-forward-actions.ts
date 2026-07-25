@@ -1,4 +1,4 @@
-/** Journal-first forward Restore/Delete-again actions over retained trail evidence. */
+/** Journal-first Restore actions over retained trail evidence. */
 
 import type { AgentEditCodec } from "@meridian/agent-edit/integration";
 import {
@@ -6,10 +6,8 @@ import {
   decodeNavigationPosition,
   getBlockItemId,
   isDocumentNotFoundError,
-  type LiveBlockRangeTarget,
   toDocHandle,
   toRef,
-  validateLiveBlockRange,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type {
@@ -33,7 +31,11 @@ import {
   fullStateFingerprint,
 } from "../domain/branch-push-transition.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
-import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
+import {
+  bodyFromHashline,
+  parseTrailChangesV1,
+  type TrailChangeV1,
+} from "../domain/trail-read-kernel.js";
 import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
@@ -536,34 +538,22 @@ export function planTrailForwardAction(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 }): { update: Uint8Array } | null {
-  const expectedKind = input.action === "restore" ? "sweep" : "resurrection";
-  if (input.change.writerImpact?.kind !== expectedKind) return null;
-  const body = input.change.writerImpact.body;
+  const body = bodyFromHashline(input.change.beforeText);
   if (body.status !== "available") return null;
   const scratch = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     const before = Y.encodeStateVector(scratch);
-    if (input.action === "restore") {
-      const root = scratch.getXmlFragment("prosemirror");
-      const index = restoreBoundaryIndex(scratch, input.change);
-      if (index === null) return null;
-      const previous = index > 0 ? root.get(index - 1) : null;
-      if (previous !== null && !(previous instanceof Y.XmlElement)) return null;
-      input.model.insertBlocks(
-        toDocHandle(scratch),
-        previous ? toRef(previous) : null,
-        input.codec.parse(body.markdown),
-      );
-    } else {
-      if (input.change.navigation.kind !== "live_block_range") return null;
-      const target = validateLiveBlockRange({
-        doc: scratch,
-        target: input.change.navigation as LiveBlockRangeTarget,
-      });
-      if (!target) return null;
-      input.model.deleteBlock(toDocHandle(scratch), toRef(target.block));
-    }
+    const root = scratch.getXmlFragment("prosemirror");
+    const index = restoreBoundaryIndex(scratch, input.change);
+    if (index === null) return null;
+    const previous = index > 0 ? root.get(index - 1) : null;
+    if (previous !== null && !(previous instanceof Y.XmlElement)) return null;
+    input.model.insertBlocks(
+      toDocHandle(scratch),
+      previous ? toRef(previous) : null,
+      input.codec.parse(body.markdown),
+    );
     return { update: Y.encodeStateAsUpdate(scratch, before) };
   } catch {
     return null;
@@ -579,9 +569,8 @@ function restoreBoundaryIndex(doc: Y.Doc, change: TrailChangeV1): number | null 
     const absolute = Y.createAbsolutePositionFromRelativePosition(relative, doc);
     return absolute?.type === root ? absolute.index : null;
   }
-  // A sweep can fresh-replace a block while retaining its element identity. If
-  // projection could not capture a deletion boundary, that canonical identity
-  // is still a document-scoped durable anchor; restore immediately before it.
+  // A replacement can retain its element identity. Restore immediately before
+  // that durable document-scoped anchor when no deletion boundary was captured.
   const identity = change.afterBlockIdentity;
   if (!identity || identity.documentId !== change.documentId) return null;
   const index = root.toArray().findIndex((value) => {

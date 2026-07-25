@@ -5,7 +5,6 @@ import {
   bodyFromHashline,
   deletionBoundaryTarget,
   liveBlockTarget,
-  navigationForSweptBlock,
   normalizeTrailPushes,
   type RawTrailChange,
   validateLiveBlockTarget,
@@ -38,7 +37,6 @@ function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
     beforeText: "before",
     afterTextAtReceipt: "after",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    writerImpact: null,
     owner: { threadId: "thread-a", turnId: "turn-a" },
     sequence: 1,
     ...overrides,
@@ -54,48 +52,11 @@ describe("trail navigation", () => {
     });
   });
 
-  it("does not guess a replacement when operation correspondence is ambiguous", () => {
-    const { doc, blocks } = docWithBlocks("new-a", "new-b");
-    const result = navigationForSweptBlock({
-      affectedBlockHash: "old",
-      afterDoc: doc,
-      operations: [
-        {
-          removedBlockHashes: ["old"],
-          insertedBlocks: [
-            { blockId: "new-a", block: blocks[0] },
-            { blockId: "new-b", block: blocks[1] },
-          ],
-        },
-      ],
-    });
-    expect(result).toEqual({
-      outcome: "delete",
-      navigation: { kind: "unavailable", reason: "capture_failed" },
-    });
-  });
-
   it("rejects a modify target after its block is deleted even if anchors resolve", () => {
     const { doc, blocks } = docWithBlocks("target", "neighbor");
     const target = liveBlockTarget(doc, blocks[0]);
     doc.getXmlFragment("prosemirror").delete(0, 1);
     expect(validateLiveBlockTarget({ doc, target })).toBe(false);
-  });
-
-  it("proves exactly one replacement and validates its surviving identity", () => {
-    const { doc, blocks } = docWithBlocks("replacement");
-    const result = navigationForSweptBlock({
-      affectedBlockHash: "old",
-      afterDoc: doc,
-      operations: [
-        {
-          removedBlockHashes: ["old"],
-          insertedBlocks: [{ blockId: "replacement", block: blocks[0] }],
-        },
-      ],
-    });
-    expect(result.outcome).toBe("modify");
-    expect(validateLiveBlockTarget({ doc, target: result.navigation })).toBe(true);
   });
 
   it("captures only the body suffix of a protocol hashline", () => {
@@ -214,33 +175,7 @@ describe("trail normalization", () => {
       { pushId: "push-a", receiptId: "receipt-a", ordinal: 0 },
       { pushId: "p2", receiptId: "r2", ordinal: 1 },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 2, writerImpact: 0, documents: 2 });
-  });
-
-  it("classifies an unattributable writer impact as shared", () => {
-    const impacted = change({
-      writerImpact: {
-        kind: "sweep",
-        affectedBlockHash: "hash",
-        body: { status: "available", markdown: "lost" },
-        beforeContentRef: 1,
-      },
-    });
-    const trails = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [
-          { threadId: "thread-a", turnId: "turn-a" },
-          { threadId: "thread-a", turnId: "turn-b" },
-        ],
-        changes: [impacted],
-      },
-    ]);
-    expect(trails).toHaveLength(1);
-    expect(trails[0].owner).toEqual({ kind: "shared", threadId: "thread-a", turnId: null });
-    expect(trails[0].counts.writerImpact).toBe(1);
+    expect(trails[0].counts).toEqual({ changes: 2, documents: 2 });
   });
 
   it("counts an addition without writer impact", () => {
@@ -253,6 +188,6 @@ describe("trail normalization", () => {
         changes: [change({ kind: "insert", beforeText: null })],
       },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 1, writerImpact: 0, documents: 1 });
+    expect(trails[0].counts).toEqual({ changes: 1, documents: 1 });
   });
 });

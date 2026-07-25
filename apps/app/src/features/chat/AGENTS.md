@@ -80,9 +80,9 @@ and review state live in
 | `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent tool runs as sibling `ToolRow`s |
 | `ActivityRow.tsx` | Timeline-row primitive; each row owns its rail segment and exports the shared text inset |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsCard.tsx` | Per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo, and `writerImpact` evidence. No draft Review/Apply/Discard. |
+| `TurnEditsReceipt.tsx` | Quiet per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo/Redo, and authorized detail loading. No draft Review/Apply/Discard. |
 | `ThreadChangesCard.tsx` | Transcript-tail Changes record for shared trails without synthetic turn ownership. |
-| `ChangeViewRows.tsx` | `writerImpact` rows with navigation and recovery; shared action eligibility and command policy live in [`features/change-trail/`](../change-trail/AGENTS.md). |
+| `ChangeViewRows.tsx` | Read-only receipt rows with navigation plus durable Before/After excerpts and Copy. |
 | `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, emphasize the exact row. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |

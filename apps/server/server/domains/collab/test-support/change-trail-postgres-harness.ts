@@ -353,7 +353,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const settlementStore = {
     ...durableSettlementStore,
     async settlePushTrail(input: Parameters<typeof durableSettlementStore.settlePushTrail>[0]) {
-      settlementRefinements.push(input.replacement?.kind ?? "none");
       const settled = await durableSettlementStore.settlePushTrail(input);
       if (Array.isArray(settled)) settlementProjections.push(...settled);
       if (settled !== false) {
@@ -383,7 +382,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
 
   const changeEvents: unknown[] = [];
   const settlementProjections: unknown[] = [];
-  const settlementRefinements: string[] = [];
   const realBranchPush = createBranchPushService({
     changeEventDelivery: {
       deliver(message) {
@@ -1551,7 +1549,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     autoPush: (branchId: string) => realBranchPush.pushToLive({ branchId }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
-    settlementRefinements: () => [...settlementRefinements],
     diff: () =>
       collab
         .agentEdit()

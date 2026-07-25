@@ -36,7 +36,6 @@ function change(
             clock: 0,
           },
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    writerImpact: null,
     reversible: false,
     ...input,
   };
@@ -101,7 +100,7 @@ describe("mergeTrailChanges", () => {
 });
 
 describe("refinePushChanges", () => {
-  it("preserves ordinary rows when completed sweep classification is empty", () => {
+  it("preserves ordinary rows when an empty replacement is empty", () => {
     const ordinary = change({
       changeId: "o",
       documentId: "doc-a",
@@ -111,43 +110,5 @@ describe("refinePushChanges", () => {
     });
 
     expect(refinePushChanges([ordinary], [])).toEqual([ordinary]);
-  });
-
-  it("replaces classified detail, preserves impact presence, and creates no duplicates", () => {
-    const rejected = change({
-      changeId: "r",
-      documentId: "doc-a",
-      beforeText: "before-r|Observed body.",
-      afterTextAtReceipt: null,
-      pushId: "7",
-      writerImpact: {
-        kind: "sweep",
-        affectedBlockHash: "before-r",
-        body: { status: "available", markdown: "Observed body." },
-        beforeContentRef: null,
-      },
-    });
-    const provisional = change({
-      changeId: "s",
-      documentId: "doc-a",
-      beforeText: "before-s|Unseen body.",
-      afterTextAtReceipt: null,
-      pushId: "7",
-    });
-    const classified = {
-      ...provisional,
-      writerImpact: {
-        kind: "sweep" as const,
-        affectedBlockHash: "before-s",
-        body: { status: "available" as const, markdown: "Unseen body." },
-        beforeContentRef: null,
-      },
-    };
-
-    const refined = refinePushChanges([rejected, provisional], [classified]);
-    expect(refined).toEqual([
-      expect.objectContaining({ changeId: "r", writerImpact: rejected.writerImpact }),
-      expect.objectContaining({ changeId: "s", writerImpact: classified.writerImpact }),
-    ]);
   });
 });

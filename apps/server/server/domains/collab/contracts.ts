@@ -381,7 +381,7 @@ export type TrailForwardActionAccess = {
     threadId: ThreadId;
     trailId: string;
     changeId: string;
-    action: "restore" | "delete-again";
+    action: "restore";
     userId: UserId;
   }): Promise<TrailForwardActionResult>;
 };

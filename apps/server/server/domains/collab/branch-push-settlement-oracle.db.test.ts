@@ -70,7 +70,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     actorA.destroyWarmState();
   });
 
-  it("item 3: A/B/C ordering retries a post-classification join in one timeline", async () => {
+  it("item 3: A/B/C ordering retries a post-settlement join in one timeline", async () => {
     await resetDatabase();
     const actorA = createHarness({
       afterDurableCommit: async () => {
@@ -81,7 +81,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     await expect(actorA.autoPush(branchId)).rejects.toThrow("actor A death");
     actorA.destroyWarmState();
 
-    // C-before-B is durable before B claims, so it is part of B's first classification.
+    // C-before-B is durable before B claims, so it is part of B's first settlement.
     const actorC = createHarness();
     await actorC.addLiveDependency();
     actorC.destroyWarmState();
@@ -155,7 +155,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     actorB.destroyWarmState();
   });
 
-  it("F1a: preserves the true lock cut and trails post-cut writer prose after a killed process", async () => {
+  it("F1a: preserves the true lock cut while joining post-cut writer updates after a killed process", async () => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;
     const injectPostCutWriter = async (input: {
       documentIds: readonly DocumentId[];
@@ -203,8 +203,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     });
 
     expect(result.cold.exactBodies).toEqual([
-      expect.stringContaining("Writer post-cut: Writer recent: Writer captured body."),
+      expect.stringContaining("Writer recent: Writer captured body."),
     ]);
+    expect(appliedMarkdown(result.cold)).toBe("Survivor.\n");
     expect(result.cold.completionState).toEqual({
       state: "completed",
       joinVersion: 1,
@@ -278,8 +279,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     });
 
     expect(result.cold.exactBodies).toEqual([
-      expect.stringContaining("Fenced writer: Writer recent: Writer captured body."),
+      expect.stringContaining("Writer recent: Writer captured body."),
     ]);
+    expect(appliedMarkdown(result.cold)).toBe("Survivor.\n");
     expect(result.cold.completionState).toMatchObject({ state: "completed" });
   });
 
@@ -335,8 +337,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     });
 
     expect(result.cold.exactBodies).toEqual([
-      expect.stringContaining("Handed-off writer: Writer recent: Writer captured body."),
+      expect.stringContaining("Writer recent: Writer captured body."),
     ]);
+    expect(appliedMarkdown(result.cold)).toBe("Survivor.\n");
   });
 
   it("delete-only recheck: equal state vectors do not hide a joined writer deletion", async () => {
@@ -380,20 +383,20 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     });
 
     expect(result.cold.exactBodies).toEqual([expect.stringContaining("Writer captured body.")]);
-    expect(result.cold.exactBodies[0]).not.toContain("Writer recent:");
+    expect(appliedMarkdown(result.cold)).not.toContain("Writer recent:");
   });
 
-  it("delete-only post-classification retry: full-state mismatch reclassifies the joined deletion", async () => {
-    let warmClassifications = 0;
-    let coldClassifications = 0;
+  it("delete-only post-settlement retry: full-state mismatch rejoins the deletion", async () => {
+    let warmSettlements = 0;
+    let coldSettlements = 0;
     const run = (mode: "warm" | "cold") => {
       let deleted = false;
       return createHarness({
         afterSettlement: async ({ documentId, deleteWriterPrefix, stateVector }) => {
-          if (mode === "warm") warmClassifications += 1;
-          else coldClassifications += 1;
+          if (mode === "warm") warmSettlements += 1;
+          else coldSettlements += 1;
           if (deleted) {
-            if (mode === "cold") throw new Error("injected death after delete reclassification");
+            if (mode === "cold") throw new Error("injected death after delete rejoin");
             return;
           }
           deleted = true;
@@ -418,9 +421,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         await resetDatabase();
         coldHarness = run("cold");
         const branchId = await coldHarness.seedDestructivePush("oracle-delete-retry-cold");
-        await expect(coldHarness.autoPush(branchId)).rejects.toThrow(
-          "death after delete reclassification",
-        );
+        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("death after delete rejoin");
       },
       async destroyWarmState() {
         coldHarness?.destroyWarmState();
@@ -436,10 +437,10 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       },
     });
 
-    expect(warmClassifications).toBe(2);
-    expect(coldClassifications).toBe(2);
+    expect(warmSettlements).toBe(2);
+    expect(coldSettlements).toBe(2);
     expect(result.cold.exactBodies).toEqual([expect.stringContaining("Writer captured body.")]);
-    expect(result.cold.exactBodies[0]).not.toContain("Writer recent:");
+    expect(appliedMarkdown(result.cold)).not.toContain("Writer recent:");
   });
 
   it("item 13: unresolved settlement joins survive a commit fault and block snapshot replacement", async () => {
@@ -493,8 +494,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     });
 
     expect(result.cold.exactBodies).toEqual([
-      expect.stringContaining("Racing writer: Writer recent: Writer captured body."),
+      expect.stringContaining("Writer recent: Writer captured body."),
     ]);
+    expect(appliedMarkdown(result.cold)).toBe("Survivor.\n");
   });
 
   it.each([
@@ -550,7 +552,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.completionState).toMatchObject({ state: "completed" });
   });
 
-  it("recovery refines the trail version already classified for the same joined revision", async () => {
+  it("recovery refines the trail version already settled for the same joined revision", async () => {
     await resetDatabase();
     let faulted = false;
     const harness = createHarness({
@@ -560,12 +562,12 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       afterSettlement: async () => {
         if (faulted) return;
         faulted = true;
-        throw new Error("injected fault after joined revision classification");
+        throw new Error("injected fault after joined revision settlement");
       },
     });
     const branchId = await harness.seedDestructivePush("oracle-joined-recovery-version");
     await expect(harness.autoPush(branchId)).rejects.toThrow(
-      "injected fault after joined revision classification",
+      "injected fault after joined revision settlement",
     );
     const [before] = await db.select().from(schema.changeTrailShells);
     expect(before?.version).toBe(2);
@@ -603,7 +605,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
                   : "modify",
             beforeText: change.afterTextAtReceipt,
             afterTextAtReceipt: change.beforeText,
-            writerImpact: null,
           }),
         );
         await runInRootDrizzleTransaction(db, () =>
@@ -617,7 +618,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
                 changes: inverse,
                 counts: {
                   changes: inverse.length,
-                  writerImpact: 0,
                   documents: new Set(inverse.map((change) => change.documentId)).size,
                 },
               },
@@ -697,25 +697,33 @@ async function expirePendingClaims(): Promise<void> {
     .where(eq(schema.branchPushSettlementOutbox.state, "pending"));
 }
 
+function appliedMarkdown(output: SettlementOracleOutput): string {
+  const result = output.applyResult;
+  if (
+    typeof result !== "object" ||
+    result === null ||
+    !("markdown" in result) ||
+    typeof result.markdown !== "string"
+  ) {
+    throw new Error("settlement apply result has no markdown");
+  }
+  return result.markdown;
+}
+
 async function observeSettlement(
   harness: ReturnType<typeof createHarness>,
 ): Promise<SettlementOracleOutput> {
   const trail = await harness.trailRows();
-  type WriterImpactChange = {
+  type ReceiptChange = {
     kind: unknown;
-    beforeText: unknown;
-    beforeBlockIdentity: { documentId: string; clientID: number; clock: number };
-    writerImpact: {
-      kind: string;
-      body: { markdown: string };
-      ranges?: Array<{ clientID: number; clock: number; length: number }>;
-    };
-    forwardAction?: unknown;
+    beforeText: string | null;
+    beforeBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
+    forwardActions?: unknown;
   };
-  const changes = trail.details.flatMap(
-    (detail) => detail.changes as unknown as WriterImpactChange[],
+  const changes = trail.details.flatMap((detail) => detail.changes as unknown as ReceiptChange[]);
+  const recoverable = changes.filter(
+    (change) => change.beforeText !== null && change.beforeBlockIdentity,
   );
-  const impacted = changes.filter((change) => change.writerImpact?.kind === "sweep");
   const [outbox] = await db
     .select()
     .from(schema.branchPushSettlementOutbox)
@@ -728,19 +736,21 @@ async function observeSettlement(
     .limit(1);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
   return {
-    trailChanges: impacted.map((change) => ({
+    trailChanges: recoverable.map((change) => ({
       kind: change.kind,
       beforeText: change.beforeText,
       beforeBlockIdentity: change.beforeBlockIdentity,
-      writerImpact: {
-        kind: change.writerImpact.kind,
-        body: change.writerImpact.body,
-        ranges: change.writerImpact.ranges,
-      },
     })),
-    exactBodies: impacted.map((change) => change.writerImpact.body.markdown as string),
-    canonicalIdentities: impacted.map((change) => change.beforeBlockIdentity),
-    eligibleRanges: impacted.flatMap((change) => change.writerImpact.ranges ?? []),
+    exactBodies: recoverable.map((change) => {
+      const beforeText = change.beforeText as string;
+      const separator = beforeText.indexOf("|");
+      return separator < 0 ? beforeText : beforeText.slice(separator + 1);
+    }),
+    canonicalIdentities: recoverable.map(
+      (change) =>
+        change.beforeBlockIdentity as { documentId: string; clientID: number; clock: number },
+    ),
+    eligibleRanges: [],
     applyResult: {
       status: push.upstreamUpdateSeq === null ? "not_applied" : "applied",
       markdown: await harness.liveMarkdown(ALPHA_ID),
@@ -750,8 +760,8 @@ async function observeSettlement(
       joinVersion: outbox.joinVersion,
       settledJoinVersion: outbox.settledJoinVersion,
     },
-    forwardActions: impacted.flatMap((change) =>
-      change.forwardAction === undefined ? [] : [change.forwardAction],
+    forwardActions: recoverable.flatMap((change) =>
+      change.forwardActions === undefined ? [] : [change.forwardActions],
     ),
   };
 }

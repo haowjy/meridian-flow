@@ -141,7 +141,7 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("persists writer impact journaled after the observation cut", async () => {
+  it("reports a writer sweep journaled after the observation cut", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
     await harness.seedProbeTimelineSweep(responseId);
@@ -161,21 +161,13 @@ describe("change trail (postgres)", () => {
     await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
 
     const trail = await harness.trailRows();
-    expect(trail.shells).toEqual([
-      expect.objectContaining({ writerImpactCount: 3, changeCount: expect.any(Number) }),
-    ]);
+    expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
     expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
       expect.objectContaining({
         changes: expect.arrayContaining([
           expect.objectContaining({
             beforeText: expect.stringContaining("Writer concurrent edit"),
-            writerImpact: expect.objectContaining({
-              body: expect.objectContaining({
-                status: "available",
-                markdown: expect.stringContaining("Writer concurrent edit"),
-              }),
-            }),
           }),
         ]),
       }),
@@ -204,7 +196,6 @@ describe("change trail (postgres)", () => {
     expect(trail.shells).toEqual([
       expect.objectContaining({
         state: "settled",
-        writerImpactCount: 3,
         changeCount: expect.any(Number),
         documentCount: 1,
       }),
@@ -214,12 +205,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({
         changes: expect.arrayContaining([
           expect.objectContaining({
-            writerImpact: expect.objectContaining({
-              body: expect.objectContaining({
-                status: "available",
-                markdown: expect.stringContaining("Writer concurrent edit"),
-              }),
-            }),
             beforeText: expect.stringContaining("Writer concurrent edit: Writer block."),
           }),
         ]),

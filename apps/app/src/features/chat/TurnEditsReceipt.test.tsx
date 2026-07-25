@@ -10,8 +10,7 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { dismissGroupMock, mutateAsyncMock } = vi.hoisted(() => ({
-  dismissGroupMock: vi.fn(),
+const { mutateAsyncMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
 }));
 
@@ -21,13 +20,7 @@ vi.mock("@/client/query/useReverseMutation", () => ({
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
 }));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({
-    peek: () => ({ markerStore: { dismissGroup: dismissGroupMock } }),
-  }),
-}));
-
-const { TurnEditsCard } = await import("./TurnEditsCard");
+const { TurnEditsReceipt } = await import("./TurnEditsReceipt");
 
 function turn(): Turn {
   return {
@@ -47,7 +40,6 @@ const settledTrail = {
   state: "settled",
   version: 1,
   changeCount: 3,
-  writerImpactCount: 0,
   documentCount: 1,
   documents: [{ documentId: "document-1", title: "chapter-1" }],
   wordsAdded: 20,
@@ -57,11 +49,11 @@ const settledTrail = {
 } satisfies ChangeTrailShell;
 
 async function withInteractiveCard(
-  props: Partial<React.ComponentProps<typeof TurnEditsCard>>,
+  props: Partial<React.ComponentProps<typeof TurnEditsReceipt>>,
   run: (card: { click(label: string): Promise<void> }) => Promise<void>,
 ): Promise<void> {
   await withReactRoot(
-    <TurnEditsCard
+    <TurnEditsReceipt
       threadId="thread-1"
       turn={turn()}
       documents={[liveDocument]}
@@ -86,7 +78,7 @@ async function withInteractiveCard(
   );
 }
 
-describe("TurnEditsCard", () => {
+describe("TurnEditsReceipt", () => {
   /**
    * A receipt may exist only for what actually reached the manuscript.
    *
@@ -106,7 +98,6 @@ describe("TurnEditsCard", () => {
         state: "settled",
         version: 1,
         changeCount: 1,
-        writerImpactCount: 0,
         documentCount: 0,
         documents: [],
         wordsAdded: null,
@@ -117,7 +108,7 @@ describe("TurnEditsCard", () => {
     ],
   ])("renders no card for draft-only lineage in the %s shape", (_shape, changeTrail) => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard
+      <TurnEditsReceipt
         threadId="thread-1"
         turn={turn()}
         documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "draft" }]}
@@ -131,7 +122,7 @@ describe("TurnEditsCard", () => {
 
   it("lets live-scope documents own the undo path", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard
+      <TurnEditsReceipt
         threadId="thread-1"
         turn={turn()}
         documents={[liveDocument]}
@@ -153,26 +144,15 @@ describe("TurnEditsCard", () => {
     });
   });
 
-  it("clears ordinary trail marks without requiring writer-impact rows", async () => {
-    dismissGroupMock.mockReset();
-    await withInteractiveCard({ changeTrail: settledTrail }, async (card) => {
-      const clearButton = [...document.querySelectorAll("button")].find(
-        (candidate) => candidate.textContent?.trim() === "Clear marks",
-      );
-      expect(clearButton?.dataset.size).toBe("meta");
-
-      await card.click("Clear marks");
-
-      expect(dismissGroupMock).toHaveBeenCalledWith({
-        trailId: "trail-1",
-        documentId: "document-1",
-      });
+  it("keeps the collapsed receipt free of bookkeeping controls", async () => {
+    await withInteractiveCard({ changeTrail: settledTrail }, async () => {
+      expect(document.body.textContent).not.toContain("Clear marks");
     });
   });
 
   it("renders Redo from a server reversed receipt", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard
+      <TurnEditsReceipt
         threadId="thread-1"
         turn={turn()}
         documents={[liveDocument]}
@@ -193,22 +173,23 @@ describe("TurnEditsCard", () => {
       expect(document.body.textContent).not.toContain("Redo");
     });
   });
-  it("guards Undo when later rows depend on the change", () => {
-    const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[liveDocument]}
-        receipt={{ state: "cant_undo_dependent", control: "view_change" }}
-      />,
+  it("puts the dependent-change Undo reason behind expansion", async () => {
+    await withInteractiveCard(
+      { receipt: { state: "cant_undo_dependent", control: "view_change" } },
+      async () => {
+        expect(document.body.textContent).toContain("Can't undo");
+        expect(document.body.textContent).not.toContain("Later edits build on this change.");
+        const toggle = document.querySelector<HTMLButtonElement>("[aria-controls]");
+        if (!toggle) throw new Error("missing receipt toggle");
+        await act(async () => toggle.click());
+        expect(document.body.textContent).toContain("Later edits build on this change.");
+      },
     );
-    expect(html).toContain("Can&#x27;t undo");
-    expect(html).toContain("Later edits build on this change.");
   });
 
   it("uses neutral copy when Undo expired without a dependent row", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard
+      <TurnEditsReceipt
         threadId="thread-1"
         turn={turn()}
         documents={[liveDocument]}
@@ -216,7 +197,7 @@ describe("TurnEditsCard", () => {
       />,
     );
     expect(html).toContain("Can&#x27;t undo");
-    expect(html).toContain("This change is too old to undo.");
+    expect(html).not.toContain("This change is too old to undo.");
     expect(html).not.toContain("Later edits build");
   });
 });

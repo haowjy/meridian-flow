@@ -969,7 +969,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             attemptCount: 0,
             state: "pending",
-            beforeContentRef: null,
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",
@@ -1035,7 +1034,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             attemptCount: 0,
             state: "pending",
-            beforeContentRef: null,
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",

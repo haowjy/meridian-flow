@@ -280,20 +280,12 @@ export async function runCrossWorkProbe(
     bTrailIds.has(row.trailId),
   );
   const trailChanges = detailRows.flatMap((row) => (Array.isArray(row.changes) ? row.changes : []));
-  const writerImpact = "writerImpact" in bResult ? bResult.writerImpact : undefined;
-  const capturedBodies = [
-    ...(writerImpact?.capturedDeletedBodies.flatMap((body) =>
-      typeof body.body === "string" && body.body !== "body_unavailable" ? [body.body] : [],
-    ) ?? []),
-    ...trailChanges.flatMap((change) => {
-      const impact = asRecord(change).writerImpact;
-      const body = asRecord(asRecord(impact).body);
-      return typeof body.markdown === "string" ? [body.markdown] : [];
-    }),
-  ];
-  const writerImpactTrail = trailChanges.some(
-    (change) => asRecord(asRecord(change).writerImpact).kind === "sweep",
-  );
+  const capturedBodies = trailChanges.flatMap((change) => {
+    const beforeText = asRecord(change).beforeText;
+    if (typeof beforeText !== "string") return [];
+    const separator = beforeText.indexOf("|");
+    return [separator < 0 ? beforeText : beforeText.slice(separator + 1)];
+  });
   let restoreActionable = false;
   let restoreOutcome: string | null = null;
   let manuscriptAfterRestore: string | null = null;
@@ -306,7 +298,7 @@ export async function runCrossWorkProbe(
         })),
       )
       .find(({ change }) => {
-        return change.writerImpact?.kind === "sweep";
+        return change.beforeText !== null && change.beforeBlockIdentity !== null;
       });
     if (restorable) {
       restoreActionable = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
@@ -320,7 +312,7 @@ export async function runCrossWorkProbe(
           }),
         ),
       );
-      if (!restoreActionable) throw new Error("protected sweep row has no Restore action");
+      if (!restoreActionable) throw new Error("receipt row has no Restore action");
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
       const restored = await createDrizzleTrailForwardActions({
@@ -360,7 +352,7 @@ export async function runCrossWorkProbe(
     manuscript: { beforeAApply, afterAApply, beforeBApply, afterBApply },
     approvedTextSurvived: afterBApply.includes("Writer-approved Work A text."),
     protection: {
-      classification: writerImpact || writerImpactTrail ? "protected" : "ordinary",
+      classification: "ordinary",
       capturedBodies: [...new Set(capturedBodies)],
       trailChanges: serializable(trailChanges) as unknown[],
       notices: serializable(await db.select().from(schema.pendingNotices)) as unknown[],

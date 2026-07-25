@@ -14,16 +14,6 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
-#: src/features/change-trail/trail-change-recovery.ts
-msgid "AI brought back text you deleted"
-msgstr "AI 恢复了你删除的文本"
-
-#. js-lingui-explicit-id
-#: src/features/change-trail/trail-change-recovery.ts
-msgid "Replaced a passage that included your unsaved edits"
-msgstr "替换了一段包含你未保存修改的内容"
-
-#. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
 msgid "Added a passage"
 msgstr "新增了一段内容"
@@ -190,6 +180,10 @@ msgstr ""
 msgid "Added"
 msgstr ""
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "After"
+msgstr ""
+
 #: src/features/home/PackageShowcase.tsx
 msgid "Agent Packages"
 msgstr ""
@@ -200,31 +194,11 @@ msgid "Agent: {0}"
 msgstr ""
 
 #: src/features/editor/PeerMarkPopover.tsx
-msgid "AI · New chat"
-msgstr "AI · 新对话"
-
-#: src/features/chat/ChangeViewRows.tsx
-#~ msgid "AI added text"
-#~ msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-#~ msgid "AI changed text"
-#~ msgstr ""
+msgid "AI assistant"
+msgstr ""
 
 #: src/features/chat/DraftModeIndicator.tsx
 msgid "AI changes wait for your review"
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-#~ msgid "AI deleted text"
-#~ msgstr ""
-
-#: src/features/chat/TurnEditsCard.tsx
-msgid "AI edited {count} chapters"
-msgstr ""
-
-#: src/features/chat/TurnEditsCard.tsx
-msgid "AI edited 1 chapter"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -273,10 +247,6 @@ msgstr ""
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "用日常语言描述你的数据、方法或下一步即可。"
 
-#: src/features/chat/Composer.tsx
-#~ msgid "Ask anything…"
-#~ msgstr "随意提问…"
-
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
@@ -306,6 +276,10 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Back to workspace"
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Before"
 msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
@@ -342,7 +316,7 @@ msgstr ""
 msgid "Buy extra usage"
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
 msgstr ""
 
@@ -424,10 +398,6 @@ msgstr ""
 msgid "Choose an option"
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
-msgid "Clear marks"
-msgstr "清除标记"
-
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -487,10 +457,6 @@ msgstr ""
 msgid "Completed"
 msgstr ""
 
-#: src/features/chat/tool-result-preview.ts
-#~ msgid "Completed."
-#~ msgstr "已完成。"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
 msgstr ""
@@ -538,10 +504,6 @@ msgstr ""
 msgid "Couldn't copy. Select the saved text and copy it manually."
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Couldn't delete the passage again. Try again."
-msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -576,7 +538,7 @@ msgstr ""
 msgid "Couldn't load agents."
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Couldn't load change details."
 msgstr ""
 
@@ -620,10 +582,6 @@ msgstr ""
 msgid "Couldn't rename this document. Try another name."
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Couldn't restore the passage. Try again, or copy it instead."
-msgstr ""
-
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
@@ -665,22 +623,12 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Delete again"
-msgstr ""
-
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete file?"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete folder?"
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Deleted again"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
@@ -773,30 +721,29 @@ msgstr ""
 msgid "Drop image to upload a figure"
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
-msgid "Earlier content could not be recovered"
-msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Edited {count} chapters"
 msgstr ""
 
 #: src/features/chat/thinking-digest.ts
 msgid "edited {name}"
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {title}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Edited 1 chapter"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited file"
 msgstr ""
-
-#: src/features/editor/useInlineReviewSync.ts
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "edited since this draft was written"
-#~ msgstr ""
 
 #: src/features/chat/tool-activity-vocabulary.ts
 msgid "Editing…"
@@ -873,10 +820,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Exploring folders…"
 msgstr "正在浏览文件夹…"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Exploring…"
-#~ msgstr "正在浏览…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -1020,7 +963,7 @@ msgstr ""
 msgid "Last name"
 msgstr "姓"
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Later edits build on this change."
 msgstr ""
 
@@ -1044,14 +987,6 @@ msgstr ""
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
 msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listed"
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Listed directory"
-#~ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Literature Review"
@@ -1450,10 +1385,6 @@ msgid "Quick thought"
 msgstr "突然想到"
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "Ran command"
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
 msgid "Ran skill"
 msgstr ""
 
@@ -1523,7 +1454,7 @@ msgstr ""
 msgid "Reconnecting… attempt {0}"
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redo"
 msgstr ""
 
@@ -1564,10 +1495,6 @@ msgstr ""
 msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
-#: src/features/chat/ChatView.tsx
-#~ msgid "Reply to the agent, or steer the analysis…"
-#~ msgstr "回复智能体，或引导分析方向…"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr ""
@@ -1584,12 +1511,10 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
-#: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Restore"
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Restored"
 msgstr ""
@@ -1672,11 +1597,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched"
 msgstr "已搜索"
-
-#. placeholder {0}: truncate(query, 60)
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Searched \"{0}\""
-#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
@@ -1860,10 +1780,6 @@ msgid "That change couldn't be made."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-#~ msgid "That change is still in the draft. Try again before applying the draft."
-#~ msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
 msgid "That change moved. Refreshed to the latest changes."
 msgstr ""
 
@@ -1876,7 +1792,7 @@ msgid "That location does not exist"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
-msgid "That part of the chapter is no longer available. Copy the saved text below."
+msgid "That part of the chapter is no longer available."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1902,10 +1818,6 @@ msgstr ""
 #: src/features/project/dock/DockChangesView.tsx
 msgid "The changes moved on. Review the related changes and confirm again."
 msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "The chapter changed after this draft was written:"
-#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The document changed while the AI was working. It needs to read it again before editing."
@@ -1960,16 +1872,20 @@ msgstr ""
 msgid "This change is no longer in the trail."
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is too old to undo."
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "This chapter is no longer available, so its change details can't be shown."
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "This chapter is no longer available. Copy any saved text you want to keep."
+msgstr ""
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "This chapter is no longer available. The saved excerpts remain below."
 msgstr ""
 
 #. placeholder {0}: agent.name
@@ -1993,10 +1909,6 @@ msgstr ""
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#~ msgid "This draft was updated after you opened it."
-#~ msgstr ""
-
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."
 msgstr ""
@@ -2016,10 +1928,6 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-msgid "This passage can't be restored in place. Copy it instead."
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
@@ -2051,7 +1959,7 @@ msgstr ""
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Try again"
 msgstr ""
 
@@ -2059,19 +1967,11 @@ msgstr ""
 msgid "Try again, or return to the live document."
 msgstr ""
 
-#: src/features/chat/useLiveTurnAnnouncements.ts
-#~ msgid "Turn cancelled"
-#~ msgstr "已取消"
-
-#: src/features/chat/AssistantTurn.tsx
-#~ msgid "Turn cancelled."
-#~ msgstr "已取消。"
-
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr ""
 
-#: src/features/chat/TurnEditsCard.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "撤销"
@@ -2155,10 +2055,6 @@ msgstr ""
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Work"
 msgstr ""
-
-#: src/features/chat/LiveTurnStatusBar.tsx
-#~ msgid "Working"
-#~ msgstr "工作中"
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"

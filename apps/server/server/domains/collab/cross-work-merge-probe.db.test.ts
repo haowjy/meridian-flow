@@ -19,7 +19,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
 
-  it("Case A: manual Apply merges a stale same-block edit and records its sweep", async () => {
+  it("Case A: manual Apply merges a stale same-block edit and records its receipt", async () => {
     const harness = createHarness();
     const result = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "manual");
     writeResult(result);
@@ -33,16 +33,11 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     expect(result.manuscript.afterBApply).not.toBe(result.manuscript.beforeBApply);
     expect(result.manuscript.afterBApply).toContain("Work B stale replacement.");
     expect(result.manuscript.afterBApply).toContain("Writer-approved Work A text.");
-    expect(result.protection.classification).toBe("protected");
+    expect(result.protection.classification).toBe("ordinary");
     expect(result.protection.capturedBodies.join("\n")).toContain("Writer-approved Work A text.");
     expect(result.protection.trailChanges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          writerImpact: expect.objectContaining({
-            kind: "sweep",
-            body: expect.objectContaining({ status: "available" }),
-          }),
-        }),
+        expect.objectContaining({ beforeText: expect.stringContaining("Writer-approved") }),
       ]),
     );
     harness.destroyWarmState();
@@ -59,7 +54,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     });
     expect(result.bApply.status).toBe("pushed");
     expect(result.approvedTextSurvived).toBe(false);
-    expect(result.protection.classification).toBe("protected");
+    expect(result.protection.classification).toBe("ordinary");
     expect(result.protection.capturedBodies.join("\n")).toContain("Writer-approved Work A text.");
     expect(result.protection.restoreActionable).toBe(true);
     expect(result.protection.trailChanges).toEqual(
@@ -69,17 +64,12 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
             kind: "live_block_range",
           }),
           afterBlockIdentity: expect.objectContaining({ documentId: expect.any(String) }),
-          writerImpact: expect.objectContaining({
-            kind: "sweep",
-            body: expect.objectContaining({ status: "available" }),
-          }),
+          beforeText: expect.stringContaining("Writer-approved"),
         }),
       ]),
     );
     expect(result.protection.deliveredEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ counts: expect.objectContaining({ writerImpact: 1 }) }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ counts: expect.any(Object) })]),
     );
     expect(result.protection.restoreOutcome).toBe("applied");
     expect(result.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");

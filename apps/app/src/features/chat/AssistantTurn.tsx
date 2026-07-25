@@ -10,7 +10,7 @@
  *
  * Draft affordances live OFF the transcript now: pending AI changes are the
  * composer-attached DraftDock's job, and this turn only records what it edited
- * (see `TurnEditsCard`). Write vocabulary comes from the mode frozen on the turn.
+ * (see `TurnEditsReceipt`). Write vocabulary comes from the mode frozen on the turn.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -36,7 +36,7 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { hasTurnEditsCardDocuments, TurnEditsCard } from "./TurnEditsCard";
+import { hasTurnEditsReceiptDocuments, TurnEditsReceipt } from "./TurnEditsReceipt";
 import { thinkingDigest } from "./thinking-digest";
 import { isToolViewVisible } from "./tool-view-visibility";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
@@ -98,8 +98,8 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {hasTurnEditsCardDocuments(liveLineageDocuments, changeTrail) ? (
-        <TurnEditsCard
+      {hasTurnEditsReceiptDocuments(liveLineageDocuments, changeTrail) ? (
+        <TurnEditsReceipt
           threadId={resolvedThreadId}
           turn={turn}
           documents={liveLineageDocuments}

@@ -12,9 +12,7 @@ import {
   bodyFromTrailHashline,
   changeTrailDetailKey,
 } from "@/client/change-trails";
-import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { i18n } from "@/lib/i18n";
 
 export type TrailRecoveryOutcome =
   | { kind: "applied" }
@@ -33,36 +31,20 @@ export type TrailChangeRecovery = {
   body: string | null;
   canExecute: boolean;
   durableState: TrailForwardActionStateV1 | undefined;
-  writerImpact: TrailChange["writerImpact"];
 };
 
 export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
-  const writerImpact = change.writerImpact;
-  const action: TrailForwardAction =
-    writerImpact?.kind === "resurrection" ? "delete-again" : "restore";
+  const action: TrailForwardAction = "restore";
   const durableState = change.forwardActions?.[action];
-  const protectedBody =
-    writerImpact?.body.status === "available" ? writerImpact.body.markdown : null;
-  const body = writerImpact ? protectedBody : bodyFromTrailHashline(change.beforeText);
-  const canExecute = protectedBody !== null || durableState?.status === "committed";
+  const body = bodyFromTrailHashline(change.beforeText);
+  const canExecute = body !== null || durableState?.status === "committed";
   return {
     action,
     body,
     canExecute:
       canExecute && durableState?.status !== "applied" && durableState?.status !== "settled",
     durableState,
-    writerImpact,
   };
-}
-
-export function trailChangeLabel(change: TrailChange): string {
-  if (change.writerImpact?.kind === "resurrection") {
-    return i18n._("AI brought back text you deleted");
-  }
-  if (change.writerImpact?.kind === "sweep") {
-    return i18n._("Replaced a passage that included your unsaved edits");
-  }
-  return changeKindLabel(change.kind);
 }
 
 export function useTrailForwardAction(input: {
@@ -70,6 +52,7 @@ export function useTrailForwardAction(input: {
   trailId: string;
   documentId: string;
   change: TrailChange | null;
+  enabled?: boolean;
   runAction?: typeof applyTrailForwardAction;
 }) {
   const queryClient = useQueryClient();
@@ -85,7 +68,8 @@ export function useTrailForwardAction(input: {
     (command.kind === "settling" &&
       (command.outcome.kind === "anchor-unavailable" ||
         command.outcome.kind === "retry-exhausted"));
-  const canExecute = recovery.canExecute && !applied && !anchorUnavailable;
+  const canExecute =
+    (input.enabled ?? true) && recovery.canExecute && !applied && !anchorUnavailable;
   const canCopy = anchorUnavailable && Boolean(recovery.body);
 
   async function execute(): Promise<TrailRecoveryOutcome> {
@@ -150,5 +134,4 @@ const EMPTY_RECOVERY: TrailChangeRecovery = {
   body: null,
   canExecute: false,
   durableState: undefined,
-  writerImpact: null,
 };

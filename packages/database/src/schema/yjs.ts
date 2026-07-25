@@ -190,7 +190,6 @@ export const branchPushSettlementOutbox = pgTable(
     lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
     trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
-    beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
     classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
       .notNull()
@@ -286,7 +285,6 @@ export const changeTrailShells = pgTable(
     state: text("state").$type<ChangeTrailState>().notNull().default("building"),
     version: integer("version").notNull().default(1),
     changeCount: integer("change_count").notNull(),
-    writerImpactCount: integer("writer_impact_count").notNull(),
     documentCount: integer("document_count").notNull(),
     documents: jsonb("documents")
       .$type<Array<{ documentId: string; title: string }>>()
@@ -312,7 +310,7 @@ export const changeTrailShells = pgTable(
     ),
     check(
       "change_trail_shells_state_counts_valid",
-      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.writerImpactCount} >= 0 AND ${table.writerImpactCount} <= ${table.changeCount} AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
+      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
     ),
   ],
 );
@@ -369,7 +367,6 @@ export const changeTrailDeliveryOutbox = pgTable(
     version: integer("version").notNull(),
     eventKind: text("event_kind").$type<ChangeTrailEventKind>().notNull(),
     changeCount: integer("change_count").notNull(),
-    writerImpactCount: integer("writer_impact_count").notNull(),
     documentCount: integer("document_count").notNull(),
     documents: jsonb("documents")
       .$type<Array<{ documentId: string; title: string }>>()
@@ -395,7 +392,7 @@ export const changeTrailDeliveryOutbox = pgTable(
     ),
     check(
       "change_trail_delivery_outbox_counts_valid",
-      sql`${table.changeCount} >= 0 AND ${table.writerImpactCount} >= 0 AND ${table.writerImpactCount} <= ${table.changeCount} AND ${table.documentCount} >= 0`,
+      sql`${table.changeCount} >= 0 AND ${table.documentCount} >= 0`,
     ),
   ],
 );

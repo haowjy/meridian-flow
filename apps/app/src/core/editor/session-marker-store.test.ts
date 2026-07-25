@@ -18,7 +18,7 @@ function encodedPosition(): string {
 
 function message(
   revision: number,
-  changes: Array<{ id: string; writerImpact?: "sweep" | "resurrection" }> = [{ id: "change-1" }],
+  changes: Array<{ id: string; swept?: boolean }> = [{ id: "change-1" }],
   overrides: Partial<ChangeEventWsMessage> = {},
 ): ChangeEventWsMessage {
   const position = encodedPosition();
@@ -29,7 +29,7 @@ function message(
     trailId: "trail-1",
     projectionRevision: revision,
     author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    changes: changes.map(({ id, writerImpact }) => ({
+    changes: changes.map(({ id, swept }) => ({
       admittedByUserId: null,
       changeId: id,
       kind: "modify",
@@ -39,7 +39,7 @@ function message(
         relEnd: position,
         targetBlockId: { clientID: 1, clock: 0 },
       },
-      writerImpact: writerImpact ? { kind: writerImpact } : null,
+      swept: swept ?? false,
       excerpt: id,
       pureDeletionOffset: null,
     })),
@@ -85,10 +85,10 @@ describe("SessionMarkerStore", () => {
     expect(store.getSnapshot()).toHaveLength(0);
   });
 
-  it("caps the session by evicting oldest ordinary markers before writer-impact markers", () => {
+  it("caps the session by evicting oldest ordinary markers before swept markers", () => {
     let now = 0;
     const store = new SessionMarkerStore("me", () => now++);
-    store.replaceGroup(message(1, [{ id: "old-writer-impact", writerImpact: "sweep" }]));
+    store.replaceGroup(message(1, [{ id: "old-swept", swept: true }]));
     for (let index = 0; index < SESSION_MARKER_CAP; index++) {
       store.replaceGroup(
         message(1, [{ id: `plain-${index}` }], {
@@ -97,9 +97,7 @@ describe("SessionMarkerStore", () => {
       );
     }
     expect(store.getSnapshot()).toHaveLength(SESSION_MARKER_CAP);
-    expect(store.getSnapshot().some((marker) => marker.changeId === "old-writer-impact")).toBe(
-      true,
-    );
+    expect(store.getSnapshot().some((marker) => marker.changeId === "old-swept")).toBe(true);
     expect(store.getSnapshot().some((marker) => marker.changeId === "plain-0")).toBe(false);
   });
 

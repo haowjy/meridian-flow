@@ -24,7 +24,7 @@ const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
 
 describe("offline reconciliation", () => {
-  it("reports hidden writer content once using the ordinary writer-impact trail shape", async () => {
+  it("records hidden writer content once in the ordinary receipt shape", async () => {
     const scenario = await setup({
       origin: "human:writer",
       editDeletedBlock: true,
@@ -37,10 +37,7 @@ describe("offline reconciliation", () => {
       documentId: DOCUMENT_ID,
       kind: "delete",
       navigation: { kind: "deletion_boundary" },
-      writerImpact: {
-        kind: "sweep",
-        body: { status: "available", markdown: "Writer offline revision" },
-      },
+      beforeText: expect.stringContaining("Writer offline revision"),
       reversible: false,
     });
     expect(
@@ -79,10 +76,7 @@ describe("offline reconciliation", () => {
     });
     await scenario.reconcile();
     expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({
-      kind: "delete",
-      writerImpact: { kind: "sweep" },
-    });
+    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
   });
 
   it("reports an offline writer revision when the agent actor has no response", async () => {
@@ -93,10 +87,7 @@ describe("offline reconciliation", () => {
     });
     await scenario.reconcile();
     expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({
-      kind: "delete",
-      writerImpact: { kind: "sweep" },
-    });
+    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
   });
 });
 

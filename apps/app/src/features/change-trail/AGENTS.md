@@ -1,17 +1,14 @@
-# features/change-trail — Shared trail recovery policy
+# features/change-trail — Live mark Restore policy
 
-Shared presentation and command policy for durable change-trail recovery
-actions (Restore / Delete-again). This directory is a seam, not a UI surface:
-its one module is consumed by chat (`ChangeViewRows.tsx`) and the editor
-(`PeerMarkPopover.tsx`).
+Shared command policy for restoring a retained Before excerpt from the live
+peer-mark popover. This directory is a seam, not a UI surface.
 
 ## Mental model
 
-A trail change carries one nullable `writerImpact` authority (sweep or
-resurrection). One recovery action per impacted change, chosen by impact kind:
-
-- **`delete-again`** when the change resurrected text the writer had deleted.
-- **`restore`** for a sweep.
+Swept elevation is live-session-only marker state. The durable trail retains
+the change's Before excerpt and navigation anchor; the popover may vend Restore
+while the corresponding swept marker exists. Receipt rows are read-only and
+offer Copy instead.
 
 Action eligibility is gated by the durable forward-action state on the trail
 change: a change already `applied` or `settled` is terminal and its verb is
@@ -32,14 +29,14 @@ draft-review React-Query-held settlement in `features/chat`.
 
 | File | What it does |
 |---|---|
-| `trail-change-recovery.ts` | `trailChangeRecovery(chg)` pure eligibility+presentation; `useTrailForwardAction` React hook command state; `trailChangeLabel` |
+| `trail-change-recovery.ts` | `trailChangeRecovery(chg)` Restore eligibility; `useTrailForwardAction` React hook command state |
 
 Backed by `@/client/change-trails.ts`: `applyTrailForwardAction` (server
 forward-action mutation), `changeTrailDetailKey` (the shared detail query key),
 `bodyFromTrailHashline` (decode the display body carried by trail hashline
 serialization).
 
-→ [features/chat](../chat/AGENTS.md) — `ChangeViewRows.tsx` renders these rows
-  in the per-turn and shared Changes cards.
+→ [features/chat](../chat/AGENTS.md) — receipts render trail excerpts without
+  importing this command policy.
 → [features/editor](../editor/.context/CONTEXT.md) — `PeerMarkPopover.tsx`
   reuses the same recovery surface for an anchored session mark.

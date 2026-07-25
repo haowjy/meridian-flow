@@ -74,7 +74,7 @@ function interactiveAttributes(
     "aria-label": peerMarkAccessibleLabel(label),
     style: `--peer-mark-color: ${markerColor(marker)}`,
     ...(deletion ? { "data-peer-mark-deletion": "true" } : {}),
-    ...(marker.writerImpact?.kind === "sweep" ? { "data-peer-mark-swept": "true" } : {}),
+    ...(marker.swept ? { "data-peer-mark-swept": "true" } : {}),
     ...(marker.changeId === emphasizedId ? { "data-peer-mark-emphasized": "true" } : {}),
   };
 }

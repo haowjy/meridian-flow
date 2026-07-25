@@ -15,29 +15,12 @@ function change(overrides: Partial<TrailChangeV1>): TrailChangeV1 {
     beforeText: "Before",
     afterTextAtReceipt: "After",
     navigation: { kind: "unavailable", reason: "fixture" },
-    writerImpact: null,
     reversible: false,
     ...overrides,
   };
 }
 
 describe("mapTrailChangeToTurnDiff", () => {
-  it("maps writer-impact prose as writer-authored", () => {
-    expect(
-      mapTrailChangeToTurnDiff(
-        change({
-          writerImpact: {
-            kind: "sweep",
-            affectedBlockHash: "abcd",
-            body: { status: "available", markdown: "Protected writer prose" },
-            beforeContentRef: 1,
-          },
-        }),
-        "doc-1",
-      ).mergedOver,
-    ).toEqual([{ body: "Protected writer prose", writerAuthored: true }]);
-  });
-
   it("does not invent merged-over prose without writer impact", () => {
     expect(
       mapTrailChangeToTurnDiff(

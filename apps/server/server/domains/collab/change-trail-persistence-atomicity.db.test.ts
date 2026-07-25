@@ -20,14 +20,11 @@ describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
 
-  it("persists auto-push writer impact in its durable trail without a model-context notice", async () => {
+  it("persists an auto-push receipt without a model-context notice", async () => {
     const success = createHarness();
-    const successBranchId = await success.seedDestructivePush("push-writer-impact-success");
+    const successBranchId = await success.seedDestructivePush("push-receipt-success");
     const beforeSuccess = await success.liveMarkdown(ALPHA_ID);
-    await expect(success.autoPush(successBranchId)).resolves.toMatchObject({
-      status: "pushed",
-      writerImpact: { reversible: false },
-    });
+    await expect(success.autoPush(successBranchId)).resolves.toMatchObject({ status: "pushed" });
     expect(await success.liveMarkdown(ALPHA_ID)).not.toEqual(beforeSuccess);
     expect(await success.noticeRows()).toEqual([]);
     expect(await success.trailRows()).toMatchObject({
@@ -80,7 +77,7 @@ describe("change trail (postgres)", () => {
       shells: [{}],
       details: [
         {
-          changes: [expect.objectContaining({ kind: "insert", writerImpact: null })],
+          changes: [expect.objectContaining({ kind: "insert" })],
         },
       ],
       outbox: [{}],
@@ -123,13 +120,11 @@ describe("change trail (postgres)", () => {
     expect(await failed.activePushJournalCount()).toBe(1);
   });
 
-  it("persists proven writer-impact replacements as immutable live ranges and deletes conservatively", async () => {
+  it("persists proven replacements as live ranges and deletes conservatively", async () => {
     const proven = createHarness();
     const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
     await proven.autoPush(provenBranchId);
-    const provenChange = (await proven.trailRows()).details[0]?.changes.find(
-      (change) => (change as { writerImpact?: unknown }).writerImpact,
-    );
+    const provenChange = (await proven.trailRows()).details[0]?.changes[0];
     expect(provenChange).toMatchObject({
       kind: "modify",
       navigation: { kind: "live_block_range", targetBlockId: expect.any(Object) },
@@ -151,9 +146,7 @@ describe("change trail (postgres)", () => {
     const conservative = createHarness();
     const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
     await conservative.autoPush(conservativeBranchId);
-    const conservativeChange = (await conservative.trailRows()).details[0]?.changes.find(
-      (change) => (change as { writerImpact?: unknown }).writerImpact,
-    );
+    const conservativeChange = (await conservative.trailRows()).details[0]?.changes[0];
     expect(conservativeChange).toMatchObject({
       kind: "delete",
       navigation: { kind: "deletion_boundary" },
@@ -168,10 +161,9 @@ describe("change trail (postgres)", () => {
     expect(committed.shells).toHaveLength(1);
     expect(committed.details).toHaveLength(1);
     expect(committed.outbox).toHaveLength(1);
-    const changes = (committed.details[0]?.changes ?? []) as Array<{ writerImpact: unknown }>;
+    const changes = committed.details[0]?.changes ?? [];
     expect(committed.shells[0]).toMatchObject({
       changeCount: changes.length,
-      writerImpactCount: changes.filter((change) => change.writerImpact).length,
       documentCount: 1,
     });
 
@@ -179,14 +171,14 @@ describe("change trail (postgres)", () => {
     expect(await harness.trailRows()).toEqual(committed);
   });
 
-  it("keeps a mixed-owner push shared and preserves its shell across document deletion", async () => {
+  it("keeps a mixed-owner push turn-owned and preserves its shell across document deletion", async () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("trail-shared-delete");
     await harness.makeJournalOwnershipMixed();
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
     const beforeDelete = await harness.trailRows();
     expect(beforeDelete.shells).toEqual([
-      expect.objectContaining({ ownerKind: "shared", turnId: null, changeCount: 1 }),
+      expect.objectContaining({ ownerKind: "turn", turnId: expect.any(String), changeCount: 1 }),
     ]);
     expect(await harness.pushRows()).toEqual([expect.objectContaining({ turnId: null })]);
 

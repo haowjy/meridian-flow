@@ -16,7 +16,6 @@ const shell = (
   state,
   version,
   changeCount: version,
-  writerImpactCount: 0,
   documentCount: 1,
   documents: [{ documentId: "document-1", title: "Chapter 1" }],
   wordsAdded: null,
@@ -34,7 +33,7 @@ describe("change trail shell state", () => {
       trailId: "trail-1",
       turnId: "turn-1",
       version: 2,
-      counts: { changes: 1, writerImpact: 0, documents: 1 },
+      counts: { changes: 1, documents: 1 },
     });
     const settled = applyTrailShellTransition(updated, {
       kind: "settled",
@@ -43,7 +42,7 @@ describe("change trail shell state", () => {
       turnId: "turn-1",
       version: 3,
       shell: {
-        counts: { changes: 1, writerImpact: 0, documents: 1 },
+        counts: { changes: 1, documents: 1 },
         documents: [{ documentId: "document-1", title: "Chapter 1" }],
         wordsAdded: 1,
         wordsRemoved: 2,
@@ -65,7 +64,7 @@ describe("change trail shell state", () => {
       trailId: "trail-1",
       turnId: "turn-1",
       version: 4,
-      counts: { changes: 4, writerImpact: 1, documents: 1 },
+      counts: { changes: 4, documents: 1 },
     });
     expect(reopened.byId["trail-1"]).toMatchObject({ state: "building", version: 4 });
   });

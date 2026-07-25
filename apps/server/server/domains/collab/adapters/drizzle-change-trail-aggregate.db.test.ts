@@ -1,7 +1,6 @@
 /** PostgreSQL contracts for committed change-event replace-set projections. */
 
 import type { TrailChangeV1 } from "@meridian/contracts";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALPHA_ID,
@@ -43,7 +42,6 @@ function change(input: {
     beforeText: input.before ?? `before-${input.id}|before ${input.id}`,
     afterTextAtReceipt: input.after ?? `after-${input.id}|after ${input.id}`,
     navigation: { kind: "unavailable", reason: "fixture" },
-    writerImpact: null,
     reversible: false,
   };
 }
@@ -53,7 +51,7 @@ const titles = new Map([[ALPHA_ID, "Alpha"]]);
 const trail = (changes: TrailChangeV1[]) => ({
   owner,
   changes,
-  counts: { changes: changes.length, writerImpact: 0, documents: changes.length === 0 ? 0 : 1 },
+  counts: { changes: changes.length, documents: changes.length === 0 ? 0 : 1 },
 });
 
 describe("change trail aggregate projections (postgres)", () => {
@@ -108,7 +106,7 @@ describe("change trail aggregate projections (postgres)", () => {
     ]);
   });
 
-  it("retains a monotonic replace-set revision through clearing and adapter restart", async () => {
+  it("retains a monotonic replace-set revision through adapter restart", async () => {
     const [push] = await db
       .insert(schema.pushLineage)
       .values({
@@ -129,30 +127,12 @@ describe("change trail aggregate projections (postgres)", () => {
       trails: [trail([initial])],
       documentTitles: titles,
     });
-    const empty = await firstWriter.record({
-      trails: [trail([])],
-      documentTitles: titles,
-      settlementRefinement: {
-        pushId,
-        kind: "empty_contribution",
-        currentVersion: true,
-      },
-    });
-    expect(empty).toMatchObject([{ documentId: ALPHA_ID, projectionRevision: 2, changes: [] }]);
-    expect(
-      await db
-        .select()
-        .from(schema.changeTrailDocumentDetails)
-        .where(eq(schema.changeTrailDocumentDetails.documentId, ALPHA_ID)),
-    ).toEqual([]);
-
     const restartedWriter = createDrizzleChangeTrailAggregateWriter(db);
     const restored = await restartedWriter.record({
       trails: [trail([{ ...initial, afterTextAtReceipt: "restored|after restart" }])],
       documentTitles: titles,
       settlementRefinement: {
         pushId,
-        kind: "refine_classifications",
         currentVersion: true,
       },
     });
@@ -161,14 +141,13 @@ describe("change trail aggregate projections (postgres)", () => {
       documentTitles: titles,
       settlementRefinement: {
         pushId,
-        kind: "refine_classifications",
         currentVersion: true,
       },
     });
 
-    expect(
-      [first, empty, restored, updated].map((result) => result[0]?.projectionRevision),
-    ).toEqual([1, 2, 3, 4]);
+    expect([first, restored, updated].map((result) => result[0]?.projectionRevision)).toEqual([
+      1, 2, 3,
+    ]);
     expect(restored[0]?.changes).toEqual([
       expect.objectContaining({ afterTextAtReceipt: "restored|after restart" }),
     ]);

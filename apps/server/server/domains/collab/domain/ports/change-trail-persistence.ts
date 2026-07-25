@@ -104,7 +104,6 @@ export type ChangeTrailPersistence = {
     documentTitles: ReadonlyMap<string, string>;
     settlementRefinement?: {
       pushId: string;
-      kind: "empty_contribution" | "refine_classifications";
       currentVersion: boolean;
     };
   }): Promise<readonly CommittedChangeTrailProjection[]>;
@@ -121,5 +120,5 @@ export type CommittedChangeTrailProjection = {
   owner: NormalizedTrail["owner"];
   documentId: string;
   projectionRevision: number;
-  changes: Array<TrailChangeV1 & { admittedByUserId: string | null }>;
+  changes: Array<TrailChangeV1 & { admittedByUserId: string | null; swept: boolean }>;
 };

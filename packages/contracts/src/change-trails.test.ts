@@ -21,14 +21,6 @@ function validChange(): TrailChangeV1 {
       relEnd: "relative-end",
       targetBlockId: { clientID: 7, clock: 11 },
     },
-    writerImpact: {
-      kind: "sweep",
-      affectedBlockHash: "hash-1",
-      affectedBlockIdentity: { documentId: "document-1", clientID: 7, clock: 11 },
-      body: { status: "available", markdown: "before" },
-      beforeContentRef: 1,
-      ranges: [{ clientID: 7, clock: 11, length: 1 }],
-    },
     reversible: false,
   };
 }
@@ -37,20 +29,6 @@ describe("change-trail Yjs identities", () => {
   it.each([
     ["canonical clientID", (change: TrailChangeV1) => change.beforeBlockIdentity, "clientID", -1],
     ["canonical clock", (change: TrailChangeV1) => change.beforeBlockIdentity, "clock", -1],
-    [
-      "writer range clientID",
-      (change: TrailChangeV1) =>
-        change.writerImpact?.kind === "sweep" ? change.writerImpact.ranges?.[0] : undefined,
-      "clientID",
-      Number.MAX_SAFE_INTEGER + 1,
-    ],
-    [
-      "writer range clock",
-      (change: TrailChangeV1) =>
-        change.writerImpact?.kind === "sweep" ? change.writerImpact.ranges?.[0] : undefined,
-      "clock",
-      Number.MAX_SAFE_INTEGER + 1,
-    ],
   ] as const)("rejects an out-of-range %s", (_case, selectIdentity, field, value) => {
     const change = validChange();
     const identity = selectIdentity(change);

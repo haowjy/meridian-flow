@@ -4,7 +4,6 @@ import {
   type AgentEditCodec,
   classifyDestructiveSnapshotEffect,
   type DocumentCoordinator,
-  normalizeLineageRanges,
   snapshotBlocks,
   toDocHandle,
   type YProsemirrorDocumentModel,
@@ -16,12 +15,8 @@ import type {
   PendingLiveSettlement,
   PreparedPushCommit,
   PushCommitStore,
-  PushWriterImpactReport,
 } from "./branch-push-contracts.js";
-import {
-  projectPushWriterImpact,
-  trailContributionReplacement,
-} from "./branch-trail-projection.js";
+import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
@@ -58,7 +53,6 @@ export function createBranchPushTransition(input: {
         onConflict: (push: PendingLiveSettlement["push"]) => T;
         finish: (input: {
           pushes: readonly PendingLiveSettlement["push"][];
-          writerImpacts: readonly (PushWriterImpactReport | undefined)[];
           docs: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Y.Doc>;
         }) => T | Promise<T>;
       };
@@ -87,7 +81,6 @@ export function createBranchPushTransition(input: {
         }
         const pushes = "status" in committed ? [committed.push] : committed.pushes;
         await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
-        const writerImpacts: Array<PushWriterImpactReport | undefined> = [];
         for (const [index, push] of pushes.entries()) {
           let durable: PendingLiveSettlement;
           try {
@@ -107,11 +100,9 @@ export function createBranchPushTransition(input: {
           }
           const liveDoc = docs.get(push.documentId);
           if (!liveDoc) throw new Error("Branch push transition lost its live document lock");
-          writerImpacts.push(
-            await settle({ pending: durable, liveDoc, signal: inputExecution.signal }),
-          );
+          await settle({ pending: durable, liveDoc, signal: inputExecution.signal });
         }
-        return prepared.finish({ pushes, writerImpacts, docs });
+        return prepared.finish({ pushes, docs });
       },
     );
   }
@@ -184,16 +175,11 @@ export function createBranchPushTransition(input: {
   const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) =>
     input.commitStore.commitPushBatch(prepared);
 
-  /** Classifies destructive effects from durable provenance and the current before/after state. */
-  function classify(
+  /** Detects live-session sweep elevation without adding it to the durable trail. */
+  function detectSweptChanges(
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
-  ): {
-    trail: PendingLiveSettlement["trail"];
-    classifications?: PendingLiveSettlement["trail"]["changes"];
-    writerImpact?: PushWriterImpactReport;
-    refineToEmpty?: boolean;
-  } | null {
+  ): ReadonlySet<string> {
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
     const afterDoc = createCollabYDoc({ gc: false });
     try {
@@ -216,26 +202,7 @@ export function createBranchPushTransition(input: {
           provenance: run.birthClass,
         })),
       });
-      if (pending.trail.changes.length === 0) {
-        return { trail: pending.trail, refineToEmpty: true };
-      }
-      if (
-        pending.trail.changes.every(
-          (change) =>
-            change.owner === null &&
-            change.kind === "modify" &&
-            change.beforeBlockIdentity !== null &&
-            change.beforeBlockIdentity !== undefined &&
-            change.afterBlockIdentity?.clientID === change.beforeBlockIdentity.clientID &&
-            change.afterBlockIdentity.clock === change.beforeBlockIdentity.clock &&
-            change.writerImpact?.kind !== "resurrection",
-        )
-      ) {
-        return { trail: pending.trail, refineToEmpty: true };
-      }
-      if (affected.length === 0) {
-        return { trail: pending.trail, classifications: [] };
-      }
+      if (affected.length === 0) return new Set();
       const affectedByIdentity = new Map(
         affected.map(
           (item) =>
@@ -249,38 +216,13 @@ export function createBranchPushTransition(input: {
             ] as const,
         ),
       );
-      const lateChanges = pending.trail.changes.flatMap((change) => {
+      const changeIds = pending.trail.changes.flatMap((change) => {
         if (!change.beforeBlockIdentity) return [];
-        const affectedItem = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
-        if (!affectedItem) return [];
-        const { block, ranges } = affectedItem;
-        const markdown = block.body;
-        return [
-          {
-            ...change,
-            beforeText: block.serialized,
-            writerImpact: {
-              kind: "sweep" as const,
-              affectedBlockHash: block.hash,
-              affectedBlockIdentity: change.beforeBlockIdentity,
-              body: { status: "available" as const, markdown },
-              beforeContentRef: pending.beforeContentRef,
-              ranges: normalizeLineageRanges(ranges),
-            },
-          },
-        ];
+        return affectedByIdentity.has(canonicalBlockKey(change.beforeBlockIdentity))
+          ? [change.changeId]
+          : [];
       });
-      if (lateChanges.length === 0) return null;
-      const writerImpact = projectPushWriterImpact(lateChanges);
-      if (!writerImpact) return null;
-      return {
-        trail: {
-          ...pending.trail,
-          changes: lateChanges,
-        },
-        classifications: lateChanges,
-        writerImpact,
-      };
+      return new Set(changeIds);
     } finally {
       afterDoc.destroy();
     }
@@ -290,9 +232,8 @@ export function createBranchPushTransition(input: {
     pending: PendingLiveSettlement;
     liveDoc: Y.Doc;
     signal?: AbortSignal;
-  }): Promise<PushWriterImpactReport | undefined> {
+  }): Promise<void> {
     let pending = inputSettlement.pending;
-    let latest: PushWriterImpactReport | undefined;
     let committedProjections: readonly CommittedChangeTrailProjection[] = [];
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
       inputSettlement.signal?.throwIfAborted();
@@ -306,26 +247,16 @@ export function createBranchPushTransition(input: {
       pending = await input.settlementStore.loadLiveSettlement(pending.push.id);
       const materialized = materializeFinalPrePush(pending);
       try {
-        const cut = classify(pending, materialized.doc);
+        const sweep = detectSweptChanges(pending, materialized.doc);
         const settled = await input.settlementStore.settlePushTrail({
           push: pending.push,
-          ...(cut
-            ? {
-                trail: cut.trail,
-                replacement: trailContributionReplacement(
-                  pending.trail,
-                  pending.push,
-                  cut.refineToEmpty ? "empty" : "refine",
-                  cut.classifications,
-                ),
-              }
-            : {}),
+          trail: pending.trail,
+          replacement: trailContributionReplacement(pending.trail, pending.push),
           claim: pending.claim,
           joinVersion: pending.joinVersion,
         });
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
         committedProjections = settled;
-        if (cut?.writerImpact) latest = cut.writerImpact;
 
         let completion: CompletionFenceResult;
         try {
@@ -351,14 +282,23 @@ export function createBranchPushTransition(input: {
             if (projection.documentId !== pending.push.documentId) continue;
             try {
               input.changeEventDelivery.deliver(
-                projectCommittedChangeEvent(projection, input.codec),
+                projectCommittedChangeEvent(
+                  {
+                    ...projection,
+                    changes: projection.changes.map((change) => ({
+                      ...change,
+                      swept: sweep.has(change.changeId),
+                    })),
+                  },
+                  input.codec,
+                ),
               );
             } catch {
               // Delivery is an ephemeral session hint; durable push completion
               // and the trail must never be reported as failed because it missed.
             }
           }
-          return latest;
+          return;
         }
       } finally {
         materialized.doc.destroy();

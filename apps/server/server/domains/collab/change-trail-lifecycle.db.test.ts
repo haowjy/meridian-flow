@@ -1,7 +1,6 @@
 import {
   createAgentEditCodec,
   toDocHandle,
-  toRef,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
@@ -19,7 +18,7 @@ import {
   createInMemoryCoordinator,
   createInMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
-import { deletionBoundaryTarget, liveBlockTarget } from "./domain/trail-read-kernel.js";
+import { deletionBoundaryTarget } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -100,7 +99,6 @@ describe("change trail (postgres)", () => {
         turnId: TURN_ID,
         state: "settled",
         documentCount: 2,
-        writerImpactCount: 2,
         documents: [
           { documentId: ALPHA_ID, title: "alpha" },
           { documentId: BETA_ID, title: "beta" },
@@ -117,13 +115,11 @@ describe("change trail (postgres)", () => {
     );
     expect(
       trails.details.flatMap((detail) =>
-        (
-          detail.changes as Array<{
-            writerImpact?: { kind: string; body: { markdown: string } };
-          }>
-        ).flatMap((change) =>
-          change.writerImpact?.kind === "sweep" ? [change.writerImpact.body.markdown] : [],
-        ),
+        (detail.changes as Array<{ beforeText?: string | null }>).flatMap((change) => {
+          if (!change.beforeText) return [];
+          const separator = change.beforeText.indexOf("|");
+          return [separator < 0 ? change.beforeText : change.beforeText.slice(separator + 1)];
+        }),
       ),
     ).toEqual([
       expect.stringContaining("Writer captured body"),
@@ -193,7 +189,6 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 0,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -213,12 +208,6 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Restored prose.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          writerImpact: {
-            kind: "sweep",
-            affectedBlockHash: "deleted-block",
-            body: { status: "available", markdown: "Restored prose." },
-            beforeContentRef: null,
-          },
           reversible: false,
         },
       ],
@@ -288,7 +277,6 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -308,12 +296,6 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Restored prose.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          writerImpact: {
-            kind: "sweep",
-            affectedBlockHash: "deleted-block",
-            body: { status: "available", markdown: "Restored prose." },
-            beforeContentRef: null,
-          },
           reversible: false,
         },
       ],
@@ -376,7 +358,6 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -396,12 +377,6 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Recovered once.",
           afterTextAtReceipt: null,
           navigation: { kind: "unavailable", reason: "crash_fixture" },
-          writerImpact: {
-            kind: "sweep",
-            affectedBlockHash: "deleted-block",
-            body: { status: "available", markdown: "Recovered once." },
-            beforeContentRef: null,
-          },
           forwardActions: {
             restore: {
               status: "committed",
@@ -453,7 +428,6 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -473,12 +447,6 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Never restored.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          writerImpact: {
-            kind: "sweep",
-            affectedBlockHash: "deleted-block",
-            body: { status: "available", markdown: "Never restored." },
-            beforeContentRef: null,
-          },
           reversible: false,
         },
       ],
@@ -531,99 +499,6 @@ describe("change trail (postgres)", () => {
     expect(await db.select().from(schema.documentYjsUpdates)).toHaveLength(0);
   });
 
-  it("keeps concurrent writer prose when a committed Delete-again guard rejects", async () => {
-    const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    const model = yProsemirrorModel(documentSchema);
-    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
-    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
-    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Restored prose.\n\nSurvivor."));
-    const doomed = liveDoc.getXmlFragment("prosemirror").get(0);
-    if (!(doomed instanceof Y.XmlElement)) throw new Error("missing restored block");
-
-    const trailId = "00000000-0000-4000-8000-000000000812";
-    const changeId = "delete-again-collision";
-    await db.insert(schema.changeTrailShells).values({
-      id: trailId,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      ownerKind: "turn",
-      changeCount: 1,
-      writerImpactCount: 0,
-      documentCount: 1,
-    });
-    await db.insert(schema.changeTrailDocumentDetails).values({
-      trailId,
-      documentId: ALPHA_ID,
-      documentTitle: "Alpha",
-      changes: [
-        {
-          changeId,
-          ordinal: 0,
-          documentId: ALPHA_ID,
-          pushId: null,
-          receiptId: null,
-          kind: "insert",
-          beforeBlockId: null,
-          afterBlockId: "restored-block",
-          beforeText: null,
-          afterTextAtReceipt: "restored-block|Restored prose.",
-          navigation: liveBlockTarget(liveDoc, doomed),
-          writerImpact: {
-            kind: "resurrection",
-            body: { status: "available", markdown: "Restored prose." },
-          },
-          reversible: false,
-        },
-      ],
-    });
-
-    let transactionCount = 0;
-    const collisionDb = new Proxy(db, {
-      get(target, property, receiver) {
-        if (property === "transaction") {
-          return async (...args: Parameters<typeof db.transaction>) => {
-            const result = await target.transaction(...args);
-            transactionCount += 1;
-            if (transactionCount === 1) {
-              model.deleteBlock(toDocHandle(liveDoc), toRef(doomed));
-              model.insertBlocks(
-                toDocHandle(liveDoc),
-                null,
-                codec.parse("Concurrent writer words."),
-              );
-            }
-            return result;
-          };
-        }
-        const value = Reflect.get(target, property, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-    const actions = createDrizzleTrailForwardActions({
-      db: collisionDb,
-      documentAccess: createDrizzleDocumentAccess(db),
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: durableProjectionSerializer(model, codec),
-    });
-
-    await expect(
-      actions.apply({
-        threadId: THREAD_ID,
-        trailId,
-        changeId,
-        action: "delete-again",
-        userId: USER_ID,
-      }),
-    ).resolves.toEqual({ status: "anchor_unavailable" });
-    const markdown = codec.serialize(model.projectBlocks(toDocHandle(liveDoc)));
-    expect(markdown).toContain("Concurrent writer words.");
-    expect(markdown).toContain("Survivor.");
-    expect(await db.select().from(schema.documentYjsUpdates)).toHaveLength(0);
-  });
-
   it("retains captured trail prose after the file is permanently deleted", async () => {
     const trailId = "00000000-0000-4000-8000-000000000810";
     await db.insert(schema.changeTrailShells).values({
@@ -632,7 +507,6 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 1,
       documentCount: 1,
     });
     await db
@@ -655,7 +529,6 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Captured after reload.",
           afterTextAtReceipt: null,
           navigation: { kind: "unavailable", reason: "document_deleted" },
-          writerImpact: null,
           reversible: false,
         },
       ],
@@ -697,7 +570,6 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 1,
       documentCount: 1,
     });
     await db
@@ -720,12 +592,6 @@ describe("change trail (postgres)", () => {
           beforeText: "protected-block|Protected prose.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          writerImpact: {
-            kind: "sweep",
-            affectedBlockHash: "deleted-block",
-            body: { status: "available", markdown: "Protected prose." },
-            beforeContentRef: null,
-          },
           reversible: false,
         },
       ],
@@ -795,7 +661,6 @@ describe("change trail (postgres)", () => {
           state: "settled",
           version: 3,
           changeCount: 0,
-          writerImpactCount: 0,
           documentCount: 0,
           settledAt: expect.any(Date),
         }),
@@ -891,7 +756,7 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("settles shared and per-turn trails from their respective durable work rows", async () => {
+  it("does not synthesize a shared trail from mixed journal ownership", async () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("shared-settlement");
     await harness.makeJournalOwnershipMixed();
@@ -901,20 +766,13 @@ describe("change trail (postgres)", () => {
     await harness.pollTrails();
 
     const rows = await harness.trailRows();
-    expect(rows.shells).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ownerKind: "shared",
-          state: "settled",
-          settledAt: expect.any(Date),
-        }),
-        expect.objectContaining({
-          ownerKind: "turn",
-          state: "settled",
-          settledAt: expect.any(Date),
-        }),
-      ]),
-    );
+    expect(rows.shells).toEqual([
+      expect.objectContaining({
+        ownerKind: "turn",
+        state: "settled",
+        settledAt: expect.any(Date),
+      }),
+    ]);
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ turnId: TURN_ID, state: "complete" }),
     ]);
@@ -976,12 +834,12 @@ describe("change trail (postgres)", () => {
   it("serializes shared recording against terminal reconciliation", async () => {
     const harness = createHarness();
     const first = await harness.seedDestructivePush("shared-record-reconcile-first", ALPHA_ID);
-    await harness.makeJournalOwnershipMixed();
+    await harness.makeJournalOwnershipNull();
     await harness.autoPush(first);
     await harness.pollTrails();
 
     const second = await harness.seedDestructivePush("shared-record-reconcile-second", BETA_ID);
-    await harness.makeJournalOwnershipMixed();
+    await harness.makeJournalOwnershipNull();
     await expect(Promise.all([harness.autoPush(second), harness.pollTrails()])).resolves.toEqual([
       expect.objectContaining({ status: "pushed" }),
       expect.any(Number),
@@ -1026,7 +884,6 @@ describe("change trail (postgres)", () => {
       version: 3,
       settledAt: expect.any(Date),
       changeCount: 0,
-      writerImpactCount: 0,
       documentCount: 0,
     });
 
@@ -1063,7 +920,6 @@ describe("change trail (postgres)", () => {
         version: 7,
         settledAt: expect.any(Date),
         changeCount: 1,
-        writerImpactCount: 1,
         documentCount: 1,
       }),
     ]);
@@ -1079,7 +935,6 @@ describe("change trail (postgres)", () => {
       resettled.outbox.find((row) => row.version === 7 && row.eventKind === "settled"),
     ).toMatchObject({
       changeCount: 1,
-      writerImpactCount: 1,
       documentCount: 1,
       documents: [expect.objectContaining({ documentId: ALPHA_ID })],
       wordsAdded: expect.any(Number),
@@ -1105,7 +960,6 @@ describe("change trail (postgres)", () => {
         expect.objectContaining({
           state: "settled",
           changeCount: 1,
-          writerImpactCount: 1,
           documentCount: 1,
         }),
       ],

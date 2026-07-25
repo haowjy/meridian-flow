@@ -115,7 +115,6 @@ function pendingSettlement(pushId: number): PendingLiveSettlement {
     lockCutUpdate: new Uint8Array(),
     pushUpdate: new Uint8Array(),
     postCutUpdates: [],
-    beforeContentRef: null,
     trail: {
       documentId: DOCUMENT_ID,
       documentTitle: "Chapter",

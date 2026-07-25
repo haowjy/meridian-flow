@@ -120,7 +120,6 @@ const [
   liveLineage,
   trailDetail,
   restoreTrailChange,
-  deleteTrailChangeAgain,
   uploadFigure,
   signedFigureUrl,
   reverseAvailability,
@@ -150,9 +149,6 @@ const [
   ),
   import(
     "../../routes/api/threads/[threadId]/change-trails/[trailId]/changes/[changeId]/restore/index.post.js"
-  ).then((module) => module.default as unknown as TestHandler),
-  import(
-    "../../routes/api/threads/[threadId]/change-trails/[trailId]/changes/[changeId]/delete-again/index.post.js"
   ).then((module) => module.default as unknown as TestHandler),
   import("../../routes/api/projects/[projectId]/documents/[documentId]/figure.post.js").then(
     (module) => module.default as unknown as TestHandler,
@@ -205,13 +201,6 @@ describe("malformed HTTP request IDs", () => {
       "change-trail restore",
       () =>
         restoreTrailChange(
-          event({ threadId: VALID_ID, trailId: MALFORMED_ID, changeId: "change-1" }),
-        ),
-    ],
-    [
-      "change-trail delete-again",
-      () =>
-        deleteTrailChangeAgain(
           event({ threadId: VALID_ID, trailId: MALFORMED_ID, changeId: "change-1" }),
         ),
     ],

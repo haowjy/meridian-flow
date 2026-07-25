@@ -33,7 +33,6 @@ function change(documentId: string, id: string): TrailChangeV1 {
     beforeText: "Before",
     afterTextAtReceipt: "After",
     navigation: { kind: "unavailable", reason: "fixture" },
-    writerImpact: null,
     reversible: false,
   };
 }
@@ -54,7 +53,6 @@ describe("turn diff query (postgres)", () => {
         state: "settled",
         settledAt: new Date(),
         changeCount: 2,
-        writerImpactCount: 0,
         documentCount: 2,
       },
       {
@@ -64,7 +62,6 @@ describe("turn diff query (postgres)", () => {
         ownerKind: "shared",
         state: "building",
         changeCount: 1,
-        writerImpactCount: 0,
         documentCount: 1,
       },
     ]);
@@ -130,7 +127,6 @@ describe("turn diff query (postgres)", () => {
       state: "settled",
       settledAt: new Date(),
       changeCount: 1,
-      writerImpactCount: 0,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({

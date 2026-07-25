@@ -17,7 +17,7 @@ export type YjsRoomName =
 
 export type ChangeEventProjection = Pick<TrailChangeV1, "changeId" | "kind" | "navigation"> & {
   admittedByUserId: string | null;
-  writerImpact: Pick<NonNullable<TrailChangeV1["writerImpact"]>, "kind"> | null;
+  swept: boolean;
   excerpt: string | null;
   pureDeletionOffset: number | null;
 };
@@ -53,12 +53,7 @@ export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMe
 const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChangeV1Schema
   .pick({ changeId: true, kind: true, navigation: true })
   .extend({
-    writerImpact: z
-      .discriminatedUnion("kind", [
-        z.object({ kind: z.literal("sweep") }),
-        z.object({ kind: z.literal("resurrection") }),
-      ])
-      .nullable(),
+    swept: z.boolean(),
     admittedByUserId: z.string().nullable(),
     excerpt: z.string().max(500).nullable(),
     pureDeletionOffset: z.number().int().nonnegative().nullable(),

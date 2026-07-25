@@ -53,7 +53,6 @@ export function createDrizzleChangeTrailDispatcher(input: {
           version: changeTrailDeliveryOutbox.version,
           turnId: changeTrailShells.turnId,
           changes: changeTrailDeliveryOutbox.changeCount,
-          writerImpact: changeTrailDeliveryOutbox.writerImpactCount,
           documents: changeTrailDeliveryOutbox.documentCount,
           documentTitles: changeTrailDeliveryOutbox.documents,
           wordsAdded: changeTrailDeliveryOutbox.wordsAdded,
@@ -81,7 +80,6 @@ export function createDrizzleChangeTrailDispatcher(input: {
               version: row.version,
               counts: {
                 changes: row.changes,
-                writerImpact: row.writerImpact,
                 documents: row.documents,
               },
             }
@@ -95,7 +93,6 @@ export function createDrizzleChangeTrailDispatcher(input: {
               shell: {
                 counts: {
                   changes: row.changes,
-                  writerImpact: row.writerImpact,
                   documents: row.documents,
                 },
                 documents: row.documentTitles,

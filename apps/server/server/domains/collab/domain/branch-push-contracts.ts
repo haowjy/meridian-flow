@@ -14,12 +14,7 @@ import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
-import type {
-  NavigationTargetV1,
-  NormalizedTrail,
-  RawTrailChange,
-  TrailChangeV1,
-} from "./trail-read-kernel.js";
+import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
   constructor(readonly branchId: string) {
@@ -121,7 +116,6 @@ export type PushToLiveResult =
       update: Uint8Array;
       branchReset?: { branchId: string; fromGeneration: number };
       conflictEcho?: BranchPushConflictEcho;
-      writerImpact?: PushWriterImpactReport;
     }
   | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
   | {
@@ -147,7 +141,6 @@ export type PreparedPushCommit = {
 };
 
 export type PreparedPush = {
-  beforeContentRef: number | null;
   trailChanges: RawTrailChange[];
   lockCutUpdate: Uint8Array;
   prepared: Omit<
@@ -162,7 +155,6 @@ export type PendingLiveSettlement = {
   lockCutUpdate: Uint8Array;
   pushUpdate: Uint8Array;
   postCutUpdates: readonly Uint8Array[];
-  beforeContentRef: number | null;
   trail: DurableTrailRecord;
   provenanceView: readonly ProvenanceRun[];
   joinVersion: number;
@@ -183,13 +175,13 @@ export type CompletionFenceResult = "applied" | "already_applied" | "retry";
 
 type TrailContributionTarget = {
   owner: NormalizedTrail["owner"];
-  classifications: readonly TrailChangeV1[];
+  changes: readonly TrailChangeV1[];
 };
 
 export type TrailContributionReplacement = {
   targets: readonly TrailContributionTarget[];
   documentTitles: ReadonlyMap<string, string>;
-} & ({ kind: "refine" } | { kind: "empty" });
+};
 
 export type PreparedDiscardCommit = {
   branch: BranchSnapshot;
@@ -207,7 +199,6 @@ export type PushCandidate = {
   rows: BranchJournalRow[];
   kind: "content" | "manifest";
   materialization: "whole" | "selected_rows";
-  sweepPolicy: "project" | "none";
 };
 
 export type CandidateBatch = {
@@ -350,20 +341,6 @@ export type BranchReviewService = {
     | { status: "rollback_pending"; rowsMarked: number }
   >;
 };
-
-export interface PushWriterImpactReport {
-  affectedBlockHashes: readonly string[];
-  capturedDeletedBodies: readonly { hash: string; body: string | "body_unavailable" }[];
-  beforeContentRef: number | null;
-  receiptId: string;
-  locations: readonly {
-    changeId: string;
-    affectedBlockHash: string;
-    outcome: "modify" | "delete";
-    navigation: NavigationTargetV1;
-  }[];
-  reversible: boolean;
-}
 
 export type BranchPushServiceInput = {
   branchStore: BranchStore;

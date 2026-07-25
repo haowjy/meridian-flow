@@ -46,9 +46,9 @@ function projectedChange(
     beforeText: null,
     afterTextAtReceipt: `${changeId}|${changeId} body`,
     navigation: { kind: "unavailable", reason: "fixture" },
-    writerImpact: null,
     reversible: false,
     admittedByUserId,
+    swept: false,
   };
 }
 
@@ -118,7 +118,6 @@ function preparedPush(
       documentTitle: trail.documentTitle,
       lockCutUpdate: Y.encodeStateAsUpdate(liveDoc),
       pushUpdate,
-      beforeContentRef: null,
       trail,
       provenanceView: [],
     }),

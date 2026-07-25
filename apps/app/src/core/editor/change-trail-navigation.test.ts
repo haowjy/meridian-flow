@@ -22,7 +22,6 @@ function deletionChange(doc: Y.Doc): TrailChange {
       position: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 0)),
       affinity: "document_start",
     },
-    writerImpact: null,
     reversible: false,
   };
 }
