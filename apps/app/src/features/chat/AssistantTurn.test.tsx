@@ -37,6 +37,7 @@ vi.mock("@/client/query/useReverseMutation", () => ({
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
+  useChatContextRoutability: () => null,
 }));
 
 const { AssistantTurn } = await import("./AssistantTurn");

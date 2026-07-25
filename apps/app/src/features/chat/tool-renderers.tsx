@@ -61,7 +61,7 @@ function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): React
   return tool.status === "complete" ? complete : active;
 }
 
-function DocumentName({ path }: { path: string }) {
+export function DocumentName({ path }: { path: string }) {
   const displayName = documentDisplayName(path);
   return (
     <span className="flex min-w-0 items-baseline gap-1.5">

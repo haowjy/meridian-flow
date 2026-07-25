@@ -1,7 +1,7 @@
 import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
@@ -10,15 +10,20 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { mutateAsyncMock } = vi.hoisted(() => ({
+const { mutateAsyncMock, contextNavigation } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
+  contextNavigation: {
+    current: null as ((uri: string) => void) | null,
+    canOpen: null as ((uri: string) => boolean) | null,
+  },
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseTurnMutation: () => ({ mutateAsync: mutateAsyncMock }),
 }));
 vi.mock("./ChatContextNavigation", () => ({
-  useChatContextNavigation: () => null,
+  useChatContextNavigation: () => contextNavigation.current,
+  useChatContextRoutability: () => contextNavigation.canOpen,
 }));
 const { TurnEditsReceipt } = await import("./TurnEditsReceipt");
 
@@ -79,6 +84,11 @@ async function withInteractiveCard(
 }
 
 describe("TurnEditsReceipt", () => {
+  beforeEach(() => {
+    contextNavigation.current = null;
+    contextNavigation.canOpen = null;
+  });
+
   /**
    * A receipt may exist only for what actually reached the manuscript.
    *
@@ -199,5 +209,47 @@ describe("TurnEditsReceipt", () => {
     expect(html).toContain("Can&#x27;t undo");
     expect(html).not.toContain("This change is too old to undo.");
     expect(html).not.toContain("Later edits build");
+  });
+
+  it("links a document name only when its URI is routable", async () => {
+    const openContextUri = vi.fn();
+    contextNavigation.current = openContextUri;
+    contextNavigation.canOpen = () => true;
+    const receiptDocument = {
+      uri: "manuscript://arc/chapter-1.mdx",
+      path: "/arc/chapter-1.mdx",
+      scope: "live" as const,
+    };
+
+    await withInteractiveCard({ documents: [receiptDocument] }, async (card) => {
+      await act(async () => document.querySelector<HTMLButtonElement>("[aria-controls]")?.click());
+      await card.click("chapter-1");
+      expect(openContextUri).toHaveBeenCalledWith(receiptDocument.uri);
+    });
+  });
+
+  it("does not make provider presence look like a routable work document", async () => {
+    contextNavigation.current = vi.fn();
+    contextNavigation.canOpen = () => false;
+    await withInteractiveCard(
+      {
+        documents: [
+          {
+            uri: "scratch://notes/beat.md",
+            path: "/notes/beat.md",
+            scope: "live",
+          },
+        ],
+      },
+      async () => {
+        await act(async () =>
+          document.querySelector<HTMLButtonElement>("[aria-controls]")?.click(),
+        );
+        const beatButtons = [...document.querySelectorAll("button")].filter(
+          (button) => button.textContent?.trim() === "beat.md",
+        );
+        expect(beatButtons).toHaveLength(0);
+      },
+    );
   });
 });

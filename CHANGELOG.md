@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: receipt document names now share canonical writer-facing naming
+  and only become links when the context URI is routable.
 - `apps/app`: AI mark popovers now keep only attribution, Restore,
   conversation navigation, and a trail-backed Before/After disclosure; receipt
   rows use clamped excerpts without nested scrolling, cards, or Copy controls.

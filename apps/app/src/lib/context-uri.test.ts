@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { contextRouteTargetFromUri, displayContextPath } from "@/lib/context-uri";
+import {
+  canOpenContextUri,
+  contextRouteTargetFromUri,
+  displayContextPath,
+} from "@/lib/context-uri";
 
 const WORK_ID = "123e4567-e89b-12d3-a456-426614174000";
 const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000000";
@@ -59,5 +63,14 @@ describe("contextRouteTargetFromUri", () => {
 
   it("degrades a bare scratch URI when there is no displayed work", () => {
     expect(contextRouteTargetFromUri("scratch://probe-cycle-3.mdx", null)).toBeNull();
+  });
+});
+
+describe("canOpenContextUri", () => {
+  it("uses the same work-aware resolution policy as navigation", () => {
+    expect(canOpenContextUri("manuscript://arc/chapter-1.mdx", null)).toBe(true);
+    expect(canOpenContextUri("scratch://notes/beat.md", WORK_ID)).toBe(true);
+    expect(canOpenContextUri("scratch://notes/beat.md", null)).toBe(false);
+    expect(canOpenContextUri(`scratch://${OTHER_WORK_ID}/notes/beat.md`, WORK_ID)).toBe(false);
   });
 });

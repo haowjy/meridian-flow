@@ -54,6 +54,10 @@ export function contextRouteTargetFromUri(
   return { scheme: parsed.scheme, path: parsed.path, workId };
 }
 
+export function canOpenContextUri(uri: string, activeWorkId: string | null): boolean {
+  return contextRouteTargetFromUri(uri, activeWorkId) !== null;
+}
+
 function formatContextPath(value: string): string {
   return `/${value.replace(/^\/+/, "")}`;
 }

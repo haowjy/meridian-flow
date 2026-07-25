@@ -19,13 +19,13 @@ import type { ReversalDirection } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
-import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
-import { useChatContextNavigation } from "./ChatContextNavigation";
+import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ConversationReveal, useConversationReveal } from "./conversation-reveal";
 import { documentDisplayName } from "./document-display-name";
 import { DraftStatsLabel } from "./draft-stats";
+import { DocumentName } from "./tool-renderers";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -65,6 +65,7 @@ export function TurnEditsReceipt({
 }: TurnEditsReceiptProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
+  const canOpenContextUri = useChatContextRoutability();
   const [expanded, setExpanded] = useState(false);
   const reveal = useConversationReveal(threadId);
   const [activeReveal, setActiveReveal] = useState<ConversationReveal | null>(null);
@@ -200,12 +201,17 @@ export function TurnEditsReceipt({
               reveal={activeReveal}
               documents={liveDocuments}
               onOpenContextUri={openContextUri}
+              canOpenContextUri={canOpenContextUri}
             />
           ) : (
             <ul className="flex flex-col">
               {liveDocuments.map((doc) => (
                 <li key={doc.uri}>
-                  <DocumentRow document={doc} onOpenContextUri={openContextUri} />
+                  <DocumentRow
+                    document={doc}
+                    onOpenContextUri={openContextUri}
+                    canOpenContextUri={canOpenContextUri}
+                  />
                 </li>
               ))}
             </ul>
@@ -223,6 +229,7 @@ export function ChangeViewDetail({
   reveal,
   documents = [],
   onOpenContextUri = null,
+  canOpenContextUri = null,
 }: {
   threadId: string;
   shell: ChangeTrailShell;
@@ -230,6 +237,7 @@ export function ChangeViewDetail({
   reveal: ReturnType<typeof useConversationReveal>;
   documents?: TurnEditDocument[];
   onOpenContextUri?: ((uri: string) => void) | null;
+  canOpenContextUri?: ((uri: string) => boolean) | null;
 }) {
   const { detail } = useAuthorizedChangeTrailDetail(threadId, shell, true);
   if (shell.state !== "settled") return null;
@@ -261,7 +269,11 @@ export function ChangeViewDetail({
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
         {liveDocument ? (
-          <DocumentRow document={liveDocument} onOpenContextUri={onOpenContextUri} />
+          <DocumentRow
+            document={liveDocument}
+            onOpenContextUri={onOpenContextUri}
+            canOpenContextUri={canOpenContextUri}
+          />
         ) : (
           <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
             {document.documentTitle}
@@ -300,15 +312,16 @@ function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
 function DocumentRow({
   document,
   onOpenContextUri,
+  canOpenContextUri,
 }: {
   document: TurnEditDocument;
   onOpenContextUri: ((uri: string) => void) | null;
+  canOpenContextUri: ((uri: string) => boolean) | null;
 }) {
-  const label = basenameOf(document);
-  if (!onOpenContextUri) {
+  if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
     return (
       <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
-        {label}
+        <DocumentName path={document.uri} />
       </span>
     );
   }
@@ -318,7 +331,7 @@ function DocumentRow({
       onClick={() => onOpenContextUri(document.uri)}
       className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-muted"
     >
-      <span className="min-w-0 truncate text-prose-foreground">{label}</span>
+      <DocumentName path={document.uri} />
     </button>
   );
 }
@@ -329,11 +342,4 @@ function documentCountLabel(count: number) {
 
 function documentTitleLabel(title: string) {
   return <Trans>Edited {title}</Trans>;
-}
-
-function basenameOf(document: TurnEditDocument): string {
-  const display = displayContextPath(document.uri, document.path);
-  const trimmed = display.replace(/\/+$/, "");
-  const parts = trimmed.split("/").filter(Boolean);
-  return parts.at(-1) ?? trimmed;
 }
