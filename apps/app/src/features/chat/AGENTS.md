@@ -76,18 +76,16 @@ and review state live in
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts route through `onRespondToInterrupt` |
 | `placeholders.ts` | Lingui `msg` descriptor pools + per-page-load localStorage rotation + `useSyncExternalStore` SSR guard. Rotation is internal to Composer; hero variant overrides by prop |
-| `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior. Unknown tools show name only; all registered renderers use `toolVerb()` for status-aware present/past tense |
+| `tool-renderers.tsx` | Tool renderer registry plus the shared `DocumentName` presentation used by tool rows and receipts |
 | `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent tool runs as sibling `ToolRow`s |
 | `ActivityRow.tsx` | Timeline-row primitive; each row owns its rail segment and exports the shared text inset |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `TurnEditsReceipt.tsx` | Quiet per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo/Redo, and authorized detail loading. No draft Review/Apply/Discard. |
-| `ThreadChangesCard.tsx` | Transcript-tail Changes record for shared trails without synthetic turn ownership. |
-| `ChangeViewRows.tsx` | Read-only receipt rows with navigation plus durable Before/After excerpts and Copy. |
-| `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, emphasize the exact row. |
+| `ChangeViewRows.tsx` | Read-only receipt rows with exact navigation and clamped durable Before/After excerpts. |
+| `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, and bring the exact row into view. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
-| `DraftModeIndicator.tsx` | Informational thread-header strip shown only while the server-authoritative Work is in Draft mode. |
 | `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |

@@ -201,6 +201,7 @@ msgid "Added"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
+#: src/features/editor/PeerMarkPopover.tsx
 msgid "After"
 msgstr ""
 
@@ -215,10 +216,6 @@ msgstr ""
 
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "AI assistant"
-msgstr ""
-
-#: src/features/chat/DraftModeIndicator.tsx
-msgid "AI changes wait for your review"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -299,6 +296,7 @@ msgid "Back to workspace"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
+#: src/features/editor/PeerMarkPopover.tsx
 msgid "Before"
 msgstr ""
 
@@ -361,10 +359,6 @@ msgstr ""
 msgid "Change applied."
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Change details are unavailable."
-msgstr ""
-
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Change restored."
 msgstr ""
@@ -375,10 +369,6 @@ msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
-msgstr ""
-
-#: src/features/chat/ThreadChangesCard.tsx
-msgid "Changes across this conversation"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
@@ -495,14 +485,7 @@ msgid "Context"
 msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
-#: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
 msgid "Copied"
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Copy"
 msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
@@ -521,11 +504,6 @@ msgstr ""
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't apply. Check your connection and try again."
-msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Couldn't copy. Select the saved text and copy it manually."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -717,10 +695,6 @@ msgstr ""
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
 msgstr ""
 
-#: src/features/chat/DraftModeIndicator.tsx
-msgid "Draft mode"
-msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted"
 msgstr ""
@@ -905,10 +879,6 @@ msgstr ""
 msgid "Heading"
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Hide details"
-msgstr ""
-
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
 msgstr "等一下…"
@@ -1043,10 +1013,6 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Loading agents…"
-msgstr ""
-
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Loading change details…"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -1502,10 +1468,6 @@ msgstr ""
 msgid "Removed"
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Removed passage"
-msgstr ""
-
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
@@ -1674,10 +1636,6 @@ msgstr ""
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
-msgstr ""
-
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Show details"
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -1905,10 +1863,6 @@ msgstr ""
 msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "This change is no longer in the trail."
-msgstr ""
-
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is too old to undo."
 msgstr ""
@@ -1965,10 +1919,6 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
-msgstr ""
-
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "This passage included edits you made that the AI hadn't seen."
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
@@ -2136,10 +2086,6 @@ msgstr "昨天"
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
 msgstr ""
-
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "You asked"
-msgstr "你的请求"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

@@ -12,9 +12,9 @@ document edits. Its line names one document or counts several and adds settled
 single-document headers derive the same URI title without inventing a delta.
 The shell carries header metadata, so collapse never triggers a detail fetch.
 Expanding shows live documents and every authorized durable trail row. Each row
-renders its retained Before and/or After excerpt; Copy is available on Before.
-A conversation reveal opened from an editor peer mark expands the receipt and
-emphasizes its exact target row.
+renders concise retained Before and/or After excerpts without a nested
+scrollport. A conversation reveal opened from an editor peer mark expands the
+receipt and brings its exact target row into view.
 
 `AssistantTurn` combines server-owned facts: full turn lineage supplies document
 scope, the durable receipt supplies whole-turn Undo/Redo authority, and the
@@ -44,10 +44,6 @@ and `ChatView`; the dock and composer control therefore share one binding. If
 either side of `thread → work` is absent, the control is not rendered. The
 independent chat composition root performs the same resolution for its thread.
 There is no first/default-Work fallback.
-
-When that server-authoritative Work is in Draft mode, `ChatView` also renders a
-quiet informational strip in the thread header. It disappears in Auto-apply and
-never mutates mode; the composer selector remains the only mode control.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an

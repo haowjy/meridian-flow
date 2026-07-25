@@ -107,18 +107,18 @@ editor-host chrome, not a ProseMirror plugin.
 during inline draft review (`inReview`), since markers are a live-document
 surface and branch rooms have a different anchor space.
 
-Detail is lazy on open: it reads the trail detail endpoint and the originating
-thread snapshot. Attribution and Restore stay visible; swept context, removed
-text with Copy, and the one-line originating-request snippet sit behind one
-Show details disclosure. Recovery runs through `useTrailRestore` (shared in
+Detail is lazy on open: it reads the trail detail endpoint. The resting surface
+contains only actor, time, Restore, and conversation navigation. A single
+Before/After control reveals the same trail-backed excerpt renderer used by the
+turn receipt; swept status adds no popover narration. Recovery runs through
+`useTrailRestore` (shared in
 [`features/change-trail`](../../change-trail/AGENTS.md)): eligibility, the
 idempotent command, and mark dismissal on a successful `applied` /
 `already_applied` outcome all live there; a failed action stays failed with a
 retry affordance. *Open conversation* routes through
 `requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
-popover closes and the chat side expands the owning turn Changes card, or the
-thread-tail shared Changes entry when the trail has no owning turn, then
-emphasizes the exact row.
+popover closes and the chat side expands the owning turn receipt and brings the
+exact row into view.
 
 Trail-row navigation addresses a matching live session mark first, preserving
 its range/tick anatomy and emphasis treatment. Generic temporary range

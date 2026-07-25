@@ -8,7 +8,7 @@ peer-mark popover. This directory is a seam, not a UI surface.
 Swept elevation is live-session-only marker state. The durable trail retains
 the change's Before excerpt and navigation anchor; any eligible live mark may
 vend Restore, whether ordinary or swept. Receipt rows are read-only and offer
-Copy instead.
+the same trail-backed Before/After evidence without recovery controls.
 
 Restore eligibility is gated by the durable restore state on the trail change:
 a change already `applied` or `settled` is terminal and its verb is disabled.
