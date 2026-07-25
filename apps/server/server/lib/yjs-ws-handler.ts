@@ -174,26 +174,20 @@ async function admitBranchSync(
     context: input.context,
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
-  if (!updateChangesDocument(input.document, input.payload)) return;
+  if (documentContainsUpdate(input.document, input.payload)) return;
   input.closeTransport?.({ code: 1008, reason: "branch-review-read-only" });
   throw permissionDenied("branch-review-read-only", 1008);
 }
 
-function updateChangesDocument(document: Y.Doc, update: Uint8Array): boolean {
-  const probe = new Y.Doc({ gc: false });
+function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
   try {
-    Y.applyUpdate(probe, Y.encodeStateAsUpdate(document));
-    let changed = false;
-    probe.on("update", () => {
-      changed = true;
-    });
-    Y.applyUpdate(probe, update);
-    return changed;
+    // Exact snapshot containment accounts for delete sets that reference
+    // structs the room has not received yet. Applying such an update to a
+    // clone appears inert while still planting a pending future deletion.
+    return Y.snapshotContainsUpdate(Y.snapshot(document), update);
   } catch {
     // Malformed update frames are never harmless acknowledgements.
-    return true;
-  } finally {
-    probe.destroy();
+    return false;
   }
 }
 

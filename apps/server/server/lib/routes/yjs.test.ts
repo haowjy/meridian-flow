@@ -169,6 +169,34 @@ describe("Yjs branch handshake route guard", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("rejects a deletion for content the branch has not received yet", async () => {
+    const source = new Y.Doc({ gc: false });
+    const text = source.getText("content");
+    text.insert(0, "future insertion");
+    const insertion = Y.encodeStateAsUpdate(source);
+    const afterInsert = Y.encodeStateVector(source);
+    text.delete(0, text.length);
+    const deletionOnly = Y.encodeStateAsUpdate(source, afterInsert);
+    const document = new Y.Doc({ gc: false });
+
+    await expect(
+      admitWriterSync({
+        services: services(false),
+        documentName,
+        document,
+        syncType: messageYjsUpdate,
+        payload: deletionOnly,
+        userId: "user-1" as never,
+        context: {
+          branchSyncState: new Map([["branch_1:3", "passed"]]),
+        },
+      }),
+    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
+
+    Y.applyUpdate(document, insertion);
+    expect(document.getText("content").toString()).toBe("future insertion");
+  });
+
   it("rejects update-first sync messages", async () => {
     const state = new Map<string, BranchHandshakeState>();
     await expect(

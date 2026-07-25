@@ -79,25 +79,70 @@ export function buildDecorations(
       continue;
     }
 
+    const endPos = resolveAnchor(hunk.relEnd, resolver);
+    if (endPos == null || endPos <= startPos) {
+      decorations.push(deletionAnchorDecoration(hunk, focused, startPos));
+      continue;
+    }
+
     // Insertion range — one decoration per span so nested authorship (a
     // writer edit inside an AI insertion) paints in each owner's color.
     // Fall back to whole-hunk coloring when spans are missing (legacy
     // payloads, or when every span anchor failed to decode).
-    if (hunk.relEnd !== hunk.relStart) {
-      const endPos = resolveAnchor(hunk.relEnd, resolver);
-      if (endPos != null && endPos > startPos && hunk.mergeArtifact) {
-        // A merge artifact is neutral, not authored: paint the whole combined
-        // range with the merged seam and skip the hued per-span split.
+    if (hunk.mergeArtifact) {
+      // A merge artifact is neutral, not authored: paint the whole combined
+      // range with the merged seam and skip the hued per-span split.
+      decorations.push(
+        Decoration.inline(
+          startPos,
+          endPos,
+          {
+            class: classNames(
+              MERGED_CLASS,
+              focused && EMPHASIS_CLASS,
+              hunk.concurrentConflict && CONFLICT_CLASS,
+            ),
+            [HUNK_ATTR]: hunk.hunkId,
+            [OPERATION_ATTR]: hunk.operationIds.join(" "),
+          },
+          {
+            [HUNK_ATTR]: hunk.hunkId,
+            [OPERATION_ATTR]: hunk.operationIds.join(" "),
+          },
+        ),
+      );
+    } else {
+      const spanRanges = resolveSpanRanges(hunk, resolver);
+      if (spanRanges.length > 0) {
+        for (const span of spanRanges) {
+          const spanOp = operationsById.get(span.operationId);
+          const kind: InlineReviewOperationKind = spanOp?.kind === "writer" ? "writer" : "agent";
+          const spanFocused =
+            focused || (activeOperationId != null && activeOperationId === span.operationId);
+          decorations.push(
+            Decoration.inline(
+              span.from,
+              span.to,
+              {
+                class: insertionClassName(kind, spanFocused, hunk.concurrentConflict),
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: span.operationId,
+              },
+              {
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: span.operationId,
+              },
+            ),
+          );
+        }
+      } else {
+        const kind = hunkKind(hunk, operationsById);
         decorations.push(
           Decoration.inline(
             startPos,
             endPos,
             {
-              class: classNames(
-                MERGED_CLASS,
-                focused && EMPHASIS_CLASS,
-                hunk.concurrentConflict && CONFLICT_CLASS,
-              ),
+              class: insertionClassName(kind, focused, hunk.concurrentConflict),
               [HUNK_ATTR]: hunk.hunkId,
               [OPERATION_ATTR]: hunk.operationIds.join(" "),
             },
@@ -107,48 +152,6 @@ export function buildDecorations(
             },
           ),
         );
-      } else if (endPos != null && endPos > startPos) {
-        const spanRanges = resolveSpanRanges(hunk, resolver);
-        if (spanRanges.length > 0) {
-          for (const span of spanRanges) {
-            const spanOp = operationsById.get(span.operationId);
-            const kind: InlineReviewOperationKind = spanOp?.kind === "writer" ? "writer" : "agent";
-            const spanFocused =
-              focused || (activeOperationId != null && activeOperationId === span.operationId);
-            decorations.push(
-              Decoration.inline(
-                span.from,
-                span.to,
-                {
-                  class: insertionClassName(kind, spanFocused, hunk.concurrentConflict),
-                  [HUNK_ATTR]: hunk.hunkId,
-                  [OPERATION_ATTR]: span.operationId,
-                },
-                {
-                  [HUNK_ATTR]: hunk.hunkId,
-                  [OPERATION_ATTR]: span.operationId,
-                },
-              ),
-            );
-          }
-        } else {
-          const kind = hunkKind(hunk, operationsById);
-          decorations.push(
-            Decoration.inline(
-              startPos,
-              endPos,
-              {
-                class: insertionClassName(kind, focused, hunk.concurrentConflict),
-                [HUNK_ATTR]: hunk.hunkId,
-                [OPERATION_ATTR]: hunk.operationIds.join(" "),
-              },
-              {
-                [HUNK_ATTR]: hunk.hunkId,
-                [OPERATION_ATTR]: hunk.operationIds.join(" "),
-              },
-            ),
-          );
-        }
       }
     }
   }
@@ -195,8 +198,37 @@ function blockHunkDecorations(
         decorations.push(Decoration.inline(startPos, endPos, attrs, dataAttrs));
       }
     }
+  } else {
+    decorations.push(deletionAnchorDecoration(hunk, focused, startPos));
   }
   return decorations;
+}
+
+function deletionAnchorDecoration(
+  hunk: ResolvedTextReviewHunk | ResolvedBlockReviewHunk,
+  focused: boolean,
+  position: number,
+): Decoration {
+  const dataAttrs = {
+    [HUNK_ATTR]: hunk.hunkId,
+    [OPERATION_ATTR]: hunk.operationIds.join(" "),
+  };
+  return Decoration.widget(
+    position,
+    (view) => {
+      const anchor = view.dom.ownerDocument.createElement("span");
+      anchor.setAttribute("aria-hidden", "true");
+      anchor.setAttribute(HUNK_ATTR, hunk.hunkId);
+      anchor.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
+      if (focused) anchor.className = EMPHASIS_CLASS;
+      return anchor;
+    },
+    {
+      ...dataAttrs,
+      key: `deletion-anchor:${hunk.hunkId}`,
+      side: -1,
+    },
+  );
 }
 
 interface ResolvedSpanRange {

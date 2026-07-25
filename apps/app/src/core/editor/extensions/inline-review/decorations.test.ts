@@ -118,6 +118,43 @@ describe("buildDecorations", () => {
     );
   });
 
+  it("anchors a pure text deletion for Changes navigation without restoring its text", () => {
+    const projection = "The surviving sentence.";
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    const yText = new Y.XmlText();
+    yFragment.insert(0, [yParagraph]);
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, projection);
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text(projection))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const anchor = encodeAnchor(Y.createRelativePositionFromTypeIndex(yText, 0));
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 3,
+      operations: [agentOperation],
+      hunks: [
+        {
+          hunkId: "h-text-delete",
+          operationIds: ["op-ai"],
+          anchor: { relStart: anchor, relEnd: anchor },
+          kind: "text",
+          spans: [],
+          deletedText: "Removed opening sentence.",
+        },
+      ],
+    });
+
+    const emitted = buildDecorations(model, null, { doc, yDoc, yFragment, mapping }).find();
+    expect(emitted).toHaveLength(1);
+    expect(decorationFlavor(emitted[0])).toBe("widget");
+    expect(emitted[0].spec["data-review-operations"]).toBe("op-ai");
+    expect(doc.textContent).toBe(projection);
+  });
+
   it("marks conflicted draft content without injecting explanation text into the manuscript", () => {
     const projection = "The writer's current sentence.";
     const yDoc = new Y.Doc();
@@ -542,7 +579,7 @@ describe("buildDecorations — block hunks", () => {
     expect(decoration.spec["data-review-operations"]).toBe("op-ai");
   });
 
-  it("does not inject a deleted block into the draft projection", () => {
+  it("anchors a deleted block without injecting its content into the draft projection", () => {
     const { resolver, yFragment } = makeBlockResolver();
     // Zero-width anchor at the delete site (before the paragraph).
     const rel = Y.createRelativePositionFromTypeIndex(yFragment, 0);
@@ -563,7 +600,9 @@ describe("buildDecorations — block hunks", () => {
     });
 
     const emitted = buildDecorations(model, null, resolver).find();
-    expect(emitted).toHaveLength(0);
+    expect(emitted).toHaveLength(1);
+    expect(decorationFlavor(emitted[0])).toBe("widget");
+    expect(emitted[0].spec["data-review-operations"]).toBe("op-ai");
     expect(resolver.doc.textContent).toBe("abcd");
   });
 

@@ -8,6 +8,8 @@
   reject client-authored Yjs branch mutations.
 - `apps/app`: refused Manual Apply actions now identify the writer conflict,
   show base/current/proposed text, and open the existing comparison surface.
+- `apps/app`, `apps/server`: review hardening now rejects pending deletion-only
+  branch updates and keeps deletion-card navigation without injecting prose.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.
