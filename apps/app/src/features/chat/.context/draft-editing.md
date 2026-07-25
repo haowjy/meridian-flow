@@ -129,13 +129,12 @@ writer changed the same passage after the draft was cut. The durable receipt
 records every edit without classification; best-effort provenance only elevates
 a swept mark in the connected session.
 
-On whole-draft Apply or Discard, the controller selects the nearest remaining
-active row for the same document (same index, otherwise the previous row) when
-one exists. Review stays open and swaps its selection without restoring the
-rails. The last row clears the surface so the editor rebinds from the draft room
-to the live manuscript room. If accept returns `status: "stale_draft"`, inline
-review reloads the refreshed draft id from the response. Review never
-automatically hops to another document.
+On whole-draft Apply or Discard, the controller clears the review surface so
+the editor rebinds from the draft room to the live manuscript room. The server
+owns one active Work-draft branch per `(documentId, workId)`, so there is no
+same-document neighbor to select after disposition. If accept returns
+`status: "stale_draft"`, inline review reloads the refreshed draft id from the
+response instead of exiting.
 
 Review mode is a full-width editor plus the dock's `Changes` view — there is no
 in-editor review split. The editor's review chrome is

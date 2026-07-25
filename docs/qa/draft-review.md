@@ -51,11 +51,10 @@ Review verb a silent no-op).
 ## Probe D — review chip and tree freshness
 
 1. On a live document with a pending overwrite draft, opened from the tree:
-   PASS: the `DraftReviewChip` renders in the identity bar ("Review draft",
-   or "Review N drafts" with multiple). It and `DraftReviewHeader` must
-   never render simultaneously; the chip opens review mode (header strip
-   above the breadcrumb), Back to live swaps back. A document with no
-   pending draft shows no chip.
+   PASS: the `DraftReviewChip` renders in the identity bar ("Review draft").
+   It and `DraftReviewHeader` must never render simultaneously; the chip opens
+   review mode (header strip above the breadcrumb), Back to live swaps back. A
+   document with no pending draft shows no chip.
 2. With the Manuscript tree mounted, have the agent write a new document in
    auto-apply mode. PASS: the tree shows the document within ~5s of turn end
    with no navigation or reload.
