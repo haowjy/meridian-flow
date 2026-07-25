@@ -1,0 +1,117 @@
+// @vitest-environment jsdom
+/** Pending-draft signal and review resolution entry for the composer mode control. */
+import type { Work } from "@meridian/contracts/protocol";
+import { describe, expect, it, vi } from "vitest";
+import { withReactRoot } from "@/test-support/react-dom-harness";
+
+const openAiDraft = vi.fn();
+const mutate = vi.fn();
+const mutateAsync = vi.fn(async () => ({
+  status: "confirmation_required" as const,
+  pendingChangeCount: 1,
+}));
+
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((result, part, index) => result + part + (values[index] ?? ""), ""),
+}));
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+    (value === 1 ? one : other).replace("#", String(value)),
+}));
+vi.mock("@/client/query/useWorkDrafts", () => ({
+  useWorkDrafts: () => ({
+    groups: [
+      {
+        documentId: "document-1",
+        documentName: "Chapter 1",
+        contextPath: "work://manuscript/chapter-1.md",
+        drafts: [
+          {
+            draftId: "draft-1",
+            documentId: "document-1",
+            documentName: "Chapter 1",
+            contextPath: "work://manuscript/chapter-1.md",
+            status: "active",
+            lastActorTurnId: null,
+            updatedAt: "2026-07-25T12:00:00.000Z",
+            appliedAt: null,
+            discardedAt: null,
+            wordsAdded: 1,
+            wordsRemoved: 0,
+          },
+        ],
+      },
+    ],
+  }),
+}));
+vi.mock("@/client/query/useWorks", () => ({
+  useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
+}));
+vi.mock("./useAiDraftLauncher", () => ({
+  useAiDraftLauncher: () => ({ openAiDraft }),
+}));
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PopoverAnchor: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
+  PopoverHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+}));
+
+const { ComposerWriteModeControl } = await import("./ComposerWriteModeControl");
+
+describe("ComposerWriteModeControl", () => {
+  it("signals pending drafts without disabling Auto-apply and opens the shared review flow", async () => {
+    await withReactRoot(
+      <ComposerWriteModeControl projectId="project-1" work={draftWork()} />,
+      () => {
+        expect(document.body.textContent).toContain("Draft(1)");
+        const draft = radio("draft");
+        const direct = radio("direct");
+        expect(draft.getAttribute("aria-description")).toBe("1 changes waiting for review");
+        expect(direct.disabled).toBe(false);
+
+        button("Review changes").click();
+        expect(openAiDraft).toHaveBeenCalledWith(
+          expect.objectContaining({
+            documentId: "document-1",
+            contextPath: "work://manuscript/chapter-1.md",
+          }),
+          "draft-1",
+        );
+      },
+    );
+  });
+});
+
+function draftWork(): Work {
+  return {
+    id: "work-1",
+    projectId: "project-1",
+    createdByUserId: "user-1",
+    title: "Novel",
+    visibility: "private",
+    aiWriteMode: "draft",
+    createdAt: "2026-07-25T12:00:00.000Z",
+    updatedAt: "2026-07-25T12:00:00.000Z",
+    lastActivityAt: "2026-07-25T12:00:00.000Z",
+    deletedAt: null,
+  };
+}
+
+function radio(value: string): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>(`input[value="${value}"]`);
+  if (!input) throw new Error(`missing radio: ${value}`);
+  return input;
+}
+
+function button(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!found) throw new Error(`missing button: ${label}`);
+  return found as HTMLButtonElement;
+}

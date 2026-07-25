@@ -11,6 +11,7 @@
  * the §3.4 guarantee honestly — policy flips only after the pushes commit, so a
  * failed push leaves the writer in Draft with nothing changed.
  */
+import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -28,19 +29,36 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-import { pendingDockedDraftCount } from "./docked-drafts";
+import { dockRows, pendingDockedDraftCount } from "./docked-drafts";
+import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 /** Binds the presentation control to the Work resolved for the active thread. */
 export function ComposerWriteModeControl({ projectId, work }: { projectId: string; work: Work }) {
   const updateWriteMode = useUpdateWorkWriteMode(projectId, work.id);
   const workDrafts = useWorkDrafts(projectId, work.id);
+  const { openAiDraft } = useAiDraftLauncher();
+  const firstPendingRow =
+    dockRows(workDrafts.groups, Date.now()).find((row) => row.state === "pending") ?? null;
 
   return (
     <AiWriteModeControl
       value={work.aiWriteMode}
       disabled={updateWriteMode.isPending || workDrafts.groups == null}
       pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
+      reviewChangesAvailable={firstPendingRow !== null}
       onSelectDraft={() => updateWriteMode.mutate("draft")}
+      onReviewChanges={() => {
+        if (!firstPendingRow) return;
+        openAiDraft(
+          {
+            documentId: firstPendingRow.documentId,
+            contextPath: firstPendingRow.contextPath ?? undefined,
+            documentName: firstPendingRow.documentName ?? undefined,
+            isNewDocument: firstPendingRow.isNewDocument,
+          },
+          firstPendingRow.draft.draftId,
+        );
+      }}
       onRequestAutoApply={(confirmedPush) =>
         updateWriteMode
           .mutateAsync(
@@ -58,7 +76,9 @@ function AiWriteModeControl({
   value,
   disabled,
   pendingChangeCount,
+  reviewChangesAvailable,
   onSelectDraft,
+  onReviewChanges,
   onRequestAutoApply,
 }: {
   value: AiWriteMode;
@@ -69,7 +89,9 @@ function AiWriteModeControl({
    * authoritative journal-row count.
    */
   pendingChangeCount: number | null;
+  reviewChangesAvailable: boolean;
   onSelectDraft: () => void;
+  onReviewChanges: () => void;
   /**
    * Requests Auto-apply with or without explicit writer confirmation. The
    * unconfirmed response either completes a zero-pending switch or vends the
@@ -86,6 +108,7 @@ function AiWriteModeControl({
   const [serverPendingCount, setServerPendingCount] = useState<number | null>(null);
 
   const selectAutoApply = async () => {
+    if (applying) return;
     // The client count is only a fast path for showing the pending UI. The
     // unconfirmed request is always sent, even when this cache says zero; only
     // the server may decide that there is nothing requiring confirmation.
@@ -129,6 +152,13 @@ function AiWriteModeControl({
     setPushFailed(false);
   };
 
+  const reviewChanges = () => {
+    if (applying) return;
+    setConfirmOpen(false);
+    setPushFailed(false);
+    onReviewChanges();
+  };
+
   return (
     <fieldset className="min-w-0 shrink-0 border-0">
       <legend className="visually-hidden">
@@ -147,8 +177,18 @@ function AiWriteModeControl({
             selected={value === "draft"}
             disabled={disabled}
             onSelect={onSelectDraft}
+            description={
+              value === "draft" && pendingChangeCount !== null && pendingChangeCount > 0
+                ? t`${pendingChangeCount} changes waiting for review`
+                : undefined
+            }
           >
             <Trans>Draft</Trans>
+            {value === "draft" && pendingChangeCount !== null && pendingChangeCount > 0 ? (
+              <span className="ml-1 rounded-full bg-primary/15 px-1 text-[10px] tabular-nums text-jade-text">
+                ({pendingChangeCount})
+              </span>
+            ) : null}
           </AiWriteModeOption>
           {/* Anchor the warning to the consequential choice that opened it. */}
           <PopoverAnchor asChild>
@@ -156,7 +196,7 @@ function AiWriteModeControl({
               name={groupName}
               value="direct"
               selected={value === "direct"}
-              disabled={disabled}
+              disabled={false}
               inputRef={autoApplyRef}
               onSelect={() => void selectAutoApply()}
             >
@@ -175,7 +215,7 @@ function AiWriteModeControl({
         >
           <PopoverHeader>
             <PopoverTitle>
-              <Trans>Switch to Auto-apply?</Trans>
+              <Trans>Drafts are waiting</Trans>
             </PopoverTitle>
             {pushFailed ? (
               <p className="text-caption text-destructive" role="alert">
@@ -188,14 +228,9 @@ function AiWriteModeControl({
             ) : (
               <PopoverDescription className="text-caption">
                 <Trans>
-                  This applies all{" "}
-                  <Plural
-                    value={serverPendingCount}
-                    one="# pending change"
-                    other="# pending changes"
-                  />{" "}
-                  to your manuscript now. After that, Auto-apply puts each new AI change directly
-                  into your manuscript.
+                  This Work has{" "}
+                  <Plural value={serverPendingCount} one="# AI change" other="# AI changes" /> in
+                  draft. Auto-apply stays off until every draft is applied or discarded.
                 </Trans>
               </PopoverDescription>
             )}
@@ -203,6 +238,14 @@ function AiWriteModeControl({
           <div className="mt-3 flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" disabled={applying} onClick={closeConfirm}>
               <Trans>Cancel</Trans>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={applying || !reviewChangesAvailable}
+              onClick={reviewChanges}
+            >
+              <Trans>Review changes</Trans>
             </Button>
             <Button
               size="sm"
@@ -235,6 +278,7 @@ function AiWriteModeOption({
   children,
   ref,
   inputRef,
+  description,
   ...anchorProps
 }: {
   name: string;
@@ -247,6 +291,7 @@ function AiWriteModeOption({
   // position the confirm popover on the option itself.
   ref?: Ref<HTMLLabelElement>;
   inputRef?: Ref<HTMLInputElement>;
+  description?: string;
 }) {
   return (
     <label
@@ -264,6 +309,7 @@ function AiWriteModeOption({
         value={value}
         checked={selected}
         disabled={disabled}
+        aria-description={description}
         onChange={() => onSelect(value)}
         className="visually-hidden"
       />
