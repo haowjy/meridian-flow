@@ -32,7 +32,6 @@ import { Composer } from "./Composer";
 import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
-import { DraftModeIndicator } from "./DraftModeIndicator";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
@@ -138,7 +137,6 @@ export function ChatView({
     <ChatSurface
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
-      header={<DraftModeIndicator mode={activeWork?.aiWriteMode ?? null} />}
       footer={
         <div data-debug-composer={threadId} className="@container">
           {/* The dock strip sits BEHIND (below) the composer — narrower via

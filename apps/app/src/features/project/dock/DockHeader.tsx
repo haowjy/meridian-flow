@@ -44,7 +44,9 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
       <div className="flex min-w-0 flex-1 items-center pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
-      <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
+      {views.length > 1 ? (
+        <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
+      ) : null}
       {onClose ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
@@ -64,7 +66,8 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
  * control a complete boundary — a bare pressed pill floating at the window's
  * top corner read as a tab with its base cut off. The active segment surfaces
  * the paper tone inside the track; selection is tonal, never an outline. The
- * set is fixed — views never close or grow. No count or badge on any segment —
+ * The switch disappears when only one view is available because a single
+ * segment cannot select anything. No count or badge appears on any segment —
  * the composer DraftDock strip carries discovery.
  */
 function DockViewSwitch({

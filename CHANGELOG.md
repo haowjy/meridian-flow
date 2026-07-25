@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: chat keeps draft mode in the composer, hides a one-option dock
+  switch, and removes the duplicate conversation-wide Changes record.
 - `apps/app`, `apps/server`: every draft Apply now merges through Yjs and
   reports swept edits only to connected sessions; the conflict veto, durable
   classification, refusal contracts, and refusal UI are gone.

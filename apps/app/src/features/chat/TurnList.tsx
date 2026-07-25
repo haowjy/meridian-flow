@@ -36,8 +36,6 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { useConversationReveal } from "./conversation-reveal";
-import { ThreadChangesCard } from "./ThreadChangesCard";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
@@ -70,7 +68,6 @@ export function TurnList({
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
-  const conversationReveal = useConversationReveal(threadId);
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
@@ -81,20 +78,12 @@ export function TurnList({
     }
     return byTurnId;
   }, [changeTrails]);
-  const sharedShells = useMemo(
-    () =>
-      Object.values(changeTrails)
-        .filter((shell) => shell.owner.kind === "shared")
-        .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt)),
-    [changeTrails],
-  );
-  const rowCount = visibleTurns.length + (sharedShells.length > 0 ? 1 : 0);
 
   const virtualizer = useVirtualizer({
-    count: rowCount,
+    count: visibleTurns.length,
     getScrollElement: () => viewportRef.current,
     estimateSize: () => ESTIMATED_TURN_HEIGHT,
-    getItemKey: (index) => visibleTurns[index]?.id ?? "thread-changes",
+    getItemKey: (index) => visibleTurns[index]?.id ?? index,
     overscan: 8,
     paddingStart: TOP_INSET,
     // Clear the pinned composer AND align the true scroll end with the last turn.
@@ -114,17 +103,6 @@ export function TurnList({
   //      exactly what "was it above the viewport" should be judged against.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
-
-  useEffect(() => {
-    if (!conversationReveal) return;
-    if (conversationReveal.turnId === null) {
-      if (sharedShells.length > 0)
-        virtualizer.scrollToIndex(visibleTurns.length, { align: "center" });
-      return;
-    }
-    const index = visibleTurns.findIndex((turn) => turn.id === conversationReveal.turnId);
-    if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
-  }, [conversationReveal, sharedShells.length, virtualizer, visibleTurns]);
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
   // append, on measured streaming-row growth, and on composer-inset change — and
@@ -188,25 +166,17 @@ export function TurnList({
           >
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const turn = visibleTurns[virtualItem.index];
-              if (!turn && sharedShells.length === 0) return null;
+              if (!turn) return null;
               return (
                 <li
                   key={virtualItem.key}
                   data-index={virtualItem.index}
-                  data-chat-turn-row={turn ? "settled" : "thread-changes"}
+                  data-chat-turn-row="settled"
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0 pb-6"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}
                 >
-                  {turn ? (
-                    renderTurn(turn, virtualItem.index)
-                  ) : (
-                    <ThreadChangesCard
-                      threadId={threadId}
-                      shells={sharedShells}
-                      navigateToChange={navigateToChange}
-                    />
-                  )}
+                  {renderTurn(turn, virtualItem.index)}
                 </li>
               );
             })}
