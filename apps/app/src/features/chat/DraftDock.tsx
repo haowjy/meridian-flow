@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -304,6 +304,7 @@ export function DraftApplyRefusalNotice({
   refusal: NonNullable<DraftDockModel["applyRefusal"]>;
   onReview?: () => void;
 }) {
+  const evidenceHeadingId = useId();
   const title =
     refusal.reason === "stale_draft"
       ? t`Not applied: review the latest draft`
@@ -349,7 +350,10 @@ export function DraftApplyRefusalNotice({
       </div>
       {refusal.conflicts.length > 0 ? (
         <details data-draft-apply-refusal-details>
-          <summary className="focus-ring w-fit cursor-pointer rounded-sm font-medium text-ink-muted">
+          <summary
+            className="focus-ring w-fit cursor-pointer rounded-sm font-medium text-ink-muted"
+            id={evidenceHeadingId}
+          >
             {refusal.conflicts.length === 1 ? (
               <Trans>Show conflict evidence</Trans>
             ) : (
@@ -359,7 +363,7 @@ export function DraftApplyRefusalNotice({
           <section
             className="focus-ring mt-2 max-h-64 space-y-2 overflow-y-auto rounded-sm pe-1"
             data-draft-apply-refusal-scroll
-            aria-label={t`Conflict evidence`}
+            aria-labelledby={evidenceHeadingId}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: Safari needs an explicit focus stop to keyboard-scroll bounded evidence.
             tabIndex={0}
           >

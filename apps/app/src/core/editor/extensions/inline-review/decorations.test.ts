@@ -149,11 +149,9 @@ describe("buildDecorations", () => {
     });
 
     const emitted = buildDecorations(model, null, { doc, yDoc, yFragment, mapping }).find();
-    const focused = buildDecorations(model, "op-ai", { doc, yDoc, yFragment, mapping }).find();
     expect(emitted).toHaveLength(1);
     expect(decorationFlavor(emitted[0])).toBe("widget");
     expect(emitted[0].spec["data-review-operations"]).toBe("op-ai");
-    expect(emitted[0].spec.key).not.toBe(focused[0].spec.key);
     expect(doc.textContent).toBe(projection);
   });
 

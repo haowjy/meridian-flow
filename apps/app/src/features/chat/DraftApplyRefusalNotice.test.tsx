@@ -50,8 +50,14 @@ describe("DraftApplyRefusalNotice", () => {
         expect(document.body.textContent).toContain("The sentence you revised.");
         expect(document.body.textContent).toContain("The draft's sentence.");
         const evidence = document.querySelector<HTMLElement>("[data-draft-apply-refusal-scroll]");
+        const evidenceHeading = document.querySelector<HTMLElement>(
+          "[data-draft-apply-refusal-details] summary",
+        );
         expect(evidence?.tabIndex).toBe(0);
-        expect(evidence?.getAttribute("aria-label")).toBe("Conflict evidence");
+        expect(evidence?.getAttribute("aria-labelledby")).toBe(evidenceHeading?.id);
+
+        act(() => evidence?.focus());
+        expect(document.activeElement).toBe(evidence);
 
         act(() => {
           button("Compare changes").click();
