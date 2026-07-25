@@ -14,15 +14,23 @@ const controller = {
     return inlineReviewMessage;
   },
   exitInlineReview: vi.fn(),
+  enterInlineReview: vi.fn(),
   accept: vi.fn(),
   reject: vi.fn(),
 };
+let activeDrafts = [{ draftId: "draft-1" }];
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray) => strings[0],
+}));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
-  useDraftReview: () => ({ controller }),
+  useDraftReview: () => ({
+    controller,
+    reviewableDraftsForDocument: () => ({ visible: activeDrafts, active: activeDrafts }),
+  }),
 }));
 
 const { DraftReviewHeader } = await import("./DraftReviewHeader");
@@ -30,6 +38,8 @@ const { DraftReviewHeader } = await import("./DraftReviewHeader");
 describe("DraftReviewHeader", () => {
   beforeEach(() => {
     controller.canAcceptReviewedDraft = false;
+    controller.enterInlineReview.mockClear();
+    activeDrafts = [{ draftId: "draft-1" }];
     inlineReviewMessage = null;
   });
 
@@ -48,11 +58,23 @@ describe("DraftReviewHeader", () => {
       );
     });
   });
+
+  it("steps between same-document drafts without exiting review", async () => {
+    activeDrafts = [{ draftId: "draft-1" }, { draftId: "draft-2" }];
+    await withReactRoot(<DraftReviewHeader documentId="document-1" draftId="draft-1" />, () => {
+      expect(document.body.textContent).toContain("Draft 1 of 2");
+      expect(button("Previous draft").disabled).toBe(true);
+      button("Next draft").click();
+      expect(controller.enterInlineReview).toHaveBeenCalledWith("document-1", "draft-2");
+      expect(controller.exitInlineReview).not.toHaveBeenCalled();
+    });
+  });
 });
 
 function button(label: string): HTMLButtonElement {
   const found = [...document.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === label,
+    (candidate) =>
+      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
   );
   if (!found) throw new Error(`missing button: ${label}`);
   return found as HTMLButtonElement;

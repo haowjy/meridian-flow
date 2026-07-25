@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { isDraftUndoable } from "@/client/query/draft-undoable";
@@ -80,12 +81,31 @@ function DraftReviewScope({
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
   const nowMs = useThreadStore((state) => state.now);
-  const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId, threadId);
+  const groups = drafts.groups ?? [];
+  const nextDraftAfter = useCallback(
+    ({ documentId, draftId }: { documentId: string; draftId: string }) =>
+      nearestRemainingDraftId(
+        orderedActiveDrafts(groups.find((group) => group.documentId === documentId)?.drafts ?? []),
+        draftId,
+        orderedActiveDrafts(
+          groups
+            .find((group) => group.documentId === documentId)
+            ?.drafts.filter((draft) => draft.draftId !== draftId) ?? [],
+        ),
+      ),
+    [groups],
+  );
+  const controller = useDraftReviewController(
+    effectiveProjectId,
+    effectiveWorkId,
+    threadId,
+    nextDraftAfter,
+  );
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.
   const [activeEditorDocumentId, setActiveEditorDocumentId] = useState<string | null>(null);
-  const groups = drafts.groups ?? [];
+  const priorActiveDrafts = useRef(new Map<string, ThreadDraftListItem[]>());
 
   useEffect(() => {
     controller.exitReview();
@@ -124,18 +144,42 @@ function DraftReviewScope({
     const activeSelection = controller.inlineReview;
     if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const activeDraft = groups
-      .flatMap((group) => group.drafts)
-      .find((draft) => draft.draftId === activeSelection.draftId);
+    if (controller.isDisposing) return;
+    const currentActive = orderedActiveDrafts(
+      groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [],
+    );
+    const activeDraft = currentActive.find((draft) => draft.draftId === activeSelection.draftId);
     if (activeDraft?.status === "active") return;
-    // The list only contains active drafts. Accept paths resolve "committed"
-    // before their refetch lands, so a vanished draft with this marker still set
-    // can only be discard exhaustion or external disappearance.
+    const nextDraftId = nearestRemainingDraftId(
+      priorActiveDrafts.current.get(activeSelection.documentId) ?? [],
+      activeSelection.draftId,
+      currentActive,
+    );
+    if (nextDraftId) {
+      controller.enterInlineReview(activeSelection.documentId, nextDraftId);
+      return;
+    }
     useContextTabsStore
       .getState()
       .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, "discarded");
     controller.exitReview();
-  }, [controller.inlineReview, drafts.status, groups, controller.exitReview, effectiveProjectId]);
+  }, [
+    controller.enterInlineReview,
+    controller.exitReview,
+    controller.inlineReview,
+    controller.isDisposing,
+    drafts.status,
+    effectiveProjectId,
+    groups,
+  ]);
+
+  useEffect(() => {
+    const next = new Map<string, ThreadDraftListItem[]>();
+    for (const group of groups) {
+      next.set(group.documentId, orderedActiveDrafts(group.drafts));
+    }
+    priorActiveDrafts.current = next;
+  }, [groups]);
 
   useEffect(() => {
     const inlineDocumentId = controller.inlineReview?.documentId;
@@ -243,8 +287,28 @@ export function reviewableDraftsFromGroup(
     }) ?? [];
   return {
     visible,
-    active: visible.filter((draft) => draft.status === "active"),
+    active: orderedActiveDrafts(visible),
   };
+}
+
+export function orderedActiveDrafts(drafts: readonly ThreadDraftListItem[]): ThreadDraftListItem[] {
+  return drafts
+    .filter((draft) => draft.status === "active")
+    .sort(
+      (left, right) =>
+        (Date.parse(left.updatedAt) || 0) - (Date.parse(right.updatedAt) || 0) ||
+        left.draftId.localeCompare(right.draftId),
+    );
+}
+
+export function nearestRemainingDraftId(
+  prior: readonly ThreadDraftListItem[],
+  currentDraftId: string,
+  remaining: readonly ThreadDraftListItem[],
+): string | null {
+  const currentIndex = prior.findIndex((draft) => draft.draftId === currentDraftId);
+  if (currentIndex < 0 || remaining.length === 0) return null;
+  return remaining[currentIndex]?.draftId ?? remaining[currentIndex - 1]?.draftId ?? null;
 }
 
 export function useDraftReview(): DraftReviewContextValue {

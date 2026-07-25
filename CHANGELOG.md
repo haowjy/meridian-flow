@@ -7,6 +7,8 @@
   classification, refusal contracts, and refusal UI are gone.
 - `apps/app`: AI change marks now use localized passage verbs, clear AI
   attribution, readable removed prose, and warning treatment for swept edits.
+- `apps/app`: inline review now steps through same-document drafts oldest-first
+  and advances to the nearest remaining draft after Apply or Discard.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and expire with the live
   session or a writer edit.
