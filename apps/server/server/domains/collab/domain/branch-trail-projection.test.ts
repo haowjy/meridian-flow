@@ -371,6 +371,132 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
   ]);
 });
 
+it("preserves ordinary changes when two blocks claim the same relocated passage", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const beforeDoc = createCollabYDoc({ gc: false });
+  model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo.\n\nCharlie."));
+  const beforeBlocks = model.getBlocks(toDocHandle(beforeDoc));
+  const alpha = beforeBlocks[0];
+  const bravo = beforeBlocks[1];
+  const charlie = beforeBlocks[2];
+  if (!alpha || !bravo || !charlie) throw new Error("missing source blocks");
+  const alphaId = model.getBlockId(alpha);
+  const bravoId = model.getBlockId(bravo);
+  const charlieId = model.getBlockId(charlie);
+
+  const afterDoc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(beforeDoc));
+  const afterBlocks = model.getBlocks(toDocHandle(afterDoc));
+  const first = afterBlocks[0];
+  const third = afterBlocks[2];
+  const bravoReplacement = codec.parse("Bravo.").blocks[0];
+  if (!first || !third || !bravoReplacement) throw new Error("missing replacement blocks");
+  model.applyBlockReplacement(toDocHandle(afterDoc), first, bravoReplacement);
+  model.applyBlockReplacement(toDocHandle(afterDoc), third, bravoReplacement);
+  afterDoc.getXmlFragment("prosemirror").delete(1, 1);
+
+  const survivingBlocks = model.getBlocks(toDocHandle(afterDoc));
+  const firstSurvivor = survivingBlocks[0];
+  const secondSurvivor = survivingBlocks[1];
+  const firstElement = afterDoc.getXmlFragment("prosemirror").get(0);
+  const secondElement = afterDoc.getXmlFragment("prosemirror").get(1);
+  if (
+    !firstSurvivor ||
+    !secondSurvivor ||
+    !(firstElement instanceof Y.XmlElement) ||
+    !(secondElement instanceof Y.XmlElement)
+  ) {
+    throw new Error("missing surviving blocks");
+  }
+  const firstSurvivorId = model.getBlockId(firstSurvivor);
+  const secondSurvivorId = model.getBlockId(secondSurvivor);
+
+  const changes = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: alphaId,
+          beforeText: "Alpha.",
+          afterText: "Bravo.",
+          beforeWordCount: 1,
+          afterWordCount: 1,
+          wordDelta: 0,
+        },
+        {
+          blockId: bravoId,
+          beforeText: "Bravo.",
+          afterText: null,
+          beforeWordCount: 1,
+          afterWordCount: 0,
+          wordDelta: -1,
+        },
+        {
+          blockId: charlieId,
+          beforeText: "Charlie.",
+          afterText: "Bravo.",
+          beforeWordCount: 1,
+          afterWordCount: 1,
+          wordDelta: 0,
+        },
+      ],
+      totalWordDelta: -1,
+    },
+    receiptId: "receipt-relocation-fan-in",
+    ownersByBlock: new Map([
+      [alphaId, [null]],
+      [bravoId, [null]],
+      [charlieId, [null]],
+    ]),
+    operations: [],
+    before: [
+      { hash: alphaId, serialized: "Alpha." },
+      { hash: bravoId, serialized: "Bravo." },
+      { hash: charlieId, serialized: "Charlie." },
+    ],
+    blockIdentities: new Map([
+      [alphaId, { documentId: "document-1", ...getBlockItemId(alpha) }],
+      [bravoId, { documentId: "document-1", ...getBlockItemId(bravo) }],
+      [charlieId, { documentId: "document-1", ...getBlockItemId(charlie) }],
+      [firstSurvivorId, { documentId: "document-1", ...getBlockItemId(firstSurvivor) }],
+      [secondSurvivorId, { documentId: "document-1", ...getBlockItemId(secondSurvivor) }],
+    ]),
+    afterIds: new Set([firstSurvivorId, secondSurvivorId]),
+    afterById: new Map([
+      [firstSurvivorId, firstElement],
+      [secondSurvivorId, secondElement],
+    ]),
+    afterDoc,
+  });
+
+  expect(changes).toMatchObject([
+    {
+      kind: "modify",
+      beforeBlockId: alphaId,
+      beforeText: "Alpha.",
+      afterTextAtReceipt: "Bravo.",
+    },
+    {
+      kind: "delete",
+      beforeBlockId: bravoId,
+      beforeText: "Bravo.",
+      afterTextAtReceipt: null,
+    },
+    {
+      kind: "modify",
+      beforeBlockId: charlieId,
+      beforeText: "Charlie.",
+      afterTextAtReceipt: "Bravo.",
+    },
+  ]);
+});
+
 it("projects a structurally adjacent whole-block replacement as one modification", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));

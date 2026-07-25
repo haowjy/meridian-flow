@@ -166,7 +166,7 @@ export function preparedTrailChanges(input: {
     }
   }
   const replacementIds = new Set(provenReplacements.values());
-  const directContentRelocations = new Map<string, string>();
+  const candidateContentRelocations = new Map<string, string>();
   for (const target of input.receipt.changedBlocks) {
     if (
       target.beforeText === null ||
@@ -180,9 +180,18 @@ export function preparedTrailChanges(input: {
         candidate.blockId !== target.blockId && candidate.beforeText === target.afterText,
     );
     if (sources.length === 1) {
-      directContentRelocations.set(target.blockId, sources[0]?.blockId as string);
+      candidateContentRelocations.set(target.blockId, sources[0]?.blockId as string);
     }
   }
+  const sourceClaimCounts = new Map<string, number>();
+  for (const sourceId of candidateContentRelocations.values()) {
+    sourceClaimCounts.set(sourceId, (sourceClaimCounts.get(sourceId) ?? 0) + 1);
+  }
+  const directContentRelocations = new Map(
+    [...candidateContentRelocations].filter(
+      ([, sourceId]) => sourceClaimCounts.get(sourceId) === 1,
+    ),
+  );
   const changedBlockById = new Map(
     input.receipt.changedBlocks.map((block) => [block.blockId, block]),
   );
