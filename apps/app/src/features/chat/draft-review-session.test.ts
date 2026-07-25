@@ -95,6 +95,60 @@ describe("DraftDispositionLock", () => {
 });
 
 describe("draft review derived identity", () => {
+  it.each([
+    {
+      action: {
+        type: "applySucceeded" as const,
+        documentId: "document-1",
+        draftId: "draft-1",
+        outcome: {
+          command: { kind: "applied" as const },
+          message: null,
+          refreshDraftId: null,
+          materializedDocument: false,
+        },
+      },
+    },
+    {
+      action: {
+        type: "rejectSucceeded" as const,
+        draftId: "draft-1",
+      },
+    },
+  ])("exits review after the active draft reaches a terminal disposition", ({ action }) => {
+    const entered = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
+      type: "enterInline",
+      documentId: "document-1",
+      draftId: "draft-1",
+    });
+
+    expect(inlineReviewFromState(draftReviewReducer(entered, action))).toBeNull();
+  });
+
+  it("keeps review open on the refreshed draft after a stale Apply", () => {
+    const entered = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
+      type: "enterInline",
+      documentId: "document-1",
+      draftId: "draft-1",
+    });
+    const refreshed = draftReviewReducer(entered, {
+      type: "applySucceeded",
+      documentId: "document-1",
+      draftId: "draft-1",
+      outcome: {
+        command: { kind: "stale", draftId: "draft-refreshed" },
+        message: null,
+        refreshDraftId: "draft-refreshed",
+        materializedDocument: false,
+      },
+    });
+
+    expect(inlineReviewFromState(refreshed)).toMatchObject({
+      documentId: "document-1",
+      draftId: "draft-refreshed",
+    });
+  });
+
   it("preserves state and selection identity when the same preview reports twice", () => {
     const entered = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
       type: "enterInline",

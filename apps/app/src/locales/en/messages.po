@@ -106,10 +106,6 @@ msgstr "{0} documents"
 msgid "{0} of {1} reviewed"
 msgstr "{0} of {1} reviewed"
 
-#: src/features/editor/DraftReviewChip.tsx
-#~ msgid "{count, plural, one {Review draft} other {Review # drafts}}"
-#~ msgstr "{count, plural, one {Review draft} other {Review # drafts}}"
-
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
@@ -717,11 +713,6 @@ msgstr "Download {name}"
 msgid "Draft"
 msgstr "Draft"
 
-#. placeholder {0}: index + 1
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Draft {0} of {count}"
-#~ msgstr "Draft {0} of {count}"
-
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
 msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
@@ -1222,10 +1213,6 @@ msgstr "New reply since you last opened"
 msgid "New tab"
 msgstr "New tab"
 
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Next draft"
-#~ msgstr "Next draft"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
@@ -1411,10 +1398,6 @@ msgstr "Preferences"
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
 msgstr "Preview not available"
-
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Previous draft"
-#~ msgstr "Previous draft"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
