@@ -2,9 +2,9 @@ DROP TABLE "model_response_causal_cuts" CASCADE;--> statement-breakpoint
 DROP TABLE "model_response_observation_entries" CASCADE;--> statement-breakpoint
 DROP TABLE "model_response_observation_snapshots" CASCADE;--> statement-breakpoint
 ALTER TABLE "change_trail_delivery_outbox" DROP CONSTRAINT "change_trail_delivery_outbox_counts_valid";--> statement-breakpoint
-ALTER TABLE "change_trail_delivery_outbox" ALTER COLUMN "change_count" SET NOT NULL;--> statement-breakpoint
-ALTER TABLE "change_trail_delivery_outbox" ALTER COLUMN "swept_change_count" SET NOT NULL;--> statement-breakpoint
-ALTER TABLE "change_trail_delivery_outbox" ALTER COLUMN "document_count" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "change_trail_delivery_outbox" ALTER COLUMN "change_count" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (pre-release schema; no production rows)--> statement-breakpoint
+ALTER TABLE "change_trail_delivery_outbox" ALTER COLUMN "swept_change_count" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (pre-release schema; no production rows)--> statement-breakpoint
+ALTER TABLE "change_trail_delivery_outbox" ALTER COLUMN "document_count" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (pre-release schema; no production rows)--> statement-breakpoint
 ALTER TABLE "change_trail_delivery_outbox" ADD COLUMN "documents" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 ALTER TABLE "change_trail_delivery_outbox" ADD COLUMN "words_added" integer;--> statement-breakpoint
 ALTER TABLE "change_trail_delivery_outbox" ADD COLUMN "words_removed" integer;--> statement-breakpoint
