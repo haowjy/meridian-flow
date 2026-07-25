@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: AI mark popovers now keep only attribution, Restore,
+  conversation navigation, and a trail-backed Before/After disclosure; receipt
+  rows use clamped excerpts without nested scrolling, cards, or Copy controls.
 - `apps/app`: chat keeps draft mode in the composer, hides a one-option dock
   switch, and removes the duplicate conversation-wide Changes record.
 - `apps/app`, `apps/server`: every draft Apply now merges through Yjs and

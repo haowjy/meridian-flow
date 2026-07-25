@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Receipt rows expose durable before/after excerpts and exact reveal targeting. */
+/** Receipt rows expose concise durable excerpts and exact editor navigation. */
 import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -13,11 +13,11 @@ import {
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray) => strings[0],
+}));
 vi.mock("@/core/editor/change-mark-labels", () => ({
   changeKindLabel: (kind: string) => `${kind} label`,
-}));
-vi.mock("@/components/ui/button", () => ({
-  Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
 const { ChangeViewRows } = await import("./ChangeViewRows");
 
@@ -50,33 +50,31 @@ describe("ChangeViewRows", () => {
     document.body.replaceChildren();
   });
 
-  it("renders before and after excerpts and copies the before excerpt", async () => {
-    const copyText = vi.fn(async () => {});
+  it("renders clamped excerpts without row chrome or copy controls", async () => {
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
       root.render(
-        <ChangeViewRows
-          documentId="document-1"
-          changes={[change]}
-          navigateToChange={vi.fn()}
-          copyText={copyText}
-        />,
+        <ChangeViewRows documentId="document-1" changes={[change]} navigateToChange={vi.fn()} />,
       );
     });
 
     expect(container.textContent).toContain("Before text.");
     expect(container.textContent).toContain("After text.");
-    const copy = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Copy",
+    expect(container.textContent).not.toContain("Copy");
+    expect(container.querySelector('[data-change-excerpt="before"]')?.className).toContain(
+      "line-clamp-3",
     );
-    await act(async () => copy?.click());
-    expect(copyText).toHaveBeenCalledWith("Before text.");
+    expect(container.querySelector('[data-change-excerpt="before"]')?.className).not.toContain(
+      "overflow-y-auto",
+    );
+    expect(container.querySelector('[data-change-view-row="modify"]')?.className).not.toContain(
+      "rounded",
+    );
     await act(async () => root.unmount());
   });
 
   it("keeps intentionally blank Before and After sides visible", async () => {
-    const copyText = vi.fn(async () => {});
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
@@ -85,23 +83,15 @@ describe("ChangeViewRows", () => {
           documentId="document-1"
           changes={[{ ...change, beforeText: "block-1|", afterTextAtReceipt: "block-1|" }]}
           navigateToChange={vi.fn()}
-          copyText={copyText}
         />,
       );
     });
 
-    expect(container.textContent).toContain("Before");
-    expect(container.textContent).toContain("After");
-    expect(container.querySelectorAll(".whitespace-pre-wrap")).toHaveLength(2);
-    const copy = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Copy",
-    );
-    await act(async () => copy?.click());
-    expect(copyText).toHaveBeenCalledWith("");
+    expect(container.querySelectorAll("[data-change-excerpt]")).toHaveLength(2);
     await act(async () => root.unmount());
   });
 
-  it("emphasizes and completes an explicit reveal", async () => {
+  it("brings an explicit reveal into view without animated emphasis", async () => {
     const reveal = { threadId: "thread-1", turnId: "turn-1", changeId: "change-1" };
     requestConversationReveal(reveal);
     const container = document.createElement("div");
@@ -118,9 +108,30 @@ describe("ChangeViewRows", () => {
     });
 
     const row = container.querySelector('[data-change-view-row="modify"]');
-    expect(row?.className).toContain("meridian-trail-row-emphasized");
-    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledOnce();
+    expect(row?.className).not.toContain("meridian-trail-row-emphasized");
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
     expect(peekConversationReveal()).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("navigates the exact selected change", async () => {
+    const navigateToChange = vi.fn(async () => ({ kind: "shown" as const }));
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ChangeViewRows
+          documentId="document-1"
+          changes={[change]}
+          navigateToChange={navigateToChange}
+        />,
+      );
+    });
+
+    await act(async () => {
+      (container.querySelector("button") as HTMLButtonElement).click();
+    });
+    expect(navigateToChange).toHaveBeenCalledWith("document-1", change);
     await act(async () => root.unmount());
   });
 });

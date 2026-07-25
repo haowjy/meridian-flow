@@ -1,9 +1,9 @@
 /** Read-only before/after rows for one durable turn receipt. */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
 import { useEffect, useRef, useState } from "react";
 import { bodyFromTrailHashline } from "@/client/change-trails";
-import { Button } from "@/components/ui/button";
 import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
 import { type ConversationReveal, completeConversationReveal } from "./conversation-reveal";
@@ -13,14 +13,12 @@ export function ChangeViewRows({
   documentId,
   changes,
   navigateToChange,
-  copyText = copyToClipboard,
   anchorUnavailable = false,
   reveal = null,
 }: {
   documentId: string;
   changes: TrailChange[];
   navigateToChange: NavigateToTrailChange;
-  copyText?: (text: string) => Promise<void>;
   anchorUnavailable?: boolean;
   reveal?: ConversationReveal | null;
 }) {
@@ -35,9 +33,7 @@ export function ChangeViewRows({
               documentId={documentId}
               change={change}
               navigateToChange={navigateToChange}
-              copyText={copyText}
               anchorUnavailable={anchorUnavailable}
-              emphasized={reveal?.changeId === change.changeId}
               reveal={reveal}
             />
           ))}
@@ -50,57 +46,30 @@ function ChangeViewRow({
   documentId,
   change,
   navigateToChange,
-  copyText,
   anchorUnavailable,
-  emphasized: shouldEmphasize,
   reveal,
 }: {
   documentId: string;
   change: TrailChange;
   navigateToChange: NavigateToTrailChange;
-  copyText: (text: string) => Promise<void>;
   anchorUnavailable: boolean;
-  emphasized: boolean;
   reveal: ConversationReveal | null;
 }) {
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const rowRef = useRef<HTMLLIElement>(null);
-  const [emphasized, setEmphasized] = useState(shouldEmphasize);
-  const before = bodyFromTrailHashline(change.beforeText);
-  const after = bodyFromTrailHashline(change.afterTextAtReceipt);
 
   useEffect(() => {
-    if (!shouldEmphasize || !reveal) return;
-    setEmphasized(true);
-    rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (reveal?.changeId !== change.changeId) return;
+    rowRef.current?.scrollIntoView({ block: "nearest" });
     completeConversationReveal(reveal);
-  }, [reveal, shouldEmphasize]);
+  }, [change.changeId, reveal]);
 
   async function revealInEditor() {
     setNavigation(await navigateToChange(documentId, change));
   }
 
-  async function copy(text: string) {
-    setCopyState("idle");
-    try {
-      await copyText(text);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  }
-
   return (
-    <li
-      ref={rowRef}
-      className={`space-y-2 rounded-md p-2 text-caption ${
-        emphasized ? "meridian-trail-row-emphasized" : ""
-      }`}
-      data-change-view-row={change.kind}
-      onPointerDown={() => setEmphasized(false)}
-      onKeyDown={() => setEmphasized(false)}
-    >
+    <li ref={rowRef} className="space-y-2 py-2 text-caption" data-change-view-row={change.kind}>
       <button
         type="button"
         className="focus-ring rounded-sm text-left font-medium text-prose-foreground"
@@ -117,51 +86,36 @@ function ChangeViewRow({
           <Trans>That part of the chapter is no longer available.</Trans>
         </p>
       ) : null}
-      {before !== null ? (
-        <ExcerptBlock label="before" text={before} onCopy={() => void copy(before)} />
-      ) : null}
-      {after !== null ? <ExcerptBlock label="after" text={after} /> : null}
-      {copyState === "copied" ? (
-        <p className="text-jade-text">
-          <Trans>Copied</Trans>
-        </p>
-      ) : copyState === "failed" ? (
-        <p className="text-destructive">
-          <Trans>Couldn't copy. Select the saved text and copy it manually.</Trans>
-        </p>
-      ) : null}
+      <ChangeExcerpts change={change} />
     </li>
   );
 }
 
-function ExcerptBlock({
-  label,
-  text,
-  onCopy,
-}: {
-  label: "before" | "after";
-  text: string;
-  onCopy?: () => void;
-}) {
+/** The one trail-backed Before/After renderer used by receipts and live marks. */
+export function ChangeExcerpts({ change }: { change: TrailChange }) {
+  const before = bodyFromTrailHashline(change.beforeText);
+  const after = bodyFromTrailHashline(change.afterTextAtReceipt);
+
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-medium text-ink-muted text-micro uppercase tracking-wide">
-          {label === "before" ? <Trans>Before</Trans> : <Trans>After</Trans>}
+      {before !== null ? (
+        <p
+          data-change-excerpt="before"
+          className="line-clamp-3 whitespace-pre-wrap break-words text-ink-muted"
+        >
+          <span className="sr-only">{t`Before`}: </span>
+          <del className="no-underline">{before || "\u00a0"}</del>
         </p>
-        {onCopy ? (
-          <Button type="button" variant="quiet" size="meta" onClick={onCopy}>
-            <Trans>Copy</Trans>
-          </Button>
-        ) : null}
-      </div>
-      <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-surface-subtle p-2 text-prose-foreground">
-        {text}
-      </p>
+      ) : null}
+      {after !== null ? (
+        <p
+          data-change-excerpt="after"
+          className="line-clamp-3 whitespace-pre-wrap break-words text-prose-foreground"
+        >
+          <span className="sr-only">{t`After`}: </span>
+          <ins className="no-underline">{after || "\u00a0"}</ins>
+        </p>
+      ) : null}
     </div>
   );
-}
-
-async function copyToClipboard(text: string): Promise<void> {
-  await navigator.clipboard.writeText(text);
 }
