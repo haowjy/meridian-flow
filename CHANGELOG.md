@@ -29,6 +29,8 @@
 - `apps/server`, `packages/database`, `tools/dev`: unit files run in parallel;
   PostgreSQL tests clone four worker databases from one migrated template and
   ordinary adapter/route cases roll back instead of truncating per test (#377).
+- `apps/server`: collab trail retries and abandoned-work leases now use an
+  injectable schedule, so tests advance eligibility without production sleeps (#377).
 - Test suite: removed 235 declarations that pinned transient UI structure,
   debug scaffolding, local store representation, thin delegates, or duplicate
   adapter behavior (#377).
