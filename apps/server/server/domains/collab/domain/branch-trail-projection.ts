@@ -166,7 +166,7 @@ export function preparedTrailChanges(input: {
     }
   }
   const replacementIds = new Set(provenReplacements.values());
-  const contentRelocations = new Map<string, string>();
+  const directContentRelocations = new Map<string, string>();
   for (const target of input.receipt.changedBlocks) {
     if (
       target.beforeText === null ||
@@ -177,12 +177,27 @@ export function preparedTrailChanges(input: {
     }
     const sources = input.receipt.changedBlocks.filter(
       (candidate) =>
-        candidate.blockId !== target.blockId &&
-        candidate.beforeText === target.afterText &&
-        candidate.afterText === null,
+        candidate.blockId !== target.blockId && candidate.beforeText === target.afterText,
     );
     if (sources.length === 1) {
-      contentRelocations.set(target.blockId, sources[0]?.blockId as string);
+      directContentRelocations.set(target.blockId, sources[0]?.blockId as string);
+    }
+  }
+  const changedBlockById = new Map(
+    input.receipt.changedBlocks.map((block) => [block.blockId, block]),
+  );
+  const contentRelocations = new Map<string, string>();
+  for (const [targetId, sourceId] of directContentRelocations) {
+    const visited = new Set([targetId]);
+    let cursorId: string | undefined = sourceId;
+    while (cursorId && !visited.has(cursorId)) {
+      visited.add(cursorId);
+      const cursor = changedBlockById.get(cursorId);
+      if (cursor?.afterText === null) {
+        contentRelocations.set(targetId, sourceId);
+        break;
+      }
+      cursorId = directContentRelocations.get(cursorId);
     }
   }
   const relocatedSourceIds = new Set(contentRelocations.values());

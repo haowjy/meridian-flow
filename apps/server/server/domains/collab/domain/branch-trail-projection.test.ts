@@ -252,6 +252,125 @@ it("projects identity-shifted surviving prose as deletion of the displaced passa
   ]);
 });
 
+it("traces multi-block identity shifts back to the displaced passage", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const beforeDoc = createCollabYDoc({ gc: false });
+  model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo.\n\nCharlie."));
+  const beforeBlocks = model.getBlocks(toDocHandle(beforeDoc));
+  const alpha = beforeBlocks[0];
+  const bravo = beforeBlocks[1];
+  const charlie = beforeBlocks[2];
+  if (!alpha || !bravo || !charlie) throw new Error("missing source blocks");
+  const alphaId = model.getBlockId(alpha);
+  const bravoId = model.getBlockId(bravo);
+  const charlieId = model.getBlockId(charlie);
+
+  const afterDoc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(beforeDoc));
+  const afterBlocks = model.getBlocks(toDocHandle(afterDoc));
+  const first = afterBlocks[0];
+  const second = afterBlocks[1];
+  const bravoReplacement = codec.parse("Bravo.").blocks[0];
+  const charlieReplacement = codec.parse("Charlie.").blocks[0];
+  if (!first || !second || !bravoReplacement || !charlieReplacement) {
+    throw new Error("missing shifted blocks");
+  }
+  model.applyBlockReplacement(toDocHandle(afterDoc), first, bravoReplacement);
+  model.applyBlockReplacement(toDocHandle(afterDoc), second, charlieReplacement);
+  afterDoc.getXmlFragment("prosemirror").delete(2, 1);
+
+  const survivingBlocks = model.getBlocks(toDocHandle(afterDoc));
+  const firstSurvivor = survivingBlocks[0];
+  const secondSurvivor = survivingBlocks[1];
+  const firstElement = afterDoc.getXmlFragment("prosemirror").get(0);
+  const secondElement = afterDoc.getXmlFragment("prosemirror").get(1);
+  if (
+    !firstSurvivor ||
+    !secondSurvivor ||
+    !(firstElement instanceof Y.XmlElement) ||
+    !(secondElement instanceof Y.XmlElement)
+  ) {
+    throw new Error("missing shifted survivors");
+  }
+  const firstSurvivorId = model.getBlockId(firstSurvivor);
+  const secondSurvivorId = model.getBlockId(secondSurvivor);
+
+  const changes = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: alphaId,
+          beforeText: "Alpha.",
+          afterText: "Bravo.",
+          beforeWordCount: 1,
+          afterWordCount: 1,
+          wordDelta: 0,
+        },
+        {
+          blockId: bravoId,
+          beforeText: "Bravo.",
+          afterText: "Charlie.",
+          beforeWordCount: 1,
+          afterWordCount: 1,
+          wordDelta: 0,
+        },
+        {
+          blockId: charlieId,
+          beforeText: "Charlie.",
+          afterText: null,
+          beforeWordCount: 1,
+          afterWordCount: 0,
+          wordDelta: -1,
+        },
+      ],
+      totalWordDelta: -1,
+    },
+    receiptId: "receipt-multi-shift",
+    ownersByBlock: new Map([
+      [alphaId, [null]],
+      [bravoId, [null]],
+      [charlieId, [null]],
+    ]),
+    operations: [],
+    before: [
+      { hash: alphaId, serialized: "Alpha." },
+      { hash: bravoId, serialized: "Bravo." },
+      { hash: charlieId, serialized: "Charlie." },
+    ],
+    blockIdentities: new Map([
+      [alphaId, { documentId: "document-1", ...getBlockItemId(alpha) }],
+      [bravoId, { documentId: "document-1", ...getBlockItemId(bravo) }],
+      [charlieId, { documentId: "document-1", ...getBlockItemId(charlie) }],
+      [firstSurvivorId, { documentId: "document-1", ...getBlockItemId(firstSurvivor) }],
+      [secondSurvivorId, { documentId: "document-1", ...getBlockItemId(secondSurvivor) }],
+    ]),
+    afterIds: new Set([firstSurvivorId, secondSurvivorId]),
+    afterById: new Map([
+      [firstSurvivorId, firstElement],
+      [secondSurvivorId, secondElement],
+    ]),
+    afterDoc,
+  });
+
+  expect(changes).toMatchObject([
+    {
+      kind: "delete",
+      beforeBlockId: alphaId,
+      afterBlockId: null,
+      beforeText: "Alpha.",
+      afterTextAtReceipt: null,
+      navigation: { kind: "deletion_boundary" },
+    },
+  ]);
+});
+
 it("projects a structurally adjacent whole-block replacement as one modification", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));
