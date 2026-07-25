@@ -184,7 +184,7 @@ function metaFromUpdateRow(
       };
     }
   }
-  if (row.originType === "human" || (mode === "latest" && row.originType === "user")) {
+  if (row.originType === "human" || row.originType === "user") {
     const originActor = row.actorUserId ?? (mode === "journal" ? "unknown" : undefined);
     if (originActor) {
       return {

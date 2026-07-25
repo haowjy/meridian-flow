@@ -356,6 +356,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
+      const [writerRow] = await db
+        .select({ id: documentYjsUpdates.id })
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, DOC_ID as never))
+        .orderBy(sql`${documentYjsUpdates.id} desc`)
+        .limit(1);
+      if (!writerRow) throw new Error("missing writer update");
+      // Writer ingress stores `user`; older direct journal writers store
+      // `human`. Reconstruction must normalize both to the same writer class.
+      await db
+        .update(documentYjsUpdates)
+        .set({ originType: "user" })
+        .where(eq(documentYjsUpdates.id, writerRow.id));
 
       await expect(
         collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
