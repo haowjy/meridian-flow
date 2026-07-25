@@ -224,7 +224,7 @@ export function pickIconForMime(mimeType: string): { Icon: LucideIcon; tone: str
 function formatResultDetail(result: ProjectResultItem): string {
   const size = formatBytes(result.sizeBytes);
   const when = relativeTime(result.createdAt, Date.now());
-  return [size, when].filter(Boolean).join(" · ");
+  return when ? `${size} (${when})` : size;
 }
 
 function formatBytes(bytes: number): string {

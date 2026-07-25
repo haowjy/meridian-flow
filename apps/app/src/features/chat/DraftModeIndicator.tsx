@@ -13,9 +13,6 @@ export function DraftModeIndicator({ mode }: { mode: AiWriteMode | null }) {
         <span className="shrink-0 font-medium text-prose-foreground">
           <Trans>Draft mode</Trans>
         </span>
-        <span aria-hidden className="shrink-0 text-ink-subtle">
-          ·
-        </span>
         <span className="truncate text-ink-muted">
           <Trans>AI changes wait for your review</Trans>
         </span>

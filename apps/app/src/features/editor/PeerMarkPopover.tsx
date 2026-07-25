@@ -2,13 +2,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { changeTrailDetailKey, readChangeTrail } from "@/client/change-trails";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { changeMarkLabel } from "@/core/editor/change-mark-labels";
+import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
@@ -16,7 +17,6 @@ import { useTrailForwardAction } from "@/features/change-trail/trail-change-reco
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
 
 export type PeerMarkPopoverTarget = {
   marker: SessionMarker;
@@ -68,8 +68,9 @@ export function PeerMarkPopover({
     changeId: string;
     state: "copied" | "failed";
   } | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const copyState =
-    copyReceipt && copyReceipt.changeId === change?.changeId ? copyReceipt.state : "idle";
+    copyReceipt && copyReceipt.changeId === marker?.changeId ? copyReceipt.state : "idle";
   const requestSnippet = useMemo(
     () => originatingRequestSnippet(snapshot.data?.turns ?? [], agentAuthor?.turnId ?? null),
     [agentAuthor?.turnId, snapshot.data?.turns],
@@ -109,6 +110,11 @@ export function PeerMarkPopover({
         : t`AI assistant`
       : t`Collaborator`;
   const removedText = change ? recovery.body : marker.excerpt;
+  const hasRemovedPassage = removedText !== null && markerLabelKind(marker) !== "insert";
+  const hasDisclosure =
+    Boolean(agentAuthor) &&
+    (marker.swept || markerLabelKind(marker) !== "insert" || requestSnippet !== null);
+  const relativeTime = formatRelativeTime(new Date(marker.receivedAt), Date.now());
 
   function openConversation(): void {
     if (!agentAuthor) return;
@@ -121,11 +127,11 @@ export function PeerMarkPopover({
   }
 
   async function copyRecoveryBody(): Promise<void> {
-    if (!recovery.body || !change) return;
-    const changeId = change.changeId;
+    if (removedText === null) return;
+    const changeId = currentMarker.changeId;
     setCopyReceipt(null);
     try {
-      await navigator.clipboard.writeText(recovery.body);
+      await navigator.clipboard.writeText(removedText);
       setCopyReceipt({ changeId, state: "copied" });
     } catch {
       setCopyReceipt({ changeId, state: "failed" });
@@ -149,112 +155,136 @@ export function PeerMarkPopover({
           event.preventDefault();
         }}
       >
-        <div className="flex items-start gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span
-            className="mt-1 size-2 shrink-0 rounded-full"
+            className="size-2 shrink-0 rounded-full"
             style={{ background: collaborationColorFor(colorIdentity) }}
             aria-hidden
           />
-          <div className="min-w-0">
-            <p className="truncate font-medium text-prose-foreground">{title}</p>
-            {marker.author.kind === "agent" ? (
-              <p className="flex items-center gap-1 text-ink-muted">
-                {markerLabel(marker)}
-                {formatRelativeTime(new Date(marker.receivedAt), Date.now())}
-              </p>
-            ) : (
-              <p className="text-ink-muted">
-                {formatRelativeTime(new Date(marker.receivedAt), Date.now())}
-              </p>
-            )}
-          </div>
+          <p className="min-w-0 flex-1 truncate font-medium text-prose-foreground">{title}</p>
+          <time
+            className="shrink-0 text-ink-muted"
+            role="timer"
+            aria-label={t`Changed ${relativeTime}`}
+            dateTime={new Date(marker.receivedAt).toISOString()}
+          >
+            {relativeTime}
+          </time>
         </div>
 
         {agentAuthor ? (
-          detail.isPending ? (
-            marker.kind === "delete" && marker.excerpt ? (
-              <RemovedText text={marker.excerpt} />
-            ) : (
-              <p className="text-ink-muted">
-                <Trans>Loading change details…</Trans>
-              </p>
-            )
-          ) : detail.isError ? (
-            <p className="text-ink-muted">
-              <Trans>Change details are unavailable.</Trans>
-            </p>
-          ) : !change ? (
-            <p className="text-ink-muted">
-              <Trans>This change is no longer in the trail.</Trans>
-            </p>
-          ) : (
-            <>
-              {removedText && change.kind !== "insert" ? <RemovedText text={removedText} /> : null}
-              {requestSnippet ? (
-                <div>
-                  <p className="font-medium text-ink-muted">
-                    <Trans>You asked</Trans>
-                  </p>
-                  <p className="truncate text-prose-foreground">{requestSnippet}</p>
-                </div>
-              ) : null}
-            </>
-          )
-        ) : null}
+          <>
+            <p className="text-ink-muted">{markerLabel(marker)}</p>
+            {hasDisclosure ? (
+              <div className="border-border-subtle border-y py-1">
+                <button
+                  type="button"
+                  className="focus-ring flex w-full items-center justify-between rounded-sm px-1 py-1 text-ink-muted hover:text-prose-foreground"
+                  aria-expanded={detailsOpen}
+                  onClick={() => setDetailsOpen((open) => !open)}
+                >
+                  {detailsOpen ? <Trans>Hide details</Trans> : <Trans>Show details</Trans>}
+                  <ChevronRight
+                    className={`size-3.5 transition-transform ${detailsOpen ? "rotate-90" : ""}`}
+                    aria-hidden
+                  />
+                </button>
+                {detailsOpen ? (
+                  <div className="space-y-3 px-1 pt-2 pb-1">
+                    {marker.swept ? (
+                      <p className="text-caption text-prose-foreground">
+                        <Trans>This passage included edits you made that the AI hadn't seen.</Trans>
+                      </p>
+                    ) : null}
+                    {hasRemovedPassage ? (
+                      <RemovedText
+                        text={removedText}
+                        copyState={copyState}
+                        onCopy={() => void copyRecoveryBody()}
+                      />
+                    ) : null}
+                    {requestSnippet ? (
+                      <div>
+                        <p className="font-medium text-ink-muted text-micro uppercase tracking-wide">
+                          <Trans>You asked</Trans>
+                        </p>
+                        <p className="truncate text-prose-foreground">{requestSnippet}</p>
+                      </div>
+                    ) : null}
+                    {detail.isPending ? (
+                      <p className="text-ink-muted">
+                        <Trans>Loading change details…</Trans>
+                      </p>
+                    ) : detail.isError ? (
+                      <p className="text-ink-muted">
+                        <Trans>Change details are unavailable.</Trans>
+                      </p>
+                    ) : !change ? (
+                      <p className="text-ink-muted">
+                        <Trans>This change is no longer in the trail.</Trans>
+                      </p>
+                    ) : null}
+                    {copyState === "failed" ? (
+                      <p className="text-destructive">
+                        <Trans>Couldn't copy. Select the saved text and copy it manually.</Trans>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
-        {agentAuthor ? (
-          <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
-            {recovery.canCopy && recovery.body ? (
-              <Button size="sm" onClick={() => void copyRecoveryBody()}>
-                <Trans>Copy</Trans>
+            <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
+              {recovery.canExecute ? (
+                <Button
+                  size="sm"
+                  disabled={recovery.isPending}
+                  onClick={() => void recovery.execute()}
+                >
+                  <Trans>Restore</Trans>
+                </Button>
+              ) : null}
+              {recovery.applied ? (
+                <span className="text-jade-text">
+                  <Trans>Restored</Trans>
+                </span>
+              ) : null}
+              <Button size="sm" variant="quiet" className="ml-auto" onClick={openConversation}>
+                <Trans>Open conversation</Trans>
               </Button>
+            </div>
+            {recovery.failed ? (
+              <p className="text-destructive">
+                <Trans>Couldn't apply that recovery action. Try again.</Trans>
+              </p>
             ) : null}
-            {recovery.canExecute ? (
-              <Button
-                size="sm"
-                disabled={recovery.isPending}
-                onClick={() => void recovery.execute()}
-              >
-                <Trans>Restore</Trans>
-              </Button>
-            ) : null}
-            {recovery.applied ? (
-              <span className="text-jade-text">
-                <Trans>Restored</Trans>
-              </span>
-            ) : null}
-            {copyState === "copied" ? (
-              <span className="text-jade-text">
-                <Trans>Copied</Trans>
-              </span>
-            ) : null}
-            <Button size="sm" variant="quiet" onClick={openConversation}>
-              <Trans>Open conversation</Trans>
-            </Button>
-          </div>
-        ) : null}
-        {recovery.failed ? (
-          <p className="text-destructive">
-            <Trans>Couldn't apply that recovery action. Try again.</Trans>
-          </p>
-        ) : null}
-        {copyState === "failed" ? (
-          <p className="text-destructive">
-            <Trans>Couldn't copy. Select the saved text and copy it manually.</Trans>
-          </p>
+          </>
         ) : null}
       </PopoverContent>
     </Popover>
   );
 }
 
-function RemovedText({ text }: { text: string }) {
-  const shortExcerpt = !text.includes("\n") && text.length <= 120;
+function RemovedText({
+  text,
+  copyState,
+  onCopy,
+}: {
+  text: string;
+  copyState: "idle" | "copied" | "failed";
+  onCopy: () => void;
+}) {
   return (
-    <div className="max-h-32 overflow-y-auto rounded-md bg-surface-subtle p-2">
-      <p
-        className={cn("whitespace-pre-wrap text-prose-foreground", shortExcerpt && "line-through")}
-      >
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-medium text-ink-muted text-micro uppercase tracking-wide">
+          <Trans>Removed passage</Trans>
+        </p>
+        <Button size="meta" variant="quiet" onClick={onCopy}>
+          {copyState === "copied" ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
+        </Button>
+      </div>
+      <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-surface-subtle p-2 text-prose-foreground">
         {text}
       </p>
     </div>
@@ -262,7 +292,11 @@ function RemovedText({ text }: { text: string }) {
 }
 
 function markerLabel(marker: SessionMarker): string {
-  return changeMarkLabel(marker.kind, marker.pureDeletionOffset);
+  return changeKindLabel(markerLabelKind(marker));
+}
+
+function markerLabelKind(marker: SessionMarker): SessionMarker["kind"] {
+  return marker.kind === "modify" && marker.pureDeletionOffset !== null ? "delete" : marker.kind;
 }
 
 function originatingRequestSnippet(

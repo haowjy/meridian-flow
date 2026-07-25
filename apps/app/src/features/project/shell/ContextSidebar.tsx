@@ -227,7 +227,7 @@ function formatFileDetail(extension: string, sizeBytes: number | null): string {
   const ext = extension.replace(/^\./, "").toUpperCase();
   if (sizeBytes == null) return ext || "";
   const size = formatBytes(sizeBytes);
-  return ext ? `${ext} · ${size}` : size;
+  return ext ? `${ext} (${size})` : size;
 }
 
 function formatBytes(bytes: number): string {

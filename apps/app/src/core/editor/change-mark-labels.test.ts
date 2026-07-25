@@ -17,16 +17,16 @@ describe("peer-mark labels", () => {
   });
 
   it("labels a pure deletion by its rendered effect", () => {
-    expect(changeMarkLabel("modify", 4)).toBe("Deleted a passage");
+    expect(changeMarkLabel("modify", 4)).toBe("AI deleted a passage");
   });
 
-  it("keeps optional identity separate from the localized verb", () => {
+  it("renders actor and verb as one localized sentence", () => {
     expect(changeMarkLabel("insert", null, "Meridian Researcher")).toBe(
-      "Meridian Researcher · Added a passage",
+      "Meridian Researcher added a passage",
     );
     expect(collaboratorChangeLabel()).toBe("Collaborator edited text");
-    expect(peerMarkAccessibleLabel("AI · Added a passage")).toBe(
-      "Show change details for AI · Added a passage",
+    expect(peerMarkAccessibleLabel("AI added a passage")).toBe(
+      "Show change details for AI added a passage",
     );
   });
 });

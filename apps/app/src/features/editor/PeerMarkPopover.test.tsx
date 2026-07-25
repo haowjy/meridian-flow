@@ -27,6 +27,11 @@ const settledChange: TrailChange = {
 const activeChange: TrailChange = { ...settledChange, forwardActions: undefined };
 let currentChange = settledChange;
 let currentThreadTitle: string | null = "Agent thread";
+let currentTurns: Array<{
+  id: string;
+  role: string;
+  blocks: Array<{ blockType: string; textContent?: string | null }>;
+}> = [];
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -45,7 +50,7 @@ vi.mock("@tanstack/react-query", () => ({
           isError: false,
         }
       : {
-          data: { thread: { title: currentThreadTitle }, turns: [] },
+          data: { thread: { title: currentThreadTitle }, turns: currentTurns },
           isPending: false,
           isError: false,
         },
@@ -78,10 +83,12 @@ describe("PeerMarkPopover recovery", () => {
   beforeEach(() => {
     currentChange = settledChange;
     currentThreadTitle = "Agent thread";
+    currentTurns = [];
   });
 
   it("offers Copy instead of another Restore after retry exhaustion", async () => {
-    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
+    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, async () => {
+      await act(async () => button("Show details").click());
       expect(document.body.textContent).toContain("Writer text.");
       expect(buttonLabels()).toContain("Copy");
       expect(buttonLabels()).not.toContain("Restore");
@@ -95,6 +102,7 @@ describe("PeerMarkPopover recovery", () => {
       await act(async () => {
         button("Restore").click();
       });
+      await act(async () => button("Show details").click());
       expect(buttonLabels()).toContain("Copy");
       expect(buttonLabels()).not.toContain("Restore");
     });
@@ -124,7 +132,8 @@ describe("PeerMarkPopover recovery", () => {
       ...settledChange,
       beforeText: `block-1|${longPassage}`,
     };
-    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
+    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, async () => {
+      await act(async () => button("Show details").click());
       const removedText = [...document.querySelectorAll("p")].find((element) =>
         element.textContent?.includes("corridor of ash"),
       );
@@ -149,6 +158,42 @@ describe("PeerMarkPopover recovery", () => {
       expect(document.body.textContent).toContain("Deleted a passage");
       expect(document.body.textContent).not.toContain("Replaced a passage");
     });
+  });
+
+  it("keeps evidence behind one disclosure and shows swept impact only when applicable", async () => {
+    currentTurns = [
+      {
+        id: "request-turn",
+        role: "user",
+        blocks: [{ blockType: "text", textContent: "Tighten the opening paragraph." }],
+      },
+      { id: "turn-1", role: "assistant", blocks: [] },
+    ];
+    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, async () => {
+      expect(document.body.textContent).not.toContain("Writer text.");
+      expect(document.body.textContent).not.toContain("Tighten the opening paragraph.");
+      await act(async () => button("Show details").click());
+      expect(document.body.textContent).toContain("Writer text.");
+      expect(document.body.textContent).toContain("You asked");
+      expect(document.body.textContent).toContain("Tighten the opening paragraph.");
+      expect(document.body.textContent).toContain(
+        "This passage included edits you made that the AI hadn't seen.",
+      );
+    });
+  });
+
+  it("does not show the swept sentence for an ordinary mark", async () => {
+    const ordinaryTarget = target();
+    ordinaryTarget.marker = { ...ordinaryTarget.marker, swept: false };
+    await withReactRoot(
+      <PeerMarkPopover target={ordinaryTarget} onOpenChange={vi.fn()} />,
+      async () => {
+        await act(async () => button("Show details").click());
+        expect(document.body.textContent).not.toContain(
+          "This passage included edits you made that the AI hadn't seen.",
+        );
+      },
+    );
   });
 });
 

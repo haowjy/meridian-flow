@@ -13,6 +13,10 @@
   blocked Auto-apply switch to Review changes or Apply all and switch.
 - `apps/app`: full-paragraph AI deletions now render as crimson inline ticks
   inside adjacent prose instead of full-width seams.
+- `apps/app`: live AI mark popovers now keep attribution and Restore compact,
+  with swept context, removed prose, Copy, and the request behind Show details.
+- `apps/app`: writer-facing status, mark, and file metadata copy no longer uses
+  middle-dot separators.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and expire with the live
   session or a writer edit.

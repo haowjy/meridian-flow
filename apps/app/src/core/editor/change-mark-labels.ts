@@ -20,9 +20,13 @@ export function changeMarkLabel(
   pureDeletionOffset: number | null,
   agentName?: string,
 ): string {
-  const verb =
-    kind === "modify" && pureDeletionOffset !== null
-      ? i18n._("Deleted a passage")
-      : changeKindLabel(kind);
-  return agentName ? `${agentName} · ${verb}` : verb;
+  const renderedKind = kind === "modify" && pureDeletionOffset !== null ? "delete" : kind;
+  const actor = agentName ?? i18n._("AI");
+  if (renderedKind === "insert") {
+    return i18n._("{agentName} added a passage", { agentName: actor });
+  }
+  if (renderedKind === "modify") {
+    return i18n._("{agentName} replaced a passage", { agentName: actor });
+  }
+  return i18n._("{agentName} deleted a passage", { agentName: actor });
 }
