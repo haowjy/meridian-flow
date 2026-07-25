@@ -1,5 +1,6 @@
 /** Persisted live-document coverage for client-owned untitled creation. */
 
+import { Hocuspocus } from "@hocuspocus/server";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, documentYjsCheckpoints, projects, users } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -54,6 +55,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         documentAccess: createDrizzleDocumentAccess(db),
       });
+      collab.bindHocuspocus(
+        new Hocuspocus({
+          yDocOptions: { gc: false, gcFilter: () => true },
+          onStoreDocument: ({ documentName, document }) =>
+            collab.storeHocuspocusDocument(documentName, document),
+        }),
+      );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
         store,

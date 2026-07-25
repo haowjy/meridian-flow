@@ -65,6 +65,7 @@ import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createBranchReviewOperations } from "./domain/branch-review-operations.js";
 import { createDocumentAttribution } from "./domain/document-attribution.js";
+import { createDocumentCreationAggregate } from "./domain/document-creation.js";
 import {
   createDocumentProjectionRefresher,
   createDocumentWriteHookRunner,
@@ -115,6 +116,10 @@ type CollabDomainDeps = {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
+  const documentCreation = createDocumentCreationAggregate({
+    atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
+    ensureDocument: persistence.lifecycle.ensureDocument,
+  });
   const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: hocuspocusBinding.require,
@@ -175,8 +180,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const runtime = createAgentEditRuntime({
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    lifecycle: persistence.lifecycle,
+    lifecycle: documentCreation,
     initialDocumentSeeds: persistence.lifecycle,
+    deferUntilCommit: deferUntilDrizzleCommit,
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,
@@ -332,6 +338,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     documents: runtime.markdownDocuments,
     model: runtime.model,
     codec: runtime.codec,
+    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
@@ -431,5 +438,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     branchPeers,
     drafts,
+    documentCreation,
   });
 }

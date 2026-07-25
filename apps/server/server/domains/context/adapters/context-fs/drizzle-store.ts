@@ -143,7 +143,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   constructor(private readonly deps: DrizzleContextDocumentStoreDeps) {}
 
   private get db() {
-    return this.deps.db;
+    return currentDrizzleDb(this.deps.db) as Database;
   }
 
   private get sourceId() {
@@ -256,7 +256,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return mapDocument(row);
   }
 
-  async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+  async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
     const [row] = await this.db
       .insert(documents)
       .values({
@@ -273,7 +273,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .onConflictDoNothing()
       .returning();
     if (!row) return null;
-    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -306,8 +305,8 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     };
   }
 
-  async ensureDocumentMembership(documentId: string): Promise<void> {
-    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", documentId);
+  async recordDocumentMembership(documentId: string): Promise<void> {
+    await this.deps.membershipObserver?.documentCreated(documentId);
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {

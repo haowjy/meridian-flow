@@ -24,6 +24,7 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -398,8 +399,10 @@ export type CollabDomain = CollabTransport &
   TrailForwardActionAccess &
   BranchPushAccess &
   BranchPeerShadowAccess &
-  CollabDrafts;
+  CollabDrafts &
+  DocumentCreationAggregate;
 
+export type { DocumentCreationAggregate } from "./domain/document-creation.js";
 export type {
   DocumentAuthorityHead,
   DocumentAuthorityHeads,

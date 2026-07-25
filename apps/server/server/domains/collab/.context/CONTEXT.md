@@ -155,6 +155,15 @@ setting an equal Y.Map value still creates Yjs history. See
 [KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
 for the cross-domain port decision and self-healing rationale.
 
+`domain/document-creation.ts` owns tracked-document materialization
+transactions. Context and bootstrap supply the row, initial-content, and
+manifest operations; the aggregate commits them together. Repair uses the same
+boundary so a row cannot become visible before its Yjs authority is usable.
+Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
+after the enclosing Drizzle transaction commits. Work/thread manifest mutations
+persist their branch state inside that transaction and defer the automatic live
+push until commit.
+
 ## Durable records
 
 - `document_yjs_updates` is the live update journal.
@@ -345,18 +354,20 @@ history is preserved for attribution, echo, and undo dependency checking.
   fold cancels the provisional row, the next classification restores the push
   contribution from the replacement's durable owner/title context. A complete empty
   classification removes that push's provisional changes in the same version.
-- **Settlement verification stack**: the shared killed-process oracle in
-  `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
-  Fixtures run a warm control, stop an identical subject at the durable commit
-  boundary, destroy all warm Y.Docs/coordinators/facades, rebuild from PostgreSQL,
-  recover, and compare normalized trail, bodies, identities, eligible ranges,
-  apply/completion, and forward actions. It is necessary but not
-  sufficient: `lib/compose.runtime-settlement.db.test.ts` must also drive the real
-  `createProductionAppPorts` + `composeAppServices` + Hocuspocus + worker-drain chain
-  with production-shaped sync-step-2 full-state updates, and S2/S10 release probes
-  must verify the writer-visible Restore/Copy and trail flows. Fixture deltas once
-  passed the full oracle while repeated full-state structs broke first-birth
-  attribution.
+- **Settlement verification stack**: the killed-process oracle owns durable
+  settlement risks—transaction boundaries, claims and leases, lock cuts, crash
+  windows, and cold recovery. Pure provenance and policy semantics belong to their
+  focused owners rather than to a second PostgreSQL replay graph. The oracle is
+  necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
+  also drive the real `createProductionAppPorts` + `composeAppServices` +
+  Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
+  updates, and S2/S10 release probes must verify the writer-visible Restore/Copy
+  and trail flows. Fixture deltas once passed the oracle while repeated full-state
+  structs broke first-birth attribution.
+- **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
+  use an injected schedule. Production obtains its time from PostgreSQL; tests
+  advance a controlled schedule. Do not reintroduce process-clock comparisons or
+  sleep-based lifecycle tests.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres

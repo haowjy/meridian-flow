@@ -20,6 +20,10 @@ it("makes initial file content retrievable from the created collab document", as
     documentSync: {
       ensureDocument: async () => {},
       readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
+      seedFromMarkdown: async (documentId: string, markdown: string) => {
+        markdownByDocument.set(documentId, markdown);
+        return Ok(null);
+      },
       writeDocument: async ({ documentId, markdown }: { documentId: string; markdown: string }) => {
         markdownByDocument.set(documentId, markdown);
         return { documentId, markdown, updateSeq: 1, updateData: new Uint8Array(), meta: {} };

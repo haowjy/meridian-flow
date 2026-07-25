@@ -1,6 +1,6 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -12,7 +12,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("drizzle branch store adapter contract (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const dbSchema = await import("@meridian/database/schema");
     const {
       branchWriteJournal,
@@ -35,6 +34,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     } = dbSchema;
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
+    );
+    const { useRollbackTestDatabase } = await import(
+      "../../../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
@@ -75,8 +77,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
     const TURN_ID = "00000000-0000-4000-8000-000000000607";
 
-    const db = createDb(DATABASE_URL, { max: 4 });
-    const livePersistence = createDrizzleCollabPersistence(db);
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+    });
+    let db = database.current;
+    let livePersistence = createDrizzleCollabPersistence(db);
     const liveDocs = new Map<string, Y.Doc>();
     const liveCoordinator = {
       async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
@@ -92,7 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       },
       async recover() {},
     };
-    const store = createDrizzleBranchStore(db, {
+    let store = createDrizzleBranchStore(db, {
       journal: livePersistence.journal,
       lifecycle: livePersistence.lifecycle,
       coordinator: liveCoordinator,
@@ -141,24 +147,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     };
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        changeTrailDeliveryOutbox,
-        changeTrailDocumentDetails,
-        changeTrailShells,
-        branchWriteJournal,
-        documentBranches,
-        documentYjsCheckpoints,
-        documentYjsHeads,
-        threadWorks,
-        turns,
-        threads,
-        documents,
-        pushLineage,
-        contextSources,
-        works,
-        projects,
-        users,
-      ]);
+      db = database.current;
+      livePersistence = createDrizzleCollabPersistence(db);
+      store = createDrizzleBranchStore(db, {
+        journal: livePersistence.journal,
+        lifecycle: livePersistence.lifecycle,
+        coordinator: liveCoordinator,
+      });
       await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-branches"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -207,8 +202,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await store.reconcileProjectManifest(PROJECT_ID as never);
     });
 
-    afterAll(async () => {
-      await db.$client.end();
+    afterEach(() => {
+      for (const doc of liveDocs.values()) doc.destroy();
+      liveDocs.clear();
     });
 
     it("provisions work draft from live and thread peer from work draft, never empty", async () => {

@@ -16,7 +16,7 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { expectReversalCompactionContract } from "./journal-reversal-compaction-contract.js";
@@ -58,18 +58,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 } else {
   describe("drizzle journal recovery/redo (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const dbSchema = await import("@meridian/database/schema");
     const {
       contextSources,
       agentEditMutations,
-      agentEditWidCounters,
-      documentYjsCheckpoints,
-      documentYjsHeads,
-      documentYjsReversals,
-      documentYjsUpdates,
       documents,
-      folders,
+      modelResponses,
       projects,
       threads,
       turns,
@@ -79,28 +73,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { asc, eq } = await import("drizzle-orm");
+    const { useRollbackTestDatabase } = await import(
+      "../../../../test-support/rollback-test-database.js"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
 
-    const db = createDb(DATABASE_URL, { max: 4 });
-
-    async function truncateAll(): Promise<void> {
-      await truncateDrizzleTables(db, [
-        agentEditMutations,
-        agentEditWidCounters,
-        documentYjsReversals,
-        documentYjsHeads,
-        documentYjsUpdates,
-        documentYjsCheckpoints,
-        turns,
-        threads,
-        documents,
-        folders,
-        contextSources,
-        projects,
-        users,
-      ]);
-    }
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+    });
+    let db = database.current;
 
     async function ensureFixtures(): Promise<void> {
       await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-journal"));
@@ -170,6 +153,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "complete" as const,
         })),
       ]);
+      await db.insert(modelResponses).values(
+        [TURN_A, TURN_B, TURN_C, TURN_D, TURN_E, ...CONCURRENT_TURNS].map((turnId) => ({
+          id: turnId,
+          turnId,
+          sequence: 1,
+          provider: "test",
+          model: "test",
+        })),
+      );
     }
 
     async function mutationRows() {
@@ -190,12 +182,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     beforeEach(async () => {
-      await truncateAll();
+      db = database.current;
       await ensureFixtures();
-    });
-
-    afterAll(async () => {
-      await db.close();
     });
 
     it("matches reversal mutation status transitions", async () => {

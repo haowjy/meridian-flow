@@ -34,6 +34,9 @@
   from one canonical pending-review collection.
 - `apps/app`: draft Apply, Discard, Undo, and bulk commands now share one
   synchronous session lock and typed outcome policy.
+- `apps/server`: tracked document creation now commits the content row, initial
+  Yjs authority/content, and manifest membership atomically; bootstrap and
+  manifest-aware repair no longer leave ghost documents (#355).
 - `apps/server`: Yjs WebSocket routes now delegate collaboration lifecycle,
   writer admission, reconnect reconciliation, and graceful drain to one gateway.
 - `apps/server`: thread context reversal routes now validate and delegate one
@@ -56,14 +59,19 @@
   document projection engine; code files persist raw text and unsupported
   filetypes block settlement instead of storing markdown-shaped projections.
 - `apps/server`, `packages/database`: the PostgreSQL gate now runs every
-  registered DB contract, including branch-push projection settlement, instead
-  of silently skipping actionable suites (#377).
+  registered DB contract, including branch persistence, journal recovery, and
+  branch-push projection settlement, instead of silently skipping suites (#377).
 - `apps/server`, `packages/database`, `tools/dev`: unit files run in parallel;
   PostgreSQL tests clone four worker databases from one migrated template and
   ordinary adapter/route cases roll back instead of truncating per test (#377).
+- `apps/server`: collab trail retries and abandoned-work leases now use an
+  injectable schedule, so tests advance eligibility without production sleeps (#377).
 - Test suite: removed 235 declarations that pinned transient UI structure,
   debug scaffolding, local store representation, thin delegates, or duplicate
   adapter behavior (#377).
+- Test suite: retired 87 post-#347 branch-push parity cases and 16 semantic
+  PostgreSQL oracle duplicates while retaining focused push-policy, aggregate
+  restoration, transaction, lease, crash, and cold-recovery owners (#377).
 - `apps/app`, `apps/server`: stateful thread, untitled-lifecycle, and runtime
   rigs replace collaborator mock graphs and wall-clock polling with controlled
   gates, event journals, real stores, and outcome queries (#377).
