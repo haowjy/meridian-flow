@@ -6,9 +6,9 @@ peer-mark popover. This directory is a seam, not a UI surface.
 ## Mental model
 
 Swept elevation is live-session-only marker state. The durable trail retains
-the change's Before excerpt and navigation anchor; the popover may vend Restore
-while the corresponding swept marker exists. Receipt rows are read-only and
-offer Copy instead.
+the change's Before excerpt and navigation anchor; any eligible live mark may
+vend Restore, whether ordinary or swept. Receipt rows are read-only and offer
+Copy instead.
 
 Action eligibility is gated by the durable forward-action state on the trail
 change: a change already `applied` or `settled` is terminal and its verb is

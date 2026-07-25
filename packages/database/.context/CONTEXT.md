@@ -93,6 +93,15 @@ The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over
 re-squashing.
 
+### Rewritten branch-local migrations
+
+An unshipped branch-local migration may be rewritten instead of stacked, but a
+developer database that already journaled the old file will not replay it.
+Slice B rewrites `0064_writer_impact.sql` this way: fresh databases get the
+classification-free trail schema, while a local database that applied the
+earlier branch version must be reset with `pnpm db:reset`. `pnpm bootstrap`
+cannot repair an already-recorded migration whose SQL changed in place.
+
 ### Merge renumbering
 
 Never renumber a migration already present on `main`. When merging a branch
