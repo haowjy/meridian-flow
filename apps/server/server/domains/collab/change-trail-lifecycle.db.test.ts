@@ -140,7 +140,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      writerImpactCount: 1,
+      writerImpactCount: 0,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({

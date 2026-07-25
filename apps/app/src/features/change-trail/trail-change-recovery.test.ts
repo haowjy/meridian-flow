@@ -16,6 +16,25 @@ describe("trailChangeRecovery", () => {
     expect(trailChangeRecovery(active).canExecute).toBe(true);
     expect(trailChangeRecovery(settled).canExecute).toBe(false);
   });
+
+  it("does not reconstruct unavailable writer-impact evidence from beforeText", () => {
+    const change: TrailChange = {
+      ...protectedChange(),
+      beforeText: "block-1|Non-authoritative fallback.",
+      writerImpact: {
+        kind: "sweep",
+        affectedBlockHash: "block-1",
+        body: { status: "unavailable", reason: "capture_failed" },
+        beforeContentRef: null,
+      },
+    };
+
+    expect(trailChangeRecovery(change)).toMatchObject({
+      body: null,
+      canExecute: false,
+      writerImpact: { kind: "sweep", body: { status: "unavailable" } },
+    });
+  });
 });
 
 function protectedChange(): TrailChange {

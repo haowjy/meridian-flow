@@ -18,7 +18,10 @@ import type {
   PushCommitStore,
   PushWriterImpactReport,
 } from "./branch-push-contracts.js";
-import { trailContributionReplacement } from "./branch-trail-projection.js";
+import {
+  projectPushWriterImpact,
+  trailContributionReplacement,
+} from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
@@ -268,25 +271,8 @@ export function createBranchPushTransition(input: {
         ];
       });
       if (lateChanges.length === 0) return null;
-      const writerImpact: PushWriterImpactReport = {
-        affectedBlockHashes: affected.map(({ block }) => block.hash).sort(),
-        capturedDeletedBodies: lateChanges.map((change) => ({
-          hash: change.writerImpact.affectedBlockHash,
-          body:
-            change.writerImpact.body.status === "available"
-              ? change.writerImpact.body.markdown
-              : "",
-        })),
-        beforeContentRef: pending.beforeContentRef,
-        receiptId: pending.trail.receiptId,
-        locations: lateChanges.map((change) => ({
-          changeId: change.changeId,
-          affectedBlockHash: change.writerImpact.affectedBlockHash,
-          outcome: change.kind === "modify" ? "modify" : "delete",
-          navigation: change.navigation,
-        })),
-        reversible: false,
-      };
+      const writerImpact = projectPushWriterImpact(lateChanges);
+      if (!writerImpact) return null;
       return {
         trail: {
           ...pending.trail,

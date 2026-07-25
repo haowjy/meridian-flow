@@ -10,7 +10,7 @@ The existing per-turn Changes view below each assistant turn that edited
 documents: a default-collapsed card
 whose header carries the edit icon and chapter count — `✎ AI edited N chapter(s)` — expanding to
 the per-document list and authorized durable change-trail rows. Trail detail is
-writer-touching iff `writerProtection` is present: pure-generative changes render
+writer-touching iff `writerImpact` is present: pure-generative changes render
 no detail rows, and mixed turns show only their writer-touching changes. A
 conversation reveal (`conversation-reveal.ts`, opened from an editor peer mark's
 *Open conversation*) additionally surfaces the targeted change row even when it
@@ -106,7 +106,7 @@ Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
 ### Change-trail row suppression
 
-`TurnEditsCard` filters every document to changes with `writerProtection`;
+`TurnEditsCard` filters every document to changes with `writerImpact`;
 change kind is never the gate. A pure-generative document therefore has no
 detail rows, while a mixed document shows only its writer-touching rows. The
 card remains visible because it carries the document line and whole-turn Undo.

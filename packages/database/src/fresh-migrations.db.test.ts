@@ -1,5 +1,6 @@
 /** Migration-chain catalog proof against the runner-owned fresh PostgreSQL database. */
 import { readFile } from "node:fs/promises";
+import { parseTrailChangesV1 } from "@meridian/contracts";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
@@ -87,10 +88,37 @@ if (!enabled || !databaseUrl) {
         {
           ...base,
           changeId: "resurrection",
-          swept: null,
+          swept: {
+            affectedBlockHash: "superseded-hash",
+            removed: { status: "available", markdown: "superseded body" },
+            beforeContentRef: 9,
+          },
           writerProtection: {
             kind: "resurrection",
             body: { status: "available", markdown: "restored" },
+          },
+        },
+        {
+          ...base,
+          changeId: "refined-sweep",
+          swept: {
+            affectedBlockHash: "refined-hash",
+            removed: { status: "unavailable", reason: "capture_failed" },
+            beforeContentRef: null,
+          },
+        },
+        {
+          ...base,
+          changeId: "empty-ranges",
+          swept: {
+            affectedBlockHash: "empty-ranges-hash",
+            removed: { status: "available", markdown: "fallback" },
+            beforeContentRef: 5,
+          },
+          writerProtection: {
+            kind: "sweep",
+            body: { status: "available", markdown: "protected" },
+            ranges: [],
           },
         },
         { ...base, changeId: "ordinary", swept: null },
@@ -125,10 +153,11 @@ if (!enabled || !databaseUrl) {
           `;
           await tx.unsafe(migration);
 
-          const [row] = await tx<{ changes: typeof changes }[]>`
+          const [row] = await tx<{ changes: unknown }[]>`
             SELECT changes FROM change_trail_document_details
           `;
-          expect(row?.changes).toEqual([
+          const parsed = parseTrailChangesV1(row?.changes);
+          expect(parsed).toEqual([
             {
               ...base,
               changeId: "sweep",
@@ -147,6 +176,27 @@ if (!enabled || !databaseUrl) {
               writerImpact: {
                 kind: "resurrection",
                 body: { status: "available", markdown: "restored" },
+              },
+            },
+            {
+              ...base,
+              changeId: "refined-sweep",
+              writerImpact: {
+                kind: "sweep",
+                affectedBlockHash: "refined-hash",
+                body: { status: "unavailable", reason: "capture_failed" },
+                beforeContentRef: null,
+              },
+            },
+            {
+              ...base,
+              changeId: "empty-ranges",
+              writerImpact: {
+                kind: "sweep",
+                affectedBlockHash: "empty-ranges-hash",
+                body: { status: "available", markdown: "protected" },
+                beforeContentRef: 5,
+                ranges: [],
               },
             },
             { ...base, changeId: "ordinary", writerImpact: null },

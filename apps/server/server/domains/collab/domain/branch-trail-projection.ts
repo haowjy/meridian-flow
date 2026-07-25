@@ -393,19 +393,25 @@ export function trailContributionReplacement(
   };
 }
 
-export function projectPushWriterImpact(prepared: PreparedPush): PushWriterImpactReport {
-  const impactedChanges = prepared.trailChanges.flatMap((change) =>
+export function projectPushWriterImpact(
+  changes: readonly RawTrailChange[],
+): PushWriterImpactReport | undefined {
+  const impactedChanges = changes.flatMap((change) =>
     change.writerImpact?.kind === "sweep" ? [{ change, writerImpact: change.writerImpact }] : [],
   );
+  const first = impactedChanges[0];
+  if (!first) return undefined;
   return {
-    affectedBlockHashes: prepared.blindConflictedBlocks,
+    affectedBlockHashes: [
+      ...new Set(impactedChanges.map(({ writerImpact }) => writerImpact.affectedBlockHash)),
+    ],
     capturedDeletedBodies: impactedChanges.map(({ writerImpact }) => ({
       hash: writerImpact.affectedBlockHash,
       body:
         writerImpact.body.status === "available" ? writerImpact.body.markdown : "body_unavailable",
     })),
-    beforeContentRef: prepared.beforeContentRef,
-    receiptId: prepared.prepared.receiptId as string,
+    beforeContentRef: first.writerImpact.beforeContentRef,
+    receiptId: first.change.receiptId as string,
     locations: impactedChanges.map(({ change, writerImpact }) => ({
       changeId: change.changeId,
       affectedBlockHash: writerImpact.affectedBlockHash,

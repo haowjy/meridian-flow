@@ -14,7 +14,58 @@ import type { BranchJournalRow } from "./branch-push-contracts.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
+  projectPushWriterImpact,
 } from "./branch-trail-projection.js";
+import type { RawTrailChange } from "./trail-read-kernel.js";
+
+it("projects push reporting only from finalized sweep impacts", () => {
+  const base: RawTrailChange = {
+    changeId: "sweep",
+    documentId: "document-1",
+    pushId: "push-1",
+    receiptId: "receipt-1",
+    kind: "delete",
+    beforeBlockId: "before",
+    afterBlockId: null,
+    beforeText: "before|Writer text.",
+    afterTextAtReceipt: null,
+    navigation: { kind: "unavailable", reason: "test" },
+    writerImpact: {
+      kind: "sweep",
+      affectedBlockHash: "writer-block",
+      body: { status: "available", markdown: "Writer text." },
+      beforeContentRef: 7,
+    },
+    owner: null,
+    sequence: 0,
+  };
+  const resurrection: RawTrailChange = {
+    ...base,
+    changeId: "resurrection",
+    receiptId: "unrelated-receipt",
+    writerImpact: {
+      kind: "resurrection",
+      body: { status: "available", markdown: "Writer-deleted text." },
+    },
+  };
+
+  expect(projectPushWriterImpact([resurrection, base])).toEqual({
+    affectedBlockHashes: ["writer-block"],
+    capturedDeletedBodies: [{ hash: "writer-block", body: "Writer text." }],
+    beforeContentRef: 7,
+    receiptId: "receipt-1",
+    locations: [
+      {
+        changeId: "sweep",
+        affectedBlockHash: "writer-block",
+        outcome: "delete",
+        navigation: { kind: "unavailable", reason: "test" },
+      },
+    ],
+    reversible: false,
+  });
+  expect(projectPushWriterImpact([resurrection])).toBeUndefined();
+});
 
 it("projects a same-identity whole-block rewrite as a live modification", () => {
   const schema = buildDocumentSchema();

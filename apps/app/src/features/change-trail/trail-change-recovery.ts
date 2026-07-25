@@ -43,10 +43,11 @@ export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
   const durableState = change.forwardActions?.[action];
   const protectedBody =
     writerImpact?.body.status === "available" ? writerImpact.body.markdown : null;
-  const canExecute = Boolean(writerImpact || durableState);
+  const body = writerImpact ? protectedBody : bodyFromTrailHashline(change.beforeText);
+  const canExecute = protectedBody !== null || durableState?.status === "committed";
   return {
     action,
-    body: protectedBody ?? bodyFromTrailHashline(change.beforeText),
+    body,
     canExecute:
       canExecute && durableState?.status !== "applied" && durableState?.status !== "settled",
     durableState,

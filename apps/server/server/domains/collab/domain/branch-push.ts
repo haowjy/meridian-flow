@@ -259,10 +259,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         const projectedImpacts = await Promise.all(
           prepared.map(async (candidate, index) => {
             const policy = phases[index]?.candidate.sweepPolicy;
-            if (policy !== "project" || candidate.blindConflictedBlocks.length === 0) {
-              return undefined;
-            }
-            return projectPushWriterImpact(candidate);
+            if (policy !== "project") return undefined;
+            return projectPushWriterImpact(candidate.trailChanges);
           }),
         );
         const pushes = prepared.map((candidate, index) => {
