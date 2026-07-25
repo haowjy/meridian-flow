@@ -113,22 +113,44 @@ describe("PeerMarkPopover recovery", () => {
     });
   });
 
-  it("keeps multiline removed prose readable without a strike", async () => {
+  it("keeps long removed prose readable without a strike", async () => {
+    const longPassage =
+      "The archive doors opened into a corridor of ash where every footstep stirred the names of vanished kingdoms into the air.";
     currentChange = {
       ...settledChange,
       writerImpact: {
         kind: "sweep",
         affectedBlockHash: "block-1",
-        body: { status: "available", markdown: "First line\nSecond line" },
+        body: { status: "available", markdown: longPassage },
         beforeContentRef: null,
       },
     };
     await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
       const removedText = [...document.querySelectorAll("p")].find((element) =>
-        element.textContent?.includes("First line"),
+        element.textContent?.includes("corridor of ash"),
       );
       expect(removedText?.className).toContain("text-prose-foreground");
       expect(removedText?.className).not.toContain("line-through");
+    });
+  });
+
+  it("uses the marker's deletion anatomy for ordinary pure-deletion copy", async () => {
+    currentChange = {
+      ...settledChange,
+      kind: "modify",
+      writerImpact: null,
+    };
+    const deletionTarget = target();
+    deletionTarget.marker = {
+      ...deletionTarget.marker,
+      kind: "modify",
+      writerImpact: null,
+      pureDeletionOffset: 4,
+    };
+
+    await withReactRoot(<PeerMarkPopover target={deletionTarget} onOpenChange={vi.fn()} />, () => {
+      expect(document.body.textContent).toContain("Deleted a passage");
+      expect(document.body.textContent).not.toContain("Replaced a passage");
     });
   });
 });

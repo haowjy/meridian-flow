@@ -166,7 +166,7 @@ export function PeerMarkPopover({
                 {change?.writerImpact?.kind === "resurrection" ? (
                   <RotateCcw className="size-3 shrink-0" aria-hidden />
                 ) : null}
-                {change ? trailChangeLabel(change) : markerLabel(marker)}
+                {change?.writerImpact ? trailChangeLabel(change) : markerLabel(marker)}
                 <span aria-hidden> · </span>
                 {formatRelativeTime(new Date(marker.receivedAt), Date.now())}
               </p>
@@ -265,10 +265,12 @@ export function PeerMarkPopover({
 }
 
 function RemovedText({ text }: { text: string }) {
-  const multiline = text.includes("\n");
+  const shortExcerpt = !text.includes("\n") && text.length <= 120;
   return (
     <div className="max-h-32 overflow-y-auto rounded-md bg-surface-subtle p-2">
-      <p className={cn("whitespace-pre-wrap text-prose-foreground", !multiline && "line-through")}>
+      <p
+        className={cn("whitespace-pre-wrap text-prose-foreground", shortExcerpt && "line-through")}
+      >
         {text}
       </p>
     </div>
