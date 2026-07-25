@@ -12,7 +12,6 @@ export interface DraftReviewHunkSpanInternal {
 type DraftReviewHunkBaseInternal = {
   hunkId: string;
   operationIds: string[];
-  blockHashes?: string[];
   mergeArtifact?: boolean;
   anchor: {
     relStart: string;

@@ -1,6 +1,5 @@
 /** Branch-backed review wire types for work-draft cards. */
 
-import type { DraftApplyConflict } from "@meridian/contracts";
 import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type {
   DraftReviewHunkInternal,
@@ -42,12 +41,6 @@ export type DraftReviewPreview = {
 
 export type DraftAcceptResult =
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
-  | {
-      status: "concurrent_conflict";
-      reason: "draft_base_divergence";
-      conflictedBlocks: string[];
-      conflicts: DraftApplyConflict[];
-    }
   | { status: "applied"; draftId: string; branchId?: string; appliedUpdateSeq: number }
   | {
       status: "partial_applied";

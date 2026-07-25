@@ -19,7 +19,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
 
-  it("Case A: records stale conflicting manual Apply behavior", async () => {
+  it("Case A: manual Apply merges a stale same-block edit and records its sweep", async () => {
     const harness = createHarness();
     const result = await runCrossWorkProbe(harness.crossWorkProbeFixture(), "manual");
     writeResult(result);
@@ -28,15 +28,23 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
       status: "pushed",
       liveOriginTypes: expect.arrayContaining(["system"]),
     });
-    expect(result.bApply.status).toBe("concurrent_conflict");
+    expect(result.bApply.status).toBe("applied");
     expect(result.approvedTextSurvived).toBe(true);
-    expect(result.manuscript.afterBApply).toBe(result.manuscript.beforeBApply);
-    expect(result.rereview).toMatchObject({
-      initialStatus: "concurrent_conflict",
-      selectedOperationIds: [expect.any(String)],
-      applyStatus: "partial_applied",
-      manuscriptAfterApply: expect.stringContaining("Work B echo probe."),
-    });
+    expect(result.manuscript.afterBApply).not.toBe(result.manuscript.beforeBApply);
+    expect(result.manuscript.afterBApply).toContain("Work B stale replacement.");
+    expect(result.manuscript.afterBApply).toContain("Writer-approved Work A text.");
+    expect(result.protection.classification).toBe("protected");
+    expect(result.protection.capturedBodies.join("\n")).toContain("Writer-approved Work A text.");
+    expect(result.protection.trailChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          writerImpact: expect.objectContaining({
+            kind: "sweep",
+            body: expect.objectContaining({ status: "available" }),
+          }),
+        }),
+      ]),
+    );
     harness.destroyWarmState();
   });
 

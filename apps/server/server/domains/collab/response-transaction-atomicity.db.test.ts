@@ -227,7 +227,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("refuses a stale whole-document Apply that encloses a writer insertion", async () => {
+  it("merges a stale whole-document Apply with a writer insertion", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000835";
     await harness.seedWriterDocument("Writer-approved root.", responseId);
@@ -264,7 +264,6 @@ describe("change trail (postgres)", () => {
       throw new Error("missing draft preview");
     }
 
-    const beforeApply = await harness.liveMarkdown(ALPHA_ID);
     const result = await fixture.collab.draftReview.accept({
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
@@ -277,14 +276,12 @@ describe("change trail (postgres)", () => {
 
     const [afterRow] = await db.select().from(schema.branchWriteJournal);
     expect(afterRow?.draftBaseUpdateSeq).toBe(beforeRow.draftBaseUpdateSeq);
-    expect(result).toMatchObject({
-      status: "concurrent_conflict",
-      reason: "draft_base_divergence",
-    });
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeApply);
+    expect(result).toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("STALE DRAFT PROPOSAL");
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 
-  it("applies a stale selective edit that does not enclose a writer insertion", async () => {
+  it("preserves an unrelated writer insertion while applying a stale selective edit", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000836";
     await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
@@ -332,7 +329,7 @@ describe("change trail (postgres)", () => {
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 
-  it("does not join separate selective edits into an enclosing replacement scope", async () => {
+  it("preserves a writer insertion between separate stale selective edits", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000837";
     await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
@@ -412,7 +409,7 @@ describe("change trail (postgres)", () => {
     );
   });
 
-  it("retains whole-document scope when a folded response refines an overwrite", async () => {
+  it("merges a folded whole-document overwrite with a later writer insertion", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000838";
     await harness.seedWriterDocument("First writer root.\n\nSecond writer root.", responseId);
@@ -487,10 +484,8 @@ describe("change trail (postgres)", () => {
         draftRevisionToken: preview.draftRevisionToken,
         operationIds: preview.operations.map((operation) => operation.operationId),
       }),
-    ).resolves.toMatchObject({
-      status: "concurrent_conflict",
-      reason: "draft_base_divergence",
-    });
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("REFINED WHOLE DRAFT");
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain(
       "Writer insertion after overwrite base.",
     );

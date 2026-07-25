@@ -976,7 +976,6 @@ export function createResponseCommitter(deps: {
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
         ...(input.semanticEditIr ? { semanticEditIr: input.semanticEditIr } : {}),
-        replacementScopeRecorded: true,
         ...mutationMode(interactionContext),
       },
       writeId: input.writeId ?? "w0",

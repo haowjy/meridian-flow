@@ -1,11 +1,9 @@
 /** Neutral branch-push contracts shared across collab domain services and adapters. */
 import type {
   DocumentCoordinator,
-  LineageRange,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DraftApplyConflict } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
 import type * as Y from "yjs";
@@ -64,35 +62,6 @@ export function branchJournalRevision(
     .sort((left, right) => left.id - right.id)
     .map((row) => `${row.id}:${row.status}`)
     .join(",");
-}
-
-export function branchUpdateMetaWithReplacementScopes(
-  updateMeta: unknown,
-  replacementScopes: readonly (readonly LineageRange[])[],
-  replacementScopesComplete: boolean,
-): unknown {
-  return {
-    ...(isRecord(updateMeta) ? updateMeta : {}),
-    replacementScopes: replacementScopes.map((scope) => scope.map((range) => ({ ...range }))),
-    replacementScopesComplete,
-  };
-}
-
-export function replacementScopesFromBranchRow(row: Pick<BranchJournalRow, "updateMeta">): {
-  complete: boolean;
-  scopes: LineageRange[][];
-} {
-  if (!isRecord(row.updateMeta) || !Array.isArray(row.updateMeta.replacementScopes)) {
-    return { complete: false, scopes: [] };
-  }
-  return {
-    complete: row.updateMeta.replacementScopesComplete === true,
-    scopes: row.updateMeta.replacementScopes.flatMap((scope) =>
-      Array.isArray(scope) && scope.length > 0 && scope.every(isLineageRange)
-        ? [scope.map((range) => ({ ...range }))]
-        : [],
-    ),
-  };
 }
 
 export type AutoBranchPushPort = {
@@ -156,12 +125,6 @@ export type PushToLiveResult =
     }
   | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
   | {
-      status: "push_concurrent_conflict";
-      reason: "draft_base_divergence";
-      conflictedBlocks: string[];
-      conflicts: DraftApplyConflict[];
-    }
-  | {
       status: "noop";
       branchId: string;
       documentId: DocumentId;
@@ -184,9 +147,6 @@ export type PreparedPushCommit = {
 };
 
 export type PreparedPush = {
-  conflictedBlocks: string[];
-  blindConflictedBlocks: string[];
-  conflicts: DraftApplyConflict[];
   beforeContentRef: number | null;
   trailChanges: RawTrailChange[];
   lockCutUpdate: Uint8Array;
@@ -247,7 +207,6 @@ export type PushCandidate = {
   rows: BranchJournalRow[];
   kind: "content" | "manifest";
   materialization: "whole" | "selected_rows";
-  conflictPolicy: "refuse" | "apply_and_trail";
   sweepPolicy: "project" | "none";
 };
 
@@ -329,7 +288,6 @@ export type BranchPushService = {
     branchId: string;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
-    overlapPolicy?: "refuse" | "apply_and_trail";
     resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
   pushSelectedToLive(input: {
@@ -345,7 +303,6 @@ export type BranchPushService = {
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
     signal?: AbortSignal;
-    overlapPolicy?: "refuse" | "apply_and_trail";
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
@@ -429,19 +386,3 @@ export type BranchPushServiceInput = {
   writerIngressBarrier?: WriterIngressBarrier;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };
-
-function isLineageRange(value: unknown): value is LineageRange {
-  if (!isRecord(value)) return false;
-  return (
-    Number.isSafeInteger(value.clientID) &&
-    Number.isSafeInteger(value.clock) &&
-    Number.isSafeInteger(value.length) &&
-    (value.clientID as number) >= 0 &&
-    (value.clock as number) >= 0 &&
-    (value.length as number) > 0
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}

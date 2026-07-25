@@ -2,12 +2,13 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: every draft Apply now merges through Yjs and
+  records writer sweeps; the conflict veto, refusal contracts, and refusal UI
+  are gone.
 - `apps/app`: AI change marks now use localized passage verbs, clear AI
   attribution, readable removed prose, and warning treatment for swept edits.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and can be cleared by trail.
-- `apps/app`: refused draft actions now use the shared compare control and a
-  compact, single-column evidence disclosure without browser-default chrome.
 - `apps/app`: collaboration awareness now publishes resolved cursor colors
   instead of unsupported CSS variable references.
 - `apps/app`, `apps/server`: change trails now use one writer-impact authority
@@ -16,15 +17,8 @@
   without splicing removed live text into proposed prose.
 - `apps/app`, `apps/server`: draft review rooms are read-only in TipTap and
   reject client-authored Yjs branch mutations.
-- `apps/app`: refused Manual Apply actions now identify the writer conflict,
-  show base/current/proposed text, and open the existing comparison surface.
 - `apps/app`, `apps/server`: review hardening now rejects pending deletion-only
   branch updates and keeps deletion-card navigation without injecting prose.
-- `apps/app`: Manual Apply conflict evidence is bounded, announced, scoped to
-  its draft, and cleared when the writer changes or refreshes review targets.
-- `apps/app`: conflict-only decoration refreshes now preserve refusal evidence,
-  deletion navigation lands on a visible seam, and long evidence is
-  keyboard-scrollable.
 - `apps/app`: draft review no longer carries browser-side mutation or undo
   wiring for server-owned dispositions.
 - `apps/server`: the durable settlement DB oracle now reads the latest push
@@ -365,11 +359,8 @@
 - `apps/server`: opening or reconnecting to a Review now catches its chapter
   draft up with the live manuscript first, instead of leaving an inactive draft stale.
 - `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
-  protected — a conflicting stale cross-Work Apply refuses
-  (`push_concurrent_conflict`) and lands in ordinary re-review; any sweep of
+  provenance-classified; a stale cross-Work Apply merges, and any sweep of
   approved text is captured in the durable Trail with its body and Restore.
-  Previously approved text was classified as ordinary AI text and could be
-  silently destroyed.
 - `apps/app`, `apps/server`: Apply (including Apply-all) submits exactly the
   operations the writer previewed; AI changes landing after the preview stay
   pending instead of riding along unreviewed. Malformed/empty operation-id
@@ -379,16 +370,13 @@
   the agent; writer-lineage destruction is captured for the trail and Restore;
   agent-only destruction stays silent (#327).
 - `apps/server`: add a real-Postgres cross-Work merge probe covering stale
-  manual Apply refusal + re-review retry, `apply_and_trail` protected
-  settlement, agent echo, and cold Restore.
+  manual and auto Apply settlement, protected sweeps, agent echo, and cold
+  Restore.
 - `apps/server`: protected sweeps that replace a document's only block via
   split delete+insert operations now keep a restore anchor beside the
   replacing block — the trail offers Restore instead of the Copy-only
   fallback. The merge probe asserts actionable restore navigation, not just
   that the swept body was captured.
-- `apps/app`: a lingering Apply-refusal notice now clears when the writer
-  re-reviews and applies — per-card Apply included (refusal state moved into
-  the review reducer alongside the other review transitions).
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane

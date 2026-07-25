@@ -24,8 +24,6 @@ type JournalMutationBase = {
   systemOrigin?: string;
   /** Certified semantic input bound to this exact lowered Yjs update. */
   semanticEditIr?: SemanticEditIRV1;
-  /** Staged host classified whether this mutation carries a replacement scope. */
-  replacementScopeRecorded?: true;
 };
 
 export type JournalMutation = JournalMutationBase &

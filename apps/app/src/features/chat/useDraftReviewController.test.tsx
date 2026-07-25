@@ -9,7 +9,7 @@ const operationAcceptMutateMock = vi.fn(async (_input: unknown) => ({
   draftId: "draft-1",
   writeId: "write-1",
 }));
-let wholeDraftResponse: unknown = null;
+const wholeDraftResponse: unknown = null;
 let wholeDraftResponses: unknown[] = [];
 const draftPreview = {
   status: "active",
@@ -352,64 +352,6 @@ describe("useDraftReviewController", () => {
     });
   });
 
-  it("stops a mixed Apply batch at its first refusal and preserves the explanation", async () => {
-    let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    wholeDraftAcceptMutateMock.mockClear();
-    draftPreviews.set("draft-1", {
-      ...draftPreview,
-      operations: [{ operationId: "operation-1a" }, { operationId: "operation-1b" }],
-    });
-    draftPreviews.set("draft-2", {
-      ...draftPreview,
-      operations: [{ operationId: "operation-2a" }, { operationId: "operation-2b" }],
-    });
-    wholeDraftResponses = [
-      {
-        status: "concurrent_conflict",
-        reason: "draft_base_divergence",
-        conflictedBlocks: ["block-1"],
-        conflicts: [
-          {
-            blockId: "block-1",
-            journalIds: [1],
-            draftBaseUpdateSeq: 1,
-            effect: "deletion",
-            evidence: "human_live_update",
-            captured: { base: "block-1|Old.", live: "block-1|Writer text.", proposed: null },
-            why: "Apply would remove writer text.",
-          },
-        ],
-      },
-      { status: "applied", draftId: "draft-2" },
-    ];
-
-    function Probe() {
-      const value = useDraftReviewController("project-1", "work-1", "thread-1");
-      useEffect(() => {
-        controller = value;
-      }, [value]);
-      return null;
-    }
-
-    await withReactRoot(<Probe />, async () => {
-      await act(async () => {
-        await controller?.disposeDrafts("apply", [
-          { documentId: "document-1", draftId: "draft-1" },
-          { documentId: "document-2", draftId: "draft-2" },
-        ]);
-      });
-
-      expect(wholeDraftAcceptMutateMock).toHaveBeenCalledTimes(1);
-      expect(controller?.applyRefusal).toMatchObject({
-        reason: "unsynced_live_edits",
-        documentId: "document-1",
-        draftId: "draft-1",
-      });
-    });
-    wholeDraftResponses = [];
-    draftPreviews.clear();
-  });
-
   it("publishes a typed dock error when a batch mutation fails", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     wholeDraftResponses = [new Error("offline")];
@@ -494,65 +436,5 @@ describe("useDraftReviewController", () => {
       expect(operationAcceptMutateMock).toHaveBeenCalledOnce();
       draftPreviewPromise = null;
     });
-  });
-
-  it("clears a prior Apply refusal when a re-reviewed per-card Apply succeeds", async () => {
-    let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    wholeDraftResponse = {
-      status: "concurrent_conflict",
-      reason: "draft_base_divergence",
-      conflictedBlocks: ["block-1"],
-      conflicts: [
-        {
-          blockId: "block-1",
-          journalIds: [1],
-          draftBaseUpdateSeq: 1,
-          effect: "deletion",
-          evidence: "human_live_update",
-          captured: { base: "block-1|Old.", live: "block-1|Writer text.", proposed: null },
-          why: "Apply would remove writer text.",
-        },
-      ],
-    };
-
-    function Probe() {
-      const value = useDraftReviewController("project-1", "work-1", "thread-1");
-      useEffect(() => {
-        controller = value;
-      }, [value]);
-      return null;
-    }
-
-    await withReactRoot(<Probe />, async () => {
-      await act(async () => {
-        controller?.enterInlineReview("document-1", "draft-1");
-        controller?.inlineReviewModelAvailable(
-          "draft-1:0:1",
-          "document-1",
-          "draft-1",
-          ["operation-1", "operation-2"],
-          { draftRevisionToken: 1, branchId: "branch-1" },
-        );
-      });
-      await act(async () => {
-        await controller?.accept("document-1", "draft-1");
-      });
-      expect(controller?.applyRefusal).toMatchObject({ reason: "unsynced_live_edits" });
-
-      await act(async () => {
-        controller?.inlineReviewModelAvailable(
-          "draft-1:0:2",
-          "document-1",
-          "draft-1",
-          ["operation-1"],
-          { draftRevisionToken: 2, branchId: "branch-1" },
-        );
-        await controller?.acceptOperation("operation-1", {
-          operations: [{ operationId: "operation-1" }],
-        } as never);
-      });
-      expect(controller?.applyRefusal).toBeNull();
-    });
-    wholeDraftResponse = null;
   });
 });

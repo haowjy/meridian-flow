@@ -346,11 +346,6 @@
   transition: background-color 120ms ease;
 }
 
-.meridian-editor .ProseMirror .meridian-review-conflict {
-  background: var(--color-review-warning-tint);
-  box-shadow: inset 0 -1px 0 0 var(--color-review-warning-border);
-}
-
 /* Emphasis keeps its underline hint alongside the ring so the two
    `box-shadow` layers compose rather than replace each other. */
 .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
@@ -439,17 +434,6 @@
   box-shadow:
     0 0 0 3px var(--color-review-writer-emphasis),
     0 0 0 5px var(--color-review-writer-ring);
-}
-
-/* Conflict is the final visual modifier. Keep these after every authorship,
-   merge, and block-shape rule so the warning tint always wins the cascade. */
-.meridian-editor .ProseMirror .meridian-review-merged.meridian-review-conflict,
-.meridian-editor .ProseMirror .meridian-review-block.meridian-review-added.meridian-review-conflict,
-.meridian-editor
-  .ProseMirror
-  .meridian-review-block.meridian-review-writer.meridian-review-conflict {
-  background: var(--color-review-warning-tint);
-  box-shadow: inset 0 -1px 0 0 var(--color-review-warning-border);
 }
 
 @media (prefers-reduced-motion: reduce) {

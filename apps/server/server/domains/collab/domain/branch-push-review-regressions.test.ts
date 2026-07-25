@@ -514,12 +514,11 @@ describe("branch push review regressions", () => {
     }
   });
 
-  it("does not require the retired writer-notice transport for either push mode", async () => {
+  it("always applies writer-overlapping whole and companion pushes", async () => {
     const whole = await blindConflictFixture();
     await expect(
       whole.service.pushToLive({
         branchId: whole.contentBranch.branchId,
-        overlapPolicy: "apply_and_trail",
       }),
     ).resolves.toMatchObject({ status: "pushed" });
 
@@ -529,7 +528,6 @@ describe("branch push review regressions", () => {
         branchId: companion.contentBranch.branchId,
         manifestBranchId: companion.manifestBranch.branchId,
         manifestEntryDocumentId: CONTENT_ID,
-        overlapPolicy: "apply_and_trail",
       }),
     ).resolves.toMatchObject({ status: "pushed" });
   });

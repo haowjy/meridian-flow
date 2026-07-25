@@ -290,7 +290,7 @@ export function createWorkDraftReviewService(input: {
               for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
             }
             if (preview.isNewDocument && command.projectId) {
-              const pushed = await pushNewDocumentToLiveWithManifest({
+              await pushNewDocumentToLiveWithManifest({
                 projectId: command.projectId,
                 workId: command.workId,
                 documentId: command.documentId,
@@ -299,29 +299,13 @@ export function createWorkDraftReviewService(input: {
                 userId: command.userId,
                 signal: command.signal,
               });
-              if (pushed.status === "push_concurrent_conflict") {
-                return {
-                  status: "concurrent_conflict" as const,
-                  reason: pushed.reason,
-                  conflictedBlocks: pushed.conflictedBlocks,
-                  conflicts: pushed.conflicts,
-                };
-              }
             } else {
-              const pushed = await input.branchPush.pushSelectedToLive({
+              await input.branchPush.pushSelectedToLive({
                 branchId: branch.branchId,
                 journalIds: [...updateIds],
                 pushedByUserId: command.userId,
                 signal: command.signal,
               });
-              if (pushed.status === "push_concurrent_conflict") {
-                return {
-                  status: "concurrent_conflict" as const,
-                  reason: pushed.reason,
-                  conflictedBlocks: pushed.conflictedBlocks,
-                  conflicts: pushed.conflicts,
-                };
-              }
             }
             const appliedEveryPreviewedOperation = preview.operations.every((operation) =>
               requested.has(operation.operationId),

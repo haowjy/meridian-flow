@@ -90,7 +90,6 @@ describe("work push policy", () => {
     expect(harness.pushToLive).toHaveBeenCalledWith({
       branchId: "work-draft",
       pushedByUserId: USER_ID,
-      overlapPolicy: "apply_and_trail",
     });
   });
 
@@ -137,7 +136,6 @@ describe("work push policy", () => {
       branchId: "branch-a",
       pushedByUserId: USER_ID,
       resetPolicy: "auto",
-      overlapPolicy: "apply_and_trail",
     });
   });
 

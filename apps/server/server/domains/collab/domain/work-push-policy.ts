@@ -6,7 +6,6 @@ import type { PushToLiveResult, WorkPushPolicyStore } from "./branch-push-contra
 type PushToLive = (input: {
   branchId: string;
   pushedByUserId?: UserId;
-  overlapPolicy?: "refuse" | "apply_and_trail";
   resetPolicy?: "auto";
 }) => Promise<PushToLiveResult>;
 
@@ -30,7 +29,6 @@ export function createWorkPushPolicy(input: {
       return input.pushToLive({
         branchId: autoInput.workDraftBranchId,
         pushedByUserId: autoInput.pushedByUserId,
-        overlapPolicy: "apply_and_trail",
       });
     },
 
@@ -62,7 +60,6 @@ export function createWorkPushPolicy(input: {
             branchId,
             pushedByUserId: policyInput.pushedByUserId,
             resetPolicy: "auto",
-            overlapPolicy: "apply_and_trail",
           });
         }
       }

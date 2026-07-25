@@ -30,10 +30,8 @@ import {
 import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
-  conflictForSelection,
   type DraftApplyOutcome,
   type DraftApplyPreview,
-  type DraftApplyRefusalState,
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
@@ -90,9 +88,6 @@ export type DraftReviewController = {
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   dockDispositionError: DraftBatchErrorCode | null;
-  needsRereview: boolean;
-  conflictedBlocks: ReadonlySet<string>;
-  applyRefusal: DraftApplyRefusalState | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -180,13 +175,6 @@ export function useDraftReviewController(
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
   const dockDispositionError = state.dockDispositionError;
-  const applyRefusal = state.applyRefusal;
-  const concurrentConflict = conflictForSelection(state, inlineReview);
-  const needsRereview = concurrentConflict !== null;
-  const conflictedBlocks = useMemo(
-    () => new Set(concurrentConflict?.conflictedBlocks ?? []),
-    [concurrentConflict],
-  );
 
   const staleDraftMessage = staleDraft
     ? "The draft changed — review the latest changes before applying."
@@ -337,9 +325,6 @@ export function useDraftReviewController(
     },
     operationDiscardStarted: () => {
       dispatch({ type: "discardStarted" });
-    },
-    applyStarted: () => {
-      dispatch({ type: "applyStarted" });
     },
     batchStarted: () => {
       dispatch({ type: "batchStarted" });
@@ -563,9 +548,6 @@ export function useDraftReviewController(
       inlineReviewMessage,
       inlineDiscardError,
       dockDispositionError,
-      needsRereview,
-      conflictedBlocks,
-      applyRefusal,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -602,9 +584,6 @@ export function useDraftReviewController(
       inlineReviewMessage,
       inlineDiscardError,
       dockDispositionError,
-      needsRereview,
-      conflictedBlocks,
-      applyRefusal,
       enterInlineReview,
       exitInlineReview,
       exitReview,

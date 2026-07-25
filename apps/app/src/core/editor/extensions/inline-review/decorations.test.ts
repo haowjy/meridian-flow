@@ -10,7 +10,7 @@ import type { Decoration } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { buildDecorations, inlineReviewClassNames } from "./decorations";
+import { buildDecorations } from "./decorations";
 import { buildInlineReviewModel } from "./model";
 
 function encodeAnchor(position: Y.RelativePosition): string {
@@ -152,47 +152,6 @@ describe("buildDecorations", () => {
     expect(emitted).toHaveLength(1);
     expect(decorationFlavor(emitted[0])).toBe("widget");
     expect(emitted[0].spec["data-review-operations"]).toBe("op-ai");
-    expect(doc.textContent).toBe(projection);
-  });
-
-  it("marks conflicted draft content without injecting explanation text into the manuscript", () => {
-    const projection = "The writer's current sentence.";
-    const yDoc = new Y.Doc();
-    const yFragment = yDoc.getXmlFragment("prosemirror");
-    const yParagraph = new Y.XmlElement("paragraph");
-    const yText = new Y.XmlText();
-    yFragment.insert(0, [yParagraph]);
-    yParagraph.insert(0, [yText]);
-    yText.insert(0, projection);
-    const schema = buildDocumentSchema();
-    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text(projection))]);
-    const mapping = new Map();
-    mapping.set(yFragment, doc);
-    mapping.set(yParagraph, doc.child(0));
-    const resolver = { doc, yDoc, yFragment, mapping };
-    const relStart = Y.createRelativePositionFromTypeIndex(yText, 0);
-    const relEnd = Y.createRelativePositionFromTypeIndex(yText, projection.length);
-    const model = buildInlineReviewModel({
-      draftRevisionToken: 1,
-      operations: [],
-      conflictedBlocks: new Set(["block-a"]),
-      hunks: [
-        {
-          hunkId: "h-conflict",
-          operationIds: [],
-          blockHashes: ["block-a"],
-          anchor: { relStart: encodeAnchor(relStart), relEnd: encodeAnchor(relEnd) },
-          kind: "text",
-          spans: [],
-          deletedText: "old words",
-        },
-      ],
-    });
-
-    const emitted = buildDecorations(model, null, resolver).find();
-    expect(emitted).toHaveLength(1);
-    expect(emitted.map(decorationFlavor)).toEqual(["inline"]);
-    expect(decorationAttrs(emitted[0]).class).toContain(inlineReviewClassNames.conflict);
     expect(doc.textContent).toBe(projection);
   });
 
@@ -510,10 +469,6 @@ function decorationFlavor(decoration: Decoration): "inline" | "node" | "widget" 
   const probed = decoration as unknown as { inline: boolean; widget: boolean };
   if (probed.widget) return "widget";
   return probed.inline ? "inline" : "node";
-}
-
-function decorationAttrs(decoration: Decoration): Record<string, string> {
-  return (decoration as unknown as { type: { attrs: Record<string, string> } }).type.attrs;
 }
 
 /** doc(paragraph("abcd"), horizontal_rule) mirrored into a resolvable Yjs mapping. */

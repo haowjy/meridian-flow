@@ -148,7 +148,7 @@ export function preparedTrailChanges(input: {
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
-  conflictedBlocks: readonly string[];
+  writerImpactBlocks: readonly string[];
   before: readonly { hash: string; serialized: string }[];
   blockIdentities: ReadonlyMap<string, CanonicalBlockIdentityV1>;
   beforeBodies: ReadonlyMap<string, string>;
@@ -158,7 +158,7 @@ export function preparedTrailChanges(input: {
   beforeContentRef: number | null;
   resurrectionBodies?: ReadonlyMap<string, string>;
 }): RawTrailChange[] {
-  const impacted = new Set(input.conflictedBlocks);
+  const impacted = new Set(input.writerImpactBlocks);
   const provenReplacements = new Map<string, string>();
   for (const operation of input.operations) {
     if (

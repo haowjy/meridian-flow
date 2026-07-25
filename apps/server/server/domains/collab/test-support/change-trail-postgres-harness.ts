@@ -443,7 +443,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         failNextTrailRetry = false;
         throw new Error("injected retryable auto-push failure");
       }
-      return realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" });
+      return realBranchPush.pushToLive({ branchId });
     },
     onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
     turnTrailWorkSchedule: {
@@ -1548,8 +1548,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         2,
         true,
       ),
-    autoPush: (branchId: string) =>
-      realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
+    autoPush: (branchId: string) => realBranchPush.pushToLive({ branchId }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     settlementRefinements: () => [...settlementRefinements],

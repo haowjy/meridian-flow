@@ -19,7 +19,6 @@ type CandidateBatchBuildResult =
 
 export function buildWholeBranchCandidates(input: {
   source: CandidateSource;
-  conflictPolicy: "refuse" | "apply_and_trail";
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
 }): CandidateBatch {
@@ -31,7 +30,6 @@ export function buildWholeBranchCandidates(input: {
         rows: input.source.rows,
         kind: "content",
         materialization: "whole",
-        conflictPolicy: input.conflictPolicy,
         sweepPolicy: "project",
       },
     ],
@@ -55,7 +53,6 @@ export function buildSelectedRowCandidates(input: {
         rows: selected,
         kind: "content",
         materialization: "selected_rows",
-        conflictPolicy: "refuse",
         sweepPolicy: "none",
       },
     ],
@@ -69,7 +66,6 @@ export function buildCompanionCandidates(input: {
   manifest: CandidateSource;
   manifestEntryDocumentId: DocumentId;
   contentJournalIds?: readonly number[];
-  conflictPolicy: "refuse" | "apply_and_trail";
   pushedByUserId?: UserId;
 }): CandidateBatchBuildResult {
   let contentRows = input.content.rows;
@@ -96,7 +92,6 @@ export function buildCompanionCandidates(input: {
           rows: contentRows,
           kind: "content",
           materialization: input.contentJournalIds ? "selected_rows" : "whole",
-          conflictPolicy: input.conflictPolicy,
           sweepPolicy: "project",
         },
         ...(manifestRows.length > 0
@@ -107,7 +102,6 @@ export function buildCompanionCandidates(input: {
                 rows: manifestRows,
                 kind: "manifest" as const,
                 materialization: "selected_rows" as const,
-                conflictPolicy: "refuse" as const,
                 sweepPolicy: "none" as const,
               },
             ]

@@ -41,9 +41,9 @@ propagation between them.
   owns explicit unsupported behavior; production and in-memory compositions use it
   rather than leaving optional runtime dependencies.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
-  `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
-  immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
-  trail projection. `branch-push-candidates.ts` builds whole, selective,
+  `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts`
+  prepares writer-impact evidence, and `branch-trail-projection.ts` owns trail
+  projection. `branch-push-candidates.ts` builds whole, selective,
   and companion candidate outcomes; `branch-push.ts` runs ready batches through
   their one shared pipeline;
   `branch-push-transition.ts` is the sole ordering owner for settlement
@@ -109,11 +109,9 @@ propagation between them.
 - **Push lock ordering**: `BranchCriticalSections` acquires sorted branch locks
   (per `branchId`) then sorted live document coordinator locks. Never bypass it
   or reverse this order.
-- **Draft Apply safety is row-based**: each draft journal row owns an immutable
-  live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
-  resurrection after that base, including writer insertions positioned inside
-  the candidate's replaced scope. Auto-apply never gates and trails only effects
-  that destroy writer-owned roots according to durable provenance.
+- **Draft Apply always merges**: manual, selective, companion, and auto pushes
+  all integrate through Yjs. Durable provenance classifies writer-root effects
+  for sweep trails and Restore; it never vetoes a push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; writer-lineage sweeps are captured for the trail and
   Restore; agent-only destruction is silent.

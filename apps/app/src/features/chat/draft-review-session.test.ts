@@ -134,7 +134,6 @@ function commandPorts(): DraftReviewCommandPorts {
     undo: vi.fn(async () => {}),
     operationApplyStarted: vi.fn(),
     operationDiscardStarted: vi.fn(),
-    applyStarted: vi.fn(),
     batchStarted: vi.fn(),
     batchSettled: vi.fn(),
     applySettled: vi.fn(),

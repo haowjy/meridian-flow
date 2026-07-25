@@ -18,8 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useId, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -45,13 +44,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
-  const refusal = controller.applyRefusal;
-  const refusalRow = refusal
-    ? (rows.find(
-        (row) => row.documentId === refusal.documentId && row.draft.draftId === refusal.draftId,
-      ) ?? null)
-    : null;
-  const applyRefusal = refusalRow ? refusal : null;
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -89,9 +81,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     mounted: pendingRows.length > 0,
     inFlightDraftId: null,
     isBusy: controller.isDisposing,
-    needsRereview: controller.needsRereview,
-    applyRefusal,
-    reviewRefusal: refusalRow ? () => reviewRow(refusalRow) : null,
     dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
@@ -174,13 +163,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           </button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              dock.needsRereview ? "bg-status-warning" : "bg-jade-text",
-            )}
-          />
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
             {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
@@ -195,14 +178,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <Trans>
                 {dock.reviewedCount} of {dock.totalCount} reviewed
               </Trans>
-            </span>
-          ) : null}
-          {dock.needsRereview ? (
-            <span
-              className="shrink-0 rounded-full border border-warning-border bg-warning-bg px-1.5 text-warning-foreground"
-              data-draft-dock-status="needs-rereview"
-            >
-              <Trans>needs re-review</Trans>
             </span>
           ) : null}
         </div>
@@ -258,12 +233,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         </div>
       </div>
 
-      {dock.applyRefusal ? (
-        <DraftApplyRefusalNotice
-          refusal={dock.applyRefusal}
-          onReview={dock.reviewRefusal ?? undefined}
-        />
-      ) : null}
       {dock.dispositionError ? (
         <p
           className="border-border-subtle border-t px-3 py-2 text-destructive text-micro"
@@ -293,145 +262,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       ) : null}
     </div>
   );
-}
-
-export function DraftApplyRefusalNotice({
-  refusal,
-  onReview,
-}: {
-  refusal: NonNullable<DraftDockModel["applyRefusal"]>;
-  onReview?: () => void;
-}) {
-  const evidenceHeadingId = useId();
-  const title =
-    refusal.reason === "stale_draft"
-      ? t`Not applied: review the latest draft`
-      : refusal.reason === "protected_resurrection"
-        ? t`Not applied: this draft restores text you deleted`
-        : refusal.conflicts.length === 1
-          ? t`Not applied: your edit conflicts with this draft`
-          : t`Not applied: your edits conflict with this draft`;
-
-  return (
-    <div
-      className="space-y-2 border-border-subtle border-b bg-muted px-3 py-2.5 text-caption text-prose-foreground"
-      data-draft-apply-refusal={refusal.reason}
-      role="alert"
-      aria-atomic="true"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-0.5">
-          <p className="font-medium">{title}</p>
-          <p className="text-ink-muted" data-draft-apply-refusal-explanation>
-            {refusal.reason === "stale_draft" ? (
-              <Trans>This draft changed after you opened it.</Trans>
-            ) : refusal.reason === "protected_resurrection" ? (
-              <Trans>Applying it would bring a deleted passage back.</Trans>
-            ) : (
-              <Trans>Applying it could overwrite changes in your manuscript.</Trans>
-            )}
-          </p>
-        </div>
-        {onReview ? (
-          <Button type="button" size="sm" onClick={onReview}>
-            {refusal.reason === "stale_draft" ? (
-              <Trans>Review latest draft</Trans>
-            ) : (
-              <Trans>Compare changes</Trans>
-            )}
-          </Button>
-        ) : null}
-      </div>
-      {refusal.conflicts.length > 0 ? (
-        <details className="group" data-draft-apply-refusal-details>
-          <summary
-            className="focus-ring flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-ink-muted [&::-webkit-details-marker]:hidden"
-            id={evidenceHeadingId}
-          >
-            <ChevronRight
-              className="size-3 shrink-0 transition-transform group-open:rotate-90"
-              aria-hidden
-            />
-            {refusal.conflicts.length === 1 ? (
-              <Trans>Show conflict evidence</Trans>
-            ) : (
-              <Trans>Show evidence for {refusal.conflicts.length} conflicts</Trans>
-            )}
-          </summary>
-          <section
-            className="focus-ring mt-2 max-h-64 space-y-2 overflow-y-auto rounded-sm pe-1 pb-4"
-            data-draft-apply-refusal-scroll
-            aria-labelledby={evidenceHeadingId}
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: Safari needs an explicit focus stop to keyboard-scroll bounded evidence.
-            tabIndex={0}
-          >
-            {refusal.conflicts.map((conflict) => (
-              <div
-                key={`${conflict.blockId}:${conflict.effect}`}
-                className="space-y-1.5 border-border-subtle border-t pt-2 first:border-t-0 first:pt-0"
-                data-draft-apply-conflict={conflict.blockId}
-                data-draft-apply-conflict-evidence={conflict.evidence}
-              >
-                <p className="text-ink-muted">{conflictEvidence(conflict.evidence)}</p>
-                <p>{conflict.why}</p>
-                <dl className="grid grid-cols-1 gap-y-1 text-micro">
-                  <ConflictVersion
-                    label={t`Before this draft`}
-                    body={conflict.base}
-                    empty={t`No earlier passage`}
-                  />
-                  <ConflictVersion
-                    label={t`Your manuscript`}
-                    body={conflict.live}
-                    empty={t`Deleted in your manuscript`}
-                  />
-                  <ConflictVersion
-                    label={t`Draft proposes`}
-                    body={conflict.proposed}
-                    empty={t`Delete this passage`}
-                  />
-                </dl>
-              </div>
-            ))}
-          </section>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-function ConflictVersion({
-  label,
-  body,
-  empty,
-}: {
-  label: string;
-  body: string | null;
-  empty: string;
-}) {
-  return (
-    <>
-      <dt className="font-medium text-ink-muted">{label}</dt>
-      <dd className="min-w-0 whitespace-pre-wrap">
-        {body ?? <span className="italic">{empty}</span>}
-      </dd>
-    </>
-  );
-}
-
-function conflictEvidence(
-  evidence: NonNullable<DraftDockModel["applyRefusal"]>["conflicts"][number]["evidence"],
-): string {
-  switch (evidence) {
-    case "human_live_change":
-      return t`You edited this passage after the draft was written.`;
-    case "human_live_deletion":
-      return t`You deleted this passage after the draft was written.`;
-    case "human_live_insertion":
-      return t`You added to this passage after the draft was written.`;
-    case "ambiguous_protected_divergence":
-      return t`This passage changed after the draft was written.`;
-  }
 }
 
 /**

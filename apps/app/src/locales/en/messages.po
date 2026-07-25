@@ -14,11 +14,6 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Show change details for {label}"
-msgstr "Show change details for {label}"
-
-#. js-lingui-explicit-id
 #: src/features/change-trail/trail-change-recovery.ts
 msgid "AI brought back text you deleted"
 msgstr "AI brought back text you deleted"
@@ -47,6 +42,11 @@ msgstr "Deleted a passage"
 #: src/core/editor/change-mark-labels.ts
 msgid "Collaborator edited text"
 msgstr "Collaborator edited text"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Show change details for {label}"
+msgstr "Show change details for {label}"
 
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
@@ -278,12 +278,12 @@ msgid "Apply all"
 msgstr "Apply all"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Applying it could overwrite changes in your manuscript."
-msgstr "Applying it could overwrite changes in your manuscript."
+#~ msgid "Applying it could overwrite changes in your manuscript."
+#~ msgstr "Applying it could overwrite changes in your manuscript."
 
 #: src/features/chat/DraftDock.tsx
-msgid "Applying it would bring a deleted passage back."
-msgstr "Applying it would bring a deleted passage back."
+#~ msgid "Applying it would bring a deleted passage back."
+#~ msgstr "Applying it would bring a deleted passage back."
 
 #: src/features/chat/DraftDock.tsx
 #~ msgid "Applying would bring back text you deleted:"
@@ -333,8 +333,8 @@ msgid "Back to workspace"
 msgstr "Back to workspace"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Before this draft"
-msgstr "Before this draft"
+#~ msgid "Before this draft"
+#~ msgstr "Before this draft"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #. placeholder {1}: formatPreset(amountOptions.maxUsd)
@@ -512,8 +512,8 @@ msgid "Combines {0} AI turns"
 msgstr "Combines {0} AI turns"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Compare changes"
-msgstr "Compare changes"
+#~ msgid "Compare changes"
+#~ msgstr "Compare changes"
 
 #: src/features/project/lifecycle.ts
 msgid "Completed"
@@ -723,8 +723,8 @@ msgid "Delete folder?"
 msgstr "Delete folder?"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Delete this passage"
-msgstr "Delete this passage"
+#~ msgid "Delete this passage"
+#~ msgstr "Delete this passage"
 
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/PeerMarkPopover.tsx
@@ -732,8 +732,8 @@ msgid "Deleted again"
 msgstr "Deleted again"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Deleted in your manuscript"
-msgstr "Deleted in your manuscript"
+#~ msgid "Deleted in your manuscript"
+#~ msgstr "Deleted in your manuscript"
 
 #: src/features/chat/ChangeViewRows.tsx
 #~ msgid "Deleted text"
@@ -810,8 +810,8 @@ msgid "Draft mode"
 msgstr "Draft mode"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Draft proposes"
-msgstr "Draft proposes"
+#~ msgid "Draft proposes"
+#~ msgstr "Draft proposes"
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "Draft write failed"
@@ -1293,8 +1293,8 @@ msgid "Names cannot end with '/'"
 msgstr "Names cannot end with '/'"
 
 #: src/features/chat/DraftDock.tsx
-msgid "needs re-review"
-msgstr "needs re-review"
+#~ msgid "needs re-review"
+#~ msgstr "needs re-review"
 
 #: src/features/project/lifecycle.ts
 msgid "Needs your answer"
@@ -1371,8 +1371,8 @@ msgid "No context files yet."
 msgstr "No context files yet."
 
 #: src/features/chat/DraftDock.tsx
-msgid "No earlier passage"
-msgstr "No earlier passage"
+#~ msgid "No earlier passage"
+#~ msgstr "No earlier passage"
 
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
@@ -1411,20 +1411,20 @@ msgstr "No results yet."
 #~ msgstr "Not applied"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Not applied: review the latest draft"
-msgstr "Not applied: review the latest draft"
+#~ msgid "Not applied: review the latest draft"
+#~ msgstr "Not applied: review the latest draft"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Not applied: this draft restores text you deleted"
-msgstr "Not applied: this draft restores text you deleted"
+#~ msgid "Not applied: this draft restores text you deleted"
+#~ msgstr "Not applied: this draft restores text you deleted"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Not applied: your edit conflicts with this draft"
-msgstr "Not applied: your edit conflicts with this draft"
+#~ msgid "Not applied: your edit conflicts with this draft"
+#~ msgstr "Not applied: your edit conflicts with this draft"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Not applied: your edits conflict with this draft"
-msgstr "Not applied: your edits conflict with this draft"
+#~ msgid "Not applied: your edits conflict with this draft"
+#~ msgstr "Not applied: your edits conflict with this draft"
 
 #: src/routes/__root.tsx
 msgid "Not Found"
@@ -1756,8 +1756,8 @@ msgid "Review draft"
 msgstr "Review draft"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Review latest draft"
-msgstr "Review latest draft"
+#~ msgid "Review latest draft"
+#~ msgstr "Review latest draft"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Reviewed {name}"
@@ -1856,13 +1856,13 @@ msgid "Settings sections"
 msgstr "Settings sections"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Show conflict evidence"
-msgstr "Show conflict evidence"
+#~ msgid "Show conflict evidence"
+#~ msgstr "Show conflict evidence"
 
 #. placeholder {0}: refusal.conflicts.length
 #: src/features/chat/DraftDock.tsx
-msgid "Show evidence for {0} conflicts"
-msgstr "Show evidence for {0} conflicts"
+#~ msgid "Show evidence for {0} conflicts"
+#~ msgstr "Show evidence for {0} conflicts"
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -2155,8 +2155,8 @@ msgid "This document keeps changing elsewhere. Reopen it and try again."
 msgstr "This document keeps changing elsewhere. Reopen it and try again."
 
 #: src/features/chat/DraftDock.tsx
-msgid "This draft changed after you opened it."
-msgstr "This draft changed after you opened it."
+#~ msgid "This draft changed after you opened it."
+#~ msgstr "This draft changed after you opened it."
 
 #: src/features/chat/DraftDock.tsx
 #~ msgid "This draft changed. Review the latest version before applying."
@@ -2196,8 +2196,8 @@ msgid "This passage can't be restored in place. Copy it instead."
 msgstr "This passage can't be restored in place. Copy it instead."
 
 #: src/features/chat/DraftDock.tsx
-msgid "This passage changed after the draft was written."
-msgstr "This passage changed after the draft was written."
+#~ msgid "This passage changed after the draft was written."
+#~ msgstr "This passage changed after the draft was written."
 
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no chats yet."
@@ -2380,8 +2380,8 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/features/chat/DraftDock.tsx
-msgid "You added to this passage after the draft was written."
-msgstr "You added to this passage after the draft was written."
+#~ msgid "You added to this passage after the draft was written."
+#~ msgstr "You added to this passage after the draft was written."
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
@@ -2394,20 +2394,20 @@ msgid "You asked"
 msgstr "You asked"
 
 #: src/features/chat/DraftDock.tsx
-msgid "You deleted this passage after the draft was written."
-msgstr "You deleted this passage after the draft was written."
+#~ msgid "You deleted this passage after the draft was written."
+#~ msgstr "You deleted this passage after the draft was written."
 
 #: src/features/chat/DraftDock.tsx
-msgid "You edited this passage after the draft was written."
-msgstr "You edited this passage after the draft was written."
+#~ msgid "You edited this passage after the draft was written."
+#~ msgstr "You edited this passage after the draft was written."
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 msgstr "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 
 #: src/features/chat/DraftDock.tsx
-msgid "Your manuscript"
-msgstr "Your manuscript"
+#~ msgid "Your manuscript"
+#~ msgstr "Your manuscript"
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"

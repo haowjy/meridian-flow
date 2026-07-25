@@ -50,7 +50,6 @@ type ComputedCandidate = {
 };
 
 type BatchPipelineResult =
-  | { kind: "return"; value: PushToLiveResult }
   | { kind: "conflict"; push: PushLineageRow; phases: readonly ComputedCandidate[] }
   | {
       kind: "committed";
@@ -234,25 +233,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             ),
           ),
         );
-        const refused = prepared.find(
-          (candidate, index) =>
-            phases[index]?.candidate.conflictPolicy === "refuse" &&
-            candidate.conflictedBlocks.length > 0,
-        );
-        if (refused) {
-          return {
-            kind: "return" as const,
-            value: {
-              kind: "return" as const,
-              value: {
-                status: "push_concurrent_conflict" as const,
-                reason: "draft_base_divergence" as const,
-                conflictedBlocks: refused.conflictedBlocks,
-                conflicts: refused.conflicts,
-              },
-            },
-          };
-        }
         const titles = await Promise.all(
           phases.map((phase) => resolveDocumentTitle(phase.candidate.documentId)),
         );
@@ -417,7 +397,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       if (source.rows.length === 0) return mapNoActiveRows(await noActiveRows(source.branch));
       const batch = buildWholeBranchCandidates({
         source,
-        conflictPolicy: pushInput.overlapPolicy ?? "refuse",
         ...((pushInput.resetPolicy ?? source.branch.pushPolicy) === "auto"
           ? { resetPolicy: "auto" as const }
           : {}),
@@ -429,7 +408,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         lease,
         pushInput.signal,
       );
-      if (result.kind === "return") return result.value;
       if (result.kind === "conflict") {
         return {
           status: "already_pushed",
@@ -456,7 +434,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         lease,
         pushInput.signal,
       );
-      if (result.kind === "return") return result.value;
       if (result.kind === "conflict") return { status: "already_pushed", push: result.push };
       return mapCommitted(result);
     });
@@ -477,7 +454,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           ...(pushInput.contentJournalIds
             ? { contentJournalIds: pushInput.contentJournalIds }
             : {}),
-          conflictPolicy: pushInput.overlapPolicy ?? "refuse",
           ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
         });
         if (built.kind === "no_active_rows") {
@@ -489,7 +465,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           lease,
           pushInput.signal,
         );
-        if (result.kind === "return") return result.value;
         if (result.kind === "conflict") {
           throw new BranchPushCommitConflictError(content.branch.branchId);
         }

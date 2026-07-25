@@ -37,7 +37,6 @@ export interface UseInlineReviewSyncOptions {
   /** When true, actually connect the extension. Callers pass true when
    *  `reviewDraftId` is set on the editor view. */
   enabled: boolean;
-  conflictedBlocks?: ReadonlySet<string>;
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
   onInlineModelAvailable?: (
@@ -114,20 +113,17 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     const hunks = preview.hunks;
     if (!documentId) return;
 
-    const conflictIdentity = [...(options.conflictedBlocks ?? [])].sort().join(",");
     const previewIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
-    const modelIdentity = `${previewIdentity}:${conflictIdentity}`;
-    if (lastPushedIdentityRef.current === modelIdentity) return;
+    if (lastPushedIdentityRef.current === previewIdentity) return;
 
     const model = buildInlineReviewModel({
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,
       operations,
       hunks,
-      conflictedBlocks: options.conflictedBlocks,
     });
     editor.commands.setInlineReviewModel(model);
-    lastPushedIdentityRef.current = modelIdentity;
+    lastPushedIdentityRef.current = previewIdentity;
     lastFatalIdentityRef.current = null;
     onInlineModelAvailable?.(
       previewIdentity,
@@ -139,15 +135,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
         ...(preview.branchId ? { branchId: preview.branchId } : {}),
       },
     );
-  }, [
-    editor,
-    enabled,
-    preview,
-    documentId,
-    options.conflictedBlocks,
-    onInlineModelAvailable,
-    onReviewSessionUnavailable,
-  ]);
+  }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
   // session is the already-retained document session, so this observes the

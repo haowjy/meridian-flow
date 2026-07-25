@@ -44,7 +44,6 @@ const ADDED_CLASS = "meridian-review-added";
 const WRITER_CLASS = "meridian-review-writer";
 /** Neutral dashed seam for a CRDT merge artifact (spec §6.2) — not an author tint. */
 const MERGED_CLASS = "meridian-review-merged";
-const CONFLICT_CLASS = "meridian-review-conflict";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
 const DELETION_ANCHOR_CLASS = "meridian-review-deletion-anchor";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
@@ -98,11 +97,7 @@ export function buildDecorations(
           startPos,
           endPos,
           {
-            class: classNames(
-              MERGED_CLASS,
-              focused && EMPHASIS_CLASS,
-              hunk.concurrentConflict && CONFLICT_CLASS,
-            ),
+            class: classNames(MERGED_CLASS, focused && EMPHASIS_CLASS),
             [HUNK_ATTR]: hunk.hunkId,
             [OPERATION_ATTR]: hunk.operationIds.join(" "),
           },
@@ -125,7 +120,7 @@ export function buildDecorations(
               span.from,
               span.to,
               {
-                class: insertionClassName(kind, spanFocused, hunk.concurrentConflict),
+                class: insertionClassName(kind, spanFocused),
                 [HUNK_ATTR]: hunk.hunkId,
                 [OPERATION_ATTR]: span.operationId,
               },
@@ -143,7 +138,7 @@ export function buildDecorations(
             startPos,
             endPos,
             {
-              class: insertionClassName(kind, focused, hunk.concurrentConflict),
+              class: insertionClassName(kind, focused),
               [HUNK_ATTR]: hunk.hunkId,
               [OPERATION_ATTR]: hunk.operationIds.join(" "),
             },
@@ -185,7 +180,7 @@ function blockHunkDecorations(
     if (endPos != null && endPos > startPos) {
       const kind = hunkKind(hunk, operationsById);
       const attrs = {
-        class: `${insertionClassName(kind, focused, hunk.concurrentConflict)} ${BLOCK_CLASS}`,
+        class: `${insertionClassName(kind, focused)} ${BLOCK_CLASS}`,
         ...dataAttrs,
       };
       const node = resolver.doc.nodeAt(startPos);
@@ -297,13 +292,9 @@ function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver)
   return resolveRelativePosition(resolver, anchor);
 }
 
-function insertionClassName(
-  kind: InlineReviewOperationKind,
-  focused: boolean,
-  conflict = false,
-): string {
+function insertionClassName(kind: InlineReviewOperationKind, focused: boolean): string {
   const base = kind === "writer" ? WRITER_CLASS : ADDED_CLASS;
-  return classNames(base, focused && EMPHASIS_CLASS, conflict && CONFLICT_CLASS);
+  return classNames(base, focused && EMPHASIS_CLASS);
 }
 
 function classNames(...values: Array<string | false | undefined>): string {
@@ -317,6 +308,5 @@ export const inlineReviewClassNames = {
   merged: MERGED_CLASS,
   emphasized: EMPHASIS_CLASS,
   block: BLOCK_CLASS,
-  conflict: CONFLICT_CLASS,
   deletionAnchor: DELETION_ANCHOR_CLASS,
 } as const;

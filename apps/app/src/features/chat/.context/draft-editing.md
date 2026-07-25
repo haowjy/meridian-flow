@@ -114,8 +114,8 @@ The controller is the single client review-session owner. Its reducer owns
 message target, and inline messages. The synchronous disposition lock is the
 only pending-command source. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
-`DraftReviewProvider` keys that owner by Project + Work so refusal, conflict,
-and dock-error state cannot cross a Work switch.
+`DraftReviewProvider` keys that owner by Project + Work so review and dock-error
+state cannot cross a Work switch.
 
 Per-card Apply routes the closure-card `acceptDraft` mutation with
 `operationIds`; the server receives the vended closure class as one card, so
@@ -135,17 +135,11 @@ each captured draft's current preview while retaining the batch reservation.
 A reviewed whole-draft Apply stays disabled until that exact preview is
 available; Apply/Discard failures are session outcomes rendered by the review
 header rather than ignored promises.
-A batch stops at its first refusal/failure so later targets cannot erase the
-explanation; transport failures surface through the dock's typed error state.
-Manual Apply refusals retain their document/draft target and the complete
-writer-conflict comparison (base, current manuscript, proposed draft, evidence,
-and explanation). The dock announces the conflict immediately, exposes the
-bounded comparison through a visibly labelled, keyboard-scrollable disclosure,
-clears it when review moves elsewhere or receives a genuinely new server
-preview, and routes
-**Compare changes** through the same `useAiDraftLauncher` review entry as every
-other review control. Conflict decoration participates only in presentation
-identity; it is not a new server preview and cannot clear the refusal.
+A batch stops at its first failure; transport failures surface through the
+dock's typed error state. Apply always merges through Yjs, including when the
+writer changed the same passage after the draft was cut. Provenance-classified
+sweeps are reported through the normal change-trail and mark surfaces rather
+than a separate refusal state.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns
@@ -191,8 +185,7 @@ for product decisions and the
 for cross-cutting architecture.
 
 The server preview identity (`draftId` plus live and draft revision tokens)
-controls re-review and refusal clearing; conflict-block identity only repaints
-presentation and cannot clear a refusal.
+controls whether the displayed Apply request is current.
 
 ## Draft review freshness
 

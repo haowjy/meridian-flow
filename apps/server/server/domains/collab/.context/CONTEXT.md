@@ -293,37 +293,27 @@ history is preserved for attribution, echo, and undo dependency checking.
   The markdown projection is serialized from a scratch `Y.Doc` the action applies
   the committed update to, before mutating the shared live document — never from the
   live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
-- **Draft Apply base**: every branch journal row captures the live journal head
-  as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
-  selected row against that row's own base, unions the resulting conflicts, and
-  never rebases rows after a click or refusal. A writer root inserted after that
-  base conflicts when its live position falls inside the candidate's replaced
-  scope; unrelated insertions outside a selective edit remain mergeable.
-  Response folding therefore retains each write's semantic replacement scope;
-  never infer one enclosing scope from the union of a row's changed roots. The
-  folded metadata records completeness; incomplete scope capture falls back to
-  aggregate changed-root safety instead of silently weakening refusal.
-- **Push policy is the only mode difference**: manual Apply refuses protected
-  draft-base divergence; Auto-apply always merges. Protection derives from
+- **Draft Apply always merges**: manual, selective, companion, and auto pushes
+  all integrate through Yjs. The immutable `draftBaseUpdateSeq` retained on each
+  journal row feeds report-only writer-impact classification; it does not gate
+  Apply. Protection derives from
   durable journal attribution: `completeStagedPush` persists the live journal
   row as `originType: "human"` with `actorUserId` when the push carries
   `pushedByUserId` (writer-confirmed Apply). Otherwise it folds branch-local
   undo/redo and inspects the remaining active agent mutations: exactly one
   shared turn produces `originType: "agent"` with that `actorTurnId`; no active
   agent turn or multiple turns stays `system`. Representative push metadata is
-  not attribution evidence. Both the push-time conflict classifier and the
+  not attribution evidence. Both the push-time writer-impact classifier and the
   agent-edit immediate-path lateSweep recheck derive protection from durable
   attribution, not from push-specific metadata or a separate protection table.
-  Auto-apply trails destructive writer-root effects from durable provenance.
-  This reporting classification is independent of the row's Apply-only draft
-  base.
+  Every apply path trails destructive writer-root effects from durable
+  provenance.
 - **Writer Apply pins to the displayed preview**: `DraftAcceptRequest.operationIds`
   is required (non-optional). The client pins Apply-all to the displayed preview
   via a render-time ref, never a click-time refetch; post-preview rows stay
   pending. Composition routes all writer Apply through `pushSelectedToLive`;
   the `whole` push kind remains for Auto-apply/retry but is unreachable from
-  writer Apply. On `push_concurrent_conflict`, composition maps the result to
-  ordinary `concurrent_conflict` and the client re-reviews with a fresh preview.
+  writer Apply.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;

@@ -89,8 +89,6 @@ export interface ReviewHunkSpan {
 type ReviewHunkBase = {
   hunkId: string;
   operationIds: string[];
-  /** Stable block hashes touched by this hunk, used to mark push conflicts. */
-  blockHashes?: string[];
   anchor: {
     relStart: string;
     relEnd: string;
@@ -124,34 +122,7 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 export type DraftAcceptResponse =
   | { status: "applied"; draftId?: string; branchId?: string }
   | { status: "partial_applied"; draftId: string; writeId: string }
-  | DraftApplyRefusal
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number };
-
-export type DraftApplyConflict = {
-  blockId: string;
-  journalIds: number[];
-  draftBaseUpdateSeq: number;
-  effect: "overwrite" | "delete" | "resurrection" | "enclosed_insertion";
-  evidence:
-    | "human_live_change"
-    | "human_live_deletion"
-    | "human_live_insertion"
-    | "ambiguous_protected_divergence";
-  captured: {
-    base: string | null;
-    live: string | null;
-    proposed: string | null;
-  };
-  why: string;
-};
-
-/** Manual Apply refusal. A review click never changes this evidence. */
-export type DraftApplyRefusal = {
-  status: "concurrent_conflict";
-  reason: "draft_base_divergence";
-  conflictedBlocks: string[];
-  conflicts: DraftApplyConflict[];
-};
 
 type DraftAcceptRequestBase = {
   draftRevisionToken: number;

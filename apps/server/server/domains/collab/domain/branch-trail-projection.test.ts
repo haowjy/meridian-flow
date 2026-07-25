@@ -134,7 +134,7 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
     receiptId: "receipt-same-identity",
     ownersByBlock: attribution.ownersByBlock,
     operations: [],
-    conflictedBlocks: [beforeId],
+    writerImpactBlocks: [beforeId],
     before: [{ hash: beforeId, serialized: "Writer text." }],
     blockIdentities: new Map([
       [beforeId, { documentId: "document-1", ...getBlockItemId(beforeBlock) }],
@@ -193,7 +193,7 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
     receiptId: "receipt-emptied-identity",
     ownersByBlock: new Map([[afterId, [null]]]),
     operations: [],
-    conflictedBlocks: [],
+    writerImpactBlocks: [],
     before: [{ hash: afterId, serialized: "Agent replacement." }],
     blockIdentities: new Map([
       [afterId, { documentId: "document-1", ...getBlockItemId(afterBlock) }],
@@ -300,7 +300,7 @@ it("projects a structurally adjacent whole-block replacement as one modification
         block: afterElement,
       })),
     })),
-    conflictedBlocks: [beforeId],
+    writerImpactBlocks: [beforeId],
     before: [{ hash: beforeId, serialized: "Writer text." }],
     blockIdentities: new Map([
       [beforeId, { documentId: "document-1", ...beforeIdentity }],
@@ -427,7 +427,7 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
         block: insertedElement,
       })),
     })),
-    conflictedBlocks: [deletedId],
+    writerImpactBlocks: [deletedId],
     before: [
       { hash: deletedId, serialized: "Deleted." },
       { hash: survivorId, serialized: "Survivor." },
@@ -505,7 +505,7 @@ it("preserves proven-writer-impact replacement promotion", () => {
         ambiguous: false,
       },
     ],
-    conflictedBlocks: [beforeId],
+    writerImpactBlocks: [beforeId],
     before: [{ hash: beforeId, serialized: "Before." }],
     blockIdentities: new Map([
       [beforeId, { documentId: "document-1", ...getBlockItemId(beforeBlock) }],
