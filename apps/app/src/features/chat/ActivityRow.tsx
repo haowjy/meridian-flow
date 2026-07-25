@@ -46,6 +46,8 @@ export type ActivityRowStatus = "running" | "done" | "error";
 
 export type ActivityRowProps = {
   Icon: LucideIcon;
+  /** Preserve the rail gutter while omitting a redundant per-row icon chip. */
+  quietIcon?: boolean;
   /** Single-line action title (e.g. `Read foo.md`). Omit when using `children`. */
   title?: ReactNode;
   /** Status indicator. Hidden when the row is `done` and not interactive. */
@@ -71,8 +73,21 @@ export type ActivityRowProps = {
  */
 const ICON_TOP_PAD = "pt-[3px]";
 
+/**
+ * Left inset that puts non-row content on the same text edge as a row's
+ * content column: the 19px icon gutter plus the row's `gap-2.5`.
+ *
+ * Exported because content that deliberately breaks the timeline (assistant
+ * prose inside a process fold) still has to agree with it on where text
+ * starts. Owning the number here keeps the two from drifting — a fold whose
+ * prose sits 29px left of every row around it reads as a broken rail rather
+ * than a change of register.
+ */
+export const ACTIVITY_ROW_TEXT_INSET = "pl-[29px]";
+
 export function ActivityRow({
   Icon,
+  quietIcon = false,
   title,
   status,
   expand,
@@ -87,12 +102,19 @@ export function ActivityRow({
   // Icon column owns the rail. `items-stretch` on the row + `flex-1` on the
   // line span makes the rail fill from below the chip to the row's bottom
   // edge regardless of how tall the content column grows.
-  const iconColumn = (
+  // `flex-col` is load-bearing, not stylistic: `flex-1` grows along the main
+  // axis, so in a row-direction parent it overrides `w-px` and paints the rail
+  // as a 19px-wide filled block instead of a hairline.
+  const iconColumn = quietIcon ? (
+    <div className="flex w-[19px] shrink-0 flex-col items-center" aria-hidden>
+      <span className="w-px flex-1 bg-border" data-activity-rail />
+    </div>
+  ) : (
     <div className={cn("flex w-[19px] shrink-0 flex-col items-center", ICON_TOP_PAD)}>
       <span className="grid size-[19px] shrink-0 place-items-center rounded-md bg-chip-muted-bg text-ink-subtle">
         <Icon className="size-3" aria-hidden />
       </span>
-      <span className="mt-1 w-px flex-1 bg-border" aria-hidden />
+      <span className="mt-1 w-px flex-1 bg-border" data-activity-rail aria-hidden />
     </div>
   );
 

@@ -130,7 +130,10 @@ history is preserved for attribution, echo, and undo dependency checking.
   through fenced completion; a durable commit requires its trail bundle.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
-  reconciliation do not duplicate aggregate SQL.
+  reconciliation do not duplicate aggregate SQL. That seam counts inserted and
+  deleted operation payloads and persists per-document magnitudes; lightweight
+  shells retain document ids/titles plus nullable aggregate magnitudes so card
+  headers never depend on manuscript-bearing detail reads.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.

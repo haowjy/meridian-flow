@@ -20,6 +20,7 @@ import {
   type WriteIdempotencyHitDetail,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -52,7 +53,7 @@ import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import {
   createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthority,
+  ensureAndReadDocumentAuthority,
   replaceDocumentAuthorityGeneration,
 } from "./adapters/drizzle-document-authority.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
@@ -149,13 +150,6 @@ const BRANCH_AGENT_BROADCAST_ORIGIN = {
   source: "local",
   context: { origin: { type: "system", reason: "branch-agent-append" } },
 } satisfies TransactionOrigin;
-
-function documentTitleFromUri(uri: string | null): string | null {
-  if (!uri) return null;
-  const segment = uri.split("/").filter(Boolean).at(-1);
-  if (!segment) return null;
-  return segment.replace(/\.[^.]+$/, "");
-}
 
 export async function recordLateSweepNotice(input: {
   notices: NoticePort;
@@ -588,7 +582,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       if (failed?.status === "rejected") throw failed.reason;
     },
     readAuthorityGeneration: async (documentId) =>
-      (await readDocumentAuthority(deps.db, documentId)).generation,
+      (await ensureAndReadDocumentAuthority(deps.db, documentId)).generation,
     replaceAuthorityGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
       const result = await replaceDocumentAuthorityGeneration(deps.db, {
         documentId,

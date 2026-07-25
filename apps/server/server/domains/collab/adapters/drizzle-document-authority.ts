@@ -40,11 +40,29 @@ export async function allocateDocumentAdmission(
   };
 }
 
-export async function readDocumentAuthority(
+/**
+ * Reads the document's authority generation, creating the head row if absent.
+ *
+ * Named for the insert because it performs one: only call this where the
+ * document is known to exist. On a missing document the insert fails the head's
+ * foreign key with a raw Postgres error rather than reporting absence — use
+ * `findDocumentAuthority` on any path that has to tolerate that.
+ */
+export async function ensureAndReadDocumentAuthority(
   db: AuthorityDb,
   documentId: string,
 ): Promise<DocumentAuthorityGeneration> {
   await ensureDocumentAuthority(db, documentId);
+  const row = await findDocumentAuthority(db, documentId);
+  if (!row) throw new Error("Failed to read document authority");
+  return row;
+}
+
+/** Authority generation for a document, or null when nothing was ever admitted. */
+export async function findDocumentAuthority(
+  db: AuthorityDb,
+  documentId: string,
+): Promise<DocumentAuthorityGeneration | null> {
   const [row] = await db
     .select({
       authorityId: documentYjsHeads.authorityId,
@@ -53,8 +71,7 @@ export async function readDocumentAuthority(
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, documentId as DocumentId))
     .limit(1);
-  if (!row) throw new Error("Failed to read document authority");
-  return row;
+  return row ?? null;
 }
 
 async function ensureDocumentAuthority(db: AuthorityDb, documentId: string): Promise<void> {

@@ -57,6 +57,7 @@ describe("runtime loop integration", () => {
     permissionGate?: PermissionGate,
     configureRepos?: (repos: ReturnType<typeof createInMemoryRepositories>) => void,
     projectPreferences?: Parameters<typeof createOrchestrator>[0]["projectPreferences"],
+    workWriteMode?: Parameters<typeof createOrchestrator>[0]["workWriteMode"],
   ) {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
@@ -97,6 +98,7 @@ describe("runtime loop integration", () => {
             return { threadGroupBy: "work", pinnedThreadIds: [], defaultAgentSlug: null };
           },
         },
+        ...(workWriteMode ? { workWriteMode } : {}),
         creditLedger,
       }),
     );
@@ -630,6 +632,28 @@ describe("runtime loop integration", () => {
     if (completed?.type === "turn.completed") {
       expect(completed.turn.status).toBe("complete");
     }
+  });
+
+  it("freezes the Work write mode on the assistant turn at creation", async () => {
+    const { repos, orchestrator, projectId } = await setupOrchestrator(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { read: async () => "draft" },
+    );
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    await repos.threadWorks.addMembership(thread.id, "00000000-0000-4000-8000-000000000001", true);
+
+    const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "draft this" });
+    const turns = await repos.turns.listByThread(thread.id);
+
+    expect(turns.map(({ role, writeMode }) => ({ role, writeMode }))).toEqual([
+      { role: "user", writeMode: null },
+      { role: "assistant", writeMode: "draft" },
+    ]);
+    await collectEvents(handle);
   });
 
   it("loops on tool_use until end_turn", async () => {

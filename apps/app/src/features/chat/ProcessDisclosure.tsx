@@ -24,10 +24,14 @@ export type ProcessDisclosureProps = {
 
 export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclosureProps) {
   const [open, setOpen] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
   const panelId = useId();
 
   const handleToggle = () => {
-    setOpen((value) => !value);
+    setOpen((value) => {
+      if (!value) setHasOpened(true);
+      return !value;
+    });
   };
 
   return (
@@ -44,19 +48,20 @@ export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclos
           className={cn("size-3 shrink-0 transition-transform duration-200", open && "rotate-90")}
           aria-hidden
         />
-        <span className="font-medium">{label}</span>
+        <span className="min-w-0 text-left font-medium">{label}</span>
       </button>
 
       <div
         id={panelId}
         data-process-fold
+        aria-hidden={!open}
         className={cn(
           "grid transition-[grid-template-rows] duration-300 ease-out",
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >
         <div className="min-w-0 overflow-hidden">
-          <div className="mt-2">{children}</div>
+          <div className="mt-2">{hasOpened ? children : null}</div>
         </div>
       </div>
     </div>

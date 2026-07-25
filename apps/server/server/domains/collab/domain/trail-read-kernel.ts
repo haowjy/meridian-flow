@@ -67,7 +67,9 @@ export type ChangeTrailShellV1 = {
   version: number;
   changeCount: number;
   sweptChangeCount: number;
-  documentCount: number;
+  documents: Array<{ documentId: string; title: string }>;
+  wordsAdded: number | null;
+  wordsRemoved: number | null;
   updatedAt: string;
   settledAt: string | null;
 };
@@ -173,6 +175,8 @@ export type ChangeTrailDocumentDetailV1 = {
   trailId: string;
   documentId: string;
   documentTitle: string;
+  wordsAdded: number | null;
+  wordsRemoved: number | null;
   changes: TrailChangeV1[];
   /** The durable detail remains readable, but its live document cannot be opened. */
   unavailable?: true;

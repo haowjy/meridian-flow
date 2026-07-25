@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { CircleAlert, RotateCw } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
@@ -8,12 +8,10 @@ import { cn } from "@/lib/utils";
 export type ErrorBlockProps = {
   /**
    * Whether this errored turn is the latest assistant turn in the thread.
-   * - `true` → full tinted block with icon + message + Retry button.
+   * - `true` → full tinted block with icon + message.
    * - `false` → quiet historical marker: single muted line, no background.
    */
   isLatest: boolean;
-  /** Callback fired when the user clicks Retry. Omit to hide the button. */
-  onRetry?: () => void;
 };
 
 /** Plain-language error message — never surfaces raw error strings. */
@@ -24,17 +22,17 @@ const ERROR_MESSAGE = () => t`Something went wrong generating a response.`;
  *
  * Two visual modes:
  * - **Active** (isLatest): destructive-tinted soft block with icon, plain
- *   sentence, and optional Retry button. Matches Variant 1 — Bare.
+ *   sentence. Matches Variant 1 — Bare.
  * - **Historical** (!isLatest): quiet inline muted marker.
  */
-export function ErrorBlock({ isLatest, onRetry }: ErrorBlockProps) {
+export function ErrorBlock({ isLatest }: ErrorBlockProps) {
   if (!isLatest) {
     return <HistoricalError />;
   }
-  return <ActiveError onRetry={onRetry} />;
+  return <ActiveError />;
 }
 
-function ActiveError({ onRetry }: { onRetry?: () => void }) {
+function ActiveError() {
   return (
     <Alert
       variant="destructive"
@@ -46,14 +44,6 @@ function ActiveError({ onRetry }: { onRetry?: () => void }) {
       <CircleAlert className="text-destructive" aria-hidden />
       <AlertDescription className="text-compact text-ink-muted">
         <p>{ERROR_MESSAGE()}</p>
-        {onRetry ? (
-          <div className="mt-2 flex items-center gap-2">
-            <button type="button" onClick={onRetry} className="soft-button">
-              <RotateCw className="size-3" aria-hidden />
-              <Trans>Retry</Trans>
-            </button>
-          </div>
-        ) : null}
       </AlertDescription>
     </Alert>
   );

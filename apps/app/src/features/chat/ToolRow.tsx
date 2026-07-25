@@ -9,60 +9,43 @@
  *
  * Hidden tools: a few "tools" are protocol primitives whose UX lives elsewhere
  * (the custom interrupt card for `ask_user`). Their tool_use / tool_result
- * blocks are duplication when rendered as activity rows — see
- * `shouldHideToolView` below.
+ * blocks are duplication when rendered as activity rows; the shared visibility
+ * predicate keeps the rendered rows and process digest in agreement.
  */
 
-import type { JsonValue } from "@meridian/contracts/protocol";
+import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import type { ToolView } from "./group-delivery-segments";
 import { rendererFor } from "./tool-renderers";
+import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ToolRowProps = {
   tool: ToolView;
-  draftWrite?: boolean;
+  writeMode?: "direct" | "draft";
 };
 
-export function ToolRow({ tool, draftWrite = false }: ToolRowProps) {
-  if (shouldHideToolView(tool)) return null;
-
+function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
     tool.status === "partial" ? "running" : tool.isError ? "error" : "done";
-  const expand = renderer.expand ? (renderer.expand(tool) ?? undefined) : undefined;
+  const presentation = useMemo(
+    () => ({
+      title: renderer.title(tool, { writeMode }),
+      expand: renderer.expand ? (renderer.expand(tool) ?? undefined) : undefined,
+    }),
+    [renderer, tool, writeMode],
+  );
+  if (!isToolViewVisible(tool)) return null;
 
   return (
     <ActivityRow
       Icon={renderer.Icon}
-      title={renderer.title(tool, { writeMode: draftWrite ? "draft" : "direct" })}
+      title={presentation.title}
       status={status}
-      expand={expand}
+      expand={presentation.expand}
     />
   );
 }
 
-/**
- * `ask_user` is the interrupt mechanism — the model fires it to pause for
- * user input, and the actual interaction surface is the `custom` interrupt
- * block (free-text or choice card). Rendering the tool_use and its eventual
- * tool_result as activity rows would duplicate the question and answer the
- * interrupt card already shows in place.
- *
- * Two flavours of view need hiding:
- *   1. The named tool_use itself (`toolName === "ask_user"`).
- *   2. An orphan tool_result whose `tool_use` was broken off into an earlier
- *      run by the segmenter (interrupt block sits between them). The result
- *      lacks `toolName` so it falls back to `"tool"`; we identify it by the
- *      interrupt-result output shape (`{ value, provenance }`).
- */
-function shouldHideToolView(tool: ToolView): boolean {
-  if (tool.toolName === "ask_user") return true;
-  if (tool.toolName === "tool" && isInterruptResultOutput(tool.output)) return true;
-  return false;
-}
-
-function isInterruptResultOutput(output: JsonValue | null): boolean {
-  if (!output || typeof output !== "object" || Array.isArray(output)) return false;
-  const record = output as Record<string, JsonValue>;
-  return "provenance" in record && "value" in record;
-}
+export const ToolRow = memo(ToolRowComponent);
+ToolRow.displayName = "ToolRow";

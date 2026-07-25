@@ -41,7 +41,11 @@ import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { insertionAttributions } from "../domain/provenance.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
-import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
+import {
+  allocateDocumentAdmission,
+  ensureAndReadDocumentAuthority,
+  findDocumentAuthority,
+} from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 
@@ -352,7 +356,7 @@ async function insertCheckpoint(
   reason: string,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
-  const authority = await readDocumentAuthority(db, documentId);
+  const authority = await ensureAndReadDocumentAuthority(db, documentId);
   const attributionManifest = await checkpointAttributionManifest(db, documentId, upToSeq);
   const [inserted] = await db
     .insert(documentYjsCheckpoints)
@@ -1059,7 +1063,15 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             authorityId: checkpoint.authorityId,
             generation: checkpoint.authorityGeneration,
           }
-        : await readDocumentAuthority(readDb, docId);
+        : await findDocumentAuthority(readDb, docId);
+      // No authority row means nothing was ever admitted for this document, so
+      // there is nothing to read. Reading must not create one: callers detect an
+      // absent document by getting an empty snapshot back (`loadDocumentState`
+      // returns null, and the coordinator turns that into DocumentNotFoundError).
+      // Materializing a head here claimed the document existed, and once its row
+      // was actually gone the insert failed the foreign key with a raw Postgres
+      // error instead — on an unawaited caller, an unhandled rejection.
+      if (!authority) return { checkpoint: null, updates: [] };
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         eq(documentYjsUpdates.authorityId, authority.authorityId),

@@ -35,6 +35,7 @@ function assistantTurn(id: string, status: Turn["status"]): Turn {
     id,
     threadId: thread.id,
     role: "assistant",
+    writeMode: null,
     status,
     finishReason: "tool_use",
     inputTokens: 0,

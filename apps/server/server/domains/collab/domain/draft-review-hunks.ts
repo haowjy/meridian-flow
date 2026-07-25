@@ -21,6 +21,7 @@ import type {
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
 import { encodeTrailPosition, rootRelativePosition } from "./trail-read-kernel.js";
+import { countWords } from "./word-count.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
@@ -906,9 +907,4 @@ function sumDraftWordDelta(
     }),
     { wordsAdded: 0, wordsRemoved: 0 },
   );
-}
-
-function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
 }

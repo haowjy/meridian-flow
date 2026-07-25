@@ -175,6 +175,7 @@ export const turns = pgTable(
       }),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
+    aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
     finishReason: text("finish_reason"),
     error: text("error"),
@@ -207,6 +208,10 @@ export const turns = pgTable(
       sql`${table.parentTurnId} IS NULL OR ${table.parentTurnId} != ${table.id}`,
     ),
     check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
+    check(
+      "turns_ai_write_mode_valid",
+      sql`${table.aiWriteMode} IS NULL OR ${table.aiWriteMode} IN ('direct', 'draft')`,
+    ),
     check(
       "turns_status_valid",
       sql`${table.status} IN ('pending', 'streaming', 'waiting_interrupt', 'complete', 'cancelled', 'error')`,

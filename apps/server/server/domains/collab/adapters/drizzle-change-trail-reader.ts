@@ -36,7 +36,9 @@ export function createDrizzleChangeTrailReader(
       version: row.version,
       changeCount: row.changeCount,
       sweptChangeCount: row.sweptChangeCount,
-      documentCount: row.documentCount,
+      documents: row.documents,
+      wordsAdded: row.wordsAdded,
+      wordsRemoved: row.wordsRemoved,
       updatedAt: row.updatedAt.toISOString(),
       settledAt: row.settledAt?.toISOString() ?? null,
     }));
@@ -51,6 +53,8 @@ export function createDrizzleChangeTrailReader(
       .select({
         documentId: changeTrailDocumentOccurrences.documentId,
         documentTitle: changeTrailDocumentDetails.documentTitle,
+        wordsAdded: changeTrailDocumentDetails.wordsAdded,
+        wordsRemoved: changeTrailDocumentDetails.wordsRemoved,
         changes: changeTrailDocumentDetails.changes,
       })
       .from(changeTrailDocumentOccurrences)
@@ -83,6 +87,8 @@ export function createDrizzleChangeTrailReader(
           trailId: input.trailId,
           documentId: row.documentId,
           documentTitle: row.documentTitle,
+          wordsAdded: row.wordsAdded,
+          wordsRemoved: row.wordsRemoved,
           changes: parseTrailChangesV1(row.changes),
           ...(unavailable ? { unavailable: true as const } : {}),
         };

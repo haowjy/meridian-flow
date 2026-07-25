@@ -37,7 +37,9 @@ const shell = (version = 1): ChangeTrailShell => ({
   version,
   changeCount: 1,
   sweptChangeCount: 0,
-  documentCount: 1,
+  documents: [{ documentId: "document-1", title: "Chapter 1" }],
+  wordsAdded: null,
+  wordsRemoved: null,
   updatedAt: "2026-01-01T00:00:00.000Z",
   settledAt: "2026-01-01T00:00:00.000Z",
 });
@@ -51,7 +53,14 @@ afterEach(() => {
 describe("useAuthorizedChangeTrailDetail", () => {
   it("loads on disclosure and evicts detail when document access is revoked", async () => {
     mocks.readChangeTrail.mockResolvedValue([
-      { documentId: "document-1", documentTitle: "Chapter", unavailable: false, changes: [] },
+      {
+        documentId: "document-1",
+        documentTitle: "Chapter",
+        wordsAdded: 2,
+        wordsRemoved: 1,
+        unavailable: false,
+        changes: [],
+      },
     ]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const host = document.createElement("div");

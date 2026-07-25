@@ -50,6 +50,18 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: n
   });
 }
 
+/**
+ * Whether the work-scoped Changes view has anything to show. This deliberately
+ * includes recent reviewed receipts, not only active drafts: those receipts
+ * keep their undo path reachable until the shared retention rule expires.
+ */
+export function hasDockChanges(
+  groups: ThreadDraftGroup[] | null | undefined,
+  nowMs: number,
+): boolean {
+  return dockRows(groups, nowMs).length > 0;
+}
+
 function documentSortKey(row: DockRow): string {
   return (row.documentName ?? row.documentId).toLowerCase();
 }
@@ -83,7 +95,7 @@ export function pendingReviewDraft(
   return active.find(draftHasReviewContent) ?? null;
 }
 
-/** Groups that still carry an active draft — the dock exists iff this is non-empty. */
+/** Groups that still carry an active draft — the composer DraftDock exists iff non-empty. */
 export function activeDockedDraftGroups(
   groups: ThreadDraftGroup[] | null | undefined,
 ): ThreadDraftGroup[] {

@@ -20,6 +20,7 @@ export function buildOptimisticUserTurn(input: {
     threadId: input.threadId,
     prevTurnId: input.prevTurnId ?? null,
     role: "user",
+    writeMode: null,
     status: "complete",
     finishReason: null,
     error: null,

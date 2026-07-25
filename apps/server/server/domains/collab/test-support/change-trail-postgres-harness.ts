@@ -36,7 +36,7 @@ const { createDrizzleChangeTrailPersistence } = await import(
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
 const {
   createDrizzleDocumentAuthorityHeads,
-  readDocumentAuthority,
+  ensureAndReadDocumentAuthority,
   replaceDocumentAuthorityGeneration,
 } = await import("../adapters/drizzle-document-authority.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
@@ -1225,7 +1225,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         upToSeq,
       ),
     );
-    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    const authority = await ensureAndReadDocumentAuthority(db, ALPHA_ID);
     const replaced = await replaceDocumentAuthorityGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
@@ -1541,7 +1541,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
       if (!checkpoint) throw new Error("authority checkpoint is unavailable");
-      const authority = await readDocumentAuthority(db, ALPHA_ID);
+      const authority = await ensureAndReadDocumentAuthority(db, ALPHA_ID);
       return replaceDocumentAuthorityGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,

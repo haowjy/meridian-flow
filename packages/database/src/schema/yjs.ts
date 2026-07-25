@@ -290,6 +290,12 @@ export const changeTrailShells = pgTable(
     changeCount: integer("change_count").notNull(),
     sweptChangeCount: integer("swept_change_count").notNull(),
     documentCount: integer("document_count").notNull(),
+    documents: jsonb("documents")
+      .$type<Array<{ documentId: string; title: string }>>()
+      .notNull()
+      .default([]),
+    wordsAdded: integer("words_added"),
+    wordsRemoved: integer("words_removed"),
     settledAt: timestamp("settled_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -337,6 +343,8 @@ export const changeTrailDocumentDetails = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     documentTitle: text("document_title").notNull(),
+    wordsAdded: integer("words_added"),
+    wordsRemoved: integer("words_removed"),
     changes: jsonb("changes").$type<unknown[]>().notNull(),
     updatedAt: updatedAt(),
   },

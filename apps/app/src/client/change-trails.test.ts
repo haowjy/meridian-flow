@@ -17,14 +17,17 @@ const shell = (
   version,
   changeCount: version,
   sweptChangeCount: 0,
-  documentCount: 1,
+  documents: [{ documentId: "document-1", title: "Chapter 1" }],
+  wordsAdded: null,
+  wordsRemoved: null,
   updatedAt: "2026-01-01T00:00:00.000Z",
   settledAt: state === "settled" ? "2026-01-01T00:00:01.000Z" : null,
 });
 
 describe("change trail shell state", () => {
   it("applies a live updated to settled transition", () => {
-    const updated = applyTrailShellTransition(emptyTrailShellState(), {
+    const initial = upsertTrailShell(emptyTrailShellState(), shell(1));
+    const updated = applyTrailShellTransition(initial, {
       kind: "updated",
       threadId: "thread-1",
       trailId: "trail-1",
@@ -38,8 +41,19 @@ describe("change trail shell state", () => {
       trailId: "trail-1",
       turnId: "turn-1",
       version: 3,
+      shell: {
+        counts: { changes: 1, swept: 0, documents: 1 },
+        documents: [{ documentId: "document-1", title: "Chapter 1" }],
+        wordsAdded: 1,
+        wordsRemoved: 2,
+      },
     });
-    expect(settled.byId["trail-1"].state).toBe("settled");
+    expect(settled.byId["trail-1"]).toMatchObject({
+      state: "settled",
+      documents: [{ documentId: "document-1", title: "Chapter 1" }],
+      wordsAdded: 1,
+      wordsRemoved: 2,
+    });
   });
 
   it("returns a reopened settled trail to building", () => {

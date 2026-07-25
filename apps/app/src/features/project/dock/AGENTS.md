@@ -27,7 +27,8 @@ body.
   — chat survives a view switch the same way it survives a collapsed dock.
 
 `useDockView(screen)` resolves the active view from a session-only store. The
-view set for each screen is fixed; the default is the occupant's native view.
+native view is always present; Changes joins it only while `hasDockChanges`
+finds an active draft or a reviewed receipt with reachable undo.
 
 ## Key rules
 
@@ -58,12 +59,18 @@ view set for each screen is fixed; the default is the occupant's native view.
    a complete boundary. The active segment may use page paper only inside that
    boundary; it never connects to the page like a tab chip.
 
+7. **Empty Changes is absent.** `hasDockChanges` is the one visibility
+   predicate used by both `DockShell` and `DockChangesView`. It includes recent
+   reviewed receipts; do not replace it with the active-only draft rule.
+
 ## Anti-patterns
 
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
   and loses chat state.
 - **Don't add a badge or count to the Changes segment.** Discovery lives
   in the composer DraftDock strip.
+- **Don't show an empty Changes segment.** When its final row disappears,
+  `DockShell` returns to the occupant's native view.
 - **Don't persist the dock view choice.** A stale view across reloads is worse
   than starting fresh.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the

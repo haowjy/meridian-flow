@@ -6,19 +6,21 @@
  * focus after terminal transitions.
  */
 import { t } from "@lingui/core/macro";
-import { blockContentRecord, type Turn } from "@meridian/contracts/protocol";
+import type { Turn } from "@meridian/contracts/protocol";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { announce, announceError } from "@/client/stores";
 import type { ComposerHandle } from "./Composer";
 import { reportChatError } from "./error-telemetry";
+import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
+import { toolActivityVocabulary } from "./tool-activity-vocabulary";
 
-function runningToolName(turn: Turn | null): string | null {
+function runningTool(turn: Turn | null): ToolView | null {
   const block = [...(turn?.blocks ?? [])]
     .reverse()
     .find((candidate) => candidate.blockType === "tool_use" && candidate.status === "partial");
   if (!block) return null;
-  const toolName = blockContentRecord(block).toolName;
-  return typeof toolName === "string" ? toolName : "tool";
+  const segment = groupDeliverySegments([block])[0];
+  return segment?.kind === "tool" ? segment.tool : null;
 }
 
 export function useLiveTurnAnnouncements(
@@ -30,7 +32,10 @@ export function useLiveTurnAnnouncements(
   const announcedThinkingRef = useRef(false);
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
-  const toolName = useMemo(() => runningToolName(liveTurn), [liveTurn]);
+  const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
+  const toolAnnouncement = tool
+    ? toolActivityVocabulary(tool, liveTurn?.writeMode ?? "direct")?.active
+    : null;
   const hasPartialText = Boolean(
     liveTurn?.blocks.some((block) => block.blockType === "text" && block.status === "partial"),
   );
@@ -45,8 +50,8 @@ export function useLiveTurnAnnouncements(
       announcedThinkingRef.current = true;
     }
 
-    if (toolName) {
-      announce(t`Running ${toolName}`);
+    if (toolAnnouncement) {
+      announce(toolAnnouncement);
     }
 
     if (status !== prevStatusRef.current) {
@@ -57,7 +62,7 @@ export function useLiveTurnAnnouncements(
           composerRef.current?.focus();
         }
       } else if (status === "cancelled") {
-        announce(t`Turn cancelled`);
+        announce(t`Stopped`);
       } else if (status === "error") {
         if (liveTurn?.error) announceError(liveTurn.error);
         reportChatError({
@@ -72,5 +77,5 @@ export function useLiveTurnAnnouncements(
     }
 
     prevStatusRef.current = status;
-  }, [chatSurfaceRef, composerRef, hasPartialText, liveTurn, status, threadId, toolName]);
+  }, [chatSurfaceRef, composerRef, hasPartialText, liveTurn, status, threadId, toolAnnouncement]);
 }

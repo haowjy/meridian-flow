@@ -25,6 +25,21 @@ msgstr "(fetched)"
 msgid "(untitled)"
 msgstr "(untitled)"
 
+#. placeholder {0}: documentUris.length
+#: src/features/chat/thinking-digest.ts
+msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
+msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
+
+#. placeholder {0}: documentUris.length
+#: src/features/chat/thinking-digest.ts
+msgid "{0, plural, one {edited # document} other {edited # documents}}"
+msgstr "{0, plural, one {edited # document} other {edited # documents}}"
+
+#. placeholder {0}: exploredDocuments.size
+#: src/features/chat/thinking-digest.ts
+msgid "{0, plural, one {explored # document} other {explored # documents}}"
+msgstr "{0, plural, one {explored # document} other {explored # documents}}"
+
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"
@@ -58,12 +73,16 @@ msgid "{minutes}m"
 msgstr "{minutes}m"
 
 #: src/features/chat/DraftDock.tsx
-msgid "{name} · reviewed"
-msgstr "{name} · reviewed"
+#~ msgid "{name} · reviewed"
+#~ msgstr "{name} · reviewed"
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
+
+#: src/features/chat/thinking-digest.ts
+msgid "{steps, plural, one {+1 step} other {+# steps}}"
+msgstr "{steps, plural, one {+1 step} other {+# steps}}"
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "↻ This edit brought back text you had deleted"
@@ -433,6 +452,14 @@ msgstr "Couldn't discard. Try again."
 msgid "Couldn't discard. Your latest edits are still syncing, try again soon."
 msgstr "Couldn't discard. Your latest edits are still syncing, try again soon."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't draft"
+msgstr "Couldn't draft"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't edit"
+msgstr "Couldn't edit"
+
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
@@ -492,6 +519,10 @@ msgstr "Couldn't save this document's home. Try again."
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
 msgstr "Couldn't undo that change. Nothing happened."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't write"
+msgstr "Couldn't write"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Create"
@@ -609,12 +640,20 @@ msgid "Draft and iterate on lab protocols with reagent + step suggestions."
 msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Draft write failed"
-msgstr "Draft write failed"
+#~ msgid "Draft write failed"
+#~ msgstr "Draft write failed"
+
+#: src/features/chat/thinking-digest.ts
+#~ msgid "drafted"
+#~ msgstr "drafted"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted"
 msgstr "Drafted"
+
+#: src/features/chat/thinking-digest.ts
+msgid "drafted {name}"
+msgstr "drafted {name}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted file"
@@ -636,18 +675,42 @@ msgstr "Drop image to upload a figure"
 msgid "Earlier content could not be recovered"
 msgstr "Earlier content could not be recovered"
 
+#: src/features/chat/thinking-digest.ts
+#~ msgid "edited"
+#~ msgstr "edited"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Edited"
+msgstr "Edited"
+
 #: src/features/chat/TurnEditsCard.tsx
 msgid "Edited {count} documents"
 msgstr "Edited {count} documents"
+
+#: src/features/chat/thinking-digest.ts
+msgid "edited {name}"
+msgstr "edited {name}"
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Edited {title}"
+msgstr "Edited {title}"
 
 #: src/features/chat/TurnEditsCard.tsx
 msgid "Edited 1 document"
 msgstr "Edited 1 document"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Edited file"
+msgstr "Edited file"
+
 #: src/features/editor/useInlineReviewSync.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "edited since this draft was written"
 msgstr "edited since this draft was written"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Editing…"
+msgstr "Editing…"
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -713,12 +776,16 @@ msgid "Explored folders"
 msgstr "Explored folders"
 
 #: src/features/chat/tool-renderers.tsx
+msgid "Exploring {folder}…"
+msgstr "Exploring {folder}…"
+
+#: src/features/chat/tool-renderers.tsx
 msgid "Exploring folders…"
 msgstr "Exploring folders…"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Exploring…"
-msgstr "Exploring…"
+#~ msgid "Exploring…"
+#~ msgstr "Exploring…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -1284,12 +1351,16 @@ msgid "Quick thought"
 msgstr "Quick thought"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Ran"
-msgstr "Ran"
+#~ msgid "Ran"
+#~ msgstr "Ran"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Ran skill"
 msgstr "Ran skill"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Ran the {skillName} skill"
+msgstr "Ran the {skillName} skill"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Read"
@@ -1434,7 +1505,6 @@ msgstr "Resume where I left off on any device"
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
-#: src/features/chat/ErrorBlock.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -1451,11 +1521,14 @@ msgstr "Review"
 msgid "Review draft"
 msgstr "Review draft"
 
+#: src/features/chat/DraftDock.tsx
+msgid "Reviewed {name}"
+msgstr "Reviewed {name}"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
 msgstr "Rewrote"
 
-#: src/features/chat/tool-renderers.tsx
 #: src/features/project/home/HomeScreen.tsx
 msgid "Running"
 msgstr "Running"
@@ -1467,6 +1540,10 @@ msgstr "Running {toolName}"
 #: src/features/chat/tool-renderers.tsx
 msgid "Running skill…"
 msgstr "Running skill…"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Running the {skillName} skill…"
+msgstr "Running the {skillName} skill…"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
@@ -1545,12 +1622,12 @@ msgid "Signing in…"
 msgstr "Signing in…"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "skill"
-msgstr "skill"
+#~ msgid "skill"
+#~ msgstr "skill"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "skill…"
-msgstr "skill…"
+#~ msgid "skill…"
+#~ msgstr "skill…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
@@ -1586,6 +1663,14 @@ msgstr "Stop"
 #: src/features/chat/FormBlock.tsx
 msgid "Stop run"
 msgstr "Stop run"
+
+#: src/features/chat/useLiveTurnAnnouncements.ts
+msgid "Stopped"
+msgstr "Stopped"
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "Stopped."
+msgstr "Stopped."
 
 #: src/features/home/RecentProjects.tsx
 msgid "Streaming"
@@ -1657,8 +1742,16 @@ msgid "That skill isn't available in this chat."
 msgstr "That skill isn't available in this chat."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The {slug} skill is no longer available in this chat — start a new chat to use the current version."
-msgstr "The {slug} skill is no longer available in this chat — start a new chat to use the current version."
+msgid "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
+msgstr "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The {skillName} skill isn't available in this chat."
+msgstr "The {skillName} skill isn't available in this chat."
+
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "The {slug} skill is no longer available in this chat — start a new chat to use the current version."
+#~ msgstr "The {slug} skill is no longer available in this chat — start a new chat to use the current version."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "The AI asked you a question"
@@ -1793,12 +1886,12 @@ msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
-msgid "Turn cancelled"
-msgstr "Turn cancelled"
+#~ msgid "Turn cancelled"
+#~ msgstr "Turn cancelled"
 
 #: src/features/chat/AssistantTurn.tsx
-msgid "Turn cancelled."
-msgstr "Turn cancelled."
+#~ msgid "Turn cancelled."
+#~ msgstr "Turn cancelled."
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
@@ -1821,6 +1914,7 @@ msgstr "Undo is unavailable because later edits depend on this change"
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
+#: src/features/chat/document-display-name.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Untitled document"
 msgstr "Untitled document"
@@ -1897,8 +1991,8 @@ msgid "Work"
 msgstr "Work"
 
 #: src/features/chat/LiveTurnStatusBar.tsx
-msgid "Working"
-msgstr "Working"
+#~ msgid "Working"
+#~ msgstr "Working"
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"
@@ -1914,8 +2008,8 @@ msgid "Write away"
 msgstr "Write away"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Write failed"
-msgstr "Write failed"
+#~ msgid "Write failed"
+#~ msgstr "Write failed"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Writing…"

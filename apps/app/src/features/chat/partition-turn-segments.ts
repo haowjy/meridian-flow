@@ -3,11 +3,11 @@
  *
  * Purpose: Converts an already ordered `Block[]` into interrupt-bounded turn
  * segments, then separates each segment into process-fold runs and the visible
- * activity frontier. The key decision is that this module reads only block
- * order and block type/content shape, never streaming status, so live and
- * settled turns partition identically.
+ * activity frontier. Durable turn settlement is the only lifecycle input:
+ * transient stream shape never changes the partition.
  */
 import { type Block, interruptIdForBlock } from "@meridian/contracts/protocol";
+import { isImageBlock, isToolDeliveryBlock } from "./block-kind";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -24,8 +24,8 @@ export function isInterruptBlock(block: Block): boolean {
   return interruptIdForBlock(block) !== null;
 }
 
-export function partitionTurnSegments(blocks: Block[]): TurnSegment[] {
-  return splitAtInterrupts(blocks).map(partitionSegment);
+export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSegment[] {
+  return splitAtInterrupts(blocks).map((segment) => partitionSegment(segment, settled));
 }
 
 function splitAtInterrupts(blocks: Block[]): Block[][] {
@@ -47,7 +47,7 @@ function splitAtInterrupts(blocks: Block[]): Block[][] {
   return segments;
 }
 
-function partitionSegment(blocks: Block[]): TurnSegment {
+function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
   const runs = groupRuns(blocks);
   const lastActivityRunIndex = findLastActivityRunIndex(runs);
 
@@ -55,10 +55,28 @@ function partitionSegment(blocks: Block[]): TurnSegment {
     return { foldRuns: runs, frontier: [] };
   }
 
-  return {
-    foldRuns: runs.filter((_, index) => index !== lastActivityRunIndex),
-    frontier: runs[lastActivityRunIndex]?.blocks ?? [],
-  };
+  const frontierRun = runs[lastActivityRunIndex];
+  if (!settled || !frontierRun) {
+    return {
+      foldRuns: runs.filter((_, index) => index !== lastActivityRunIndex),
+      frontier: frontierRun?.blocks ?? [],
+    };
+  }
+
+  const foldedFrontierTools = frontierRun.blocks.filter(isFoldableToolBlock);
+  const visibleFrontier = frontierRun.blocks.filter((block) => !isFoldableToolBlock(block));
+  const foldRuns = runs.flatMap((run, index): Run[] => {
+    if (index !== lastActivityRunIndex) return [run];
+    return foldedFrontierTools.length > 0
+      ? [{ kind: "activity", blocks: foldedFrontierTools }]
+      : [];
+  });
+
+  return { foldRuns, frontier: visibleFrontier };
+}
+
+function isFoldableToolBlock(block: Block): boolean {
+  return isToolDeliveryBlock(block) && !isImageBlock(block);
 }
 
 function groupRuns(blocks: Block[]): Run[] {

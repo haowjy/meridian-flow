@@ -2,6 +2,7 @@
 
 export * from "./change-trails.js";
 export * from "./context-entry-validation.js";
+export * from "./context-uri.js";
 export * from "./drafts/index.js";
 export * from "./enums";
 export * from "./ids";

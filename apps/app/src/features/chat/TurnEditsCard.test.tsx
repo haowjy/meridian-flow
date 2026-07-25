@@ -2,6 +2,7 @@ import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { ChangeTrailShell } from "@/client/change-trails";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -66,20 +67,45 @@ async function withInteractiveCard(
 }
 
 describe("TurnEditsCard", () => {
-  it("renders draft-only lineage with turn undo authority", () => {
+  /**
+   * A receipt may exist only for what actually reached the manuscript.
+   *
+   * Both shapes are the same turn that only ever drafted: `live` is the turn
+   * still held in memory, `reload` is it rebuilt from a settled trail naming no
+   * document. A card in either case tells the writer their chapter changed when
+   * it did not — and it only appears after a reload, so nobody would catch it by
+   * using the app.
+   */
+  it.each([
+    ["live", undefined],
+    [
+      "reload",
+      {
+        trailId: "trail-1",
+        owner: { kind: "turn", threadId: "thread-1", turnId: "turn-1" },
+        state: "settled",
+        version: 1,
+        changeCount: 1,
+        sweptChangeCount: 0,
+        documents: [],
+        wordsAdded: null,
+        wordsRemoved: null,
+        updatedAt: "2026-07-04T00:00:00.000Z",
+        settledAt: "2026-07-04T00:00:00.000Z",
+      } satisfies ChangeTrailShell,
+    ],
+  ])("renders no card for draft-only lineage in the %s shape", (_shape, changeTrail) => {
     const html = renderToStaticMarkup(
       <TurnEditsCard
         threadId="thread-1"
         turn={turn()}
         documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "draft" }]}
         receipt={{ state: "branch-active", control: "undo" }}
+        changeTrail={changeTrail}
       />,
     );
 
-    expect(html).toContain("data-turn-edits-card");
-    expect(html).toContain("Edited 1 document");
-    expect(html).toContain("Undo");
-    expect(html).not.toContain("Redo");
+    expect(html).toBe("");
   });
 
   it("lets live-scope documents own the undo path", () => {
@@ -92,7 +118,7 @@ describe("TurnEditsCard", () => {
       />,
     );
 
-    expect(html).toContain("Edited 1 document");
+    expect(html).toContain("Edited chapter-1");
     expect(html).toContain("Undo");
   });
 

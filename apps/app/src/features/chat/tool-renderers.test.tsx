@@ -28,13 +28,6 @@ function writeToolView(overrides: Partial<ToolView> = {}): ToolView {
 describe("write tool renderer", () => {
   const renderer = rendererFor("write");
 
-  it("renders success copy unchanged for a completed write", () => {
-    const html = renderToStaticMarkup(renderer.title?.(writeToolView(), { writeMode: "draft" }));
-    expect(html).toContain("Drafted");
-    expect(html).toContain("manuscript://chapter-1.md");
-    expect(renderer.expand?.(writeToolView())).toBeNull();
-  });
-
   it("labels read calls as reads rather than writes", () => {
     const html = renderToStaticMarkup(
       renderer.title?.(
@@ -47,7 +40,7 @@ describe("write tool renderer", () => {
     expect(html).not.toContain("Wrote");
   });
 
-  it("surfaces failure verb and error text for rejected writes", () => {
+  it("maps rejected writes to curated document copy", () => {
     const structuredOutput = {
       code: "tool_error",
       source: "tool",
@@ -60,41 +53,39 @@ describe("write tool renderer", () => {
       output: structuredOutput,
     });
     const html = renderToStaticMarkup(renderer.title?.(tool, { writeMode: "draft" }));
-    expect(html).toContain("Draft write failed");
+    expect(html).toContain("Couldn&#x27;t draft");
+    expect(html).toContain("chapter-1");
     expect(html).not.toContain("Drafted");
     const expand = renderToStaticMarkup(renderer.expand?.(tool));
-    expect(expand).toContain("File already exists");
-    expect(expand).toContain("overwrite=true");
+    expect(expand).toContain("That change couldn&#x27;t be made in chapter-1.");
+    expect(expand).not.toMatch(/:\/\/|\.md|command=|overwrite=true/);
   });
 
-  it("still surfaces legacy string-shaped tool errors", () => {
+  it("sanitizes legacy string-shaped tool errors", () => {
     const tool = writeToolView({
       isError: true,
       output:
         "status: invalid_write\nFile already exists: manuscript://chapter-1.md. Use overwrite=true to overwrite.",
     });
     const expand = renderToStaticMarkup(renderer.expand?.(tool));
-    expect(expand).toContain("overwrite=true");
+    expect(expand).toContain("That change couldn&#x27;t be made in chapter-1.");
+    expect(expand).not.toMatch(/:\/\/|\.md|command=|overwrite=true/);
+  });
+
+  it("never renders unknown machine detail", () => {
+    const tool = writeToolView({
+      isError: true,
+      output: 'Run write(command="read", file="manuscript://chapters/Chapter 1.md") to re-sync.',
+    });
+
+    const expand = renderToStaticMarkup(renderer.expand?.(tool));
+
+    expect(expand).toContain("Something went wrong while changing chapter-1.");
+    expect(expand).not.toMatch(/:\/\/|\.md|command=|file=/);
   });
 });
 
 describe("unknown tool renderer", () => {
-  it("humanizes the tool name and shows a path without exposing other arguments", () => {
-    const tool = writeToolView({
-      toolName: "return_result",
-      input: {
-        path: "manuscript://chapter-1.md",
-        query: "a long developer-facing argument",
-      },
-    });
-    const html = renderToStaticMarkup(rendererFor(tool.toolName).title(tool));
-
-    expect(html).toContain("Return result");
-    expect(html).toContain("manuscript://chapter-1.md");
-    expect(html).not.toContain("query");
-    expect(html).not.toContain("developer-facing");
-  });
-
   it("shows only the humanized tool name when no path is present", () => {
     const tool = writeToolView({
       toolName: "return_result",
@@ -107,7 +98,7 @@ describe("unknown tool renderer", () => {
 
 describe("streaming tool labels", () => {
   it.each([
-    ["ls", { path: "manuscript://" }, "Exploring"],
+    ["ls", { path: "manuscript://" }, "Exploring Manuscript…"],
     ["grep", { pattern: "dragon" }, "Searching"],
   ])("uses present tense for a partial %s call", (toolName, input, expected) => {
     const tool = writeToolView({ toolName, input, status: "partial" });
@@ -124,6 +115,8 @@ describe("streaming tool labels", () => {
     const html = renderToStaticMarkup(rendererFor("write").title(tool, { writeMode }));
 
     expect(html).toContain(expected);
+    expect(html).not.toContain("manuscript://");
+    expect(html).not.toContain("chapter-1");
   });
 });
 
@@ -164,7 +157,9 @@ describe("runtime tool registry", () => {
 
     const html = renderToStaticMarkup(rendererFor("grep").expand?.(tool));
 
-    expect(html).toContain("manuscript://chapter-12.md");
+    expect(html).toContain("chapter-12");
+    expect(html).not.toContain("manuscript://");
+    expect(html).not.toContain(".md");
     expect(html).toContain("Line 42");
     expect(html).toContain("The dragon stirred beneath the mountain.");
     expect(html).not.toContain("0.91");

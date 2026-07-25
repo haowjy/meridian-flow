@@ -29,6 +29,7 @@ function assistantTurn(id: string, threadId: string, status: Turn["status"] = "s
     threadId,
     parentTurnId: null,
     role: "assistant",
+    writeMode: null,
     status,
     agentDefinitionId: "agent_test",
     finishReason: null,

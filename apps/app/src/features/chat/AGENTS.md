@@ -19,18 +19,20 @@ management, or composer — those are adjacent concerns in sibling files
 An assistant turn renders as a **stack of segments**, one per interrupt round.
 Each segment has exactly two zones:
 
-- **`Thinking` disclosure** (collapsed) — process history: all reasoning blocks
-  + all completed (non-latest) activity runs, in chronological order.
-- **`ActivityBlock`** (visible) — the **last activity run** — the delivery
-  frontier the reader is focused on.
+- **Process disclosure** (collapsed) — all reasoning, all completed activity
+  runs, and (once the durable turn settles) every frontier tool operation.
+  Its visible label becomes a deterministic digest when it contains tools.
+- **`ActivityBlock`** (visible) — the live last activity run. After settlement,
+  only that frontier's non-tool blocks remain visible.
 
-The partition is **purely structural**: it depends only on block order and block
-type, never on streaming state. This guarantees a settled/reloaded turn renders
-the same structure the user saw live.
+The partition keys off block order/type and the durable terminal-status
+predicate. It never reads transient stream state (`isLive`, partial blocks).
+At the durable status flip, tool rows move into the fold; the resulting final
+frame is identical to a reload.
 
-When a new activity run begins, the previous frontier **rolls up** into `Thinking`
-in its chronological position. When a interrupt is resolved, the segment is
-**frozen** and a new segment begins below.
+When a new activity run begins, the previous frontier **rolls up** into the
+process fold in chronological position. Interrupts end a segment; their cards
+remain visible after resolution even though tool protocol rows fold on settle.
 
 The full model — including the 6-state lifecycle table and interrupt segmentation
 diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
@@ -39,27 +41,30 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 1. **Default-collapsed everywhere.** `Thinking` disclosures are closed by default
    whether streaming live or settled. No auto-open on streaming.
-2. **Streaming ≡ settled.** The partition logic must never branch on `isLive` or
-   `turn.status`. Same `Block[]` order → same render structure.
-3. **Interrupt segments are frozen.** Once a user responds to a interrupt, that
-   segment's `ActivityBlock` (including the interrupt) stays expanded forever —
-   never rolled up into a later segment's `Thinking`.
+2. **Durable settlement folds tool rows.** `complete`, `cancelled`, and `error`
+   put every segment's tool operations inside its fold. Live statuses keep the
+   last activity run visible. Never key this decision off `isLive` or partial
+   block content; use the contracts terminal-status predicate.
+3. **Interrupt cards stay visible.** Resolution starts a new segment. On settle,
+   tool protocol rows in every segment fold, while resolved interrupt cards and
+   other frontier non-tool blocks remain expanded.
 4. **Block render keys are positional.** Use `blockRenderKey(block)` —
-   `turnId::sequence`. Never key by `block.id`. This ensures the live→settled swap
-   is an in-place content replace, not a remount.
+   `turnId::sequence`. Never key by `block.id`. Blocks keep identity while they
+   remain in one zone; frontier prose, images, and custom cards therefore do not
+   remount at settlement. Tool views structurally move from the frontier into the
+   process fold at settlement and may remount at that boundary.
 
 ## Anti-patterns
 
-- **Don't branch on streaming state in partition logic.** If `isLive` appears in
-  `partitionTurnSegments` or determines which zone a block lands in, you're
-  building a settled-reload divergence.
+- **Don't branch on transient streaming state in partition logic.** Durable
+  terminal status is an input; `isLive`, partial-block shape, and component-local
+  stream state are not.
 - **Don't key by `block.id`.** ID spaces can drift between sources; positional
   identity cannot. Use `blockRenderKey`.
 - **Don't duplicate tool rendering between fold and activity zone.**
   `DeliverySegments` normalizes tool protocol blocks into ToolViews for both folded
   activity runs and visible frontiers. No raw tool block should reach `TurnBlockStep`.
-- **Don't hard-code `defaultOpen={reasoningStreaming}`.** That's the old model
-  being migrated away from.
+- **Don't auto-open process disclosures during streaming.**
 
 ## Entry points
 
@@ -72,14 +77,14 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts route through `onRespondToInterrupt` |
 | `placeholders.ts` | Lingui `msg` descriptor pools + per-page-load localStorage rotation + `useSyncExternalStore` SSR guard. Rotation is internal to Composer; hero variant overrides by prop |
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior. Unknown tools show name only; all registered renderers use `toolVerb()` for status-aware present/past tense |
-| `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
+| `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent tool runs as sibling `ToolRow`s |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/CONTEXT.md`](.context/CONTEXT.md) §Turn edits card |
 | `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams. Returns null for plain-insert-only trails (no writerProtection) |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
-| `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
+| `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
@@ -145,7 +150,8 @@ From `@meridian/contracts` `BlockType`: `reasoning` | `thinking` | `text` |
 
 - **reasoning run** = `reasoning` | `thinking` (rendered in `TurnBlockStep`, italic prose)
 - **activity run** = everything else (text/image/custom rendered directly; tool_use/tool_result
-  normalized into ToolViews and rendered as `ToolCard` or `ToolRunBlock`)
+  normalized into ToolViews and rendered as sibling `ToolRow`s by
+  `DeliverySegments`)
 
 ## Transcript viewport (TurnList)
 

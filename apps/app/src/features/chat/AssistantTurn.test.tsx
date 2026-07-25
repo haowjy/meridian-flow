@@ -16,7 +16,12 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Plural: ({ value }: { value: number }) => <>{value}</>,
 }));
-vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((copy, part, index) => copy + part + (values[index] ?? ""), ""),
+  plural: (count: number, forms: { one: string; other: string }) =>
+    (count === 1 ? forms.one : forms.other).replace("#", String(count)),
+}));
 
 const { documentsRef } = vi.hoisted(() => ({
   documentsRef: {
@@ -45,6 +50,7 @@ function turn(id: string, status: Turn["status"] = "complete"): Turn {
     id,
     threadId: "thread-1",
     role: "assistant",
+    writeMode: null,
     status,
     createdAt: "2026-07-04T00:00:00.000Z",
     blocks: [],
@@ -64,6 +70,17 @@ describe("AssistantTurn edit lineage", () => {
     expect(html).toContain("data-turn-edits-card");
     expect(html).toContain("Undo");
   });
+
+  it("keeps the committed lineage when a turn drafted and the writer applied", () => {
+    // The live-lineage endpoint returns the draft entry BEFORE the live entry for
+    // the same URI. Deduping to the first match hid the applied edit entirely.
+    documentsRef.current = [
+      { uri: "context://doc/chapter-3", path: "/chapter-3", scope: "draft" },
+      { uri: "context://doc/chapter-3", path: "/chapter-3", scope: "live" },
+    ];
+    const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
+    expect(html).toContain("data-turn-edits-card");
+  });
 });
 
 describe("AssistantTurn change view", () => {
@@ -82,7 +99,9 @@ describe("AssistantTurn change view", () => {
       version,
       changeCount: 2,
       sweptChangeCount: 0,
-      documentCount: 1,
+      documents: [{ documentId: "document-1", title: "Chapter 1" }],
+      wordsAdded: null,
+      wordsRemoved: null,
       updatedAt: `2026-07-04T00:00:0${version}.000Z`,
       settledAt: state === "settled" ? `2026-07-04T00:00:0${version}.000Z` : null,
     });

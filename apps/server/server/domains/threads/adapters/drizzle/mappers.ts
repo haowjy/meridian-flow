@@ -67,6 +67,7 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     prevTurnId: row.parentTurnId,
     parentTurnId: row.parentTurnId,
     role: row.role as Turn["role"],
+    writeMode: row.aiWriteMode as Turn["writeMode"],
     status: row.status as Turn["status"],
     agentDefinitionId: row.agentDefinitionId,
     finishReason: row.finishReason as Turn["finishReason"],

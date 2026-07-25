@@ -25,6 +25,20 @@ import {
   type NormalizedTrail,
   type TrailChangeV1,
 } from "../domain/trail-read-kernel.js";
+import { wordDeltaBetweenHashlines } from "../domain/word-count.js";
+
+function trailWordDelta(changes: readonly TrailChangeV1[]) {
+  return changes.reduce(
+    (total, change) => {
+      const delta = wordDeltaBetweenHashlines(change.beforeText, change.afterTextAtReceipt);
+      return {
+        wordsAdded: total.wordsAdded + delta.wordsAdded,
+        wordsRemoved: total.wordsRemoved + delta.wordsRemoved,
+      };
+    },
+    { wordsAdded: 0, wordsRemoved: 0 },
+  );
+}
 
 function deterministicUuid(namespace: string): string {
   const bytes = Buffer.from(createHash("sha256").update(namespace).digest().subarray(0, 16));
@@ -140,6 +154,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         const existingDetails = await tx
           .select({
             documentId: changeTrailDocumentDetails.documentId,
+            documentTitle: changeTrailDocumentDetails.documentTitle,
             changes: changeTrailDocumentDetails.changes,
           })
           .from(changeTrailDocumentDetails)
@@ -178,6 +193,10 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
         ]);
         for (const documentId of documentIds) {
+          const documentTitle =
+            input.documentTitles.get(documentId) ??
+            existingDetails.find((detail) => detail.documentId === documentId)?.documentTitle ??
+            "Untitled document";
           await tx
             .insert(changeTrailDocumentOccurrences)
             .values({ trailId, documentId })
@@ -194,18 +213,21 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
               );
             continue;
           }
+          const wordDelta = trailWordDelta(documentChanges);
           await tx
             .insert(changeTrailDocumentDetails)
             .values({
               trailId,
               documentId,
-              documentTitle: input.documentTitles.get(documentId) ?? "Untitled document",
+              documentTitle,
+              ...wordDelta,
               changes: documentChanges,
             })
             .onConflictDoUpdate({
               target: [changeTrailDocumentDetails.trailId, changeTrailDocumentDetails.documentId],
               set: {
-                documentTitle: input.documentTitles.get(documentId) ?? "Untitled document",
+                documentTitle,
+                ...wordDelta,
                 changes: documentChanges,
                 updatedAt: new Date(),
               },
@@ -213,10 +235,22 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         }
 
         const details = await tx
-          .select({ changes: changeTrailDocumentDetails.changes })
+          .select({
+            documentId: changeTrailDocumentDetails.documentId,
+            documentTitle: changeTrailDocumentDetails.documentTitle,
+            wordsAdded: changeTrailDocumentDetails.wordsAdded,
+            wordsRemoved: changeTrailDocumentDetails.wordsRemoved,
+            changes: changeTrailDocumentDetails.changes,
+          })
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
         const allChanges = details.flatMap((detail) => detail.changes as TrailChangeV1[]);
+        const documents = details
+          .map((detail) => ({ documentId: detail.documentId, title: detail.documentTitle }))
+          .sort((left, right) => left.documentId.localeCompare(right.documentId));
+        const hasWordData = details.every(
+          (detail) => detail.wordsAdded !== null && detail.wordsRemoved !== null,
+        );
         await tx
           .update(changeTrailShells)
           .set({
@@ -226,6 +260,13 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             changeCount: allChanges.length,
             sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
             documentCount: details.length,
+            documents,
+            wordsAdded: hasWordData
+              ? details.reduce((sum, detail) => sum + (detail.wordsAdded ?? 0), 0)
+              : null,
+            wordsRemoved: hasWordData
+              ? details.reduce((sum, detail) => sum + (detail.wordsRemoved ?? 0), 0)
+              : null,
             updatedAt: new Date(),
           })
           .where(eq(changeTrailShells.id, trailId));
