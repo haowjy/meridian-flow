@@ -433,6 +433,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const fences: Array<{ threadId: string; documentId: string }> = [];
   let failNextTrailRetry = false;
   let failAllTrailRetries = false;
+  let trailWorkTime = new Date(Date.now() + 60_000);
   const trailDelivery = createChangeTrailWorker({
     db,
     journalWriter: {
@@ -450,6 +451,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" });
     },
     onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
+    turnTrailWorkSchedule: {
+      now: () => trailWorkTime,
+      retryDelayMs: (attempts) => Math.min(2 ** attempts, 30) * 1_000,
+      runningLeaseMs: 30_000,
+      successRetryMs: 1_000,
+    },
   });
   const autoPushSchedules: string[] = [];
   const autoPushPromises: Promise<unknown>[] = [];
@@ -1550,6 +1557,18 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       deliveredEvents,
     }),
     pollTrails: () => trailDelivery.drain(),
+    advanceTrailWorkTime(milliseconds: number) {
+      trailWorkTime = new Date(trailWorkTime.getTime() + milliseconds);
+    },
+    deferTrailWork(milliseconds: number) {
+      return db.update(schema.turnTrailWork).set({
+        state: "pending",
+        nextAttemptAt: new Date(trailWorkTime.getTime() + milliseconds),
+      });
+    },
+    markTrailWorkRunning() {
+      return db.update(schema.turnTrailWork).set({ state: "running", updatedAt: trailWorkTime });
+    },
     failNextTrailRetry() {
       failNextTrailRetry = true;
     },

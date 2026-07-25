@@ -770,7 +770,7 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ state: "pending", attempts: 1 }),
     ]);
 
-    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    harness.advanceTrailWorkTime(2_000);
     await expect(harness.pollTrails()).resolves.toEqual(expect.any(Number));
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ state: "complete", attempts: 2 }),
@@ -782,14 +782,52 @@ describe("change trail (postgres)", () => {
     expect(await harness.branchGeneration(branchId)).toBe(3);
   });
 
+  it("claims pending trail work only when its retry deadline arrives", async () => {
+    const harness = createHarness();
+    await harness.seedDestructivePush("retry-deadline");
+    await harness.setPushPolicy("auto");
+    await harness.deferTrailWork(2_000);
+
+    harness.advanceTrailWorkTime(1_999);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "pending", attempts: 0 }),
+    ]);
+
+    harness.advanceTrailWorkTime(1);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "complete", attempts: 1 }),
+    ]);
+  });
+
+  it("reclaims running trail work only after its lease expires", async () => {
+    const harness = createHarness();
+    await harness.seedDestructivePush("running-lease");
+    await harness.setPushPolicy("auto");
+    await harness.markTrailWorkRunning();
+
+    harness.advanceTrailWorkTime(30_000);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "running", attempts: 0 }),
+    ]);
+
+    harness.advanceTrailWorkTime(1);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "complete", attempts: 1 }),
+    ]);
+  });
+
   it("fences exhausted auto-push work without falsely settling its trail", async () => {
     const harness = createHarness();
     await harness.seedDestructivePush("exhausted-auto-push");
     await harness.setPushPolicy("auto");
     harness.failAllTrailRetries();
 
-    for (const delay of [0, 2_100, 4_100, 8_100, 16_100]) {
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    for (const delay of [0, 2_000, 4_000, 8_000, 16_000]) {
+      harness.advanceTrailWorkTime(delay);
       await harness.pollTrails();
     }
 
@@ -802,7 +840,7 @@ describe("change trail (postgres)", () => {
       details: [],
       outbox: [expect.objectContaining({ eventKind: "updated" })],
     });
-  }, 40_000);
+  });
 
   it("settles shared and per-turn trails from their respective durable work rows", async () => {
     const harness = createHarness();
