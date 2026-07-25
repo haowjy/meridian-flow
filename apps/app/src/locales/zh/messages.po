@@ -75,12 +75,12 @@ msgstr "（未命名）"
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 msgstr ""
 
-#. placeholder {0}: documentUris.length
+#. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
 msgstr ""
 
-#. placeholder {0}: documentUris.length
+#. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr ""
@@ -128,10 +128,6 @@ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
-msgstr ""
-
-#: src/features/chat/thinking-digest.ts
-msgid "{steps, plural, one {+1 step} other {+# steps}}"
 msgstr ""
 
 #. placeholder {0}: target.name
@@ -699,10 +695,6 @@ msgstr ""
 msgid "Drafted"
 msgstr ""
 
-#: src/features/chat/thinking-digest.ts
-msgid "drafted {name}"
-msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted file"
 msgstr ""
@@ -729,10 +721,6 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {count} chapters"
-msgstr ""
-
-#: src/features/chat/thinking-digest.ts
-msgid "edited {name}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

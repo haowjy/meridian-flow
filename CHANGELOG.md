@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: folded activity summaries now report only counted document reads
+  and edits, without document names, generic step counts, or error signals.
 - `apps/app`: receipt document names now share canonical writer-facing naming
   and only become links when the context URI is routable.
 - `apps/app`: AI mark popovers now keep only attribution, Restore,

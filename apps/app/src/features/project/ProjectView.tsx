@@ -22,7 +22,10 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
-import { usePendingConversationReveal } from "@/features/chat/conversation-reveal";
+import {
+  completeConversationReveal,
+  usePendingConversationReveal,
+} from "@/features/chat/conversation-reveal";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -115,6 +118,11 @@ export function ProjectView(props: ProjectViewProps) {
   useEffect(() => {
     if (!pendingConversationReveal) return;
     selectThreadRef.current(pendingConversationReveal.threadId);
+    // Shared trails deliberately have no turn receipt to target. Opening their
+    // conversation is still useful, but the selection itself completes the request.
+    if (pendingConversationReveal.turnId === null) {
+      completeConversationReveal(pendingConversationReveal);
+    }
   }, [pendingConversationReveal]);
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;

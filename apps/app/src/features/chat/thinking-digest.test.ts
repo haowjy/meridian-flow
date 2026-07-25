@@ -39,7 +39,7 @@ function tool(toolName: string, input: ToolView["input"]): ToolView {
 describe("thinkingDigest", () => {
   it.each([
     ["read", "Explored 1 document"],
-    ["replace", "Edited Chapter 1"],
+    ["replace", "Edited 1 document"],
   ])("counts canonical %s targets once across path spellings", (command, expected) => {
     expect(
       thinkingDigest(
@@ -51,5 +51,22 @@ describe("thinkingDigest", () => {
         "direct",
       ),
     ).toBe(expected);
+  });
+
+  it("only reports counted read and edit outcomes", () => {
+    const error = { ...tool("write", { command: "read" }), isError: true };
+
+    expect(
+      thinkingDigest(
+        [
+          tool("write", { command: "read", path: "manuscript://chapter-1" }),
+          tool("write", { command: "replace", path: "manuscript://chapter-2" }),
+          tool("search", { query: "dragon" }),
+          error,
+        ],
+        "draft",
+      ),
+    ).toBe("Explored 1 document, drafted 1 document");
+    expect(thinkingDigest([tool("search", { query: "dragon" }), error], "direct")).toBeNull();
   });
 });

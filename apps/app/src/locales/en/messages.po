@@ -75,12 +75,12 @@ msgstr "(untitled)"
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 msgstr "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 
-#. placeholder {0}: documentUris.length
+#. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
 msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
 
-#. placeholder {0}: documentUris.length
+#. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr "{0, plural, one {edited # document} other {edited # documents}}"
@@ -129,10 +129,6 @@ msgstr "{pendingChangeCount} changes waiting for review"
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
-
-#: src/features/chat/thinking-digest.ts
-msgid "{steps, plural, one {+1 step} other {+# steps}}"
-msgstr "{steps, plural, one {+1 step} other {+# steps}}"
 
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
@@ -699,10 +695,6 @@ msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
 msgid "Drafted"
 msgstr "Drafted"
 
-#: src/features/chat/thinking-digest.ts
-msgid "drafted {name}"
-msgstr "drafted {name}"
-
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted file"
 msgstr "Drafted file"
@@ -730,10 +722,6 @@ msgstr "Edited"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {count} chapters"
 msgstr "Edited {count} chapters"
-
-#: src/features/chat/thinking-digest.ts
-msgid "edited {name}"
-msgstr "edited {name}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {title}"
