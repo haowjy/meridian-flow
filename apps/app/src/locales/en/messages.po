@@ -447,6 +447,10 @@ msgstr "Choose a listed option"
 msgid "Choose an option"
 msgstr "Choose an option"
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Clear marks"
+msgstr "Clear marks"
+
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"

@@ -121,7 +121,7 @@ describe("branch push settlement refinement (postgres)", () => {
     expect(harness.changeEvents()).toEqual([
       expect.objectContaining({
         projectionRevision: 2,
-        changes: [expect.objectContaining({ kind: "modify", hasWriterImpact: true })],
+        changes: [expect.objectContaining({ kind: "modify", writerImpact: { kind: "sweep" } })],
       }),
     ]);
     await expect(harness.diff()).resolves.toMatchObject({ command: "diff", status: "success" });

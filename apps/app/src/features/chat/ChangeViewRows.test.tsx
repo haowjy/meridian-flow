@@ -11,6 +11,8 @@ import {
   requestConversationReveal,
 } from "./conversation-reveal";
 
+const { dismissGroupMock } = vi.hoisted(() => ({ dismissGroupMock: vi.fn() }));
+
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -24,7 +26,9 @@ vi.mock("@/components/ui/button", () => ({
   Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
 vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({ peek: () => null }),
+  getDocumentSessionRegistry: () => ({
+    peek: () => ({ markerStore: { dismissGroup: dismissGroupMock } }),
+  }),
 }));
 
 const { ChangeViewRows } = await import("./ChangeViewRows");
@@ -47,6 +51,7 @@ const generativeInsertion: TrailChange = {
 
 describe("ChangeViewRows conversation reveal", () => {
   beforeEach(() => {
+    dismissGroupMock.mockReset();
     (
       globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -86,6 +91,16 @@ describe("ChangeViewRows conversation reveal", () => {
     expect(row?.className).toContain("meridian-trail-row-emphasized");
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledOnce();
     expect(peekConversationReveal()).toBeNull();
+
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Clear marks")
+        ?.click();
+    });
+    expect(dismissGroupMock).toHaveBeenCalledWith({
+      trailId: "trail-1",
+      documentId: "document-1",
+    });
 
     await act(async () => root.unmount());
   });

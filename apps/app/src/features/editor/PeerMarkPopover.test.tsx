@@ -141,7 +141,7 @@ function target(): PeerMarkPopoverTarget {
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
       kind: "delete",
       anchor: { type: "unresolved", raw: { kind: "unavailable", reason: "test" } },
-      hasWriterImpact: true,
+      writerImpact: { kind: "sweep" },
       excerpt: "Writer text.",
       pureDeletionOffset: null,
       projectionRevision: 1,

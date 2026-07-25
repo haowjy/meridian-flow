@@ -435,6 +435,10 @@ msgstr ""
 msgid "Choose an option"
 msgstr ""
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Clear marks"
+msgstr "清除标记"
+
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"

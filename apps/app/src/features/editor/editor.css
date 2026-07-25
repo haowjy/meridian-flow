@@ -207,19 +207,33 @@
   opacity: 0.2;
 }
 
-/* Peer marks are session presence: jade insertion anatomy plus each
-   conversation's stable collaboration-cursor hue. */
+/* Peer marks are session presence. Manuscript anatomy uses authorship colors;
+   thread hues survive only in the identity label. */
 .meridian-editor .ProseMirror .meridian-peer-mark--range {
-  background: var(--color-review-added-tint);
   box-shadow: inset 0 -1px 0 0 var(--color-review-added-border);
   cursor: pointer;
   transition: background-color 120ms ease;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--range:hover {
+  background: var(--color-review-added-tint);
 }
 
 .meridian-editor .ProseMirror .meridian-peer-mark--range:focus-visible {
   background: var(--color-review-added-emphasis);
   outline: 2px solid var(--color-review-added-ring);
   outline-offset: 1px;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--range[data-peer-mark-swept="true"] {
+  background: var(--color-review-warning-tint);
+  box-shadow: inset 0 -1px 0 0 var(--color-review-warning-border);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-peer-mark--range[data-peer-mark-swept="true"]:focus-visible {
+  outline-color: var(--color-review-warning-border);
 }
 
 .meridian-editor .ProseMirror .meridian-peer-mark--tick {
@@ -229,7 +243,7 @@
   height: 1.15em;
   margin-inline: -1px;
   border-radius: var(--radius-sm);
-  background: var(--peer-mark-color);
+  background: var(--color-review-added-border);
   cursor: pointer;
   opacity: 0.72;
   vertical-align: text-bottom;
@@ -242,8 +256,13 @@
   width: 4px;
   height: 4px;
   border-radius: 999px;
-  background: var(--peer-mark-color);
+  background: var(--color-review-added-border);
   content: "";
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-deletion="true"],
+.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-deletion="true"]::before {
+  background: var(--color-review-removed-border);
 }
 
 .meridian-editor .ProseMirror .meridian-peer-mark--seam {
@@ -259,7 +278,7 @@
   position: absolute;
   inset: 5px 0;
   border-radius: var(--radius-sm);
-  background: var(--peer-mark-color);
+  background: var(--color-review-removed-border);
   content: "";
   opacity: 0.68;
 }
@@ -281,6 +300,13 @@
 .meridian-editor .ProseMirror .meridian-peer-mark--seam:focus-visible {
   outline: 2px solid var(--color-review-added-ring);
   outline-offset: 2px;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-peer-mark--tick[data-peer-mark-deletion="true"]:focus-visible,
+.meridian-editor .ProseMirror .meridian-peer-mark--seam:focus-visible {
+  outline-color: var(--color-review-removed-ring);
 }
 
 /* Inline draft-review decorations — Track Changes for the manuscript.
@@ -608,8 +634,31 @@
   vertical-align: text-bottom;
 }
 
-.meridian-editor .ProseMirror [data-peer-mark-emphasized="true"] {
+.meridian-editor .ProseMirror .meridian-peer-mark--range[data-peer-mark-emphasized="true"] {
+  background: var(--color-review-added-emphasis);
+  box-shadow:
+    inset 0 -1px 0 0 var(--color-review-added-border),
+    0 0 0 3px var(--color-review-added-ring);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-peer-mark--range[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
+  background: var(--color-review-warning-tint);
+  box-shadow:
+    inset 0 -1px 0 0 var(--color-review-warning-border),
+    0 0 0 3px var(--color-review-warning-border);
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-added-ring);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-peer-mark--tick[data-peer-mark-deletion="true"][data-peer-mark-emphasized="true"],
+.meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-emphasized="true"] {
+  box-shadow: 0 0 0 3px var(--color-review-removed-ring);
 }
 
 .meridian-trail-row-emphasized {

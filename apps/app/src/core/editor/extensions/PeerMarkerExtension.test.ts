@@ -25,6 +25,7 @@ function addMarker(
   to = from,
   suffix = "",
   pureDeletionOffset: number | null = null,
+  writerImpact: { kind: "sweep" | "resurrection" } | null = null,
 ): void {
   const start = relativePositionForEditorIndex(editor, from);
   const end = relativePositionForEditorIndex(editor, to);
@@ -55,7 +56,7 @@ function addMarker(
         changeId: `${kind}-mark${suffix}`,
         kind: kind === "range" ? "modify" : "delete",
         navigation,
-        hasWriterImpact: false,
+        writerImpact,
         excerpt: null,
         pureDeletionOffset,
       },
@@ -159,6 +160,23 @@ describe("peer marker writer self-clear", () => {
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
     expect(editor.view.dom.querySelector(".meridian-peer-mark--range")?.textContent).toBe("ell");
     expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).not.toBeNull();
+  });
+
+  it("projects swept severity and deletion anatomy as semantic attributes", () => {
+    addMarker("range", 2, 5, "-swept", null, { kind: "sweep" });
+    addMarker("range", 1, 6, "-deletion", 2);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    expect(
+      editor.view.dom
+        .querySelector('[data-peer-mark="range-mark-swept"]')
+        ?.getAttribute("data-peer-mark-swept"),
+    ).toBe("true");
+    expect(
+      editor.view.dom
+        .querySelector('[data-peer-mark="range-mark-deletion"]')
+        ?.getAttribute("data-peer-mark-deletion"),
+    ).toBe("true");
   });
 
   it("emphasizes an addressed live marker without creating a second decoration", () => {

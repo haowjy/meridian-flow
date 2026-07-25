@@ -18,7 +18,7 @@ function encodedPosition(): string {
 
 function message(
   revision: number,
-  changes: Array<{ id: string; hasWriterImpact?: boolean }> = [{ id: "change-1" }],
+  changes: Array<{ id: string; writerImpact?: "sweep" | "resurrection" }> = [{ id: "change-1" }],
   overrides: Partial<ChangeEventWsMessage> = {},
 ): ChangeEventWsMessage {
   const position = encodedPosition();
@@ -29,7 +29,7 @@ function message(
     trailId: "trail-1",
     projectionRevision: revision,
     author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
-    changes: changes.map(({ id, hasWriterImpact }) => ({
+    changes: changes.map(({ id, writerImpact }) => ({
       admittedByUserId: null,
       changeId: id,
       kind: "modify",
@@ -39,7 +39,7 @@ function message(
         relEnd: position,
         targetBlockId: { clientID: 1, clock: 0 },
       },
-      hasWriterImpact: hasWriterImpact ?? false,
+      writerImpact: writerImpact ? { kind: writerImpact } : null,
       excerpt: id,
       pureDeletionOffset: null,
     })),
@@ -88,7 +88,7 @@ describe("SessionMarkerStore", () => {
   it("caps the session by evicting oldest ordinary markers before writer-impact markers", () => {
     let now = 0;
     const store = new SessionMarkerStore("me", () => now++);
-    store.replaceGroup(message(1, [{ id: "old-writer-impact", hasWriterImpact: true }]));
+    store.replaceGroup(message(1, [{ id: "old-writer-impact", writerImpact: "sweep" }]));
     for (let index = 0; index < SESSION_MARKER_CAP; index++) {
       store.replaceGroup(
         message(1, [{ id: `plain-${index}` }], {

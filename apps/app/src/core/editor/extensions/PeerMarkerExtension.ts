@@ -60,6 +60,7 @@ function interactiveAttributes(
   markerAgentName?: (threadId: string) => string | undefined,
 ): Record<string, string> {
   const label = markerLabel(marker, markerAgentName);
+  const deletion = marker.kind === "delete" || marker.pureDeletionOffset !== null;
   return {
     "data-peer-mark": marker.changeId,
     "data-peer-mark-label": label,
@@ -67,6 +68,8 @@ function interactiveAttributes(
     tabindex: "0",
     "aria-label": `${label}. Show change details.`,
     style: `--peer-mark-color: ${markerColor(marker)}`,
+    ...(deletion ? { "data-peer-mark-deletion": "true" } : {}),
+    ...(marker.writerImpact?.kind === "sweep" ? { "data-peer-mark-swept": "true" } : {}),
     ...(marker.changeId === emphasizedId ? { "data-peer-mark-emphasized": "true" } : {}),
   };
 }

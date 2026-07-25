@@ -37,7 +37,7 @@ function projectChange(
     admittedByUserId: change.admittedByUserId,
     kind: change.kind,
     navigation: change.navigation,
-    hasWriterImpact: change.writerImpact !== null,
+    writerImpact: change.writerImpact ? { kind: change.writerImpact.kind } : null,
     excerpt: text === null ? null : text.slice(0, 500),
     pureDeletionOffset:
       change.kind === "modify"
