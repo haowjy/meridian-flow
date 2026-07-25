@@ -85,9 +85,9 @@ msgstr ""
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr ""
 
-#. placeholder {0}: exploredDocuments.size
+#. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {explored # document} other {explored # documents}}"
+msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
@@ -695,6 +695,11 @@ msgstr ""
 msgid "Drafted"
 msgstr ""
 
+#. placeholder {0}: editedDocuments.size
+#: src/features/chat/thinking-digest.ts
+msgid "drafted {0}"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted file"
 msgstr ""
@@ -717,6 +722,11 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
+msgstr ""
+
+#. placeholder {0}: editedDocuments.size
+#: src/features/chat/thinking-digest.ts
+msgid "edited {0}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

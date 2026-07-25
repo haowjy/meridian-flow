@@ -38,7 +38,7 @@ function tool(toolName: string, input: ToolView["input"]): ToolView {
 
 describe("thinkingDigest", () => {
   it.each([
-    ["read", "Explored 1 document"],
+    ["read", "Read 1 document"],
     ["replace", "Edited 1 document"],
   ])("counts canonical %s targets once across path spellings", (command, expected) => {
     expect(
@@ -61,12 +61,13 @@ describe("thinkingDigest", () => {
         [
           tool("write", { command: "read", path: "manuscript://chapter-1" }),
           tool("write", { command: "replace", path: "manuscript://chapter-2" }),
+          tool("grep", { pattern: "dragon" }),
           tool("search", { query: "dragon" }),
           error,
         ],
         "draft",
       ),
-    ).toBe("Explored 1 document, drafted 1 document");
+    ).toBe("Read 1 document, drafted 1");
     expect(thinkingDigest([tool("search", { query: "dragon" }), error], "direct")).toBeNull();
   });
 });

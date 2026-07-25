@@ -85,10 +85,10 @@ msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr "{0, plural, one {edited # document} other {edited # documents}}"
 
-#. placeholder {0}: exploredDocuments.size
+#. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
-msgid "{0, plural, one {explored # document} other {explored # documents}}"
-msgstr "{0, plural, one {explored # document} other {explored # documents}}"
+msgid "{0, plural, one {read # document} other {read # documents}}"
+msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
@@ -695,6 +695,11 @@ msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
 msgid "Drafted"
 msgstr "Drafted"
 
+#. placeholder {0}: editedDocuments.size
+#: src/features/chat/thinking-digest.ts
+msgid "drafted {0}"
+msgstr "drafted {0}"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Drafted file"
 msgstr "Drafted file"
@@ -718,6 +723,11 @@ msgstr "Drop image to upload a figure"
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
 msgstr "Edited"
+
+#. placeholder {0}: editedDocuments.size
+#: src/features/chat/thinking-digest.ts
+msgid "edited {0}"
+msgstr "edited {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {count} chapters"
