@@ -1,4 +1,4 @@
-import { toDocHandle } from "@meridian/agent-edit";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -7,6 +7,7 @@ import {
   createBranchAgentEditJournal,
   createBranchPendingJournalEntries,
 } from "./branch-agent-edit.js";
+import { enlistResponseParticipant } from "./response-transaction.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 
@@ -168,7 +169,7 @@ describe("branch agent-edit journal appendBatch", () => {
   });
 
   it("stages the planning watermark rather than resampling branch history at persistence", async () => {
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     const branchJournal = createBranchAgentEditJournal({
       threadId: THREAD_ID,
       liveJournal: createInMemoryJournal(),
@@ -333,7 +334,7 @@ describe("branch agent-edit journal appendBatch", () => {
   });
 
   it("pins branch reversal authority from planning through persistence", async () => {
-    const pending = createBranchPendingJournalEntries();
+    const pending = createBranchPendingJournalEntries(enlistResponseParticipant);
     const liveJournal = createInMemoryJournal();
     const livePersistUndo = vi.spyOn(liveJournal, "persistUndo");
     const branchDoc = new Y.Doc({ gc: false });

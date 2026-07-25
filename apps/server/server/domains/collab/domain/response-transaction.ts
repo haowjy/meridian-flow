@@ -1,9 +1,5 @@
 /** Coordinates response-scoped process-local state with the database transaction outcome. */
 import { AsyncLocalStorage } from "node:async_hooks";
-import {
-  deferUntilDrizzleCommit,
-  deferUntilDrizzleRollback,
-} from "../../../shared/drizzle-transaction.js";
 
 export interface ResponseCommitParticipant {
   commit(): void | Promise<void>;
@@ -16,6 +12,16 @@ type ResponseTransactionContext = {
   id: string;
   participants: ResponseCommitParticipant[];
   settled: boolean;
+};
+
+export type ResponseTransactionSettlement = {
+  deferUntilCommit(callback: () => void | Promise<void>): boolean;
+  deferUntilRollback(callback: () => void | Promise<void>): boolean;
+};
+
+const immediateSettlement: ResponseTransactionSettlement = {
+  deferUntilCommit: () => false,
+  deferUntilRollback: () => false,
 };
 
 const responseTransactionStorage = new AsyncLocalStorage<ResponseTransactionContext>();
@@ -37,6 +43,7 @@ export function enlistResponseParticipant(participant: ResponseCommitParticipant
 export async function runResponseTransaction<T>(
   atomic: (operation: () => Promise<T>) => Promise<T>,
   operation: () => Promise<T>,
+  settlement: ResponseTransactionSettlement = immediateSettlement,
 ): Promise<T> {
   const active = responseTransactionStorage.getStore();
   if (active) return operation();
@@ -88,8 +95,8 @@ export async function runResponseTransaction<T>(
     let commitDeferred = false;
     const result = await responseTransactionStorage.run(transaction, () =>
       atomic(async () => {
-        commitDeferred = deferUntilDrizzleCommit(commitAll);
-        const abortDeferred = deferUntilDrizzleRollback(abortAll);
+        commitDeferred = settlement.deferUntilCommit(commitAll);
+        const abortDeferred = settlement.deferUntilRollback(abortAll);
         if (commitDeferred !== abortDeferred) {
           throw new Error("Drizzle transaction exposes only one response settlement direction");
         }

@@ -1,4 +1,8 @@
-import type { ReversalRecord, ReversalStore, UpdateJournal } from "@meridian/agent-edit";
+import type {
+  ReversalRecord,
+  ReversalStore,
+  UpdateJournal,
+} from "@meridian/agent-edit/integration";
 import { expect } from "vitest";
 import * as Y from "yjs";
 

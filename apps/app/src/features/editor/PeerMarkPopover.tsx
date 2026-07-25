@@ -53,13 +53,13 @@ export function PeerMarkPopover({
     enabled: Boolean(agentAuthor),
     staleTime: 30_000,
   });
-  const change = useMemo(
-    () =>
-      detail.data
-        ?.find((document) => document.documentId === marker?.group.documentId)
-        ?.changes?.find((candidate) => candidate.changeId === marker?.changeId) ?? null,
-    [detail.data, marker],
-  );
+  const change = useMemo(() => {
+    const document = detail.data?.find(
+      (candidate) => candidate.documentId === marker?.group.documentId,
+    );
+    if (!document || "unavailable" in document) return null;
+    return document.changes.find((candidate) => candidate.changeId === marker?.changeId) ?? null;
+  }, [detail.data, marker]);
   const recovery = useTrailForwardAction({
     threadId: agentAuthor?.threadId ?? "",
     trailId: marker?.group.trailId ?? "",

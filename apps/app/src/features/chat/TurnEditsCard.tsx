@@ -200,25 +200,31 @@ export function ChangeViewDetail({
     );
   }
   return detail.data?.map((document) => {
-    const writerTouchingChanges = document.changes?.filter(
+    if ("unavailable" in document) {
+      return (
+        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
+          <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
+        </p>
+      );
+    }
+    const writerTouchingChanges = document.changes.filter(
       (change) => change.writerProtection != null,
     );
-    const visibleChanges =
-      reveal && document.changes
-        ? [
-            ...(writerTouchingChanges ?? []),
-            ...document.changes.filter(
-              (change) =>
-                change.changeId === reveal.changeId &&
-                !writerTouchingChanges?.some((candidate) => candidate.changeId === change.changeId),
-            ),
-          ]
-        : writerTouchingChanges;
-    if (!visibleChanges || visibleChanges.length === 0) return null;
+    const visibleChanges = reveal
+      ? [
+          ...writerTouchingChanges,
+          ...document.changes.filter(
+            (change) =>
+              change.changeId === reveal.changeId &&
+              !writerTouchingChanges.some((candidate) => candidate.changeId === change.changeId),
+          ),
+        ]
+      : writerTouchingChanges;
+    if (visibleChanges.length === 0) return null;
 
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
-        {document.unavailable ? (
+        {document.anchorState === "deleted" ? (
           <p className="px-3 py-1 text-caption text-ink-muted">
             <Trans>
               This chapter is no longer available. Copy any saved text you want to keep.
@@ -231,7 +237,7 @@ export function ChangeViewDetail({
           documentId={document.documentId}
           changes={visibleChanges}
           navigateToChange={navigateToChange}
-          anchorUnavailable={document.unavailable}
+          anchorUnavailable={document.anchorState === "deleted"}
           reveal={reveal}
         />
       </section>

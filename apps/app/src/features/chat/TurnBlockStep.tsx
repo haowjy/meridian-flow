@@ -51,7 +51,7 @@ function iconForBlock(blockType: string): LucideIcon {
 
 function stepBody(block: Block): string {
   const raw = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
-  if (raw) return raw.length > 220 ? `${raw.slice(0, 219).trimEnd()}…` : raw;
+  if (raw) return raw;
   if (block.content && typeof block.content === "object" && !Array.isArray(block.content)) {
     const summary = (block.content as Record<string, unknown>).summary;
     if (typeof summary === "string") return summary;

@@ -11,13 +11,15 @@ import type {
 
 export interface BlockSnapshot {
   hash: string;
-  clientID?: number;
-  clock?: number;
+  clientID: number;
+  clock: number;
   /** Hash-independent canonical rendering used by provenance classification. */
-  renderedContent?: string;
+  renderedContent: string;
+  /** Canonical hashless block body. */
+  body: string;
   serialized: string;
   /** Visible prose ancestry; identities come from CRDT items, never text bytes. */
-  lineage?: readonly ContentLineage[];
+  lineage: readonly ContentLineage[];
 }
 
 export interface SnapshotChangeSet {
@@ -93,6 +95,7 @@ export function snapshotBlocks(
     hash: hashes[index],
     ...model.getCanonicalBlockIdentity(block),
     renderedContent: `${model.getBlockType(block)}|${bodies[index]}`,
+    body: bodies[index],
     serialized: serialized[index],
     lineage: model.getVisibleContentLineage(block),
   }));
@@ -224,13 +227,8 @@ function blockMatchScore(
   after: BlockSnapshot | undefined,
 ): number {
   if (!before || !after) return 0;
-  if (blockBody(before.serialized) !== blockBody(after.serialized)) return 0;
+  if (before.body !== after.body) return 0;
   return before.hash === after.hash ? 2 : 1;
-}
-
-function blockBody(serialized: string): string {
-  const separator = serialized.indexOf("|");
-  return separator < 0 ? serialized : serialized.slice(separator + 1);
 }
 
 /** Return stable top-level block hashes whose content or presence differs between two docs. */
@@ -318,7 +316,7 @@ export function applyConcurrentUpdates(
 }
 
 function visibleLineage(blocks: readonly BlockSnapshot[]): ContentLineage[] {
-  return blocks.flatMap((block) => block.lineage ?? []);
+  return blocks.flatMap((block) => block.lineage);
 }
 
 function captureNewLineage(
@@ -430,7 +428,7 @@ export function renderConcurrentRuns(input: {
     for (const hash of deletionHashes) {
       const deleted = input.deletedBodies?.get(hash);
       if (!deleted) continue;
-      const body = blockBody(deleted.block.serialized).replace(/^\n/, "");
+      const body = deleted.block.body.replace(/^\n/, "");
       run.tombstones.push({ hash, capturedBody: body });
       run.origin = mergeOrigin(run.origin, deleted.origin);
     }

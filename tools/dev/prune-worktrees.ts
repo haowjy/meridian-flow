@@ -12,6 +12,7 @@ import {
   executeCleanupPlan,
   isPrNumberTarget,
   type MeridianWorkItem,
+  parseGitWorktreePorcelain,
   parseMeridianWorkList,
   parseMeridianWorkShow,
   parsePrNumber,
@@ -19,6 +20,13 @@ import {
   resolveTarget,
   type TargetReference,
 } from "./lib/worktree-cleanup";
+import {
+  type CleanupEligibility,
+  decideCleanupEligibility,
+  type MergedPullRequest,
+  type PullRequestDiscovery,
+  validateCleanupEligibility,
+} from "./lib/worktree-cleanup-eligibility";
 
 interface CliOptions {
   readonly mode: "auto" | "target" | "help";
@@ -97,6 +105,14 @@ function printPlan(plan: CleanupPlan): void {
   for (const target of plan.targets) {
     console.log(`\n- worktree: ${target.worktree.path}`);
     console.log(`  branch:   ${target.branch}`);
+    console.log(`  commit:   ${target.eligibility.plannedOid}`);
+    console.log(
+      `  evidence: ${
+        target.eligibility.kind === "ancestry"
+          ? `ancestor of ${target.eligibility.baseBranch}`
+          : `merged PR #${target.eligibility.pullRequestNumber}`
+      }`,
+    );
     console.log(`  work:     ${target.workItem?.id ?? "(none linked)"}`);
     console.log("  actions:");
     for (const action of target.actions) console.log(`    - ${formatCommand(action)}`);
@@ -157,18 +173,161 @@ function collectMeridianWorkItems(cwd: string): MeridianWorkItem[] {
   return workItems;
 }
 
+// The trunk this repo integrates into. Detected from the remote's default
+// branch (`origin/HEAD`) so cleanup tracks a renamed trunk instead of a
+// hardcoded name; falls back to `main` when the symbolic ref isn't set.
+function resolveBaseBranch(cwd: string): string {
+  try {
+    const ref = runText(
+      "git",
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      cwd,
+    );
+    const slash = ref.indexOf("/");
+    if (slash >= 0 && slash < ref.length - 1) return ref.slice(slash + 1);
+  } catch {
+    // origin/HEAD unset (e.g. no remote); fall through to the default.
+  }
+  return "main";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseMergedPullRequests(output: string): MergedPullRequest[] {
+  const parsed: unknown = JSON.parse(output);
+  if (!Array.isArray(parsed)) throw new Error("gh returned a non-array PR response");
+  return parsed.map((value) => {
+    if (!isRecord(value)) throw new Error("gh returned an invalid PR record");
+    const owner = value.headRepositoryOwner;
+    const ownerLogin =
+      typeof owner === "string"
+        ? owner
+        : isRecord(owner) && typeof owner.login === "string"
+          ? owner.login
+          : undefined;
+    if (
+      typeof value.number !== "number" ||
+      typeof value.baseRefName !== "string" ||
+      typeof value.headRefName !== "string" ||
+      typeof value.headRefOid !== "string" ||
+      !ownerLogin
+    ) {
+      throw new Error("gh returned a PR record with missing eligibility fields");
+    }
+    return {
+      number: value.number,
+      baseRefName: value.baseRefName,
+      headRefName: value.headRefName,
+      headRefOid: value.headRefOid,
+      headRepositoryOwner: ownerLogin,
+    };
+  });
+}
+
+function discoverMergedPullRequests(branch: string, cwd: string): PullRequestDiscovery {
+  try {
+    const output = runText(
+      "gh",
+      [
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "merged",
+        "--limit",
+        "1000",
+        "--json",
+        "number,baseRefName,headRefName,headRefOid,headRepositoryOwner",
+      ],
+      cwd,
+    );
+    return { ok: true, pullRequests: parseMergedPullRequests(output) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function resolveRepositoryOwner(cwd: string): string {
+  return runText("gh", ["repo", "view", "--json", "owner", "--jq", ".owner.login"], cwd);
+}
+
+function checkAncestry(oid: string, baseBranch: string, cwd: string): boolean {
+  const result = spawnSync("git", ["merge-base", "--is-ancestor", oid, baseBranch], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  throw new Error(
+    result.stderr.trim() ||
+      result.error?.message ||
+      `Could not verify whether ${oid} is an ancestor of '${baseBranch}'.`,
+  );
+}
+
+function collectCleanupEligibility(
+  gitWorktreePorcelain: string,
+  baseBranch: string,
+  cwd: string,
+): Map<string, CleanupEligibility> {
+  const eligibility = new Map<string, CleanupEligibility>();
+  let repositoryOwner: string | undefined;
+  let repositoryOwnerError: string | undefined;
+
+  for (const worktree of parseGitWorktreePorcelain(gitWorktreePorcelain)) {
+    const branch = worktree.branch;
+    if (!branch || branch === baseBranch) continue;
+
+    let plannedOid: string;
+    try {
+      plannedOid = runText("git", ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`], cwd);
+    } catch {
+      continue;
+    }
+
+    const isAncestor = checkAncestry(plannedOid, baseBranch, cwd);
+    if (!isAncestor && repositoryOwner === undefined && repositoryOwnerError === undefined) {
+      try {
+        repositoryOwner = resolveRepositoryOwner(cwd);
+      } catch (error) {
+        repositoryOwnerError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    const pullRequestDiscovery: PullRequestDiscovery = isAncestor
+      ? { ok: true, pullRequests: [] }
+      : repositoryOwnerError
+        ? { ok: false, error: repositoryOwnerError }
+        : discoverMergedPullRequests(branch, cwd);
+    const decision = decideCleanupEligibility({
+      branch,
+      plannedOid,
+      baseBranch,
+      repositoryOwner: repositoryOwner ?? "",
+      isAncestor,
+      pullRequestDiscovery,
+    });
+    if (decision.eligible) eligibility.set(branch, decision.evidence);
+  }
+  return eligibility;
+}
+
 function buildPlan(options: CliOptions, cwd: string): CleanupPlan {
   const currentWorktreePath = runText("git", ["rev-parse", "--show-toplevel"], cwd);
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
-  const mergedBranches = runText(
-    "git",
-    ["branch", "--format=%(refname:short)", "--merged", "main"],
-    cwd,
-  );
+  const baseBranch = resolveBaseBranch(cwd);
+  const eligibilityByBranch = collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd);
   const meridianWorkItems = collectMeridianWorkItems(cwd);
   const context = buildCleanupContext({
     gitWorktreePorcelain,
-    mergedBranches,
+    eligibilityByBranch,
+    baseBranch,
     meridianWorkItems,
     currentWorktreePath,
   });
@@ -198,12 +357,36 @@ function runAction(action: CleanupAction): { ok: boolean; output: string } {
   return { ok: result.status === 0, output: actionOutput };
 }
 
+function revalidateTarget(target: CleanupPlan["targets"][number]) {
+  const primaryCwd =
+    target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
+  let currentOid: string | undefined;
+  try {
+    currentOid = runText(
+      "git",
+      ["rev-parse", "--verify", `refs/heads/${target.branch}^{commit}`],
+      primaryCwd,
+    );
+  } catch {
+    currentOid = undefined;
+  }
+  const isAncestor =
+    target.eligibility.kind === "ancestry"
+      ? checkAncestry(target.eligibility.plannedOid, target.eligibility.baseBranch, primaryCwd)
+      : undefined;
+  return validateCleanupEligibility({ evidence: target.eligibility, currentOid, isAncestor });
+}
+
 async function executePlan(plan: CleanupPlan): Promise<number> {
-  const result = await executeCleanupPlan(plan, (action) => runAction(action), {
+  const result = await executeCleanupPlan(plan, revalidateTarget, (action) => runAction(action), {
     onTargetStart: (target) => console.log(`\nCleaning ${target.worktree.path} (${target.branch})`),
     onActionStart: (action) => console.log(`▸ ${formatCommand(action)}`),
   });
   if (result.ok) return 0;
+  if (result.eligibilityFailure) {
+    console.error(`✗ eligibility changed: ${result.eligibilityFailure}`);
+    return 1;
+  }
   console.error(`✗ failed: ${result.failedAction?.kind ?? "unknown action"}`);
   return 1;
 }

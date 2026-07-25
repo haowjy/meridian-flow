@@ -17,7 +17,7 @@ import {
   type UpdateMeta,
   type WriteOutcome,
   type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";
@@ -32,8 +32,8 @@ import type {
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
-} from "../index.js";
-import { type AuthorshipSource, createDocumentMutationPolicy } from "./document-mutation-policy.js";
+} from "../contracts.js";
+import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -177,30 +177,17 @@ export function createMarkdownDocumentEngine(
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
     const meta = deps.metaForOrigin(origin);
     let seq = 0;
-    const unsupported = async (): Promise<never> => {
-      throw new Error("Document mutation policy dependency is unavailable for markdown authorship");
-    };
-    await createDocumentMutationPolicy({
-      readMutationTarget: () => ({ documentId, generation: 0n, doc: liveDoc }),
-      admitImmediate: async ({ update: admittedUpdate }) => {
-        seq = await deps.journal.append(documentId, admittedUpdate, meta);
-        Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
-        return { sequence: BigInt(seq), joined: 0 };
+    await admitFreshAuthorship(
+      {
+        readMutationTarget: () => ({ documentId, generation: 0n, doc: liveDoc }),
+        admitImmediate: async ({ update: admittedUpdate }) => {
+          seq = await deps.journal.append(documentId, admittedUpdate, meta);
+          Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+          return { sequence: BigInt(seq), joined: 0 };
+        },
       },
-      readFrozenReplicationSource: unsupported,
-      readCurrentRevision: unsupported,
-      lowerCertifiedMutation: unsupported,
-      loadCheckpoint: unsupported,
-      unresolvedSettlements: unsupported,
-      replaceGeneration: unsupported,
-      disconnectGeneration: unsupported,
-      stagePush: unsupported,
-      completePush: unsupported,
-    }).mutate({
-      kind: "attributedFreshAuthorship",
-      source: authorshipSource(origin),
-      update,
-    });
+      { source: authorshipSource(origin), update },
+    );
     return Ok({
       documentId,
       markdown: serializeForSchema(draft, schemaType),
@@ -464,8 +451,18 @@ export function syncErrorMessage(error: SyncError): string {
   }
 }
 
+export class DocumentSyncError extends Error {
+  readonly code: SyncError["code"];
+
+  constructor(readonly syncError: SyncError) {
+    super(syncErrorMessage(syncError));
+    this.name = "DocumentSyncError";
+    this.code = syncError.code;
+  }
+}
+
 function throwSyncError(error: SyncError): never {
-  throw new Error(syncErrorMessage(error));
+  throw new DocumentSyncError(error);
 }
 
 function documentWriteResult(

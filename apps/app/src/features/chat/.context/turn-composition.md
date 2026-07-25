@@ -172,12 +172,24 @@ AssistantTurn.tsx
               → CustomBlockRenderer (interrupts)
 ```
 
-`tool-renderers.tsx` is the registry for tool-name-specific presentation. Unknown
-tools fall back to the static default renderer; neutral tools such as `read`,
-`write`, `edit`, `search`, and `bash` get explicit titles/icons and may expose
-`streamOrOutput` or result rows without implying any external execution
-substrate. Adding a renderer is a presentation change only: append to the
-`RENDERERS` map and keep protocol pairing in `group-delivery-segments.ts`.
+`tool-renderers.tsx` is the registry for tool-name-specific presentation.
+Registry keys must be real runtime tool names from the server tool registry.
+The current runtime surface is `write`, `ls`, `grep`, `invoke`, `ask_user`,
+`spawn`, and `return_result`; `ask_user` renders through component cards, while
+`spawn` and `return_result` intentionally use the humanized default renderer.
+
+Three conventions govern all renderers:
+
+- Unknown tools show a humanized name and optional path, never raw arguments.
+- Registered renderers use `toolVerb()` for complete/active tense.
+- Expansions render curated result rows, stream tails, or plain output rather
+  than raw JSON.
+
+Neutral tools (`write`, `ls`, `grep`, `invoke`) get explicit titles/icons and
+may expose streamed or settled output without implying an external execution
+substrate. Adding a renderer is a presentation change only: append the real
+runtime tool name to the `RENDERERS` map and keep protocol pairing in
+`group-delivery-segments.ts`.
 
 Key files:
 
@@ -188,7 +200,7 @@ Key files:
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle state |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts pass through `onRespondToInterrupt` |
-| `tool-renderers.tsx` | Tool renderer registry; unknown tools use the default renderer, known neutral tools can show streamed or settled output |
+| `tool-renderers.tsx` | Tool renderer registry; unknown tools show a humanized name only, registered tools use `toolVerb()` and curated expansions |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `block-render-key.ts` | Positional render keys — `turnId::sequence` |

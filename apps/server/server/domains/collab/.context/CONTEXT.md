@@ -9,7 +9,7 @@ and WebSocket callers.
 | Concept | Canonical name | Code surface |
 |---|---|---|
 | Durable `document_yjs_heads` row and its fenced journal prefix | **document authority head** | `DocumentAuthorityHead`, `DocumentAuthorityId`, `document_yjs_heads` |
-| Capability that validates and admits content-bearing mutations | **document mutation policy** | `DocumentMutationPolicy`, `createDocumentMutationPolicy`, `domain/document-mutation-policy.ts` |
+| Operation-specific capabilities that validate and admit content-bearing mutations | **document mutation policy** | `admitFreshAuthorship`, `admitCertifiedMutation`, `replicateFrozenIdentity`, `replaceAuthorityGeneration` |
 | Mutable `Y.Doc` held by a loaded Hocuspocus room | **live document** | `liveDocument` / `liveDoc` in room and Hocuspocus surfaces |
 
 “Document authority” is reserved for the durable head and its identity/generation.
@@ -22,6 +22,7 @@ state is a live document.
 | Document mutation policy | `domain/document-mutation-policy.ts` |
 | Durable authority heads and generation fencing | `domain/ports/document-authority-heads.ts`, `adapters/drizzle-document-authority-head.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
+| Document projection and activity read-model writes | `domain/ports/document-projection-effects.ts`, `adapters/drizzle-document-activity.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
@@ -31,15 +32,20 @@ state is a live document.
 | Push materialization | `domain/branch-push-plan.ts` |
 | Immutable-base Manual Apply policy | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
-| Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
+| Durable push execution | `domain/branch-push-candidates.ts`, `domain/branch-push.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
+| Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
 | Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
-| Post-apply live-room change events | `domain/ports/change-event-delivery.ts`, `adapters/hocuspocus-change-event-delivery.ts` |
+| Session-local change-event projection + delivery | `domain/change-event-projection.ts`, `domain/branch-push-transition.ts`, `adapters/hocuspocus-change-event-delivery.ts` |
 | Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
+| Yjs WebSocket orchestration | `lib/yjs-ws-handler.ts` |
 | Offline late reconciliation | `domain/offline-reconciliation.ts` |
-| Model-context notice production + delivery | `composition.ts`, `domains/notices/` |
+| Review/effective-read/response/reversal application services | `domain/work-draft-review-service.ts`, `domain/effective-document-reader.ts`, `domain/response-write-finalizer.ts`, `domain/turn-reversal-service.ts` |
+| Thread-peer runtime ownership and LRU | `domain/thread-peer-core-pool.ts` |
+| Thread notice production | `domain/reversal-notices.ts`, `domains/notices/` |
+| Production/in-memory assembly | `composition.ts`, `collab-facade.ts`, `adapters/in-memory/composition.ts` |
 
 ## Write codec and schema coherence
 
@@ -50,6 +56,26 @@ resolver injected in `composition.ts`) before every parse or serialization:
 verbatim (`language` = filetype), read back without fences. Checkpoint restore,
 branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
+
+**Durable whole-document projections route through this engine.** Push
+completion (`completeStagedPush` → `deriveDurableProjection`) and trail forward
+actions inject `DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
+a `Pick<MarkdownDocumentEngine, "serializeDocument">` narrow port), never a
+schema-blind `{model, codec}` bag. The old bag serialized code documents through
+the markdown codec, emitting fenced output into `documents.markdown_projection`;
+code pushes now project raw verbatim text (the single `code_block` `textContent`).
+`PreparedPushCommit` no longer carries `markdownProjection`/`liveState`/
+`liveStateVector` — projection is derived at settlement, not prepared. Re-adding
+prepared projection fields or a `{model, codec}` bag re-opens the fence-corruption
+class for the projection column.
+
+**Projection effects preserve caller-specific ordering.** Ordinary durable
+writes start document activity and markdown projection together and settle both
+before reporting the first failure. Push completion instead runs projection,
+all-thread activity, explicit Work activity, active-document project lookup, and
+project activity in that order. The Drizzle adapter resolves the ambient
+transaction for every port operation so a completion retry rolls these
+read-model writes back with journal, lineage, mutation, and outbox writes.
 
 Filetype resolution uses the contracts disposition registry. Missing or
 unregistered persisted values deliberately use the document schema; a registered
@@ -105,6 +131,16 @@ rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regres
 test; the prior redundant checkpoint surfaced only in a live loaded-room probe, not
 `pnpm check`.
 
+The Yjs route owns only upgrade authentication, CrossWS peer adaptation, and
+gateway delegation. `lib/yjs-ws-handler.ts` owns connection state, admission,
+Hocuspocus lifecycle hooks, and graceful drain; transport changes must preserve
+the admission ordering above and keep `beforeSync` awaited. The gateway is a
+synchronous process singleton: authenticated upgrade captures it in the peer
+context, and `open`/`message`/`close`/`error` must dispatch through that
+instance without a lookup `await`. Startup retains that same instance so
+shutdown calls `drain()` before its first await; `drain()` closes admission
+synchronously before waiting for persistence.
+
 ## Live manifest membership
 
 The project manifest's `documents` Y.Map is the membership authority used by the
@@ -148,6 +184,16 @@ evidence emits degradation telemetry rather than guessing from update bytes.
 
 ## Undo guard and push safety
 
+`reverseThreadContext` is the route-facing reversal command. It owns the choice
+between context-document and turn-lineage reversal, write-handle parsing,
+projection refresh, and aggregate result status; the HTTP route only authenticates,
+validates its transport body, invokes the command, and serializes the result.
+For compatibility, a top-level array, primitive, or `null` body is normalized
+to `{}` before validation and returns `400 direction must be undo or redo`.
+`TurnReversalServiceDeps` is total: each composition supplies its dependencies
+or the declared unsupported stubs; do not restore optional dependencies that
+fail only when a command reaches them.
+
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
@@ -185,30 +231,45 @@ journal-watermark fence above.
 history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
   branch-id order, then live coordinator locks in document-id order.
-- **One push commit seam**: whole, selective, and companion pushes execute via
-  `branch-push-executor.ts`; immutable-base conflict preparation lives in
-  `branch-push-preparation.ts`, trail and notice projection live in
-  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders
-  capture through fenced completion. A durable commit requires its trail bundle.
+- **One push commit seam**: whole, selective, and companion builders produce a
+  `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
+  Candidate data carries whole-vs-selected materialization, conflict/sweep policy,
+  and the shared receipt. A companion selection with no matching
+  active content rows is a builder outcome mapped to `noop` or `already_pushed`
+  before cardinality validation; non-empty partial matches remain conflicts.
+  Immutable-base conflict preparation lives in
+  `branch-push-preparation.ts`, trail projection lives in
+  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders capture
+  through fenced completion. The transition projects the aggregate writer's exact
+  committed replace-set and delivers it to connected bare-document rooms only
+  after the completion fence reports applied/already-applied. Delivery is a
+  session-local hint: it is not queued or replayed, and a vanished room cannot
+  fail an otherwise durable push. A durable commit requires its trail bundle. Review
+  reversal is a separately composed
+  `branch-review-operations.ts` service.
+  Projection failure is classified: only the canonical `DocumentSyncError` with
+  `code: "corrupt_state"` (a registered non-tracked filetype on a tracked
+  journal) permanently blocks live settlement via `PendingSettlementStore.block`;
+  transient serializer failures propagate but leave the settlement retryable.
+  Do not block on every projection throw.
 - **One trail write seam**: recording and reconciliation delegate aggregate
-  mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
-  reconciliation do not duplicate aggregate SQL.
-- **Committed projection delivery**: aggregate recording returns the persisted
-  post-fold replace-set with its durable occurrence revision. The push transition
-  may deliver it only after `completeUnderFence` reports applied/already-applied.
-  Message authorship comes from the trail shell owner. Each projected change,
-  rather than the cumulative message, carries the admitting user resolved from
-  its surviving `push_lineage` row inside the aggregate transaction; missing
-  lineage is explicitly `null`.
+  mutation to `drizzle-change-trail-aggregate.ts`. It is also the sole interpreter
+  of `TrailContributionReplacement`; settlement carries the replacement opaquely.
+  Each replacement carries its durable per-owner classifications and document-title
+  context. Never recover that context from surviving aggregate rows: an intervening
+  fold can remove every provisional row before final classification must restore the
+  push contribution. Dispatch, work claiming, and reconciliation do not duplicate
+  aggregate SQL.
+- **Trail detail authorization precedes detail materialization**: the reader
+  resolves each occurrence to `available`, `deleted`, or denied before selecting
+  manuscript-bearing title/prose. Denied occurrences disappear; authorized
+  deleted anchors retain evidence under an explicit `anchorState`. Forward
+  actions require an available anchor before loading evidence and hold the
+  document, source, work, and project authorization rows locked across guarded
+  live apply and journal finalization.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
-- **Replacement projection**: one journal row that replaces a block, or exactly
-  one delete row followed immediately by exactly one insert row at the same
-  block ordinal in one push, is one `modify` change anchored to the inserted
-  block. This is structural Yjs/journal evidence, never text similarity;
-  non-adjacent, multi-delete, and multi-insert effects remain independent
-  changes. The removed body remains the writer-protection payload.
 - **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.
@@ -216,9 +277,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   rejected intents replan from current live state. Proven anchor loss settles
   `anchor_unavailable`; three live-state collisions settle the distinct
   `retry_exhausted` outcome. This same state machine recovers a crash between intent
-  commit, live apply, and journal finalization without bypassing the guard. Captured
-  bodies remain readable when the live document is unavailable; both terminal
-  outcomes degrade to the client Copy fallback.
+  commit, live apply, and journal finalization without bypassing the guard. After
+  durable ownership authorization, captured bodies remain readable when the live
+  document is unavailable; both terminal outcomes degrade to the client Copy fallback.
+  The markdown projection is serialized from a scratch `Y.Doc` the action applies
+  the committed update to, before mutating the shared live document — never from the
+  live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and
@@ -261,23 +325,25 @@ history is preserved for attribution, echo, and undo dependency checking.
   a history-sized Yjs snapshot.
 - **Push settlement state**: the outbox stores binary `lock_cut_update` and
   `push_update`, validated trail JSON, fenced ownership fields, and typed
-  pending/blocked/completed state. Exact post-cut Yjs admissions live in the
-  normalized `branch_push_outbox_updates` relation; admission association and
-  `join_version` advancement share the document mutation transaction. Cold reads
-  reconstruct durable provenance for the final pre-push document and feed its
-  visible occurrences to the shared pointwise destructive-effect classifier.
+  pending/blocked/completed state. `PendingSettlementStore` is the required
+  persistence authority for settlement, claims, failure backoff, blocking, trail
+  refinement, and fenced completion. Exact post-cut Yjs admissions live in the
+  normalized `branch_push_outbox_updates` relation. Journal and staged-push
+  admission both call the single `joinAdmissionWithinTx` writer inside their
+  document-mutation transaction; source identity and completing-push exclusion
+  are parameters, while join-version advancement follows one SQL path. Cold
+  reads reconstruct durable provenance for the final pre-push document and feed
+  its visible occurrences to the shared pointwise destructive-effect classifier.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
   Swept trail details retain the normalized final-pre-push target ranges and exact
-  final-pre-push body. Settlement carries a typed refinement outcome: final
-  destructive classifications demote provisional sweep metadata while retaining
-  ordinary edit history; a genuinely empty contribution explicitly replaces that
-  push with an empty set. Same joined authority refines the existing aggregate
-  version; only journal or staged-push authority joined after the durable commit
-  publishes another trail version.
-  A surviving textblock whose non-empty body becomes empty projects as a deletion
-  at that block's boundary, not as a zero-width modification range.
+  final-pre-push body. Settlement refines a complete provisional push trail in its
+  existing aggregate version; only journal or staged-push authority joined after
+  the durable commit publishes another trail version. If that admission's aggregate
+  fold cancels the provisional row, the next classification restores the push
+  contribution from the replacement's durable owner/title context. A complete empty
+  classification removes that push's provisional changes in the same version.
 - **Settlement verification stack**: the shared killed-process oracle in
   `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
   Fixtures run a warm control, stop an identical subject at the durable commit
@@ -304,8 +370,8 @@ history is preserved for attribution, echo, and undo dependency checking.
   `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction
   context) to carry response-transaction enrollment through arbitrary call depth.
   Deep code calls `enlistResponseParticipant()` without explicit parameters;
-  settlement is bound to the real DB outcome via `deferUntilDrizzleCommit` /
-  `deferUntilDrizzleRollback`.
+  composition binds settlement to the real DB outcome through an injected
+  commit/rollback deferral capability.
 - **Participant settlement contract**: enrolled `ResponseCommitParticipant`s
   expose `commit()`, `abort()`, and optional best-effort
   `onCommitFailure(cause)`. Commit runs in enrollment order after DB commit;

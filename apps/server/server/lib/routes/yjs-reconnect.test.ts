@@ -1,13 +1,13 @@
 /** Real-provider regression coverage for reconnect writer admission. */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { Server } from "@hocuspocus/server";
-import type { UpdateJournal } from "@meridian/agent-edit";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
-import { admitWriterSync } from "../../routes/ws/yjs.js";
+import { admitWriterSync } from "../yjs-ws-handler.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 

@@ -4,7 +4,7 @@ import {
   getBlockItemId,
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import {
   type CanonicalBlockIdentityV1,
   type ChangeTrailDocumentDetailV1,

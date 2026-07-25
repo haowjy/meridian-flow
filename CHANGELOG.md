@@ -2,15 +2,159 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: completed AI edits now appear as session-local
+  insertion, modification, and deletion marks in every open document peer;
+  their shared popover restores the change or opens its originating turn.
+- `apps/app`, `apps/server`, `packages/agent-edit`: change trails hide
+  pure-generative rows while retaining writer-touching changes, and agents can
+  inspect their settled turn effect with `write(command: "diff")`; auto-applied
+  live updates retain that same authoring turn attribution.
 - `apps/app`: Restore and Delete-again now share one query-backed recovery
   command, so editor marks and mounted trail rows converge on durable status.
 - `apps/app`: draft chips, dock rows, and write-mode confirmation now project
   from one canonical pending-review collection.
 - `apps/app`: draft Apply, Discard, Undo, and bulk commands now share one
   synchronous session lock and typed outcome policy.
-B- `packages/agent-edit`, `apps/server`: the model-facing write contract now
+- `apps/server`: Yjs WebSocket routes now delegate collaboration lifecycle,
+  writer admission, reconnect reconciliation, and graceful drain to one gateway.
+- `apps/server`: thread context reversal routes now validate and delegate one
+  facade command across live-turn lineage and context-document undo/redo.
+
+- `apps/server`: collab composition now assembles required review, response,
+  reversal, effective-read, projection, and thread-peer services from explicit
+  production or in-memory adapters instead of hiding feature fallbacks in one
+  facade closure.
+- `apps/server`: ordinary collab writes retain independent activity/projection
+  settlement, while completed branch pushes keep projection and activity inside
+  the fenced settlement transaction.
+- `apps/server`: whole, selective, and companion branch pushes now share one
+  candidate-batch pipeline and required persistence ports without changing
+  selective error identity, empty companion results, or whole-only notice
+  requirements.
+- `apps/server`: final branch-push classification now restores trail
+  contributions that provisional aggregate folding had cancelled away.
+- `apps/server`: branch pushes and trail actions now use the filetype-aware
+  document projection engine; code files persist raw text and unsupported
+  filetypes block settlement instead of storing markdown-shaped projections.
+- `apps/server`, `packages/database`: the PostgreSQL gate now runs every
+  registered DB contract, including branch-push projection settlement, instead
+  of silently skipping actionable suites (#377).
+- `apps/server`, `packages/database`, `tools/dev`: unit files run in parallel;
+  PostgreSQL tests clone four worker databases from one migrated template and
+  ordinary adapter/route cases roll back instead of truncating per test (#377).
+- Test suite: removed 235 declarations that pinned transient UI structure,
+  debug scaffolding, local store representation, thin delegates, or duplicate
+  adapter behavior (#377).
+- `apps/app`, `apps/server`: stateful thread, untitled-lifecycle, and runtime
+  rigs replace collaborator mock graphs and wall-clock polling with controlled
+  gates, event journals, real stores, and outcome queries (#377).
+- `apps/server`: collab domain policy no longer imports Drizzle or observability
+  adapters; composition supplies transaction and diagnostic capabilities (#345).
+- `apps/server`: removed draft review endpoints that could only return not found,
+  plus stale safety-era diagnostic naming (#345).
+- `apps/server`: collab mutation admission now exposes only supported operations;
+  journal attribution is the sole provenance birth-class authority (#345).
+- `packages/agent-edit`, `apps/server`: removed the inert low-level response
+  transaction hook and duplicate undo/redo aliases; response transactions now
+  own their callback explicitly (#344).
+- `packages/agent-edit`, `apps/server`: live and branch destructive receipts now
+  share one typed snapshot/provenance projection with complete block identity
+  and hashless bodies (#344).
+- `packages/agent-edit`: immediate creates and edits now submit one prepared
+  mutation shape through one journal/apply/recovery wrapper (#344).
+- `packages/agent-edit`: response commit attempts now own one acceptance value
+  and one settled-receipt promise instead of mirroring durability across
+  lifecycle records and unreachable rollback branches; empty settlements close
+  the response, while post-append failures preserve the accepted boundary and
+  disclose degraded destructive awareness after recovery (#344).
+- `packages/agent-edit`: cold reversal reconstruction now owns its prose-order
+  repair instead of hiding a second update synthesizer in tool orchestration
+  (#344).
+- `packages/agent-edit`, `apps/server`: the default package entry is now a
+  39-name core façade; host adapters use the explicit integration entry and
+  staged response documents are lent without exposing raw Yjs update bytes
+  (#344).
+- `apps/server`, `apps/app`: denied change-trail document access no longer
+  discloses retained titles/prose or permits forward actions; authorized deleted
+  anchors remain readable through an explicit state (#343).
+- `packages/agent-edit`, `apps/server`: staged write receipts now show the
+  settled document projection once instead of concatenating pulled and
+  post-write snapshots (#341).
+- `apps/server`: Manual Apply now refuses stale replacements that enclose
+  post-base writer insertions while retaining unrelated selective merges (#335).
+- `packages/agent-edit`, `apps/server`: destructive agent writes now always report
+  recoverable writer-lineage loss; observation no longer suppresses live,
+  offline, or auto-push reports (#333).
+- `packages/agent-edit`, `apps/server`, `packages/database`: removed the
+  response-observation/causal-cut hierarchy; durable provenance and current
+  settlement state are now the sole destructive-reporting authority (#333).
+- `apps/server`: live and branch writer frames now share one admission order:
+  authority/generation validation, containment acknowledgement, fresh-authorship
+  validation, then durable append (#334).
+- `packages/agent-edit`: immediate writes, local-runtime sync, and response
+  phase-C projection now share one journal-first, lock-scoped apply kernel
+  (#334).
+- `apps/server`: branch push orchestration now delegates immutable-base Manual
+  Apply preparation and trail/notice projection to typed modules (#334).
+- `packages/agent-edit`, `apps/server`: Draft-mode undo/redo now targets
+  generation-local, response-grouped branch handles atomically without writing
+  live reversal history; durable projection failures recover and report the
+  committed reversal honestly, and handles folded into one Apply reverse as one
+  durable live group (#332).
+- `apps/app`: project chat resolves one thread and Work for context hydration,
+  Draft Review, headers, and the conversation body (#334).
+- `apps/app`: per-card and whole-draft Apply now share one revision and response
+  disposition policy (#334).
+- `apps/server`: durable authority heads, document mutation policy, and live
+  documents now have distinct collab names and layer-specific failures (#320).
+- `packages/agent-edit`, `apps/server`: the model-facing write contract now
   names whole-document overwrite, exact `find` replacement, hash anchors, and
   hash/number scope ranges (#328).
+- `apps/server`: request UUIDs now share one canonical hyphenated wire grammar,
+  normalize uppercase IDs, accept every UUID version/variant, and reject malformed
+  HTTP/WS IDs before Postgres can turn them into `22P02` 500s (#357).
+- `apps/server`: authenticated request fan-out now reads a durable bootstrap-ready
+  flag instead of re-locking and re-seeding completed default workspaces; seed
+  failures stay repairable without failing unrelated requests (#358).
+- `apps/server`: concurrent turn starts now serialize on the thread row and
+  return a 409 conflict instead of leaking PostgreSQL's single-root violation.
+- `agent-edit`: find-all now replaces exact same-block ranges without re-authoring
+  untouched writer prose or normalizing whitespace around deletions, and adjacent
+  structural matches no longer fail on deleted predecessor anchors. Failed
+  multi-edit applies and provenance-writer failures restore the session's pre-write
+  document; retained roots bypass continuation-fact rematerialization.
+- `apps/server`: authentication now rejects cross-principal email collisions
+  with a structured 409 instead of adopting the existing Meridian account.
+- `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
+  branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
+  PR evidence, GitHub failures, and refs that move before execution are refused.
+- `tools/dev`: restart now terminates only its owned tmux session, waits for
+  fixed ports to become bindable, and refuses non-owned or uninspectable
+  listeners instead of killing processes discovered by port.
+- `tools/dev`: the app dev-transform smoke now uses an OS-assigned port reported
+  by its child, requires the child to remain alive, and enforces `/` 307 plus
+  `/login` 200 with Meridian's login-page marker.
+- CI now builds the app's production `.output`, passes validated fake config to
+  the generated Nitro server, and enforces the same exact public-route contract.
+- `tools/dev`: destructive and gate-critical scripts now compile under one
+  strict Nx typecheck target included in root `pnpm typecheck`.
+- `tools/dev`: startup failures now print the concrete portless log path, while
+  pre-launch port refusals identify the non-owned holder by PID and command.
+- `apps/app`: chat composer opens at its one-line height reliably and rotates
+  short, localized placeholders per page load — a calmer interject pool shows
+  while the AI is streaming.
+- `apps/app`: unknown tool rows show just the tool name (plus path when
+  present) instead of truncated argument dumps; in-flight tool calls show
+  present-tense labels ("Writing…", "Reading…") until they complete.
+- `apps/app`: reasoning disclosures show the full thinking text — the
+  220-character cut is gone.
+- `apps/app`: change-trail cards no longer list per-operation "Inserted text"
+  rows for pure-generative writes; writer-safety rows (sweeps, resurrections)
+  still render.
+- `apps/app`: the editor keeps the active writing line away from the viewport
+  bottom with 50vh of trailing space; clicking the empty space still places
+  the cursor at the end.
+
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

@@ -38,6 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
+    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { checkDependentLaterLiveRows } = await import("./adapters/drizzle-live-dependencies.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { decodeUpdateForDependencies, deleteRanges, rangesOverlap, suppliedRanges } =
@@ -61,7 +62,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const createTestCollab = () =>
       createCollabDomain({
         db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
+        documentAccess: createDrizzleDocumentAccess(db),
       });
 
     beforeEach(async () => {

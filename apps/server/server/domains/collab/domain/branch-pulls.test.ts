@@ -1,5 +1,5 @@
 /** Branch pull service conformance for live-to-work and work-to-thread cadence. */
-import type { DocumentCoordinator } from "@meridian/agent-edit";
+import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";

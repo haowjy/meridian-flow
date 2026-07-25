@@ -46,7 +46,7 @@ instead of the N:1 `threads.workId` column.
   explicit confirmation; the confirmed request pushes every pending Work draft
   to live before switching the policy. `direct` → `draft` is always permitted.
 
-  → See [`domains/collab/.context/CONTEXT.md`](../collab/.context/CONTEXT.md)
+  → See [`domains/collab/.context/CONTEXT.md`](../../collab/.context/CONTEXT.md)
     for the branch review model.
 - **Active documents** — `createActiveDocumentResolver` is the sole definition
   of document activity for a thread: the union of explicit `thread_documents`
@@ -63,7 +63,7 @@ instead of the N:1 `threads.workId` column.
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
-| `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes |
+| `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -138,6 +138,14 @@ contract shapes.
   (`runtime/loop/persistence.ts`) runs `projectReadModelEvent` before
   `eventWriter.appendEvent` so that `event_journal.turn_id` FK can reference
   the turn row created by the projector. Both happen in the same transaction.
+- **Turn start is a serialized thread transition.** `runTurnStartTransition`
+  locks `threads.id`, verifies the expected active leaf did not advance, then
+  holds that lock through orphaned-write reconciliation, next-parent reads,
+  user/assistant turn projection, active-leaf updates, and journal append.
+  Cross-instance losers receive `TurnStartConflictError`, never a raw unique
+  violation. A pre-existing nonterminal leaf is not mistaken for a live owner
+  after restart. Standalone turn creation also locks the thread so root
+  insertion and active-leaf advancement commit atomically.
 - A thread's `totalCostUsd` is the sum of all model response costs for its turns,
   recomputed by the read-model projector from `model_responses`. `updateCost`
   remains only for direct lifecycle/counter writes such as `turnCount`.

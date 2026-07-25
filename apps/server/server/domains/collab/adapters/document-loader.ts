@@ -1,6 +1,6 @@
 /** Rebuilds encoded Y.Doc state from the durable UpdateJournal. */
 
-import type { UpdateJournal } from "@meridian/agent-edit";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 

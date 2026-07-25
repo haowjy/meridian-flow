@@ -9,7 +9,7 @@
  * `createWiredCoreToolRegistrations`, keeping this runtime-domain catalogue free
  * of ContextPort or other app-layer adapter imports.
  */
-import { WriteCommandSchema } from "@meridian/agent-edit";
+import { WriteCommandSchema } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
 import type { ToolRegistration } from "./types.js";

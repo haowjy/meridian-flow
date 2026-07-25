@@ -85,6 +85,28 @@ mid-handoff. That first turn therefore uses the new Work's `direct` default
 before the composer can expose the mode control. In-project new threads already
 have a Work and do not have this gap.
 
+### Composer placeholder and sizing contracts
+
+`placeholders.ts` owns the per-page-load compose and interject prompt pools as
+Lingui `msg` descriptors. `selectPagePlaceholders()` advances localStorage once
+per page load and freezes that selection; component re-renders do not consume
+another entry. `useSyncExternalStore` supplies a stable first descriptor during
+SSR and the rotated descriptor on the client, while locale resolution happens
+inside the hook. Composer owns rotation; its `placeholder` prop remains the
+explicit override used by the Home hero.
+
+The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
+resize loop requires `field-sizing: fixed`. Keep that override inline:
+Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
+
+### Change-trail row suppression
+
+`ChangeViewRows` returns `null` when every change is a plain insert without
+writer protection. `TurnEditsCard` remains visible because it carries the
+document line and whole-turn Undo. Mixed trails and protected changes retain
+the full row list; per-row filtering inside mixed trails remains outside this
+contract.
+
 ## Draft review architecture
 
 The composer-attached `DraftDock`, dock `Changes` view, and editor

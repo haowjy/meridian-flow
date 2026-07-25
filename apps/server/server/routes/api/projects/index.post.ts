@@ -3,6 +3,7 @@ import { type CreateProjectRequest, serializeTransport } from "@meridian/contrac
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 
 import { requireAppUser } from "../../../lib/auth-gate.js";
+import { parseOptionalRequestId } from "../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const project = await projectRepo.create({
-    id: body.id,
+    id: parseOptionalRequestId(body.id, "id"),
     userId,
     title: body.title.trim(),
     description: body.description ?? null,

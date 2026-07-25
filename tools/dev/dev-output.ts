@@ -30,6 +30,7 @@ export function printFailure({
   sessionName,
   message,
   remediation,
+  logPath,
   routeLines = [],
 }: {
   sessionName: string;
@@ -48,5 +49,6 @@ export function printFailure({
   }
 
   console.error(tmuxAttachCommand(sessionName));
+  console.error(`logs: ${logPath}`);
   console.error(`${remediation} · pnpm portless:list · pnpm dev --restart`);
 }

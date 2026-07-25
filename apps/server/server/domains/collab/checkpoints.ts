@@ -1,12 +1,12 @@
 /** Checkpoint, restore, and listing service for collab documents. */
-import type { DocumentCoordinator } from "@meridian/agent-edit";
-import { isDocumentNotFoundError } from "@meridian/agent-edit";
+import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
+import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
-import type { DocumentMutationPolicy } from "./domain/document-mutation-policy.js";
-import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./index.js";
+import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
+import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
@@ -43,7 +43,10 @@ type CheckpointServiceDeps = {
   store: CheckpointStore;
   latestUpdateSeq(documentId: string): Promise<number>;
   markdownDocuments: CheckpointMarkdownDocuments;
-  mutationPolicy?(documentId: DocumentId): DocumentMutationPolicy;
+  replaceAuthorityGeneration?(
+    documentId: DocumentId,
+    checkpointId: string,
+  ): ReturnType<AuthorityGenerationReplacement>;
 };
 
 export type CheckpointService = Pick<CollabDomain, "checkpoint" | "restore" | "listCheckpoints">;
@@ -73,12 +76,8 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
       try {
         const restored = createCollabYDoc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
-        if (deps.mutationPolicy) {
-          await deps.mutationPolicy(documentId as DocumentId).mutate({
-            kind: "authorityHeadSnapshotReplacement",
-            checkpointId,
-            replaceGeneration: true,
-          });
+        if (deps.replaceAuthorityGeneration) {
+          await deps.replaceAuthorityGeneration(documentId as DocumentId, checkpointId);
         } else {
           const result = await deps.markdownDocuments.restoreFromYDoc(
             documentId as DocumentId,

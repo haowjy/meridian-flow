@@ -1,6 +1,10 @@
 /** Checkpoint restore behavior coverage. */
 
-import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
@@ -19,11 +23,11 @@ function document(markdown: string): Y.Doc {
   return doc;
 }
 
-describe("checkpoint restore notices", () => {
+describe("checkpoint restore", () => {
   it("uses authority-head snapshot replacement instead of merging checkpoint bytes", async () => {
     const liveDoc = document("new generation");
     const checkpointDoc = document("checkpoint generation");
-    const mutate = vi.fn(async () => ({ generation: 2n }));
+    const replaceAuthorityGeneration = vi.fn(async () => ({ generation: 2n }));
     const restoreFromYDoc = vi.fn(async () => Ok(undefined));
     const service = createCheckpointService({
       coordinator: {
@@ -52,22 +56,18 @@ describe("checkpoint restore notices", () => {
       },
       latestUpdateSeq: async () => 1,
       markdownDocuments: { restoreFromYDoc },
-      mutationPolicy: () => ({ mutate }) as never,
+      replaceAuthorityGeneration,
     });
 
     await expect(service.restore(DOC_ID, "checkpoint-1")).resolves.toEqual(Ok(undefined));
-    expect(mutate).toHaveBeenCalledWith({
-      kind: "authorityHeadSnapshotReplacement",
-      checkpointId: "checkpoint-1",
-      replaceGeneration: true,
-    });
+    expect(replaceAuthorityGeneration).toHaveBeenCalledWith(DOC_ID, "checkpoint-1");
     expect(restoreFromYDoc).not.toHaveBeenCalled();
     expect(model.serializeBlockLines(toDocHandle(liveDoc), codec).join("\n")).toContain(
       "new generation",
     );
   });
 
-  it("restores through the document mutation boundary without requiring a notice recorder", async () => {
+  it("restores without requiring the deleted writer-notice transport", async () => {
     const liveDoc = document("Current generation.");
     const checkpointDoc = document("Kept.");
     const restoreFromYDoc = vi.fn(async (_documentId: string, restored: Y.Doc) => {
@@ -101,9 +101,7 @@ describe("checkpoint restore notices", () => {
       async latestUpdateSeq() {
         return 42;
       },
-      markdownDocuments: {
-        restoreFromYDoc,
-      },
+      markdownDocuments: { restoreFromYDoc },
     });
 
     await expect(service.restore(DOC_ID, "checkpoint-1")).resolves.toEqual(Ok(undefined));

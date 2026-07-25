@@ -62,7 +62,11 @@
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
-import { applyConcurrentRenderBudget, type ConcurrentEditInfo } from "@meridian/agent-edit";
+import {
+  applyConcurrentRenderBudget,
+  type ConcurrentEditInfo,
+  type ResponseCommitWriteReceipt,
+} from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -108,7 +112,11 @@ import {
   type InterruptRegistry,
 } from "./interrupts.js";
 import type { PermissionGate } from "./permissions/index.js";
-import { appendEvent, persistAndAppendEvents } from "./persistence.js";
+import {
+  appendEvent,
+  persistAndAppendEvents,
+  persistAndAppendTurnStartEvents,
+} from "./persistence.js";
 import type { RunTurnHandle, RunTurnInput, RunTurnPort } from "./run-turn-port.js";
 import {
   collectToolCalls,
@@ -131,6 +139,11 @@ export interface OrchestratorRepositories {
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  runTurnStartTransition<T>(
+    threadId: ThreadId,
+    expectedActiveLeafTurnId: TurnId | null,
+    operation: () => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface OrchestratorDeps {
@@ -172,9 +185,24 @@ export interface OrchestratorDeps {
 type ResponseWriteCommitOutcome =
   | {
       status: "committed";
+      receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
+
+function settledReceipt(
+  receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
+  documentId: string,
+  settlementId: string,
+): ResponseCommitWriteReceipt {
+  const settled = receipts.find(
+    (entry) => entry.documentId === documentId && entry.receipt.settlementId === settlementId,
+  );
+  if (!settled) {
+    throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
+  }
+  return settled.receipt;
+}
 
 function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
   return (
@@ -375,8 +403,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
-  await reconcileOrphanedPendingWrites(deps, input.threadId);
-
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
@@ -386,53 +412,60 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     );
   }
 
-  const priorTurns = await repos.turns.listByThread(input.threadId);
-  const conversation = await loadThreadConversationContext(
-    { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
-    thread,
-  );
-  const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
-  const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
-  const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
-  const inheritedBlocks = conversation.blocks.filter((block) => inheritedTurnIds.has(block.turnId));
-  const lastTurn = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
-
   // The setup transaction mints both turns + the user text block.
   // The read-model projector creates turn/block rows from the emitted events.
-  const setup = await persistAndAppendEvents(deps, input.threadId, async () => {
-    const userTurn = createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: lastTurn?.id ?? null,
-      role: "user",
-      status: "complete",
-    });
-    const userBlock = contentForBlockInput({
-      turnId: userTurn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent: input.userText,
-      status: "complete",
-    });
+  const setup = await persistAndAppendTurnStartEvents(
+    deps,
+    input.threadId,
+    thread.activeLeafTurnId,
+    async () => {
+      await reconcileOrphanedPendingWrites(deps, input.threadId);
+      const priorTurns = await repos.turns.listByThread(input.threadId);
+      const conversation = await loadThreadConversationContext(
+        { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+        thread,
+      );
+      const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
+      const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
+      const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
+      const inheritedBlocks = conversation.blocks.filter((block) =>
+        inheritedTurnIds.has(block.turnId),
+      );
+      const lastTurn = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+      const userTurn = createLocalTurn({
+        threadId: input.threadId,
+        prevTurnId: lastTurn?.id ?? null,
+        role: "user",
+        status: "complete",
+      });
+      const userBlock = contentForBlockInput({
+        turnId: userTurn.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: input.userText,
+        status: "complete",
+      });
 
-    const assistantTurn = createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: userTurn.id,
-      role: "assistant",
-      status: "streaming",
-    });
-    await repos.threads.updateStatus(input.threadId, "active");
+      const assistantTurn = createLocalTurn({
+        threadId: input.threadId,
+        prevTurnId: userTurn.id,
+        role: "assistant",
+        status: "streaming",
+      });
+      await repos.threads.updateStatus(input.threadId, "active");
 
-    return {
-      result: { userTurn, assistantTurn },
-      events: [
-        { type: "turn.created", turn: userTurn },
-        { type: "block.upserted", block: userBlock },
-        { type: "turn.created", turn: assistantTurn },
-      ],
-    };
-  });
+      return {
+        result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
+        events: [
+          { type: "turn.created", turn: userTurn },
+          { type: "block.upserted", block: userBlock },
+          { type: "turn.created", turn: assistantTurn },
+        ],
+      };
+    },
+  );
 
-  const { userTurn, assistantTurn } = setup.result;
+  const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
@@ -735,13 +768,12 @@ async function persistCommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   block: Block;
-  committedOutput: unknown;
+  output: unknown;
 }): Promise<{ block: Block; events: OrchestratorEvent[] }> {
   const content = input.block.content as {
     toolCallId?: string;
     metadata?: Record<string, unknown>;
   } | null;
-  const committedOutput = input.committedOutput;
   const metadata = content?.metadata ?? {};
   const toolCallId = content?.toolCallId ?? "";
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -751,7 +783,7 @@ async function persistCommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output: committedOutput, metadata }),
+      content: toJsonValue({ toolCallId, output: input.output, metadata }),
       provider: input.block.provider,
       status: "complete",
     });
@@ -759,7 +791,7 @@ async function persistCommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output: toJsonValue(committedOutput) },
+        { type: "tool.result", toolCallId, output: toJsonValue(input.output) },
       ],
     };
   });
@@ -1086,7 +1118,7 @@ async function* generateEvents(
 
         const writeBlocksByDocument = new Map<
           string,
-          Array<{ block: Block; committedOutput: unknown }>
+          Array<{ block: Block; writeId: string; settlementId: string }>
         >();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
@@ -1165,10 +1197,21 @@ async function* generateEvents(
             dispatched.metadata?.stagedWrite === true &&
             typeof dispatched.metadata.documentId === "string"
           ) {
+            if (typeof dispatched.metadata.writeId !== "string") {
+              throw new Error(
+                `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
+              );
+            }
+            if (typeof dispatched.metadata.settlementId !== "string") {
+              throw new Error(
+                `Staged write result missing settlement id for ${dispatched.metadata.documentId}.`,
+              );
+            }
             const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
             blocks.push({
               block: dispatched.block,
-              committedOutput: dispatched.metadata.committedOutput,
+              writeId: dispatched.metadata.writeId,
+              settlementId: dispatched.metadata.settlementId,
             });
             writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
@@ -1204,7 +1247,8 @@ async function* generateEvents(
                         deps,
                         threadId: input.threadId,
                         block: write.block,
-                        committedOutput: write.committedOutput,
+                        output: settledReceipt(result.receipts, documentId, write.settlementId)
+                          .content,
                       })
                     : await persistUncommittedWriteResult({
                         deps,

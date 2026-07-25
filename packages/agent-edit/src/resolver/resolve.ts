@@ -277,11 +277,19 @@ function lowerFindMatches(
   if (plainTextEdits) return { ok: true, edits: plainTextEdits };
 
   const edits: ResolvedEdit[] = [];
-  for (const group of groupFindMatches(matches)) {
+  // Structural groups can replace their predecessor block. Lower from the end
+  // so every insert anchor remains live until its group executes.
+  for (const group of groupFindMatches(matches).reverse()) {
     const groupSource = group.elements
       .map((element) => serializeBlockBody(ctx, element))
       .join("\n\n");
-    const replacedSource = spliceFindMatches(groupSource, group, params.content, command);
+    const replacedSource = spliceFindMatches(
+      groupSource,
+      group.matches,
+      group.rangeStart,
+      params.content,
+      command,
+    );
     const parsed = parseReplacementRange(ctx, replacedSource);
     if (!parsed.ok) return parsed;
     const lowered = replaceScope(
@@ -308,24 +316,65 @@ function lowerPlainTextFindMatches(
   command: WriteCommandName,
 ): ResolvedEdit[] | null {
   if (!isPlainTextContent(ctx, params.content)) return null;
-  const edits: ResolvedEdit[] = [];
+  const byBlock = new Map<BlockRef, TextFindMatch[]>();
   for (const match of matches) {
     if (match.elements.length !== 1) return null;
     const [element] = match.elements;
     if (match.rangeSource !== ctx.model.getText(element)) return null;
-    const start = command === "insert" ? match.matchEnd : match.matchStart;
-    const end = match.matchEnd;
+    const existing = byBlock.get(element);
+    if (existing) existing.push(match);
+    else byBlock.set(element, [match]);
+  }
+  const edits: ResolvedEdit[] = [];
+  for (const [element, blockMatches] of byBlock) {
+    const replacements = blockMatches.map((match) => ({
+      span: {
+        start: command === "insert" ? match.matchEnd : match.matchStart,
+        end: match.matchEnd,
+      },
+      newText: params.content,
+    }));
+    const first = replacements[0];
+    if (!first) continue;
+    if (replacements.length === 1) {
+      edits.push({
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
+        kind: "text",
+        block: element,
+        span: first.span,
+        newText: first.newText,
+        semanticLowering: "prosemirror",
+      });
+      continue;
+    }
+    const blockText = ctx.model.getText(element);
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
-      kind: "text",
+      kind: "textRanges",
       block: element,
-      span: { start, end },
-      newText: params.content,
-      semanticLowering: "prosemirror",
+      replacements,
+      output: replacementWindowOutput(blockText, replacements),
     });
   }
   return edits;
+}
+
+function replacementWindowOutput(
+  source: string,
+  replacements: readonly { span: { start: number; end: number }; newText: string }[],
+): string {
+  const first = replacements[0];
+  if (!first) return "";
+  let sourceCursor = first.span.start;
+  let output = "";
+  for (const replacement of replacements) {
+    output += source.slice(sourceCursor, replacement.span.start);
+    output += replacement.newText;
+    sourceCursor = replacement.span.end;
+  }
+  return output;
 }
 
 function isPlainTextContent(ctx: ConcreteResolveContext, content: string): boolean {
@@ -368,14 +417,15 @@ function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
 
 function spliceFindMatches(
   source: string,
-  group: FindMatchGroup,
+  matches: readonly TextFindMatch[],
+  rangeStart: number,
   content: string,
   command: WriteCommandName,
 ): string {
   let result = source;
-  for (const match of [...group.matches].reverse()) {
-    const start = match.rangeStart + match.matchStart - group.rangeStart;
-    const end = match.rangeStart + match.matchEnd - group.rangeStart;
+  for (const match of [...matches].reverse()) {
+    const start = match.rangeStart + match.matchStart - rangeStart;
+    const end = match.rangeStart + match.matchEnd - rangeStart;
     const spliceStart = command === "insert" ? end : start;
     result = result.slice(0, spliceStart) + content + result.slice(end);
   }
@@ -525,6 +575,13 @@ function semanticIrForResolvedEdits(
           },
         ];
       }
+    } else if (edit.kind === "textRanges") {
+      const lineage = ctx.model.getVisibleContentLineage(edit.block);
+      scope.push(...lineage);
+      for (const replacement of edit.replacements) {
+        deleted.push(...sliceLineage(lineage, replacement.span.start, replacement.span.end));
+      }
+      outputRuns = semanticRunsForTextRanges(lineage, edit);
     } else if (edit.kind === "insert") {
       if (edit.newText.length > 0) {
         outputRuns = [
@@ -568,6 +625,38 @@ function semanticIrForResolvedEdits(
       : { kind: "mappedEdits", edits: mappedEdits },
     deleted: normalizedDeleted,
   };
+}
+
+function semanticRunsForTextRanges(
+  lineage: readonly LineageRange[],
+  edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
+): SemanticOutputRun[] {
+  const first = edit.replacements[0];
+  if (!first) return [];
+  const runs: SemanticOutputRun[] = [];
+  let sourceCursor = first.span.start;
+  let outputCursor = 0;
+  for (const replacement of edit.replacements) {
+    for (const source of sliceLineage(lineage, sourceCursor, replacement.span.start)) {
+      runs.push({
+        kind: "preserved",
+        source,
+        output: { from: outputCursor, to: outputCursor + source.length },
+        materialization: "retained",
+      });
+      outputCursor += source.length;
+    }
+    if (replacement.newText.length > 0) {
+      runs.push({
+        kind: "fresh",
+        payload: replacement.newText,
+        output: { from: outputCursor, to: outputCursor + replacement.newText.length },
+      });
+      outputCursor += replacement.newText.length;
+    }
+    sourceCursor = replacement.span.end;
+  }
+  return runs;
 }
 
 function sameLineageRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {

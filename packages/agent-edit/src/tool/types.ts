@@ -52,6 +52,8 @@ interface WriteOutcomeBase {
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
+  /** Unique host-only correlation for replacing a staged result with its settled receipt. */
+  settlementId?: string;
   /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
   error?: WriteErrorDetail;
   /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
@@ -213,8 +215,15 @@ export type TurnRedoResult = RedoResult;
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
+  receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+}
+
+export interface ResponseCommitWriteReceipt {
+  writeId: string;
+  settlementId: string;
+  content: WriteResultBlock[];
 }
 
 export interface ResponseStagedCreateOutcome {

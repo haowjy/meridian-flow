@@ -97,16 +97,14 @@ export type ChangeTrailDocumentDetailV1 =
   | {
       documentId: string;
       unavailable: true;
-      trailId?: string;
-      documentTitle?: string;
-      changes?: TrailChangeV1[];
     }
   | {
       trailId: string;
       documentId: string;
       documentTitle: string;
       changes: TrailChangeV1[];
-      unavailable?: false;
+      /** Retained evidence stays readable after its authorized live anchor is deleted. */
+      anchorState: "available" | "deleted";
     };
 
 export type ChangeTrailDetailResponseV1 = {

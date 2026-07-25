@@ -4,7 +4,31 @@ import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
-import type { EnsureUserInput, UserRepository } from "../../ports/user-repository.js";
+import {
+  AccountLinkConflictError,
+  type EnsureUserInput,
+  type UserRepository,
+} from "../../ports/user-repository.js";
+
+/**
+ * `onConflictDoUpdate` arbitrates external_id only. A different principal that
+ * claims an existing email therefore raises users_email_unique outside that
+ * update path and must fail closed rather than adopting the email owner's row.
+ */
+function isEmailUniqueViolation(error: unknown): boolean {
+  let cause: unknown = error;
+  while (cause) {
+    if (
+      typeof cause === "object" &&
+      (cause as { code?: unknown }).code === "23505" &&
+      (cause as { constraint_name?: unknown }).constraint_name === "users_email_unique"
+    ) {
+      return true;
+    }
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return false;
+}
 
 export interface DrizzleUserRepositoryDeps {
   db: Database;
@@ -17,29 +41,43 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
       const now = new Date().toISOString();
-      const [row] = await db
-        .insert(users)
-        .values({
-          externalId: input.externalId,
-          email: input.email,
-          name: input.name,
-          avatarUrl: input.avatarUrl,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: users.externalId,
-          set: {
+      try {
+        const [row] = await db
+          .insert(users)
+          .values({
+            externalId: input.externalId,
             email: input.email,
             name: input.name,
             avatarUrl: input.avatarUrl,
             updatedAt: now,
-          },
-        })
-        .returning({ id: users.id });
-      if (!row) {
-        throw new Error("User provisioning did not return an internal user id");
+          })
+          .onConflictDoUpdate({
+            target: users.externalId,
+            set: {
+              email: input.email,
+              name: input.name,
+              avatarUrl: input.avatarUrl,
+              updatedAt: now,
+            },
+          })
+          .returning({ id: users.id });
+        if (!row) {
+          throw new Error("User provisioning did not return an internal user id");
+        }
+        return row.id as UserId;
+      } catch (error) {
+        if (!isEmailUniqueViolation(error)) throw error;
+        const [existing] = await db
+          .select({ externalId: users.externalId })
+          .from(users)
+          .where(eq(users.email, input.email))
+          .limit(1);
+        if (!existing) throw error;
+        if (existing.externalId !== input.externalId) {
+          throw new AccountLinkConflictError();
+        }
+        throw error;
       }
-      return row.id as UserId;
     },
 
     async getLastActiveProjectId(userId: UserId): Promise<ProjectId | null> {

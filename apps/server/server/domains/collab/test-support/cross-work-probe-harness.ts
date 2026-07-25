@@ -1,8 +1,9 @@
 /** Real-adapter fixture orchestration for the split cross-Work merge probe. */
-import { toDocHandle } from "@meridian/agent-edit";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { createDrizzleDocumentAccess } from "../../../lib/document-access.js";
 import {
   createDrizzleTrailForwardActions,
   planTrailForwardAction,
@@ -23,7 +24,7 @@ export const WORK_B_ID = "00000000-0000-4000-8000-000000000820" as WorkId;
 export const THREAD_B_ID = "00000000-0000-4000-8000-000000000821" as ThreadId;
 export const TURN_B_ID = "00000000-0000-4000-8000-000000000822" as TurnId;
 
-export type CrossWorkProbeObservation = {
+export type CrossWorkProbeResult = {
   case: "manual" | "auto";
   aApply: {
     status: string;
@@ -80,7 +81,7 @@ function serializeMarkdown(fixture: CrossWorkProbeFixture, doc: Y.Doc): string {
 export async function runCrossWorkProbe(
   fixture: CrossWorkProbeFixture,
   probeCase: "manual" | "auto",
-): Promise<CrossWorkProbeObservation> {
+): Promise<CrossWorkProbeResult> {
   const {
     db,
     schema,
@@ -361,9 +362,15 @@ export async function runCrossWorkProbe(
       hocuspocus.documents.clear();
       const restored = await createDrizzleTrailForwardActions({
         db,
+        documentAccess: createDrizzleDocumentAccess(db),
         coordinator: liveCoordinator,
         model,
         codec: agentEditCodec,
+        durableProjectionSerializer: {
+          async serializeDocument(_documentId, doc) {
+            return agentEditCodec.serialize(model.projectBlocks(toDocHandle(doc)));
+          },
+        },
       }).apply({
         threadId: THREAD_B_ID,
         trailId: restorable.row.trailId,

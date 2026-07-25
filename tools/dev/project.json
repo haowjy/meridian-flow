@@ -1,0 +1,15 @@
+{
+  "name": "meridian-dev-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/dev",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "tools/dev",
+        "command": "tsc --noEmit -p tsconfig.json"
+      }
+    }
+  }
+}

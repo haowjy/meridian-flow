@@ -1,14 +1,19 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchJournalRow, PushReceiptPayload, PushSweptTrail } from "./branch-push.js";
+import type { NoticePort } from "../../notices/index.js";
+import type {
+  BranchJournalRow,
+  PreparedPush,
+  PushReceiptPayload,
+  PushSweptTrail,
+  TrailContributionReplacement,
+} from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
-import type { PreparedPush } from "./branch-push-preparation.js";
 import type {
   ChangeTrailPersistence,
-  CommittedChangeTrailProjection,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
 import {
@@ -324,14 +329,8 @@ export async function persistDurableTrailRecord(
   record: DurableTrailRecord,
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
-  options: {
-    settlementRefinement?: {
-      kind: "refine_classifications" | "empty_contribution";
-      currentVersion: boolean;
-      classifications?: DurableTrailRecord["changes"];
-    };
-  } = {},
-): Promise<readonly CommittedChangeTrailProjection[]> {
+  notices?: NoticePort,
+): Promise<void> {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
   const normalized = normalizeTrailPushes(
@@ -343,47 +342,63 @@ export async function persistDurableTrailRecord(
       journalOwners: record.journalOwners,
     })),
   );
+  await persistence.record({
+    trails: normalized,
+    documentTitles: new Map([[record.documentId, record.documentTitle]]),
+  });
+  if (record.transactionalNotice) {
+    await notices?.record({
+      ...record.transactionalNotice,
+      data: {
+        ...record.transactionalNotice.data,
+        pushId,
+        threadId: push.threadId ?? null,
+        turnId: push.turnId ?? null,
+      },
+    });
+  }
+}
+
+export function trailContributionReplacement(
+  record: DurableTrailRecord,
+  push: { id: number },
+  kind: "refine" | "empty",
+  classifications: DurableTrailRecord["changes"] = record.changes,
+): TrailContributionReplacement {
+  const pushId = String(push.id);
+  const changes = record.changes.map((change) => ({ ...change, pushId }));
+  const trails = normalizeTrailPushes(
+    record.threadIds.map((threadId) => ({
+      pushId,
+      receiptId: record.receiptId,
+      threadId,
+      changes,
+      journalOwners: record.journalOwners,
+    })),
+  );
   const classified =
-    options.settlementRefinement?.kind === "refine_classifications"
+    kind === "refine"
       ? normalizeTrailPushes(
           record.threadIds.map((threadId) => ({
             pushId,
             receiptId: record.receiptId,
             threadId,
-            changes: (options.settlementRefinement?.classifications ?? []).map((change) => ({
-              ...change,
-              pushId,
-            })),
+            changes: classifications.map((change) => ({ ...change, pushId })),
             journalOwners: record.journalOwners,
           })),
         )
       : [];
   const classifiedByOwner = new Map(
-    classified.map((trail) => [JSON.stringify(trail.owner), trail]),
+    classified.map((trail) => [JSON.stringify(trail.owner), trail.changes]),
   );
-  const refinementTrails = options.settlementRefinement
-    ? normalized.map((trail) => {
-        const final = classifiedByOwner.get(JSON.stringify(trail.owner));
-        return {
-          ...trail,
-          changes: final?.changes ?? [],
-          counts: final?.counts ?? { changes: 0, swept: 0, documents: 0 },
-        };
-      })
-    : normalized;
-  const committed = await persistence.record({
-    trails: refinementTrails,
+  return {
+    kind,
+    targets: trails.map((trail) => ({
+      owner: trail.owner,
+      classifications: classifiedByOwner.get(JSON.stringify(trail.owner)) ?? [],
+    })),
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
-    ...(options.settlementRefinement
-      ? {
-          settlementRefinement: {
-            pushId,
-            ...options.settlementRefinement,
-          },
-        }
-      : {}),
-  });
-  return committed;
+  };
 }
 
 export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
@@ -414,7 +429,6 @@ export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
 export function buildDurablePushTrail(input: {
   prepared: PreparedPush;
   documentTitle: string;
-  swept?: PushSweptTrail;
 }): DurableTrailRecord {
   const journalOwners = input.prepared.prepared.journalRows.map((row) =>
     row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,

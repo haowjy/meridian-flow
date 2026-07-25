@@ -58,6 +58,13 @@ pnpm dev
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
 
+**First browser load after `pnpm install`** in a fresh worktree can hit a
+stale-Vite-deps crash: Vite's pre-bundled dependency cache may hold a
+duplicate React copy, causing `useContext` to return `null` in layout
+components (e.g. `AuthenticatedLayout`). A hard reload (Ctrl+Shift+R) clears
+the stale bundle and resolves it. This is a Vite dep-optimization artifact,
+not an app bug.
+
 ## Local database
 
 Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docker-compose.yml`). App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
@@ -73,9 +80,10 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 
 Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
-database owned by that invocation, then drops it on exit. If the process is
-killed before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes the managed name
-and drops it only after its owner process has stopped. Manually named test
+template owned by that invocation, clones four isolated worker databases from
+it, then drops the workers and template on exit. If the process is killed
+before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes every managed name and
+drops it only after its owner process has stopped. Manually named test
 databases that must survive GC use `<base>_test-manual-<label>`; test lifecycle
 prefixes are reserved from worktree slugs.
 
@@ -90,7 +98,12 @@ pnpm dev:prune-worktrees -- --auto --dry-run   # print plan without executing
 pnpm dev:prune-worktrees -- --auto --yes       # execute without confirmation
 ```
 
-Per target, cleanup runs in order: stop dev stack → drop database → remove git worktree → delete local branch → mark Meridian work done. The resolver refuses primary worktree, current worktree, `main` branch, and unmerged branches.
+Per target, cleanup runs in order: stop dev stack → drop database → remove git
+worktree → mark Meridian work done → delete the local branch. Eligibility is
+bound to the planned branch commit and revalidated before every action; exact
+merged-PR evidence must match the detected base, head commit, and repository
+owner. The resolver refuses primary/current worktrees, the detected base branch,
+unmerged commits, ambiguous evidence, and refs that move after planning.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
@@ -133,7 +146,8 @@ Same gates as hooks, useful before push:
 pnpm lint
 pnpm typecheck
 pnpm test
-pnpm check          # lint + typecheck + test
+pnpm check          # static/unit gates + DB suites when local Postgres is reachable
+pnpm test:db        # force the managed Postgres-backed suite
 ```
 
 ## Dev server
@@ -149,6 +163,10 @@ pnpm dev --stop           # stop this worktree's tmux session + prune routes
 pnpm dev --restart        # stop + restart (preserves mode unless --no-tailscale/--funnel)
 pnpm portless:list        # live localhost HTTPS URLs
 ```
+
+Restart terminates only this worktree's owned tmux session. If a fixed port
+remains held or its holder cannot be inspected, startup refuses with diagnostics;
+port discovery never authorizes killing the holder.
 
 ## Workstation: memory-safe ripgrep
 

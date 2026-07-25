@@ -205,7 +205,6 @@ export async function dispatchToolCall(
       ? {
           metadata: {
             ...execResult.metadata,
-            ...(stagedWrite ? { committedOutput: execResult.output } : {}),
           },
         }
       : {}),

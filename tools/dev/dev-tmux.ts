@@ -13,6 +13,7 @@ import {
 import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
+import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
@@ -331,6 +332,34 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
   }
 }
 
+async function releaseFixedBackendPorts(
+  sharedPorts: ReadonlyArray<SharedDevServicePorts>,
+): Promise<void> {
+  const ports = sharedPorts.map((entry) => entry.appBackendPort);
+  const result = await releaseFixedPorts(ports);
+  if (result.status === "released") return;
+  if (result.status === "discoveryError") {
+    throw new Error(
+      result.errors
+        .map(
+          ({ port, error }) =>
+            `port ${port} is still held, but its non-owned listener could not be inspected: ${error}`,
+        )
+        .join("; "),
+    );
+  }
+  throw new Error(
+    result.held
+      .map(
+        ({ port, holders }) =>
+          `port ${port} held by ${holders
+            .map(({ pid, command }) => `PID ${pid} (${command})`)
+            .join(", ")}; refusing to kill a non-owned process`,
+      )
+      .join("; "),
+  );
+}
+
 async function main(): Promise<void> {
   const tmuxStore = new TmuxSessionStore(repoRoot);
   const tailscale = new TailscaleDevLifecycle();
@@ -410,6 +439,7 @@ async function main(): Promise<void> {
   if (cliOptions.restart) {
     tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
+    await releaseFixedBackendPorts(sharedPorts);
   } else if (tmuxStore.sessionExists(identity.sessionName)) {
     const runningMode = isDevMode(previous?.mode) ? previous.mode : mode;
     const runningSharedPorts = resolveSharedDevServicePorts({

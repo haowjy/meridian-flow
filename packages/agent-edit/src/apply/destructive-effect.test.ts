@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  buildDestructiveEffectInput,
   classifyDestructiveEffect,
   type VisibleProseOccurrence,
 } from "./destructive-classification.js";
@@ -20,6 +21,40 @@ const occurrence = (input: {
 });
 
 describe("classifyDestructiveEffect", () => {
+  it("materializes rendering identity and provenance from typed snapshots once", () => {
+    const input = buildDestructiveEffectInput({
+      before: [
+        {
+          hash: "a",
+          clientID: 1,
+          clock: 2,
+          renderedContent: "paragraph|writer text",
+          body: "writer text",
+          serialized: "a|writer text",
+          lineage: [{ clientID: 3, clock: 4, length: 5 }],
+        },
+      ],
+      afterCandidate: [],
+      beforeProvenance: [
+        {
+          target: { clientID: 3, clock: 4, length: 5 },
+          root: { clientID: 9, clock: 10, length: 5 },
+          provenance: "writer_protected",
+        },
+      ],
+      afterCandidateProvenance: [],
+    });
+
+    expect(input.before).toEqual([
+      {
+        target: { clientID: 3, clock: 4, length: 5 },
+        root: { clientID: 9, clock: 10, length: 5 },
+        provenance: "writer_protected",
+        finalRendering: "1:2:paragraph|writer text",
+      },
+    ]);
+  });
+
   it("reports only removed protected root units and projects pointwise to final rendering", () => {
     const before = [occurrence({ targetClock: 0, length: 4, rendering: "block-a" })];
     const afterCandidate = [

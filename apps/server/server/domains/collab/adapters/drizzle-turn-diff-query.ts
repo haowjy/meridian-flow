@@ -1,6 +1,6 @@
 /** Read-only projection of folded collab trail rows for agent turn self-inspection. */
 
-import type { TurnDiffChange, TurnDiffQuery } from "@meridian/agent-edit";
+import type { TurnDiffChange, TurnDiffQuery } from "@meridian/agent-edit/integration";
 import type { TrailChangeV1 } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { changeTrailDocumentDetails, changeTrailShells } from "@meridian/database/schema";

@@ -1,5 +1,9 @@
 /** Behavioral coverage for offline journal reconciliation. */
-import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";

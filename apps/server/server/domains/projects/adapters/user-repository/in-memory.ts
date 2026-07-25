@@ -1,7 +1,11 @@
 /** In-memory UserRepository for tests: Map-backed idempotent user provisioning implementing the port. */
 import { randomUUID } from "node:crypto";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
-import type { EnsureUserInput, UserRepository } from "../../ports/user-repository.js";
+import {
+  AccountLinkConflictError,
+  type EnsureUserInput,
+  type UserRepository,
+} from "../../ports/user-repository.js";
 
 type UserRow = EnsureUserInput & {
   id: UserId;
@@ -22,6 +26,10 @@ export function createInMemoryUserRepository(): UserRepository {
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
       const existing = rowsByExternalId.get(input.externalId);
+      const emailOwner = [...rowsByExternalId.values()].find((row) => row.email === input.email);
+      if (emailOwner && emailOwner.externalId !== input.externalId) {
+        throw new AccountLinkConflictError();
+      }
       const timestamp = now();
       const row = {
         ...input,

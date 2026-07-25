@@ -1,4 +1,4 @@
-import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit";
+import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
@@ -28,8 +28,9 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): Age
       responseId: commitResult.responseId,
       stagedCreates: { committed: [], discarded: [] },
     }),
-    bufferedUpdatesForDoc: () => [],
-    stagedCreatedDocumentIds: () => [],
+    hasResponseDocument: () => false,
+    withResponseDocument: async () => null,
+    responseDocuments: () => ({ staged: [], created: [] }),
     getAvailability: async () => ({ undo: false, redo: false }),
     undo: async () => ({
       command: "undo",
@@ -38,18 +39,6 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): Age
       text: "",
     }),
     redo: async () => ({
-      command: "redo",
-      status: "nothing_to_redo",
-      isError: false,
-      text: "",
-    }),
-    undoTurn: async () => ({
-      command: "undo",
-      status: "nothing_to_undo",
-      isError: false,
-      text: "",
-    }),
-    redoTurn: async () => ({
       command: "redo",
       status: "nothing_to_redo",
       isError: false,
@@ -105,6 +94,13 @@ describe("agent-edit response write lifecycle", () => {
         {
           documentId: "doc-1",
           updateCount: 1,
+          receipts: [
+            {
+              writeId: "w1",
+              settlementId: "write-1",
+              content: [{ type: "text", text: "status: success\nwrite id: w1" }],
+            },
+          ],
           concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
           lateSweep: {
             affectedBlockHashes: ["abcd"],
@@ -144,6 +140,16 @@ describe("agent-edit response write lifecycle", () => {
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
     ).resolves.toEqual({
       status: "committed",
+      receipts: [
+        {
+          documentId: "doc-1",
+          receipt: {
+            writeId: "w1",
+            settlementId: "write-1",
+            content: [{ type: "text", text: "status: success\nwrite id: w1" }],
+          },
+        },
+      ],
       concurrentEdits: [
         { documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [], runs: [] } },
       ],
@@ -162,7 +168,7 @@ describe("agent-edit response write lifecycle", () => {
               responseId: "response-1",
               documentCount: 1,
               updateCount: 1,
-              documents: [{ documentId: "doc-1", updateCount: 1 }],
+              documents: [{ documentId: "doc-1", updateCount: 1, receipts: [] }],
               stagedCreates: { committed: [], discarded: [] },
             }),
           ),
@@ -172,7 +178,7 @@ describe("agent-edit response write lifecycle", () => {
           responseId: "response-1",
           documentCount: 1,
           updateCount: 1,
-          documents: [{ documentId: "doc-1", updateCount: 1 }],
+          documents: [{ documentId: "doc-1", updateCount: 1, receipts: [] }],
           stagedCreates: { committed: [], discarded: [] },
         }),
       },
@@ -180,7 +186,7 @@ describe("agent-edit response write lifecycle", () => {
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
+    ).resolves.toEqual({ status: "committed", receipts: [], concurrentEdits: [] });
   });
 
   it("surfaces draft_closed as an explicit response commit result", async () => {

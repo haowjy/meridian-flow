@@ -135,7 +135,12 @@ describe("runtime orchestrator behavior", () => {
           return {
             toolCallId: call.id,
             output: [{ type: "text" as const, text: "status: success" }],
-            metadata: { documentId: "doc-1", stagedWrite: true },
+            metadata: {
+              documentId: "doc-1",
+              stagedWrite: true,
+              writeId: "w1",
+              settlementId: "write-1",
+            },
           };
         },
       },
@@ -145,7 +150,20 @@ describe("runtime orchestrator behavior", () => {
       gateway: firstGateway,
       responseWrites: {
         async commitResponse(_responseId, _context, beforeTransactionCommit) {
-          await beforeTransactionCommit({ status: "committed", concurrentEdits: [] });
+          await beforeTransactionCommit({
+            status: "committed",
+            receipts: [
+              {
+                documentId: "doc-1",
+                receipt: {
+                  writeId: "w1",
+                  settlementId: "write-1",
+                  content: [{ type: "text", text: "status: success" }],
+                },
+              },
+            ],
+            concurrentEdits: [],
+          });
           throw new Error("process failed after atomic response commit");
         },
         async rollbackResponse() {},
@@ -198,7 +216,12 @@ describe("runtime orchestrator behavior", () => {
           return {
             toolCallId: call.id,
             output: [{ type: "text" as const, text: "status: success" }],
-            metadata: { documentId: "doc-1", stagedWrite: true },
+            metadata: {
+              documentId: "doc-1",
+              stagedWrite: true,
+              writeId: "w1",
+              settlementId: "write-1",
+            },
           };
         },
       },
@@ -377,7 +400,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse() {},
       },
@@ -459,14 +482,35 @@ describe("runtime orchestrator behavior", () => {
       toolExecutor: {
         executeTool: async (call) => ({
           toolCallId: call.id,
-          output: [{ type: "text", text: "status: success" }],
-          metadata: { documentId: "doc-1", stagedWrite: true },
+          output: [
+            { type: "text", text: "status: success\nwrite id: w1" },
+            { type: "text", text: "old1|Old speculative line.\nnew1|New speculative line." },
+          ],
+          metadata: {
+            documentId: "doc-1",
+            stagedWrite: true,
+            writeId: "w1",
+            settlementId: "write-1",
+          },
         }),
       },
       responseWrites: {
         async commitResponse(_responseId, _context, beforeTransactionCommit) {
           const result = {
             status: "committed" as const,
+            receipts: [
+              {
+                documentId: "doc-1",
+                receipt: {
+                  writeId: "w1",
+                  settlementId: "write-1",
+                  content: [
+                    { type: "text" as const, text: "status: success\nwrite id: w1" },
+                    { type: "text" as const, text: "final1|Final settled line." },
+                  ],
+                },
+              },
+            ],
             concurrentEdits: [
               {
                 documentId: "doc-1",
@@ -505,6 +549,124 @@ describe("runtime orchestrator behavior", () => {
     const secondRequest = JSON.stringify(requests[1]?.messages);
     expect(secondRequest).toContain("concurrent edits:\\n  human:");
     expect(secondRequest).toContain("abcd|Human changed line.");
+    expect(secondRequest).toContain("final1|Final settled line.");
+    expect(secondRequest).not.toContain("Old speculative line.");
+    expect(secondRequest).not.toContain("New speculative line.");
+  });
+
+  it("matches settled receipts by tool call when grouped writes share a write handle", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "tool_use", toolCallId: "write-first", toolName: "write", input: {} },
+                { type: "tool_use", toolCallId: "write-second", toolName: "write", input: {} },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "settled" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate(_request: GenerateRequest) {
+        throw new Error("not used in this test");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        executeTool: async (call) => ({
+          toolCallId: call.id,
+          output: [{ type: "text", text: `speculative ${call.id}` }],
+          metadata: {
+            documentId: "doc-1",
+            stagedWrite: true,
+            writeId: "w1",
+            settlementId: call.id,
+          },
+        }),
+      },
+      responseWrites: {
+        async commitResponse(_responseId, _context, beforeTransactionCommit) {
+          const result = {
+            status: "committed" as const,
+            receipts: ["write-second", "write-first"].map((settlementId) => ({
+              documentId: "doc-1",
+              receipt: {
+                writeId: "w1",
+                settlementId,
+                content: [{ type: "text" as const, text: `settled ${settlementId}` }],
+              },
+            })),
+            concurrentEdits: [],
+          };
+          await beforeTransactionCommit(result);
+          return result;
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit twice" }),
+    );
+
+    const persistedResults = (await repos.blocks.listByThread(thread.id))
+      .filter((block) => block.blockType === "tool_result")
+      .map((block) => {
+        const content = block.content as { toolCallId: string; output: unknown };
+        return { toolCallId: content.toolCallId, output: content.output };
+      });
+    expect(persistedResults).toEqual([
+      {
+        toolCallId: "write-first",
+        output: [{ type: "text", text: "settled write-first" }],
+      },
+      {
+        toolCallId: "write-second",
+        output: [{ type: "text", text: "settled write-second" }],
+      },
+    ]);
+    const secondRequest = JSON.stringify(requests[1]?.messages);
+    expect(secondRequest).toContain("settled write-first");
+    expect(secondRequest).toContain("settled write-second");
+    expect(secondRequest).not.toContain("speculative write-first");
+    expect(secondRequest).not.toContain("speculative write-second");
   });
 
   it("drains undo and newly recorded awareness notices before each model call", async () => {
@@ -596,7 +758,7 @@ describe("runtime orchestrator behavior", () => {
               documentName: "chapter-2.md",
             },
           });
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse() {},
       },
@@ -901,7 +1063,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);
@@ -982,7 +1144,7 @@ describe("runtime orchestrator behavior", () => {
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
-          return { status: "committed", concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse(responseId) {
           rolledBack.push(responseId);

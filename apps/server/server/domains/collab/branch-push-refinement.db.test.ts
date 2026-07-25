@@ -1,10 +1,14 @@
 /** Real push-service regressions for settlement refinement and rewrite projection. */
+import { eq, like } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
+  db,
   resetDatabase,
+  schema,
+  TURN_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -34,6 +38,27 @@ describe("branch push settlement refinement (postgres)", () => {
     }
     await harness.recoverPendingLiveSettlements();
 
+    const attributedUpdates = await db
+      .select({
+        originType: schema.documentYjsUpdates.originType,
+        updateTurnId: schema.documentYjsUpdates.actorTurnId,
+        mutationTurnId: schema.agentEditMutations.turnId,
+      })
+      .from(schema.agentEditMutations)
+      .innerJoin(
+        schema.documentYjsUpdates,
+        eq(schema.documentYjsUpdates.id, schema.agentEditMutations.createdSeq),
+      )
+      .where(like(schema.agentEditMutations.writeId, "push:%"));
+    expect(attributedUpdates).toHaveLength(2);
+    expect(attributedUpdates).toEqual(
+      attributedUpdates.map(() => ({
+        originType: "agent",
+        updateTurnId: TURN_ID,
+        mutationTurnId: TURN_ID,
+      })),
+    );
+
     const trails = await harness.trailRows();
     expect(trails.shells).toEqual([expect.objectContaining({ changeCount: 2, documentCount: 2 })]);
     expect(trails.details).toHaveLength(2);
@@ -56,7 +81,7 @@ describe("branch push settlement refinement (postgres)", () => {
         }),
       ]),
       projections: expect.any(Array),
-      refinements: ["refine_classifications", "refine_classifications"],
+      refinements: ["refine", "refine"],
     });
     await expect(harness.diff()).resolves.toMatchObject({ command: "diff", status: "success" });
     harness.destroyWarmState();

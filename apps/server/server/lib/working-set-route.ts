@@ -13,8 +13,7 @@ import {
 } from "../domains/projects/index.js";
 import type { ThreadRepository } from "../domains/threads/ports/index.js";
 import type { WorkingSetRepository, WorkingSetRow } from "../domains/working-set/index.js";
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { requireRequestId } from "./request-id.js";
 
 export type PutWorkingSetRequest = {
   recentRoutes: WorkingSetRoute[];
@@ -47,15 +46,16 @@ export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
   if (body.lastThreadId !== null && typeof body.lastThreadId !== "string") {
     throw createError({ statusCode: 400, message: "`lastThreadId` must be a string or null" });
   }
-  if (typeof body.lastThreadId === "string" && !UUID_PATTERN.test(body.lastThreadId)) {
-    throw createError({ statusCode: 400, message: "`lastThreadId` must be a UUID" });
-  }
-  for (const route of routes.value) {
-    if (isWorkScopedRoute(route) && !UUID_PATTERN.test(route.workId)) {
-      throw createError({ statusCode: 400, message: "Working-set route `workId` must be a UUID" });
-    }
-  }
-  return { recentRoutes: routes.value, lastThreadId: body.lastThreadId as ThreadId | null };
+  const recentRoutes = routes.value.map((route) =>
+    isWorkScopedRoute(route)
+      ? { ...route, workId: requireRequestId(route.workId, "recentRoutes[].workId") }
+      : route,
+  );
+  const lastThreadId =
+    typeof body.lastThreadId === "string"
+      ? (requireRequestId(body.lastThreadId, "lastThreadId") as ThreadId)
+      : null;
+  return { recentRoutes, lastThreadId };
 }
 
 export async function handleGetWorkingSetRequest(

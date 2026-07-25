@@ -10,15 +10,18 @@ import {
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAgentEditCodec } from "../../codec-adapter.js";
-import { createAgentEditCore, type ReversalNoticePort } from "../../index.js";
+import { createAgentEditCore } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { AgentEditModel } from "../../ports/model.js";
+import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
 import type { TurnDiffQuery } from "../../ports/turn-diff-query.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
+import type { ReversalNoticePort } from "../write-reversal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -52,9 +55,12 @@ export function harness(
     >[0]["closedResponseTombstoneCap"];
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
+    model?: AgentEditModel;
+    semanticProvenance?: SemanticProvenanceWriter;
     turnDiffQuery?: TurnDiffQuery;
   } = {},
 ) {
+  const agentEditModel = options.model ?? model;
   const coordinator = new MemoryCoordinator(initialDocs);
   const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
@@ -66,7 +72,8 @@ export function harness(
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
-    model,
+    model: agentEditModel,
+    semanticProvenance: options.semanticProvenance,
     turnDiffQuery: options.turnDiffQuery,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),

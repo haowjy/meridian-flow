@@ -4,13 +4,13 @@ import {
   getBlockItemId,
   toDocHandle,
   yProsemirrorModel,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { planTrailForwardAction } from "../adapters/drizzle-trail-forward-actions.js";
-import type { BranchJournalRow } from "./branch-push.js";
+import type { BranchJournalRow } from "./branch-push-contracts.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,

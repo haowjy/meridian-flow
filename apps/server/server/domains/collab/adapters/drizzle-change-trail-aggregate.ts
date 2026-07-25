@@ -100,7 +100,7 @@ function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
-  return {
+  const writer: ChangeTrailAggregateWriter = {
     async record(input) {
       const tx = currentDrizzleDb(db);
       const committed: CommittedChangeTrailProjection[] = [];
@@ -182,6 +182,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
                 : persistedChanges,
               replacement,
             );
+
         const pushIds = [
           ...new Set(
             changes.flatMap((change) =>
@@ -307,6 +308,29 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       }
       return committed;
     },
+    async replacePushContribution(pushId, replacement, context) {
+      const trails = replacement.targets.map(({ owner, classifications }) => {
+        const changes = replacement.kind === "refine" ? [...classifications] : [];
+        return {
+          owner,
+          changes,
+          counts: {
+            changes: changes.length,
+            swept: changes.filter((change) => change.swept !== null).length,
+            documents: new Set(changes.map((change) => change.documentId)).size,
+          },
+        };
+      });
+      return writer.record({
+        trails,
+        documentTitles: replacement.documentTitles,
+        settlementRefinement: {
+          pushId,
+          kind: replacement.kind === "empty" ? "empty_contribution" : "refine_classifications",
+          currentVersion: context.refineCurrentVersion,
+        },
+      });
+    },
     async reopenOwners(owners) {
       const tx = currentDrizzleDb(db);
       const sortedOwners = [
@@ -351,6 +375,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       await reconcileTerminalOwners(db);
     },
   };
+  return writer;
 }
 
 /** Advances turn trails only after the terminal turn policy has covered every owned row. */

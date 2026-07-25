@@ -11,7 +11,7 @@ This domain is not the full project CRUD surface; that lives in
   agent, first work, manuscript context source, `chapter-1.md` document, and
   primary thread.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `work://manuscript/chapter-1.md`.
-- **Compatibility stub** — `WorkRepository` is still a phase marker here; full
+- **Phase marker** — `WorkRepository` is still a temporary ownership seam here; full
   work CRUD is owned by `domains/projects`.
 
 ## Contracts
@@ -19,6 +19,7 @@ This domain is not the full project CRUD surface; that lives in
 | Contract | Purpose |
 |---|---|
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
+| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth fast path: reads the durable completion flag and enters bootstrap only while incomplete. Seed failures leave the flag false for repair without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Phase marker only; do not add work CRUD here while `domains/projects` owns it. |
 
@@ -34,10 +35,16 @@ This domain is not the full project CRUD surface; that lives in
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, chapter document, or editing
   thread.
+- WorkOS `external_id` is the sole automatic user identity key. Email collisions
+  across external IDs fail closed and never merge local accounts.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
-- Auth provisioning and home routing re-enter bootstrap even when the personal
-  project exists, so a crash after row commit but before the initial seed repairs.
+- Auth provisioning checks the personal project's `default_bootstrap_ready`;
+  completed workspaces take no advisory lock and never enter collab. An
+  incomplete flag re-enters the full bootstrap, so a crash after row commit or
+  seed but before readiness persistence repairs on a later request.
+- Readiness becomes true only after initialize-only canonical seeding succeeds,
+  so it includes document-authority readiness rather than merely row existence.
 
 ## Relationship to `domains/projects`
 

@@ -36,6 +36,11 @@ export type InlineReplacementResult =
       details?: Record<string, unknown>;
     };
 
+export interface InlineTextReplacement {
+  span: Span;
+  newText: string;
+}
+
 /**
  * Block-operation seam carrying block semantics and Tier 1/3 apply routing.
  *
@@ -122,6 +127,14 @@ export interface AgentEditModel extends DocumentModel {
     block: BlockRef,
     span: Span,
     replacementMarkup: string,
+    codec: AgentEditCodec,
+  ): InlineReplacementResult;
+
+  /** Apply disjoint same-block replacements through one adapter-owned ProseMirror transform. */
+  applyInlineReplacements(
+    doc: DocHandle,
+    block: BlockRef,
+    replacements: readonly InlineTextReplacement[],
     codec: AgentEditCodec,
   ): InlineReplacementResult;
 

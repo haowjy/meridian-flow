@@ -52,16 +52,28 @@ List CRDTs*, and Loro's `MovableList`). Deferred deliberately. Research notes:
 is common and its `cannot_place` rate is high enough to hurt writers. Blocked on product
 analytics (none exists yet) — see GH issue #127 (interaction-telemetry work item).
 
-## Fix adapter-contract fixture: change-trail persistence wiring
+## Register the two deferred real-Postgres suites
 
-**Affected:** `adapters/__conformance__/drizzle-branches.adapter-contract.test.ts`
-("pushes manifest membership journal rows with lineage receipt").
+**Affected:**
+`adapters/__conformance__/drizzle-branches.adapter-contract.test.ts` (28 test
+declarations) and
+`adapters/__conformance__/drizzle-journal.recovery-redo.test.ts` (5).
 
-Pre-existing failure (26/27) present at `3c67c3a0` (before the merge-mechanics
-branch): the branch-push committer now requires change-trail persistence
-(`drizzle-branch-push.ts` `persistRequiredTrail`), but this contract test's
-fixture never wires it, so the test throws instead of exercising the manifest
-membership path. Wire the change-trail store into the conformance fixture (see
-`test-support/change-trail-postgres-harness.ts` for the working pattern) or
-delete the case if the manifest path is covered elsewhere. Evidence:
-work `draft-simplify` → `mechanics/evidence/0a-baseline.md`.
+Both files require Postgres but retain the ordinary `.test.ts` suffix. The
+default unit project therefore reports only their disabled placeholder, while
+`pnpm test:db` discovers neither file. The DB gate currently omits all 33 real
+test declarations even though its manifest is complete for every
+`*.db.test.ts` file.
+
+Before renaming and registering both suites in `apps/server/vitest.db.config.ts`,
+repair the branch-store fixture's missing change-trail persistence wiring for
+“pushes manifest membership journal rows with lineage receipt”; use
+`test-support/change-trail-postgres-harness.ts` as the working composition
+pattern. Preserve the suites' adapter and recovery contracts while adapting
+them to the shared DB harness.
+
+PR [#385](https://github.com/haowjy/meridian-flow/pull/385) deliberately
+deferred this collab work until after the #347 restructure. That prerequisite
+has now landed. Audit evidence lives in work `draft-simplify` →
+`review/test-architecture-review.md`; the earlier fixture failure is in
+`mechanics/evidence/0a-baseline.md`.

@@ -22,3 +22,16 @@ shipping; the human explicitly chose to say nothing for now.
 
 Owner seam: `src/apply/echo.ts` marker rendering +
 `src/tool/response-format.ts` concurrent section copy.
+
+## Complete-plan apply preflight (deferred 2026-07-24)
+
+`applyEdits` still validates and commits groups incrementally. The write façade
+now restores its pre-write runtime snapshot whenever a later group or semantic
+provenance materializer rejects, so unsuccessful writes do not leak speculative
+state. A stronger kernel contract would preflight every adapter-owned operation
+before mutating, or apply the complete plan to a clone and merge only success.
+Revisit when an adapter needs failure-prone execution after preflight; do not add
+a parallel transaction planner without that concrete producer.
+
+Owner seam: `src/apply/tiers.ts` planning/apply split and
+`src/tool/write-commands.ts` failure restoration.

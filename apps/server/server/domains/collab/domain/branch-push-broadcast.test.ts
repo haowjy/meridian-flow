@@ -1,6 +1,6 @@
 /** Focused contract coverage for post-completion branch-push broadcasts. */
 
-import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit";
+import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
@@ -9,12 +9,13 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
-  BranchPushStore,
   PreparedPushCommit,
+  PushCommitStore,
   PushLineageRow,
-} from "./branch-push-executor.js";
+} from "./branch-push-contracts.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
+import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
 const DOCUMENT_A = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const DOCUMENT_B = "00000000-0000-4000-8000-000000000002" as DocumentId;
@@ -112,9 +113,6 @@ function preparedPush(
       totalWordDelta: 0,
     },
     idempotencyKey: `push-${pushId}`,
-    markdownProjection: "",
-    liveStateVector: Y.encodeStateVector(liveDoc),
-    liveState: Y.encodeStateAsUpdate(liveDoc),
     trail,
     pendingLiveSettlement: transition.prepare({
       documentTitle: trail.documentTitle,
@@ -137,7 +135,6 @@ function pushRow(prepared: PreparedPushCommit, id: number): PushLineageRow {
     upstreamUpdateSeq: null,
     receiptPayload: prepared.receiptPayload,
     idempotencyKey: prepared.idempotencyKey,
-    pushedByUserId: prepared.pushedByUserId ?? null,
   };
 }
 
@@ -152,19 +149,58 @@ function coordinator(docs: ReadonlyMap<DocumentId, Y.Doc>) {
   };
 }
 
-function pushStore(overrides: Partial<BranchPushStore>): BranchPushStore {
-  return {
-    listActiveJournalRows: async () => [],
-    listConcurrentJournalRows: async () => [],
+function stores(
+  overrides: Partial<PushCommitStore & PendingSettlementStore>,
+): Pick<Parameters<typeof createBranchPushTransition>[0], "commitStore" | "settlementStore"> {
+  const settlements = new Map<
+    number,
+    ReturnType<typeof preparedPush>["pendingLiveSettlement"] & { push: PushLineageRow }
+  >();
+  const commitStore: PushCommitStore = {
     commitPush: async () => {
       throw new Error("unexpected single push");
     },
-    countUnpushedRowsForWork: async () => 0,
-    listActiveWorkDraftBranchIdsForWork: async () => [],
-    updateWorkDraftPushPolicy: async () => {},
+    commitDiscard: async () => {},
+    commitPushBatch: async () => ({ pushes: [] }),
+    commitTurnRedo: async () => {},
     markRollbackPending: async () => 0,
-    ...overrides,
   };
+  const settlementStore: PendingSettlementStore = {
+    joinAdmission: async () => {},
+    loadLiveSettlement: async (pushId) => {
+      const pending = settlements.get(pushId);
+      if (!pending) throw new Error(`missing settlement ${pushId}`);
+      return pending;
+    },
+    claimRecoverable: async () => null,
+    renewClaim: async ({ claim }) => claim,
+    handoffClaim: async () => true,
+    recordFailure: async () => true,
+    block: async () => true,
+    settlePushTrail: async () => [],
+    withCompletionFence: async (_input, complete) => complete(),
+    listRecoverableSettlementIds: async () => [],
+  };
+  Object.assign(commitStore, overrides);
+  Object.assign(settlementStore, overrides);
+  const commit = commitStore.commitPush;
+  commitStore.commitPush = async (prepared) => {
+    const result = await commit(prepared);
+    if (result.status === "inserted") {
+      settlements.set(result.push.id, { ...prepared.pendingLiveSettlement, push: result.push });
+    }
+    return result;
+  };
+  const commitBatch = commitStore.commitPushBatch;
+  commitStore.commitPushBatch = async (input) => {
+    const result = await commitBatch(input);
+    input.pushes.forEach((prepared, index) => {
+      const push = result.pushes[index];
+      if (push) settlements.set(push.id, { ...prepared.pendingLiveSettlement, push });
+    });
+    return result;
+  };
+  return { commitStore, settlementStore };
 }
 
 describe("branch push change-event broadcast", () => {
@@ -192,7 +228,7 @@ describe("branch push change-event broadcast", () => {
       }),
     ];
     let nextPushId = 1;
-    const store = pushStore({
+    const storeDeps = stores({
       async commitPush(prepared: PreparedPushCommit) {
         const push = pushRow(prepared, nextPushId++);
         return {
@@ -206,7 +242,7 @@ describe("branch push change-event broadcast", () => {
       },
     });
     const transition = createBranchPushTransition({
-      pushStore: store,
+      ...storeDeps,
       liveCoordinator: coordinator(new Map([[DOCUMENT_A, liveDoc]])),
       model,
       codec,
@@ -245,7 +281,7 @@ describe("branch push change-event broadcast", () => {
     const delivered: Array<Omit<ChangeEventWsMessage, "type">> = [];
     let fenceAttempt = 0;
     let projectionRevision = 0;
-    const store = pushStore({
+    const storeDeps = stores({
       async commitPush(prepared: PreparedPushCommit) {
         const push = pushRow(prepared, 1);
         return {
@@ -272,7 +308,7 @@ describe("branch push change-event broadcast", () => {
       },
     });
     const transition = createBranchPushTransition({
-      pushStore: store,
+      ...storeDeps,
       liveCoordinator: coordinator(new Map([[DOCUMENT_A, liveDoc]])),
       model,
       codec,
@@ -298,7 +334,7 @@ describe("branch push change-event broadcast", () => {
     const deliver = vi.fn(() => {
       throw new Error("room disappeared");
     });
-    const store = pushStore({
+    const storeDeps = stores({
       async commitPush(prepared: PreparedPushCommit) {
         const push = pushRow(prepared, 1);
         return {
@@ -315,7 +351,7 @@ describe("branch push change-event broadcast", () => {
       },
     });
     const transition = createBranchPushTransition({
-      pushStore: store,
+      ...storeDeps,
       liveCoordinator: coordinator(new Map([[DOCUMENT_A, liveDoc]])),
       model,
       codec,
@@ -342,7 +378,7 @@ describe("branch push change-event broadcast", () => {
     const beta = createCollabYDoc({ gc: false });
     const completed: DocumentId[] = [];
     const delivered: DocumentId[] = [];
-    const store = pushStore({
+    const storeDeps = stores({
       async commitPushBatch({ pushes }: { pushes: PreparedPushCommit[] }) {
         const rows = pushes.map((prepared, index) => pushRow(prepared, index + 1));
         return {
@@ -372,7 +408,7 @@ describe("branch push change-event broadcast", () => {
       },
     });
     const transition = createBranchPushTransition({
-      pushStore: store,
+      ...storeDeps,
       liveCoordinator: coordinator(
         new Map([
           [DOCUMENT_A, alpha],
