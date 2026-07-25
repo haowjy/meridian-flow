@@ -1560,6 +1560,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     advanceTrailWorkTime(milliseconds: number) {
       trailWorkTime = new Date(trailWorkTime.getTime() + milliseconds);
     },
+    deferTrailWork(milliseconds: number) {
+      return db.update(schema.turnTrailWork).set({
+        state: "pending",
+        nextAttemptAt: new Date(trailWorkTime.getTime() + milliseconds),
+      });
+    },
+    markTrailWorkRunning() {
+      return db.update(schema.turnTrailWork).set({ state: "running", updatedAt: trailWorkTime });
+    },
     failNextTrailRetry() {
       failNextTrailRetry = true;
     },

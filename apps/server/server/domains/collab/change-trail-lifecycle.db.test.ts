@@ -782,6 +782,44 @@ describe("change trail (postgres)", () => {
     expect(await harness.branchGeneration(branchId)).toBe(3);
   });
 
+  it("claims pending trail work only when its retry deadline arrives", async () => {
+    const harness = createHarness();
+    await harness.seedDestructivePush("retry-deadline");
+    await harness.setPushPolicy("auto");
+    await harness.deferTrailWork(2_000);
+
+    harness.advanceTrailWorkTime(1_999);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "pending", attempts: 0 }),
+    ]);
+
+    harness.advanceTrailWorkTime(1);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "complete", attempts: 1 }),
+    ]);
+  });
+
+  it("reclaims running trail work only after its lease expires", async () => {
+    const harness = createHarness();
+    await harness.seedDestructivePush("running-lease");
+    await harness.setPushPolicy("auto");
+    await harness.markTrailWorkRunning();
+
+    harness.advanceTrailWorkTime(30_000);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "running", attempts: 0 }),
+    ]);
+
+    harness.advanceTrailWorkTime(1);
+    await harness.pollTrails();
+    expect(await harness.workRows()).toEqual([
+      expect.objectContaining({ state: "complete", attempts: 1 }),
+    ]);
+  });
+
   it("fences exhausted auto-push work without falsely settling its trail", async () => {
     const harness = createHarness();
     await harness.seedDestructivePush("exhausted-auto-push");
