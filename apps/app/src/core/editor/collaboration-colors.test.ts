@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Awareness colors must be concrete CSS values, not token references. */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COLLABORATION_CURSOR_COLORS,
   collaborationColorFor,
@@ -22,7 +22,22 @@ describe("collaboration colors", () => {
       );
     }
 
-    expect(collaborationColorFor("thread-1")).toBe("rgb(12, 34, 56)");
+    expect(collaborationColorFor("thread-1")).toBe("#0c2238");
+  });
+
+  it("converts the actual OKLCH token shape to y-prosemirror's six-digit RGB format", () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext");
+    getContext.mockReturnValue({
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      getImageData: () => ({ data: new Uint8ClampedArray([45, 123, 91, 255]) }),
+      set fillStyle(_value: string) {},
+    } as unknown as CanvasRenderingContext2D);
+    document.documentElement.style.setProperty("--color-collab-cursor-1", "oklch(0.52 0.13 165)");
+
+    expect(resolveCollaborationColor("var(--color-collab-cursor-1)")).toBe("#2d7b5b");
+
+    getContext.mockRestore();
   });
 
   it("preserves a token when styles are not available yet", () => {
