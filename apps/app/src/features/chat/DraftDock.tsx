@@ -19,6 +19,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useId, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -332,25 +333,25 @@ export function DraftApplyRefusalNotice({
           </p>
         </div>
         {onReview ? (
-          <button
-            type="button"
-            onClick={onReview}
-            className="focus-ring inline-flex h-6 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground"
-          >
+          <Button type="button" size="sm" onClick={onReview}>
             {refusal.reason === "stale_draft" ? (
               <Trans>Review latest draft</Trans>
             ) : (
               <Trans>Compare changes</Trans>
             )}
-          </button>
+          </Button>
         ) : null}
       </div>
       {refusal.conflicts.length > 0 ? (
-        <details data-draft-apply-refusal-details>
+        <details className="group" data-draft-apply-refusal-details>
           <summary
-            className="focus-ring w-fit cursor-pointer rounded-sm font-medium text-ink-muted"
+            className="focus-ring flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-ink-muted [&::-webkit-details-marker]:hidden"
             id={evidenceHeadingId}
           >
+            <ChevronRight
+              className="size-3 shrink-0 transition-transform group-open:rotate-90"
+              aria-hidden
+            />
             {refusal.conflicts.length === 1 ? (
               <Trans>Show conflict evidence</Trans>
             ) : (
@@ -358,7 +359,7 @@ export function DraftApplyRefusalNotice({
             )}
           </summary>
           <section
-            className="focus-ring mt-2 max-h-64 space-y-2 overflow-y-auto rounded-sm pe-1"
+            className="focus-ring mt-2 max-h-64 space-y-2 overflow-y-auto rounded-sm pe-1 pb-4"
             data-draft-apply-refusal-scroll
             aria-labelledby={evidenceHeadingId}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: Safari needs an explicit focus stop to keyboard-scroll bounded evidence.
@@ -373,7 +374,7 @@ export function DraftApplyRefusalNotice({
               >
                 <p className="text-ink-muted">{conflictEvidence(conflict.evidence)}</p>
                 <p>{conflict.why}</p>
-                <dl className="grid grid-cols-1 gap-x-2 gap-y-1 text-micro sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+                <dl className="grid grid-cols-1 gap-y-1 text-micro">
                   <ConflictVersion
                     label={t`Before this draft`}
                     body={conflict.base}

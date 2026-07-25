@@ -6,6 +6,8 @@
   attribution, readable removed prose, and warning treatment for swept edits.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and can be cleared by trail.
+- `apps/app`: refused draft actions now use the shared compare control and a
+  compact, single-column evidence disclosure without browser-default chrome.
 - `apps/app`, `apps/server`: change trails now use one writer-impact authority
   for ownership, counts, marks, self-diffs, and Restore/Delete-again recovery.
 - `apps/app`: draft review manuscripts now render the server draft projection

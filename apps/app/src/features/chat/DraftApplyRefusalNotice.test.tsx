@@ -53,14 +53,22 @@ describe("DraftApplyRefusalNotice", () => {
         const evidenceHeading = document.querySelector<HTMLElement>(
           "[data-draft-apply-refusal-details] summary",
         );
+        const compare = button("Compare changes");
+        const versions = document.querySelector("[data-draft-apply-conflict] dl");
         expect(evidence?.tabIndex).toBe(0);
         expect(evidence?.getAttribute("aria-labelledby")).toBe(evidenceHeading?.id);
+        expect(evidence?.className).toContain("pb-4");
+        expect(evidenceHeading?.className).toContain("list-none");
+        expect(evidenceHeading?.querySelector("svg")).not.toBeNull();
+        expect(compare.dataset.slot).toBe("button");
+        expect(compare.dataset.size).toBe("sm");
+        expect(versions?.className).not.toContain("sm:grid-cols");
 
         act(() => evidence?.focus());
         expect(document.activeElement).toBe(evidence);
 
         act(() => {
-          button("Compare changes").click();
+          compare.click();
         });
         expect(onReview).toHaveBeenCalledOnce();
       },
