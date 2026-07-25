@@ -1,7 +1,7 @@
 /**
  * The digest is the collapsed fold's only label, and its counts must match what
  * expanding the fold shows. Cross-spelling dedup is where an off-by-one makes
- * the label lie ("Explored 5 documents" over 4 real ones) without looking wrong.
+ * the label lie ("Read 5 documents" over 4 real ones) without looking wrong.
  */
 
 import { describe, expect, it, vi } from "vitest";
