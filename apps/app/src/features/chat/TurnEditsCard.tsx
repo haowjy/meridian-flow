@@ -22,6 +22,7 @@ import type { ReversalDirection } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
@@ -122,6 +123,17 @@ export function TurnEditsCard({
     }
   }
 
+  function clearTrailMarks() {
+    if (!changeTrail) return;
+    const registry = getDocumentSessionRegistry();
+    for (const document of changeTrail.documents) {
+      registry.peek(document.documentId)?.markerStore.dismissGroup({
+        trailId: changeTrail.trailId,
+        documentId: document.documentId,
+      });
+    }
+  }
+
   return (
     // overflow-hidden clips the header hover wash to the card radius.
     <div
@@ -192,6 +204,20 @@ export function TurnEditsCard({
             {receipt?.control === "redo" ? t`Redo` : t`Undo`}
           </Button>
         )}
+        {changeTrail?.state === "settled" && changeTrail.documents.length > 0 ? (
+          <Button
+            type="button"
+            variant="quiet"
+            size="meta"
+            onClick={(event) => {
+              event.stopPropagation();
+              clearTrailMarks();
+            }}
+            className="shrink-0"
+          >
+            <Trans>Clear marks</Trans>
+          </Button>
+        ) : null}
       </div>
       {guardCopy ? (
         <p className="px-3 pb-2 pl-9 text-ink-muted" data-undo-unavailable-reason>

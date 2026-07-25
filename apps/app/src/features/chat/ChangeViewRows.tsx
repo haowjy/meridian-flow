@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import { applyTrailForwardAction } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   trailChangeLabel,
   useTrailForwardAction,
@@ -38,17 +37,6 @@ export function ChangeViewRows({
 }) {
   return (
     <div className="px-3 pb-2 pl-9">
-      <button
-        type="button"
-        className="focus-ring mb-1 rounded-sm text-ink-muted text-micro hover:text-prose-foreground"
-        onClick={() =>
-          getDocumentSessionRegistry()
-            .peek(documentId)
-            ?.markerStore.dismissGroup({ trailId, documentId })
-        }
-      >
-        <Trans>Clear marks</Trans>
-      </button>
       <ol className="space-y-2">
         {[...changes]
           .sort((left, right) => left.ordinal - right.ordinal)

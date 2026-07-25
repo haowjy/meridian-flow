@@ -10,7 +10,8 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { mutateAsyncMock } = vi.hoisted(() => ({
+const { dismissGroupMock, mutateAsyncMock } = vi.hoisted(() => ({
+  dismissGroupMock: vi.fn(),
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
 }));
 
@@ -19,6 +20,11 @@ vi.mock("@/client/query/useReverseMutation", () => ({
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
+}));
+vi.mock("@/core/editor/document-session-registry", () => ({
+  getDocumentSessionRegistry: () => ({
+    peek: () => ({ markerStore: { dismissGroup: dismissGroupMock } }),
+  }),
 }));
 
 const { TurnEditsCard } = await import("./TurnEditsCard");
@@ -35,6 +41,20 @@ function turn(): Turn {
 }
 
 const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
+const settledTrail = {
+  trailId: "trail-1",
+  owner: { kind: "turn", threadId: "thread-1", turnId: "turn-1" },
+  state: "settled",
+  version: 1,
+  changeCount: 3,
+  writerImpactCount: 0,
+  documentCount: 1,
+  documents: [{ documentId: "document-1", title: "chapter-1" }],
+  wordsAdded: 20,
+  wordsRemoved: 0,
+  updatedAt: "2026-07-04T00:00:00.000Z",
+  settledAt: "2026-07-04T00:00:00.000Z",
+} satisfies ChangeTrailShell;
 
 async function withInteractiveCard(
   props: Partial<React.ComponentProps<typeof TurnEditsCard>>,
@@ -130,6 +150,23 @@ describe("TurnEditsCard", () => {
 
       expect(document.body.textContent).toContain("Undo");
       expect(document.body.textContent).not.toContain("Redo");
+    });
+  });
+
+  it("clears ordinary trail marks without requiring writer-impact rows", async () => {
+    dismissGroupMock.mockReset();
+    await withInteractiveCard({ changeTrail: settledTrail }, async (card) => {
+      const clearButton = [...document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === "Clear marks",
+      );
+      expect(clearButton?.dataset.size).toBe("meta");
+
+      await card.click("Clear marks");
+
+      expect(dismissGroupMock).toHaveBeenCalledWith({
+        trailId: "trail-1",
+        documentId: "document-1",
+      });
     });
   });
 
