@@ -140,9 +140,11 @@ carries hover-revealed Apply/Discard verbs — the only mutating targets on the
 card — driving `controller.acceptOperation` / `controller.discardOperation`.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
-the TipTap inline-review extension and reports model availability identities. An
-active preview without a model is an invariant violation, logged loudly and
-ignored safely.
+the TipTap inline-review extension and reports model availability identities.
+The extension styles only text and blocks present in the server draft
+projection; removed live content stays in the dock's compare cards so old and
+proposed prose can never compose into one manuscript line. An active preview
+without a model is an invariant violation, logged loudly and ignored safely.
 
 `reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
 keeps active drafts visible and hides older terminal undo receipts when a newer

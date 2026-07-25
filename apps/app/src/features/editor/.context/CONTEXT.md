@@ -53,6 +53,11 @@ check, not by a shared slot. (The former `EditorBannerSlot`/`belowToolbar`
 tenancy mechanism was deleted 2026-07-21 when the review strip moved above
 the identity bar.)
 
+The review manuscript is the server draft projection, not a track-changes
+composition. Inline decorations may style ranges that exist in that projection,
+but must not inject deleted live prose or blocks. Before/after content belongs
+in the dock's Changes cards.
+
 ### Rejected placements
 
 | Placement | Reason rejected |

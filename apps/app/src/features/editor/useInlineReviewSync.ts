@@ -15,7 +15,6 @@
  * live draft, client just receives them.
  */
 
-import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
@@ -125,7 +124,6 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       operations,
       hunks,
       conflictedBlocks: options.conflictedBlocks,
-      conflictLabel: t`edited since this draft was written`,
     });
     editor.commands.setInlineReviewModel(model);
     lastPushedIdentityRef.current = identity;

@@ -6,13 +6,9 @@
  * position via `y-prosemirror`'s binding mapping, so decorations survive
  * remote sync and are never coupled to a specific insert index.
  *
- * Widget rendering (deleted content) is intentionally minimal — a read-only
- * element marked `contenteditable="false"` with a `data-` attribute pair so
- * the sidebar can find and emphasize it: a `<span>` for deleted text inside a
- * text hunk, a full-width `<div>` standing in for a whole deleted block.
- * Widget-DOM stays outside the document's text content: it must not
- * participate in cursor movement, copy, or select-all — those behaviours come
- * from the widget spec's defaults (`side: -1`, no marks, plain HTMLElement).
+ * Decorations only style content that exists in the draft projection. Removed
+ * live content belongs in the Changes compare surface; injecting it as widget
+ * DOM makes the manuscript read like the old and proposed versions were merged.
  */
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -49,17 +45,11 @@ const WRITER_CLASS = "meridian-review-writer";
 /** Neutral dashed seam for a CRDT merge artifact (spec §6.2) — not an author tint. */
 const MERGED_CLASS = "meridian-review-merged";
 const CONFLICT_CLASS = "meridian-review-conflict";
-const CONFLICT_CHIP_CLASS = "meridian-review-conflict-chip";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
-const WIDGET_CLASS = "meridian-review-removed";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
-/** Modifier on the removed widget when it stands in for a whole deleted block. */
-const BLOCK_WIDGET_CLASS = "meridian-review-removed-block";
 const HUNK_ATTR = "data-review-hunk";
 const OPERATION_ATTR = "data-review-operations";
-/** Carries the deleted block's node type so CSS can shape special cases (rules). */
-const BLOCK_TYPE_ATTR = "data-review-block-type";
 
 /**
  * Build a fresh `DecorationSet` from the resolved model. When an anchor no
@@ -83,17 +73,6 @@ export function buildDecorations(
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
-
-    if (hunk.concurrentConflict) {
-      decorations.push(
-        Decoration.widget(startPos, () => renderConflictChip(hunk.hunkId, model.conflictLabel), {
-          side: -2,
-          key: `${hunk.hunkId}:concurrent-conflict`,
-          ignoreSelection: true,
-          [HUNK_ATTR]: hunk.hunkId,
-        }),
-      );
-    }
 
     if (hunk.kind === "block") {
       decorations.push(...blockHunkDecorations(hunk, focused, startPos, operationsById, resolver));
@@ -172,24 +151,6 @@ export function buildDecorations(
         }
       }
     }
-
-    // Deletion widget — read-only span rendering the removed text.
-    if (hunk.deletedText) {
-      decorations.push(
-        Decoration.widget(startPos, () => renderDeletionWidget(hunk, focused), {
-          // Draw before the anchor character so a deletion that lived *at* a
-          // paragraph boundary reads on the correct line.
-          side: -1,
-          // Widget must not be part of the document text stream — key it so
-          // ProseMirror re-uses the DOM across mapped transactions instead
-          // of destroying and rebuilding it.
-          key: `${hunk.hunkId}:${focused ? "focus" : "rest"}`,
-          ignoreSelection: true,
-          [HUNK_ATTR]: hunk.hunkId,
-          [OPERATION_ATTR]: hunk.operationIds.join(" "),
-        }),
-      );
-    }
   }
 
   return DecorationSet.create(resolver.doc, decorations);
@@ -198,11 +159,9 @@ export function buildDecorations(
 /**
  * Decorations for a whole-block replace hunk. The inserted draft block gets a
  * `Decoration.node` (the anchor spans exactly that node), painting the same
- * insert tint family as text hunks at node granularity. The deleted live
- * block — which no longer exists in the draft doc — renders as a full-width
- * widget above the anchor, striking the server's one-line `display`
- * rendering of the old block. A change hunk emits both: struck old block
- * directly above the highlighted new one.
+ * insert tint family as text hunks at node granularity. Deleted live blocks
+ * are intentionally absent here so the editor remains the exact draft
+ * projection; their before/after comparison lives in the Changes surface.
  */
 function blockHunkDecorations(
   hunk: ResolvedBlockReviewHunk,
@@ -237,21 +196,6 @@ function blockHunkDecorations(
       }
     }
   }
-
-  if (hunk.deletedBlock) {
-    const deletedBlock = hunk.deletedBlock;
-    decorations.push(
-      Decoration.widget(startPos, () => renderBlockDeletionWidget(hunk, deletedBlock, focused), {
-        // Draw before the anchor so the struck old block sits directly above
-        // the inserted replacement (or at the delete site for pure deletes).
-        side: -1,
-        key: `${hunk.hunkId}:block:${focused ? "focus" : "rest"}`,
-        ignoreSelection: true,
-        ...dataAttrs,
-      }),
-    );
-  }
-
   return decorations;
 }
 
@@ -329,60 +273,6 @@ function insertionClassName(
   return classNames(base, focused && EMPHASIS_CLASS, conflict && CONFLICT_CLASS);
 }
 
-function renderDeletionWidget(hunk: ResolvedTextReviewHunk, focused: boolean): HTMLElement {
-  const span = document.createElement("span");
-  span.className = classNames(
-    WIDGET_CLASS,
-    focused && EMPHASIS_CLASS,
-    hunk.concurrentConflict && CONFLICT_CLASS,
-  );
-  span.setAttribute("contenteditable", "false");
-  span.setAttribute(HUNK_ATTR, hunk.hunkId);
-  span.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
-  // Hidden from a11y trees by default — the sidebar surfaces the same content
-  // as structured proposals; screen readers should not read strikethrough
-  // widgets as inline prose.
-  span.setAttribute("aria-hidden", "true");
-  span.textContent = hunk.deletedText ?? "";
-  return span;
-}
-
-/**
- * Full-width stand-in for a deleted block. Reuses the removed visual language
- * (tint + strikethrough) at block shape; the `display` string is the server's
- * one-line rendering of the old block, so even an atom node like a horizontal
- * rule shows a visible struck glyph instead of an empty span.
- */
-function renderBlockDeletionWidget(
-  hunk: ResolvedBlockReviewHunk,
-  deletedBlock: NonNullable<ResolvedBlockReviewHunk["deletedBlock"]>,
-  focused: boolean,
-): HTMLElement {
-  const block = document.createElement("div");
-  block.className = classNames(
-    WIDGET_CLASS,
-    BLOCK_WIDGET_CLASS,
-    focused && EMPHASIS_CLASS,
-    hunk.concurrentConflict && CONFLICT_CLASS,
-  );
-  block.setAttribute("contenteditable", "false");
-  block.setAttribute(HUNK_ATTR, hunk.hunkId);
-  block.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
-  block.setAttribute(BLOCK_TYPE_ATTR, deletedBlock.type);
-  block.setAttribute("aria-hidden", "true");
-  block.textContent = deletedBlock.display;
-  return block;
-}
-
-function renderConflictChip(hunkId: string, label: string): HTMLElement {
-  const chip = document.createElement("span");
-  chip.className = CONFLICT_CHIP_CLASS;
-  chip.setAttribute("contenteditable", "false");
-  chip.setAttribute(HUNK_ATTR, hunkId);
-  chip.textContent = label;
-  return chip;
-}
-
 function classNames(...values: Array<string | false | undefined>): string {
   return values.filter(Boolean).join(" ");
 }
@@ -393,9 +283,6 @@ export const inlineReviewClassNames = {
   writer: WRITER_CLASS,
   merged: MERGED_CLASS,
   emphasized: EMPHASIS_CLASS,
-  removed: WIDGET_CLASS,
   block: BLOCK_CLASS,
-  removedBlock: BLOCK_WIDGET_CLASS,
   conflict: CONFLICT_CLASS,
-  conflictChip: CONFLICT_CHIP_CLASS,
 } as const;
