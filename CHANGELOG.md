@@ -4,6 +4,8 @@
 
 - `apps/app`: draft review manuscripts now render the server draft projection
   without splicing removed live text into proposed prose.
+- `apps/app`, `apps/server`: draft review rooms are read-only in TipTap and
+  reject client-authored Yjs branch mutations.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.

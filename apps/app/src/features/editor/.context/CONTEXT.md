@@ -56,7 +56,8 @@ the identity bar.)
 The review manuscript is the server draft projection, not a track-changes
 composition. Inline decorations may style ranges that exist in that projection,
 but must not inject deleted live prose or blocks. Before/after content belongs
-in the dock's Changes cards.
+in the dock's Changes cards. The review editor is always read-only and omits
+formatting controls.
 
 ### Rejected placements
 

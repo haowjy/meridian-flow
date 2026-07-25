@@ -174,18 +174,26 @@ async function admitBranchSync(
     context: input.context,
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
+  if (!updateChangesDocument(input.document, input.payload)) return;
+  input.closeTransport?.({ code: 1008, reason: "branch-review-read-only" });
+  throw permissionDenied("branch-review-read-only", 1008);
+}
+
+function updateChangesDocument(document: Y.Doc, update: Uint8Array): boolean {
+  const probe = new Y.Doc({ gc: false });
   try {
-    await input.services.documentSync.admitBranchWriterUpdate({
-      branchId: room.branchId,
-      expectedGeneration: room.generation,
-      update: input.payload,
-      origin: { type: "user", userId: input.userId },
-      document: input.document,
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(document));
+    let changed = false;
+    probe.on("update", () => {
+      changed = true;
     });
-    return;
+    Y.applyUpdate(probe, update);
+    return changed;
   } catch {
-    input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
-    throw permissionDenied("branch-update-admission-failed", 1008);
+    // Malformed update frames are never harmless acknowledgements.
+    return true;
+  } finally {
+    probe.destroy();
   }
 }
 
