@@ -55,6 +55,9 @@ export function createDrizzleChangeTrailDispatcher(input: {
           changes: changeTrailDeliveryOutbox.changeCount,
           swept: changeTrailDeliveryOutbox.sweptChangeCount,
           documents: changeTrailDeliveryOutbox.documentCount,
+          documentTitles: changeTrailDeliveryOutbox.documents,
+          wordsAdded: changeTrailDeliveryOutbox.wordsAdded,
+          wordsRemoved: changeTrailDeliveryOutbox.wordsRemoved,
         })
         .from(changeTrailDeliveryOutbox)
         .innerJoin(changeTrailShells, eq(changeTrailShells.id, changeTrailDeliveryOutbox.trailId))
@@ -77,9 +80,9 @@ export function createDrizzleChangeTrailDispatcher(input: {
               turnId: row.turnId,
               version: row.version,
               counts: {
-                changes: row.changes as number,
-                swept: row.swept as number,
-                documents: row.documents as number,
+                changes: row.changes,
+                swept: row.swept,
+                documents: row.documents,
               },
             }
           : {
@@ -89,6 +92,16 @@ export function createDrizzleChangeTrailDispatcher(input: {
               trailId: row.trailId,
               turnId: row.turnId,
               version: row.version,
+              shell: {
+                counts: {
+                  changes: row.changes,
+                  swept: row.swept,
+                  documents: row.documents,
+                },
+                documents: row.documentTitles,
+                wordsAdded: row.wordsAdded,
+                wordsRemoved: row.wordsRemoved,
+              },
             };
       const seq = await input.journalWriter.appendEvent(row.threadId, event);
       await tx

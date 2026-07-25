@@ -2,12 +2,15 @@
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
  * work-scoped (scratch/uploads) ContextFS adapters into one router per scope.
  *
- * Key decision: scheme taxonomy and adapter assembly live here as one deep module
- * (Voluma's context-schemes + context-adapter-factories collapsed in). Source
- * provisioning is delegated to context-source-provisioning.ts; thread resolution
- * to context-port-resolution.ts.
+ * Contracts owns the scheme taxonomy; adapter assembly lives here as one deep
+ * module. Source provisioning is delegated to context-source-provisioning.ts;
+ * thread resolution to context-port-resolution.ts.
  */
 
+import {
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+  WORK_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { Err, Ok } from "../../shared/result.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
@@ -39,15 +42,10 @@ import {
   type InMemoryUnifiedContextStoreRegistry,
 } from "./support/in-memory-unified-context-stores.js";
 
-const PROJECT_CONTEXTFS_SCHEMES = [
-  "manuscript",
-  "kb",
-  "user",
-] as const satisfies readonly ProjectContextFsScheme[];
-const WORK_SCOPED_CONTEXTFS_SCHEMES = [
-  "scratch",
-  "uploads",
-] as const satisfies readonly WorkScopedContextFsScheme[];
+const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
+const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
+  WORK_SCOPED_CONTEXT_URI_SCHEMES;
 
 export interface UnifiedContextPortFactory {
   forProject(projectId: string, userId: string): ContextPort;

@@ -123,6 +123,16 @@
 - `tools/dev`: worktree pruning now binds cleanup eligibility to the planned
   branch commit; historical same-name PRs, mismatched owners/bases, ambiguous
   PR evidence, GitHub failures, and refs that move before execution are refused.
+- `tools/dev`: automatic worktree pruning now requires exact merged-PR evidence,
+  skips dirty or active worktrees, rechecks readiness before teardown, deletes
+  refs atomically, attributes cwd-hidden processes by command line instead of
+  blocking every candidate, and batches discovery instead of pausing silently
+  per lane. Cleanup now leads with deliberate `--target` selection; advanced
+  `--auto` batch selection requires an explicit risk acknowledgement. Targeted
+  cleanup now refuses dirty worktrees before dropping their databases, and a
+  missing tmux server counts as no live dev sessions.
+- `apps/server`: structured event writes under `logs/` no longer trigger Nitro
+  dev rebuilds or restart in-flight turns.
 - `tools/dev`: restart now terminates only its owned tmux session, waits for
   fixed ports to become bindable, and refuses non-owned or uninspectable
   listeners instead of killing processes discovered by port.
@@ -135,12 +145,68 @@
   strict Nx typecheck target included in root `pnpm typecheck`.
 - `tools/dev`: startup failures now print the concrete portless log path, while
   pre-launch port refusals identify the non-owned holder by PID and command.
+- `apps/app`: edit cards now ignore draft-scoped lineage and record only changes to the live manuscript.
+
+- `apps/server`: durable change trails now compute additions and removals from
+  prose word tokens, ignoring internal hashline identity changes.
+- `apps/app`: failed write rows now show curated document-aware guidance instead
+  of server messages, tool arguments, paths, or context URIs.
+- `apps/app`: process digests now include the unique documents shown in search
+  results, deduplicated with direct reads; folder listings claim no documents.
+- `apps/app`, `apps/server`: trail-settled events now carry collapsed-card
+  document and word metadata, so the live settled frame matches a reload.
+- `apps/app`: empty change trails no longer render zero-document cards; the
+  latest-turn control reliably hides after its jump; collapsed process folds
+  defer their hidden row tree until first expansion; live announcements now use
+  the same writer-facing activity vocabulary as tool rows.
+- `apps/app`, `apps/server`: assistant turns now persist the Work write mode
+  they began under, so draft activity keeps “Drafted” vocabulary after reload,
+  apply, or discard.
+- `apps/app`: process digests now count canonically equivalent document paths
+  once and omit hidden interrupt protocol operations.
+- `apps/app`: quiet folded reasoning keeps the process rail while omitting its
+  redundant clock chip.
+- `apps/app`: draft and helper metadata now use plain spacing and sentence
+  structure instead of middot separators.
+- `apps/app`: applying a drafted edit keeps its receipt across reloads — the
+  card now reads a document's committed lineage instead of the superseded draft
+  entry that shared its URI.
+- `apps/app`: change-trail reconciliation converges under event bursts. Long
+  threads previously reconciled forever without ever committing a response,
+  which dropped edit-card receipts until a new turn happened to settle.
+- `apps/app`: expanded edit cards keep loading their change rows on threads that
+  gap continuously — trail detail is keyed by version and no longer evicted per
+  gap, so in-flight fetches survive.
+- `packages/contracts`, `apps/server`: the request-ID wire grammar lives in
+  contracts, so context-URI Work authorities parse under the same canonical
+  grammar as every other request ID rather than a stale stricter copy.
+
+- `apps/app`: collapsed edit cards name single documents and show settled `+added −removed words` totals without fetching trail detail; live single-document cards use the shared display-name resolver.
+
+- `packages/design-tokens`: shared light/dark diff-added and diff-removed text colors now give compact edit magnitudes one consistent color story.
+
+- `apps/server`: settled change-trail shells now carry captured document titles and truthful per-document and total word additions/removals for collapsed edit-card headers.
+
+- `apps/app`: a quiet breathing ink drop now marks the growing edge of pending
+  and streaming assistant turns, replacing the “Working” status bar.
+- `apps/app`: settled assistant turns fold every tool row behind a per-segment
+  deterministic activity digest while leaving prose, images, and resolved
+  interrupt cards visible; folded reasoning no longer repeats icon chips.
+- `apps/app`: the dock hides Changes when it has no draft or review-receipt
+  rows, returning an emptied selected view to Chat.
+- `apps/app`: cancelled assistant turns now say and announce “Stopped” in the
+  writer's voice.
+- `apps/app`: errored turns no longer show an unreachable Retry affordance.
+- `apps/app`: empty unknown turn blocks no longer expose developer block-type
+  labels in chat.
+- `apps/app`: chat-surface guidance now reflects that adjacent tool runs render
+  as sibling rows rather than through the deleted tool-run disclosure.
 - `apps/app`: chat composer opens at its one-line height reliably and rotates
   short, localized placeholders per page load — a calmer interject pool shows
   while the AI is streaming.
-- `apps/app`: unknown tool rows show just the tool name (plus path when
-  present) instead of truncated argument dumps; in-flight tool calls show
-  present-tense labels ("Writing…", "Reading…") until they complete.
+- `apps/app`: chat tool rows name documents and folders instead of exposing
+  context URIs or paths, qualify non-manuscript locations, distinguish writes
+  from edits, and humanize skill names; unknown tools show no arguments.
 - `apps/app`: reasoning disclosures show the full thinking text — the
   220-character cut is gone.
 - `apps/app`: change-trail cards no longer list per-operation "Inserted text"

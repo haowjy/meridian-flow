@@ -3,6 +3,8 @@
  * Why independent: Thread snapshots and event payloads are cross-boundary contracts shared by clients, server routes, and persistence adapters.
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
+
+import type { AiWriteMode } from "../works/index.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
@@ -185,6 +187,8 @@ export interface Turn {
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;
+  /** Write policy frozen when this turn began; null identifies pre-contract turns. */
+  writeMode: AiWriteMode | null;
   status: TurnStatus;
   agentDefinitionId?: string | null;
   finishReason: FinishReason | null;

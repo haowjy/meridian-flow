@@ -9,7 +9,7 @@ export function HelperResultBlock({ content }: ComponentBlockProps) {
   const status = props.status;
   const Icon =
     status === "completed" ? CheckCircle2 : status === "failed" ? CircleAlert : LoaderCircle;
-  const label = props.title ?? props.agentName ?? props.agentSlug;
+  const secondaryTitle = props.title && props.title !== props.agentName ? props.title : null;
 
   return (
     <section
@@ -21,8 +21,7 @@ export function HelperResultBlock({ content }: ComponentBlockProps) {
       <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
         <Icon className="size-3.5" aria-hidden />
         <span>{props.agentName}</span>
-        <span aria-hidden>·</span>
-        <span>{label}</span>
+        {secondaryTitle ? <span>{secondaryTitle}</span> : null}
       </div>
       {props.summary ? (
         <div className="mt-1 text-compact text-foreground">

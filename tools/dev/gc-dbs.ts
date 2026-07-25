@@ -28,7 +28,7 @@ interface WorktreeInfo {
 
 function parseArgs(argv: string[]): { yes: boolean } {
   const yes = argv.includes("--yes") || argv.includes("-y");
-  const unknown = argv.filter((arg) => arg !== "--yes" && arg !== "-y");
+  const unknown = argv.filter((arg) => arg !== "--" && arg !== "--yes" && arg !== "-y");
   if (unknown.length > 0) {
     throw new Error(`Unknown option(s): ${unknown.join(", ")}`);
   }

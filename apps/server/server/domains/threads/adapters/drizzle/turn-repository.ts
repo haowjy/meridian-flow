@@ -116,6 +116,7 @@ export function createDrizzleTurnRepository(db: DrizzleDatabase): TurnRepository
             threadId: input.threadId,
             parentTurnId: input.prevTurnId ?? null,
             role: input.role,
+            aiWriteMode: input.writeMode ?? null,
             status: input.status ?? "pending",
             totalInputTokens: 0,
             totalOutputTokens: 0,

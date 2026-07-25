@@ -4,6 +4,11 @@
  */
 
 import type {
+  ContextUriScheme,
+  ProjectScopedContextUriScheme,
+  WorkScopedContextUriScheme,
+} from "@meridian/contracts/context-uri";
+import type {
   DocumentFileType,
   Filetype,
   YjsTrackedSchemaType,
@@ -16,13 +21,13 @@ import type { Result } from "../../../shared/result.js";
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
  * Work-scoped: `scratch`/`uploads` (authority URIs use `scheme://<workId>/...`).
  */
-export type ContextScheme = "manuscript" | "kb" | "scratch" | "uploads" | "user";
+export type ContextScheme = ContextUriScheme;
 
 /** Schemes provisioned at project scope in the unified context port. */
-export type ProjectContextFsScheme = "manuscript" | "kb" | "user";
+export type ProjectContextFsScheme = ProjectScopedContextUriScheme;
 
 /** Schemes provisioned per Work in the unified context port. */
-export type WorkScopedContextFsScheme = "scratch" | "uploads";
+export type WorkScopedContextFsScheme = WorkScopedContextUriScheme;
 
 export interface ContextReadResult {
   content: string;

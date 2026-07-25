@@ -21,6 +21,13 @@ auth). `/logout` clears the session via `signOut()`.
 false in production and requires `WORKOS_DEV_AUTOLOGIN=1` plus
 `WORKOS_DEV_LOGIN_EMAIL` / `WORKOS_DEV_LOGIN_PASSWORD`.
 
+## Dev watcher boundary
+
+The repository `logs/` tree is generated server observability output. Vite's
+`server.watch.ignored` predicate excludes that directory and its descendants so
+log mirrors do not cause app reloads; it must remain boundary-aware and must
+not ignore sibling paths merely sharing a prefix such as `logs-other`.
+
 ## State + transport seams
 
 Hocuspocus stateless `safety_notice` messages enter through the existing

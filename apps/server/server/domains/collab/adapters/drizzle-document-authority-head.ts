@@ -40,11 +40,28 @@ export async function allocateDocumentAdmission(
   };
 }
 
-export async function readDocumentAuthorityHead(
+/**
+ * Reads the authority head, creating it first.
+ *
+ * Only use this where the document is known to exist. Missing-document reads
+ * must use `findDocumentAuthorityHead` so they do not turn a read into a
+ * foreign-key-failing insert.
+ */
+export async function ensureAndReadDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
 ): Promise<DocumentAuthorityHeadGeneration> {
   await ensureDocumentAuthorityHead(db, documentId);
+  const row = await findDocumentAuthorityHead(db, documentId);
+  if (!row) throw new Error("Failed to read the durable document authority head");
+  return row;
+}
+
+/** Returns the current authority head without materializing a missing row. */
+export async function findDocumentAuthorityHead(
+  db: AuthorityHeadDb,
+  documentId: string,
+): Promise<DocumentAuthorityHeadGeneration | null> {
   const [row] = await db
     .select({
       authorityId: documentYjsHeads.authorityId,
@@ -53,8 +70,7 @@ export async function readDocumentAuthorityHead(
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, documentId as DocumentId))
     .limit(1);
-  if (!row) throw new Error("Failed to read the durable document authority head");
-  return row;
+  return row ?? null;
 }
 
 async function ensureDocumentAuthorityHead(db: AuthorityHeadDb, documentId: string): Promise<void> {
@@ -97,7 +113,7 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
 
 export function createDrizzleAuthorityGenerationReader(db: AuthorityHeadDb) {
   return async (documentId: DocumentId): Promise<bigint> =>
-    (await readDocumentAuthorityHead(db, documentId)).generation;
+    (await ensureAndReadDocumentAuthorityHead(db, documentId)).generation;
 }
 
 async function readAuthorityHeads(db: AuthorityHeadDb, documentIds: DocumentId[]) {

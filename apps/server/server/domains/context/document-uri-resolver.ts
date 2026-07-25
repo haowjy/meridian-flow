@@ -1,4 +1,5 @@
 /** Resolve persisted document ids back to canonical context URIs. */
+import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -15,16 +16,8 @@ export type DocumentUriResolver = (documentId: string) => Promise<string | null>
 
 type DocumentUriDb = Pick<Database, "select">;
 
-const KNOWN_CONTEXT_SCHEMES = new Set<ContextScheme>([
-  "manuscript",
-  "kb",
-  "scratch",
-  "uploads",
-  "user",
-]);
-
 function asContextScheme(slug: string): ContextScheme | null {
-  return KNOWN_CONTEXT_SCHEMES.has(slug as ContextScheme) ? (slug as ContextScheme) : null;
+  return isContextUriScheme(slug) ? slug : null;
 }
 
 export function createDocumentUriResolver(db: DocumentUriDb): DocumentUriResolver {

@@ -168,6 +168,41 @@
   }
 }
 
+/* Turn-level liveness sits at the growing edge as a single classical-ink
+   breath. Tool rows keep their own operation-level running indicators. */
+@utility ink-drop {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 42% 38%,
+    var(--color-ink-muted) 0%,
+    var(--color-ink-deep) 58%,
+    transparent 76%
+  );
+  animation: ink-breath 4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes ink-breath {
+  0%, 100% {
+    transform: scale(0.72);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-drop {
+    animation: none;
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+}
+
 /* Undo-pill countdown bar — drains from full to empty over the undo window.
    The duration is set inline at the call site (per-instance), but the
    visual treatment (track color, easing) lives here. */
@@ -624,32 +659,6 @@
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
 @utility disclosure-trigger {
   @apply focus-ring flex w-full min-w-0 cursor-pointer items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
-}
-
-/*
- * Left-truncate text — single-line text that ellipsizes from the *start*
- * instead of the end. Use for paths where the leaf (filename, leaf directory)
- * is the informative tail and the prefix is scaffolding that can drop.
- *
- *   `apps/server/server/domains/runtime/foo.ts` → `…/runtime/foo.ts`
- *
- * Trick: `direction: rtl` flips the overflow side so ellipsis lands at the
- * visual left. `unicode-bidi: plaintext` keeps the actual character order
- * resolved by the content (LTR for ASCII paths), so the text reads forward
- * even though the container is rtl.
- */
-.truncate-start {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-  unicode-bidi: plaintext;
-}
-
-/** Small bordered action (Retry, secondary actions in chat). */
-@utility soft-button {
-  @apply focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-focus hover:bg-muted;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to

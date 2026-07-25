@@ -42,6 +42,7 @@ const assistantTurn: Turn = {
   prevTurnId: null,
   parentTurnId: null,
   role: "assistant",
+  writeMode: null,
   status: "complete",
   finishReason: "end_turn",
   model: null,

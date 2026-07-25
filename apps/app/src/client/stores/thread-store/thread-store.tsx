@@ -135,6 +135,7 @@ function createAssistantTurn(
     threadId,
     prevTurnId,
     role: "assistant",
+    writeMode: opts?.writeMode ?? null,
     status: "streaming",
     finishReason: null,
     ...baseTurnFields(),
@@ -312,11 +313,21 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               threadListPatch = liveThreadListPatchForTurnStatus(turnId, "streaming");
 
               const meta = liveMetaFor(state.liveMeta, threadId);
+              const nextTurns =
+                opts?.writeMode !== undefined && existingTurn.writeMode !== opts.writeMode
+                  ? existing.map((turn) =>
+                      turn.id === turnId ? { ...turn, writeMode: opts.writeMode ?? null } : turn,
+                    )
+                  : existing;
               return {
                 liveMeta: {
                   ...state.liveMeta,
                   [threadId]: { ...meta, runningTurnId: turnId },
                 },
+                turnsByThread:
+                  nextTurns === existing
+                    ? state.turnsByThread
+                    : { ...state.turnsByThread, [threadId]: nextTurns },
               };
             }
 

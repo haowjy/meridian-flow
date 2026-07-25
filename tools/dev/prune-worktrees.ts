@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
 import {
@@ -27,6 +27,13 @@ import {
   type PullRequestDiscovery,
   validateCleanupEligibility,
 } from "./lib/worktree-cleanup-eligibility";
+import {
+  type AutoCleanupReadinessDecision,
+  autoCleanupReadinessKey,
+  collectAutoCleanupReadiness,
+  inspectAutoCleanupReadiness,
+  inspectCleanupCleanliness,
+} from "./lib/worktree-cleanup-readiness";
 
 interface CliOptions {
   readonly mode: "auto" | "target" | "help";
@@ -36,14 +43,20 @@ interface CliOptions {
 }
 
 const USAGE = `Usage:
-  pnpm dev:prune-worktrees -- --auto [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- --target <value> [--dry-run] [--yes]
+  pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- -h|--help
 
-Target values may be a Meridian work id, worktree path, local branch name, or PR number (123 or #123).`;
+Target values may be a Meridian work id, worktree path, local branch name, or PR number (123 or #123).
+Batch cleanup via --auto is advanced and not yet trusted for routine use.`;
+
+const AUTO_NOTICE = `Batch cleanup via --auto is advanced and not yet trusted for routine use.
+Clean up one lane at a time with --target <work-id|path|branch|pr>.
+To proceed anyway, add --acknowledge-batch-risk.`;
 
 function parseArgs(argv: readonly string[]): CliOptions {
   let auto = false;
+  let acknowledgeBatchRisk = false;
   let target: string | undefined;
   let dryRun = false;
   let yes = false;
@@ -54,6 +67,10 @@ function parseArgs(argv: readonly string[]): CliOptions {
     if (arg === "-h" || arg === "--help") return { mode: "help", dryRun, yes };
     if (arg === "--auto") {
       auto = true;
+      continue;
+    }
+    if (arg === "--acknowledge-batch-risk") {
+      acknowledgeBatchRisk = true;
       continue;
     }
     if (arg === "--target") {
@@ -75,6 +92,10 @@ function parseArgs(argv: readonly string[]): CliOptions {
 
   if (auto && target) throw new Error(`Use either --auto or --target, not both.\n\n${USAGE}`);
   if (!auto && !target) throw new Error(`Missing --auto or --target.\n\n${USAGE}`);
+  if (acknowledgeBatchRisk && !auto) {
+    throw new Error(`--acknowledge-batch-risk requires --auto.\n\n${USAGE}`);
+  }
+  if (auto && !acknowledgeBatchRisk) throw new Error(AUTO_NOTICE);
   return auto ? { mode: "auto", dryRun, yes } : { mode: "target", target, dryRun, yes };
 }
 
@@ -84,6 +105,27 @@ function runText(command: string, args: readonly string[], cwd: string): string 
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
+}
+
+function runTextAsync(command: string, args: readonly string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      {
+        cwd,
+        encoding: "utf8",
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout.trim());
+      },
+    );
+  });
 }
 
 function formatCommand(action: CleanupAction): string {
@@ -153,10 +195,28 @@ function resolvePrHeadBranch(target: string, cwd: string): string {
   }
 }
 
-function collectMeridianWorkItems(cwd: string): MeridianWorkItem[] {
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await task(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function collectMeridianWorkItems(cwd: string): Promise<MeridianWorkItem[]> {
   let listOutput: string;
   try {
-    listOutput = runText("meridian", ["work", "list", "--no-done"], cwd);
+    listOutput = await runTextAsync("meridian", ["work", "list", "--no-done"], cwd);
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === "ENOENT")
@@ -165,12 +225,10 @@ function collectMeridianWorkItems(cwd: string): MeridianWorkItem[] {
   }
 
   const listItems = parseMeridianWorkList(listOutput);
-  const workItems: MeridianWorkItem[] = [];
-  for (const item of listItems) {
-    const showOutput = runText("meridian", ["work", "show", item.id], cwd);
-    workItems.push(parseMeridianWorkShow(item.id, showOutput));
-  }
-  return workItems;
+  return mapWithConcurrency(listItems, 8, async (item) => {
+    const showOutput = await runTextAsync("meridian", ["work", "show", item.id], cwd);
+    return parseMeridianWorkShow(item.id, showOutput);
+  });
 }
 
 // The trunk this repo integrates into. Detected from the remote's default
@@ -226,15 +284,18 @@ function parseMergedPullRequests(output: string): MergedPullRequest[] {
   });
 }
 
-function discoverMergedPullRequests(branch: string, cwd: string): PullRequestDiscovery {
+async function discoverMergedPullRequests(
+  baseBranch: string,
+  cwd: string,
+): Promise<PullRequestDiscovery> {
   try {
-    const output = runText(
+    const output = await runTextAsync(
       "gh",
       [
         "pr",
         "list",
-        "--head",
-        branch,
+        "--base",
+        baseBranch,
         "--state",
         "merged",
         "--limit",
@@ -253,8 +314,8 @@ function discoverMergedPullRequests(branch: string, cwd: string): PullRequestDis
   }
 }
 
-function resolveRepositoryOwner(cwd: string): string {
-  return runText("gh", ["repo", "view", "--json", "owner", "--jq", ".owner.login"], cwd);
+async function resolveRepositoryOwner(cwd: string): Promise<string> {
+  return runTextAsync("gh", ["repo", "view", "--json", "owner", "--jq", ".owner.login"], cwd);
 }
 
 function checkAncestry(oid: string, baseBranch: string, cwd: string): boolean {
@@ -272,14 +333,51 @@ function checkAncestry(oid: string, baseBranch: string, cwd: string): boolean {
   );
 }
 
-function collectCleanupEligibility(
+function pullRequestEvidenceKey(input: {
+  readonly baseRefName: string;
+  readonly headRefName: string;
+  readonly headRepositoryOwner: string;
+  readonly headRefOid: string;
+}): string {
+  return [input.baseRefName, input.headRefName, input.headRepositoryOwner, input.headRefOid].join(
+    "\0",
+  );
+}
+
+function indexMergedPullRequests(
+  pullRequests: readonly MergedPullRequest[],
+): ReadonlyMap<string, readonly MergedPullRequest[]> {
+  const index = new Map<string, MergedPullRequest[]>();
+  for (const pullRequest of pullRequests) {
+    const key = pullRequestEvidenceKey(pullRequest);
+    const existing = index.get(key);
+    if (existing) existing.push(pullRequest);
+    else index.set(key, [pullRequest]);
+  }
+  return index;
+}
+
+async function collectCleanupEligibility(
   gitWorktreePorcelain: string,
   baseBranch: string,
   cwd: string,
-): Map<string, CleanupEligibility> {
+  allowAncestry: boolean,
+): Promise<Map<string, CleanupEligibility>> {
   const eligibility = new Map<string, CleanupEligibility>();
-  let repositoryOwner: string | undefined;
-  let repositoryOwnerError: string | undefined;
+  let repositoryOwner = "";
+  let pullRequestDiscovery: PullRequestDiscovery;
+  try {
+    repositoryOwner = await resolveRepositoryOwner(cwd);
+    pullRequestDiscovery = await discoverMergedPullRequests(baseBranch, cwd);
+  } catch (error) {
+    pullRequestDiscovery = {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const pullRequestsByEvidence = pullRequestDiscovery.ok
+    ? indexMergedPullRequests(pullRequestDiscovery.pullRequests)
+    : new Map<string, readonly MergedPullRequest[]>();
 
   for (const worktree of parseGitWorktreePorcelain(gitWorktreePorcelain)) {
     const branch = worktree.branch;
@@ -292,41 +390,84 @@ function collectCleanupEligibility(
       continue;
     }
 
-    const isAncestor = checkAncestry(plannedOid, baseBranch, cwd);
-    if (!isAncestor && repositoryOwner === undefined && repositoryOwnerError === undefined) {
-      try {
-        repositoryOwner = resolveRepositoryOwner(cwd);
-      } catch (error) {
-        repositoryOwnerError = error instanceof Error ? error.message : String(error);
-      }
-    }
-    const pullRequestDiscovery: PullRequestDiscovery = isAncestor
-      ? { ok: true, pullRequests: [] }
-      : repositoryOwnerError
-        ? { ok: false, error: repositoryOwnerError }
-        : discoverMergedPullRequests(branch, cwd);
+    const isAncestor = allowAncestry ? checkAncestry(plannedOid, baseBranch, cwd) : false;
+    const branchPullRequestDiscovery: PullRequestDiscovery = pullRequestDiscovery.ok
+      ? {
+          ok: true,
+          pullRequests:
+            pullRequestsByEvidence.get(
+              pullRequestEvidenceKey({
+                baseRefName: baseBranch,
+                headRefName: branch,
+                headRepositoryOwner: repositoryOwner,
+                headRefOid: plannedOid,
+              }),
+            ) ?? [],
+        }
+      : pullRequestDiscovery;
     const decision = decideCleanupEligibility({
       branch,
       plannedOid,
       baseBranch,
-      repositoryOwner: repositoryOwner ?? "",
+      repositoryOwner,
       isAncestor,
-      pullRequestDiscovery,
+      allowAncestry,
+      pullRequestDiscovery: branchPullRequestDiscovery,
     });
     if (decision.eligible) eligibility.set(branch, decision.evidence);
   }
   return eligibility;
 }
 
-function buildPlan(options: CliOptions, cwd: string): CleanupPlan {
+function printAutoReadinessSkips(
+  gitWorktreePorcelain: string,
+  eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>,
+  readinessByWorktree: ReadonlyMap<string, AutoCleanupReadinessDecision>,
+): void {
+  for (const worktree of parseGitWorktreePorcelain(gitWorktreePorcelain)) {
+    if (!worktree.branch || eligibilityByBranch.get(worktree.branch)?.kind !== "pull-request") {
+      continue;
+    }
+    const readiness = readinessByWorktree.get(autoCleanupReadinessKey(worktree.path));
+    if (worktree.locked) {
+      console.log(`Skipping ${worktree.path}: worktree is locked`);
+      continue;
+    }
+    if (readiness && !readiness.ready) {
+      console.log(`Skipping ${worktree.path}: ${readiness.reasons.join("; ")}`);
+    }
+  }
+}
+
+async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan> {
+  console.log("Discovering worktrees, active work items, and merged PR evidence...");
   const currentWorktreePath = runText("git", ["rev-parse", "--show-toplevel"], cwd);
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
   const baseBranch = resolveBaseBranch(cwd);
-  const eligibilityByBranch = collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd);
-  const meridianWorkItems = collectMeridianWorkItems(cwd);
+  const [eligibilityByBranch, meridianWorkItems] = await Promise.all([
+    collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd, options.mode !== "auto"),
+    collectMeridianWorkItems(cwd),
+  ]);
+  const worktrees = parseGitWorktreePorcelain(gitWorktreePorcelain);
+  const autoReadiness =
+    options.mode === "auto"
+      ? collectAutoCleanupReadiness(
+          worktrees.map((worktree) => worktree.path),
+          meridianWorkItems,
+          cwd,
+        )
+      : {
+          decisions: new Map<string, AutoCleanupReadinessDecision>(),
+          caveats: [],
+        };
+  if (options.mode === "auto") {
+    for (const caveat of autoReadiness.caveats) console.log(`Caveat: ${caveat}`);
+    printAutoReadinessSkips(gitWorktreePorcelain, eligibilityByBranch, autoReadiness.decisions);
+  }
   const context = buildCleanupContext({
     gitWorktreePorcelain,
     eligibilityByBranch,
+    autoReadinessByWorktree: autoReadiness.decisions,
     baseBranch,
     meridianWorkItems,
     currentWorktreePath,
@@ -338,7 +479,14 @@ function buildPlan(options: CliOptions, cwd: string): CleanupPlan {
     const reference: TargetReference = isPrNumberTarget(options.target)
       ? { kind: "pr", value: options.target, headBranch: resolvePrHeadBranch(options.target, cwd) }
       : { kind: "direct", value: options.target };
-    return [resolveTarget(context, reference)];
+    const target = resolveTarget(context, reference);
+    const cleanliness = inspectCleanupCleanliness(target.worktree.path);
+    if (!cleanliness.ready) {
+      throw new CleanupResolverError(
+        `Refusing to clean '${target.worktree.path}': ${cleanliness.reasons.join("; ")}.`,
+      );
+    }
+    return [target];
   })();
 
   return createCleanupPlan(context, targets);
@@ -377,12 +525,63 @@ function revalidateTarget(target: CleanupPlan["targets"][number]) {
   return validateCleanupEligibility({ evidence: target.eligibility, currentOid, isAncestor });
 }
 
-async function executePlan(plan: CleanupPlan): Promise<number> {
-  const result = await executeCleanupPlan(plan, revalidateTarget, (action) => runAction(action), {
-    onTargetStart: (target) => console.log(`\nCleaning ${target.worktree.path} (${target.branch})`),
-    onActionStart: (action) => console.log(`▸ ${formatCommand(action)}`),
-  });
+async function revalidateCleanupReadiness(
+  target: CleanupPlan["targets"][number],
+  mode: CliOptions["mode"],
+): Promise<AutoCleanupReadinessDecision> {
+  try {
+    if (mode === "target") {
+      const cleanliness = inspectCleanupCleanliness(target.worktree.path);
+      if (!cleanliness.ready) return cleanliness;
+      const primaryCwd =
+        target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
+      const currentWorktree = parseGitWorktreePorcelain(
+        runText("git", ["worktree", "list", "--porcelain"], primaryCwd),
+      ).find(
+        (worktree) =>
+          autoCleanupReadinessKey(worktree.path) === autoCleanupReadinessKey(target.worktree.path),
+      );
+      if (!currentWorktree) {
+        return { ready: false, reasons: ["worktree is no longer registered"] };
+      }
+      if (currentWorktree.locked) {
+        return { ready: false, reasons: ["worktree is locked"] };
+      }
+      return cleanliness;
+    }
+    const primaryCwd =
+      target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
+    const workItems = await collectMeridianWorkItems(primaryCwd);
+    return inspectAutoCleanupReadiness(target.worktree.path, workItems);
+  } catch (error) {
+    return {
+      ready: false,
+      reasons: [
+        `could not revalidate cleanup readiness: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      ],
+    };
+  }
+}
+
+async function executePlan(plan: CleanupPlan, mode: CliOptions["mode"]): Promise<number> {
+  const result = await executeCleanupPlan(
+    plan,
+    revalidateTarget,
+    (target) => revalidateCleanupReadiness(target, mode),
+    (action) => runAction(action),
+    {
+      onTargetStart: (target) =>
+        console.log(`\nCleaning ${target.worktree.path} (${target.branch})`),
+      onActionStart: (action) => console.log(`▸ ${formatCommand(action)}`),
+    },
+  );
   if (result.ok) return 0;
+  if (result.readinessFailure) {
+    console.error(`✗ cleanup readiness changed: ${result.readinessFailure}`);
+    return 1;
+  }
   if (result.eligibilityFailure) {
     console.error(`✗ eligibility changed: ${result.eligibilityFailure}`);
     return 1;
@@ -407,7 +606,7 @@ async function main(): Promise<void> {
 
   let plan: CleanupPlan;
   try {
-    plan = buildPlan(options, process.cwd());
+    plan = await buildPlan(options, process.cwd());
   } catch (error) {
     if (error instanceof CleanupResolverError) {
       console.error(`✗ ${error.message}`);
@@ -431,7 +630,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const failures = await executePlan(plan);
+  const failures = await executePlan(plan, options.mode);
   if (failures > 0) {
     console.error(`\nCleanup completed with ${failures} failure(s).`);
     process.exit(1);

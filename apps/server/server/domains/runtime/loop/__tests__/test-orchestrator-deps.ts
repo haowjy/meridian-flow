@@ -81,6 +81,11 @@ export function createTestOrchestratorDeps(
     packageRepository: createInMemoryPackageStore(),
     toolRegistry: createToolRegistry(),
     projectPreferences,
+    workWriteMode: {
+      async read() {
+        return "direct";
+      },
+    },
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     interruptArtifacts: createNoopInterruptArtifactFlushPort(),

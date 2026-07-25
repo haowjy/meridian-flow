@@ -22,13 +22,19 @@ export type TurnBlockStepProps = {
 };
 
 export function TurnBlockStep({ block }: TurnBlockStepProps) {
-  const Icon = iconForBlock(block.blockType);
   const body = stepBody(block);
+  if (!body) return null;
+
+  const Icon = iconForBlock(block.blockType);
   const isReasoning = block.blockType === "reasoning" || block.blockType === "thinking";
 
   return (
     <div data-block-id={block.id} data-block-type={block.blockType} data-block-seq={block.sequence}>
-      <ActivityRow Icon={Icon} proseClassName={isReasoning ? "italic text-ink-subtle" : undefined}>
+      <ActivityRow
+        Icon={Icon}
+        quietIcon={isReasoning}
+        proseClassName={isReasoning ? "italic text-ink-subtle" : undefined}
+      >
         {isReasoning ? (
           <Markdown variant="compact">{body}</Markdown>
         ) : (
@@ -49,12 +55,12 @@ function iconForBlock(blockType: string): LucideIcon {
   }
 }
 
-function stepBody(block: Block): string {
+function stepBody(block: Block): string | null {
   const raw = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
   if (raw) return raw;
   if (block.content && typeof block.content === "object" && !Array.isArray(block.content)) {
     const summary = (block.content as Record<string, unknown>).summary;
     if (typeof summary === "string") return summary;
   }
-  return `(${block.blockType})`;
+  return null;
 }

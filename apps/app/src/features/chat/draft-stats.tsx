@@ -4,8 +4,8 @@
  *   1. `wordsAdded` / `wordsRemoved` present  → `+X −Y words`
  *   2. else `proposedOperationCount` present  → `N edits`
  *   3. else no stats
- * `+N` paints jade, `−N` subtle; deletions are NEVER red (this is progress,
- * not danger). Counts are tabular so columns of rows line up.
+ * `+N` / `−N` use the quiet diff palette. Counts are tabular so columns of
+ * rows line up.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 
@@ -72,11 +72,11 @@ export function DraftStatsLabel({
   return (
     <span className="tabular-nums">
       {stats.added > 0 ? (
-        <span className="text-jade-text">+{stats.added.toLocaleString()}</span>
+        <span className="text-diff-added">+{stats.added.toLocaleString()}</span>
       ) : null}
       {stats.added > 0 && stats.removed > 0 ? " " : null}
       {stats.removed > 0 ? (
-        <span className="text-ink-subtle">−{stats.removed.toLocaleString()}</span>
+        <span className="text-diff-removed">−{stats.removed.toLocaleString()}</span>
       ) : null}
       {wordsSuffix ? <span className="@max-[430px]:hidden text-ink-muted"> words</span> : null}
     </span>

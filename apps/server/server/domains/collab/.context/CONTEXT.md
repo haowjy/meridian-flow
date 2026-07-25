@@ -264,8 +264,10 @@ history is preserved for attribution, echo, and undo dependency checking.
   Each replacement carries its durable per-owner classifications and document-title
   context. Never recover that context from surviving aggregate rows: an intervening
   fold can remove every provisional row before final classification must restore the
-  push contribution. Dispatch, work claiming, and reconciliation do not duplicate
-  aggregate SQL.
+  push contribution. The aggregate counts inserted/deleted payloads and persists
+  per-document word magnitudes; lightweight shells retain document ids/titles
+  plus nullable totals so receipt headers never need manuscript-bearing detail.
+  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized

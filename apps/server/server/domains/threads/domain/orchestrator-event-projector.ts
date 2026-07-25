@@ -122,6 +122,7 @@ export function createOrchestratorEventProjector() {
             type: EventType.RUN_STARTED,
             threadId: event.turn.threadId,
             runId: event.turn.id,
+            rawEvent: { writeMode: event.turn.writeMode },
           }),
         ];
       }
@@ -396,6 +397,7 @@ export function createOrchestratorEventProjector() {
               trailId: event.trailId,
               turnId: event.turnId,
               version: event.version,
+              shell: event.shell,
             },
           }),
         ];

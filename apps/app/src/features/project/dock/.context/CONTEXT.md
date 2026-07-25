@@ -49,6 +49,15 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 - **Explicit choice only.** The store only records writer-initiated view switches;
   the default is not written to the store.
 
+### Changes availability
+
+`hasDockChanges(groups, nowMs)` in `features/chat/docked-drafts.ts` is the
+single predicate for both the Changes segment and the Changes view's empty
+branch. It derives from `dockRows`, so active drafts and recent reviewed
+receipts remain reachable, while expired receipts do not keep a dead
+destination alive. If Changes is selected when its final row disappears,
+`DockShell` immediately renders the native view and updates the session choice.
+
 ### Slot material contract
 
 The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
