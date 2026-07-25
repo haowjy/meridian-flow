@@ -17,6 +17,8 @@
   keyboard-scrollable.
 - `apps/app`: draft review no longer carries browser-side mutation or undo
   wiring for server-owned dispositions.
+- `apps/server`: the durable settlement DB oracle now reads the latest push
+  deterministically when a scenario produces multiple completed pushes.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.

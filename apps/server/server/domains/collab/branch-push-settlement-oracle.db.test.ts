@@ -1,6 +1,6 @@
 /** PostgreSQL-only warm/cold equivalence proof for branch-push settlement. */
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
@@ -1046,8 +1046,16 @@ async function observeSettlement(
   };
   const changes = trail.details.flatMap((detail) => detail.changes as unknown as SweptChange[]);
   const swept = changes.filter((change) => change.writerProtection?.kind === "sweep");
-  const [outbox] = await db.select().from(schema.branchPushSettlementOutbox);
-  const [push] = await db.select().from(schema.pushLineage);
+  const [outbox] = await db
+    .select()
+    .from(schema.branchPushSettlementOutbox)
+    .orderBy(desc(schema.branchPushSettlementOutbox.pushId))
+    .limit(1);
+  const [push] = await db
+    .select()
+    .from(schema.pushLineage)
+    .orderBy(desc(schema.pushLineage.id))
+    .limit(1);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
   return {
     trailChanges: swept.map((change) => ({
