@@ -146,7 +146,12 @@ export function preparedTrailChanges(input: {
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
-  before: readonly { hash: string; serialized: string }[];
+  before: readonly {
+    hash: string;
+    serialized: string;
+    clientID?: number;
+    clock?: number;
+  }[];
   blockIdentities: ReadonlyMap<string, CanonicalBlockIdentityV1>;
   afterIds: ReadonlySet<string>;
   afterById: ReadonlyMap<string, Y.XmlElement>;
@@ -177,7 +182,9 @@ export function preparedTrailChanges(input: {
     }
     const sources = input.receipt.changedBlocks.filter(
       (candidate) =>
-        candidate.blockId !== target.blockId && candidate.beforeText === target.afterText,
+        candidate.blockId !== target.blockId &&
+        !provenReplacements.has(candidate.blockId) &&
+        candidate.beforeText === target.afterText,
     );
     if (sources.length === 1) {
       candidateContentRelocations.set(target.blockId, sources[0]?.blockId as string);
@@ -224,6 +231,7 @@ export function preparedTrailChanges(input: {
     if (relocatedSourceIds.has(block.blockId)) return [];
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
+    const beforeSnapshot = input.before[beforeIndex];
     const nextId = input.before
       .slice(beforeIndex + 1)
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
@@ -239,7 +247,15 @@ export function preparedTrailChanges(input: {
             previous: previousId ? input.afterById.get(previousId) : null,
           });
     const beforeIdentity =
-      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
+      block.beforeText === null
+        ? null
+        : beforeSnapshot?.clientID !== undefined && beforeSnapshot.clock !== undefined
+          ? {
+              documentId: input.receipt.documentId,
+              clientID: beforeSnapshot.clientID,
+              clock: beforeSnapshot.clock,
+            }
+          : (input.blockIdentities.get(block.blockId) ?? null);
     const sameIdentityAfter =
       block.beforeText !== null && block.afterText !== null && beforeIdentity
         ? survivingAfterBlockByIdentity.get(canonicalBlockKey(beforeIdentity))

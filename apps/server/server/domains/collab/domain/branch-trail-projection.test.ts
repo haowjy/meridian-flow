@@ -497,6 +497,127 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
   ]);
 });
 
+it("does not relocate content from a structurally replaced source block", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const beforeDoc = createCollabYDoc({ gc: false });
+  model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo."));
+  const beforeBlocks = model.getBlocks(toDocHandle(beforeDoc));
+  const alpha = beforeBlocks[0];
+  const bravo = beforeBlocks[1];
+  if (!alpha || !bravo) throw new Error("missing source blocks");
+  const alphaId = model.getBlockId(alpha);
+  const bravoId = model.getBlockId(bravo);
+
+  const afterDoc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(beforeDoc));
+  const first = model.getBlocks(toDocHandle(afterDoc))[0];
+  const bravoReplacement = codec.parse("Bravo.").blocks[0];
+  if (!first || !bravoReplacement) throw new Error("missing shifted block");
+  model.applyBlockReplacement(toDocHandle(afterDoc), first, bravoReplacement);
+  afterDoc.getXmlFragment("prosemirror").delete(1, 1);
+  afterDoc.clientID = 314_159_265;
+  model.insertBlocks(toDocHandle(afterDoc), null, codec.parse("Xray."));
+
+  const afterBlocks = model.getBlocks(toDocHandle(afterDoc));
+  const firstSurvivor = afterBlocks[0];
+  const xray = afterBlocks[1];
+  const firstElement = afterDoc.getXmlFragment("prosemirror").get(0);
+  const xrayElement = afterDoc.getXmlFragment("prosemirror").get(1);
+  if (
+    !firstSurvivor ||
+    !xray ||
+    !(firstElement instanceof Y.XmlElement) ||
+    !(xrayElement instanceof Y.XmlElement)
+  ) {
+    throw new Error("missing replacement blocks");
+  }
+  const firstSurvivorId = model.getBlockId(firstSurvivor);
+  const xrayId = "xray-inserted";
+
+  const changes = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: alphaId,
+          beforeText: "Alpha.",
+          afterText: "Bravo.",
+          beforeWordCount: 1,
+          afterWordCount: 1,
+          wordDelta: 0,
+        },
+        {
+          blockId: bravoId,
+          beforeText: "Bravo.",
+          afterText: null,
+          beforeWordCount: 1,
+          afterWordCount: 0,
+          wordDelta: -1,
+        },
+        {
+          blockId: xrayId,
+          beforeText: null,
+          afterText: "Xray.",
+          beforeWordCount: 0,
+          afterWordCount: 1,
+          wordDelta: 1,
+        },
+      ],
+      totalWordDelta: 0,
+    },
+    receiptId: "receipt-replacement-relocation",
+    ownersByBlock: new Map([
+      [alphaId, [null]],
+      [bravoId, [null]],
+    ]),
+    operations: [
+      {
+        removedBlockHashes: [bravoId],
+        insertedBlocks: [{ blockId: xrayId, block: xrayElement }],
+        ambiguous: false,
+      },
+    ],
+    before: [
+      { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
+      { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
+    ],
+    blockIdentities: new Map([
+      [alphaId, { documentId: "document-1", ...getBlockItemId(alpha) }],
+      [bravoId, { documentId: "document-1", ...getBlockItemId(bravo) }],
+      [firstSurvivorId, { documentId: "document-1", ...getBlockItemId(firstSurvivor) }],
+      [xrayId, { documentId: "document-1", ...getBlockItemId(xray) }],
+    ]),
+    afterIds: new Set([firstSurvivorId, xrayId]),
+    afterById: new Map([
+      [firstSurvivorId, firstElement],
+      [xrayId, xrayElement],
+    ]),
+    afterDoc,
+  });
+
+  expect(changes).toMatchObject([
+    {
+      kind: "modify",
+      beforeBlockId: alphaId,
+      beforeText: "Alpha.",
+      afterTextAtReceipt: "Bravo.",
+    },
+    {
+      kind: "modify",
+      beforeBlockId: bravoId,
+      afterBlockId: xrayId,
+      beforeText: "Bravo.",
+      afterTextAtReceipt: "Xray.",
+    },
+  ]);
+});
+
 it("projects a structurally adjacent whole-block replacement as one modification", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));
