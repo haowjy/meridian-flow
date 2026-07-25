@@ -93,6 +93,17 @@ The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over
 re-squashing.
 
+### Merge renumbering
+
+Never renumber a migration already present on `main`. When merging a branch
+whose ordinals collide with newly deployed ones, renumber only the branch
+migrations behind the deployed tail and regenerate their snapshots. The
+journal tail must maintain strictly monotonic `when` timestamps; renumbering
+ordinals without advancing timestamps can make an incremental database skip
+the renumbered entries while a fresh database applies them normally. A
+monotonic-order regression test (`fresh-migrations.db.test.ts`) covers the
+changed tail after any renumber.
+
 ## Transaction model (lives in apps/server)
 
 This package exposes no ambient transaction context. Cross-cutting transaction
