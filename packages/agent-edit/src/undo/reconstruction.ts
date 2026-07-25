@@ -207,7 +207,7 @@ export function evaluateRedoEligibility(
   options: { undoUpdateSeq: number },
 ): RedoEligibility {
   const blockingUpdate = updates.find(
-    (update) => update.seq > options.undoUpdateSeq && isForwardUpdate(update),
+    (update) => update.seq > options.undoUpdateSeq && isWriterUpdate(update),
   );
   if (!blockingUpdate) return { ok: true };
   return {
@@ -367,10 +367,6 @@ function noRedoResult(
   };
 }
 
-function isForwardUpdate(update: PersistedUpdate): boolean {
-  return update.meta.actorTurnId !== undefined || isForwardOrigin(update.meta.origin);
-}
-
-function isForwardOrigin(origin: string): boolean {
-  return origin.startsWith("agent:") || origin.startsWith("human:");
+function isWriterUpdate(update: PersistedUpdate): boolean {
+  return update.meta.origin.startsWith("human:");
 }

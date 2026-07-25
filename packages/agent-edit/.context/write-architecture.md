@@ -103,6 +103,11 @@ doc+thread+turn reversal is still `status: "reversed"` inside the append
 transaction, marks it `status: "redone"`, and returns `consumed: false` without
 appending when another session already used it.
 
+Redo staleness is writer-specific. A later `human:*` journal row withdraws redo;
+system reversal/bookkeeping rows and later agent rows do not. The planner and
+persist-time watermark guard use that same classification, so read-model
+eligibility and command execution cannot disagree except across a race.
+
 Lineage has two distinct persisted authorities.
 `document_yjs_reversals.redo_update_seq` records the current active redo closure
 (state): handles that are active because of the same redo update must undo

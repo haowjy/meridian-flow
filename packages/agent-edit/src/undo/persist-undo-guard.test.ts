@@ -4,7 +4,7 @@ import { InMemoryAgentEditJournal } from "../test-support/in-memory-agent-edit.j
 import { guardPersistUndo } from "./persist-undo-guard.js";
 
 describe("guardPersistUndo", () => {
-  it("blocks unaffiliated later non-system rows that race before persistence", async () => {
+  it("blocks a later writer row that races before persistence", async () => {
     const journal = new InMemoryAgentEditJournal();
     journal.setCheckpoint("chapter.md", new Uint8Array());
     await journal.appendBatch([
@@ -40,5 +40,32 @@ describe("guardPersistUndo", () => {
     ]);
 
     expect(blocked).toMatchObject({ persisted: false, status: "cant_undo_dependent" });
+  });
+
+  it.each([
+    "system",
+    "agent:turn-bookkeeping",
+  ])("allows a later %s row that races before persistence", async (origin) => {
+    const journal = new InMemoryAgentEditJournal();
+    journal.setCheckpoint("chapter.md", new Uint8Array());
+    await journal.append("chapter.md", new Uint8Array([1]), {
+      origin: "agent:turn-target",
+      seq: 0,
+    });
+    await journal.append("chapter.md", new Uint8Array([2]), { origin, seq: 0 });
+
+    await expect(
+      guardPersistUndo(journal, "chapter.md", [
+        {
+          documentId: "chapter.md",
+          threadId: "thread-a",
+          turnId: "turn-target",
+          writeIds: ["w1"],
+          status: "reversed",
+          undoUpdateSeq: 0,
+          persistGuardWatermark: 1,
+        },
+      ]),
+    ).resolves.toBeNull();
   });
 });

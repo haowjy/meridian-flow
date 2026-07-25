@@ -269,6 +269,19 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     entries: readonly import("../ports/update-journal.js").PersistRedoEntry[],
   ): Promise<{ consumed: boolean; seqs?: number[] }> {
     const entry = this.entry(docId);
+    if (
+      entries.some(
+        (redo) =>
+          redo.persistGuardWatermark !== undefined &&
+          entry.updates.some(
+            (update) =>
+              update.seq > (redo.persistGuardWatermark ?? 0) &&
+              update.meta.origin.startsWith("human:"),
+          ),
+      )
+    ) {
+      return { consumed: false };
+    }
     const groups = entries.map(({ ref }) =>
       [...entry.reversals.entries()].filter(
         ([, stored]) =>

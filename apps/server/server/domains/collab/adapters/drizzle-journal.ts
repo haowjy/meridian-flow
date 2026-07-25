@@ -16,7 +16,7 @@ import type {
   WriteMutationRow,
 } from "@meridian/agent-edit/integration";
 import {
-  isLaterNonSystemUpdateAfterWatermark,
+  isLaterWriterUpdateAfterWatermark,
   parseWriteHandle,
   persistUndoPlanWatermark,
   unwrapDoc,
@@ -556,7 +556,7 @@ function replayKeyValueJson(row: {
   };
 }
 
-async function hasLaterNonSystemJournalUpdateAfter(
+async function hasLaterWriterJournalUpdateAfter(
   db: JournalDb,
   documentId: string,
   afterSeq: number,
@@ -568,12 +568,12 @@ async function hasLaterNonSystemJournalUpdateAfter(
       and(
         eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
         gt(documentYjsUpdates.id, afterSeq),
-        sql`${documentYjsUpdates.originType} IS DISTINCT FROM 'system'`,
+        inArray(documentYjsUpdates.originType, ["human", "user"]),
       ),
     )
     .orderBy(asc(documentYjsUpdates.id))
     .limit(1);
-  return row !== undefined && isLaterNonSystemUpdateAfterWatermark(row, afterSeq);
+  return row !== undefined && isLaterWriterUpdateAfterWatermark(row, afterSeq);
 }
 
 async function reserveWriteOrdinal(
@@ -716,6 +716,12 @@ async function persistRedoEntries(
     reversals: Array<{ writeId: string; status: ReversalStatus }>;
   }> = [];
   for (const entry of entries) {
+    if (
+      entry.persistGuardWatermark !== undefined &&
+      (await hasLaterWriterJournalUpdateAfter(db, docId, entry.persistGuardWatermark))
+    ) {
+      return { consumed: false };
+    }
     const reversals = await db
       .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
       .from(documentYjsReversals)
@@ -1307,8 +1313,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
     async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
       let undoUpdateSeq: number | undefined;
-      const result = await db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      const result = await runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         // The dependency check (any later live journal row that depends on the
         // writes being undone) is performed inside the document-mutation
@@ -1334,7 +1340,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         const planWatermark = persistUndoPlanWatermark(records);
         if (
           planWatermark > 0 &&
-          (await hasLaterNonSystemJournalUpdateAfter(txDb, docId, planWatermark))
+          (await hasLaterWriterJournalUpdateAfter(txDb, docId, planWatermark))
         ) {
           return {
             persisted: false as const,
@@ -1412,8 +1418,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     },
 
     async persistRedo(docId, redoUpdate, ref, meta) {
-      const result = await db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      const result = await runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         return persistRedoEntries(txDb, docId, [{ update: redoUpdate, ref, meta }]);
       });
@@ -1421,8 +1427,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
     },
 
     async persistRedoBatch(docId, entries) {
-      return db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      return runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         return persistRedoEntries(txDb, docId, entries);
       });

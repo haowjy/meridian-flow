@@ -2,7 +2,7 @@
 import type { JournalSnapshot, ReversalRecord } from "../ports/types.js";
 import type { PersistUndoResult, ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
-  hasLaterNonSystemUpdateAfterWatermark,
+  hasLaterWriterUpdateAfterWatermark,
   persistUndoPlanWatermark,
 } from "./persist-undo-watermark.js";
 
@@ -26,7 +26,7 @@ export async function guardPersistUndo(
   const planWatermark = persistUndoPlanWatermark(records);
   if (planWatermark === 0) return null;
   const snapshot = await reversalStore.read(docId);
-  if (!hasLaterNonSystemUpdateAfter(snapshot, planWatermark)) return null;
+  if (!hasLaterWriterUpdateAfter(snapshot, planWatermark)) return null;
   return {
     persisted: false,
     status: "cant_undo_dependent",
@@ -34,8 +34,8 @@ export async function guardPersistUndo(
   };
 }
 
-function hasLaterNonSystemUpdateAfter(snapshot: JournalSnapshot, afterSeq: number): boolean {
-  return hasLaterNonSystemUpdateAfterWatermark(
+function hasLaterWriterUpdateAfter(snapshot: JournalSnapshot, afterSeq: number): boolean {
+  return hasLaterWriterUpdateAfterWatermark(
     snapshot.updates.map((update) => ({ seq: update.seq, origin: update.meta.origin })),
     afterSeq,
   );

@@ -99,7 +99,9 @@ propagation between them.
   reads go through `readEffectiveMarkdown` / `readEffectiveHashlines`.
 - **Undo is intrinsically guarded**: live `persistUndo` runs the dependency
   check under `lockDocumentMutation`; Draft reversal commits reject any branch
-  journal advance after planning under the branch snapshot CAS.
+  journal advance after planning under the branch snapshot CAS. Redo is
+  writer-stale: the planner and persist-time watermark guard reject a later
+  human row but ignore system reversal/bookkeeping and agent rows.
 - **Draft write undo is generation-local**: a response/document folds to one
   durable handle; undo/redo stages a typed-generation system row and projects it
   in the same Work-draft commit. Never delegate an active Draft generation to

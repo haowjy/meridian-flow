@@ -165,10 +165,12 @@ response lifecycle methods after the model response finishes or is cancelled.
 `getAvailability` is the source of truth for whether write-level undo/redo will
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the
-retained earliest forward row for the reversed turn, and the existing linear-redo
-eligibility check. `invalidateThread` evicts cached runtime state and drops buffered
-response updates for a document/thread so the next access rebuilds runtime state
-from the live document and journal.
+retained earliest forward row for the reversed turn, and no later writer-authored
+(`human:*`) journal row. System and agent rows do not stale redo. Persistence
+rechecks the planner watermark under the document lock. `invalidateThread`
+evicts cached runtime state and drops buffered response updates for a
+document/thread so the next access rebuilds runtime state from the live document
+and journal.
 
 Cold/restart/hosted reversals derive their live-journal watermark from durable
 reconstruction when the host does not supply an `InteractionContext`.
