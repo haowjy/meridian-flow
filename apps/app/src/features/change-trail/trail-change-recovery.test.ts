@@ -1,7 +1,7 @@
 /** Durable action eligibility shared by every trail-recovery surface. */
 import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
-import { trailChangeRecovery } from "./trail-change-recovery";
+import { trailChangeLabel, trailChangeRecovery } from "./trail-change-recovery";
 
 describe("trailChangeRecovery", () => {
   it("does not offer another command after durable terminal settlement", () => {
@@ -34,6 +34,12 @@ describe("trailChangeRecovery", () => {
       canExecute: false,
       writerImpact: { kind: "sweep", body: { status: "unavailable" } },
     });
+  });
+
+  it("uses quiet sentence-case copy for swept writer edits", () => {
+    expect(trailChangeLabel(protectedChange())).toBe(
+      "Replaced a passage that included your unsaved edits",
+    );
   });
 });
 

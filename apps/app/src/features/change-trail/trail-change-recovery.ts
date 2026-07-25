@@ -1,5 +1,4 @@
 /** Shared presentation and command policy for durable trail recovery actions. */
-import { t } from "@lingui/core/macro";
 import type {
   TrailChangeV1 as TrailChange,
   TrailForwardAction,
@@ -15,6 +14,7 @@ import {
 } from "@/client/change-trails";
 import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { i18n } from "@/lib/i18n";
 
 export type TrailRecoveryOutcome =
   | { kind: "applied" }
@@ -56,9 +56,11 @@ export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
 }
 
 export function trailChangeLabel(change: TrailChange): string {
-  if (change.writerImpact?.kind === "resurrection") return t`↻ AI brought back text you deleted`;
+  if (change.writerImpact?.kind === "resurrection") {
+    return i18n._("AI brought back text you deleted");
+  }
   if (change.writerImpact?.kind === "sweep") {
-    return t`Replaced a passage, including edits the agent hadn't seen yet.`;
+    return i18n._("Replaced a passage that included your unsaved edits");
   }
   return changeKindLabel(change.kind);
 }

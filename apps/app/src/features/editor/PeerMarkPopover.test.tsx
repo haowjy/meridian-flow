@@ -32,6 +32,7 @@ const settledChange: TrailChange = {
 };
 const activeChange: TrailChange = { ...settledChange, forwardActions: undefined };
 let currentChange = settledChange;
+let currentThreadTitle: string | null = "Agent thread";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -50,7 +51,7 @@ vi.mock("@tanstack/react-query", () => ({
           isError: false,
         }
       : {
-          data: { thread: { title: "Agent thread" }, turns: [] },
+          data: { thread: { title: currentThreadTitle }, turns: [] },
           isPending: false,
           isError: false,
         },
@@ -82,6 +83,7 @@ const { PeerMarkPopover } = await import("./PeerMarkPopover");
 describe("PeerMarkPopover recovery", () => {
   beforeEach(() => {
     currentChange = settledChange;
+    currentThreadTitle = "Agent thread";
   });
 
   it("offers Copy instead of another Restore after retry exhaustion", async () => {
@@ -101,6 +103,32 @@ describe("PeerMarkPopover recovery", () => {
       });
       expect(buttonLabels()).toContain("Copy");
       expect(buttonLabels()).not.toContain("Restore");
+    });
+  });
+
+  it("attributes an untitled thread to AI rather than a bare chat title", async () => {
+    currentThreadTitle = null;
+    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
+      expect(document.body.textContent).toContain("AI · New chat");
+    });
+  });
+
+  it("keeps multiline removed prose readable without a strike", async () => {
+    currentChange = {
+      ...settledChange,
+      writerImpact: {
+        kind: "sweep",
+        affectedBlockHash: "block-1",
+        body: { status: "available", markdown: "First line\nSecond line" },
+        beforeContentRef: null,
+      },
+    };
+    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
+      const removedText = [...document.querySelectorAll("p")].find((element) =>
+        element.textContent?.includes("First line"),
+      );
+      expect(removedText?.className).toContain("text-prose-foreground");
+      expect(removedText?.className).not.toContain("line-through");
     });
   });
 });

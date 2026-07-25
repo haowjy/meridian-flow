@@ -13,6 +13,36 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
+#. js-lingui-explicit-id
+#: src/features/change-trail/trail-change-recovery.ts
+msgid "AI brought back text you deleted"
+msgstr "AI brought back text you deleted"
+
+#. js-lingui-explicit-id
+#: src/features/change-trail/trail-change-recovery.ts
+msgid "Replaced a passage that included your unsaved edits"
+msgstr "Replaced a passage that included your unsaved edits"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Added a passage"
+msgstr "Added a passage"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Replaced a passage"
+msgstr "Replaced a passage"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Deleted a passage"
+msgstr "Deleted a passage"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Collaborator edited text"
+msgstr "Collaborator edited text"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
@@ -93,10 +123,6 @@ msgstr "{remainingPercent}% remaining"
 msgid "{steps, plural, one {+1 step} other {+# steps}}"
 msgstr "{steps, plural, one {+1 step} other {+# steps}}"
 
-#: src/features/change-trail/trail-change-recovery.ts
-msgid "↻ AI brought back text you deleted"
-msgstr "↻ AI brought back text you deleted"
-
 #: src/features/chat/ChangeViewRows.tsx
 #~ msgid "↻ This edit brought back text you had deleted"
 #~ msgstr "↻ This edit brought back text you had deleted"
@@ -175,6 +201,10 @@ msgstr "Agent Packages"
 #: src/features/agents/AgentSelector.tsx
 msgid "Agent: {0}"
 msgstr "Agent: {0}"
+
+#: src/features/editor/PeerMarkPopover.tsx
+msgid "AI · New chat"
+msgstr "AI · New chat"
 
 #: src/features/chat/ChangeViewRows.tsx
 #~ msgid "AI added text"
@@ -1653,17 +1683,9 @@ msgstr "Renamed to {trimmed}"
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
-#: src/features/change-trail/trail-change-recovery.ts
-msgid "Replaced a passage, including edits the agent hadn't seen yet."
-msgstr "Replaced a passage, including edits the agent hadn't seen yet."
-
 #: src/features/chat/ChatView.tsx
 #~ msgid "Reply to the agent, or steer the analysis…"
 #~ msgstr "Reply to the agent, or steer the analysis…"
-
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Request"
-msgstr "Request"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
@@ -2357,6 +2379,10 @@ msgstr "You added to this passage after the draft was written."
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
 msgstr "you answered"
+
+#: src/features/editor/PeerMarkPopover.tsx
+msgid "You asked"
+msgstr "You asked"
 
 #: src/features/chat/DraftDock.tsx
 msgid "You deleted this passage after the draft was written."

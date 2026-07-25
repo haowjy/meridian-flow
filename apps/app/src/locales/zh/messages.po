@@ -13,6 +13,36 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
+#. js-lingui-explicit-id
+#: src/features/change-trail/trail-change-recovery.ts
+msgid "AI brought back text you deleted"
+msgstr "AI 恢复了你删除的文本"
+
+#. js-lingui-explicit-id
+#: src/features/change-trail/trail-change-recovery.ts
+msgid "Replaced a passage that included your unsaved edits"
+msgstr "替换了一段包含你未保存修改的内容"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Added a passage"
+msgstr "新增了一段内容"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Replaced a passage"
+msgstr "替换了一段内容"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Deleted a passage"
+msgstr "删除了一段内容"
+
+#. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Collaborator edited text"
+msgstr "协作者编辑了文本"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr ""
@@ -89,10 +119,6 @@ msgstr ""
 msgid "{steps, plural, one {+1 step} other {+# steps}}"
 msgstr ""
 
-#: src/features/change-trail/trail-change-recovery.ts
-msgid "↻ AI brought back text you deleted"
-msgstr ""
-
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> and all its contents will be permanently deleted."
@@ -167,6 +193,10 @@ msgstr ""
 #: src/features/agents/AgentSelector.tsx
 msgid "Agent: {0}"
 msgstr ""
+
+#: src/features/editor/PeerMarkPopover.tsx
+msgid "AI · New chat"
+msgstr "AI · 新对话"
 
 #: src/features/chat/ChangeViewRows.tsx
 #~ msgid "AI added text"
@@ -1585,17 +1615,9 @@ msgstr ""
 msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
-#: src/features/change-trail/trail-change-recovery.ts
-msgid "Replaced a passage, including edits the agent hadn't seen yet."
-msgstr ""
-
 #: src/features/chat/ChatView.tsx
 #~ msgid "Reply to the agent, or steer the analysis…"
 #~ msgstr "回复智能体，或引导分析方向…"
-
-#: src/features/editor/PeerMarkPopover.tsx
-msgid "Request"
-msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
@@ -2249,6 +2271,10 @@ msgstr ""
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
 msgstr ""
+
+#: src/features/editor/PeerMarkPopover.tsx
+msgid "You asked"
+msgstr "你的请求"
 
 #: src/features/chat/DraftDock.tsx
 msgid "You deleted this passage after the draft was written."

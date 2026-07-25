@@ -131,10 +131,50 @@ describe("ChangeViewRows conversation reveal", () => {
     });
 
     expect(container.textContent).toContain("Earlier content could not be recovered");
+    const sweepLabel = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Replaced a passage"),
+    );
+    expect(sweepLabel?.className).toContain("--color-review-warning-chip-bg");
+    expect(sweepLabel?.textContent).toBe("Replaced a passage that included your unsaved edits");
     expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toContain(
       "Restore",
     );
     expect(container.textContent).not.toContain("Non-authoritative fallback.");
+
+    await act(async () => root.unmount());
+  });
+
+  it("renders resurrection semantics with an icon outside the localized copy", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const resurrection: TrailChange = {
+      ...generativeInsertion,
+      changeId: "resurrection",
+      writerImpact: {
+        kind: "resurrection",
+        body: { status: "available", markdown: "Writer text." },
+      },
+    };
+
+    await act(async () => {
+      root.render(
+        <ChangeViewRows
+          threadId="thread-1"
+          trailId="trail-1"
+          documentId="document-1"
+          changes={[resurrection]}
+          navigateToChange={vi.fn()}
+        />,
+      );
+    });
+
+    const label = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("AI brought back"),
+    );
+    expect(label?.querySelector("svg")).not.toBeNull();
+    expect(label?.textContent).toBe("AI brought back text you deleted");
+    expect(label?.textContent).not.toContain("↻");
 
     await act(async () => root.unmount());
   });

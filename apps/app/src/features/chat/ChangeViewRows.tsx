@@ -1,6 +1,7 @@
 /** Peer-edit rows with recovery actions inside the existing per-turn Changes view. */
 import { Trans } from "@lingui/react/macro";
 import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
+import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { applyTrailForwardAction } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import {
   trailChangeLabel,
   useTrailForwardAction,
 } from "@/features/change-trail/trail-change-recovery";
+import { cn } from "@/lib/utils";
 import { type ConversationReveal, completeConversationReveal } from "./conversation-reveal";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -139,9 +141,16 @@ function ChangeViewRow({
     >
       <button
         type="button"
-        className="focus-ring text-left font-medium text-prose-foreground"
+        className={cn(
+          "focus-ring inline-flex items-center gap-1 text-left font-medium text-prose-foreground",
+          writerImpact?.kind === "sweep" &&
+            "rounded-sm bg-[color:var(--color-review-warning-chip-bg)] px-1.5 py-0.5 text-[color:var(--color-review-warning-chip-foreground)]",
+        )}
         onClick={() => void revealInEditor()}
       >
+        {writerImpact?.kind === "resurrection" ? (
+          <RotateCcw className="size-3 shrink-0" aria-hidden />
+        ) : null}
         {trailChangeLabel(change)}
       </button>
       {body ? <p className="whitespace-pre-wrap text-prose-foreground">{body}</p> : null}

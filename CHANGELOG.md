@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: AI change marks now use localized passage verbs, clear AI
+  attribution, readable removed prose, and warning treatment for swept edits.
 - `apps/app`, `apps/server`: change trails now use one writer-impact authority
   for ownership, counts, marks, self-diffs, and Restore/Delete-again recovery.
 - `apps/app`: draft review manuscripts now render the server draft projection

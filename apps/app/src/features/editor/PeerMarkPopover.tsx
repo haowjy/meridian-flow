@@ -2,6 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { changeTrailDetailKey, readChangeTrail } from "@/client/change-trails";
@@ -19,6 +20,7 @@ import {
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
+import { cn } from "@/lib/utils";
 
 export type PeerMarkPopoverTarget = {
   marker: SessionMarker;
@@ -106,7 +108,9 @@ export function PeerMarkPopover({
     marker.author.kind === "agent" ? marker.author.threadId : `writer:${marker.author.userId}`;
   const title =
     marker.author.kind === "agent"
-      ? displayThreadTitle(snapshot.data?.thread.title)
+      ? snapshot.data?.thread.title?.trim()
+        ? displayThreadTitle(snapshot.data.thread.title)
+        : t`AI · New chat`
       : t`Collaborator`;
   const removedText = change ? recovery.body : marker.excerpt;
 
@@ -158,7 +162,10 @@ export function PeerMarkPopover({
           <div className="min-w-0">
             <p className="truncate font-medium text-prose-foreground">{title}</p>
             {marker.author.kind === "agent" ? (
-              <p className="text-ink-muted">
+              <p className="flex items-center gap-1 text-ink-muted">
+                {change?.writerImpact?.kind === "resurrection" ? (
+                  <RotateCcw className="size-3 shrink-0" aria-hidden />
+                ) : null}
                 {change ? trailChangeLabel(change) : markerLabel(marker)}
                 <span aria-hidden> · </span>
                 {formatRelativeTime(new Date(marker.receivedAt), Date.now())}
@@ -194,7 +201,7 @@ export function PeerMarkPopover({
               {requestSnippet ? (
                 <div>
                   <p className="font-medium text-ink-muted">
-                    <Trans>Request</Trans>
+                    <Trans>You asked</Trans>
                   </p>
                   <p className="truncate text-prose-foreground">{requestSnippet}</p>
                 </div>
@@ -258,9 +265,12 @@ export function PeerMarkPopover({
 }
 
 function RemovedText({ text }: { text: string }) {
+  const multiline = text.includes("\n");
   return (
     <div className="max-h-32 overflow-y-auto rounded-md bg-surface-subtle p-2">
-      <p className="whitespace-pre-wrap text-ink-muted line-through">{text}</p>
+      <p className={cn("whitespace-pre-wrap text-prose-foreground", !multiline && "line-through")}>
+        {text}
+      </p>
     </div>
   );
 }

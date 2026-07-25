@@ -1,13 +1,14 @@
 /** Shared peer-edit labels for editor marks and durable trail rows. */
+import { i18n } from "@/lib/i18n";
 
 export function changeKindLabel(kind: "insert" | "modify" | "delete"): string {
-  if (kind === "insert") return "AI added text";
-  if (kind === "modify") return "AI changed text";
-  return "AI deleted text";
+  if (kind === "insert") return i18n._("Added a passage");
+  if (kind === "modify") return i18n._("Replaced a passage");
+  return i18n._("Deleted a passage");
 }
 
 export function collaboratorChangeLabel(): string {
-  return "Collaborator edited text";
+  return i18n._("Collaborator edited text");
 }
 
 export function changeMarkLabel(
@@ -16,6 +17,8 @@ export function changeMarkLabel(
   agentName?: string,
 ): string {
   const verb =
-    kind === "modify" && pureDeletionOffset !== null ? "AI deleted text" : changeKindLabel(kind);
+    kind === "modify" && pureDeletionOffset !== null
+      ? i18n._("Deleted a passage")
+      : changeKindLabel(kind);
   return agentName ? `${agentName} · ${verb}` : verb;
 }
