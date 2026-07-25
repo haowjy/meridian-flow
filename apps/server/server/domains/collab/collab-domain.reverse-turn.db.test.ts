@@ -221,6 +221,153 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
       ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
+
+      const bookkeeping = new Y.Doc({ gc: false });
+      bookkeeping.getMap("bookkeeping").set("settled", true);
+      await createDrizzleJournal(db).append(DOC_ID, Y.encodeStateAsUpdate(bookkeeping), {
+        origin: "system",
+        seq: 0,
+      });
+      bookkeeping.destroy();
+      await expect(
+        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
+      ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
+
+      for (const direction of ["redo", "undo", "redo"] as const) {
+        const outcome = await collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction,
+          actor: { type: "user", userId: USER_ID },
+        });
+        expect(outcome.status).toBe(direction === "undo" ? "reversed" : "reconciled");
+      }
+      await expectMarkdown(collab, DOC_ID, "Live undo target.");
+    });
+
+    it("undoes and redoes overlapping replace and delete writes as one turn", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      const fountain =
+        "The fountain wore a skin of ice, each dark stone mirroring the colorless winter sky.";
+      const gate =
+        "At the gate, Captain Ilyan waited in silence, his gloved hand closed around the iron latch.";
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: fountain,
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
+      for (const [find, content] of [
+        [fountain, gate],
+        [gate, ""],
+      ] as const) {
+        await expect(
+          collab
+            .agentEdit()
+            .write(
+              { command: "replace", file: "chapter.md", documentId: DOC_ID, find, content },
+              { sessionId: "session-overlap", threadId: THREAD_ID, turnId: TURN_ID },
+            ),
+        ).resolves.toMatchObject({ status: "success" });
+      }
+
+      const undo = await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(["reversed", "reconciled"]).toContain(undo.status);
+      await expectMarkdown(collab, DOC_ID, fountain);
+
+      const redo = await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "redo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(redo.status).toBe("reconciled");
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain(fountain);
+    });
+
+    it.each([
+      "manual",
+      "auto",
+    ] as const)("keeps repeated turn reversal stable under %s policy", async (policy) => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy });
+      for (const content of ["First turn change.", "Second turn change."]) {
+        await expect(
+          collab
+            .agentEdit()
+            .write(
+              { command: "insert", file: "chapter.md", documentId: DOC_ID, content },
+              { sessionId: `session-cycle-${policy}`, threadId: THREAD_ID, turnId: TURN_ID },
+            ),
+        ).resolves.toMatchObject({ status: "success" });
+      }
+
+      for (const direction of ["undo", "redo", "undo", "redo"] as const) {
+        const outcome = await collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction,
+          actor: { type: "user", userId: USER_ID },
+        });
+        expect(outcome.status).toBe(direction === "undo" ? "reversed" : "reconciled");
+      }
+    });
+
+    it("withdraws redo after a writer edit lands following undo", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab
+        .agentEdit()
+        .write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Agent change." },
+          { sessionId: "session-writer-redo", threadId: THREAD_ID, turnId: TURN_ID },
+        );
+      const [workDraft] = await activeWorkDraft();
+      await collab.pushToLive({ branchId: workDraft.id });
+      await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Writer changed the manuscript.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
+      ).resolves.toEqual(expect.objectContaining({ state: "expired", control: "view_change" }));
+      await expect(
+        collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction: "redo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "nothing_to_redo" });
     });
 
     it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {

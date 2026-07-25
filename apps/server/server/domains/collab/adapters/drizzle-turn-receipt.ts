@@ -1,4 +1,5 @@
-/** Drizzle read-model for server-derived transcript receipt chip states. */
+/** Drizzle-backed recovery-state projection for transcript receipt controls. */
+import { planRedo, planUndo } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -14,11 +15,10 @@ import {
   type TurnReceiptState,
   type TurnReceiptStateStore,
 } from "../domain/turn-receipt.js";
-import { hasDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
+import { createDrizzleJournal } from "./drizzle-journal.js";
 
-type TurnReceiptDb = Pick<Database, "select">;
+type TurnReceiptDb = Database;
 
-type StatusCount = { status: string; count: number };
 type JournalDependencyRow = {
   id: number;
   branchId: string;
@@ -63,48 +63,34 @@ async function liveStates(
   turnId: TurnId,
 ): Promise<TurnReceiptState[]> {
   const rows = await db
-    .select({
-      documentId: agentEditMutations.documentId,
-      status: agentEditMutations.status,
-      count: sql<number>`count(*)::int`,
-    })
+    .selectDistinct({ documentId: agentEditMutations.documentId })
     .from(agentEditMutations)
-    .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)))
-    .groupBy(agentEditMutations.documentId, agentEditMutations.status);
-  return statesFromLiveCounts(rows, async (documentId) =>
-    hasDependentLaterLiveRows(db, { documentId, threadId, turnId }),
+    .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)));
+  if (rows.length === 0) return [];
+
+  const reversalStore = createDrizzleJournal(db);
+  const states = await Promise.all(
+    rows.map(async ({ documentId }): Promise<TurnReceiptState> => {
+      const selection = { kind: "turn" as const, turnId };
+      const undo = await planUndo({
+        reversalStore,
+        docId: documentId,
+        threadId,
+        selection,
+      });
+      if (undo.ok) return "live-active";
+      if (undo.status === "cant_undo_dependent") return "cant_undo_dependent";
+
+      const redo = await planRedo({
+        reversalStore,
+        docId: documentId,
+        threadId,
+        selection,
+      });
+      return redo.ok ? "live-reversed" : "expired";
+    }),
   );
-}
-
-async function statesFromLiveCounts(
-  rows: readonly (StatusCount & { documentId: string })[],
-  hasDependentLaterRowsForDocument: (documentId: string) => Promise<boolean>,
-): Promise<TurnReceiptState[]> {
-  const statuses = new Set(rows.map((row) => row.status));
-  const states: TurnReceiptState[] = [];
-  if (statuses.has("reversed")) states.push("live-reversed");
-  const activeDocumentIds = rows
-    .filter((row) => row.status !== "reversed" && row.status !== "expired")
-    .map((row) => row.documentId);
-  if (activeDocumentIds.length > 0) {
-    states.push(
-      (await hasAnyDependentLaterRows(activeDocumentIds, hasDependentLaterRowsForDocument))
-        ? "cant_undo_dependent"
-        : "live-active",
-    );
-  }
-  if (statuses.has("expired")) states.push("expired");
   return states;
-}
-
-async function hasAnyDependentLaterRows(
-  documentIds: readonly string[],
-  hasDependentLaterRowsForDocument: (documentId: string) => Promise<boolean>,
-): Promise<boolean> {
-  for (const documentId of new Set(documentIds)) {
-    if (await hasDependentLaterRowsForDocument(documentId)) return true;
-  }
-  return false;
 }
 
 async function branchStates(

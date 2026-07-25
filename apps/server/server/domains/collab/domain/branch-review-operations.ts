@@ -24,12 +24,18 @@ type Dependencies = {
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
   branchCoordinator?: Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
+  deferUntilCommit?(operation: () => void | Promise<void>): boolean;
   journal: UpdateJournal;
   criticalSections?: BranchCriticalSections;
 };
 
 export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
   const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
+
+  function broadcastAfterCommit(input: { branchId: string; update: Uint8Array }): void {
+    const broadcast = () => deps.branchCoordinator?.broadcastUpdate?.(input);
+    if (!deps.deferUntilCommit?.(broadcast)) broadcast();
+  }
 
   async function listReviewableRows(
     branchId: string,
@@ -116,7 +122,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           stateVector,
           reviewedByUserId: discardInput.reviewedByUserId,
         });
-        deps.branchCoordinator?.broadcastUpdate?.({
+        broadcastAfterCommit({
           branchId: branch.branchId,
           update: reversalUpdate,
         });
@@ -194,7 +200,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
             stateVector: Y.encodeStateVector(branchDoc),
             reviewedByUserId: turnInput.reviewedByUserId,
           });
-          deps.branchCoordinator?.broadcastUpdate?.({
+          broadcastAfterCommit({
             branchId: branch.branchId,
             update: reversalUpdate,
           });
@@ -226,26 +232,21 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
       const branchDoc = materializeBranch(branch);
       try {
         const redoUpdate = syncPeer(peer, branchDoc);
-        const collapsedRedoRow = [...rows].sort((a, b) => a.id - b.id)[0];
-        if (!collapsedRedoRow) {
-          return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
-        }
         await deps.commitStore.commitTurnRedo({
           branch,
-          journalRows: [collapsedRedoRow],
-          replacementUpdateData: redoUpdate,
+          journalRows: rows,
           state: Y.encodeStateAsUpdate(branchDoc),
           stateVector: Y.encodeStateVector(branchDoc),
           reviewedByUserId: turnInput.reviewedByUserId,
         });
-        deps.branchCoordinator?.broadcastUpdate?.({
+        broadcastAfterCommit({
           branchId: branch.branchId,
           update: redoUpdate,
         });
         return {
           status: "reconciled" as const,
           branchId: branch.branchId,
-          journalIds: [collapsedRedoRow.id],
+          journalIds: [...selected].sort((a, b) => a - b),
         };
       } finally {
         liveDoc.destroy();
