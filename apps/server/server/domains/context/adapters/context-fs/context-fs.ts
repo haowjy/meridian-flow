@@ -16,6 +16,7 @@ import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   BranchPeerShadowAccess,
+  DocumentCreationAggregate,
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
@@ -51,6 +52,7 @@ export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore;
+  documentCreation?: DocumentCreationAggregate;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
   manifestView?: {
@@ -59,6 +61,12 @@ export interface ContextFSDeps {
     threadId?: string | null;
     responseId?: string | null;
   };
+}
+
+class DocumentCreationFault extends Error {
+  constructor(readonly fault: AdapterFault) {
+    super("message" in fault ? fault.message : fault.code);
+  }
 }
 
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
@@ -149,6 +157,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: MarkdownDocumentStore;
+  private readonly documentCreation: DocumentCreationAggregate | null;
   private readonly manifestView?: ContextFSDeps["manifestView"];
 
   readonly tree: ContextTreeAdapter = {
@@ -162,6 +171,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
     this.documentSync = deps.documentSync;
+    this.documentCreation = deps.documentCreation ?? null;
     this.manifestView = deps.manifestView;
     this.name = deps.scheme;
   }
@@ -183,6 +193,105 @@ export class ContextFS implements ContextSchemeAdapter {
   private async finalizeUntitledDocument(documentId: string): Promise<void> {
     await this.store.ensureDocumentMembership(documentId);
     await this.documentSync.ensureDocument(documentId);
+  }
+
+  private async createTrackedDocumentAtomically(input: {
+    id?: string;
+    folderId: string | null;
+    name: string;
+    extension: string;
+    filetype: Filetype;
+    content: string;
+    provisionalName?: boolean;
+    options?: ContextWriteOptions;
+  }): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
+    if (!this.documentCreation) {
+      const document = await this.store.createDocumentIfAbsent({
+        id: input.id,
+        folderId: input.folderId,
+        name: input.name,
+        extension: input.extension,
+        markdown: "",
+        filetype: input.filetype,
+        provisionalName: input.provisionalName,
+      });
+      if (!document) return Err({ code: "conflict" });
+      const write = await writeCollabMarkdown({
+        documentSync: this.documentSync,
+        documentId: document.id,
+        content: input.content,
+        provenance: input.options?.origin,
+      });
+      if (!write.ok) return write;
+      const persisted = await this.persistProjection(document.id, write.markdown);
+      return persisted.ok ? Ok({ document, markdown: write.markdown }) : persisted;
+    }
+
+    const documentId = input.id ?? crypto.randomUUID();
+    let document: ContextDocument | null = null;
+    try {
+      const created = await this.documentCreation.createDocumentAtomically({
+        documentId: documentId as never,
+        persistIdentity: async () => {
+          document = await this.store.createDocumentRecordIfAbsent({
+            id: documentId,
+            folderId: input.folderId,
+            name: input.name,
+            extension: input.extension,
+            markdown: "",
+            filetype: input.filetype,
+            provisionalName: input.provisionalName,
+          });
+          return document !== null;
+        },
+        persistMembership: () => this.store.recordDocumentMembership(documentId),
+        initializeContent: async () => {
+          const write = await writeCollabMarkdown({
+            documentSync: this.documentSync,
+            documentId,
+            content: input.content,
+            provenance: input.options?.origin,
+          });
+          if (!write.ok) throw new DocumentCreationFault(write.error);
+          const persisted = await this.persistProjection(documentId, write.markdown);
+          if (!persisted.ok) throw new DocumentCreationFault(persisted.error);
+          return write.markdown;
+        },
+      });
+      if (!created.created) return Err({ code: "conflict" });
+      if (!document) {
+        return Err({ code: "io_error", message: "Created document identity was not returned" });
+      }
+      return Ok({ document, markdown: created.value });
+    } catch (error) {
+      if (error instanceof DocumentCreationFault) return Err(error.fault);
+      throw error;
+    }
+  }
+
+  private async repairTrackedDocument(
+    document: ContextDocument,
+  ): Promise<Result<void, AdapterFault>> {
+    if (!this.documentCreation) {
+      await this.finalizeUntitledDocument(document.id);
+      return Ok(undefined);
+    }
+    try {
+      await this.documentCreation.repairDocumentAtomically({
+        documentId: document.id as never,
+        initializeContent: async () => {
+          const seeded = await this.documentSync.seedFromMarkdown(document.id, document.markdown, {
+            type: "system",
+          });
+          if (!seeded.ok) throw new DocumentCreationFault(this.syncFault(seeded.error));
+        },
+        persistMembership: () => this.store.recordDocumentMembership(document.id),
+      });
+      return Ok(undefined);
+    } catch (error) {
+      if (error instanceof DocumentCreationFault) return Err(error.fault);
+      throw error;
+    }
   }
 
   private async persistProjection(
@@ -303,22 +412,33 @@ export class ContextFS implements ContextSchemeAdapter {
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
     }
-    const filetype = existing?.filetype ?? resolvedFiletype.value;
-    const doc =
-      existing ??
-      (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
+    if (existing && !(await this.isVisibleDocument(existing.id))) {
+      const repaired = await this.repairTrackedDocument(existing);
+      if (!repaired.ok) return repaired;
+    }
+    if (!existing) {
+      const created = await this.createTrackedDocumentAtomically({
+        folderId,
+        name,
+        extension,
+        filetype: resolvedFiletype.value,
+        content,
+        options,
+      });
+      return created.ok ? Ok({ documentId: created.value.document.id }) : created;
+    }
 
     const write = await writeCollabMarkdown({
       documentSync: this.documentSync,
-      documentId: doc.id,
+      documentId: existing.id,
       content,
       provenance: options?.origin,
     });
     if (!write.ok) return write;
-    const persisted = await this.persistProjection(doc.id, write.markdown);
+    const persisted = await this.persistProjection(existing.id, write.markdown);
     if (!persisted.ok) return persisted;
     return Ok({
-      documentId: doc.id,
+      documentId: existing.id,
       markdown: write.markdown,
       updateSeq: write.updateSeq,
     });
@@ -336,24 +456,24 @@ export class ContextFS implements ContextSchemeAdapter {
     const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
-    const doc = await this.store.createDocumentIfAbsent({
+    const existing = await this.store.findDocument(folderId, name, extension);
+    if (existing) {
+      if (existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
+      if (!(await this.isVisibleDocument(existing.id))) {
+        const repaired = await this.repairTrackedDocument(existing);
+        if (!repaired.ok) return repaired;
+      }
+      return Err({ code: "conflict" });
+    }
+    const created = await this.createTrackedDocumentAtomically({
       folderId,
       name,
       extension,
-      markdown: "",
       filetype,
-    });
-    if (!doc) return Err({ code: "conflict" });
-    const write = await writeCollabMarkdown({
-      documentSync: this.documentSync,
-      documentId: doc.id,
       content,
-      provenance: options?.origin,
+      options,
     });
-    if (!write.ok) return write;
-    const persisted = await this.persistProjection(doc.id, write.markdown);
-    if (!persisted.ok) return persisted;
-    return Ok({ documentId: doc.id });
+    return created.ok ? Ok({ documentId: created.value.document.id }) : created;
   }
 
   async locateDocument(documentId: string) {
@@ -389,7 +509,8 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "conflict",
         });
       }
-      await this.finalizeUntitledDocument(existing.document.id);
+      const repaired = await this.repairTrackedDocument(existing.document);
+      if (!repaired.ok) return repaired;
       return Ok({
         status: "already-exists",
         documentId: existing.document.id,
@@ -411,24 +532,46 @@ export class ContextFS implements ContextSchemeAdapter {
           : max;
       }, 0);
       const name = `Untitled ${maxNumber + 1}`;
-      const document = await this.store.createDocumentIfAbsent({
+      if (!this.documentCreation) {
+        const document = await this.store.createDocumentIfAbsent({
+          id: options.documentId,
+          folderId,
+          name,
+          extension: "md",
+          markdown: "",
+          filetype: "markdown",
+          provisionalName: true,
+        });
+        if (document) {
+          await this.finalizeUntitledDocument(document.id);
+          return Ok({
+            status: "created",
+            documentId: document.id,
+            path: joinPath(path, renderFilename(document.name, document.extension)),
+            name: renderFilename(document.name, document.extension),
+          });
+        }
+        continue;
+      }
+      const created = await this.createTrackedDocumentAtomically({
         id: options.documentId,
         folderId,
         name,
         extension: "md",
-        markdown: "",
         filetype: "markdown",
+        content: "",
         provisionalName: true,
+        options: { origin: options.origin },
       });
-      if (document) {
-        await this.finalizeUntitledDocument(document.id);
+      if (created.ok) {
+        const document = created.value.document;
         return Ok({
           status: "created",
           documentId: document.id,
           path: joinPath(path, renderFilename(document.name, document.extension)),
           name: renderFilename(document.name, document.extension),
         });
-      }
+      } else if (created.error.code !== "conflict") return created;
 
       const collision = await this.store.findDocumentById(options.documentId);
       if (!collision) continue;
@@ -465,12 +608,37 @@ export class ContextFS implements ContextSchemeAdapter {
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
     }
-    const doc =
-      existing ??
-      (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
-    const created = !existing;
-    if (!created || !options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
-    return Ok({ documentId: doc.id, created });
+    if (existing) {
+      if (!(await this.isVisibleDocument(existing.id))) {
+        const repaired = await this.repairTrackedDocument(existing);
+        if (!repaired.ok) return repaired;
+      } else {
+        await this.documentSync.ensureDocument(existing.id);
+      }
+      return Ok({ documentId: existing.id, created: false });
+    }
+
+    if (!this.documentCreation) {
+      const document = await this.store.upsertDocument({
+        folderId,
+        name,
+        extension,
+        markdown: "",
+        filetype,
+      });
+      if (!options?.deferDocumentSync) await this.documentSync.ensureDocument(document.id);
+      return Ok({ documentId: document.id, created: true });
+    }
+
+    const created = await this.createTrackedDocumentAtomically({
+      folderId,
+      name,
+      extension,
+      filetype,
+      content: "",
+      options,
+    });
+    return created.ok ? Ok({ documentId: created.value.document.id, created: true }) : created;
   }
 
   async edit(

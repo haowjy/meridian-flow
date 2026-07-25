@@ -15,6 +15,7 @@ import type {
   TurnLiveLineageAccess,
   TurnReversalAccess,
 } from "./contracts.js";
+import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 
 export type CollabFacadeServices = {
@@ -32,6 +33,7 @@ export type CollabFacadeServices = {
   branchPush: BranchPushAccess;
   branchPeers: BranchPeerShadowAccess;
   drafts: CollabDrafts;
+  documentCreation: DocumentCreationAggregate;
 };
 
 export function createCollabFacade(services: CollabFacadeServices): CollabDomain {
@@ -50,5 +52,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.branchPush,
     ...services.branchPeers,
     ...services.drafts,
+    ...services.documentCreation,
   };
 }

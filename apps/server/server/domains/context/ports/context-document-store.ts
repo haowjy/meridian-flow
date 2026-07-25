@@ -82,11 +82,18 @@ export interface ContextDocumentStore {
   findDocumentById(documentId: string): Promise<LocatedContextDocument | null>;
   /** Idempotently ensure shadow membership after a recoverable document create. */
   ensureDocumentMembership(documentId: string): Promise<void>;
+  /** Persist membership inside the caller's ambient document-creation transaction. */
+  recordDocumentMembership(documentId: string): Promise<void>;
   /** Update the search/list projection by stable identity, even if a concurrent move changed path. */
   updateDocumentProjection(documentId: string, markdown: string): Promise<boolean>;
   upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;
   /** Claim a new tracked path. Returns null when an active node already owns it. */
   createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;
+  /**
+   * Claim only the SQL/tree identity. The document-creation aggregate owns
+   * Yjs initialization and manifest membership around this operation.
+   */
+  createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;

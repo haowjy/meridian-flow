@@ -114,6 +114,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
 
   async ensureDocumentMembership(_documentId: string): Promise<void> {}
 
+  async recordDocumentMembership(_documentId: string): Promise<void> {}
+
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
     const foldersSnapshot = new Map(
       [...this.backing.folders].map(([id, row]) => [id, { ...row }] as const),
@@ -236,6 +238,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+    return this.createDocumentRecordIfAbsent(input);
+  }
+
+  async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
     if (this.backing.documents.has(input.id ?? "")) return null;
     for (const row of this.backing.documents.values()) {
       if (

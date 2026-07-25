@@ -1466,8 +1466,8 @@ export function createServerDocumentLifecycle(
 } {
   return {
     async seedInitialDocument(docId, state) {
-      return db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      return runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         await assertReadableHead(txDb, docId);
         await upsertHead(txDb, docId);

@@ -127,7 +127,6 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const overwriting = command.overwrite === true;
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -139,6 +138,7 @@ export function createWriteCommands(deps: {
       );
     }
     const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
+    const overwriting = command.overwrite === true || deferNewDocumentCreation;
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const liveCheck = await withLiveDocument(
       options.coordinator,
