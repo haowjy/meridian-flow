@@ -17,6 +17,7 @@ import { isUuid } from "../../../../shared/uuid.js";
 import type {
   BranchPeerShadowAccess,
   DocumentCreationAggregate,
+  DocumentSeedOrigin,
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
@@ -225,16 +226,32 @@ export class ContextFS implements ContextSchemeAdapter {
         },
         persistMembership: () => this.store.recordDocumentMembership(documentId),
         initializeContent: async () => {
-          const write = await writeCollabMarkdown({
-            documentSync: this.documentSync,
-            documentId,
-            content: input.content,
-            provenance: input.options?.origin,
-          });
-          if (!write.ok) throw new DocumentCreationFault(write.error);
-          const persisted = await this.persistProjection(documentId, write.markdown);
+          if (input.content.length === 0) {
+            await this.documentCreation.ensureDocument(documentId);
+            return "";
+          }
+          const persisted = await this.persistProjection(documentId, input.content);
           if (!persisted.ok) throw new DocumentCreationFault(persisted.error);
-          return write.markdown;
+          const provenance = input.options?.origin;
+          const origin: DocumentSeedOrigin =
+            provenance?.type === "import"
+              ? {
+                  type: "import",
+                  userId: provenance.userId,
+                  source: provenance.source,
+                  filename: provenance.filename,
+                  sourceId: provenance.sourceId,
+                }
+              : { type: "system" };
+          const seeded = await this.documentSync.seedFromMarkdown(
+            documentId,
+            input.content,
+            origin,
+          );
+          if (!seeded.ok) {
+            throw new DocumentCreationFault(this.syncFault(seeded.error));
+          }
+          return input.content;
         },
       });
       if (!created.created) return Err({ code: "conflict" });

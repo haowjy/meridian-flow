@@ -49,8 +49,8 @@ describe("ContextFS ensureTrackedDocument", () => {
     const created = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
     if (!created.ok) throw new Error(`create failed: ${created.error.code}`);
     expect(created.value.created).toBe(true);
-    expect(ensured).toEqual([]);
-    expect(seeded).toEqual([created.value.documentId]);
+    expect(ensured).toEqual([created.value.documentId]);
+    expect(seeded).toEqual([]);
   });
 
   it("ensures live Yjs state for existing tracked documents even when response staging defers new docs", async () => {

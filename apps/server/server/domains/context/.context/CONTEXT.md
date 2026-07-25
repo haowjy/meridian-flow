@@ -117,7 +117,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   all roll back. Warm-room publication follows commit, so rollback cannot expose
   checkpoint or manifest state that SQL rejected. Create/read/list/edit use that
   manifest-aware view consistently, and observations fail closed when membership
-  authority is unavailable.
+  authority is unavailable. New non-empty content is parsed into a detached
+  initialize-only checkpoint; work/thread manifest auto-push also waits for the
+  aggregate commit.
   An older row missing membership is repaired on its next tracked-document touch;
   repair seeds absent Yjs state from the row projection and preserves existing
   canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project

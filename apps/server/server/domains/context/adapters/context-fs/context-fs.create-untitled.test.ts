@@ -80,14 +80,12 @@ describe("ContextFS createUntitledDocument", () => {
     let failDurableHeadOnce = true;
     const documentSync = {
       ...collab,
-      async seedFromMarkdown(
-        ...args: Parameters<MarkdownDocumentStore["seedFromMarkdown"]>
-      ): ReturnType<MarkdownDocumentStore["seedFromMarkdown"]> {
+      async ensureDocument(documentId: string) {
         if (failDurableHeadOnce) {
           failDurableHeadOnce = false;
           throw new Error("durable document authority head unavailable");
         }
-        return collab.seedFromMarkdown(...args);
+        return collab.ensureDocument(documentId);
       },
     } satisfies MarkdownDocumentStore;
     const { fs, backing } = createFs({ documentSync });
@@ -191,7 +189,7 @@ describe("ContextFS createUntitledDocument", () => {
     expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(false);
   });
 
-  it("keeps tracked creates named and seeds their content through the collab writer", async () => {
+  it("keeps tracked creates named and seeds content without opening the live writer", async () => {
     const writeDocument = vi.fn(async ({ documentId, markdown }) => ({
       documentId,
       markdown,
@@ -205,7 +203,7 @@ describe("ContextFS createUntitledDocument", () => {
       ensureDocument: vi.fn(),
       writeDocument,
       readAsMarkdown: vi.fn(),
-      seedFromMarkdown: vi.fn(),
+      seedFromMarkdown: vi.fn().mockResolvedValue({ ok: true, value: null }),
       editDocument: vi.fn(),
     } satisfies MarkdownDocumentStore;
     const { fs, store } = createFs({ documentSync: sync });
@@ -215,11 +213,13 @@ describe("ContextFS createUntitledDocument", () => {
     });
     if (!created.ok) throw new Error(created.error.code);
 
-    expect(writeDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: created.value.documentId, markdown: "Opening line" }),
-    );
-    expect((await store.findDocumentById(created.value.documentId))?.document.provisionalName).toBe(
-      false,
-    );
+    expect(sync.seedFromMarkdown).toHaveBeenCalledWith(created.value.documentId, "Opening line", {
+      type: "system",
+    });
+    expect(writeDocument).not.toHaveBeenCalled();
+    expect((await store.findDocumentById(created.value.documentId))?.document).toMatchObject({
+      provisionalName: false,
+      markdown: "Opening line",
+    });
   });
 });

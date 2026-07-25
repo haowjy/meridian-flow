@@ -328,6 +328,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     documents: runtime.markdownDocuments,
     model: runtime.model,
     codec: runtime.codec,
+    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
