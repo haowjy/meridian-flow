@@ -28,6 +28,12 @@ describe("draft review concurrent conflict", () => {
     });
 
     expect(conflicted.surface).toMatchObject({ kind: "inline", draftId: "draft-1" });
+    expect(conflicted.applyRefusal).toMatchObject({
+      documentId: "document-1",
+      draftId: "draft-1",
+      reason: "unsynced_live_edits",
+      conflictedBlocks: ["block-a"],
+    });
     expect(
       conflictForSelection(conflicted, { documentId: "document-1", draftId: "draft-1" }),
     ).toEqual({

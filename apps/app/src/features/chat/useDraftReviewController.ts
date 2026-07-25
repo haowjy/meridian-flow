@@ -34,7 +34,7 @@ import {
   conflictForSelection,
   type DraftApplyOutcome,
   type DraftApplyPreview,
-  type DraftApplyRefusal,
+  type DraftApplyRefusalState,
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
@@ -97,7 +97,7 @@ export type DraftReviewController = {
   dockDispositionError: DraftBatchErrorCode | null;
   needsRereview: boolean;
   conflictedBlocks: ReadonlySet<string>;
-  applyRefusal: DraftApplyRefusal | null;
+  applyRefusal: DraftApplyRefusalState | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;

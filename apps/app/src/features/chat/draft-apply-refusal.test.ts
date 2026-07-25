@@ -28,10 +28,20 @@ describe("draftApplyRefusalFromResponse", () => {
 
     expect(draftApplyOutcome("draft", response).command).toEqual({
       kind: "conflict",
-      conflictedBlocks: ["block-1"],
       refusal: {
         reason: "protected_resurrection",
-        passages: [{ body: "Deleted by the writer." }],
+        conflictedBlocks: ["block-1"],
+        conflicts: [
+          {
+            blockId: "block-1",
+            effect: "resurrection",
+            evidence: "human_live_deletion",
+            why: "Apply would restore writer-deleted text.",
+            base: "Deleted by the writer.",
+            live: null,
+            proposed: "Deleted by the writer.",
+          },
+        ],
       },
     });
   });

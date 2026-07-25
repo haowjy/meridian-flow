@@ -406,7 +406,11 @@ describe("useDraftReviewController", () => {
       });
 
       expect(wholeDraftAcceptMutateMock).toHaveBeenCalledTimes(1);
-      expect(controller?.applyRefusal).toMatchObject({ reason: "unsynced_live_edits" });
+      expect(controller?.applyRefusal).toMatchObject({
+        reason: "unsynced_live_edits",
+        documentId: "document-1",
+        draftId: "draft-1",
+      });
     });
     wholeDraftResponses = [];
     draftPreviews.clear();

@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -44,6 +44,13 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
+  const applyRefusal = controller.applyRefusal;
+  const refusalRow = applyRefusal
+    ? (rows.find(
+        (row) =>
+          row.documentId === applyRefusal.documentId && row.draft.draftId === applyRefusal.draftId,
+      ) ?? null)
+    : null;
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -82,7 +89,8 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     inFlightDraftId: null,
     isBusy: controller.isDisposing,
     needsRereview: controller.needsRereview,
-    applyRefusal: controller.applyRefusal,
+    applyRefusal,
+    reviewRefusal: refusalRow ? () => reviewRow(refusalRow) : null,
     dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
@@ -252,7 +260,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         </div>
       </div>
 
-      {dock.applyRefusal ? <DraftApplyRefusalNotice refusal={dock.applyRefusal} /> : null}
+      {dock.applyRefusal ? (
+        <DraftApplyRefusalNotice
+          refusal={dock.applyRefusal}
+          onReview={dock.reviewRefusal ?? undefined}
+        />
+      ) : null}
       {dock.dispositionError ? (
         <p
           className="border-border-subtle border-t px-3 py-2 text-destructive text-micro"
@@ -286,53 +299,120 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
 export function DraftApplyRefusalNotice({
   refusal,
+  onReview,
 }: {
   refusal: NonNullable<DraftDockModel["applyRefusal"]>;
+  onReview?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const explanationId = useId();
-  const explanation =
+  const title =
     refusal.reason === "stale_draft"
-      ? t`This draft was updated after you opened it.`
+      ? t`Not applied: review the latest draft`
       : refusal.reason === "protected_resurrection"
-        ? t`Applying would bring back text you deleted:`
-        : t`The chapter changed after this draft was written:`;
+        ? t`Not applied: this draft restores text you deleted`
+        : refusal.conflicts.length === 1
+          ? t`Not applied: your edit conflicts with this draft`
+          : t`Not applied: your edits conflict with this draft`;
 
   return (
     <div
-      className="border-border-subtle border-b bg-muted text-caption text-prose-foreground"
+      className="space-y-2 border-border-subtle border-b bg-muted px-3 py-2.5 text-caption text-prose-foreground"
       data-draft-apply-refusal={refusal.reason}
-      data-draft-apply-refusal-expanded={expanded}
     >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={explanationId}
-        onClick={() => setExpanded((value) => !value)}
-        className="focus-ring flex w-full items-center gap-1.5 px-3 py-2 text-left hover:bg-card"
-      >
-        <ChevronRight
-          className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")}
-          aria-hidden
-        />
-        <span className="font-medium">
-          <Trans>Not applied</Trans>
-        </span>
-      </button>
-      {expanded ? (
-        <div id={explanationId} className="space-y-1 px-3 pb-2" data-draft-apply-refusal-details>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="font-medium">{title}</p>
           <p className="text-ink-muted" data-draft-apply-refusal-explanation>
-            {explanation}
+            {refusal.reason === "stale_draft" ? (
+              <Trans>This draft changed after you opened it.</Trans>
+            ) : refusal.reason === "protected_resurrection" ? (
+              <Trans>Applying it would bring a deleted passage back.</Trans>
+            ) : (
+              <Trans>Applying it could overwrite changes in your manuscript.</Trans>
+            )}
           </p>
-          {refusal.passages.map((passage) => (
-            <p key={passage.body} className="whitespace-pre-wrap text-prose-foreground">
-              {passage.body}
-            </p>
+        </div>
+        {onReview ? (
+          <button
+            type="button"
+            onClick={onReview}
+            className="focus-ring inline-flex h-6 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground"
+          >
+            {refusal.reason === "stale_draft" ? (
+              <Trans>Review latest draft</Trans>
+            ) : (
+              <Trans>Compare changes</Trans>
+            )}
+          </button>
+        ) : null}
+      </div>
+      {refusal.conflicts.length > 0 ? (
+        <div className="space-y-2" data-draft-apply-refusal-details>
+          {refusal.conflicts.map((conflict) => (
+            <div
+              key={`${conflict.blockId}:${conflict.effect}`}
+              className="space-y-1.5 border-border-subtle border-t pt-2 first:border-t-0 first:pt-0"
+              data-draft-apply-conflict={conflict.blockId}
+              data-draft-apply-conflict-evidence={conflict.evidence}
+            >
+              <p className="text-ink-muted">{conflictEvidence(conflict.evidence)}</p>
+              <p>{conflict.why}</p>
+              <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-micro">
+                <ConflictVersion
+                  label={t`Before this draft`}
+                  body={conflict.base}
+                  empty={t`No earlier passage`}
+                />
+                <ConflictVersion
+                  label={t`Your manuscript`}
+                  body={conflict.live}
+                  empty={t`Deleted in your manuscript`}
+                />
+                <ConflictVersion
+                  label={t`Draft proposes`}
+                  body={conflict.proposed}
+                  empty={t`Delete this passage`}
+                />
+              </dl>
+            </div>
           ))}
         </div>
       ) : null}
     </div>
   );
+}
+
+function ConflictVersion({
+  label,
+  body,
+  empty,
+}: {
+  label: string;
+  body: string | null;
+  empty: string;
+}) {
+  return (
+    <>
+      <dt className="font-medium text-ink-muted">{label}</dt>
+      <dd className="min-w-0 whitespace-pre-wrap">
+        {body ?? <span className="italic">{empty}</span>}
+      </dd>
+    </>
+  );
+}
+
+function conflictEvidence(
+  evidence: NonNullable<DraftDockModel["applyRefusal"]>["conflicts"][number]["evidence"],
+): string {
+  switch (evidence) {
+    case "human_live_change":
+      return t`You edited this passage after the draft was written.`;
+    case "human_live_deletion":
+      return t`You deleted this passage after the draft was written.`;
+    case "human_live_insertion":
+      return t`You added to this passage after the draft was written.`;
+    case "ambiguous_protected_divergence":
+      return t`This passage changed after the draft was written.`;
+  }
 }
 
 /**

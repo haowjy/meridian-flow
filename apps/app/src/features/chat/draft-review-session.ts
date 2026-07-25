@@ -80,11 +80,7 @@ export type DraftCommandOutcome =
   | { kind: "applied" }
   | { kind: "partial-applied"; writeId: string }
   | { kind: "stale"; draftId: string }
-  | {
-      kind: "conflict";
-      conflictedBlocks: string[];
-      refusal: DraftApplyRefusal;
-    }
+  | { kind: "conflict"; refusal: DraftApplyRefusal }
   | { kind: "discarded" }
   | { kind: "undone" }
   | { kind: "failed"; code: InlineReviewMessageCode };
@@ -444,8 +440,19 @@ export type InlineReviewMessage = {
 
 export type DraftApplyRefusal = {
   reason: "stale_draft" | "unsynced_live_edits" | "protected_resurrection";
-  passages: Array<{ body: string }>;
+  conflictedBlocks: string[];
+  conflicts: Array<{
+    blockId: string;
+    effect: DraftApplyRefusalResponse["conflicts"][number]["effect"];
+    evidence: DraftApplyRefusalResponse["conflicts"][number]["evidence"];
+    why: string;
+    base: string | null;
+    live: string | null;
+    proposed: string | null;
+  }>;
 };
+
+export type DraftApplyRefusalState = DraftApplyRefusal & DraftReviewSelection;
 
 /** Interpret a server Apply response exactly once for every Apply surface. */
 export function draftApplyOutcome(
@@ -483,7 +490,6 @@ export function draftApplyOutcome(
   return {
     command: {
       kind: "conflict",
-      conflictedBlocks: response.conflictedBlocks,
       refusal: draftApplyRefusalFromResponse(response),
     },
     message: null,
@@ -507,15 +513,21 @@ function draftApplyRefusalFromResponse(response: DraftApplyRefusalResponse): Dra
   );
   return {
     reason: protectedResurrection ? "protected_resurrection" : "unsynced_live_edits",
-    passages: response.conflicts.flatMap((conflict) => {
-      const captured =
-        conflict.effect === "resurrection" ? conflict.captured.base : conflict.captured.live;
-      return captured ? [{ body: bodyFromHashline(captured) }] : [];
-    }),
+    conflictedBlocks: [...response.conflictedBlocks],
+    conflicts: response.conflicts.map((conflict) => ({
+      blockId: conflict.blockId,
+      effect: conflict.effect,
+      evidence: conflict.evidence,
+      why: conflict.why,
+      base: bodyFromHashline(conflict.captured.base),
+      live: bodyFromHashline(conflict.captured.live),
+      proposed: bodyFromHashline(conflict.captured.proposed),
+    })),
   };
 }
 
-function bodyFromHashline(value: string): string {
+function bodyFromHashline(value: string | null): string | null {
+  if (value === null) return null;
   const separator = value.indexOf("|");
   return separator < 0 ? value : value.slice(separator + 1).replace(/^\n/, "");
 }
@@ -530,7 +542,7 @@ export type DraftReviewState = {
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   dockDispositionError: DraftBatchErrorCode | null;
-  applyRefusal: DraftApplyRefusal | null;
+  applyRefusal: DraftApplyRefusalState | null;
   /** Conflicts survive navigation; only re-review or disposition removes their entry. */
   concurrentConflicts: ReadonlyMap<string, DraftReviewSelection & { conflictedBlocks: string[] }>;
 };
@@ -590,9 +602,19 @@ export function draftReviewReducer(
         ...stateAfterAcceptResult(state, action),
         applyRefusal:
           action.outcome.command.kind === "conflict"
-            ? action.outcome.command.refusal
+            ? {
+                ...action.outcome.command.refusal,
+                documentId: action.documentId,
+                draftId: action.draftId,
+              }
             : action.outcome.command.kind === "stale"
-              ? { reason: "stale_draft", passages: [] }
+              ? {
+                  reason: "stale_draft",
+                  conflictedBlocks: [],
+                  conflicts: [],
+                  documentId: action.documentId,
+                  draftId: action.outcome.command.draftId,
+                }
               : null,
       };
     case "operationAcceptStarted":
@@ -675,7 +697,7 @@ function stateAfterAcceptResult(
     concurrentConflicts.set(reviewSelectionKey({ documentId, draftId }), {
       documentId,
       draftId,
-      conflictedBlocks: outcome.command.conflictedBlocks,
+      conflictedBlocks: outcome.command.refusal.conflictedBlocks,
     });
     return {
       ...state,

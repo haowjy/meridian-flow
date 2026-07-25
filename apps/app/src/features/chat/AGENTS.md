@@ -122,6 +122,11 @@ available; Apply/Discard failures are session outcomes rendered by the review
 header rather than ignored promises.
 A batch stops at its first refusal/failure so later targets cannot erase the
 explanation; transport failures surface through the dock's typed error state.
+Manual Apply refusals retain their document/draft target and the complete
+writer-conflict comparison (base, current manuscript, proposed draft, evidence,
+and explanation). The dock shows that evidence immediately and routes
+**Compare changes** through the same `useAiDraftLauncher` review entry as every
+other review control.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns
