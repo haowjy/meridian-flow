@@ -4,7 +4,12 @@ import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
-import { changeMarkLabel, collaboratorChangeLabel } from "../change-mark-labels";
+import { i18n } from "@/lib/i18n";
+import {
+  changeMarkLabel,
+  collaboratorChangeLabel,
+  peerMarkAccessibleLabel,
+} from "../change-mark-labels";
 import { collaborationColorFor } from "../collaboration-colors";
 import {
   relativePositionRuntimeFromState,
@@ -66,7 +71,7 @@ function interactiveAttributes(
     "data-peer-mark-label": label,
     role: "button",
     tabindex: "0",
-    "aria-label": `${label}. Show change details.`,
+    "aria-label": peerMarkAccessibleLabel(label),
     style: `--peer-mark-color: ${markerColor(marker)}`,
     ...(deletion ? { "data-peer-mark-deletion": "true" } : {}),
     ...(marker.writerImpact?.kind === "sweep" ? { "data-peer-mark-swept": "true" } : {}),
@@ -182,7 +187,7 @@ function buildMarkerDecorations(
           side: -1,
           // ProseMirror reuses keyed widget DOM. Include emphasis state so an
           // addressed tick/seam is rebuilt with its emphasis attribute.
-          key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}`,
+          key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}:${markerLabel(marker, markerAgentName)}`,
           changeId: marker.changeId,
         },
       ),
@@ -397,6 +402,7 @@ export const PeerMarkerExtension = Extension.create<{
             });
           };
           const unsubscribe = store.subscribe(requestRebuild);
+          const unsubscribeLocale = i18n.on("change", requestRebuild);
           anchorsResolve(store, view.state);
           return {
             update(updatedView) {
@@ -407,6 +413,7 @@ export const PeerMarkerExtension = Extension.create<{
             destroy() {
               destroyed = true;
               unsubscribe();
+              unsubscribeLocale();
             },
           };
         },

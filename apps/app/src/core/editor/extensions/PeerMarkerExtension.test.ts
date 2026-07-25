@@ -5,6 +5,7 @@ import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { activateLocale } from "@/lib/i18n";
 import { createEditorConfig } from "../config";
 import { SessionMarkerStore } from "../session-marker-store";
 import { relativePositionForEditorIndex } from "./LiveRangeNavigationExtension";
@@ -88,7 +89,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => editor.destroy());
+afterEach(() => {
+  editor.destroy();
+  activateLocale("en");
+});
 
 describe("peer marker writer self-clear", () => {
   it("clears a range for an interior insertion but not insertion at its start boundary", () => {
@@ -164,7 +168,8 @@ describe("peer marker writer self-clear", () => {
 
   it("projects swept severity and deletion anatomy as semantic attributes", () => {
     addMarker("range", 2, 5, "-swept", null, { kind: "sweep" });
-    addMarker("range", 1, 6, "-deletion", 2);
+    addMarker("range", 1, 6, "-deletion", 2, { kind: "sweep" });
+    addMarker("boundary", 6, 6, "-swept", null, { kind: "sweep" });
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
 
     expect(
@@ -172,11 +177,32 @@ describe("peer marker writer self-clear", () => {
         .querySelector('[data-peer-mark="range-mark-swept"]')
         ?.getAttribute("data-peer-mark-swept"),
     ).toBe("true");
+    const deletionTick = editor.view.dom.querySelector(
+      '[data-peer-mark="range-mark-deletion"].meridian-peer-mark--tick',
+    );
+    expect(deletionTick?.getAttribute("data-peer-mark-deletion")).toBe("true");
+    expect(deletionTick?.getAttribute("data-peer-mark-swept")).toBe("true");
     expect(
-      editor.view.dom
-        .querySelector('[data-peer-mark="range-mark-deletion"]')
-        ?.getAttribute("data-peer-mark-deletion"),
-    ).toBe("true");
+      editor.view.dom.querySelector(
+        '[data-peer-mark="boundary-mark-swept"].meridian-peer-mark--seam',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("rebuilds existing marker labels when the locale changes", async () => {
+    addMarker("range", 2, 5);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    const selector = '[data-peer-mark="range-mark"]';
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
+      "Show change details for Replaced a passage",
+    );
+
+    activateLocale("zh");
+    await Promise.resolve();
+
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
+      "显示替换了一段内容的更改详情",
+    );
   });
 
   it("emphasizes an addressed live marker without creating a second decoration", () => {

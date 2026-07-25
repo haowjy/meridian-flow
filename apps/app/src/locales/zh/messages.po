@@ -14,6 +14,11 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Show change details for {label}"
+msgstr "显示{label}的更改详情"
+
+#. js-lingui-explicit-id
 #: src/features/change-trail/trail-change-recovery.ts
 msgid "AI brought back text you deleted"
 msgstr "AI 恢复了你删除的文本"
@@ -435,7 +440,7 @@ msgstr ""
 msgid "Choose an option"
 msgstr ""
 
-#: src/features/chat/ChangeViewRows.tsx
+#: src/features/chat/TurnEditsCard.tsx
 msgid "Clear marks"
 msgstr "清除标记"
 

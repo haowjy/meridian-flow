@@ -14,6 +14,11 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/core/editor/change-mark-labels.ts
+msgid "Show change details for {label}"
+msgstr "Show change details for {label}"
+
+#. js-lingui-explicit-id
 #: src/features/change-trail/trail-change-recovery.ts
 msgid "AI brought back text you deleted"
 msgstr "AI brought back text you deleted"
@@ -447,7 +452,7 @@ msgstr "Choose a listed option"
 msgid "Choose an option"
 msgstr "Choose an option"
 
-#: src/features/chat/ChangeViewRows.tsx
+#: src/features/chat/TurnEditsCard.tsx
 msgid "Clear marks"
 msgstr "Clear marks"
 

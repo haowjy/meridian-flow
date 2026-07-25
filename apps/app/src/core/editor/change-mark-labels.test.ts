@@ -1,6 +1,11 @@
 /** Writer-facing peer-mark label contracts. */
 import { describe, expect, it } from "vitest";
-import { changeKindLabel, changeMarkLabel, collaboratorChangeLabel } from "./change-mark-labels";
+import {
+  changeKindLabel,
+  changeMarkLabel,
+  collaboratorChangeLabel,
+  peerMarkAccessibleLabel,
+} from "./change-mark-labels";
 
 describe("peer-mark labels", () => {
   it.each([
@@ -20,5 +25,8 @@ describe("peer-mark labels", () => {
       "Meridian Researcher · Added a passage",
     );
     expect(collaboratorChangeLabel()).toBe("Collaborator edited text");
+    expect(peerMarkAccessibleLabel("AI · Added a passage")).toBe(
+      "Show change details for AI · Added a passage",
+    );
   });
 });

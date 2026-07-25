@@ -11,6 +11,10 @@ export function collaboratorChangeLabel(): string {
   return i18n._("Collaborator edited text");
 }
 
+export function peerMarkAccessibleLabel(label: string): string {
+  return i18n._("Show change details for {label}", { label });
+}
+
 export function changeMarkLabel(
   kind: "insert" | "modify" | "delete",
   pureDeletionOffset: number | null,

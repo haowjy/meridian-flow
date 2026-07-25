@@ -265,6 +265,10 @@
   background: var(--color-review-removed-border);
 }
 
+.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-swept="true"] {
+  box-shadow: 0 0 0 3px var(--color-review-warning-tint);
+}
+
 .meridian-editor .ProseMirror .meridian-peer-mark--seam {
   position: relative;
   display: block;
@@ -281,6 +285,11 @@
   background: var(--color-review-removed-border);
   content: "";
   opacity: 0.68;
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-swept="true"] {
+  border-radius: var(--radius-sm);
+  background: var(--color-review-warning-tint);
 }
 
 .meridian-editor .ProseMirror .meridian-peer-mark__label {
@@ -307,6 +316,11 @@
   .meridian-peer-mark--tick[data-peer-mark-deletion="true"]:focus-visible,
 .meridian-editor .ProseMirror .meridian-peer-mark--seam:focus-visible {
   outline-color: var(--color-review-removed-ring);
+}
+
+.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-swept="true"]:focus-visible,
+.meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-swept="true"]:focus-visible {
+  outline-color: var(--color-review-warning-border);
 }
 
 /* Inline draft-review decorations — Track Changes for the manuscript.
@@ -659,6 +673,15 @@
   .meridian-peer-mark--tick[data-peer-mark-deletion="true"][data-peer-mark-emphasized="true"],
 .meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-removed-ring);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-peer-mark--tick[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"],
+.meridian-editor
+  .ProseMirror
+  .meridian-peer-mark--seam[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
+  box-shadow: 0 0 0 3px var(--color-review-warning-border);
 }
 
 .meridian-trail-row-emphasized {
