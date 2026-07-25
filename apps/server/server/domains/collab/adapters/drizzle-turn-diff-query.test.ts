@@ -15,24 +15,21 @@ function change(overrides: Partial<TrailChangeV1>): TrailChangeV1 {
     beforeText: "Before",
     afterTextAtReceipt: "After",
     navigation: { kind: "unavailable", reason: "fixture" },
-    swept: null,
+    writerImpact: null,
     reversible: false,
     ...overrides,
   };
 }
 
 describe("mapTrailChangeToTurnDiff", () => {
-  it("maps protected swept prose as writer-authored", () => {
+  it("maps writer-impact prose as writer-authored", () => {
     expect(
       mapTrailChangeToTurnDiff(
         change({
-          writerProtection: {
+          writerImpact: {
             kind: "sweep",
-            body: { status: "available", markdown: "Protected writer prose" },
-          },
-          swept: {
             affectedBlockHash: "abcd",
-            removed: { status: "available", markdown: "Captured fallback" },
+            body: { status: "available", markdown: "Protected writer prose" },
             beforeContentRef: 1,
           },
         }),
@@ -41,18 +38,14 @@ describe("mapTrailChangeToTurnDiff", () => {
     ).toEqual([{ body: "Protected writer prose", writerAuthored: true }]);
   });
 
-  it("maps an agent-only swept body without claiming writer authorship", () => {
+  it("does not invent merged-over prose without writer impact", () => {
     expect(
       mapTrailChangeToTurnDiff(
         change({
-          swept: {
-            affectedBlockHash: "abcd",
-            removed: { status: "available", markdown: "Agent-only prose" },
-            beforeContentRef: null,
-          },
+          beforeText: "Agent-only prose",
         }),
         "doc-1",
       ).mergedOver,
-    ).toEqual([{ body: "Agent-only prose", writerAuthored: false }]);
+    ).toEqual([]);
   });
 });

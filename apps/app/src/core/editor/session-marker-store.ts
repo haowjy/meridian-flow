@@ -19,7 +19,7 @@ export type SessionMarker = {
   author: ChangeEventWsMessage["author"];
   kind: "insert" | "modify" | "delete";
   anchor: SessionMarkerAnchor;
-  swept: boolean;
+  hasWriterImpact: boolean;
   excerpt: string | null;
   pureDeletionOffset: number | null;
   projectionRevision: number;
@@ -116,7 +116,7 @@ export class SessionMarkerStore {
             author: message.author,
             kind: change.kind,
             anchor: { type: "unresolved", raw: change.navigation },
-            swept: change.swept,
+            hasWriterImpact: change.hasWriterImpact,
             excerpt: change.excerpt,
             pureDeletionOffset: change.pureDeletionOffset,
             projectionRevision: message.projectionRevision,
@@ -211,7 +211,7 @@ export class SessionMarkerStore {
       .sort(
         (a, b) =>
           Number(b.marker.dismissed) - Number(a.marker.dismissed) ||
-          Number(a.marker.swept) - Number(b.marker.swept) ||
+          Number(a.marker.hasWriterImpact) - Number(b.marker.hasWriterImpact) ||
           a.marker.receivedAt - b.marker.receivedAt ||
           a.index - b.index,
       );

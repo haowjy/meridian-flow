@@ -73,7 +73,7 @@ export function mergeTrailChanges(
           : change.afterTextAtReceipt === null
             ? "delete"
             : "modify",
-      swept: change.swept ?? prior.swept,
+      writerImpact: change.writerImpact ?? prior.writerImpact,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(key);
     else folded.set(key, combined);
@@ -84,19 +84,11 @@ export function mergeTrailChanges(
 /** Applies final sweep classification without erasing the push's ordinary edit history. */
 export function refinePushChanges(
   provisional: readonly TrailChangeV1[],
-  classifiedSweeps: readonly TrailChangeV1[],
+  classifiedImpacts: readonly TrailChangeV1[],
 ): TrailChangeV1[] {
-  const classifiedKeys = new Set(classifiedSweeps.map(canonicalChangeKey));
-  const ordinary = provisional
-    .filter((change) => !classifiedKeys.has(canonicalChangeKey(change)))
-    .map(withoutProvisionalSweep);
-  return mergeTrailChanges(ordinary, classifiedSweeps);
-}
-
-function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
-  if (change.writerProtection?.kind === "resurrection") return change;
-  const { writerProtection: _writerProtection, ...ordinary } = change;
-  return { ...ordinary, swept: null };
+  const classifiedKeys = new Set(classifiedImpacts.map(canonicalChangeKey));
+  const ordinary = provisional.filter((change) => !classifiedKeys.has(canonicalChangeKey(change)));
+  return mergeTrailChanges(ordinary, classifiedImpacts);
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
@@ -136,7 +128,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
               ownerKind: trail.owner.kind,
               version,
               changeCount: trail.counts.changes,
-              sweptChangeCount: trail.counts.swept,
+              writerImpactCount: trail.counts.writerImpact,
               documentCount: trail.counts.documents,
             })
             .onConflictDoNothing();
@@ -274,14 +266,14 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             state: "building",
             settledAt: null,
             changeCount: allChanges.length,
-            sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
+            writerImpactCount: allChanges.filter((change) => change.writerImpact !== null).length,
             documentCount: details.length,
             updatedAt: new Date(),
           })
           .where(eq(changeTrailShells.id, trailId));
         const counts = {
           changeCount: allChanges.length,
-          sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
+          writerImpactCount: allChanges.filter((change) => change.writerImpact !== null).length,
           documentCount: details.length,
         };
         if (input.settlementRefinement?.currentVersion) {
@@ -316,7 +308,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           changes,
           counts: {
             changes: changes.length,
-            swept: changes.filter((change) => change.swept !== null).length,
+            writerImpact: changes.filter((change) => change.writerImpact !== null).length,
             documents: new Set(changes.map((change) => change.documentId)).size,
           },
         };
@@ -352,7 +344,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .returning({
             version: changeTrailShells.version,
             changeCount: changeTrailShells.changeCount,
-            sweptChangeCount: changeTrailShells.sweptChangeCount,
+            writerImpactCount: changeTrailShells.writerImpactCount,
             documentCount: changeTrailShells.documentCount,
           });
         if (!reopened) continue;
@@ -365,7 +357,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             version: reopened.version,
             eventKind: "updated",
             changeCount: reopened.changeCount,
-            sweptChangeCount: reopened.sweptChangeCount,
+            writerImpactCount: reopened.writerImpactCount,
             documentCount: reopened.documentCount,
           })
           .onConflictDoNothing();
@@ -426,7 +418,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
           turnId: owner.turn_id as never,
           ownerKind: "turn",
           changeCount: 0,
-          sweptChangeCount: 0,
+          writerImpactCount: 0,
           documentCount: 0,
         })
         .onConflictDoNothing();
@@ -441,14 +433,14 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
           AND work.updated_at > shell.settled_at
       )
       RETURNING shell.id, shell.thread_id, shell.version, shell.change_count,
-        shell.swept_change_count, shell.document_count
+        shell.writer_impact_count, shell.document_count
     `);
     for (const item of reopened as unknown as Array<{
       id: string;
       thread_id: string;
       version: number;
       change_count: number;
-      swept_change_count: number;
+      writer_impact_count: number;
       document_count: number;
     }>) {
       await tx
@@ -460,7 +452,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
           version: item.version,
           eventKind: "updated",
           changeCount: item.change_count,
-          sweptChangeCount: item.swept_change_count,
+          writerImpactCount: item.writer_impact_count,
           documentCount: item.document_count,
         })
         .onConflictDoNothing();
@@ -469,7 +461,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
     // This preserves a durable, observable settling version between RUN_FINISHED
     // and the terminal event instead of collapsing both states in one poll.
     const ready = await tx.execute(sql`
-      SELECT shell.id, shell.version, shell.change_count, shell.swept_change_count,
+      SELECT shell.id, shell.version, shell.change_count, shell.writer_impact_count,
         shell.document_count
       FROM change_trail_shells AS shell
       WHERE shell.state = 'settling'
@@ -499,7 +491,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
       id: string;
       version: number;
       change_count: number;
-      swept_change_count: number;
+      writer_impact_count: number;
       document_count: number;
     }>) {
       const version = item.version + 1;
@@ -527,7 +519,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
         AND shell.state = 'building'
         AND turns.status IN ('complete', 'cancelled', 'error')
       RETURNING shell.id, shell.thread_id, shell.version, shell.change_count,
-        shell.swept_change_count, shell.document_count
+        shell.writer_impact_count, shell.document_count
     `);
 
     await tx.execute(sql`
@@ -543,7 +535,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
       thread_id: string;
       version: number;
       change_count: number;
-      swept_change_count: number;
+      writer_impact_count: number;
       document_count: number;
     }>) {
       await tx
@@ -555,7 +547,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
           version: item.version,
           eventKind: "updated",
           changeCount: item.change_count,
-          sweptChangeCount: item.swept_change_count,
+          writerImpactCount: item.writer_impact_count,
           documentCount: item.document_count,
         })
         .onConflictDoNothing();

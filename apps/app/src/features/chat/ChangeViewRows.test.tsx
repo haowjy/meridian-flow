@@ -41,7 +41,7 @@ const generativeInsertion: TrailChange = {
   beforeText: null,
   afterTextAtReceipt: "Agent text.",
   navigation: { kind: "unavailable", reason: "test" },
-  swept: null,
+  writerImpact: null,
   reversible: false,
 };
 

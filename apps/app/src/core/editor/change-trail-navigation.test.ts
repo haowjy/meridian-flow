@@ -22,7 +22,7 @@ function deletionChange(doc: Y.Doc): TrailChange {
       position: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 0)),
       affinity: "document_start",
     },
-    swept: null,
+    writerImpact: null,
     reversible: false,
   };
 }

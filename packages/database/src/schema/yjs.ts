@@ -286,7 +286,7 @@ export const changeTrailShells = pgTable(
     state: text("state").$type<ChangeTrailState>().notNull().default("building"),
     version: integer("version").notNull().default(1),
     changeCount: integer("change_count").notNull(),
-    sweptChangeCount: integer("swept_change_count").notNull(),
+    writerImpactCount: integer("writer_impact_count").notNull(),
     documentCount: integer("document_count").notNull(),
     settledAt: timestamp("settled_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -306,7 +306,7 @@ export const changeTrailShells = pgTable(
     ),
     check(
       "change_trail_shells_state_counts_valid",
-      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
+      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.writerImpactCount} >= 0 AND ${table.writerImpactCount} <= ${table.changeCount} AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
     ),
   ],
 );
@@ -361,7 +361,7 @@ export const changeTrailDeliveryOutbox = pgTable(
     version: integer("version").notNull(),
     eventKind: text("event_kind").$type<ChangeTrailEventKind>().notNull(),
     changeCount: integer("change_count"),
-    sweptChangeCount: integer("swept_change_count"),
+    writerImpactCount: integer("writer_impact_count"),
     documentCount: integer("document_count"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -381,7 +381,7 @@ export const changeTrailDeliveryOutbox = pgTable(
     ),
     check(
       "change_trail_delivery_outbox_counts_valid",
-      sql`(${table.eventKind} = 'settled' AND ${table.changeCount} IS NULL AND ${table.sweptChangeCount} IS NULL AND ${table.documentCount} IS NULL) OR (${table.eventKind} = 'updated' AND ${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0)`,
+      sql`(${table.eventKind} = 'settled' AND ${table.changeCount} IS NULL AND ${table.writerImpactCount} IS NULL AND ${table.documentCount} IS NULL) OR (${table.eventKind} = 'updated' AND ${table.changeCount} >= 0 AND ${table.writerImpactCount} >= 0 AND ${table.writerImpactCount} <= ${table.changeCount} AND ${table.documentCount} >= 0)`,
     ),
   ],
 );

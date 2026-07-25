@@ -21,10 +21,12 @@ function validChange(): TrailChangeV1 {
       relEnd: "relative-end",
       targetBlockId: { clientID: 7, clock: 11 },
     },
-    swept: null,
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
+      affectedBlockHash: "hash-1",
+      affectedBlockIdentity: { documentId: "document-1", clientID: 7, clock: 11 },
       body: { status: "available", markdown: "before" },
+      beforeContentRef: 1,
       ranges: [{ clientID: 7, clock: 11, length: 1 }],
     },
     reversible: false,
@@ -38,14 +40,14 @@ describe("change-trail Yjs identities", () => {
     [
       "writer range clientID",
       (change: TrailChangeV1) =>
-        change.writerProtection?.kind === "sweep" ? change.writerProtection.ranges?.[0] : undefined,
+        change.writerImpact?.kind === "sweep" ? change.writerImpact.ranges?.[0] : undefined,
       "clientID",
       Number.MAX_SAFE_INTEGER + 1,
     ],
     [
       "writer range clock",
       (change: TrailChangeV1) =>
-        change.writerProtection?.kind === "sweep" ? change.writerProtection.ranges?.[0] : undefined,
+        change.writerImpact?.kind === "sweep" ? change.writerImpact.ranges?.[0] : undefined,
       "clock",
       Number.MAX_SAFE_INTEGER + 1,
     ],

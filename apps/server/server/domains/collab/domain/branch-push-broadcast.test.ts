@@ -46,7 +46,7 @@ function projectedChange(
     beforeText: null,
     afterTextAtReceipt: `${changeId}|${changeId} body`,
     navigation: { kind: "unavailable", reason: "fixture" },
-    swept: null,
+    writerImpact: null,
     reversible: false,
     admittedByUserId,
   };

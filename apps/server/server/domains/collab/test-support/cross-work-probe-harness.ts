@@ -317,19 +317,19 @@ export async function runCrossWorkProbe(
     bTrailIds.has(row.trailId),
   );
   const trailChanges = detailRows.flatMap((row) => (Array.isArray(row.changes) ? row.changes : []));
-  const swept = "swept" in bResult ? bResult.swept : undefined;
+  const writerImpact = "writerImpact" in bResult ? bResult.writerImpact : undefined;
   const capturedBodies = [
-    ...(swept?.capturedDeletedBodies.flatMap((body) =>
+    ...(writerImpact?.capturedDeletedBodies.flatMap((body) =>
       typeof body.body === "string" && body.body !== "body_unavailable" ? [body.body] : [],
     ) ?? []),
     ...trailChanges.flatMap((change) => {
-      const protection = asRecord(change).writerProtection;
-      const body = asRecord(asRecord(protection).body);
+      const impact = asRecord(change).writerImpact;
+      const body = asRecord(asRecord(impact).body);
       return typeof body.markdown === "string" ? [body.markdown] : [];
     }),
   ];
-  const protectedTrail = trailChanges.some(
-    (change) => asRecord(asRecord(change).writerProtection).kind === "sweep",
+  const writerImpactTrail = trailChanges.some(
+    (change) => asRecord(asRecord(change).writerImpact).kind === "sweep",
   );
   let restoreActionable = false;
   let restoreOutcome: string | null = null;
@@ -343,7 +343,7 @@ export async function runCrossWorkProbe(
         })),
       )
       .find(({ change }) => {
-        return change.writerProtection?.kind === "sweep";
+        return change.writerImpact?.kind === "sweep";
       });
     if (restorable) {
       restoreActionable = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
@@ -410,7 +410,7 @@ export async function runCrossWorkProbe(
     manuscript: { beforeAApply, afterAApply, beforeBApply, afterBApply },
     approvedTextSurvived: afterBApply.includes("Writer-approved Work A text."),
     protection: {
-      classification: swept || protectedTrail ? "protected" : "ordinary",
+      classification: writerImpact || writerImpactTrail ? "protected" : "ordinary",
       capturedBodies: [...new Set(capturedBodies)],
       trailChanges: serializable(trailChanges) as unknown[],
       notices: serializable(await db.select().from(schema.pendingNotices)) as unknown[],

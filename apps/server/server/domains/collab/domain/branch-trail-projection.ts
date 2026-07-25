@@ -8,7 +8,7 @@ import type {
   BranchJournalRow,
   PreparedPush,
   PushReceiptPayload,
-  PushSweptTrail,
+  PushWriterImpactReport,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
@@ -158,7 +158,7 @@ export function preparedTrailChanges(input: {
   beforeContentRef: number | null;
   resurrectionBodies?: ReadonlyMap<string, string>;
 }): RawTrailChange[] {
-  const swept = new Set(input.conflictedBlocks);
+  const impacted = new Set(input.conflictedBlocks);
   const provenReplacements = new Map<string, string>();
   for (const operation of input.operations) {
     if (
@@ -192,10 +192,10 @@ export function preparedTrailChanges(input: {
     const previousId = [...input.before.slice(0, Math.max(0, beforeIndex))]
       .reverse()
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
-    const isSwept = swept.has(block.blockId);
+    const hasWriterImpact = impacted.has(block.blockId);
     const resurrectionBody = input.resurrectionBodies?.get(block.blockId);
     const wholeDocumentReplacement =
-      isSwept &&
+      hasWriterImpact &&
       input.before.length === 1 &&
       input.before[0]?.hash === block.blockId &&
       !nextId &&
@@ -213,7 +213,7 @@ export function preparedTrailChanges(input: {
             previous: previousId ? input.afterById.get(previousId) : null,
           });
     const sweptNavigation =
-      isSwept && resurrectionBody === undefined
+      hasWriterImpact && resurrectionBody === undefined
         ? navigationForSweptBlock({
             affectedBlockHash: block.blockId,
             afterDoc: input.afterDoc,
@@ -297,29 +297,21 @@ export function preparedTrailChanges(input: {
         ? block.afterText
         : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
-      swept: isSwept
-        ? {
-            affectedBlockHash: block.blockId,
-            affectedBlockIdentity: stableIdentity,
-            removed: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
-            beforeContentRef: input.beforeContentRef,
-          }
-        : null,
-      ...(resurrectionBody !== undefined
-        ? {
-            writerProtection: {
+      writerImpact:
+        resurrectionBody !== undefined
+          ? {
               kind: "resurrection" as const,
               body: bodyFromHashline(resurrectionBody),
-            },
-          }
-        : isSwept
-          ? {
-              writerProtection: {
-                kind: "sweep" as const,
-                body: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
-              },
             }
-          : {}),
+          : hasWriterImpact
+            ? {
+                kind: "sweep" as const,
+                affectedBlockHash: block.blockId,
+                affectedBlockIdentity: stableIdentity,
+                body: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
+                beforeContentRef: input.beforeContentRef,
+              }
+            : null,
       owner,
       sequence: sequence * 1000 + ownerIndex,
     }));
@@ -401,22 +393,22 @@ export function trailContributionReplacement(
   };
 }
 
-export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
-  const sweptChanges = prepared.trailChanges.filter((change) => change.swept !== null);
+export function projectPushWriterImpact(prepared: PreparedPush): PushWriterImpactReport {
+  const impactedChanges = prepared.trailChanges.flatMap((change) =>
+    change.writerImpact?.kind === "sweep" ? [{ change, writerImpact: change.writerImpact }] : [],
+  );
   return {
     affectedBlockHashes: prepared.blindConflictedBlocks,
-    capturedDeletedBodies: sweptChanges.map((change) => ({
-      hash: change.swept?.affectedBlockHash as string,
+    capturedDeletedBodies: impactedChanges.map(({ writerImpact }) => ({
+      hash: writerImpact.affectedBlockHash,
       body:
-        change.swept?.removed.status === "available"
-          ? change.swept.removed.markdown
-          : "body_unavailable",
+        writerImpact.body.status === "available" ? writerImpact.body.markdown : "body_unavailable",
     })),
     beforeContentRef: prepared.beforeContentRef,
     receiptId: prepared.prepared.receiptId as string,
-    locations: sweptChanges.map((change) => ({
+    locations: impactedChanges.map(({ change, writerImpact }) => ({
       changeId: change.changeId,
-      affectedBlockHash: change.swept?.affectedBlockHash as string,
+      affectedBlockHash: writerImpact.affectedBlockHash,
       outcome: change.kind === "modify" ? "modify" : "delete",
       navigation: change.navigation,
     })),

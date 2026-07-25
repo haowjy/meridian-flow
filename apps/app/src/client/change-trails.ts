@@ -34,7 +34,7 @@ export type TrailShellTransition = {
   trailId: string;
   turnId: string | null;
   version: number;
-  counts?: { changes: number; swept: number; documents: number };
+  counts?: { changes: number; writerImpact: number; documents: number };
 };
 
 /** Fold one ordered delivery fact into shell state without inventing missing counts. */
@@ -49,7 +49,7 @@ export function applyTrailShellTransition(
     (prior
       ? {
           changes: prior.changeCount,
-          swept: prior.sweptChangeCount,
+          writerImpact: prior.writerImpactCount,
           documents: prior.documentCount,
         }
       : null);
@@ -62,7 +62,7 @@ export function applyTrailShellTransition(
     state: transition.kind === "settled" ? "settled" : "building",
     version: transition.version,
     changeCount: counts.changes,
-    sweptChangeCount: counts.swept,
+    writerImpactCount: counts.writerImpact,
     documentCount: counts.documents,
     updatedAt: occurredAt,
     settledAt: transition.kind === "settled" ? occurredAt : null,

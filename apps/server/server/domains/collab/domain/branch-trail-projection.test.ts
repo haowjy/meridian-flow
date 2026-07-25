@@ -268,7 +268,7 @@ it("projects a structurally adjacent whole-block replacement as one modification
     afterTextAtReceipt: "Agent replacement.",
     afterBlockIdentity: { documentId: "document-1" },
     navigation: { kind: "live_block_range" },
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
       body: { status: "available", markdown: "Writer text." },
     },
@@ -401,7 +401,7 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
   expect(changes[1]?.navigation.kind).toBe("live_block_range");
 });
 
-it("preserves proven-swept replacement promotion", () => {
+it("preserves proven-writer-impact replacement promotion", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));
   const model = yProsemirrorModel(schema);
@@ -473,6 +473,6 @@ it("preserves proven-swept replacement promotion", () => {
     beforeText: "Before.",
     afterTextAtReceipt: "After.",
     navigation: { kind: "live_block_range" },
-    writerProtection: { kind: "sweep" },
+    writerImpact: { kind: "sweep" },
   });
 });

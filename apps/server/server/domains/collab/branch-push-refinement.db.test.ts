@@ -20,8 +20,7 @@ type ProjectedChange = {
   kind: string;
   beforeText: string | null;
   afterTextAtReceipt: string | null;
-  swept: unknown;
-  writerProtection?: unknown;
+  writerImpact: unknown;
   navigation: { kind: string };
 };
 
@@ -87,7 +86,7 @@ describe("branch push settlement refinement (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("retains a same-identity rewrite's protection and modification projection", async () => {
+  it("retains a same-identity rewrite's writer impact and modification projection", async () => {
     const harness = createHarness();
     const branchId = await harness.seedAndStageDestructive(
       "00000000-0000-4000-8000-000000000821",
@@ -110,20 +109,19 @@ describe("branch push settlement refinement (postgres)", () => {
     const trails = await harness.trailRows();
     const changes = trails.details.flatMap((detail) => detail.changes as ProjectedChange[]);
     expect(trails.shells).toEqual([
-      expect.objectContaining({ changeCount: 1, sweptChangeCount: 1, documentCount: 1 }),
+      expect.objectContaining({ changeCount: 1, writerImpactCount: 1, documentCount: 1 }),
     ]);
     expect(changes).toEqual([
       expect.objectContaining({
         kind: "modify",
-        swept: expect.any(Object),
+        writerImpact: expect.any(Object),
         navigation: expect.objectContaining({ kind: "live_block_range" }),
       }),
     ]);
-    expect(changes[0]).toHaveProperty("writerProtection");
     expect(harness.changeEvents()).toEqual([
       expect.objectContaining({
         projectionRevision: 2,
-        changes: [expect.objectContaining({ kind: "modify", swept: true })],
+        changes: [expect.objectContaining({ kind: "modify", hasWriterImpact: true })],
       }),
     ]);
     await expect(harness.diff()).resolves.toMatchObject({ command: "diff", status: "success" });
@@ -149,7 +147,7 @@ describe("branch push settlement refinement (postgres)", () => {
 
     const trails = await harness.trailRows();
     expect(trails.shells).toEqual([
-      expect.objectContaining({ changeCount: 0, sweptChangeCount: 0, documentCount: 0 }),
+      expect.objectContaining({ changeCount: 0, writerImpactCount: 0, documentCount: 0 }),
     ]);
     expect(trails.details).toEqual([]);
     expect(harness.changeEvents()).toEqual([

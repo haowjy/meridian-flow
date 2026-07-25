@@ -488,7 +488,7 @@ describe("change-trail event projection", () => {
         trailId: "trail-1",
         turnId: "turn-1",
         version: 3,
-        counts: { changes: 4, swept: 1, documents: 2 },
+        counts: { changes: 4, writerImpact: 1, documents: 2 },
       },
       {
         type: "turn.change_trail_settled",
@@ -510,7 +510,7 @@ describe("change-trail event projection", () => {
           trailId: "trail-1",
           turnId: "turn-1",
           version: 3,
-          counts: { changes: 4, swept: 1, documents: 2 },
+          counts: { changes: 4, writerImpact: 1, documents: 2 },
         },
       },
       {

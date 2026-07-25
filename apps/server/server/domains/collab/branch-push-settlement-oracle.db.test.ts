@@ -603,7 +603,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
                   : "modify",
             beforeText: change.afterTextAtReceipt,
             afterTextAtReceipt: change.beforeText,
-            swept: null,
+            writerImpact: null,
           }),
         );
         await runInRootDrizzleTransaction(db, () =>
@@ -617,7 +617,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
                 changes: inverse,
                 counts: {
                   changes: inverse.length,
-                  swept: 0,
+                  writerImpact: 0,
                   documents: new Set(inverse.map((change) => change.documentId)).size,
                 },
               },
@@ -701,19 +701,21 @@ async function observeSettlement(
   harness: ReturnType<typeof createHarness>,
 ): Promise<SettlementOracleOutput> {
   const trail = await harness.trailRows();
-  type SweptChange = {
+  type WriterImpactChange = {
     kind: unknown;
     beforeText: unknown;
     beforeBlockIdentity: { documentId: string; clientID: number; clock: number };
-    writerProtection: {
+    writerImpact: {
       kind: string;
       body: { markdown: string };
-      ranges: Array<{ clientID: number; clock: number; length: number }>;
+      ranges?: Array<{ clientID: number; clock: number; length: number }>;
     };
     forwardAction?: unknown;
   };
-  const changes = trail.details.flatMap((detail) => detail.changes as unknown as SweptChange[]);
-  const swept = changes.filter((change) => change.writerProtection?.kind === "sweep");
+  const changes = trail.details.flatMap(
+    (detail) => detail.changes as unknown as WriterImpactChange[],
+  );
+  const impacted = changes.filter((change) => change.writerImpact?.kind === "sweep");
   const [outbox] = await db
     .select()
     .from(schema.branchPushSettlementOutbox)
@@ -726,15 +728,19 @@ async function observeSettlement(
     .limit(1);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
   return {
-    trailChanges: swept.map((change) => ({
+    trailChanges: impacted.map((change) => ({
       kind: change.kind,
       beforeText: change.beforeText,
       beforeBlockIdentity: change.beforeBlockIdentity,
-      writerProtection: change.writerProtection,
+      writerImpact: {
+        kind: change.writerImpact.kind,
+        body: change.writerImpact.body,
+        ranges: change.writerImpact.ranges,
+      },
     })),
-    exactBodies: swept.map((change) => change.writerProtection.body.markdown as string),
-    canonicalIdentities: swept.map((change) => change.beforeBlockIdentity),
-    eligibleRanges: swept.flatMap((change) => change.writerProtection.ranges),
+    exactBodies: impacted.map((change) => change.writerImpact.body.markdown as string),
+    canonicalIdentities: impacted.map((change) => change.beforeBlockIdentity),
+    eligibleRanges: impacted.flatMap((change) => change.writerImpact.ranges ?? []),
     applyResult: {
       status: push.upstreamUpdateSeq === null ? "not_applied" : "applied",
       markdown: await harness.liveMarkdown(ALPHA_ID),
@@ -744,7 +750,7 @@ async function observeSettlement(
       joinVersion: outbox.joinVersion,
       settledJoinVersion: outbox.settledJoinVersion,
     },
-    forwardActions: swept.flatMap((change) =>
+    forwardActions: impacted.flatMap((change) =>
       change.forwardAction === undefined ? [] : [change.forwardAction],
     ),
   };

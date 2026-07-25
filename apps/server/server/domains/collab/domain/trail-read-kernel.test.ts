@@ -38,7 +38,7 @@ function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
     beforeText: "before",
     afterTextAtReceipt: "after",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    swept: null,
+    writerImpact: null,
     owner: { threadId: "thread-a", turnId: "turn-a" },
     sequence: 1,
     ...overrides,
@@ -214,14 +214,15 @@ describe("trail normalization", () => {
       { pushId: "push-a", receiptId: "receipt-a", ordinal: 0 },
       { pushId: "p2", receiptId: "r2", ordinal: 1 },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 2, swept: 0, documents: 2 });
+    expect(trails[0].counts).toEqual({ changes: 2, writerImpact: 0, documents: 2 });
   });
 
-  it("classifies an unattributable swept effect as shared", () => {
-    const swept = change({
-      swept: {
+  it("classifies an unattributable writer impact as shared", () => {
+    const impacted = change({
+      writerImpact: {
+        kind: "sweep",
         affectedBlockHash: "hash",
-        removed: { status: "available", markdown: "lost" },
+        body: { status: "available", markdown: "lost" },
         beforeContentRef: 1,
       },
     });
@@ -234,15 +235,15 @@ describe("trail normalization", () => {
           { threadId: "thread-a", turnId: "turn-a" },
           { threadId: "thread-a", turnId: "turn-b" },
         ],
-        changes: [swept],
+        changes: [impacted],
       },
     ]);
     expect(trails).toHaveLength(1);
     expect(trails[0].owner).toEqual({ kind: "shared", threadId: "thread-a", turnId: null });
-    expect(trails[0].counts.swept).toBe(1);
+    expect(trails[0].counts.writerImpact).toBe(1);
   });
 
-  it("counts an addition but not as swept", () => {
+  it("counts an addition without writer impact", () => {
     const trails = normalizeTrailPushes([
       {
         pushId: "p1",
@@ -252,6 +253,6 @@ describe("trail normalization", () => {
         changes: [change({ kind: "insert", beforeText: null })],
       },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 1, swept: 0, documents: 1 });
+    expect(trails[0].counts).toEqual({ changes: 1, writerImpact: 0, documents: 1 });
   });
 });

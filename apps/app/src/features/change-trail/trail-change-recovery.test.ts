@@ -31,10 +31,11 @@ function protectedChange(): TrailChange {
     beforeText: null,
     afterTextAtReceipt: null,
     navigation: { kind: "unavailable", reason: "test" },
-    swept: null,
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
+      affectedBlockHash: "block-1",
       body: { status: "available", markdown: "Writer text." },
+      beforeContentRef: null,
     },
     reversible: false,
   };

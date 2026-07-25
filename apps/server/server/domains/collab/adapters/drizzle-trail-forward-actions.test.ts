@@ -42,10 +42,11 @@ it("plans Restore at a validated live-root boundary", () => {
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    swept: null,
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
+      affectedBlockHash: "before",
       body: { status: "available", markdown: "Restored." },
+      beforeContentRef: null,
     },
     reversible: false,
   };
@@ -85,7 +86,7 @@ it("restores before a fresh-replaced block when projection retained only its ide
   if (!(replaced instanceof Y.XmlElement)) throw new Error("missing replacement anchor");
   const identity = getBlockItemId(replaced);
   const change: TrailChangeV1 = {
-    changeId: "swept-replacement",
+    changeId: "writer-impact-replacement",
     ordinal: 0,
     documentId: "doc",
     pushId: "push",
@@ -97,10 +98,11 @@ it("restores before a fresh-replaced block when projection retained only its ide
     beforeText: "writer|Writer V2.",
     afterTextAtReceipt: "agent|Agent replacement.",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    swept: null,
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
+      affectedBlockHash: "writer",
       body: { status: "available", markdown: "Writer V2." },
+      beforeContentRef: null,
     },
     reversible: false,
   };
@@ -133,10 +135,11 @@ it("does not apply a stale Restore when a WebSocket mutation lands during persis
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    swept: null,
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
+      affectedBlockHash: "before",
       body: { status: "available", markdown: "Restored." },
+      beforeContentRef: null,
     },
     reversible: false,
   };
@@ -235,10 +238,11 @@ function restoreFixture() {
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    swept: null,
-    writerProtection: {
+    writerImpact: {
       kind: "sweep",
+      affectedBlockHash: "before",
       body: { status: "available", markdown: "Restored." },
+      beforeContentRef: null,
     },
     reversible: false,
   };

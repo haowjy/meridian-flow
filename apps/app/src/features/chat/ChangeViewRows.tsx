@@ -86,7 +86,7 @@ function ChangeViewRow({
     change,
     runAction,
   });
-  const { action, protection } = recovery;
+  const { action, writerImpact } = recovery;
   const hasCanonicalRestoreAnchor =
     action === "restore" &&
     change.navigation.kind === "unavailable" &&
@@ -101,7 +101,7 @@ function ChangeViewRow({
   const rowRef = useRef<HTMLLIElement>(null);
   const [emphasized, setEmphasized] = useState(shouldEmphasize);
   const anchorUnavailable = recovery.anchorUnavailable || locallyUnavailable;
-  const body = protection || anchorUnavailable ? recovery.body : null;
+  const body = writerImpact || anchorUnavailable ? recovery.body : null;
   const canCopy = recovery.canCopy || locallyUnavailable;
 
   useEffect(() => {
@@ -133,7 +133,7 @@ function ChangeViewRow({
       className={`space-y-1.5 rounded-md bg-surface-subtle p-2 text-caption ${
         emphasized ? "meridian-trail-row-emphasized" : ""
       }`}
-      data-change-view-row={protection?.kind ?? change.kind}
+      data-change-view-row={writerImpact?.kind ?? change.kind}
       onPointerDown={() => setEmphasized(false)}
       onKeyDown={() => setEmphasized(false)}
     >
@@ -145,7 +145,7 @@ function ChangeViewRow({
         {trailChangeLabel(change)}
       </button>
       {body ? <p className="whitespace-pre-wrap text-prose-foreground">{body}</p> : null}
-      {protection && !body ? (
+      {writerImpact && !body ? (
         <p className="text-ink-muted">
           <Trans>Earlier content could not be recovered</Trans>
         </p>
@@ -169,7 +169,7 @@ function ChangeViewRow({
           )}
         </p>
       ) : null}
-      {body && (protection || anchorUnavailable) ? (
+      {body && (writerImpact || anchorUnavailable) ? (
         <div className="flex items-center gap-2">
           {canCopy || (recovery.failed && action === "restore") ? (
             <Button size="sm" onClick={() => void copy(body)}>

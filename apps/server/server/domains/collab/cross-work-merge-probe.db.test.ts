@@ -61,7 +61,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
             kind: "live_block_range",
           }),
           afterBlockIdentity: expect.objectContaining({ documentId: expect.any(String) }),
-          writerProtection: expect.objectContaining({
+          writerImpact: expect.objectContaining({
             kind: "sweep",
             body: expect.objectContaining({ status: "available" }),
           }),
@@ -70,7 +70,7 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     );
     expect(result.protection.deliveredEvents).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ counts: expect.objectContaining({ swept: 1 }) }),
+        expect.objectContaining({ counts: expect.objectContaining({ writerImpact: 1 }) }),
       ]),
     );
     expect(result.protection.restoreOutcome).toBe("applied");

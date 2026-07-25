@@ -36,7 +36,7 @@ function change(
             clock: 0,
           },
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    swept: null,
+    writerImpact: null,
     reversible: false,
     ...input,
   };
@@ -113,21 +113,18 @@ describe("refinePushChanges", () => {
     expect(refinePushChanges([ordinary], [])).toEqual([ordinary]);
   });
 
-  it("replaces classified rows, demotes rejected sweep candidates, and creates no duplicates", () => {
+  it("replaces classified detail, preserves impact presence, and creates no duplicates", () => {
     const rejected = change({
       changeId: "r",
       documentId: "doc-a",
       beforeText: "before-r|Observed body.",
       afterTextAtReceipt: null,
       pushId: "7",
-      swept: {
-        affectedBlockHash: "before-r",
-        removed: { status: "available", markdown: "Observed body." },
-        beforeContentRef: null,
-      },
-      writerProtection: {
+      writerImpact: {
         kind: "sweep",
+        affectedBlockHash: "before-r",
         body: { status: "available", markdown: "Observed body." },
+        beforeContentRef: null,
       },
     });
     const provisional = change({
@@ -139,22 +136,18 @@ describe("refinePushChanges", () => {
     });
     const classified = {
       ...provisional,
-      swept: {
-        affectedBlockHash: "before-s",
-        removed: { status: "available" as const, markdown: "Unseen body." },
-        beforeContentRef: null,
-      },
-      writerProtection: {
+      writerImpact: {
         kind: "sweep" as const,
+        affectedBlockHash: "before-s",
         body: { status: "available" as const, markdown: "Unseen body." },
+        beforeContentRef: null,
       },
     };
 
     const refined = refinePushChanges([rejected, provisional], [classified]);
     expect(refined).toEqual([
-      expect.objectContaining({ changeId: "r", swept: null }),
-      expect.objectContaining({ changeId: "s", swept: classified.swept }),
+      expect.objectContaining({ changeId: "r", writerImpact: rejected.writerImpact }),
+      expect.objectContaining({ changeId: "s", writerImpact: classified.writerImpact }),
     ]);
-    expect(refined[0]).not.toHaveProperty("writerProtection");
   });
 });

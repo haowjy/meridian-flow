@@ -7,11 +7,11 @@ its one module is consumed by chat (`ChangeViewRows.tsx`) and the editor
 
 ## Mental model
 
-A trail change carries an optional `writerProtection` (sweep or resurrection)
-or `swept` body. One recovery action per change, chosen by protection kind:
+A trail change carries one nullable `writerImpact` authority (sweep or
+resurrection). One recovery action per impacted change, chosen by impact kind:
 
 - **`delete-again`** when the change resurrected text the writer had deleted.
-- **`restore`** otherwise (sweep, or any captured body).
+- **`restore`** for a sweep.
 
 Action eligibility is gated by the durable forward-action state on the trail
 change: a change already `applied` or `settled` is terminal and its verb is

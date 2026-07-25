@@ -169,7 +169,7 @@ export type NormalizedTrail = {
     | { kind: "turn"; threadId: string; turnId: string }
     | { kind: "shared"; threadId: string; turnId: null };
   changes: TrailChangeV1[];
-  counts: { changes: number; swept: number; documents: number };
+  counts: { changes: number; writerImpact: number; documents: number };
 };
 
 function ownerKey(owner: NormalizedTrail["owner"]): string {
@@ -193,15 +193,15 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
         owner ? [[`${owner.threadId}:${owner.turnId}`, owner] as const] : [],
       ),
     );
-    const sweptOwner =
+    const writerImpactOwner =
       push.journalOwners.length > 0 &&
       !push.journalOwners.includes(null) &&
       distinctOwners.size === 1
         ? [...distinctOwners.values()][0]
         : null;
     for (const change of push.changes) {
-      if (change.swept) {
-        const owner = sweptOwner;
+      if (change.writerImpact !== null) {
+        const owner = writerImpactOwner;
         append(
           owner
             ? { kind: "turn", threadId: owner.threadId, turnId: owner.turnId }
@@ -224,7 +224,7 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
         changes: folded,
         counts: {
           changes: folded.length,
-          swept: folded.filter((change) => change.swept !== null).length,
+          writerImpact: folded.filter((change) => change.writerImpact !== null).length,
           documents: new Set(
             folded.flatMap((change) => (change.documentId ? [change.documentId] : [])),
           ).size,
@@ -256,7 +256,7 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
             : "modify",
       beforeBlockId: previous.beforeBlockId,
       beforeText: previous.beforeText,
-      swept: change.swept ?? previous.swept,
+      writerImpact: change.writerImpact ?? previous.writerImpact,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(identity);
     else folded.set(identity, combined);

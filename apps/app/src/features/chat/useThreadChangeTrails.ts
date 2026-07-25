@@ -15,7 +15,7 @@ type TrailEventValue = {
   trailId: string;
   turnId: string | null;
   version: number;
-  counts?: { changes: number; swept: number; documents: number };
+  counts?: { changes: number; writerImpact: number; documents: number };
 };
 
 export function useThreadChangeTrails(threadId: string) {

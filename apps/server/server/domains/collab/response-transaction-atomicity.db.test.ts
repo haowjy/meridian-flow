@@ -141,7 +141,7 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("persists a writer edit journaled after the observation cut as swept", async () => {
+  it("persists writer impact journaled after the observation cut", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
     await harness.seedProbeTimelineSweep(responseId);
@@ -162,7 +162,7 @@ describe("change trail (postgres)", () => {
 
     const trail = await harness.trailRows();
     expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 3, changeCount: expect.any(Number) }),
+      expect.objectContaining({ writerImpactCount: 3, changeCount: expect.any(Number) }),
     ]);
     expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
@@ -170,8 +170,8 @@ describe("change trail (postgres)", () => {
         changes: expect.arrayContaining([
           expect.objectContaining({
             beforeText: expect.stringContaining("Writer concurrent edit"),
-            swept: expect.objectContaining({
-              removed: expect.objectContaining({
+            writerImpact: expect.objectContaining({
+              body: expect.objectContaining({
                 status: "available",
                 markdown: expect.stringContaining("Writer concurrent edit"),
               }),
@@ -204,7 +204,7 @@ describe("change trail (postgres)", () => {
     expect(trail.shells).toEqual([
       expect.objectContaining({
         state: "settled",
-        sweptChangeCount: 3,
+        writerImpactCount: 3,
         changeCount: expect.any(Number),
         documentCount: 1,
       }),
@@ -214,8 +214,8 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({
         changes: expect.arrayContaining([
           expect.objectContaining({
-            swept: expect.objectContaining({
-              removed: expect.objectContaining({
+            writerImpact: expect.objectContaining({
+              body: expect.objectContaining({
                 status: "available",
                 markdown: expect.stringContaining("Writer concurrent edit"),
               }),

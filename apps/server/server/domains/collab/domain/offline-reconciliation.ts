@@ -158,15 +158,12 @@ export function createOfflineReconciliation(deps: {
       beforeText: input.writerBlock.serialized,
       afterTextAtReceipt: null,
       navigation: target,
-      swept: {
+      writerImpact: {
+        kind: "sweep",
         affectedBlockHash: input.writerBlock.hash,
         affectedBlockIdentity: blockIdentity,
-        removed: bodyFromHashline(input.writerBlock.serialized),
-        beforeContentRef: input.agentSeq - 1 || null,
-      },
-      writerProtection: {
-        kind: "sweep",
         body: bodyFromHashline(input.writerBlock.serialized),
+        beforeContentRef: input.agentSeq - 1 || null,
       },
       reversible: false,
     };
@@ -175,7 +172,7 @@ export function createOfflineReconciliation(deps: {
         {
           owner: { kind: "turn", threadId: input.threadId, turnId: input.turnId },
           changes: [change],
-          counts: { changes: 1, swept: 1, documents: 1 },
+          counts: { changes: 1, writerImpact: 1, documents: 1 },
         },
       ],
       documentTitles: new Map([

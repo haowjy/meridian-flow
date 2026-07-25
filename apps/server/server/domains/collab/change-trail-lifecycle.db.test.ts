@@ -100,7 +100,7 @@ describe("change trail (postgres)", () => {
         turnId: TURN_ID,
         state: "settled",
         documentCount: 2,
-        sweptChangeCount: 2,
+        writerImpactCount: 2,
       }),
     ]);
     expect(trails.details).toHaveLength(2);
@@ -108,10 +108,10 @@ describe("change trail (postgres)", () => {
       trails.details.flatMap((detail) =>
         (
           detail.changes as Array<{
-            writerProtection?: { kind: string; body: { markdown: string } };
+            writerImpact?: { kind: string; body: { markdown: string } };
           }>
         ).flatMap((change) =>
-          change.writerProtection?.kind === "sweep" ? [change.writerProtection.body.markdown] : [],
+          change.writerImpact?.kind === "sweep" ? [change.writerImpact.body.markdown] : [],
         ),
       ),
     ).toEqual([
@@ -140,7 +140,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 1,
+      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -160,14 +160,11 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Restored prose.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          swept: {
-            affectedBlockHash: "deleted-block",
-            removed: { status: "available", markdown: "Restored prose." },
-            beforeContentRef: null,
-          },
-          writerProtection: {
+          writerImpact: {
             kind: "sweep",
+            affectedBlockHash: "deleted-block",
             body: { status: "available", markdown: "Restored prose." },
+            beforeContentRef: null,
           },
           reversible: false,
         },
@@ -238,7 +235,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 1,
+      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -258,14 +255,11 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Restored prose.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          swept: {
-            affectedBlockHash: "deleted-block",
-            removed: { status: "available", markdown: "Restored prose." },
-            beforeContentRef: null,
-          },
-          writerProtection: {
+          writerImpact: {
             kind: "sweep",
+            affectedBlockHash: "deleted-block",
             body: { status: "available", markdown: "Restored prose." },
+            beforeContentRef: null,
           },
           reversible: false,
         },
@@ -329,7 +323,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 1,
+      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -349,10 +343,11 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Recovered once.",
           afterTextAtReceipt: null,
           navigation: { kind: "unavailable", reason: "crash_fixture" },
-          swept: null,
-          writerProtection: {
+          writerImpact: {
             kind: "sweep",
+            affectedBlockHash: "deleted-block",
             body: { status: "available", markdown: "Recovered once." },
+            beforeContentRef: null,
           },
           forwardActions: {
             restore: {
@@ -405,7 +400,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 1,
+      writerImpactCount: 1,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -425,10 +420,11 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Never restored.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          swept: null,
-          writerProtection: {
+          writerImpact: {
             kind: "sweep",
+            affectedBlockHash: "deleted-block",
             body: { status: "available", markdown: "Never restored." },
+            beforeContentRef: null,
           },
           reversible: false,
         },
@@ -500,7 +496,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 0,
+      writerImpactCount: 0,
       documentCount: 1,
     });
     await db.insert(schema.changeTrailDocumentDetails).values({
@@ -520,8 +516,7 @@ describe("change trail (postgres)", () => {
           beforeText: null,
           afterTextAtReceipt: "restored-block|Restored prose.",
           navigation: liveBlockTarget(liveDoc, doomed),
-          swept: null,
-          writerProtection: {
+          writerImpact: {
             kind: "resurrection",
             body: { status: "available", markdown: "Restored prose." },
           },
@@ -584,7 +579,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 1,
+      writerImpactCount: 1,
       documentCount: 1,
     });
     await db
@@ -607,7 +602,7 @@ describe("change trail (postgres)", () => {
           beforeText: "deleted-block|Captured after reload.",
           afterTextAtReceipt: null,
           navigation: { kind: "unavailable", reason: "document_deleted" },
-          swept: null,
+          writerImpact: null,
           reversible: false,
         },
       ],
@@ -649,7 +644,7 @@ describe("change trail (postgres)", () => {
       turnId: TURN_ID,
       ownerKind: "turn",
       changeCount: 1,
-      sweptChangeCount: 1,
+      writerImpactCount: 1,
       documentCount: 1,
     });
     await db
@@ -672,10 +667,11 @@ describe("change trail (postgres)", () => {
           beforeText: "protected-block|Protected prose.",
           afterTextAtReceipt: null,
           navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-          swept: null,
-          writerProtection: {
+          writerImpact: {
             kind: "sweep",
+            affectedBlockHash: "deleted-block",
             body: { status: "available", markdown: "Protected prose." },
+            beforeContentRef: null,
           },
           reversible: false,
         },
@@ -746,7 +742,7 @@ describe("change trail (postgres)", () => {
           state: "settled",
           version: 3,
           changeCount: 0,
-          sweptChangeCount: 0,
+          writerImpactCount: 0,
           documentCount: 0,
           settledAt: expect.any(Date),
         }),
@@ -977,7 +973,7 @@ describe("change trail (postgres)", () => {
       version: 3,
       settledAt: expect.any(Date),
       changeCount: 0,
-      sweptChangeCount: 0,
+      writerImpactCount: 0,
       documentCount: 0,
     });
 
@@ -1014,7 +1010,7 @@ describe("change trail (postgres)", () => {
         version: 7,
         settledAt: expect.any(Date),
         changeCount: 1,
-        sweptChangeCount: 1,
+        writerImpactCount: 1,
         documentCount: 1,
       }),
     ]);
@@ -1046,7 +1042,7 @@ describe("change trail (postgres)", () => {
         expect.objectContaining({
           state: "settled",
           changeCount: 1,
-          sweptChangeCount: 1,
+          writerImpactCount: 1,
           documentCount: 1,
         }),
       ],

@@ -19,10 +19,11 @@ const settledChange: TrailChange = {
   beforeText: "block-1|Writer text.",
   afterTextAtReceipt: null,
   navigation: { kind: "unavailable", reason: "test" },
-  swept: null,
-  writerProtection: {
+  writerImpact: {
     kind: "sweep",
+    affectedBlockHash: "block-1",
     body: { status: "available", markdown: "Writer text." },
+    beforeContentRef: null,
   },
   forwardActions: {
     restore: { status: "settled", outcome: "retry_exhausted" },
@@ -112,7 +113,7 @@ function target(): PeerMarkPopoverTarget {
       author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
       kind: "delete",
       anchor: { type: "unresolved", raw: { kind: "unavailable", reason: "test" } },
-      swept: true,
+      hasWriterImpact: true,
       excerpt: "Writer text.",
       pureDeletionOffset: null,
       projectionRevision: 1,

@@ -36,7 +36,7 @@ const shell = (version = 1): ChangeTrailShell => ({
   state: "settled",
   version,
   changeCount: 1,
-  sweptChangeCount: 0,
+  writerImpactCount: 0,
   documentCount: 1,
   updatedAt: "2026-01-01T00:00:00.000Z",
   settledAt: "2026-01-01T00:00:00.000Z",

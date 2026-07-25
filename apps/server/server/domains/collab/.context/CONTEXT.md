@@ -186,8 +186,9 @@ Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
 durable journal for origin and structural-delete attribution, and reports each
 removed writer-owned canonical block identity.
-Reports use the ordinary swept change-trail shape; missing ancestry/body/owner
-evidence emits degradation telemetry rather than guessing from update bytes.
+Reports use the ordinary `writerImpact` change-trail shape; missing
+ancestry/body/owner evidence emits degradation telemetry rather than guessing
+from update bytes.
 
 ## Undo guard and push safety
 

@@ -53,7 +53,7 @@ export function createDrizzleChangeTrailDispatcher(input: {
           version: changeTrailDeliveryOutbox.version,
           turnId: changeTrailShells.turnId,
           changes: changeTrailDeliveryOutbox.changeCount,
-          swept: changeTrailDeliveryOutbox.sweptChangeCount,
+          writerImpact: changeTrailDeliveryOutbox.writerImpactCount,
           documents: changeTrailDeliveryOutbox.documentCount,
         })
         .from(changeTrailDeliveryOutbox)
@@ -78,7 +78,7 @@ export function createDrizzleChangeTrailDispatcher(input: {
               version: row.version,
               counts: {
                 changes: row.changes as number,
-                swept: row.swept as number,
+                writerImpact: row.writerImpact as number,
                 documents: row.documents as number,
               },
             }

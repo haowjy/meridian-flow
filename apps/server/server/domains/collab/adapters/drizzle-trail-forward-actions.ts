@@ -537,8 +537,8 @@ export function planTrailForwardAction(input: {
   codec: AgentEditCodec;
 }): { update: Uint8Array } | null {
   const expectedKind = input.action === "restore" ? "sweep" : "resurrection";
-  if (input.change.writerProtection?.kind !== expectedKind) return null;
-  const body = input.change.writerProtection.body;
+  if (input.change.writerImpact?.kind !== expectedKind) return null;
+  const body = input.change.writerImpact.body;
   if (body.status !== "available") return null;
   const scratch = new Y.Doc({ gc: false });
   try {

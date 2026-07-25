@@ -43,7 +43,7 @@ function change(input: {
     beforeText: input.before ?? `before-${input.id}|before ${input.id}`,
     afterTextAtReceipt: input.after ?? `after-${input.id}|after ${input.id}`,
     navigation: { kind: "unavailable", reason: "fixture" },
-    swept: null,
+    writerImpact: null,
     reversible: false,
   };
 }
@@ -53,7 +53,7 @@ const titles = new Map([[ALPHA_ID, "Alpha"]]);
 const trail = (changes: TrailChangeV1[]) => ({
   owner,
   changes,
-  counts: { changes: changes.length, swept: 0, documents: changes.length === 0 ? 0 : 1 },
+  counts: { changes: changes.length, writerImpact: 0, documents: changes.length === 0 ? 0 : 1 },
 });
 
 describe("change trail aggregate projections (postgres)", () => {

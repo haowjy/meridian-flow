@@ -33,30 +33,30 @@ export type TrailChangeRecovery = {
   body: string | null;
   canExecute: boolean;
   durableState: TrailForwardActionStateV1 | undefined;
-  protection: TrailChange["writerProtection"];
+  writerImpact: TrailChange["writerImpact"];
 };
 
 export function trailChangeRecovery(change: TrailChange): TrailChangeRecovery {
-  const protection = protectionFor(change);
+  const writerImpact = change.writerImpact;
   const action: TrailForwardAction =
-    protection?.kind === "resurrection" ? "delete-again" : "restore";
+    writerImpact?.kind === "resurrection" ? "delete-again" : "restore";
   const durableState = change.forwardActions?.[action];
-  const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
-  const canExecute = Boolean(protection || change.swept || durableState);
+  const protectedBody =
+    writerImpact?.body.status === "available" ? writerImpact.body.markdown : null;
+  const canExecute = Boolean(writerImpact || durableState);
   return {
     action,
     body: protectedBody ?? bodyFromTrailHashline(change.beforeText),
     canExecute:
       canExecute && durableState?.status !== "applied" && durableState?.status !== "settled",
     durableState,
-    protection,
+    writerImpact,
   };
 }
 
 export function trailChangeLabel(change: TrailChange): string {
-  const protection = protectionFor(change);
-  if (protection?.kind === "resurrection") return t`↻ AI brought back text you deleted`;
-  if (protection?.kind === "sweep") {
+  if (change.writerImpact?.kind === "resurrection") return t`↻ AI brought back text you deleted`;
+  if (change.writerImpact?.kind === "sweep") {
     return t`Replaced a passage, including edits the agent hadn't seen yet.`;
   }
   return changeKindLabel(change.kind);
@@ -142,15 +142,10 @@ function outcomeFromResult(result: TrailForwardActionResult): TrailRecoveryOutco
   }
 }
 
-function protectionFor(change: TrailChange): TrailChange["writerProtection"] {
-  if (change.writerProtection) return change.writerProtection;
-  return change.swept ? { kind: "sweep", body: change.swept.removed } : undefined;
-}
-
 const EMPTY_RECOVERY: TrailChangeRecovery = {
   action: "restore",
   body: null,
   canExecute: false,
   durableState: undefined,
-  protection: undefined,
+  writerImpact: null,
 };

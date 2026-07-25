@@ -16,7 +16,7 @@ import type {
   PendingLiveSettlement,
   PreparedPushCommit,
   PushCommitStore,
-  PushSweptTrail,
+  PushWriterImpactReport,
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
@@ -55,7 +55,7 @@ export function createBranchPushTransition(input: {
         onConflict: (push: PendingLiveSettlement["push"]) => T;
         finish: (input: {
           pushes: readonly PendingLiveSettlement["push"][];
-          swept: readonly (PushSweptTrail | undefined)[];
+          writerImpacts: readonly (PushWriterImpactReport | undefined)[];
           docs: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Y.Doc>;
         }) => T | Promise<T>;
       };
@@ -84,7 +84,7 @@ export function createBranchPushTransition(input: {
         }
         const pushes = "status" in committed ? [committed.push] : committed.pushes;
         await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
-        const swept: Array<PushSweptTrail | undefined> = [];
+        const writerImpacts: Array<PushWriterImpactReport | undefined> = [];
         for (const [index, push] of pushes.entries()) {
           let durable: PendingLiveSettlement;
           try {
@@ -104,9 +104,11 @@ export function createBranchPushTransition(input: {
           }
           const liveDoc = docs.get(push.documentId);
           if (!liveDoc) throw new Error("Branch push transition lost its live document lock");
-          swept.push(await settle({ pending: durable, liveDoc, signal: inputExecution.signal }));
+          writerImpacts.push(
+            await settle({ pending: durable, liveDoc, signal: inputExecution.signal }),
+          );
         }
-        return prepared.finish({ pushes, swept, docs });
+        return prepared.finish({ pushes, writerImpacts, docs });
       },
     );
   }
@@ -186,7 +188,7 @@ export function createBranchPushTransition(input: {
   ): {
     trail: PendingLiveSettlement["trail"];
     classifications?: PendingLiveSettlement["trail"]["changes"];
-    swept?: PushSweptTrail;
+    writerImpact?: PushWriterImpactReport;
     refineToEmpty?: boolean;
   } | null {
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
@@ -223,7 +225,7 @@ export function createBranchPushTransition(input: {
             change.beforeBlockIdentity !== undefined &&
             change.afterBlockIdentity?.clientID === change.beforeBlockIdentity.clientID &&
             change.afterBlockIdentity.clock === change.beforeBlockIdentity.clock &&
-            change.writerProtection?.kind !== "resurrection",
+            change.writerImpact?.kind !== "resurrection",
         )
       ) {
         return { trail: pending.trail, refineToEmpty: true };
@@ -254,32 +256,32 @@ export function createBranchPushTransition(input: {
           {
             ...change,
             beforeText: block.serialized,
-            swept: {
+            writerImpact: {
+              kind: "sweep" as const,
               affectedBlockHash: block.hash,
               affectedBlockIdentity: change.beforeBlockIdentity,
-              removed: { status: "available" as const, markdown },
-              beforeContentRef: pending.beforeContentRef,
-            },
-            writerProtection: {
-              kind: "sweep" as const,
               body: { status: "available" as const, markdown },
+              beforeContentRef: pending.beforeContentRef,
               ranges: normalizeLineageRanges(ranges),
             },
           },
         ];
       });
       if (lateChanges.length === 0) return null;
-      const swept: PushSweptTrail = {
+      const writerImpact: PushWriterImpactReport = {
         affectedBlockHashes: affected.map(({ block }) => block.hash).sort(),
         capturedDeletedBodies: lateChanges.map((change) => ({
-          hash: change.swept.affectedBlockHash,
-          body: change.swept.removed.status === "available" ? change.swept.removed.markdown : "",
+          hash: change.writerImpact.affectedBlockHash,
+          body:
+            change.writerImpact.body.status === "available"
+              ? change.writerImpact.body.markdown
+              : "",
         })),
         beforeContentRef: pending.beforeContentRef,
         receiptId: pending.trail.receiptId,
         locations: lateChanges.map((change) => ({
           changeId: change.changeId,
-          affectedBlockHash: change.swept.affectedBlockHash,
+          affectedBlockHash: change.writerImpact.affectedBlockHash,
           outcome: change.kind === "modify" ? "modify" : "delete",
           navigation: change.navigation,
         })),
@@ -291,7 +293,7 @@ export function createBranchPushTransition(input: {
           changes: lateChanges,
         },
         classifications: lateChanges,
-        swept,
+        writerImpact,
       };
     } finally {
       afterDoc.destroy();
@@ -302,9 +304,9 @@ export function createBranchPushTransition(input: {
     pending: PendingLiveSettlement;
     liveDoc: Y.Doc;
     signal?: AbortSignal;
-  }): Promise<PushSweptTrail | undefined> {
+  }): Promise<PushWriterImpactReport | undefined> {
     let pending = inputSettlement.pending;
-    let latest: PushSweptTrail | undefined;
+    let latest: PushWriterImpactReport | undefined;
     let committedProjections: readonly CommittedChangeTrailProjection[] = [];
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
       inputSettlement.signal?.throwIfAborted();
@@ -337,7 +339,7 @@ export function createBranchPushTransition(input: {
         });
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
         committedProjections = settled;
-        if (cut?.swept) latest = cut.swept;
+        if (cut?.writerImpact) latest = cut.writerImpact;
 
         let completion: CompletionFenceResult;
         try {

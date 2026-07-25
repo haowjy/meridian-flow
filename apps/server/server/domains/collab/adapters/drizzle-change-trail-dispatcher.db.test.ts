@@ -80,7 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         state: "settled",
         version: 1,
         changeCount: 2,
-        sweptChangeCount: 0,
+        writerImpactCount: 0,
         documentCount: 1,
         settledAt: new Date(),
       });
@@ -236,7 +236,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           trailId: TRAIL_ID,
           changeCount: event.eventKind === "updated" ? 2 : null,
-          sweptChangeCount: event.eventKind === "updated" ? 0 : null,
+          writerImpactCount: event.eventKind === "updated" ? 0 : null,
           documentCount: event.eventKind === "updated" ? 1 : null,
           createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
         })),

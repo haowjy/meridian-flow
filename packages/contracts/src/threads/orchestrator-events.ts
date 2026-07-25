@@ -169,7 +169,7 @@ export type OrchestratorEvent =
       trailId: string;
       turnId: string | null;
       version: number;
-      counts: { changes: number; swept: number; documents: number };
+      counts: { changes: number; writerImpact: number; documents: number };
     }
   | {
       type: "turn.change_trail_settled";

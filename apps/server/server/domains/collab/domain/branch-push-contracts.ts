@@ -152,7 +152,7 @@ export type PushToLiveResult =
       update: Uint8Array;
       branchReset?: { branchId: string; fromGeneration: number };
       conflictEcho?: BranchPushConflictEcho;
-      swept?: PushSweptTrail;
+      writerImpact?: PushWriterImpactReport;
     }
   | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
   | {
@@ -394,7 +394,7 @@ export type BranchReviewService = {
   >;
 };
 
-export interface PushSweptTrail {
+export interface PushWriterImpactReport {
   affectedBlockHashes: readonly string[];
   capturedDeletedBodies: readonly { hash: string; body: string | "body_unavailable" }[];
   beforeContentRef: number | null;

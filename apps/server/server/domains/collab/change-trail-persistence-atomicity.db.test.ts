@@ -20,13 +20,13 @@ describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
 
-  it("persists an auto-push sweep in its durable trail without a model-context notice", async () => {
+  it("persists auto-push writer impact in its durable trail without a model-context notice", async () => {
     const success = createHarness();
-    const successBranchId = await success.seedDestructivePush("push-swept-success");
+    const successBranchId = await success.seedDestructivePush("push-writer-impact-success");
     const beforeSuccess = await success.liveMarkdown(ALPHA_ID);
     await expect(success.autoPush(successBranchId)).resolves.toMatchObject({
       status: "pushed",
-      swept: { reversible: false },
+      writerImpact: { reversible: false },
     });
     expect(await success.liveMarkdown(ALPHA_ID)).not.toEqual(beforeSuccess);
     expect(await success.noticeRows()).toEqual([]);
@@ -80,7 +80,7 @@ describe("change trail (postgres)", () => {
       shells: [{}],
       details: [
         {
-          changes: [expect.objectContaining({ kind: "insert", swept: null })],
+          changes: [expect.objectContaining({ kind: "insert", writerImpact: null })],
         },
       ],
       outbox: [{}],
@@ -123,12 +123,12 @@ describe("change trail (postgres)", () => {
     expect(await failed.activePushJournalCount()).toBe(1);
   });
 
-  it("persists proven swept replacements as immutable live ranges and deletes conservatively", async () => {
+  it("persists proven writer-impact replacements as immutable live ranges and deletes conservatively", async () => {
     const proven = createHarness();
     const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
     await proven.autoPush(provenBranchId);
     const provenChange = (await proven.trailRows()).details[0]?.changes.find(
-      (change) => (change as { swept?: unknown }).swept,
+      (change) => (change as { writerImpact?: unknown }).writerImpact,
     );
     expect(provenChange).toMatchObject({
       kind: "modify",
@@ -152,7 +152,7 @@ describe("change trail (postgres)", () => {
     const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
     await conservative.autoPush(conservativeBranchId);
     const conservativeChange = (await conservative.trailRows()).details[0]?.changes.find(
-      (change) => (change as { swept?: unknown }).swept,
+      (change) => (change as { writerImpact?: unknown }).writerImpact,
     );
     expect(conservativeChange).toMatchObject({
       kind: "delete",
@@ -168,10 +168,10 @@ describe("change trail (postgres)", () => {
     expect(committed.shells).toHaveLength(1);
     expect(committed.details).toHaveLength(1);
     expect(committed.outbox).toHaveLength(1);
-    const changes = (committed.details[0]?.changes ?? []) as Array<{ swept: unknown }>;
+    const changes = (committed.details[0]?.changes ?? []) as Array<{ writerImpact: unknown }>;
     expect(committed.shells[0]).toMatchObject({
       changeCount: changes.length,
-      sweptChangeCount: changes.filter((change) => change.swept).length,
+      writerImpactCount: changes.filter((change) => change.writerImpact).length,
       documentCount: 1,
     });
 

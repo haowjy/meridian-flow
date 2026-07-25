@@ -27,6 +27,17 @@ export type HistoricalBody =
   | { status: "available"; markdown: string }
   | { status: "unavailable"; reason: string };
 
+export type WriterImpact =
+  | {
+      kind: "sweep";
+      affectedBlockHash: string;
+      affectedBlockIdentity?: CanonicalBlockIdentityV1;
+      body: HistoricalBody;
+      beforeContentRef: number | null;
+      ranges?: Array<{ clientID: number; clock: number; length: number }>;
+    }
+  | { kind: "resurrection"; body: HistoricalBody };
+
 /** Stable Yjs block identity. Display hashlines are deliberately excluded. */
 export type CanonicalBlockIdentityV1 = {
   documentId: string;
@@ -62,19 +73,7 @@ export type TrailChangeV1 = {
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation: NavigationTargetV1;
-  swept: null | {
-    affectedBlockHash: string;
-    affectedBlockIdentity?: CanonicalBlockIdentityV1;
-    removed: HistoricalBody;
-    beforeContentRef: number | null;
-  };
-  writerProtection?:
-    | {
-        kind: "sweep";
-        body: HistoricalBody;
-        ranges?: Array<{ clientID: number; clock: number; length: number }>;
-      }
-    | { kind: "resurrection"; body: HistoricalBody };
+  writerImpact: WriterImpact | null;
   forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
   reversible: false;
 };
@@ -87,7 +86,7 @@ export type ChangeTrailShellV1 = {
   state: "building" | "settling" | "settled";
   version: number;
   changeCount: number;
-  sweptChangeCount: number;
+  writerImpactCount: number;
   documentCount: number;
   updatedAt: string;
   settledAt: string | null;
@@ -172,19 +171,14 @@ export const trailChangeV1Schema = z.object({
   beforeText: z.string().nullable(),
   afterTextAtReceipt: z.string().nullable(),
   navigation: navigationTargetV1Schema,
-  swept: z
-    .object({
-      affectedBlockHash: z.string(),
-      affectedBlockIdentity: canonicalBlockIdentityV1Schema.optional(),
-      removed: historicalBodySchema,
-      beforeContentRef: z.number().int().nullable(),
-    })
-    .nullable(),
-  writerProtection: z
+  writerImpact: z
     .discriminatedUnion("kind", [
       z.object({
         kind: z.literal("sweep"),
+        affectedBlockHash: z.string(),
+        affectedBlockIdentity: canonicalBlockIdentityV1Schema.optional(),
         body: historicalBodySchema,
+        beforeContentRef: z.number().int().nullable(),
         ranges: z
           .array(
             z.object({
@@ -197,7 +191,7 @@ export const trailChangeV1Schema = z.object({
       }),
       z.object({ kind: z.literal("resurrection"), body: historicalBodySchema }),
     ])
-    .optional(),
+    .nullable(),
   forwardActions: z
     .object({
       restore: trailForwardActionStateV1Schema.optional(),
@@ -216,7 +210,7 @@ export const changeTrailShellV1Schema: z.ZodType<ChangeTrailShellV1> = z.object(
   state: z.enum(["building", "settling", "settled"]),
   version: z.number().int(),
   changeCount: z.number().int(),
-  sweptChangeCount: z.number().int(),
+  writerImpactCount: z.number().int(),
   documentCount: z.number().int(),
   updatedAt: z.string(),
   settledAt: z.string().nullable(),

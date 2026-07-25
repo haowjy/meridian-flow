@@ -197,18 +197,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const trails = await db.select().from(schema.changeTrailShells);
       expect(trails).toHaveLength(1);
       const [trail] = trails;
-      expect(trail?.sweptChangeCount).toBe(1);
+      expect(trail?.writerImpactCount).toBe(1);
       const [details] = await db.select().from(schema.changeTrailDocumentDetails);
-      const sweptBodies = (
+      const writerImpactBodies = (
         (details?.changes ?? []) as Array<{
-          writerProtection?: { kind: string; body?: { markdown?: string } };
+          writerImpact?: { kind: string; body?: { markdown?: string } };
         }>
       ).flatMap((change) =>
-        change.writerProtection?.kind === "sweep"
-          ? [change.writerProtection.body?.markdown?.trim()]
-          : [],
+        change.writerImpact?.kind === "sweep" ? [change.writerImpact.body?.markdown?.trim()] : [],
       );
-      expect(sweptBodies).toEqual([writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed."]);
+      expect(writerImpactBodies).toEqual([
+        writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
+      ]);
       await room.disconnect();
       await unloadRuntime(runtime.hocuspocus);
 
@@ -242,10 +242,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const change = (
           (details?.changes ?? []) as Array<{
             changeId: string;
-            writerProtection?: { kind: string };
+            writerImpact?: { kind: string };
           }>
-        ).find((candidate) => candidate.writerProtection?.kind === "sweep");
-        if (!trail || !change) throw new Error("S2 trail has no restorable swept change");
+        ).find((candidate) => candidate.writerImpact?.kind === "sweep");
+        if (!trail || !change) throw new Error("S2 trail has no restorable writer-impact change");
         const action = {
           threadId: THREAD_ID,
           trailId: trail.id,
@@ -280,16 +280,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const retained = reloaded as {
           anchorState?: "available" | "deleted";
           changes?: Array<{
-            writerProtection?: { kind?: string; body?: { markdown?: string } };
+            writerImpact?: { kind?: string; body?: { markdown?: string } };
             forwardActions?: { restore?: { status?: string } };
           }>;
         };
-        const retainedSweep = retained.changes?.find(
-          (candidate) => candidate.writerProtection?.kind === "sweep",
+        const retainedImpact = retained.changes?.find(
+          (candidate) => candidate.writerImpact?.kind === "sweep",
         );
         expect(retained.anchorState).toBe("deleted");
-        expect(retainedSweep?.writerProtection?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
-        expect(retainedSweep?.forwardActions?.restore?.status).toBe("applied");
+        expect(retainedImpact?.writerImpact?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
+        expect(retainedImpact?.forwardActions?.restore?.status).toBe("applied");
         await unloadRuntime(runtime.hocuspocus);
       }
     }

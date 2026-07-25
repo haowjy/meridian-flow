@@ -207,9 +207,7 @@ export function ChangeViewDetail({
         </p>
       );
     }
-    const writerTouchingChanges = document.changes.filter(
-      (change) => change.writerProtection != null,
-    );
+    const writerTouchingChanges = document.changes.filter((change) => change.writerImpact !== null);
     const visibleChanges = reveal
       ? [
           ...writerTouchingChanges,

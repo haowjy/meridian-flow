@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: change trails now use one writer-impact authority
+  for ownership, counts, marks, self-diffs, and Restore/Delete-again recovery.
 - `apps/app`: draft review manuscripts now render the server draft projection
   without splicing removed live text into proposed prose.
 - `apps/app`, `apps/server`: draft review rooms are read-only in TipTap and

@@ -435,6 +435,13 @@
       "when": 1784934615247,
       "tag": "0061_milky_celestials",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784951846124,
+      "tag": "0062_writer_impact",
+      "breakpoints": true
     }
   ]
 }

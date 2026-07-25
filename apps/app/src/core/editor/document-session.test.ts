@@ -133,7 +133,7 @@ function changeEvent(
         changeId: "change-1",
         kind: "delete",
         navigation: { kind: "unavailable", reason: "test" },
-        swept: false,
+        hasWriterImpact: false,
         excerpt: null,
         pureDeletionOffset: null,
       },
