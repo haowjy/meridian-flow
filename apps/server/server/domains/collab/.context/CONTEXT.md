@@ -30,7 +30,7 @@ state is a live document.
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
 | Push materialization | `domain/branch-push-plan.ts` |
-| Immutable-base Manual Apply policy | `domain/branch-push-preparation.ts` |
+| Immutable-base writer-impact preparation | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
 | Durable push execution | `domain/branch-push-candidates.ts`, `domain/branch-push.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
