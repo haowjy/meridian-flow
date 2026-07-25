@@ -12,7 +12,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
+import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { ReversalDirection } from "@/client/api/reverse-api";
@@ -70,10 +70,11 @@ export function TurnEditsReceipt({
   const reveal = useConversationReveal(threadId);
   const [activeReveal, setActiveReveal] = useState<ConversationReveal | null>(null);
   const [pending, setPending] = useState(false);
+  const [commandRefusal, setCommandRefusal] = useState<ReversalOutcome["status"] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  const guardCopy = undoGuardCopy(receipt);
+  const guardCopy = reversalRefusalCopy(commandRefusal) ?? undoGuardCopy(receipt);
   const liveDocuments = documents.filter((document) => document.scope === "live");
   const trailDocuments = changeTrail?.documents ?? [];
   // Asks the predicate about the full lineage, not the pre-filtered live subset.
@@ -106,13 +107,21 @@ export function TurnEditsReceipt({
     setExpanded(true);
   }, [reveal, turn.id]);
 
+  useEffect(() => {
+    setCommandRefusal(null);
+  }, [receipt?.control, receipt?.state]);
+
   if (!hasEditedDocuments) return null;
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
     setPending(true);
     try {
-      await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      if (outcome.status !== "reversed" && outcome.status !== "reconciled") {
+        setCommandRefusal(outcome.status);
+        setExpanded(true);
+      }
     } catch {
       // Keep the chip available for retry; history cards do not carry error prose.
     } finally {
@@ -220,6 +229,17 @@ export function TurnEditsReceipt({
       ) : null}
     </div>
   );
+}
+
+function reversalRefusalCopy(status: ReversalOutcome["status"] | null): string | null {
+  if (status === "nothing_to_redo") {
+    return t`Redo is no longer available because the manuscript changed.`;
+  }
+  if (status === "nothing_to_undo") return t`Undo is no longer available.`;
+  if (status === "cant_undo_dependent") return t`Later edits build on this change.`;
+  if (status === "expired") return t`This change is no longer reversible.`;
+  if (status === "partial") return t`Only part of this change could be reversed.`;
+  return null;
 }
 
 export function ChangeViewDetail({

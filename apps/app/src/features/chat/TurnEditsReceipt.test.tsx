@@ -151,7 +151,22 @@ describe("TurnEditsReceipt", () => {
 
       expect(document.body.textContent).toContain("Undo");
       expect(document.body.textContent).not.toContain("Redo");
+      expect(document.body.textContent).toContain("Undo is no longer available.");
     });
+  });
+
+  it("surfaces a raced redo refusal instead of silently doing nothing", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({ status: "nothing_to_redo" });
+    await withInteractiveCard(
+      { receipt: { state: "live-reversed", control: "redo" } },
+      async (card) => {
+        await card.click("Redo");
+
+        expect(document.body.textContent).toContain(
+          "Redo is no longer available because the manuscript changed.",
+        );
+      },
+    );
   });
 
   it("keeps the collapsed receipt free of bookkeeping controls", async () => {
