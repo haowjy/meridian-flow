@@ -16,12 +16,15 @@ conversation reveal (`conversation-reveal.ts`, opened from an editor peer mark's
 *Open conversation*) additionally surfaces the targeted change row even when it
 is not writer-touching, so the jump can land on and emphasize the exact change;
 outside that reveal the filter is unchanged. The
-plain document line and whole-turn Undo remain regardless. Created files count like any edit (creation flows
-through the same agent-edit write path and produces mutation rows). Rows come
-from turn lineage in BOTH scopes (`live` + `draft` via `useTurnLiveLineage`),
-while historical row evidence comes from the authorized trail reader. Undo is
-guarded by the canonical receipt state. Sweep and resurrection rows carry only
-forward human actions (`Restore` / `Delete again`), idempotent by `changeId`.
+plain document line and whole-turn Undo remain regardless. Created files count
+like any edit (creation flows through the same agent-edit write path and
+produces mutation rows). `useTurnLiveLineage` reads both live
+`agent_edit_mutations` and branch-journal rows and labels the resulting
+documents `live` or `draft`; those scopes are read-model values, not persisted
+`scope_id` columns. Historical row evidence comes from the authorized trail
+reader. Undo is guarded by the canonical receipt state. Sweep and resurrection
+rows carry only forward human actions (`Restore` / `Delete again`), idempotent
+by `changeId`.
 Captured bodies remain visible after document loss and reload; an unavailable
 live root degrades to Copy. There is no ChangeTrail transcript
 card or finishing presentation. INVARIANT: no draft Review/Apply/Discard here;
@@ -39,13 +42,15 @@ Turn edits line behavior in auto-apply mode:
 
 - **Document list source** — `AssistantTurn` calls `useTurnLiveLineage(threadId,
   turnId)`, backed by `GET /api/threads/:threadId/turns/:turnId/live-lineage`.
-  The server derives documents from live `agent_edit_mutations` filtered to
-  `scope_id = 'live'`; tool blocks, `turn_document_touches`, and
-  recent-documents are not undo authority.
-- **Draft review separation** — draft-only turns have no live-lineage line. When
-  a draft is applied, accept creates a distinct user accept turn and stamps the
-  live mutation with that accept turn, so the record belongs to the writer
-  acceptance event rather than the proposing assistant turn.
+  The server derives live documents from `agent_edit_mutations` and draft
+  documents from `branch_write_journal` joined to the branch; tool blocks,
+  `turn_document_touches`, and recent-documents are not undo authority.
+- **Draft review separation** — draft-only rows stay labeled `draft`. Apply
+  materializes each active branch agent mutation into live
+  `agent_edit_mutations` with its original turn identity, so the proposing
+  assistant turn gains live lineage without inventing a user accept turn. The
+  combined live journal admission is separately attributed to the confirming
+  writer.
 - **Whole-turn Undo/Redo** — the single `Undo` chip calls
   `POST /api/threads/:threadId/context/reverse` with
   `{ direction, scope: "turn", target: turnId }` (`reverseTurn` across every
@@ -101,11 +106,12 @@ Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
 ### Change-trail row suppression
 
-`ChangeViewRows` returns `null` when every change is a plain insert without
-writer protection. `TurnEditsCard` remains visible because it carries the
-document line and whole-turn Undo. Mixed trails and protected changes retain
-the full row list; per-row filtering inside mixed trails remains outside this
-contract.
+`TurnEditsCard` filters every document to changes with `writerProtection`;
+change kind is never the gate. A pure-generative document therefore has no
+detail rows, while a mixed document shows only its writer-touching rows. The
+card remains visible because it carries the document line and whole-turn Undo.
+The one-shot *Open conversation* reveal may additionally mount its exact
+targeted row as described above.
 
 ## Draft review architecture
 

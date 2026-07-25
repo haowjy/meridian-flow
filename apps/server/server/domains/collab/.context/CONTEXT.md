@@ -43,7 +43,7 @@ state is a live document.
 | Yjs WebSocket orchestration | `lib/yjs-ws-handler.ts` |
 | Offline late reconciliation | `domain/offline-reconciliation.ts` |
 | Review/effective-read/response/reversal application services | `domain/work-draft-review-service.ts`, `domain/effective-document-reader.ts`, `domain/response-write-finalizer.ts`, `domain/turn-reversal-service.ts` |
-| Thread-peer runtime ownership and LRU | `domain/thread-peer-core-pool.ts` |
+| Thread-peer runtime ownership, LRU, and turn diff | `domain/thread-peer-core-pool.ts` |
 | Thread notice production | `domain/reversal-notices.ts`, `domains/notices/` |
 | Production/in-memory assembly | `composition.ts`, `collab-facade.ts`, `adapters/in-memory/composition.ts` |
 
@@ -297,9 +297,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   draft-base divergence; Auto-apply always merges. Protection derives from
   durable journal attribution: `completeStagedPush` persists the live journal
   row as `originType: "human"` with `actorUserId` when the push carries
-  `pushedByUserId` (writer-confirmed Apply); Auto-apply pushes (no
-  `pushedByUserId`) stay `system`. Both the push-time conflict classifier and
-  the agent-edit immediate-path lateSweep recheck derive protection from this
+  `pushedByUserId` (writer-confirmed Apply). Otherwise it folds branch-local
+  undo/redo and inspects the remaining active agent mutations: exactly one
+  shared turn produces `originType: "agent"` with that `actorTurnId`; no active
+  agent turn or multiple turns stays `system`. Representative push metadata is
+  not attribution evidence. Both the push-time conflict classifier and the
+  agent-edit immediate-path lateSweep recheck derive protection from durable
   attribution, not from push-specific metadata or a separate protection table.
   Auto-apply trails destructive writer-root effects from durable provenance.
   This reporting classification is independent of the row's Apply-only draft
