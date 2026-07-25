@@ -294,9 +294,11 @@ history is preserved for attribution, echo, and undo dependency checking.
   `branch-trail-projection.ts` may repair exact content relocation across a
   chain of shifted block identities only when the evidence forms a one-to-one
   path ending in one terminal deletion. It projects the chain head as the
-  deletion and suppresses intermediate shifts. Fan-in, duplicate-source, cycle,
-  or otherwise ambiguous evidence falls back to ordinary per-block changes;
-  projection never guesses a relocation.
+  deletion and suppresses intermediate shifts. Proven structural replacement
+  evidence takes precedence, so its source cannot also participate in a
+  relocation. Fan-in, duplicate-source, cycle, or otherwise ambiguous evidence
+  falls back to ordinary per-block changes; projection never guesses a
+  relocation.
 - **Trail Restore**: `drizzle-trail-restore.ts` validates retained
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.
