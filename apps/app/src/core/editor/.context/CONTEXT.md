@@ -21,7 +21,7 @@ Yjs document session. It must stay structurally aligned with
   local draft cache risks stale recovery across review sessions.
 - Live peer marks are the session projection of durable trail changes. Their
   anchored popover lazy-reads trail detail and the originating thread snapshot;
-  recovery uses the trail forward-action endpoint and removes the session mark
+  recovery uses the fixed trail Restore endpoint and removes the session mark
   only after success.
 - Peer-mark manuscript color describes the change, not the thread identity:
   added/modified marks use jade and deletions use crimson. Ordinary ranges rest
@@ -37,8 +37,12 @@ Yjs document session. It must stay structurally aligned with
   marks and fences delayed replays. Unresolved anchors expire on their own timer
   even while the editor is idle; store teardown cancels that timer.
   The ProseMirror projection clears a whole mark only for a local writer edit
-  through its range/seam; remote sync, selection, and boundary-adjacent typing
+  through its range or tick; remote sync, selection, and boundary-adjacent typing
   never clear it.
+- Deletion marks are caret-sized inline ticks. A boundary anchor resolves into
+  the first or last descendant textblock on its affinity side, falling back to
+  the opposite adjacent container; never leave the widget between block nodes
+  as an anonymous line. Deletions use crimson for their tick and focus ring.
 - Collaboration awareness is a browser protocol boundary: theme-owned cursor
   colors must be resolved before publication and serialized as concrete
   six-digit RGB hex. CSS variables and OKLCH strings are valid token sources,

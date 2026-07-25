@@ -98,9 +98,21 @@ room checkpoint at the same journal cut cannot replace it. The context caller co
 
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
 pulls by CRDT sync, and stages agent writes. The Work draft is the writer review
-branch. Pushing computes a Yjs update from branch to live, records push lineage,
-marks source journal rows reviewed, and resets/advances branch generation where
-needed.
+branch. There is at most one active Work-draft branch per
+`(documentId, workId)`; every thread peer for that document and Work shares it
+as upstream. Pushing computes a Yjs update from branch to live, records push
+lineage, marks source journal rows reviewed, and resets/advances branch
+generation where needed.
+
+The review list therefore emits one active item per document and folds all
+contributing journal rows into that item. `lastActorTurnId` is representative
+metadata, not review identity. The wire's `draftId` names a review card while
+`branchId` addresses the physical branch, but the current list aliases the card
+to its one Work branch and preview resolves by document + Work. Do not infer
+independently disposable same-document drafts from the two identifiers. The
+client can render and step through a synthetic multi-row list, but production
+cannot create that state without a new review-identity design spanning list,
+preview, disposition, closure, revision fencing, and manifest ownership.
 
 Propagation is sync-only: no basis reconstruction, draft projection, accept token,
 reactivation fence, or scope routing. Cold attribution uses persisted branch
@@ -279,6 +291,12 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
+  `branch-trail-projection.ts` may repair exact content relocation across a
+  chain of shifted block identities only when the evidence forms a one-to-one
+  path ending in one terminal deletion. It projects the chain head as the
+  deletion and suppresses intermediate shifts. Fan-in, duplicate-source, cycle,
+  or otherwise ambiguous evidence falls back to ordinary per-block changes;
+  projection never guesses a relocation.
 - **Trail Restore**: `drizzle-trail-restore.ts` validates retained
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.

@@ -10,8 +10,10 @@ propagation between them.
 - **Live document** is the canonical Yjs journal (`document_yjs_updates`).
 - **Thread peer** is the agent's per-thread branch. Agent-edit writes there, not
   directly to live, and each write is pushed into the Work draft journal.
-- **Work draft** is the writer-review branch for a Work. Review compares the
-  work-draft Y.Doc with live and pushes/discards selected journal rows.
+- **Work draft** is the single writer-review branch for one document and Work.
+  Every thread peer in that Work pushes into the same branch. Review compares
+  its Y.Doc with live and pushes/discards selected journal rows; turns are not
+  independent physical drafts.
 - **Journal is the durable record.** Runtime state is memory-only; restarts cold
   reconstruct from the live journal plus branch state/journal rows.
 - **The durable authority head is fenced.** Each live document has one durable

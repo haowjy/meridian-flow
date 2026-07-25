@@ -65,6 +65,10 @@ No raw hex/color outside `design-tokens`.
 comments: explain the *weird* — hidden constraints, non-obvious invariants,
 workarounds. Don't explain what the code does; explain why it's surprising.
 
+**Writer-facing copy.** Separate facts with layout, typography, a sentence, or
+parentheses — never punctuation glyphs such as `·`, `•`, `—`, or `|`. See the
+[copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-copy-separation.md).
+
 **Debugging.** Temporary console probes must use the marked convention in
 [docs/debugging.md](docs/debugging.md) and be deleted before push. Server
 diagnostics go through `EventSink` and are queryable in dev — endpoints,

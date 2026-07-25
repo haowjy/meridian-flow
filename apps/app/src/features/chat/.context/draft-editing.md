@@ -52,10 +52,14 @@ never mutates mode; the composer selector remains the only mode control.
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an
 unconfirmed request; the server-vended journal-row count is the number shown in
-the confirmation, and only its explicit Apply button sends `confirmedPush`. Moving Draft → Auto-apply
-with pending draft changes opens its confirmation popover; confirmation asks the server to push every pending Work
-draft to the live manuscript and only then switch policy. A failed push leaves
-Draft selected. The sidebar has no write-mode control.
+the confirmation. Moving Draft → Auto-apply with pending changes keeps Draft
+selected and opens the **Drafts are waiting** popover. Cancel preserves the
+mode; Review changes uses the same `useAiDraftLauncher` entry as every other
+review control; Apply all and switch is the only action that sends
+`confirmedPush`. It asks the server to push every pending Work draft to the live
+manuscript and only then switch policy. A failed push leaves Draft selected.
+The Auto-apply choice is never disabled, and the sidebar has no write-mode
+control.
 
 Home bootstrap is a distinct path: its optimistic thread has no Work while the
 first message is handed off, and project plus default-Work creation occur
@@ -125,17 +129,31 @@ writer changed the same passage after the draft was cut. The durable receipt
 records every edit without classification; best-effort provenance only elevates
 a swept mark in the connected session.
 
-On success, `applySucceeded` clears the active surface so the editor rebinds from
-the draft room back to the live manuscript room. If accept returns
-`status: "stale_draft"`, inline review reloads the refreshed draft id from the
-response. Whole-draft discard uses the same cleanup path.
+On whole-draft Apply or Discard, the controller selects the nearest remaining
+active row for the same document (same index, otherwise the previous row) when
+one exists. Review stays open and swaps its selection without restoring the
+rails. The last row clears the surface so the editor rebinds from the draft room
+to the live manuscript room. If accept returns `status: "stale_draft"`, inline
+review reloads the refreshed draft id from the response. Review never
+automatically hops to another document.
+
+The multi-row transition is a defensive client contract, not a state the
+current production server can create. The server owns one active Work-draft
+branch per `(documentId, workId)` and aggregates every contributing thread into
+that branch, so its review list contains at most one active row for a document.
+The same-document stepper and its synthetic tests remain unreachable until the
+review-identity architecture changes.
 
 Review mode is a full-width editor plus the dock's `Changes` view — there is no
 in-editor review split. The editor's review chrome is
 `features/editor/DraftReviewHeader` (above the identity bar, review-only): LEFT
-"Back to live" exit, RIGHT whole-draft "Apply all" / "Discard all", all
-delegating to the controller. The dock's `DockChangesView` expands the reviewed
-document to operation cards read from the live preview; a card body click calls
+"Back to live" exit, an oldest-first same-document stepper when the client is
+given more than one active row, and RIGHT whole-draft "Apply all" / "Discard
+all", all delegating to the controller. The stepper swaps the selected
+`draftId`; it does not exit and re-enter review. Under the current one-Work-draft
+server invariant it does not render in production. The dock's `DockChangesView`
+expands the reviewed document to operation cards read from the live preview; a
+card body click calls
 `controller.focusReviewOperation(operationId)`, which reads the review editor off
 the inline-review runtime and highlights + scrolls the manuscript span. Each card
 carries hover-revealed Apply/Discard verbs — the only mutating targets on the
@@ -214,11 +232,14 @@ never stored. The marker's lifecycle is event-based via
   document on the first partial apply) resolves `"committed"` — keep the
   tab, drop the marker — and must do so BEFORE the workDrafts refetch lands,
   because draft-group absence alone cannot distinguish accept from discard.
-- Whole-draft reject resolves `"discarded"` — close the tab. The provider's
-  disappearance effect also resolves `"discarded"` unconditionally: it is
-  only ever reached for discard exhaustion, since accepts cleared the marker
-  first (the server list never returns terminal drafts, so there is no
-  terminal evidence to disambiguate with).
+- Whole-draft reject resolves `"discarded"` — close the tab.
+- A remotely closed selected row resolves the tab only when the refreshed list
+  carries truthful terminal evidence: `appliedAt` means `"committed"` and
+  `discardedAt` means `"discarded"`. If another active same-document row
+  remains, review advances to it after resolving any committed tab state.
+  The current server normally returns active rows only, so disappearance
+  without terminal evidence must exit safely without closing or graduating a
+  draft-only tab.
 - `openTab`'s metadata merge deliberately never clears the marker (absent
   keys don't override); `saveLastContextRoute` skips draftOnly tabs so a
   discarded path can't replay on the next visit; `ContextPaneController`

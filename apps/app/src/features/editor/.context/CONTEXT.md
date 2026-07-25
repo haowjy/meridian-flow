@@ -121,7 +121,7 @@ thread-tail shared Changes entry when the trail has no owning turn, then
 emphasizes the exact row.
 
 Trail-row navigation addresses a matching live session mark first, preserving
-its range/tick/seam anatomy and emphasis treatment. Generic temporary range
+its range/tick anatomy and emphasis treatment. Generic temporary range
 navigation remains the fallback after that mark has cleared or expired.
 
 Popover focus follows activation. Pointer open prevents Radix autofocus and
