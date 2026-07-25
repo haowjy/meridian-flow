@@ -258,9 +258,6 @@ describe("useDraftReviewController", () => {
         );
         controller?.registerInlineReviewRuntime({
           editor: {},
-          draftDoc: {},
-          projectId: "project-1",
-          workId: "work-1",
           documentId: "document-1",
           draftId: "draft-1",
         } as never);
@@ -314,9 +311,6 @@ describe("useDraftReviewController", () => {
         );
         controller?.registerInlineReviewRuntime({
           editor: {},
-          draftDoc: {},
-          projectId: "project-1",
-          workId: "work-1",
           documentId: "document-1",
           draftId: "draft-1",
         } as never);

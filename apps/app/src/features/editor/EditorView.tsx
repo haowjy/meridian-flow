@@ -405,13 +405,8 @@ function SessionEditorView({
   const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
     if (!inReview || !reviewDraftId || !editor) return;
-    // In review mode `session` is the draft session, so `session.document` is the
-    // draft Y.Doc the per-card Discard reconstructs its inverse against.
     registerInlineReviewRuntime({
       editor,
-      draftDoc: session.document,
-      projectId: projectId ?? "",
-      workId: reviewWorkId ?? "",
       documentId,
       draftId: reviewDraftId,
     });
@@ -422,10 +417,7 @@ function SessionEditorView({
     documentId,
     editor,
     inReview,
-    projectId,
     reviewDraftId,
-    reviewWorkId,
-    session.document,
   ]);
 
   useInlineReviewSync({

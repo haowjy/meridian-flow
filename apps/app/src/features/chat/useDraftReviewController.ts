@@ -20,7 +20,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type * as Y from "yjs";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
@@ -51,16 +50,12 @@ import {
 export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
 
 /**
- * The single review-runtime claim. It carries the active draft identifiers and
- * doc so any review surface can route server-backed per-card dispositions.
- * Registration is claim-based
- * on the editor identity (see register/release below).
+ * The single review-runtime claim. It carries the editor used for navigation
+ * and the draft selection used by server-backed per-card dispositions.
+ * Registration is claim-based on the editor identity (see register/release below).
  */
 export type InlineReviewRuntime = {
   editor: Editor;
-  draftDoc: Y.Doc;
-  projectId: string;
-  workId: string;
   documentId: string;
   draftId: string;
 };

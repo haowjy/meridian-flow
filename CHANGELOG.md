@@ -15,6 +15,8 @@
 - `apps/app`: conflict-only decoration refreshes now preserve refusal evidence,
   deletion navigation lands on a visible seam, and long evidence is
   keyboard-scrollable.
+- `apps/app`: draft review no longer carries browser-side mutation or undo
+  wiring for server-owned dispositions.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.
