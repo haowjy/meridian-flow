@@ -17,6 +17,7 @@ import {
   createBranchAgentEditDiagnostics,
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
+  createSweepProjectionDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import {
   SILENT_POST_DURABILITY_NOTICES,
@@ -227,7 +228,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       eventSink: deps.eventSink,
     }),
     writerIngressBarrier: writerIngress.barrier,
-    eventSink: deps.eventSink,
+    sweepProjectionDiagnostics: createSweepProjectionDiagnostics(deps.eventSink),
     resolveDocumentTitle: documentPresentation.resolveTitle,
   });
   const branchReview = createBranchReviewOperations({

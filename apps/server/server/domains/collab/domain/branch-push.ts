@@ -69,7 +69,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     codec: attributionCodec,
     changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
-    eventSink: input.eventSink,
+    sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,
   });
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {

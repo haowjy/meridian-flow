@@ -8,6 +8,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
+import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 
@@ -71,6 +72,22 @@ export function createAgentEditInvariantDiagnostic(
       name: "invariant_violation",
       payload,
     });
+  };
+}
+
+export function createSweepProjectionDiagnostics(
+  eventSink?: EventSink,
+): SweepProjectionDiagnostics {
+  return {
+    unavailable({ pushId, documentId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.change_event",
+        name: "sweep_projection.unavailable",
+        payload: { pushId, documentId, ...unknownToEventPayload(cause) },
+      });
+    },
   };
 }
 

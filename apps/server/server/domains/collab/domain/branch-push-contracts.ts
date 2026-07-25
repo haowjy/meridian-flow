@@ -7,7 +7,6 @@ import type {
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
 import type * as Y from "yjs";
-import type { EventSink } from "../../observability/index.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
@@ -164,6 +163,10 @@ export type PendingLiveSettlement = {
   claim: SettlementClaim;
   attemptCount: number;
   state: "pending";
+};
+
+export type SweepProjectionDiagnostics = {
+  unavailable(input: { pushId: number; documentId: DocumentId; cause: unknown }): void;
 };
 
 export type SettlementClaim = {
@@ -363,6 +366,6 @@ export type BranchPushServiceInput = {
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   writerIngressBarrier?: WriterIngressBarrier;
-  eventSink?: EventSink;
+  sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };

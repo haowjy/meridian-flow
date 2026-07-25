@@ -10,12 +10,12 @@ import {
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type {
   CompletionFenceResult,
   PendingLiveSettlement,
   PreparedPushCommit,
   PushCommitStore,
+  SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
@@ -44,7 +44,7 @@ export function createBranchPushTransition(input: {
   codec: AgentEditCodec;
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
-  eventSink?: EventSink;
+  sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
 }) {
   type PreparedTransition<T> =
     | { kind: "return"; value: T }
@@ -223,18 +223,11 @@ export function createBranchPushTransition(input: {
     try {
       return detectSweptChanges(pending, prePushDoc);
     } catch (cause) {
-      if (input.eventSink) {
-        emitEvent(input.eventSink, {
-          level: "warn",
-          source: "collab.change_event",
-          name: "sweep_projection.unavailable",
-          payload: {
-            pushId: pending.push.id,
-            documentId: pending.push.documentId,
-            ...unknownToEventPayload(cause),
-          },
-        });
-      }
+      input.sweepProjectionDiagnostics?.unavailable({
+        pushId: pending.push.id,
+        documentId: pending.push.documentId,
+        cause,
+      });
       return new Set();
     }
   }
