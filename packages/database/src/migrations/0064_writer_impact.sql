@@ -6,7 +6,23 @@ ALTER TABLE "branch_push_settlement_outbox" DROP COLUMN "before_content_ref";-->
 UPDATE "change_trail_document_details"
 SET "changes" = (
 	SELECT COALESCE(
-		jsonb_agg("change" - 'swept' - 'writerProtection' - 'writerImpact' ORDER BY "ordinality"),
+		jsonb_agg(
+			(
+				CASE
+					WHEN jsonb_typeof("change"->'forwardActions') = 'object'
+						AND (("change"->'forwardActions') - 'delete-again'::text) = '{}'::jsonb
+						THEN "change" - 'forwardActions'
+					WHEN jsonb_typeof("change"->'forwardActions') = 'object'
+						THEN jsonb_set(
+							"change",
+							'{forwardActions}',
+							("change"->'forwardActions') - 'delete-again'::text
+						)
+					ELSE "change"
+				END
+			) - 'swept' - 'writerProtection' - 'writerImpact'
+			ORDER BY "ordinality"
+		),
 		'[]'::jsonb
 	)
 	FROM jsonb_array_elements("change_trail_document_details"."changes")
