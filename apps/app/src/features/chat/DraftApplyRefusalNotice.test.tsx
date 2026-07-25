@@ -40,6 +40,7 @@ describe("DraftApplyRefusalNotice", () => {
         onReview={onReview}
       />,
       () => {
+        expect(document.querySelector('[role="alert"]')).not.toBeNull();
         expect(document.body.textContent).toContain(
           "Not applied: your edit conflicts with this draft",
         );

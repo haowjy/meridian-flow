@@ -10,6 +10,8 @@
   show base/current/proposed text, and open the existing comparison surface.
 - `apps/app`, `apps/server`: review hardening now rejects pending deletion-only
   branch updates and keeps deletion-card navigation without injecting prose.
+- `apps/app`: Manual Apply conflict evidence is bounded, announced, scoped to
+  its draft, and cleared when the writer changes or refreshes review targets.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.

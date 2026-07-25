@@ -124,7 +124,9 @@ A batch stops at its first refusal/failure so later targets cannot erase the
 explanation; transport failures surface through the dock's typed error state.
 Manual Apply refusals retain their document/draft target and the complete
 writer-conflict comparison (base, current manuscript, proposed draft, evidence,
-and explanation). The dock shows that evidence immediately and routes
+and explanation). The dock announces the conflict immediately, exposes the
+bounded comparison through a disclosure, clears it when review moves elsewhere
+or refreshes, and routes
 **Compare changes** through the same `useAiDraftLauncher` review entry as every
 other review control.
 

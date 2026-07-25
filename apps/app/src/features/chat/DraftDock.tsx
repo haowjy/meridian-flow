@@ -44,13 +44,13 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
-  const applyRefusal = controller.applyRefusal;
-  const refusalRow = applyRefusal
+  const refusal = controller.applyRefusal;
+  const refusalRow = refusal
     ? (rows.find(
-        (row) =>
-          row.documentId === applyRefusal.documentId && row.draft.draftId === applyRefusal.draftId,
+        (row) => row.documentId === refusal.documentId && row.draft.draftId === refusal.draftId,
       ) ?? null)
     : null;
+  const applyRefusal = refusalRow ? refusal : null;
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -317,6 +317,8 @@ export function DraftApplyRefusalNotice({
     <div
       className="space-y-2 border-border-subtle border-b bg-muted px-3 py-2.5 text-caption text-prose-foreground"
       data-draft-apply-refusal={refusal.reason}
+      role="alert"
+      aria-atomic="true"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-0.5">
@@ -346,36 +348,45 @@ export function DraftApplyRefusalNotice({
         ) : null}
       </div>
       {refusal.conflicts.length > 0 ? (
-        <div className="space-y-2" data-draft-apply-refusal-details>
-          {refusal.conflicts.map((conflict) => (
-            <div
-              key={`${conflict.blockId}:${conflict.effect}`}
-              className="space-y-1.5 border-border-subtle border-t pt-2 first:border-t-0 first:pt-0"
-              data-draft-apply-conflict={conflict.blockId}
-              data-draft-apply-conflict-evidence={conflict.evidence}
-            >
-              <p className="text-ink-muted">{conflictEvidence(conflict.evidence)}</p>
-              <p>{conflict.why}</p>
-              <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-micro">
-                <ConflictVersion
-                  label={t`Before this draft`}
-                  body={conflict.base}
-                  empty={t`No earlier passage`}
-                />
-                <ConflictVersion
-                  label={t`Your manuscript`}
-                  body={conflict.live}
-                  empty={t`Deleted in your manuscript`}
-                />
-                <ConflictVersion
-                  label={t`Draft proposes`}
-                  body={conflict.proposed}
-                  empty={t`Delete this passage`}
-                />
-              </dl>
-            </div>
-          ))}
-        </div>
+        <details data-draft-apply-refusal-details>
+          <summary className="focus-ring w-fit cursor-pointer rounded-sm font-medium text-ink-muted">
+            {refusal.conflicts.length === 1 ? (
+              <Trans>Show conflict evidence</Trans>
+            ) : (
+              <Trans>Show evidence for {refusal.conflicts.length} conflicts</Trans>
+            )}
+          </summary>
+          <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pe-1">
+            {refusal.conflicts.map((conflict) => (
+              <div
+                key={`${conflict.blockId}:${conflict.effect}`}
+                className="space-y-1.5 border-border-subtle border-t pt-2 first:border-t-0 first:pt-0"
+                data-draft-apply-conflict={conflict.blockId}
+                data-draft-apply-conflict-evidence={conflict.evidence}
+              >
+                <p className="text-ink-muted">{conflictEvidence(conflict.evidence)}</p>
+                <p>{conflict.why}</p>
+                <dl className="grid grid-cols-1 gap-x-2 gap-y-1 text-micro sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+                  <ConflictVersion
+                    label={t`Before this draft`}
+                    body={conflict.base}
+                    empty={t`No earlier passage`}
+                  />
+                  <ConflictVersion
+                    label={t`Your manuscript`}
+                    body={conflict.live}
+                    empty={t`Deleted in your manuscript`}
+                  />
+                  <ConflictVersion
+                    label={t`Draft proposes`}
+                    body={conflict.proposed}
+                    empty={t`Delete this passage`}
+                  />
+                </dl>
+              </div>
+            ))}
+          </div>
+        </details>
       ) : null}
     </div>
   );

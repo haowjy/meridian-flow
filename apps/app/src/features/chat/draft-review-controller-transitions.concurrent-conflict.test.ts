@@ -50,6 +50,7 @@ describe("draft review concurrent conflict", () => {
     expect(
       conflictForSelection(navigated, { documentId: "document-1", draftId: "draft-1" }),
     ).not.toBeNull();
+    expect(navigated.applyRefusal).toBeNull();
 
     const returned = draftReviewReducer(navigated, {
       type: "enterInline",
@@ -71,5 +72,6 @@ describe("draft review concurrent conflict", () => {
     expect(
       conflictForSelection(rereviewed, { documentId: "document-1", draftId: "draft-1" }),
     ).toBeNull();
+    expect(rereviewed.applyRefusal).toBeNull();
   });
 });

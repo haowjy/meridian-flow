@@ -592,6 +592,9 @@ export function draftReviewReducer(
         staleDraft: null,
         inlineReviewMessage: null,
         inlineDiscardError: null,
+        applyRefusal: refusalMatchesSelection(state.applyRefusal, action)
+          ? state.applyRefusal
+          : null,
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
@@ -718,6 +721,7 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
+    applyRefusal: state.applyRefusal?.draftId === draftId ? null : state.applyRefusal,
     concurrentConflicts,
   };
 }
@@ -741,7 +745,12 @@ function stateAfterInlineModelAvailable(
   // writer is now looking at a model rebuilt after the rejected disposition.
   const concurrentConflicts = new Map(state.concurrentConflicts);
   concurrentConflicts.delete(reviewSelectionKey(action));
-  return { ...state, surface: nextSurface, concurrentConflicts };
+  return {
+    ...state,
+    surface: nextSurface,
+    applyRefusal: refusalMatchesSelection(state.applyRefusal, action) ? null : state.applyRefusal,
+    concurrentConflicts,
+  };
 }
 
 export function conflictForSelection(
@@ -753,6 +762,13 @@ export function conflictForSelection(
 
 function reviewSelectionKey(selection: DraftReviewSelection): string {
   return `${selection.documentId}\0${selection.draftId}`;
+}
+
+function refusalMatchesSelection(
+  refusal: DraftReviewState["applyRefusal"],
+  selection: DraftReviewSelection,
+): boolean {
+  return refusal?.documentId === selection.documentId && refusal.draftId === selection.draftId;
 }
 
 function clearInlineState(state: DraftReviewState): DraftReviewState {
