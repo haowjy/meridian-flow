@@ -213,14 +213,14 @@ describe("peer marker writer self-clear", () => {
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
     const selector = '[data-peer-mark="range-mark"]';
     expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
-      "Show change details for Replaced a passage",
+      "Show change details for AI replaced a passage",
     );
 
     activateLocale("zh");
     await Promise.resolve();
 
     expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
-      "显示替换了一段内容的更改详情",
+      "显示AI replaced a passage的更改详情",
     );
   });
 
