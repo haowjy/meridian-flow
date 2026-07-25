@@ -1,9 +1,12 @@
 # collab — Draft review (branch model)
 
 > **The pre-branch draft subsystem is deleted.** `document_yjs_drafts`,
-> `document_yjs_draft_updates`, `scope_id`, draft Hocuspocus rooms, the draft
-> write-mode router, accept/reactivation lifecycle, and draft-scoped
-> agent-edit state no longer exist.
+> `document_yjs_draft_updates`, `scope_id`, draft Hocuspocus rooms, the old
+> document-level write-mode router, accept/reactivation lifecycle, and
+> draft-scoped agent-edit state no longer exist.
+
+The Work-level Draft/Auto-apply route remains and requires explicit
+confirmation before applying pending branch changes.
 
 Current review model: branches are real `Y.Doc` peers. The agent writes to a
 thread-peer branch; the work-draft branch accumulates writes across threads
