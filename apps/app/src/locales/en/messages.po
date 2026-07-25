@@ -277,10 +277,6 @@ msgstr "Apply"
 msgid "Apply all"
 msgstr "Apply all"
 
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Applying would bring back text you deleted:"
-#~ msgstr "Applying would bring back text you deleted:"
-
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
@@ -534,14 +530,6 @@ msgstr "Copy"
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
 msgstr "Could not load files."
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Couldn't apply because this would bring back text you deleted."
-#~ msgstr "Couldn't apply because this would bring back text you deleted."
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Couldn't apply because your live document changed since this draft was prepared."
-#~ msgstr "Couldn't apply because your live document changed since this draft was prepared."
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
@@ -1369,10 +1357,6 @@ msgstr "No projects yet."
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr "No results yet."
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Not applied"
-#~ msgstr "Not applied"
 
 #: src/routes/__root.tsx
 msgid "Not Found"

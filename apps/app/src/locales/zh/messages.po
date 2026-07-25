@@ -265,10 +265,6 @@ msgstr ""
 msgid "Apply all"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Applying would bring back text you deleted:"
-#~ msgstr ""
-
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Applying…"
 msgstr ""
@@ -1309,10 +1305,6 @@ msgstr ""
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Not applied"
-#~ msgstr ""
 
 #: src/routes/__root.tsx
 msgid "Not Found"
