@@ -1,0 +1,37 @@
+# Gates PR bodies on the sections of .github/PULL_REQUEST_TEMPLATE.md.
+# Separate from ci.yml because it must also run on `edited` (a body fix has to
+# clear the X without re-running the full build-and-test matrix).
+name: PR body
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-body-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body-lint:
+    name: pr-body-lint
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+      - name: Check body against the template
+        env:
+          # Env, not inline interpolation: the body is attacker-controlled
+          # markdown and must never reach the shell as script text.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr diff "$PR_NUMBER" --name-only --repo "$GITHUB_REPOSITORY" > /tmp/changed-files.txt
+          node tools/ci/check-pr-body.mjs /tmp/changed-files.txt
