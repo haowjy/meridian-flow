@@ -169,9 +169,9 @@ function ChangeViewRow({
           )}
         </p>
       ) : null}
-      {body && (writerImpact || anchorUnavailable) ? (
+      {writerImpact || anchorUnavailable ? (
         <div className="flex items-center gap-2">
-          {canCopy || (recovery.failed && action === "restore") ? (
+          {body && (canCopy || (recovery.failed && action === "restore")) ? (
             <Button size="sm" onClick={() => void copy(body)}>
               <Trans>Copy</Trans>
             </Button>

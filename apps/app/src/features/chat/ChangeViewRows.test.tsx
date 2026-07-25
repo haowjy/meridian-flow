@@ -89,4 +89,53 @@ describe("ChangeViewRows conversation reveal", () => {
 
     await act(async () => root.unmount());
   });
+
+  it("shows a committed recovery action when its authoritative body is unavailable", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const unavailableImpact: TrailChange = {
+      ...generativeInsertion,
+      changeId: "unavailable-impact",
+      kind: "delete",
+      beforeBlockId: "writer-block",
+      afterBlockId: null,
+      beforeText: "writer-block|Non-authoritative fallback.",
+      afterTextAtReceipt: null,
+      writerImpact: {
+        kind: "sweep",
+        affectedBlockHash: "writer-block",
+        body: { status: "unavailable", reason: "capture_failed" },
+        beforeContentRef: null,
+      },
+      forwardActions: {
+        restore: {
+          status: "committed",
+          update: "AA==",
+          expectedLiveStateHash: "hash",
+        },
+      },
+    };
+
+    await act(async () => {
+      root.render(
+        <ChangeViewRows
+          threadId="thread-1"
+          trailId="trail-1"
+          documentId="document-1"
+          changes={[unavailableImpact]}
+          navigateToChange={vi.fn()}
+          runAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Earlier content could not be recovered");
+    expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toContain(
+      "Restore",
+    );
+    expect(container.textContent).not.toContain("Non-authoritative fallback.");
+
+    await act(async () => root.unmount());
+  });
 });
