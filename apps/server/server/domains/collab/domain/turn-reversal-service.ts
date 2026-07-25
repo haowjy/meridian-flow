@@ -32,7 +32,8 @@ export type ThreadContextReversalResolver = {
 
 export type TurnReversalServiceDeps = {
   atomic?<T>(operation: () => Promise<T>): Promise<T>;
-  live: Required<ReverseTurnDeps>;
+  live: Required<Omit<ReverseTurnDeps, "deferUntilCommit">> &
+    Pick<ReverseTurnDeps, "deferUntilCommit">;
   agentEdit: Pick<ThreadPeerAgentEditCore, "reverse">;
   branchReview: BranchReviewService;
   branchJournal: Pick<BranchJournalReadStore, "listJournalRowsForTurn">;
@@ -68,10 +69,15 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
           statuses,
         });
         const branchIds = [...new Set(rows.map((row) => row.branchId))];
+        const allowedDocumentIds = command.documentIds
+          ? new Set<string>(command.documentIds)
+          : undefined;
         const branchDocuments: Array<ReversalOutcome["documents"][number]> = [];
         for (const branchId of branchIds) {
           const branch = await input.branches.getBranch(branchId);
-          if (!branch) continue;
+          if (!branch || (allowedDocumentIds && !allowedDocumentIds.has(branch.documentId))) {
+            continue;
+          }
           const result = await input.branchReview.reverseBranchTurn({
             branchId,
             threadId: command.threadId,
@@ -93,9 +99,8 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
           throw new CrossScopeReversalRefused(branchOutcome);
         }
 
-        // Branch writes stay transaction-local and broadcasts are deferred until
-        // commit. Run live last because its coordinator projection is immediate;
-        // no later scope may refuse after live has changed writer-visible state.
+        // Branch and live durable writes share the ambient transaction. Their
+        // process-local projections and broadcasts publish only after commit.
         const liveOutcome = await reverseTurn(input.live, command);
         const documents = mergeDocumentScopeResults(command.direction, [
           ...liveOutcome.documents,

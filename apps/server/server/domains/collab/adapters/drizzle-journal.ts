@@ -16,7 +16,6 @@ import type {
   WriteMutationRow,
 } from "@meridian/agent-edit/integration";
 import {
-  isLaterWriterUpdateAfterWatermark,
   parseWriteHandle,
   persistUndoPlanWatermark,
   unwrapDoc,
@@ -562,7 +561,7 @@ async function hasLaterWriterJournalUpdateAfter(
   afterSeq: number,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ seq: documentYjsUpdates.id, origin: documentYjsUpdates.originType })
+    .select({ id: documentYjsUpdates.id })
     .from(documentYjsUpdates)
     .where(
       and(
@@ -573,7 +572,7 @@ async function hasLaterWriterJournalUpdateAfter(
     )
     .orderBy(asc(documentYjsUpdates.id))
     .limit(1);
-  return row !== undefined && isLaterWriterUpdateAfterWatermark(row, afterSeq);
+  return row !== undefined;
 }
 
 async function reserveWriteOrdinal(

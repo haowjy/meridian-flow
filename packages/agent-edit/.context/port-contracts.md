@@ -49,6 +49,12 @@ projection restores or evicts the runtime before reporting failure. A failed
 projection after a durable reversal recovers from the journal and reports the
 committed outcome; diagnostics must not turn that committed effect into an
 `internal_error`.
+Hosts that wrap several reversal scopes in one transaction provide
+`deferUntilCommit`. Agent-edit then persists and reports the planned reversal
+without changing the coordinated or thread-runtime Y.Doc; the callback performs
+the final concurrent recheck, live apply, and runtime synchronization only
+after commit. A rollback that discards the callback therefore leaves no
+process-local reversal residue.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group

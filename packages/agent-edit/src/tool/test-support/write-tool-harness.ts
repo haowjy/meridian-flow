@@ -50,6 +50,7 @@ export function harness(
     >[0]["onResponseCommitterTransition"];
     onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
     onReversalNoticeFailed?: Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"];
+    deferUntilCommit?: Parameters<typeof createAgentEditCore>[0]["deferUntilCommit"];
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
@@ -91,6 +92,7 @@ export function harness(
     ...(options.onReversalNoticeFailed
       ? { onReversalNoticeFailed: options.onReversalNoticeFailed }
       : {}),
+    ...(options.deferUntilCommit ? { deferUntilCommit: options.deferUntilCommit } : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
       : {}),

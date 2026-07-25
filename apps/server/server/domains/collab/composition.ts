@@ -371,6 +371,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveDocumentUri: documentUriResolver,
       checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
       refreshDocumentProjection: projectionRefresher.refresh,
+      deferUntilCommit: deferUntilDrizzleCommit,
     },
     agentEdit,
     branchReview,

@@ -224,10 +224,15 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
         return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
       }
       const liveDoc = await loadLiveDoc(branch.documentId);
-      const branchRows = await deps.journalReadStore.listJournalRowsForBranch({
-        branchId: branch.branchId,
-        generation: branch.generation,
-      });
+      const branchRows = (
+        await deps.journalReadStore.listJournalRowsForBranch({
+          branchId: branch.branchId,
+          generation: branch.generation,
+        })
+      ).filter(
+        (row) =>
+          row.status === "active" || row.status === "rollback_pending" || selected.has(row.id),
+      );
       const peer = buildRedoPeer({ liveDoc, rows: branchRows, selectedIds: selected });
       const branchDoc = materializeBranch(branch);
       try {

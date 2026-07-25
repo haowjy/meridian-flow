@@ -26,6 +26,7 @@ export interface ReverseTurnDeps {
     checkedUntilSeq: number;
   }>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
 }
 
 const CANT_UNDO_DEPENDENT_MESSAGE =
@@ -49,10 +50,12 @@ export async function reverseTurn(
   for (const documentId of documentIds) {
     const outcome = await reverseDocumentForTurn(deps, input, documentId);
     if (isSuccessfulReversal(outcome)) {
-      await deps.refreshDocumentProjection?.({
-        documentId: documentId as DocumentId,
-        threadId: input.threadId,
-      });
+      const refresh = () =>
+        deps.refreshDocumentProjection?.({
+          documentId: documentId as DocumentId,
+          threadId: input.threadId,
+        });
+      if (!deps.deferUntilCommit?.(refresh)) await refresh();
     }
     documents.push(
       await documentReversalResult({

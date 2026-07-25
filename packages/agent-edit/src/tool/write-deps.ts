@@ -41,6 +41,8 @@ export interface CreateWriteToolOptions {
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
+  /** Stage live reversal projection until the host transaction commits. */
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   closedResponseTombstoneCap?: number;
   /** Commit-phase seam for deterministic race injection and host observability. */
   afterResponsePreflight?: (responseId: string) => Promise<void> | void;

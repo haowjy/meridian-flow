@@ -1,5 +1,5 @@
-import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
-import { act } from "react";
+import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
+import { act, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
@@ -167,6 +167,41 @@ describe("TurnEditsReceipt", () => {
         );
       },
     );
+  });
+
+  it("retains a raced refusal when refreshed receipt state withdraws the action", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({ status: "nothing_to_redo" });
+    let withdrawRedo: (() => void) | undefined;
+    function Scenario() {
+      const [receipt, setReceipt] = useState<TurnReceiptChip>({
+        state: "live-reversed" as const,
+        control: "redo" as const,
+      });
+      withdrawRedo = () =>
+        setReceipt({ state: "expired" as const, control: "view_change" as const });
+      return (
+        <TurnEditsReceipt
+          threadId="thread-1"
+          turn={turn()}
+          documents={[liveDocument]}
+          receipt={receipt}
+        />
+      );
+    }
+
+    await withReactRoot(<Scenario />, async () => {
+      const redo = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Redo",
+      );
+      if (!redo) throw new Error("missing Redo button");
+      await act(async () => redo.dispatchEvent(new window.MouseEvent("click", { bubbles: true })));
+      await act(async () => withdrawRedo?.());
+
+      expect(document.body.textContent).toContain("Can't undo");
+      expect(document.body.textContent).toContain(
+        "Redo is no longer available because the manuscript changed.",
+      );
+    });
   });
 
   it("keeps the collapsed receipt free of bookkeeping controls", async () => {

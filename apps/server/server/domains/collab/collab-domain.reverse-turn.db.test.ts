@@ -292,6 +292,69 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(collab, DOC_ID)).not.toContain(fountain);
     });
 
+    it("rolls back every live document when one document refuses a turn reversal", async () => {
+      await db.insert(documents).values({
+        id: CREATED_DOC_ID,
+        contextSourceId: SOURCE_ID,
+        name: "chapter-two",
+        extension: "md",
+        fileType: "markdown",
+      });
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
+      for (const [documentId, markdown] of [
+        [DOC_ID, "First base."],
+        [CREATED_DOC_ID, "Second base."],
+      ] as const) {
+        await collab.writeDocument({
+          documentId: documentId as never,
+          markdown,
+          origin: { type: "user", actorUserId: USER_ID as never },
+          threadId: THREAD_ID as never,
+        });
+        await expect(
+          collab.agentEdit().write(
+            {
+              command: "insert",
+              file: `${documentId}.md`,
+              documentId,
+              content: `Turn edit for ${documentId}.`,
+            },
+            { sessionId: "session-atomic-reversal", threadId: THREAD_ID, turnId: TURN_ID },
+          ),
+        ).resolves.toMatchObject({ status: "success" });
+      }
+      await collab.writeDocument({
+        documentId: CREATED_DOC_ID as never,
+        markdown: "Writer invalidated only the second document.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction: "undo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+
+      await expectMarkdown(collab, DOC_ID, `Turn edit for ${DOC_ID}.`);
+      await expectMarkdown(collab, CREATED_DOC_ID, "Writer invalidated only the second document.");
+      const reversals = await db
+        .select()
+        .from(documentYjsReversals)
+        .where(
+          and(
+            eq(documentYjsReversals.threadId, THREAD_ID as never),
+            eq(documentYjsReversals.turnId, TURN_ID as never),
+          ),
+        );
+      expect(reversals).toHaveLength(0);
+    });
+
     it.each([
       "manual",
       "auto",
@@ -325,6 +388,67 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect(outcome.status).toBe(direction === "undo" ? "reversed" : "reconciled");
       }
+    });
+
+    it("does not resurrect another discarded turn when redoing a manual draft turn", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "manual" });
+      for (const [turnId, content] of [
+        [TURN_ID, "First independent turn."],
+        [TURN_2_ID, "Second discarded turn."],
+      ] as const) {
+        await expect(
+          collab
+            .agentEdit()
+            .write(
+              { command: "insert", file: "chapter.md", documentId: DOC_ID, content },
+              { sessionId: "session-selective-redo", threadId: THREAD_ID, turnId },
+            ),
+        ).resolves.toMatchObject({ status: "success" });
+      }
+
+      for (const turnId of [TURN_2_ID, TURN_ID]) {
+        await expect(
+          collab.reverseTurn({
+            threadId: THREAD_ID as never,
+            turnId: turnId as never,
+            direction: "undo",
+            actor: { type: "user", userId: USER_ID },
+          }),
+        ).resolves.toMatchObject({ status: "reversed" });
+      }
+      await expect(
+        collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction: "redo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "reconciled" });
+
+      const preview = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+        documentId: DOC_ID as never,
+      });
+      const serialized = JSON.stringify(preview);
+      expect(serialized).toContain("First independent turn.");
+      expect(serialized).not.toContain("Second discarded turn.");
+      const statuses = await db
+        .select({ turnId: branchWriteJournal.turnId, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .orderBy(branchWriteJournal.id);
+      expect(statuses).toEqual([
+        expect.objectContaining({ turnId: TURN_ID, status: "active" }),
+        expect.objectContaining({ turnId: TURN_2_ID, status: "discarded" }),
+      ]);
     });
 
     it("withdraws redo after a writer edit lands following undo", async () => {
@@ -381,6 +505,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           actor: { type: "user", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ status: "nothing_to_redo" });
+
+      const journal = createDrizzleJournal(db);
+      const [reversal] = await journal.readReversals(DOC_ID, {
+        threadId: THREAD_ID,
+      });
+      if (!reversal) throw new Error("missing reversal");
+      await expect(
+        journal.persistRedoBatch(DOC_ID, [
+          {
+            update: Y.encodeStateAsUpdate(new Y.Doc()),
+            ref: { threadId: THREAD_ID, undoUpdateSeq: reversal.undoUpdateSeq },
+            meta: { origin: "system", seq: 0 },
+            persistGuardWatermark: reversal.undoUpdateSeq,
+          },
+        ]),
+      ).resolves.toEqual({ consumed: false });
     });
 
     it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {

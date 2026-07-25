@@ -247,26 +247,13 @@ fail only when a command reaches them.
   transitions both reject the stale reversal for replanning.
   After Apply advances to an empty generation, reversal lookup falls back to the
   live store so pushed writes retain their normal undo path.
-- **Turn reversal currently stages branch scope before live scope**:
-  production wraps both durable paths in one ambient Drizzle transaction,
-  defers branch broadcasts until commit, and runs live last so no later branch
-  refusal can follow an immediately writer-visible live apply.
-
-> [!FLAG] **Cross-scope reversal is not runtime-atomic.**
-> `domain/turn-reversal-service.ts` can roll back the SQL transaction after the
-> live coordinator Y.Doc has already changed; PostgreSQL rollback cannot restore
-> that process-local projection. The current ordering narrows the refusal window
-> but does not satisfy the settled prepare/commit/publish contract. A cold agent
-> must not treat the ambient transaction as proof that mixed live/branch turns
-> cannot become half-reversed.
-
-> [!FLAG] **Branch redo and authorization still diverge from the settled
-> recovery contract.** `domain/branch-review-operations.ts` rebuilds redo from
-> the generation's full row set, which can reintroduce an unrelated discarded
-> turn. `domain/turn-reversal-service.ts` also discovers branch candidates
-> independently of the authorized live-document set. The same command needs one
-> authorized scope and branch reconstruction from active survivors plus only the
-> selected redo target.
+- **Turn reversal is cross-scope atomic**: production persists branch and live
+  changes in one ambient Drizzle transaction. Branch broadcasts, live Y.Doc
+  application, runtime synchronization, and projection refresh are deferred
+  until that transaction commits; rollback publishes none of them. Branch
+  candidates are restricted to the command's authorized document set. Branch
+  redo reconstructs from active survivors plus only the selected discarded
+  target, so another undone turn stays discarded.
 - **Draft handles name durable response groups**: response buffering and branch
   projection fold all same-document mutations in one response into one
   `branch_write_journal` row. Every write in that group therefore receives the

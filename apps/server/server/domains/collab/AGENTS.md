@@ -127,11 +127,15 @@ propagation between them.
 - **Reversal availability is dependency-based**: canonical dependency checks may
   refuse a lossy undo. Destructive effects from an allowed agent reversal are
   reported without changing the reversal outcome.
+- **Cross-scope reversal publishes after commit**: branch and live durability
+  share one transaction; branch broadcasts, live Y.Doc application, runtime
+  synchronization, and projection refresh are deferred until it commits.
+  Rollback must leave every process-local projection untouched.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   reporting-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push
-  enforce this; reversal `executePrepared` snapshots around persistence and uses
-  the same final synchronous recheck-and-apply seam.
+  enforce this; reversal `executePrepared` uses the same final synchronous
+  recheck-and-apply seam, inline or after transaction commit.
 - All seed and text-write callers use `domain/markdown-document.ts`; it resolves
   filetype and constructs content for the document's actual schema. The
   markdown-only seeding that caused #196 is historical, not the current engine.
