@@ -35,6 +35,13 @@ server-derived reason; the client does not invent local receipt state. Sweep and
 resurrection rows retain only forward human actions (`Restore` / `Delete again`),
 idempotent by `changeId`. Captured bodies remain visible after document loss and
 reload, and deleted live anchors degrade navigation without discarding evidence.
+Sweep rows use the warning-chip treatment so their severity survives outside the
+editor without becoming an alert banner.
+
+Every settled trail receipt exposes **Clear marks**, including receipts whose
+expanded detail has no writer-impact rows. It dismisses that trail's ephemeral
+session marks in every open document; it does not reverse prose, change durable
+trail evidence, or alter Restore/Delete-again state.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review

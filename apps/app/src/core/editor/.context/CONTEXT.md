@@ -23,6 +23,12 @@ Yjs document session. It must stay structurally aligned with
   anchored popover lazy-reads trail detail and the originating thread snapshot;
   recovery uses the trail forward-action endpoint and removes the session mark
   only after success.
+- Peer-mark manuscript color describes the change, not the thread identity:
+  added/modified marks use jade and deletions use crimson. Ordinary ranges rest
+  as an underline only; a sweep is the sole resting warning tint. Per-thread
+  hues belong only to identity chrome such as the hover label and popover dot.
+  Localized mark and trail verbs come from `change-mark-labels.ts`; do not
+  duplicate English labels in the ProseMirror extension or UI surfaces.
 - Live `DocumentSession`s own an ephemeral `SessionMarkerStore` sidecar.
   Change-event replace sets survive editor remounts during the registry's
   retention window but are never persisted or projected into branch rooms.
@@ -33,6 +39,10 @@ Yjs document session. It must stay structurally aligned with
   The ProseMirror projection clears a whole mark only for a local writer edit
   through its range/seam; remote sync, selection, and boundary-adjacent typing
   never clear it.
+- Collaboration awareness is a browser protocol boundary: theme-owned cursor
+  colors must be resolved before publication and serialized as concrete
+  six-digit RGB hex. CSS variables and OKLCH strings are valid token sources,
+  not valid y-prosemirror awareness colors.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
