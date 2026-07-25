@@ -120,5 +120,5 @@ export type CommittedChangeTrailProjection = {
   owner: NormalizedTrail["owner"];
   documentId: string;
   projectionRevision: number;
-  changes: Array<TrailChangeV1 & { admittedByUserId: string | null; swept: boolean }>;
+  changes: Array<TrailChangeV1 & { admittedByUserId: string | null }>;
 };

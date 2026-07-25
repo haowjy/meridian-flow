@@ -282,16 +282,7 @@ export function createBranchPushTransition(input: {
             if (projection.documentId !== pending.push.documentId) continue;
             try {
               input.changeEventDelivery.deliver(
-                projectCommittedChangeEvent(
-                  {
-                    ...projection,
-                    changes: projection.changes.map((change) => ({
-                      ...change,
-                      swept: sweep.has(change.changeId),
-                    })),
-                  },
-                  input.codec,
-                ),
+                projectCommittedChangeEvent(projection, sweep, input.codec),
               );
             } catch {
               // Delivery is an ephemeral session hint; durable push completion

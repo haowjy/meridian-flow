@@ -239,7 +239,6 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
               ...change,
               admittedByUserId:
                 change.pushId === null ? null : (admitterByPushId.get(change.pushId) ?? null),
-              swept: false,
             })),
           });
           if (documentChanges.length === 0) {

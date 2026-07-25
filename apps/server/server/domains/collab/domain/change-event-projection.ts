@@ -7,6 +7,7 @@ import { bodyFromHashline } from "./trail-read-kernel.js";
 
 export function projectCommittedChangeEvent(
   projection: CommittedChangeTrailProjection,
+  sweptChangeIds: ReadonlySet<string>,
   codec: AgentEditCodec,
 ): Omit<ChangeEventWsMessage, "type"> {
   const capped = projection.changes.slice(0, 100);
@@ -20,13 +21,16 @@ export function projectCommittedChangeEvent(
       threadId: projection.owner.threadId,
       turnId: projection.owner.kind === "turn" ? projection.owner.turnId : null,
     },
-    changes: capped.map((change) => projectChange(change, codec)),
+    changes: capped.map((change) =>
+      projectChange(change, sweptChangeIds.has(change.changeId), codec),
+    ),
     truncated: projection.changes.length > capped.length,
   };
 }
 
 function projectChange(
   change: CommittedChangeTrailProjection["changes"][number],
+  swept: boolean,
   codec: AgentEditCodec,
 ): ChangeEventProjection {
   const hashline = change.kind === "delete" ? change.beforeText : change.afterTextAtReceipt;
@@ -37,7 +41,7 @@ function projectChange(
     admittedByUserId: change.admittedByUserId,
     kind: change.kind,
     navigation: change.navigation,
-    swept: change.swept,
+    swept,
     excerpt: text === null ? null : text.slice(0, 500),
     pureDeletionOffset:
       change.kind === "modify"

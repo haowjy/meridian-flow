@@ -48,7 +48,6 @@ function projectedChange(
     navigation: { kind: "unavailable", reason: "fixture" },
     reversible: false,
     admittedByUserId,
-    swept: false,
   };
 }
 

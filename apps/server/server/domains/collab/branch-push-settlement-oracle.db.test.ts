@@ -171,6 +171,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         const warm = createHarness({ afterDurableCommit: injectPostCutWriter });
         const branchId = await warm.seedDestructivePush("oracle-f1a-warm");
         await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+        await expectLiveSweepOnly(warm);
         const observed = await observeSettlement(warm);
         warm.destroyWarmState();
         return observed;
@@ -196,6 +197,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) });
         const cold = createHarness();
         await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
+        await expectLiveSweepOnly(cold);
         const observed = await observeSettlement(cold);
         cold.destroyWarmState();
         return observed;
@@ -708,6 +710,24 @@ function appliedMarkdown(output: SettlementOracleOutput): string {
     throw new Error("settlement apply result has no markdown");
   }
   return result.markdown;
+}
+
+async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): Promise<void> {
+  expect(harness.changeEvents()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        changes: expect.arrayContaining([expect.objectContaining({ swept: true })]),
+      }),
+    ]),
+  );
+  const trail = await harness.trailRows();
+  for (const detail of trail.details) {
+    for (const change of detail.changes as unknown as Array<Record<string, unknown>>) {
+      expect(change).not.toHaveProperty("swept");
+      expect(change).not.toHaveProperty("writerImpact");
+      expect(change).not.toHaveProperty("writerProtection");
+    }
+  }
 }
 
 async function observeSettlement(
