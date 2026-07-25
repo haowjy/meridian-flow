@@ -97,11 +97,13 @@ propagation between them.
   the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
   reads go through `readEffectiveMarkdown` / `readEffectiveHashlines`.
-- **Undo is intrinsically guarded**: live `persistUndo` runs the dependency
-  check under `lockDocumentMutation`; Draft reversal commits reject any branch
-  journal advance after planning under the branch snapshot CAS. Redo is
-  writer-stale: the planner and persist-time watermark guard reject a later
-  human row but ignore system reversal/bookkeeping and agent rows.
+- **Live reversal has one planner authority**: receipt availability and command
+  execution both use agent-edit `planUndo` / `planRedo`; `persistUndo` and
+  `persistRedo` repeat the plan watermark guard under `lockDocumentMutation`.
+  Freshness is writer-owned: later human rows stale the plan, while system
+  reversal/bookkeeping and agent rows do not. Draft reversal remains a separate
+  generation-local authority and rejects any branch advance after planning
+  under the branch snapshot CAS.
 - **Draft write undo is generation-local**: a response/document folds to one
   durable handle; undo/redo stages a typed-generation system row and projects it
   in the same Work-draft commit. Never delegate an active Draft generation to

@@ -179,8 +179,11 @@ push until commit.
 ## Durable records
 
 - `document_yjs_updates` is the live update journal.
-  Reversal rows keep `origin_type = system` for redo classification and store the
-  independent `reversal_actor_type` attribution used by other sessions.
+  Writer rows persist as `origin_type = human`; reads also normalize legacy
+  `user` rows to the package's `human:<actor>` origin. Reversal and bookkeeping
+  rows keep `origin_type = system`, and reversal rows store independent
+  `reversal_actor_type` attribution. Agent rows persist as `agent`. Only the
+  writer class invalidates a live reversal plan.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` records pushes to live and receipts.
@@ -213,6 +216,21 @@ to `{}` before validation and returns `400 direction must be undo or redo`.
 or the declared unsupported stubs; do not restore optional dependencies that
 fail only when a command reaches them.
 
+- **Live receipt recovery state uses the command planner**:
+  `drizzle-turn-receipt.ts` asks agent-edit `planUndo` and `planRedo` for each
+  live document instead of projecting availability from mutation status.
+  Command execution uses the same planners. The planner rejects redo after a
+  later writer (`human:*`) row but ignores the undo's system row, other system
+  bookkeeping, and later agent rows. Persist-time guards repeat the writer-only
+  watermark check under the document lock, covering a writer admission between
+  planning and persistence. Active Work-draft receipts remain branch-derived:
+  their authority is the branch generation, journal status, and dependency
+  check rather than the live planner.
+- **Receipt command refusals are semantic outcomes**: the reverse endpoint may
+  return `nothing_to_undo`, `nothing_to_redo`, `cant_undo_dependent`, `expired`,
+  or `partial` with HTTP 200 when state races the projection. The app invalidates
+  the turn query after the command and retains the raced reason while the receipt
+  changes to its unavailable state; callers must not discard these outcomes.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
@@ -229,6 +247,26 @@ fail only when a command reaches them.
   transitions both reject the stale reversal for replanning.
   After Apply advances to an empty generation, reversal lookup falls back to the
   live store so pushed writes retain their normal undo path.
+- **Turn reversal currently stages branch scope before live scope**:
+  production wraps both durable paths in one ambient Drizzle transaction,
+  defers branch broadcasts until commit, and runs live last so no later branch
+  refusal can follow an immediately writer-visible live apply.
+
+> [!FLAG] **Cross-scope reversal is not runtime-atomic.**
+> `domain/turn-reversal-service.ts` can roll back the SQL transaction after the
+> live coordinator Y.Doc has already changed; PostgreSQL rollback cannot restore
+> that process-local projection. The current ordering narrows the refusal window
+> but does not satisfy the settled prepare/commit/publish contract. A cold agent
+> must not treat the ambient transaction as proof that mixed live/branch turns
+> cannot become half-reversed.
+
+> [!FLAG] **Branch redo and authorization still diverge from the settled
+> recovery contract.** `domain/branch-review-operations.ts` rebuilds redo from
+> the generation's full row set, which can reintroduce an unrelated discarded
+> turn. `domain/turn-reversal-service.ts` also discovers branch candidates
+> independently of the authorized live-document set. The same command needs one
+> authorized scope and branch reconstruction from active survivors plus only the
+> selected redo target.
 - **Draft handles name durable response groups**: response buffering and branch
   projection fold all same-document mutations in one response into one
   `branch_write_journal` row. Every write in that group therefore receives the

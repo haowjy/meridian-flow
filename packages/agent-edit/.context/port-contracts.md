@@ -162,12 +162,15 @@ adapters, snapshots, provenance algebra, and Yjs utilities live on the explicit
 `@meridian/agent-edit/integration` entry instead of the default façade. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
-`getAvailability` is the source of truth for whether write-level undo/redo will
-attempt work: undo requires active mutation metadata plus the retained earliest
-forward row for that turn; redo requires a retained reversed record/update, the
-retained earliest forward row for the reversed turn, and no later writer-authored
-(`human:*`) journal row. System and agent rows do not stale redo. Persistence
-rechecks the planner watermark under the document lock. `invalidateThread`
+`getAvailability` delegates to the same `planUndo` / `planRedo` entry points that
+execute write-level reversal. Undo requires active mutation metadata plus the
+retained earliest forward row for that turn; redo requires a retained reversed
+record/update, the retained earliest forward row for the reversed turn, and no
+later writer-authored (`human:*`) journal row. `evaluateRedoEligibility` owns
+that retained-journal predicate. System reversal/bookkeeping and agent rows do
+not stale redo. Both directions carry the reconstruction watermark into
+persistence, where the adapter repeats the writer-only race check under its
+document lock. `invalidateThread`
 evicts cached runtime state and drops buffered response updates for a
 document/thread so the next access rebuilds runtime state from the live document
 and journal.
