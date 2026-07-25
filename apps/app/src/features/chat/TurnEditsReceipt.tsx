@@ -108,8 +108,8 @@ export function TurnEditsReceipt({
   }, [reveal, turn.id]);
 
   useEffect(() => {
-    setCommandRefusal(null);
-  }, [receipt?.control, receipt?.state]);
+    if (receipt?.control !== "view_change") setCommandRefusal(null);
+  }, [receipt?.control]);
 
   if (!hasEditedDocuments) return null;
 
@@ -121,6 +121,8 @@ export function TurnEditsReceipt({
       if (outcome.status !== "reversed" && outcome.status !== "reconciled") {
         setCommandRefusal(outcome.status);
         setExpanded(true);
+      } else {
+        setCommandRefusal(null);
       }
     } catch {
       // Keep the chip available for retry; history cards do not carry error prose.
