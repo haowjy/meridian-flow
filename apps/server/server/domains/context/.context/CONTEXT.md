@@ -104,20 +104,22 @@ with a single unified `ContextPort` that resolves durable project schemes
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
   boundary: it atomically allocates `Untitled N.md`, persists `provisionalName`,
-  and only ensures an empty Yjs authority. The client owns initial CRDT content;
-  this path must never seed markdown. Creation finalization is repairable: both
-  new creates and idempotent retries re-ensure manifest membership and the Yjs
-  authority after the document row exists. Router-level retries locate the ID
+  installs an empty Yjs authority, and records manifest membership in one
+  transaction. The client owns initial CRDT content; this path must never seed
+  non-empty markdown. Router-level retries locate the ID
   across every project scheme and authorized Work authority and return
   `already-materialized` with the actual canonical scheme/path/Work. This is
   distinct from a true allocation conflict. Response `name` is always the full
   basename including extension. A successful basename change clears the flag in
   the shared tree-mutation store, while path-only moves preserve it.
-- Every document creation registers in the live project manifest via the required
-  manifest-membership port wired in `unified-context-port-factory.ts`. Work-scoped
-  `scratch`/`uploads` stores resolve the project through their Work and deliberately
-  register in the live view, not a work-draft view: the ws live-room gate checks the
-  live project manifest. Any unregistered document renders a permanently dead editor.
+- Production text creation is one aggregate transaction: the context row, initial
+  Yjs authority/content, and effective manifest membership either all commit or
+  all roll back. Create/read/list use that manifest-aware view consistently.
+  An older row missing membership is repaired on its next tracked-document touch;
+  repair seeds absent Yjs state from the row projection and preserves existing
+  canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project
+  through their Work and deliberately register in the live view, not a work-draft
+  view: the ws live-room gate checks the live project manifest.
 - Cross-source moves preserve document identity and therefore preserve the same live
   project-manifest membership; source scope is storage location, not a second
   manifest namespace. The move commit must not rewrite document Yjs authority or journal rows.

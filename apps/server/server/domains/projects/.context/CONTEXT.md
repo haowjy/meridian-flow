@@ -19,7 +19,7 @@ This domain is not the full project CRUD surface; that lives in
 | Contract | Purpose |
 |---|---|
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
-| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth fast path: reads the durable completion flag and enters bootstrap only while incomplete. Seed failures leave the flag false for repair without failing unrelated requests. |
+| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Phase marker only; do not add work CRUD here while `domains/projects` owns it. |
 
@@ -39,12 +39,15 @@ This domain is not the full project CRUD surface; that lives in
   across external IDs fail closed and never merge local accounts.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
-- Auth provisioning checks the personal project's `default_bootstrap_ready`;
-  completed workspaces take no advisory lock and never enter collab. An
-  incomplete flag re-enters the full bootstrap, so a crash after row commit or
-  seed but before readiness persistence repairs on a later request.
-- Readiness becomes true only after initialize-only canonical seeding succeeds,
-  so it includes document-authority readiness rather than merely row existence.
+- The project, chapter row, initialize-only canonical seed, live manifest
+  membership, primary thread, and readiness flag commit in one ambient
+  transaction. Interruption leaves no partial bootstrap.
+- Auth provisioning performs one idempotent bootstrap repair check per user and
+  repository instance so older ready projects with a ghost chapter gain manifest
+  membership without replacing writer content. Later ready checks take no
+  advisory lock and never enter collab.
+- Readiness becomes true only after document authority and manifest membership
+  are durable, rather than merely after row existence.
 
 ## Relationship to `domains/projects`
 
