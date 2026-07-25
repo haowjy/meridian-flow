@@ -169,6 +169,45 @@ describe("Yjs branch handshake route guard", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("rejects a V1 update with trailing bytes", async () => {
+    const document = new Y.Doc({ gc: false });
+    const canonical = Y.encodeStateAsUpdate(document);
+    const withTrailingByte = Uint8Array.from([...canonical, 255]);
+
+    await expect(
+      admitWriterSync({
+        services: services(false),
+        documentName,
+        document,
+        syncType: messageYjsUpdate,
+        payload: withTrailingByte,
+        userId: "user-1" as never,
+        context: {
+          branchSyncState: new Map([["branch_1:3", "passed"]]),
+        },
+      }),
+    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
+  });
+
+  it("rejects a state-changing V2 update", async () => {
+    const source = new Y.Doc({ gc: false });
+    source.getText("content").insert(0, "writer edit");
+
+    await expect(
+      admitWriterSync({
+        services: services(false),
+        documentName,
+        document: new Y.Doc({ gc: false }),
+        syncType: messageYjsUpdate,
+        payload: Y.encodeStateAsUpdateV2(source),
+        userId: "user-1" as never,
+        context: {
+          branchSyncState: new Map([["branch_1:3", "passed"]]),
+        },
+      }),
+    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
+  });
+
   it("rejects a deletion for content the branch has not received yet", async () => {
     const source = new Y.Doc({ gc: false });
     const text = source.getText("content");

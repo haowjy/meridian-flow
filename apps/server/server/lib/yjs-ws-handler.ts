@@ -181,9 +181,18 @@ async function admitBranchSync(
 
 function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
   try {
+    const canonicalV1 = Y.convertUpdateFormatV2ToV1(Y.convertUpdateFormatV1ToV2(update));
+    if (
+      canonicalV1.length !== update.length ||
+      canonicalV1.some((byte, index) => byte !== update[index])
+    ) {
+      return false;
+    }
     // Exact snapshot containment accounts for delete sets that reference
     // structs the room has not received yet. Applying such an update to a
     // clone appears inert while still planting a pending future deletion.
+    // The round trip above also proves the V1 decoder consumed the full frame:
+    // Yjs otherwise accepts trailing bytes and can read V2 frames as empty V1.
     return Y.snapshotContainsUpdate(Y.snapshot(document), update);
   } catch {
     // Malformed update frames are never harmless acknowledgements.

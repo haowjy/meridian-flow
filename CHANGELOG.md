@@ -19,6 +19,8 @@
   wiring for server-owned dispositions.
 - `apps/server`: the durable settlement DB oracle now reads the latest push
   deterministically when a scenario produces multiple completed pushes.
+- `apps/server`: read-only draft rooms now admit only canonical V1 sync
+  acknowledgements, rejecting trailing data and V2 payloads.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.
