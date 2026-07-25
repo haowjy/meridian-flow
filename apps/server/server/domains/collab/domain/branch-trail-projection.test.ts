@@ -160,6 +160,98 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
   ]);
 });
 
+it("projects identity-shifted surviving prose as deletion of the displaced passage", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const beforeDoc = createCollabYDoc({ gc: false });
+  model.insertBlocks(
+    toDocHandle(beforeDoc),
+    null,
+    codec.parse("The fountain froze.\n\nThe captain waited."),
+  );
+  const beforeBlocks = model.getBlocks(toDocHandle(beforeDoc));
+  const fountain = beforeBlocks[0];
+  const captain = beforeBlocks[1];
+  if (!fountain || !captain) throw new Error("missing source blocks");
+  const fountainId = model.getBlockId(fountain);
+  const captainId = model.getBlockId(captain);
+
+  const afterDoc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(beforeDoc));
+  const afterBlocks = model.getBlocks(toDocHandle(afterDoc));
+  const surviving = afterBlocks[0];
+  if (!surviving) throw new Error("missing surviving block");
+  const captainReplacement = codec.parse("The captain waited.").blocks[0];
+  if (!captainReplacement) throw new Error("missing replacement");
+  model.applyBlockReplacement(toDocHandle(afterDoc), surviving, captainReplacement);
+  afterDoc.getXmlFragment("prosemirror").delete(1, 1);
+  const survivingAfter = model.getBlocks(toDocHandle(afterDoc))[0];
+  const survivingElement = afterDoc.getXmlFragment("prosemirror").get(0);
+  if (!survivingAfter || !(survivingElement instanceof Y.XmlElement)) {
+    throw new Error("missing shifted survivor");
+  }
+  const survivingId = model.getBlockId(survivingAfter);
+
+  const changes = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: fountainId,
+          beforeText: "The fountain froze.",
+          afterText: "The captain waited.",
+          beforeWordCount: 3,
+          afterWordCount: 3,
+          wordDelta: 0,
+        },
+        {
+          blockId: captainId,
+          beforeText: "The captain waited.",
+          afterText: null,
+          beforeWordCount: 3,
+          afterWordCount: 0,
+          wordDelta: -3,
+        },
+      ],
+      totalWordDelta: -3,
+    },
+    receiptId: "receipt-shift",
+    ownersByBlock: new Map([
+      [fountainId, [null]],
+      [captainId, [null]],
+    ]),
+    operations: [],
+    before: [
+      { hash: fountainId, serialized: "The fountain froze." },
+      { hash: captainId, serialized: "The captain waited." },
+    ],
+    blockIdentities: new Map([
+      [fountainId, { documentId: "document-1", ...getBlockItemId(fountain) }],
+      [captainId, { documentId: "document-1", ...getBlockItemId(captain) }],
+      [survivingId, { documentId: "document-1", ...getBlockItemId(survivingAfter) }],
+    ]),
+    afterIds: new Set([survivingId]),
+    afterById: new Map([[survivingId, survivingElement]]),
+    afterDoc,
+  });
+
+  expect(changes).toMatchObject([
+    {
+      kind: "delete",
+      beforeBlockId: fountainId,
+      afterBlockId: null,
+      beforeText: "The fountain froze.",
+      afterTextAtReceipt: null,
+      navigation: { kind: "deletion_boundary" },
+    },
+  ]);
+});
+
 it("projects a structurally adjacent whole-block replacement as one modification", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodec(mdxCodec({ schema }));

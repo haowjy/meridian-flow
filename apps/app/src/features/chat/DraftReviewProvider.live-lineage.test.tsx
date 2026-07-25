@@ -171,7 +171,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
-  it("resolves a draft-only tab as discarded when its active draft disappears", async () => {
+  it("does not destroy a draft-only tab when a vanished draft has no terminal evidence", async () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
 
@@ -181,11 +181,25 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
-        "project-1",
-        "doc-terminal",
-        "discarded",
-      );
+      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+      expect(exitReviewMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it.each([
+    ["committed", "2026-01-01T00:01:00.000Z", null],
+    ["discarded", null, "2026-01-01T00:01:00.000Z"],
+  ] as const)("resolves a draft-only tab as %s from remote terminal evidence", async (outcome, appliedAt, discardedAt) => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      exitReviewMock.mockClear();
+      resolveDraftOnlyTabMock.mockClear();
+      currentGroups = [terminalGroup({ appliedAt, discardedAt })];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith("project-1", "doc-terminal", outcome);
       expect(exitReviewMock).toHaveBeenCalledTimes(1);
     });
   });
@@ -260,5 +274,21 @@ function activeGroup(): ThreadDraftGroup {
         wordsRemoved: null,
       },
     ],
+  };
+}
+
+function terminalGroup(input: {
+  appliedAt: string | null;
+  discardedAt: string | null;
+}): ThreadDraftGroup {
+  const group = activeGroup();
+  return {
+    ...group,
+    drafts: group.drafts.map((draft) => ({
+      ...draft,
+      status: "closed",
+      appliedAt: input.appliedAt,
+      discardedAt: input.discardedAt,
+    })),
   };
 }

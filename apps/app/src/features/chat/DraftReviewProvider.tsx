@@ -145,11 +145,24 @@ function DraftReviewScope({
     if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     if (controller.isDisposing) return;
-    const currentActive = orderedActiveDrafts(
-      groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [],
-    );
+    const documentDrafts =
+      groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [];
+    const currentActive = orderedActiveDrafts(documentDrafts);
     const activeDraft = currentActive.find((draft) => draft.draftId === activeSelection.draftId);
     if (activeDraft?.status === "active") return;
+    const terminalDraft = documentDrafts.find(
+      (draft) => draft.draftId === activeSelection.draftId && draft.status === "closed",
+    );
+    const terminalOutcome = terminalDraft?.appliedAt
+      ? "committed"
+      : terminalDraft?.discardedAt
+        ? "discarded"
+        : null;
+    if (terminalOutcome === "committed") {
+      useContextTabsStore
+        .getState()
+        .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, terminalOutcome);
+    }
     const nextDraftId = nearestRemainingDraftId(
       priorActiveDrafts.current.get(activeSelection.documentId) ?? [],
       activeSelection.draftId,
@@ -159,9 +172,11 @@ function DraftReviewScope({
       controller.enterInlineReview(activeSelection.documentId, nextDraftId);
       return;
     }
-    useContextTabsStore
-      .getState()
-      .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, "discarded");
+    if (terminalOutcome === "discarded") {
+      useContextTabsStore
+        .getState()
+        .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, terminalOutcome);
+    }
     controller.exitReview();
   }, [
     controller.enterInlineReview,

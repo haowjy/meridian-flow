@@ -208,6 +208,28 @@ describe("peer marker writer self-clear", () => {
     expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).toBeNull();
   });
 
+  it("nudges document-boundary ticks into nested textblocks", () => {
+    editor.commands.setContent("<ul><li><p>Nested prose.</p></li></ul>");
+    addMarker("boundary", 0, 0, "-start", null, false, "document_start");
+    addMarker(
+      "boundary",
+      editor.state.doc.content.size,
+      editor.state.doc.content.size,
+      "-end",
+      null,
+      false,
+      "after_previous",
+    );
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    const start = editor.view.dom.querySelector('[data-peer-mark="boundary-mark-start"]');
+    const end = editor.view.dom.querySelector('[data-peer-mark="boundary-mark-end"]');
+    expect(start?.parentElement?.tagName).toBe("P");
+    expect(end?.parentElement?.tagName).toBe("P");
+    expect(start?.parentElement?.textContent).toContain("Nested prose.");
+    expect(end?.parentElement?.textContent).toContain("Nested prose.");
+  });
+
   it("rebuilds existing marker labels when the locale changes", async () => {
     addMarker("range", 2, 5);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));

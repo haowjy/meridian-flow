@@ -1,5 +1,6 @@
 /** Headless ProseMirror projection and writer-edit reducer for session markers. */
 import { type Editor, Extension } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -136,10 +137,39 @@ function boundaryWidgetPosition(
   position: number,
   affinity: Extract<SessionMarker["anchor"], { type: "boundary" }>["affinity"],
 ): number {
+  const $position = state.doc.resolve(position);
+  const before = $position.nodeBefore;
+  const after = $position.nodeAfter;
+  const beforePosition = before ? lastTextblockPosition(before, position - before.nodeSize) : null;
+  const afterPosition = after ? firstTextblockPosition(after, position) : null;
   if (affinity === "after_previous") {
-    return state.doc.resolve(position).nodeBefore?.isTextblock ? position - 1 : position;
+    return beforePosition ?? afterPosition ?? position;
   }
-  return textRangeStart(state, position);
+  return afterPosition ?? beforePosition ?? position;
+}
+
+function firstTextblockPosition(node: ProseMirrorNode, nodeStart: number): number | null {
+  if (node.isTextblock) return nodeStart + 1;
+  let offset = 0;
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    const position = firstTextblockPosition(child, nodeStart + 1 + offset);
+    if (position !== null) return position;
+    offset += child.nodeSize;
+  }
+  return null;
+}
+
+function lastTextblockPosition(node: ProseMirrorNode, nodeStart: number): number | null {
+  if (node.isTextblock) return nodeStart + node.nodeSize - 1;
+  let offset = node.content.size;
+  for (let index = node.childCount - 1; index >= 0; index -= 1) {
+    const child = node.child(index);
+    offset -= child.nodeSize;
+    const position = lastTextblockPosition(child, nodeStart + 1 + offset);
+    if (position !== null) return position;
+  }
+  return null;
 }
 
 function buildMarkerDecorations(

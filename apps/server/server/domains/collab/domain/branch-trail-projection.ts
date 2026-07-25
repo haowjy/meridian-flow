@@ -166,6 +166,26 @@ export function preparedTrailChanges(input: {
     }
   }
   const replacementIds = new Set(provenReplacements.values());
+  const contentRelocations = new Map<string, string>();
+  for (const target of input.receipt.changedBlocks) {
+    if (
+      target.beforeText === null ||
+      target.afterText === null ||
+      target.beforeText === target.afterText
+    ) {
+      continue;
+    }
+    const sources = input.receipt.changedBlocks.filter(
+      (candidate) =>
+        candidate.blockId !== target.blockId &&
+        candidate.beforeText === target.afterText &&
+        candidate.afterText === null,
+    );
+    if (sources.length === 1) {
+      contentRelocations.set(target.blockId, sources[0]?.blockId as string);
+    }
+  }
+  const relocatedSourceIds = new Set(contentRelocations.values());
   const survivingAfterBlockByIdentity = new Map<
     string,
     { blockId: string; block: Y.XmlElement; identity: CanonicalBlockIdentityV1 }
@@ -177,6 +197,7 @@ export function preparedTrailChanges(input: {
     }
   }
   return input.receipt.changedBlocks.flatMap((block, sequence) => {
+    if (relocatedSourceIds.has(block.blockId)) return [];
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
     const nextId = input.before
@@ -199,6 +220,7 @@ export function preparedTrailChanges(input: {
       block.beforeText !== null && block.afterText !== null && beforeIdentity
         ? survivingAfterBlockByIdentity.get(canonicalBlockKey(beforeIdentity))
         : undefined;
+    const contentRelocated = contentRelocations.has(block.blockId);
     const replacementId = sameIdentityAfter?.blockId ?? provenReplacements.get(block.blockId);
     const replacement = replacementId
       ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
@@ -221,31 +243,38 @@ export function preparedTrailChanges(input: {
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
     const afterIdentity = emptiedSurvivingBlock
       ? null
-      : (sameIdentityAfter?.identity ??
-        (replacementId !== undefined
-          ? (input.blockIdentities.get(replacementId) ?? null)
-          : block.afterText === null
-            ? null
-            : (input.blockIdentities.get(block.blockId) ?? null)));
-    const location: TrailProjectionLocation = {
-      kind: emptiedSurvivingBlock
-        ? "delete"
-        : replacementId !== undefined
-          ? "modify"
-          : block.beforeText === null
-            ? "insert"
+      : contentRelocated
+        ? null
+        : (sameIdentityAfter?.identity ??
+          (replacementId !== undefined
+            ? (input.blockIdentities.get(replacementId) ?? null)
             : block.afterText === null
-              ? "delete"
-              : "modify",
+              ? null
+              : (input.blockIdentities.get(block.blockId) ?? null)));
+    const location: TrailProjectionLocation = {
+      kind:
+        emptiedSurvivingBlock || contentRelocated
+          ? "delete"
+          : replacementId !== undefined
+            ? "modify"
+            : block.beforeText === null
+              ? "insert"
+              : block.afterText === null
+                ? "delete"
+                : "modify",
       beforeIdentity,
       afterIdentity,
-      navigation: emptiedSurvivingBlock
-        ? deletionBoundaryTarget({ doc: input.afterDoc, next: sameIdentityAfter.block })
-        : sameIdentityAfter
-          ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
-          : replacementBlock
-            ? liveBlockTarget(input.afterDoc, replacementBlock)
-            : ordinaryNavigation,
+      navigation:
+        emptiedSurvivingBlock || contentRelocated
+          ? deletionBoundaryTarget({
+              doc: input.afterDoc,
+              next: sameIdentityAfter?.block ?? input.afterById.get(block.blockId) ?? null,
+            })
+          : sameIdentityAfter
+            ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
+            : replacementBlock
+              ? liveBlockTarget(input.afterDoc, replacementBlock)
+              : ordinaryNavigation,
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
@@ -256,15 +285,18 @@ export function preparedTrailChanges(input: {
       receiptId: input.receiptId,
       kind: location.kind,
       beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId: emptiedSurvivingBlock
-        ? null
-        : (replacementId ?? (block.afterText === null ? null : block.blockId)),
+      afterBlockId:
+        emptiedSurvivingBlock || contentRelocated
+          ? null
+          : (replacementId ?? (block.afterText === null ? null : block.blockId)),
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,
-      afterTextAtReceipt: sameIdentityAfter
-        ? block.afterText
-        : (replacement?.afterText ?? block.afterText),
+      afterTextAtReceipt: contentRelocated
+        ? null
+        : sameIdentityAfter
+          ? block.afterText
+          : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
       owner,
       sequence: sequence * 1000 + ownerIndex,
