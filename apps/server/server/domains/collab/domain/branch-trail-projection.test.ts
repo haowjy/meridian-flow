@@ -518,7 +518,9 @@ it("does not relocate content from a structurally replaced source block", () => 
   model.applyBlockReplacement(toDocHandle(afterDoc), first, bravoReplacement);
   afterDoc.getXmlFragment("prosemirror").delete(1, 1);
   afterDoc.clientID = 314_159_265;
-  model.insertBlocks(toDocHandle(afterDoc), null, codec.parse("Xray."));
+  const shiftedBravo = model.getBlocks(toDocHandle(afterDoc))[0];
+  if (!shiftedBravo) throw new Error("missing shifted survivor");
+  model.insertBlocks(toDocHandle(afterDoc), shiftedBravo, codec.parse("Xray."));
 
   const afterBlocks = model.getBlocks(toDocHandle(afterDoc));
   const firstSurvivor = afterBlocks[0];
@@ -534,7 +536,7 @@ it("does not relocate content from a structurally replaced source block", () => 
     throw new Error("missing replacement blocks");
   }
   const firstSurvivorId = model.getBlockId(firstSurvivor);
-  const xrayId = "xray-inserted";
+  const xrayId = model.getBlockId(xray);
 
   const changes = preparedTrailChanges({
     receipt: {
@@ -614,6 +616,78 @@ it("does not relocate content from a structurally replaced source block", () => 
       afterBlockId: xrayId,
       beforeText: "Bravo.",
       afterTextAtReceipt: "Xray.",
+    },
+  ]);
+});
+
+it("keeps canonical identities distinct when snapshot block hashes collide", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const beforeDoc = createCollabYDoc({ gc: false });
+  beforeDoc.clientID = 111_111_111;
+  model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha."));
+  const beforeBlock = model.getBlocks(toDocHandle(beforeDoc))[0];
+  if (!beforeBlock) throw new Error("missing source block");
+  const beforeIdentity = getBlockItemId(beforeBlock);
+
+  const afterDoc = createCollabYDoc({ gc: false });
+  afterDoc.clientID = 222_222_222;
+  model.insertBlocks(toDocHandle(afterDoc), null, codec.parse("Xray."));
+  const afterBlock = model.getBlocks(toDocHandle(afterDoc))[0];
+  const afterElement = afterDoc.getXmlFragment("prosemirror").get(0);
+  if (!afterBlock || !(afterElement instanceof Y.XmlElement)) {
+    throw new Error("missing target block");
+  }
+  const afterIdentity = getBlockItemId(afterBlock);
+  const collidingHash = "same-snapshot-hash";
+
+  const changes = preparedTrailChanges({
+    receipt: {
+      version: 1,
+      documentId: "document-1" as never,
+      branchId: "branch-1",
+      branchGeneration: 1,
+      pushKind: "whole",
+      changedBlocks: [
+        {
+          blockId: collidingHash,
+          beforeText: "Alpha.",
+          afterText: "Xray.",
+          beforeWordCount: 1,
+          afterWordCount: 1,
+          wordDelta: 0,
+        },
+      ],
+      totalWordDelta: 0,
+    },
+    receiptId: "receipt-hash-collision",
+    ownersByBlock: new Map([[collidingHash, [null]]]),
+    operations: [],
+    before: [
+      {
+        hash: collidingHash,
+        serialized: "Alpha.",
+        ...beforeIdentity,
+      },
+    ],
+    // Push preparation intentionally stores the after snapshot last when the
+    // display hash collides, so canonical before identity must come from
+    // `before` rather than this combined lookup.
+    blockIdentities: new Map([[collidingHash, { documentId: "document-1", ...afterIdentity }]]),
+    afterIds: new Set([collidingHash]),
+    afterById: new Map([[collidingHash, afterElement]]),
+    afterDoc,
+  });
+
+  expect(changes).toMatchObject([
+    {
+      kind: "modify",
+      beforeBlockIdentity: { documentId: "document-1", ...beforeIdentity },
+      afterBlockIdentity: { documentId: "document-1", ...afterIdentity },
+      beforeText: "Alpha.",
+      afterTextAtReceipt: "Xray.",
+      navigation: { kind: "live_block_range" },
     },
   ]);
 });
