@@ -17,6 +17,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../collab/composition.js");
+    const { createProductionUnifiedContextPortFactory } = await import(
+      "../context/unified-context-port-factory.js"
+    );
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
     const { useRollbackTestDatabase } = await import(
@@ -79,20 +82,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(checkpointsAfter).toHaveLength(checkpointsBefore.length);
     });
 
-    it("repairs bootstrap rows committed before canonical seeding", async () => {
+    it("exposes the freshly bootstrapped chapter through its thread context", async () => {
+      const { collab } = createBoundCollab();
+      const bootstrap = await createDrizzleProjectBootstrapRepository({
+        db,
+        documents: collab,
+      }).ensureDefaultBootstrap(USER_ID as never);
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+      const port = contextPorts.forWork(
+        bootstrap.workId,
+        bootstrap.projectId,
+        USER_ID,
+        new Set([bootstrap.workId]),
+        bootstrap.threadId,
+      );
+
+      await expect(port.list("manuscript://")).resolves.toEqual({
+        ok: true,
+        value: [
+          expect.objectContaining({
+            kind: "file",
+            documentId: bootstrap.documentId,
+            uri: "manuscript://chapter-1.md",
+          }),
+        ],
+      });
+      await expect(port.read("manuscript://chapter-1.md")).resolves.toEqual({
+        ok: true,
+        value: {
+          content: "# Chapter 1\n",
+          documentId: bootstrap.documentId,
+        },
+      });
+    });
+
+    it("rolls back the whole bootstrap when document materialization is interrupted", async () => {
+      const { collab } = createBoundCollab();
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
         documents: {
-          async seedFromMarkdown() {
-            throw new Error("simulated crash after bootstrap commit");
-          },
+          ...collab,
+          createDocumentAtomically: (input) =>
+            collab.createDocumentAtomically({
+              ...input,
+              async initializeContent() {
+                await input.initializeContent();
+                throw new Error("simulated interruption before document commit");
+              },
+            }),
         },
       });
       await expect(interrupted.ensureDefaultBootstrap(USER_ID as never)).rejects.toThrow(
-        "simulated crash",
+        "simulated interruption",
       );
+      await expect(
+        Promise.all([
+          db.select().from(schema.projects),
+          db.select().from(schema.documents),
+          db.select().from(schema.documentYjsCheckpoints),
+          db.select().from(schema.documentYjsUpdates),
+        ]).then((rows) => rows.map((row) => row.length)),
+      ).resolves.toEqual([0, 0, 0, 0]);
 
-      const { collab } = createBoundCollab();
       const repaired = await createDrizzleProjectBootstrapRepository({
         db,
         documents: collab,
@@ -104,36 +159,82 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("does not seed over an existing journal when the projection is absent", async () => {
-      const interrupted = createDrizzleProjectBootstrapRepository({
-        db,
-        documents: {
-          async seedFromMarkdown() {
-            throw new Error("stop before seed");
-          },
-        },
-      });
-      await expect(interrupted.ensureDefaultBootstrap(USER_ID as never)).rejects.toThrow();
-      const [document] = await db
-        .select({ id: schema.documents.id })
-        .from(schema.documents)
-        .limit(1);
-      if (!document) throw new Error("bootstrap document missing");
-
+    it("repairs missing manifest membership without replacing writer content", async () => {
       const { collab } = createBoundCollab();
+      const first = await createDrizzleProjectBootstrapRepository({
+        db,
+        documents: collab,
+      }).ensureDefaultBootstrap(USER_ID as never);
       await collab.writeDocument({
-        documentId: document.id,
+        documentId: first.documentId,
         markdown: "Durable writer draft\n",
         origin: { type: "user", actorUserId: USER_ID as never },
       });
+      await collab.recordManifestDocumentDeleted(first.documentId, {
+        projectId: first.projectId,
+      });
+      await expect(
+        collab.resolveManifestMembership({ projectId: first.projectId }),
+      ).resolves.toMatchObject({ members: [] });
+
       await createDrizzleProjectBootstrapRepository({
         db,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
 
-      expect(await collab.readAsMarkdown(document.id)).toEqual({
+      await expect(
+        collab.resolveManifestMembership({ projectId: first.projectId }),
+      ).resolves.toMatchObject({ members: [first.documentId] });
+      expect(await collab.readAsMarkdown(first.documentId)).toEqual({
         ok: true,
         value: "Durable writer draft\n",
+      });
+    });
+
+    it("repairs a ghost on create resolution so create, list, and read share existence", async () => {
+      const { collab } = createBoundCollab();
+      const bootstrap = await createDrizzleProjectBootstrapRepository({
+        db,
+        documents: collab,
+      }).ensureDefaultBootstrap(USER_ID as never);
+      const view = {
+        projectId: bootstrap.projectId,
+        workId: bootstrap.workId,
+        threadId: bootstrap.threadId,
+      };
+      await collab.recordManifestDocumentDeleted(bootstrap.documentId, view);
+      const port = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      }).forWork(
+        bootstrap.workId,
+        bootstrap.projectId,
+        USER_ID,
+        new Set([bootstrap.workId]),
+        bootstrap.threadId,
+      );
+      await expect(port.list("manuscript://")).resolves.toEqual({ ok: true, value: [] });
+      await expect(port.read("manuscript://chapter-1.md")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "not_found" },
+      });
+
+      await expect(
+        port.ensureTrackedDocument("manuscript://chapter-1.md", {
+          deferDocumentSync: true,
+        }),
+      ).resolves.toEqual({
+        ok: true,
+        value: { documentId: bootstrap.documentId, created: false },
+      });
+      await expect(port.list("manuscript://")).resolves.toMatchObject({
+        ok: true,
+        value: [expect.objectContaining({ documentId: bootstrap.documentId })],
+      });
+      await expect(port.read("manuscript://chapter-1.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: bootstrap.documentId, content: "# Chapter 1\n" },
       });
     });
 
@@ -143,6 +244,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const bootstrap = await createDrizzleProjectBootstrapRepository({
         db,
         documents: {
+          ...collab,
           async seedFromMarkdown(documentId, markdown, origin) {
             warmConnection = await hocuspocus.openDirectConnection(documentId, {
               origin: { type: "system", reason: "bootstrap-race" },
