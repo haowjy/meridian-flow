@@ -341,18 +341,20 @@ history is preserved for attribution, echo, and undo dependency checking.
   fold cancels the provisional row, the next classification restores the push
   contribution from the replacement's durable owner/title context. A complete empty
   classification removes that push's provisional changes in the same version.
-- **Settlement verification stack**: the shared killed-process oracle in
-  `test-support/durable-settlement-oracle.ts` is the exhaustive protocol layer.
-  Fixtures run a warm control, stop an identical subject at the durable commit
-  boundary, destroy all warm Y.Docs/coordinators/facades, rebuild from PostgreSQL,
-  recover, and compare normalized trail, bodies, identities, eligible ranges,
-  apply/completion, and forward actions. It is necessary but not
-  sufficient: `lib/compose.runtime-settlement.db.test.ts` must also drive the real
-  `createProductionAppPorts` + `composeAppServices` + Hocuspocus + worker-drain chain
-  with production-shaped sync-step-2 full-state updates, and S2/S10 release probes
-  must verify the writer-visible Restore/Copy and trail flows. Fixture deltas once
-  passed the full oracle while repeated full-state structs broke first-birth
-  attribution.
+- **Settlement verification stack**: the killed-process oracle owns durable
+  settlement risks—transaction boundaries, claims and leases, lock cuts, crash
+  windows, and cold recovery. Pure provenance and policy semantics belong to their
+  focused owners rather than to a second PostgreSQL replay graph. The oracle is
+  necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
+  also drive the real `createProductionAppPorts` + `composeAppServices` +
+  Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
+  updates, and S2/S10 release probes must verify the writer-visible Restore/Copy
+  and trail flows. Fixture deltas once passed the oracle while repeated full-state
+  structs broke first-birth attribution.
+- **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
+  use an injected schedule. Production obtains its time from PostgreSQL; tests
+  advance a controlled schedule. Do not reintroduce process-clock comparisons or
+  sleep-based lifecycle tests.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
