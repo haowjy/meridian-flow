@@ -16,7 +16,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import { COLLABORATION_CURSOR_COLORS } from "./collaboration-colors";
+import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import {
@@ -88,9 +88,8 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 const lowlight = createLowlight(common);
 
 /**
- * Collaboration cursor palette. Token references, not resolved colors:
- * CollaborationCaret writes these into inline styles, where `var()` still
- * resolves against the active theme.
+ * Collaboration cursor default. The composition path resolves its token before
+ * publishing awareness because y-prosemirror accepts concrete colors only.
  */
 const DEFAULT_USER: EditorUser = {
   name: "Meridian Researcher",
@@ -105,19 +104,8 @@ function pickCursorColor(awareness: Awareness): string {
       taken.add(state.user.color as string);
     }
   }
-  const palette = COLLABORATION_CURSOR_COLORS.map(resolveCursorColor);
+  const palette = COLLABORATION_CURSOR_COLORS.map(resolveCollaborationColor);
   return palette.find((color) => !taken.has(color)) ?? palette[0];
-}
-
-/** CollaborationCaret validates awareness colors before placing them in CSS. */
-function resolveCursorColor(token: string): string {
-  if (typeof window === "undefined") return token;
-  const match = /^var\\((--[^)]+)\\)$/.exec(token);
-  if (!match?.[1]) return token;
-  return (
-    window.getComputedStyle(window.document.documentElement).getPropertyValue(match[1]).trim() ||
-    token
-  );
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {

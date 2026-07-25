@@ -14,5 +14,15 @@ export const COLLABORATION_CURSOR_COLORS = [
 export function collaborationColorFor(identity: string): string {
   let hash = 0;
   for (const character of identity) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return COLLABORATION_CURSOR_COLORS[hash % COLLABORATION_CURSOR_COLORS.length];
+  return resolveCollaborationColor(
+    COLLABORATION_CURSOR_COLORS[hash % COLLABORATION_CURSOR_COLORS.length],
+  );
+}
+
+/** Resolve a theme token before it crosses the awareness JSON boundary. */
+export function resolveCollaborationColor(token: string): string {
+  if (typeof document === "undefined") return token;
+  const match = /^var\((--[^)]+)\)$/.exec(token);
+  if (!match?.[1]) return token;
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || token;
 }
