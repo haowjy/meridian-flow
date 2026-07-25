@@ -11,6 +11,8 @@
   and advances to the nearest remaining draft after Apply or Discard.
 - `apps/app`: the Draft composer toggle now shows pending counts and routes a
   blocked Auto-apply switch to Review changes or Apply all and switch.
+- `apps/app`: full-paragraph AI deletions now render as crimson inline ticks
+  inside adjacent prose instead of full-width seams.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and expire with the live
   session or a writer edit.

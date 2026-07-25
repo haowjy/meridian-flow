@@ -27,6 +27,7 @@ function addMarker(
   suffix = "",
   pureDeletionOffset: number | null = null,
   swept = false,
+  affinity: "before_next" | "after_previous" | "document_start" = "before_next",
 ): void {
   const start = relativePositionForEditorIndex(editor, from);
   const end = relativePositionForEditorIndex(editor, to);
@@ -42,7 +43,7 @@ function addMarker(
       : {
           kind: "deletion_boundary" as const,
           position: encode(start),
-          affinity: "before_next" as const,
+          affinity,
         };
   const message: ChangeEventWsMessage = {
     type: "change_event",
@@ -163,7 +164,7 @@ describe("peer marker writer self-clear", () => {
     addMarker("boundary", 6);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
     expect(editor.view.dom.querySelector(".meridian-peer-mark--range")?.textContent).toBe("ell");
-    expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).not.toBeNull();
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--tick")).not.toBeNull();
   });
 
   it("projects swept severity and deletion anatomy as semantic attributes", () => {
@@ -184,9 +185,27 @@ describe("peer marker writer self-clear", () => {
     expect(deletionTick?.getAttribute("data-peer-mark-swept")).toBe("true");
     expect(
       editor.view.dom.querySelector(
-        '[data-peer-mark="boundary-mark-swept"].meridian-peer-mark--seam',
+        '[data-peer-mark="boundary-mark-swept"].meridian-peer-mark--tick',
       ),
     ).not.toBeNull();
+  });
+
+  it("nudges block-boundary deletion ticks into adjacent prose", () => {
+    editor.commands.setContent("<p>Before.</p><p>After.</p>");
+    const boundary = editor.state.doc.child(0).nodeSize;
+    addMarker("boundary", boundary, boundary, "-next");
+    addMarker("boundary", boundary, boundary, "-previous", null, false, "after_previous");
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    const next = editor.view.dom.querySelector(
+      '[data-peer-mark="boundary-mark-next"].meridian-peer-mark--tick',
+    );
+    const previous = editor.view.dom.querySelector(
+      '[data-peer-mark="boundary-mark-previous"].meridian-peer-mark--tick',
+    );
+    expect(next?.parentElement?.textContent).toContain("After.");
+    expect(previous?.parentElement?.textContent).toContain("Before.");
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).toBeNull();
   });
 
   it("rebuilds existing marker labels when the locale changes", async () => {

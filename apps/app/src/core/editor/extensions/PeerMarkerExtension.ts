@@ -131,6 +131,17 @@ function textRangeStart(state: EditorState, position: number): number {
   return $position.nodeAfter?.isTextblock ? position + 1 : position;
 }
 
+function boundaryWidgetPosition(
+  state: EditorState,
+  position: number,
+  affinity: Extract<SessionMarker["anchor"], { type: "boundary" }>["affinity"],
+): number {
+  if (affinity === "after_previous") {
+    return state.doc.resolve(position).nodeBefore?.isTextblock ? position - 1 : position;
+  }
+  return textRangeStart(state, position);
+}
+
 function buildMarkerDecorations(
   store: SessionMarkerStore,
   state: EditorState,
@@ -161,16 +172,17 @@ function buildMarkerDecorations(
     const pos =
       pureDeletion && position.type === "range"
         ? pureDeletionPosition(state, position.from, marker.pureDeletionOffset ?? 0)
-        : position.type === "boundary"
-          ? position.pos
-          : position.from;
+        : position.type === "boundary" && marker.anchor.type === "boundary"
+          ? boundaryWidgetPosition(state, position.pos, marker.anchor.affinity)
+          : position.type === "boundary"
+            ? position.pos
+            : position.from;
     decorations.push(
       Decoration.widget(
         pos,
         () => {
-          const mark = document.createElement(marker.kind === "delete" ? "div" : "span");
-          mark.className =
-            marker.kind === "delete" ? "meridian-peer-mark--seam" : "meridian-peer-mark--tick";
+          const mark = document.createElement("span");
+          mark.className = "meridian-peer-mark--tick";
           for (const [name, value] of Object.entries(
             interactiveAttributes(marker, emphasizedId, markerAgentName),
           )) {
@@ -186,7 +198,7 @@ function buildMarkerDecorations(
         {
           side: -1,
           // ProseMirror reuses keyed widget DOM. Include emphasis state so an
-          // addressed tick/seam is rebuilt with its emphasis attribute.
+          // addressed tick is rebuilt with its emphasis attribute.
           key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}:${markerLabel(marker, markerAgentName)}`,
           changeId: marker.changeId,
         },

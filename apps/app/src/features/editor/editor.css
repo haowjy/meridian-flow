@@ -269,29 +269,6 @@
   box-shadow: 0 0 0 3px var(--color-review-warning-tint);
 }
 
-.meridian-editor .ProseMirror .meridian-peer-mark--seam {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 12px;
-  margin-block: -4px;
-  cursor: pointer;
-}
-
-.meridian-editor .ProseMirror .meridian-peer-mark--seam::before {
-  position: absolute;
-  inset: 5px 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-review-removed-border);
-  content: "";
-  opacity: 0.68;
-}
-
-.meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-swept="true"] {
-  border-radius: var(--radius-sm);
-  background: var(--color-review-warning-tint);
-}
-
 .meridian-editor .ProseMirror .meridian-peer-mark__label {
   display: none;
   background: var(--peer-mark-color);
@@ -299,27 +276,22 @@
 }
 
 .meridian-editor .ProseMirror .meridian-peer-mark--tick:hover .meridian-peer-mark__label,
-.meridian-editor .ProseMirror .meridian-peer-mark--tick:focus .meridian-peer-mark__label,
-.meridian-editor .ProseMirror .meridian-peer-mark--seam:hover .meridian-peer-mark__label,
-.meridian-editor .ProseMirror .meridian-peer-mark--seam:focus .meridian-peer-mark__label {
+.meridian-editor .ProseMirror .meridian-peer-mark--tick:focus .meridian-peer-mark__label {
   display: block;
 }
 
-.meridian-editor .ProseMirror .meridian-peer-mark--tick:focus-visible,
-.meridian-editor .ProseMirror .meridian-peer-mark--seam:focus-visible {
+.meridian-editor .ProseMirror .meridian-peer-mark--tick:focus-visible {
   outline: 2px solid var(--color-review-added-ring);
   outline-offset: 2px;
 }
 
 .meridian-editor
   .ProseMirror
-  .meridian-peer-mark--tick[data-peer-mark-deletion="true"]:focus-visible,
-.meridian-editor .ProseMirror .meridian-peer-mark--seam:focus-visible {
+  .meridian-peer-mark--tick[data-peer-mark-deletion="true"]:focus-visible {
   outline-color: var(--color-review-removed-ring);
 }
 
-.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-swept="true"]:focus-visible,
-.meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-swept="true"]:focus-visible {
+.meridian-editor .ProseMirror .meridian-peer-mark--tick[data-peer-mark-swept="true"]:focus-visible {
   outline-color: var(--color-review-warning-border);
 }
 
@@ -654,17 +626,13 @@
 
 .meridian-editor
   .ProseMirror
-  .meridian-peer-mark--tick[data-peer-mark-deletion="true"][data-peer-mark-emphasized="true"],
-.meridian-editor .ProseMirror .meridian-peer-mark--seam[data-peer-mark-emphasized="true"] {
+  .meridian-peer-mark--tick[data-peer-mark-deletion="true"][data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-removed-ring);
 }
 
 .meridian-editor
   .ProseMirror
-  .meridian-peer-mark--tick[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"],
-.meridian-editor
-  .ProseMirror
-  .meridian-peer-mark--seam[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
+  .meridian-peer-mark--tick[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-warning-border);
 }
 
