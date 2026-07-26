@@ -124,12 +124,14 @@ propagation between them.
   or reverse this order.
 - **Draft Apply settles the whole current branch**: every writer Apply and
   auto-push integrates through Yjs. Writer rows created after preview are
-  included with their actor attribution; a canonical reconciliation row keeps
-  cold replay equivalent to the pushed branch without changing dependency-based
-  Undo semantics. Settlement sweep policy elevates a live-session
-  mark only for a receiving writer whose post-observation edit was overwritten;
-  unknown, historical, AI, and other-writer roots are ordinary for that
-  recipient. This never changes the durable receipt or vetoes a push.
+  included with their actor attribution. The final reconciliation row carries
+  the complete pushed update for causal replay coverage; authored rows remain
+  the attribution and dependency records. Settlement sweep policy treats each
+  agent row's `draftBaseUpdateSeq` as that candidate's own observation
+  watermark and elevates a live-session mark only for a receiving writer whose
+  later edit that candidate overwrote. Unknown, historical, AI, and
+  other-writer roots are ordinary for that recipient. This never changes the
+  durable receipt or vetoes a push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; swept changes elevate ephemeral marks. Trail evidence
   and peer-mark popovers remain read-only; receipt Undo/Redo is the sole

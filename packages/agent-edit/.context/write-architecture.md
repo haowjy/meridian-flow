@@ -116,6 +116,10 @@ together. `document_yjs_reversal_ops` records durable reversal op identity
 (history): old undo/redo update seqs are exempt from dependency blocking even
 when the current state has moved on. Both authorities compact with the retained
 Yjs update log so closure and dependency checks only target retained update seqs.
+Hosts may append a `system:reconcile` update after separately attributed rows in
+the same admission to make cold replay causally complete. That row is coverage
+for those authored rows, not a later semantic edit, so lineage dependency
+evaluation ignores it; the authored rows remain the reversal targets.
 The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
 journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
 handles, candidate handles, and reversal-op seqs, then receive the undo closure or

@@ -357,13 +357,16 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Draft Apply settles the whole current branch**: every writer Apply and
   auto-push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
-  observation watermark. Apply writes current branch rows into the live journal
-  with their original attribution, then appends the complete push update as a
-  `reconcile` row so cold replay includes causal dependencies omitted from active
-  rows. Active agent handles materialize against their corresponding authored
-  rows; reconciliation coverage is not a later semantic dependency. Handles
-  eliminated by Draft Undo remain absent. A later writer row can therefore make
-  producing-turn Undo unavailable through the canonical dependency predicate.
+  observation watermark. Each candidate is classified against the pre-push
+  document plus earlier selected branch rows, and recipient/change elevations
+  are unioned across candidates. Apply writes current branch rows into the live
+  journal with their original attribution, then appends the complete push update
+  as a `reconcile` row so cold replay includes causal dependencies omitted from
+  active rows. Active agent handles materialize against their corresponding
+  authored rows; reconciliation coverage is not a later semantic dependency.
+  Handles eliminated by Draft Undo remain absent. A later writer row can
+  therefore make producing-turn Undo unavailable through the canonical
+  dependency predicate.
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
   Trail rows persist every edit without classification; missing evidence
