@@ -95,6 +95,11 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
    (functions are applied separately, after migrate).
 
+Migrations that transform existing rows need a populated upgrade scenario in
+`fresh-migrations.db.test.ts`. Use `withPopulatedMigrationDatabase` to apply the
+committed prefix, seed the pre-migration shape, apply the remaining chain, and
+assert the preserved data.
+
 The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over
 re-squashing.

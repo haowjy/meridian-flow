@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
+import { withPopulatedMigrationDatabase } from "./__test-support__/migration-fixtures";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -68,6 +69,112 @@ if (!enabled || !databaseUrl) {
           },
         ]);
       } finally {
+        await target.end();
+      }
+    });
+
+    it("upgrades populated publication lineage without losing its generation", async () => {
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0065_secret_red_ghost",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES (
+              '00000000-0000-4000-8000-000000000001',
+              'populated-migration-fixture',
+              'populated-migration@test.invalid'
+            );
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES (
+              '00000000-0000-4000-8000-000000000002',
+              '00000000-0000-4000-8000-000000000001',
+              'Migration fixture',
+              'migration-fixture'
+            );
+            INSERT INTO works (id, project_id, created_by_user_id)
+            VALUES (
+              '00000000-0000-4000-8000-000000000003',
+              '00000000-0000-4000-8000-000000000002',
+              '00000000-0000-4000-8000-000000000001'
+            );
+            INSERT INTO context_sources (id, project_id, name, slug)
+            VALUES (
+              '00000000-0000-4000-8000-000000000004',
+              '00000000-0000-4000-8000-000000000002',
+              'Migration fixture',
+              'migration-fixture'
+            );
+            INSERT INTO documents (id, context_source_id, name)
+            VALUES (
+              '00000000-0000-4000-8000-000000000005',
+              '00000000-0000-4000-8000-000000000004',
+              'migration-fixture'
+            );
+            INSERT INTO document_branches (
+              id, document_id, kind, work_id, state, state_vector, schema_version, generation
+            )
+            VALUES (
+              'migration-fixture-branch',
+              '00000000-0000-4000-8000-000000000005',
+              'work_draft',
+              '00000000-0000-4000-8000-000000000003',
+              '\\x00',
+              '\\x00',
+              1,
+              7
+            );
+            INSERT INTO push_lineage (
+              branch_id, document_id, push_kind, journal_ids, receipt_payload, idempotency_key
+            )
+            VALUES (
+              'migration-fixture-branch',
+              '00000000-0000-4000-8000-000000000005',
+              'whole',
+              '{}',
+              '{"branchGeneration": 7}',
+              'populated-migration-fixture'
+            );
+          `);
+        },
+        verify: async (target) => {
+          const rows = await target<{ branch_generation: number }[]>`
+            SELECT branch_generation
+            FROM push_lineage
+            WHERE idempotency_key = 'populated-migration-fixture'
+          `;
+          expect(rows).toEqual([{ branch_generation: 7 }]);
+        },
+      });
+    }, 120_000);
+
+    it("refuses to invent publication generations when legacy evidence is missing", async () => {
+      const target = postgres(databaseUrl, { max: 1 });
+      const migration = await readFile(
+        new URL("./migrations/0065_secret_red_ghost.sql", import.meta.url),
+        "utf8",
+      );
+      const schema = "push_lineage_migration_fixture";
+      try {
+        await target.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await expect(
+          target.begin(async (tx) => {
+            await tx.unsafe(`CREATE SCHEMA ${schema}`);
+            await tx.unsafe(`SET LOCAL search_path TO ${schema}`);
+            await tx.unsafe(`
+              CREATE TABLE push_lineage (
+                branch_id text,
+                push_kind text NOT NULL,
+                receipt_payload jsonb
+              );
+              CREATE INDEX push_lineage_branch ON push_lineage (branch_id);
+              INSERT INTO push_lineage (push_kind, receipt_payload) VALUES ('whole', NULL);
+            `);
+            await tx.unsafe(migration);
+          }),
+        ).rejects.toThrow("push_lineage contains rows without a recoverable branchGeneration");
+      } finally {
+        await target.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
         await target.end();
       }
     });
