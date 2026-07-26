@@ -760,7 +760,7 @@ async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): P
       }),
     ]),
   );
-  const trail = await harness.trailRows();
+  const trail = await harness.trailRowMembership();
   for (const detail of trail.details) {
     for (const change of detail.changes as unknown as Array<Record<string, unknown>>) {
       expect(change).not.toHaveProperty("swept");
@@ -786,7 +786,7 @@ function expectSweepClassification(
 async function observeSettlement(
   harness: ReturnType<typeof createHarness>,
 ): Promise<SettlementOracleOutput> {
-  const trail = await harness.trailRows();
+  const trail = await harness.trailRowMembership();
   type ReceiptChange = {
     kind: unknown;
     beforeText: string | null;

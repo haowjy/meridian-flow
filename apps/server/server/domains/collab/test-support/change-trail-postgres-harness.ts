@@ -2012,13 +2012,34 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
     },
     noticeRows: () => db.select().from(schema.pendingNotices),
-    async trailRows() {
+    async trailRowMembership() {
       return {
-        shells: await db.select().from(schema.changeTrailShells),
-        details: await db.select().from(schema.changeTrailDocumentDetails),
-        outbox: await db.select().from(schema.changeTrailDeliveryOutbox),
+        shells: await db
+          .select()
+          .from(schema.changeTrailShells)
+          .orderBy(schema.changeTrailShells.id),
+        details: await db
+          .select()
+          .from(schema.changeTrailDocumentDetails)
+          .orderBy(
+            schema.changeTrailDocumentDetails.trailId,
+            schema.changeTrailDocumentDetails.documentId,
+          ),
+        outbox: await db
+          .select()
+          .from(schema.changeTrailDeliveryOutbox)
+          .orderBy(schema.changeTrailDeliveryOutbox.eventId),
       };
     },
+    trailEventSequence: () =>
+      db
+        .select()
+        .from(schema.changeTrailDeliveryOutbox)
+        .orderBy(
+          schema.changeTrailDeliveryOutbox.trailId,
+          schema.changeTrailDeliveryOutbox.version,
+          schema.changeTrailDeliveryOutbox.eventKind,
+        ),
     threadPeerMarkdown: () => markdownByKind("thread_peer"),
     workDraftMarkdown: () => markdownByKind("work_draft"),
     async databaseBranchHashes() {
