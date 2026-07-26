@@ -29,6 +29,22 @@ async function lintMigration(name: string, sql: string) {
 }
 
 describe("migration lint", () => {
+  it("enforces populated-row safety from the unreleased migration tail", async () => {
+    const unreleased = await lintMigration(
+      "0060_unsafe.sql",
+      'ALTER TABLE "publications" ADD COLUMN "generation" integer NOT NULL;',
+    );
+    const released = await lintMigration(
+      "0059_unsafe.sql",
+      'ALTER TABLE "publications" ADD COLUMN "generation" integer NOT NULL;',
+    );
+
+    expect(unreleased.exitCode).toBe(1);
+    expect(unreleased.output).toContain("[ADD_NOT_NULL_WITHOUT_DEFAULT]");
+    expect(released.exitCode).toBe(0);
+    expect(released.output).toContain("No issues found");
+  });
+
   it("rejects a new NOT NULL column that cannot be added to populated rows", async () => {
     const result = await lintMigration(
       "0067_unsafe.sql",

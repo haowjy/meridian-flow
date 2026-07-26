@@ -39,9 +39,9 @@ const RULES: Rule[] = [
     severity: "error",
     message:
       "ADD COLUMN NOT NULL without DEFAULT cannot migrate a populated table. Add it nullable, backfill, then set NOT NULL.",
-    // Earlier migrations predate this authoring gate and remain covered by executable
-    // migration tests; enforcing from 0065 keeps all new migrations honest.
-    enforcedFromOrdinal: 65,
+    // The branch's unreleased migration tail begins here. Released history before
+    // this boundary remains covered by executable migration tests.
+    enforcedFromOrdinal: 60,
   },
   {
     id: "RENAME_COLUMN",
