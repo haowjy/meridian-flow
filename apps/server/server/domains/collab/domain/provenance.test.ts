@@ -319,7 +319,6 @@ describe("sweep observation evidence", () => {
     ];
 
     const evidence = materializeSweepEvidence({
-      doc,
       rows,
       candidates: [
         { precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 10 },
@@ -331,6 +330,49 @@ describe("sweep observation evidence", () => {
       expect.objectContaining({ userId: actorUserId }),
     ]);
     expect(evidence.candidates[1]?.byUser).toEqual([]);
+    doc.destroy();
+  });
+
+  it("keeps every recipient while excluding historical, AI, and unknown roots", () => {
+    const doc = proseDoc("writer words");
+    const update = Y.encodeStateAsUpdate(doc);
+    const recentWriters = Array.from({ length: 101 }, () => crypto.randomUUID());
+    const evidence = materializeSweepEvidence({
+      rows: [
+        {
+          journalRowId: 10n,
+          originType: "human",
+          actorUserId: crypto.randomUUID(),
+          update,
+        },
+        {
+          journalRowId: 11n,
+          originType: "agent",
+          actorUserId: null,
+          update,
+        },
+        {
+          journalRowId: 12n,
+          originType: null,
+          actorUserId: null,
+          update,
+        },
+        ...recentWriters.map((actorUserId, index) => ({
+          journalRowId: BigInt(13 + index),
+          originType: "human",
+          actorUserId,
+          update,
+        })),
+      ],
+      candidates: [{ precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 10 }],
+    });
+
+    expect(evidence.candidates[0]?.byUser.map(({ userId }) => userId)).toEqual(recentWriters);
+    expect(
+      evidence.candidates[0]?.byUser.every(
+        ({ rootsAfterObservationWatermark }) => rootsAfterObservationWatermark.length > 0,
+      ),
+    ).toBe(true);
     doc.destroy();
   });
 });

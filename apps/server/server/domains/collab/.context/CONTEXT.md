@@ -369,6 +369,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   dependency predicate.
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
+  Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`
+  evidence and evaluates it against neutral target-to-root intervals; it does
+  not reuse destructive-safety birth classes.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
 - **Writer Apply is branch-scoped, not preview-scoped**:
@@ -397,14 +400,16 @@ history is preserved for attribution, echo, and undo dependency checking.
   admission both call the single `joinAdmissionWithinTx` writer inside their
   document-mutation transaction; source identity and completing-push exclusion
   are parameters, while join-version advancement follows one SQL path. Cold
-  reads best-effort reconstruct causal, actor-specific sweep evidence for the
-  final pre-push document so each connected editor can elevate only its own
-  overwritten post-observation edits. Push admission identity does not transfer
-  AI content authorship to the admitting writer.
+  reads best-effort reconstruct compact causal, actor-specific root evidence for
+  the final pre-push document so each connected editor can elevate only its own
+  overwritten post-observation edits. Delivery projects a recipient-specific
+  boolean per connection rather than broadcasting recipient arrays. Push
+  admission identity does not transfer AI content authorship to the admitting
+  writer.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
-  Provenance reconstruction failure emits diagnostics and yields no swept
+  Root-effect materialization failure emits diagnostics and yields no swept
   elevation; it is never settlement authority. Settlement writes the complete
   push trail in its existing aggregate version; only journal or staged-push
   authority joined after the durable commit publishes another trail version. If

@@ -43,7 +43,6 @@ import {
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
-import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -622,9 +621,6 @@ async function readPendingSettlement(
     .from(branchPushOutboxUpdates)
     .where(eq(branchPushOutboxUpdates.pushId, pushId))
     .orderBy(branchPushOutboxUpdates.ordinal);
-  const provenanceDoc = createCollabYDoc({ gc: false });
-  Y.applyUpdate(provenanceDoc, row.outbox.lockCutUpdate);
-  for (const { update } of updates) Y.applyUpdate(provenanceDoc, update);
   let sweepEvidence: PendingLiveSettlement["sweepEvidence"] = null;
   try {
     const candidateRows =
@@ -676,10 +672,6 @@ async function readPendingSettlement(
     }
     const attributedRows = await db
       .select({
-        authorityId: documentYjsUpdates.authorityId,
-        generation: documentYjsUpdates.authorityGeneration,
-        admissionSequence: documentYjsUpdates.admissionSequence,
-        batchOrdinal: documentYjsUpdates.batchOrdinal,
         journalRowId: documentYjsUpdates.id,
         originType: documentYjsUpdates.originType,
         actorUserId: documentYjsUpdates.actorUserId,
@@ -698,33 +690,14 @@ async function readPendingSettlement(
         documentYjsUpdates.batchOrdinal,
         documentYjsUpdates.id,
       );
-    const watermarkRow = attributedRows.at(-1);
-    const retained = watermarkRow
-      ? await createDrizzleProvenanceReader(db).materialize({
-          documentId: row.outbox.documentId,
-          authorityId: authority.authorityId,
-          generation: authority.generation,
-          watermark: {
-            admissionSequence: watermarkRow.admissionSequence,
-            batchOrdinal: watermarkRow.batchOrdinal,
-            journalRowId: BigInt(watermarkRow.journalRowId),
-          },
-        })
-      : null;
-    try {
-      sweepEvidence = materializeSweepEvidence({
-        doc: provenanceDoc,
-        retainedAttributions: retained?.attributionManifest.attributions,
-        candidates: sweepCandidates,
-        rows: attributedRows.map((attribution) => ({
-          ...attribution,
-          journalRowId: BigInt(attribution.journalRowId),
-          update: new Uint8Array(attribution.update),
-        })),
-      });
-    } finally {
-      retained?.doc.destroy();
-    }
+    sweepEvidence = materializeSweepEvidence({
+      candidates: sweepCandidates,
+      rows: attributedRows.map((attribution) => ({
+        ...attribution,
+        journalRowId: BigInt(attribution.journalRowId),
+        update: new Uint8Array(attribution.update),
+      })),
+    });
   } catch (cause) {
     if (!(cause instanceof ProvenanceMaterializationError)) throw cause;
     if (eventSink) {
@@ -739,8 +712,6 @@ async function readPendingSettlement(
         },
       });
     }
-  } finally {
-    provenanceDoc.destroy();
   }
   return {
     push: mapLineage(row.push),

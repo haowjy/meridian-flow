@@ -21,7 +21,7 @@ import type { CommittedChangeTrailProjection } from "./ports/change-trail-persis
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import { detectSweptChanges, type SweptChangeRecipients } from "./sweep-policy.js";
+import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
 
@@ -161,7 +161,7 @@ export function createBranchPushTransition(input: {
   function detectSweptChangesBestEffort(
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
-  ): SweptChangeRecipients {
+  ): SweptChangesByRecipient {
     try {
       return detectSweptChanges({
         pending,
@@ -233,7 +233,8 @@ export function createBranchPushTransition(input: {
             if (projection.documentId !== pending.push.documentId) continue;
             try {
               input.changeEventDelivery.deliver(
-                projectCommittedChangeEvent(projection, sweep, input.codec),
+                projectCommittedChangeEvent(projection, input.codec),
+                sweep,
               );
             } catch {
               // Delivery is an ephemeral session hint; durable push completion

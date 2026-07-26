@@ -2,13 +2,13 @@
 
 import type { AgentEditCodec } from "@meridian/agent-edit/integration";
 import type { ChangeEventProjection, ChangeEventWsMessage } from "@meridian/contracts/protocol";
+import type { UserId } from "@meridian/contracts/runtime";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
-import type { SweptChangeRecipients } from "./sweep-policy.js";
+import type { SweptChangesByRecipient } from "./sweep-policy.js";
 import { bodyFromHashline } from "./trail-read-kernel.js";
 
 export function projectCommittedChangeEvent(
   projection: CommittedChangeTrailProjection,
-  sweptRecipients: SweptChangeRecipients,
   codec: AgentEditCodec,
 ): Omit<ChangeEventWsMessage, "type"> {
   const capped = projection.changes.slice(0, 100);
@@ -22,16 +22,28 @@ export function projectCommittedChangeEvent(
       threadId: projection.owner.threadId,
       turnId: projection.owner.kind === "turn" ? projection.owner.turnId : null,
     },
-    changes: capped.map((change) =>
-      projectChange(change, [...(sweptRecipients.get(change.changeId) ?? [])], codec),
-    ),
+    changes: capped.map((change) => projectChange(change, codec)),
     truncated: projection.changes.length > capped.length,
+  };
+}
+
+export function projectChangeEventForRecipient(
+  message: Omit<ChangeEventWsMessage, "type">,
+  sweptChanges: SweptChangesByRecipient,
+  userId: UserId | null,
+): Omit<ChangeEventWsMessage, "type"> {
+  const recipientChanges = userId ? sweptChanges.get(userId) : undefined;
+  return {
+    ...message,
+    changes: message.changes.map((change) => ({
+      ...change,
+      swept: recipientChanges?.has(change.changeId) ?? false,
+    })),
   };
 }
 
 function projectChange(
   change: CommittedChangeTrailProjection["changes"][number],
-  sweptForUserIds: string[],
   codec: AgentEditCodec,
 ): ChangeEventProjection {
   const hashline = change.kind === "delete" ? change.beforeText : change.afterTextAtReceipt;
@@ -42,7 +54,7 @@ function projectChange(
     admittedByUserId: change.admittedByUserId,
     kind: change.kind,
     navigation: change.navigation,
-    sweptForUserIds,
+    swept: false,
     excerpt: text === null ? null : text.slice(0, 500),
     pureDeletionOffset:
       change.kind === "modify"

@@ -63,6 +63,7 @@ const { createBranchCriticalSections } = await import("../domain/branch-critical
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { journalAttributionByChangedBlock } = await import("../domain/branch-trail-projection.js");
+const { projectChangeEventForRecipient } = await import("../domain/change-event-projection.js");
 const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
 const { createDocumentProjectionRefresher, createDocumentWriteHookRunner } = await import(
   "../domain/document-projection-refresher.js"
@@ -393,8 +394,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const settlementProjections: unknown[] = [];
   const realBranchPush = createBranchPushService({
     changeEventDelivery: {
-      deliver(message) {
-        changeEvents.push(message);
+      deliver(message, sweptChanges) {
+        changeEvents.push(projectChangeEventForRecipient(message, sweptChanges, USER_ID as UserId));
       },
     },
     branchStore,

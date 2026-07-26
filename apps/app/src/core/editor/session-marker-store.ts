@@ -116,7 +116,7 @@ export class SessionMarkerStore {
             author: message.author,
             kind: change.kind,
             anchor: { type: "unresolved", raw: change.navigation },
-            swept: this.ownUserId !== null && change.sweptForUserIds.includes(this.ownUserId),
+            swept: change.swept,
             excerpt: change.excerpt,
             pureDeletionOffset: change.pureDeletionOffset,
             projectionRevision: message.projectionRevision,
