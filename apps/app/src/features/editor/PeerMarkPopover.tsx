@@ -73,11 +73,18 @@ export function PeerMarkPopover({
 
   function openConversation(): void {
     if (!agentAuthor) return;
-    requestConversationReveal({
-      threadId: agentAuthor.threadId,
-      turnId: agentAuthor.turnId,
-      changeId: currentMarker.changeId,
-    });
+    // A change row lives inside a turn's receipt, so an authorless-of-turn mark
+    // can only ask for the conversation itself.
+    requestConversationReveal(
+      agentAuthor.turnId === null
+        ? { kind: "thread", threadId: agentAuthor.threadId }
+        : {
+            kind: "change",
+            threadId: agentAuthor.threadId,
+            turnId: agentAuthor.turnId,
+            changeId: currentMarker.changeId,
+          },
+    );
     onOpenChange(false);
   }
 

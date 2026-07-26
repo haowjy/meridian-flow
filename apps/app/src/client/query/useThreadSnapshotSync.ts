@@ -26,6 +26,12 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   attention: DeserializedThreadSnapshot["attention"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
+  /**
+   * The request resolved at least once — applied or failed. Surfaces that must
+   * distinguish "this thread has no such turn" from "history hasn't arrived
+   * yet" (the conversation-reveal handshake) key off this, not off emptiness.
+   */
+  settled: boolean;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
@@ -70,6 +76,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     liveState: data?.liveState ?? null,
     attention: data?.attention ?? null,
     nextSeq: data?.nextSeq ?? null,
+    settled: data !== undefined || isError,
     isError,
     isFetching,
     refetch: () => {

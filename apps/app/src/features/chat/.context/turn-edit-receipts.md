@@ -41,3 +41,22 @@ surface.
 `TurnEditsReceipt` renders every authorized trail change in ordinal order. The
 one-shot *Open conversation* reveal only expands the receipt and emphasizes the
 target row; it does not change which rows are mounted.
+
+## Reveal staging
+
+A reveal target names a thread, a turn, or a change row — never a partial path.
+It is handed down one stage at a time, and the surface holding a stage reports
+`landed` or `unavailable` once its own data settles:
+
+| Stage | Owner | Lands | Reports unavailable when |
+|---|---|---|---|
+| thread | project shell (`useConversationRevealRouting`) | points the current screen's chat surface at the thread | never — a shell cannot fail to aim a surface |
+| turn | transcript (`useTurnRevealLanding`) | centers the turn's row, waiting for a parked viewport to be measured | settled history holds no such turn |
+| change | turn receipt (`TurnEditsReceipt` → `ChangeViewRows`) | expands the receipt and scrolls the row into view | no authorized trail, the evidence request failed, or the loaded evidence no longer carries the change |
+
+An unavailable stage ends the request where its parent left the writer: a
+change row that never renders still leaves them on its turn, a turn that never
+arrives still leaves them in the thread. Nothing copies the pending request into
+component state — display without the lifecycle is what let a request outlive
+everything that could complete it. A stage deadline in the controller is only a
+backstop for the case no surface can report: a stage whose surface never mounts.

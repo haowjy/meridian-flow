@@ -84,7 +84,8 @@ composer mode, and review state live in
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `TurnEditsReceipt.tsx` | Quiet per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo/Redo, and authorized detail loading. No draft Review/Apply/Discard. |
 | `ChangeViewRows.tsx` | Read-only receipt rows with exact navigation and clamped durable Before/After excerpts. |
-| `conversation-reveal.ts` | One-shot reveal handshake: name a thread + optional turn + optional change row; `useConversationRevealRouting` brings it up on the current screen (never a screen swap) and the deepest surface that can honor the target completes it. |
+| `conversation-reveal.ts` | Staged reveal handshake: a target names a thread, a turn, or a change row, and one owner per stage reports `landed` or `unavailable`. See [`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md). |
+| `useTurnRevealLanding.ts` | The transcript's stage: centers the named turn, or reports it absent once history settles. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip for the Work's pending AI changes. `useDraftDock` assembles the model and starts bulk commands; `draft-review-session.ts` owns sequential execution and stop policy. `<DraftDock>` renders the chrome, not a card |

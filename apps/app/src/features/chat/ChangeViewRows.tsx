@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { bodyFromTrailHashline } from "@/client/change-trails";
 import { changeKindLabel } from "@/core/editor/change-mark-labels";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
-import { type ConversationReveal, completeConversationReveal } from "./conversation-reveal";
+import type { ChangeRevealRequest } from "./conversation-reveal";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export function ChangeViewRows({
@@ -20,7 +20,7 @@ export function ChangeViewRows({
   changes: TrailChange[];
   navigateToChange: NavigateToTrailChange;
   anchorUnavailable?: boolean;
-  reveal?: ConversationReveal | null;
+  reveal?: ChangeRevealRequest | null;
 }) {
   return (
     <div className="px-3 pb-2 pl-9">
@@ -53,15 +53,17 @@ function ChangeViewRow({
   change: TrailChange;
   navigateToChange: NavigateToTrailChange;
   anchorUnavailable: boolean;
-  reveal: ConversationReveal | null;
+  reveal: ChangeRevealRequest | null;
 }) {
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
   const rowRef = useRef<HTMLLIElement>(null);
 
+  // Landing the change stage: this row is the deepest thing a reveal can name,
+  // so bringing it into view is what finishes the request.
   useEffect(() => {
     if (reveal?.changeId !== change.changeId) return;
     rowRef.current?.scrollIntoView({ block: "nearest" });
-    completeConversationReveal(reveal);
+    reveal.landed();
   }, [change.changeId, reveal]);
 
   async function revealInEditor() {
