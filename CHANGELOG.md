@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - `packages/database`: migration 0060 now upgrades populated settled change-trail
-  delivery rows without inventing counts for superseded trail versions.
+  delivery rows from their exact shell or retained preceding delivery snapshot.
 - `tools/dev`: `db:migrate` now reports the failing migration file and underlying
   PostgreSQL error instead of exiting silently.
 - `tools/dev`: `db:migrate` now derives its target from the current checkout, so

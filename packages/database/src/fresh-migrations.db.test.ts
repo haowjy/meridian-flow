@@ -96,7 +96,7 @@ if (!enabled || !databaseUrl) {
                 '00000000-0000-4000-8000-000000000003',
                 'shared',
                 'settled',
-                2,
+                3,
                 3,
                 1,
                 1,
@@ -107,29 +107,66 @@ if (!enabled || !databaseUrl) {
                 '00000000-0000-4000-8000-000000000008',
                 'shared',
                 'building',
-                3,
+                4,
                 9,
                 4,
                 2,
                 NULL
               );
             INSERT INTO change_trail_delivery_outbox (
-              event_id, thread_id, trail_id, version, event_kind
+              event_id, thread_id, trail_id, version, event_kind,
+              change_count, swept_change_count, document_count
             )
             VALUES
+              (
+                '00000000-0000-4000-8000-000000000009',
+                '00000000-0000-4000-8000-000000000003',
+                '00000000-0000-4000-8000-000000000004',
+                2,
+                'updated',
+                3,
+                1,
+                1
+              ),
               (
                 '00000000-0000-4000-8000-000000000006',
                 '00000000-0000-4000-8000-000000000003',
                 '00000000-0000-4000-8000-000000000004',
+                3,
+                'settled',
+                NULL,
+                NULL,
+                NULL
+              ),
+              (
+                '00000000-0000-4000-8000-000000000010',
+                '00000000-0000-4000-8000-000000000008',
+                '00000000-0000-4000-8000-000000000005',
                 2,
-                'settled'
+                'updated',
+                3,
+                1,
+                1
               ),
               (
                 '00000000-0000-4000-8000-000000000007',
                 '00000000-0000-4000-8000-000000000008',
                 '00000000-0000-4000-8000-000000000005',
-                2,
-                'settled'
+                3,
+                'settled',
+                NULL,
+                NULL,
+                NULL
+              ),
+              (
+                '00000000-0000-4000-8000-000000000011',
+                '00000000-0000-4000-8000-000000000008',
+                '00000000-0000-4000-8000-000000000005',
+                4,
+                'updated',
+                9,
+                4,
+                2
               );
           `);
         },
@@ -144,6 +181,7 @@ if (!enabled || !databaseUrl) {
           >`
             SELECT event_id, change_count, swept_change_count, document_count
             FROM change_trail_delivery_outbox
+            WHERE event_kind = 'settled'
             ORDER BY event_id
           `;
           expect(rows).toEqual([
@@ -155,9 +193,9 @@ if (!enabled || !databaseUrl) {
             },
             {
               event_id: "00000000-0000-4000-8000-000000000007",
-              change_count: 0,
-              swept_change_count: 0,
-              document_count: 0,
+              change_count: 3,
+              swept_change_count: 1,
+              document_count: 1,
             },
           ]);
         },
