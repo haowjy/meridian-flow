@@ -47,7 +47,6 @@ const expectedSuites = [
   "apps/server/server/lib/routes/context-create-untitled.db.test.ts",
   "apps/server/server/lib/routes/context-move.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
-  "packages/database/src/event-journal.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database}/**/*.db.test.ts", {
