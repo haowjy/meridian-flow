@@ -188,7 +188,7 @@ function mapAcceptResult(
       ? { status: "applied", branchId: result.branchId }
       : { status: "applied", draftId: result.draftId };
   if (result.status === "partial_applied") {
-    return { status: "partial_applied", draftId: result.draftId, writeId: result.writeId };
+    return { status: "partial_applied", draftId: result.draftId };
   }
   if (result.status === "stale_draft") return result;
   if (result.status === "discarded") {
@@ -227,11 +227,9 @@ function serializeThreadDraft(
     documentId: string;
     documentName: string | null;
     contextPath: string | null;
-    status: "active" | "closed";
+    status: "active";
     lastActorTurnId: string | null;
     updatedAt: Date;
-    appliedAt: Date | null;
-    discardedAt: Date | null;
     wordsAdded?: number | null;
     wordsRemoved?: number | null;
     createdDocument?: boolean;
@@ -249,12 +247,10 @@ function serializeThreadDraft(
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
-    appliedAt: draft.appliedAt?.toISOString() ?? null,
-    discardedAt: draft.discardedAt?.toISOString() ?? null,
     partialAcceptedOperationCount: lifecycle?.partialAcceptedOperationCount ?? null,
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
-    wordsAdded: draft.status === "active" ? (draft.wordsAdded ?? null) : null,
-    wordsRemoved: draft.status === "active" ? (draft.wordsRemoved ?? null) : null,
+    wordsAdded: draft.wordsAdded ?? null,
+    wordsRemoved: draft.wordsRemoved ?? null,
     ...(draft.createdDocument ? { isNewDocument: true } : {}),
   };
 }

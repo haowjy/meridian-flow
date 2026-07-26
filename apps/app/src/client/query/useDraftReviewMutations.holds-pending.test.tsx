@@ -17,8 +17,6 @@ const { acceptDraftMock } = vi.hoisted(() => ({
 vi.mock("@/client/api/drafts-api", () => ({
   acceptDraft: acceptDraftMock,
   rejectDraft: vi.fn(),
-  undoAcceptDraft: vi.fn(),
-  undoRejectDraft: vi.fn(),
 }));
 
 const { useAcceptDraft } = await import("./useDraftReviewMutations");

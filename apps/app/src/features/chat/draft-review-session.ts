@@ -10,7 +10,6 @@ export type DraftDispositionTarget =
       draftId: string;
       operationId: string;
     }
-  | { kind: "undo-operation"; documentId: string; draftId: string; writeId: string }
   | { kind: "batch"; mode: "apply" | "discard"; count: number };
 
 export type DraftDispositionState =
@@ -75,10 +74,9 @@ export class DraftDispositionLock {
 export type DraftCommandOutcome =
   | { kind: "blocked" }
   | { kind: "applied" }
-  | { kind: "partial-applied"; writeId: string }
+  | { kind: "partial-applied" }
   | { kind: "stale"; draftId: string }
   | { kind: "discarded" }
-  | { kind: "undone" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
 export type DraftApplyScope = "draft" | "operation";
@@ -123,7 +121,6 @@ export type DraftReviewCommandPorts = {
     selection: DraftReviewSelection,
     input: { branchId?: string; operationIds?: string[] },
   ) => Promise<void>;
-  undo: (selection: DraftReviewSelection, writeId: string) => Promise<void>;
   operationApplyStarted: (operationId: string) => void;
   operationDiscardStarted: () => void;
   batchStarted: () => void;
@@ -207,22 +204,6 @@ export class DraftReviewSession {
           return { kind: "discarded" };
         } catch {
           return { kind: "failed", code: "discard-offline" };
-        }
-      },
-    );
-  }
-
-  undoOperation(selection: DraftReviewSelection, writeId: string): Promise<DraftCommandOutcome> {
-    return this.withReservation(
-      { kind: "undo-operation", ...selection, writeId },
-      async (reservation, ports) => {
-        try {
-          this.disposition.advance(reservation, "mutating");
-          await ports.undo(selection, writeId);
-          this.disposition.advance(reservation, "settling");
-          return { kind: "undone" };
-        } catch {
-          return { kind: "failed", code: "undo-failed" };
         }
       },
     );
@@ -414,19 +395,11 @@ export type InlineReviewMessageCode =
   | "discard-stale"
   | "discard-finalized"
   | "discard-offline"
-  | "discard-failed"
-  | "change-restored"
-  | "undo-failed";
+  | "discard-failed";
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;
   tone?: "info" | "error";
-  /**
-   * The write id a per-card Apply produced (`partial_applied`), which the
-   * "Change applied — Undo" affordance reverses. Present only on the
-   * `change-applied` message.
-   */
-  writeId?: string;
 };
 
 /** Interpret a server Apply response exactly once for every Apply surface. */
@@ -448,8 +421,8 @@ export function draftApplyOutcome(
   }
   if (response.status === "partial_applied") {
     return {
-      command: { kind: "partial-applied", writeId: response.writeId },
-      message: scope === "operation" ? { code: "change-applied", writeId: response.writeId } : null,
+      command: { kind: "partial-applied" },
+      message: scope === "operation" ? { code: "change-applied" } : null,
       refreshDraftId,
       materializedDocument,
     };
@@ -490,8 +463,6 @@ export type DraftReviewAction =
   | { type: "operationAcceptStarted"; operationId: string }
   | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
-  | { type: "operationUndoAcceptSucceeded"; message: InlineReviewMessage }
-  | { type: "operationUndoAcceptFailed"; message: InlineReviewMessage }
   | { type: "discardStarted" }
   | { type: "discardFailed"; code: InlineReviewMessageCode }
   | { type: "batchStarted" }
@@ -538,9 +509,6 @@ export function draftReviewReducer(
     case "operationAcceptSucceeded":
       return { ...state, inlineReviewMessage: action.message };
     case "operationAcceptFailed":
-      return { ...state, inlineReviewMessage: action.message };
-    case "operationUndoAcceptSucceeded":
-    case "operationUndoAcceptFailed":
       return { ...state, inlineReviewMessage: action.message };
     case "discardStarted":
       return {

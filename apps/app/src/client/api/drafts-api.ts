@@ -11,15 +11,12 @@ import type {
   DraftPreviewResponse,
   DraftRejectRequest,
   DraftRejectResponse,
-  DraftUndoResponse,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
   apiProjectWorkDocumentDraftAcceptPath,
   apiProjectWorkDocumentDraftPath,
   apiProjectWorkDocumentDraftRejectPath,
-  apiProjectWorkDocumentDraftUndoAcceptPath,
-  apiProjectWorkDocumentDraftUndoRejectPath,
   apiProjectWorkDraftsPath,
 } from "@meridian/contracts/protocol";
 
@@ -65,29 +62,5 @@ export async function rejectDraft(
   return postJson<DraftRejectResponse>(
     apiProjectWorkDocumentDraftRejectPath(projectId, workId, documentId),
     request,
-  );
-}
-
-export async function undoAcceptDraft(
-  projectId: string,
-  workId: string,
-  documentId: string,
-  body: { draftId: string; writeId?: string },
-): Promise<DraftUndoResponse> {
-  return postJson<DraftUndoResponse>(
-    apiProjectWorkDocumentDraftUndoAcceptPath(projectId, workId, documentId),
-    body,
-  );
-}
-
-export async function undoRejectDraft(
-  projectId: string,
-  workId: string,
-  documentId: string,
-  body: { draftId: string },
-): Promise<DraftUndoResponse> {
-  return postJson<DraftUndoResponse>(
-    apiProjectWorkDocumentDraftUndoRejectPath(projectId, workId, documentId),
-    body,
   );
 }

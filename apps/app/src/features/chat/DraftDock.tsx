@@ -1,6 +1,5 @@
 /**
- * DraftDock — the composer-attached strip that is the SINGLE actionable surface
- * for a Work's pending AI changes.
+ * DraftDock — the composer-attached strip for a Work's pending AI changes.
  *
  * Visual model: a jade-tinted strip that sits BEHIND the composer (narrower
  * via horizontal margin, top corners rounded) — the composer keeps its own
@@ -30,7 +29,7 @@ import { useAiDraftLauncher } from "./useAiDraftLauncher";
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
 export function useDraftDock({ generating }: { generating: boolean }) {
-  const { groups, controller, nowMs } = useDraftReview();
+  const { groups, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
 
   const applyDraft = useCallback(
@@ -42,8 +41,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     [controller],
   );
 
-  const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
-  const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
+  const rows = useMemo(() => dockRows(groups), [groups]);
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -74,18 +72,15 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const model = {
     generating,
     rows,
-    pendingRows,
-    reviewedCount: rows.filter((row) => row.state === "reviewed").length,
-    totalCount: rows.length,
     aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
-    mounted: pendingRows.length > 0,
+    mounted: rows.length > 0,
     inFlightDraftId: null,
     isBusy: controller.isDisposing,
     dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
     reviewFirst: () => {
-      const first = pendingRows[0];
+      const first = rows[0];
       if (first) reviewRow(first);
     },
     applyRow: applyDraft,
@@ -96,7 +91,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     startApplyAll: () => {
       void controller.disposeDrafts(
         "apply",
-        pendingRows.map((row) => ({
+        rows.map((row) => ({
           documentId: row.documentId,
           draftId: row.draft.draftId,
         })),
@@ -105,7 +100,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     startDiscardAll: () => {
       void controller.disposeDrafts(
         "discard",
-        pendingRows.map((row) => ({
+        rows.map((row) => ({
           documentId: row.documentId,
           draftId: row.draft.draftId,
         })),
@@ -122,9 +117,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   if (!dock.mounted) return null;
 
   const multi = dock.rows.length > 1;
-  const guided = dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
   const single = dock.rows.length === 1;
-  const firstPending = dock.pendingRows[0] ?? null;
+  const firstPending = dock.rows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
 
   function verbBusy(row: DockRow): boolean {
@@ -173,13 +167,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <DraftStatsLabel stats={dock.aggregateStats} />
             </span>
           ) : null}
-          {guided ? (
-            <span className="@max-[360px]:hidden shrink-0 whitespace-nowrap text-ink-subtle">
-              <Trans>
-                {dock.reviewedCount} of {dock.totalCount} reviewed
-              </Trans>
-            </span>
-          ) : null}
         </div>
         {/* biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row. */}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own. */}
@@ -225,7 +212,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               >
                 {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
               </QuietButton>
-              {!guided && firstPending ? (
+              {firstPending ? (
                 <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
               ) : null}
             </>
@@ -252,7 +239,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <DockRowLine
               key={row.documentId}
               row={row}
-              reviewAlways={guided && row.draft.draftId === firstPending?.draft.draftId}
               busy={verbBusy(row)}
               onOpen={() => dock.openRow(row)}
               onReview={() => dock.reviewRow(row)}
@@ -271,13 +257,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
  */
 function DockRowLine({
   row,
-  reviewAlways,
   busy,
   onOpen,
   onReview,
 }: {
   row: DockRow;
-  reviewAlways: boolean;
   busy: boolean;
   onOpen: () => void;
   onReview: () => void;
@@ -285,24 +269,8 @@ function DockRowLine({
   const name = row.documentName ?? row.documentId;
   const stats = draftStats(row.draft);
 
-  if (row.state === "reviewed") {
-    return (
-      <DockRowShell onOpen={onOpen} className="text-ink-subtle">
-        <span aria-hidden className="shrink-0 text-jade-text">
-          ✓
-        </span>
-        <span className="min-w-0 flex-1 truncate">
-          <Trans>Reviewed {name}</Trans>
-        </span>
-      </DockRowShell>
-    );
-  }
-
   return (
-    <DockRowShell
-      onOpen={onOpen}
-      className={cn("text-prose-foreground", reviewAlways && "bg-jade-text/[0.06]")}
-    >
+    <DockRowShell onOpen={onOpen} className="text-prose-foreground">
       <span aria-hidden className="shrink-0 text-ink-subtle">
         ○
       </span>
@@ -318,12 +286,7 @@ function DockRowLine({
       {busy ? (
         <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
       ) : null}
-      <RowClickFence
-        className={cn(
-          "shrink-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
-          reviewAlways ? "opacity-100" : "opacity-0",
-        )}
-      >
+      <RowClickFence className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <ReviewPill onClick={onReview} disabled={busy} />
       </RowClickFence>
     </DockRowShell>

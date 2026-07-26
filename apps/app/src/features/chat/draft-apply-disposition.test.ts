@@ -18,16 +18,15 @@ describe("draft Apply disposition", () => {
     });
   });
 
-  it("maps a partial per-card Apply to its reversible receipt", () => {
+  it("maps a partial per-card Apply to its completion receipt", () => {
     const response: DraftAcceptResponse = {
       status: "partial_applied",
       draftId: "draft-1",
-      writeId: "write-1",
     };
 
     expect(draftApplyOutcome("operation", response)).toEqual({
-      command: { kind: "partial-applied", writeId: "write-1" },
-      message: { code: "change-applied", writeId: "write-1" },
+      command: { kind: "partial-applied" },
+      message: { code: "change-applied" },
       refreshDraftId: null,
       materializedDocument: true,
     });

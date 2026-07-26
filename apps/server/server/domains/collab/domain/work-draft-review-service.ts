@@ -82,9 +82,6 @@ export function createWorkDraftReviewService(input: {
         branchId: branch.branchId,
         generation: branch.generation,
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
-        appliedAt: null,
-        discardedAt: null,
-        undoneAt: null,
         wordsAdded: null,
         wordsRemoved: null,
         updatedAt: new Date(),
@@ -322,8 +319,6 @@ export function createWorkDraftReviewService(input: {
               status: "partial_applied" as const,
               draftId: branch.branchId,
               appliedUpdateSeq: 0,
-              acceptedOperationIds: [...operationIds].sort(),
-              writeId: [...updateIds].sort((left, right) => left - right).join(","),
             };
           }
         }
@@ -401,9 +396,7 @@ export function createWorkDraftReviewService(input: {
     },
     draftSessionStats: {
       async listActiveDraftsByWork(command) {
-        return (await listReviewableWorkDraftBranches(command.workId)).filter(
-          (draft): draft is ReviewableDraft & { status: "active" } => draft.status === "active",
-        );
+        return listReviewableWorkDraftBranches(command.workId);
       },
     },
   };

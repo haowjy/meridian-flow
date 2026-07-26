@@ -1,6 +1,5 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -11,7 +10,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
@@ -19,14 +17,8 @@ import {
   type ThreadDraftsStatus,
   useWorkDrafts,
 } from "@/client/query/useWorkDrafts";
-import { useContextTabsStore, useThreadStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
-
-export type ReviewableDrafts = {
-  visible: ThreadDraftListItem[];
-  active: ThreadDraftListItem[];
-};
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
@@ -34,7 +26,6 @@ export type DraftReviewContextValue = {
   drafts: ThreadDraftsStatus;
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
   reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
-  nowMs: number;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (documentId: string | null) => void;
 };
@@ -77,7 +68,6 @@ function DraftReviewScope({
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
-  const nowMs = useThreadStore((state) => state.now);
   const groups = drafts.groups ?? [];
   const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId, threadId);
   // Editor-host concern: this only tells the chat overlay whether the active
@@ -113,21 +103,7 @@ function DraftReviewScope({
     if (controller.isDisposing) return;
     const documentDrafts =
       groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [];
-    const activeDraft = documentDrafts.find((draft) => draft.draftId === activeSelection.draftId);
-    if (activeDraft?.status === "active") return;
-    const terminalDraft = documentDrafts.find(
-      (draft) => draft.draftId === activeSelection.draftId && draft.status === "closed",
-    );
-    const terminalOutcome = terminalDraft?.appliedAt
-      ? "committed"
-      : terminalDraft?.discardedAt
-        ? "discarded"
-        : null;
-    if (terminalOutcome) {
-      useContextTabsStore
-        .getState()
-        .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, terminalOutcome);
-    }
+    if (documentDrafts.some((draft) => draft.draftId === activeSelection.draftId)) return;
     controller.exitReview();
   }, [
     controller.exitReview,
@@ -204,44 +180,13 @@ function DraftReviewScope({
       drafts,
       groupForDocument,
       reviewRoomNameForDraft,
-      nowMs,
       activeEditorDocumentId,
       setActiveEditorDocumentId,
     }),
-    [
-      controller,
-      groups,
-      drafts,
-      groupForDocument,
-      reviewRoomNameForDraft,
-      nowMs,
-      activeEditorDocumentId,
-    ],
+    [controller, groups, drafts, groupForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
   );
 
   return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
-}
-
-export function reviewableDraftsFromGroup(
-  group: ThreadDraftGroup | null | undefined,
-  nowMs: number,
-): ReviewableDrafts {
-  const activeDrafts = group?.drafts.filter((draft) => draft.status === "active") ?? [];
-  const newestActiveUpdatedAt = activeDrafts.reduce(
-    (newest, draft) => Math.max(newest, Date.parse(draft.updatedAt) || 0),
-    0,
-  );
-  const visible =
-    group?.drafts.filter((draft) => {
-      if (draft.status === "active") return true;
-      if (!isDraftUndoable(draft, nowMs)) return false;
-      const terminalUpdatedAt = Date.parse(draft.updatedAt) || 0;
-      return newestActiveUpdatedAt === 0 || terminalUpdatedAt > newestActiveUpdatedAt;
-    }) ?? [];
-  return {
-    visible,
-    active: visible.filter((draft) => draft.status === "active"),
-  };
 }
 
 export function useDraftReview(): DraftReviewContextValue {

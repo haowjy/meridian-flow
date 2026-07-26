@@ -10,13 +10,10 @@ export type ReviewableDraft = {
   id: string;
   documentId: DocumentId;
   workId: WorkId;
-  status: "active" | "closed";
+  status: "active";
   branchId?: string;
   generation?: number;
   lastActorTurnId: TurnId | null;
-  appliedAt: Date | null;
-  discardedAt: Date | null;
-  undoneAt: Date | null;
   updatedAt: Date;
   documentName: string | null;
   contextPath: string | null;
@@ -25,7 +22,7 @@ export type ReviewableDraft = {
   createdDocument?: boolean;
 };
 
-export type ActiveDraft = ReviewableDraft & { status: "active" };
+export type ActiveDraft = ReviewableDraft;
 
 export type DraftReviewPreview = {
   live: string;
@@ -46,8 +43,6 @@ export type DraftAcceptResult =
       status: "partial_applied";
       draftId: string;
       appliedUpdateSeq: number;
-      acceptedOperationIds: string[];
-      writeId: string;
     }
   | { status: "discarded"; draftId: string; branchId?: string }
   | { status: "not_found"; draftId: string };

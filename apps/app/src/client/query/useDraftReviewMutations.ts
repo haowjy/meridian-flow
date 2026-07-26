@@ -4,12 +4,7 @@
 
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
-import {
-  acceptDraft,
-  rejectDraft,
-  undoAcceptDraft,
-  undoRejectDraft,
-} from "@/client/api/drafts-api";
+import { acceptDraft, rejectDraft } from "@/client/api/drafts-api";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
@@ -138,51 +133,6 @@ export function useRejectDraft() {
         ...reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
       }),
-    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
-    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
-  });
-}
-
-export function useUndoDraftAccept() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      workId,
-      documentId,
-      draftId,
-      writeId,
-    }: {
-      projectId: string;
-      workId: string;
-      threadId?: string | null;
-      documentId: string;
-      draftId: string;
-      writeId?: string;
-    }) =>
-      undoAcceptDraft(projectId, workId, documentId, { draftId, ...(writeId ? { writeId } : {}) }),
-    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
-    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
-  });
-}
-
-export function useUndoDraftReject() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      workId,
-      documentId,
-      draftId,
-    }: {
-      projectId: string;
-      workId: string;
-      threadId?: string | null;
-      documentId: string;
-      draftId: string;
-    }) => undoRejectDraft(projectId, workId, documentId, { draftId }),
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
     onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });

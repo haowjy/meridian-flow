@@ -7,11 +7,9 @@ export interface ThreadDraftListItem {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  status: "active" | "closed";
+  status: "active";
   lastActorTurnId: string | null;
   updatedAt: string;
-  appliedAt: string | null;
-  discardedAt: string | null;
   partialAcceptedOperationCount?: number | null;
   proposedOperationCount?: number | null;
   wordsAdded: number | null;
@@ -121,7 +119,7 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
 export type DraftAcceptResponse =
   | { status: "applied"; draftId?: string; branchId?: string }
-  | { status: "partial_applied"; draftId: string; writeId: string }
+  | { status: "partial_applied"; draftId: string }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number };
 
 type DraftAcceptRequestBase = {
@@ -138,5 +136,3 @@ export type DraftRejectResponse = { status: "discarded"; draftId?: string; branc
 export type DraftRejectRequest =
   | { draftId: string; branchId?: never; operationIds?: string[] }
   | { branchId: string; draftId?: never; operationIds?: string[] };
-export type DraftUndoResponse = { status: "not_found"; draftId: string };
-export type DraftUndoAcceptRequest = { draftId: string; writeId?: string };

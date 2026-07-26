@@ -8,7 +8,6 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 const invalidateQueriesMock = vi.fn();
 const queryClientMock = { invalidateQueries: invalidateQueriesMock };
 const exitReviewMock = vi.fn();
-const resolveDraftOnlyTabMock = vi.fn();
 let currentGroups: ThreadDraftGroup[] = [];
 let currentInlineReview: { documentId: string; draftId: string } | null = null;
 let currentReviewRoomName: string | null = null;
@@ -26,12 +25,6 @@ vi.mock("@/client/query/useWorkDrafts", () => ({
     groups: currentGroups,
     status: currentGroups.length === 0 ? "empty" : "ready",
   }),
-}));
-vi.mock("@/client/stores", () => ({
-  useThreadStore: (selector: (state: { now: number }) => number) => selector({ now: 0 }),
-  useContextTabsStore: {
-    getState: () => ({ resolveDraftOnlyTab: resolveDraftOnlyTabMock }),
-  },
 }));
 vi.mock("./useDraftReviewController", () => ({
   useDraftReviewController: () => {
@@ -127,7 +120,6 @@ describe("DraftReviewProvider live lineage invalidation", () => {
   beforeEach(() => {
     invalidateQueriesMock.mockClear();
     exitReviewMock.mockClear();
-    resolveDraftOnlyTabMock.mockClear();
     docUpdateHandlers.clear();
     currentGroups = [];
     currentInlineReview = null;
@@ -171,35 +163,15 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
-  it("does not destroy a draft-only tab when a vanished draft has no terminal evidence", async () => {
+  it("exits review when the active draft vanishes", async () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
 
     await withReactRoot(<ProviderHarness />, async () => {
       exitReviewMock.mockClear();
-      resolveDraftOnlyTabMock.mockClear();
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
-      expect(exitReviewMock).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it.each([
-    ["committed", "2026-01-01T00:01:00.000Z", null],
-    ["discarded", null, "2026-01-01T00:01:00.000Z"],
-  ] as const)("resolves a draft-only tab as %s from remote terminal evidence", async (outcome, appliedAt, discardedAt) => {
-    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
-    currentGroups = [activeGroup()];
-
-    await withReactRoot(<ProviderHarness />, async () => {
-      exitReviewMock.mockClear();
-      resolveDraftOnlyTabMock.mockClear();
-      currentGroups = [terminalGroup({ appliedAt, discardedAt })];
-      await act(async () => rerenderProvider?.());
-
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith("project-1", "doc-terminal", outcome);
       expect(exitReviewMock).toHaveBeenCalledTimes(1);
     });
   });
@@ -266,29 +238,11 @@ function activeGroup(): ThreadDraftGroup {
         status: "active",
         lastActorTurnId: null,
         updatedAt: "2026-01-01T00:00:00.000Z",
-        appliedAt: null,
-        discardedAt: null,
         partialAcceptedOperationCount: 0,
         proposedOperationCount: 1,
         wordsAdded: null,
         wordsRemoved: null,
       },
     ],
-  };
-}
-
-function terminalGroup(input: {
-  appliedAt: string | null;
-  discardedAt: string | null;
-}): ThreadDraftGroup {
-  const group = activeGroup();
-  return {
-    ...group,
-    drafts: group.drafts.map((draft) => ({
-      ...draft,
-      status: "closed",
-      appliedAt: input.appliedAt,
-      discardedAt: input.discardedAt,
-    })),
   };
 }

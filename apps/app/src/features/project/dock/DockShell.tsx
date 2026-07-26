@@ -38,8 +38,8 @@ export type DockShellProps = {
 
 export function DockShell({ placement, screen, onClose, threadSelect, children }: DockShellProps) {
   const dockView = useDockView(screen);
-  const { groups, nowMs } = useDraftReview();
-  const hasChanges = hasDockChanges(groups, nowMs);
+  const { groups } = useDraftReview();
+  const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
   const { setView } = dockView;
   const inDock = placement === "dock";

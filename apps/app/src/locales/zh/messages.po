@@ -100,12 +100,6 @@ msgstr ""
 msgid "{0} documents"
 msgstr ""
 
-#. placeholder {0}: dock.reviewedCount
-#. placeholder {1}: dock.totalCount
-#: src/features/chat/DraftDock.tsx
-msgid "{0} of {1} reviewed"
-msgstr ""
-
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}天"
@@ -351,10 +345,6 @@ msgstr ""
 msgid "Change applied."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Change restored."
-msgstr ""
-
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr ""
@@ -578,10 +568,6 @@ msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Couldn't undo that change. Nothing happened."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1557,10 +1543,6 @@ msgstr ""
 msgid "Review draft"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-msgid "Reviewed {name}"
-msgstr ""
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
 msgstr ""
@@ -1965,7 +1947,6 @@ msgid "Type your answer…"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "撤销"
 

@@ -2,16 +2,14 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { reviewableDraftsFromGroup } from "./DraftReviewProvider";
 
-/** One document's line in the dock — pending (has an active draft) or reviewed. */
+/** One document's active draft line in the dock. */
 export type DockRow = {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  /** The draft the row's verbs act on (the active one, or the terminal receipt). */
+  /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
-  state: "pending" | "reviewed";
   /**
    * the draft proposes a document not yet in the writer's live project
    * (spec §5.5). Drives the row's `New` badge + additions-only stats and the
@@ -23,42 +21,30 @@ export type DockRow = {
 
 /**
  * Collapse work draft groups into dock rows. Each document contributes at most
- * one row: its active draft (pending) or, if none is active but a recent
- * terminal draft is still in view, a reviewed receipt. Pending rows come first
- * (stable by document), reviewed rows after — the guided-progression order.
+ * one row for its active draft, sorted stably by document.
  */
-export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: number): DockRow[] {
+export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow[] {
   if (!groups || groups.length === 0) return [];
   const rows: DockRow[] = [];
   for (const group of groups) {
-    const { visible } = reviewableDraftsFromGroup(group, nowMs);
-    const draft = pendingReviewDraft(group) ?? visible.find((draft) => draft.status !== "active");
+    const draft = pendingReviewDraft(group);
     if (!draft) continue;
     rows.push({
       documentId: group.documentId,
       documentName: group.documentName,
       contextPath: group.contextPath,
       draft,
-      state: draft.status === "active" ? "pending" : "reviewed",
       isNewDocument: draft.isNewDocument === true,
     });
   }
-  return rows.sort((left, right) => {
-    if (left.state !== right.state) return left.state === "pending" ? -1 : 1;
-    return documentSortKey(left).localeCompare(documentSortKey(right));
-  });
+  return rows.sort((left, right) => documentSortKey(left).localeCompare(documentSortKey(right)));
 }
 
 /**
- * Whether the work-scoped Changes view has anything to show. This deliberately
- * includes recent reviewed receipts, not only active drafts: those receipts
- * keep their undo path reachable until the shared retention rule expires.
+ * Whether the work-scoped Changes view has active work to show.
  */
-export function hasDockChanges(
-  groups: ThreadDraftGroup[] | null | undefined,
-  nowMs: number,
-): boolean {
-  return dockRows(groups, nowMs).length > 0;
+export function hasDockChanges(groups: ThreadDraftGroup[] | null | undefined): boolean {
+  return dockRows(groups).length > 0;
 }
 
 function documentSortKey(row: DockRow): string {

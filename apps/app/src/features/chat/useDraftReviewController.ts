@@ -22,11 +22,7 @@ import {
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import {
-  useAcceptDraft,
-  useRejectDraft,
-  useUndoDraftAccept,
-} from "@/client/query/useDraftReviewMutations";
+import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
@@ -61,7 +57,7 @@ export type InlineReviewRuntime = {
 export type DraftReviewController = {
   projectId: string;
   workId: string;
-  /** Focused thread owning this review surface; threads accept/reject/undo cache invalidation. */
+  /** Focused thread owning this review surface; threads accept/reject cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
   reviewRoomName: string | null;
@@ -74,8 +70,6 @@ export type DraftReviewController = {
   isInlineDiscardPending: boolean;
   /** True while a per-card Apply is in flight (its own mutation, not Apply all). */
   isOperationAccepting: boolean;
-  /** True while a per-card Apply's Undo is in flight. */
-  isOperationUndoing: boolean;
   canAcceptReviewedDraft: boolean;
   /**
    * The global disposition lock: any accept/discard in flight in the session.
@@ -115,7 +109,6 @@ export type DraftReviewController = {
    */
   focusReviewOperation: (operationId: string) => void;
   acceptOperation: (operationId: string, model: InlineReviewModel) => Promise<DraftCommandOutcome>;
-  undoAcceptOperation: () => Promise<DraftCommandOutcome>;
   discardOperation: (operationId: string) => Promise<DraftCommandOutcome>;
   accept: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
   reject: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
@@ -136,7 +129,6 @@ export function useDraftReviewController(
   // separate from whole-draft Apply all, so the two surfaces never disable
   // each other by sharing one `isPending`.
   const operationAcceptMutation = useAcceptDraft();
-  const undoAcceptMutation = useUndoDraftAccept();
   const rejectMutation = useRejectDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
@@ -183,7 +175,6 @@ export function useDraftReviewController(
   const isAccepting = activeDisposition?.kind === "apply-draft";
   const isRejecting = activeDisposition?.kind === "discard-draft";
   const isOperationAccepting = activeDisposition?.kind === "apply-operation";
-  const isOperationUndoing = activeDisposition?.kind === "undo-operation";
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isAccepting || isRejecting;
   const isDisposing = disposition.phase !== "idle";
@@ -308,16 +299,6 @@ export function useDraftReviewController(
         documentId,
         draftId,
         ...input,
-      });
-    },
-    undo: async ({ documentId, draftId }, writeId) => {
-      await undoAcceptMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId,
-        draftId,
-        writeId,
       });
     },
     operationApplyStarted: (operationId) => {
@@ -458,27 +439,6 @@ export function useDraftReviewController(
     [projectId, queryClient, reviewSession, workId],
   );
 
-  // Reverse the most recent per-card Apply. The `writeId` rides on the
-  // "Change applied" message; undo is only offered while that message stands.
-  const undoAcceptOperation = useCallback(async (): Promise<DraftCommandOutcome> => {
-    const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-    const writeId = stateRef.current.inlineReviewMessage?.writeId;
-    if (!inline || !writeId) return { kind: "failed", code: "undo-failed" };
-    const outcome = await reviewSession.undoOperation(inline, writeId);
-    if (outcome.kind === "undone") {
-      dispatch({
-        type: "operationUndoAcceptSucceeded",
-        message: { code: "change-restored" },
-      });
-    } else if (outcome.kind === "failed") {
-      dispatch({
-        type: "operationUndoAcceptFailed",
-        message: { code: "undo-failed", tone: "error" },
-      });
-    }
-    return outcome;
-  }, [reviewSession]);
-
   const discardOperation = useCallback(
     async (operationId: string): Promise<DraftCommandOutcome> => {
       const runtime = inlineRuntimeRef.current;
@@ -540,7 +500,6 @@ export function useDraftReviewController(
       isPending,
       isInlineDiscardPending,
       isOperationAccepting,
-      isOperationUndoing,
       canAcceptReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
@@ -556,7 +515,6 @@ export function useDraftReviewController(
       releaseInlineReviewRuntime,
       focusReviewOperation,
       acceptOperation,
-      undoAcceptOperation,
       discardOperation,
       accept,
       reject,
@@ -576,7 +534,6 @@ export function useDraftReviewController(
       isPending,
       isInlineDiscardPending,
       isOperationAccepting,
-      isOperationUndoing,
       canAcceptReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
@@ -592,7 +549,6 @@ export function useDraftReviewController(
       releaseInlineReviewRuntime,
       focusReviewOperation,
       acceptOperation,
-      undoAcceptOperation,
       discardOperation,
       accept,
       reject,

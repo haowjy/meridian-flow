@@ -7,7 +7,6 @@ const resolveDraftOnlyTabMock = vi.fn();
 const operationAcceptMutateMock = vi.fn(async (_input: unknown) => ({
   status: "partial_applied" as const,
   draftId: "draft-1",
-  writeId: "write-1",
 }));
 const wholeDraftResponse: unknown = null;
 let wholeDraftResponses: unknown[] = [];
@@ -58,7 +57,6 @@ vi.mock("@/client/api/drafts-api", () => ({
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
   useAcceptDraft: () => ({ mutateAsync: acceptMutateMock }),
-  useUndoDraftAccept: () => ({ mutateAsync: vi.fn() }),
   useRejectDraft: () => ({ mutateAsync: rejectMutateMock }),
 }));
 vi.mock("@/client/stores", () => ({
@@ -287,7 +285,7 @@ describe("useDraftReviewController", () => {
     });
   });
 
-  it("keeps the existing Undo receipt when an overlapping per-card Apply is blocked", async () => {
+  it("keeps the existing Apply receipt when an overlapping per-card Apply is blocked", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     rejectMutateMock.mockClear();
 
@@ -322,7 +320,6 @@ describe("useDraftReviewController", () => {
       });
       expect(controller?.inlineReviewMessage).toMatchObject({
         code: "change-applied",
-        writeId: "write-1",
       });
 
       let resolveReject!: (result: { status: "discarded" }) => void;
@@ -341,7 +338,6 @@ describe("useDraftReviewController", () => {
       });
       expect(controller?.inlineReviewMessage).toMatchObject({
         code: "change-applied",
-        writeId: "write-1",
       });
 
       await act(async () => {

@@ -80,22 +80,6 @@ export function apiProjectWorkDocumentDraftRejectPath(
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/reject`;
 }
 
-export function apiProjectWorkDocumentDraftUndoAcceptPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/undo-accept`;
-}
-
-export function apiProjectWorkDocumentDraftUndoRejectPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/undo-reject`;
-}
-
 /** (user, project)-scoped UI preferences — user resolved from auth. */
 export function apiProjectPreferencesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/preferences`;

@@ -185,7 +185,6 @@ function commandPorts(): DraftReviewCommandPorts {
     })),
     apply: vi.fn(async ({ draftId }) => ({ status: "applied" as const, draftId })),
     discard: vi.fn(async () => {}),
-    undo: vi.fn(async () => {}),
     operationApplyStarted: vi.fn(),
     operationDiscardStarted: vi.fn(),
     batchStarted: vi.fn(),

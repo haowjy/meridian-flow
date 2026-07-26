@@ -41,14 +41,9 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
     documentId,
     documentName: groupDrafts[0]?.documentName ?? null,
     contextPath: groupDrafts[0]?.contextPath ?? null,
-    // Active drafts first so group.drafts[0] always picks the actionable
-    // draft over terminal (applied/discarded) ones still within the
-    // retention window.
-    drafts: groupDrafts.sort((a, b) => {
-      if (a.status === "active" && b.status !== "active") return -1;
-      if (a.status !== "active" && b.status === "active") return 1;
-      return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
-    }),
+    drafts: groupDrafts.sort(
+      (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
+    ),
   }));
 }
 
