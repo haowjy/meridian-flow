@@ -228,6 +228,35 @@ describe("useDraftReviewController", () => {
     draftPreviews.clear();
   });
 
+  it("discards a change with no editor mounted, so the Changes rail works off the Editor screen", async () => {
+    let controller: ReturnType<typeof useDraftReviewController> | null = null;
+    rejectMutateMock.mockClear();
+
+    function Probe() {
+      const value = useDraftReviewController("project-1", "work-1", "thread-1");
+      useEffect(() => {
+        controller = value;
+      }, [value]);
+      return null;
+    }
+
+    await withReactRoot(<Probe />, async () => {
+      // No registerInlineReviewRuntime: review is open, but the manuscript pane
+      // is not mounted — the writer is reviewing from Home or Chat.
+      await act(async () => {
+        controller?.enterInlineReview("document-1", "draft-1");
+      });
+
+      let outcome: unknown;
+      await act(async () => {
+        outcome = await controller?.discardOperation("operation-1");
+      });
+
+      expect(outcome).toEqual({ kind: "discarded" });
+      expect(rejectMutateMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("releases a discard reservation when preview settlement arrives before mutation completion", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     rejectMutateMock.mockClear();

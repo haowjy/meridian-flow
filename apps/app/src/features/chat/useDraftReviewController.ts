@@ -44,9 +44,11 @@ import {
 export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
 
 /**
- * The single review-runtime claim. It carries the editor used for navigation
- * and the draft selection used by server-backed per-card dispositions.
- * Registration is claim-based on the editor identity (see register/release below).
+ * The single review-runtime claim: the mounted editor a review card can scroll
+ * to, plus the selection it is showing. Dispositions do NOT read it — they take
+ * their selection from review state so the Changes rail works on screens with no
+ * manuscript pane. Registration is claim-based on the editor identity
+ * (see register/release below).
  */
 export type InlineReviewRuntime = {
   editor: Editor;
@@ -441,9 +443,13 @@ export function useDraftReviewController(
 
   const discardOperation = useCallback(
     async (operationId: string): Promise<DraftCommandOutcome> => {
-      const runtime = inlineRuntimeRef.current;
-      if (!runtime?.draftId) return { kind: "failed", code: "discard-failed" };
-      const outcome = await reviewSession.discardOperation(runtime, operationId);
+      // The review selection comes from state, not from the editor runtime:
+      // the disposition is server-backed, so a Changes card must work on
+      // screens where the manuscript is not mounted (matching `acceptOperation`).
+      const current = stateRef.current;
+      const inline = current.surface.kind === "inline" ? current.surface : null;
+      if (!inline) return { kind: "failed", code: "discard-failed" };
+      const outcome = await reviewSession.discardOperation(inline, operationId);
       if (outcome.kind === "failed") {
         dispatch({
           type: "discardFailed",

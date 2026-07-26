@@ -47,19 +47,24 @@ same-document neighbor to select after disposition. If accept returns
 `status: "stale_draft"`, inline review reloads the refreshed draft id from the
 response instead of exiting.
 
-Review mode is a full-width editor plus the dock's `Changes` view — there is no
-in-editor review split. The editor's review chrome is
+Review mode is the dock's `Changes` view, plus a full-width editor when the
+writer is on the Editor screen — there is no in-editor review split. Entering
+review never changes `?screen` (`useAiDraftLauncher`): Changes is a dock view on
+every screen and its cards read the server preview, so review opens where the
+writer already is. The editor's review chrome is
 `features/editor/DraftReviewHeader` (above the identity bar, review-only): LEFT
 "Back to live" exit and RIGHT whole-draft "Apply all" / "Discard all", all
 delegating to the controller. The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
 branch, so review has one active row per document. The dock's `DockChangesView`
-expands the reviewed document to operation cards read from the live preview; a
-card body click calls
+expands the reviewed document to operation cards read from the live preview.
+Each card carries hover-revealed Apply/Discard verbs — the only mutating targets
+on the card — driving `controller.acceptOperation` / `controller.discardOperation`.
+Both take their selection from review state, so a card disposes correctly with no
+manuscript mounted. Only the card-body click needs the editor: it calls
 `controller.focusReviewOperation(operationId)`, which reads the review editor off
-the inline-review runtime and highlights + scrolls the manuscript span. Each card
-carries hover-revealed Apply/Discard verbs — the only mutating targets on the
-card — driving `controller.acceptOperation` / `controller.discardOperation`.
+the inline-review runtime to highlight + scroll the manuscript span, and is
+inert on screens with no editor.
 
 The review editor is editable. A draft branch is a Yjs room and the writer is
 one more peer in it, so ordinary TipTap input is admitted and lands in the draft

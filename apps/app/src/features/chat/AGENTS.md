@@ -84,14 +84,14 @@ composer mode, and review state live in
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
 | `TurnEditsReceipt.tsx` | Quiet per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo/Redo, and authorized detail loading. No draft Review/Apply/Discard. |
 | `ChangeViewRows.tsx` | Read-only receipt rows with exact navigation and clamped durable Before/After excerpts. |
-| `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, and bring the exact row into view. |
+| `conversation-reveal.ts` | One-shot reveal handshake: name a thread + optional turn + optional change row; `useConversationRevealRouting` brings it up on the current screen (never a screen swap) and the deepest surface that can honor the target completes it. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip for the Work's pending AI changes. `useDraftDock` assembles the model and starts bulk commands; `draft-review-session.ts` owns sequential execution and stop policy. `<DraftDock>` renders the chrome, not a card |
 | `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
 | `docked-drafts.ts` | Pure active-draft assembly: `dockRows` (one pending row per document), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
-| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
+| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: reveals Changes in the current screen's dock and enters inline review, never changing `?screen`; on the Editor screen it also opens the drafted document and collapses the left rail, restoring it on exit (capture mechanics in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
 | `draft-review-session.ts` | Shared disposition lock, revision acquisition, response policy, command sequencing, and review-session reducer |
