@@ -32,8 +32,15 @@ expands the receipt, and retains the returned reason while refreshed lineage
 withdraws the action. Do not reduce the result to transport success or clear the
 local reason merely because the refreshed control becomes `view_change`; both
 recreate click-and-nothing.
-Unexpected transport failures remain retryable and do not replace server-derived
-recovery state.
+
+Every refusal is visible, and the receipt's reason line is where it shows.
+Copy covers the whole wire status union through an exhaustive switch that fails
+the build when a status is added, and a command that never reached a status at
+all — rejected fetch, HTTP error envelope — gets its own retry line naming the
+command the writer pressed. `cant_undo_dependent` reads the same sentence
+whether it arrives as receipt state or as a refused command, and points at
+viewing the change, which is what expansion puts on screen. A refused command
+never leaves the card unchanged.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review
