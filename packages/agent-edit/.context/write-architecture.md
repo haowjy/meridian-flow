@@ -105,8 +105,9 @@ appending when another session already used it.
 
 Redo staleness is writer-specific. A later `human:*` journal row withdraws redo;
 system reversal/bookkeeping rows and later agent rows do not. The planner and
-persist-time watermark guard use that same classification, so read-model
-eligibility and command execution cannot disagree except across a race.
+persist-time watermark guard use that same classification. `planUndo()` and
+`planRedo()` are the shared authority for read-model availability and command
+execution, so those paths cannot disagree except across a race.
 
 Lineage has two distinct persisted authorities.
 `document_yjs_reversals.redo_update_seq` records the current active redo closure
