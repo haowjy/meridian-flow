@@ -345,9 +345,13 @@ history is preserved for attribution, echo, and undo dependency checking.
   the committed update to, before mutating the shared live document — never from the
   live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes
-  all integrate through Yjs. Authorship derives from
-  durable journal attribution: `completeStagedPush` persists the live journal
-  row as `originType: "human"` with `actorUserId` when the push carries
+  all integrate through Yjs. `draftBaseUpdateSeq` is still a required persisted
+  and mapped journal field, but no current semantic reader compares it or uses
+  it to gate Apply. Do not treat it as freshness or conflict authority; removing
+  it is a schema-, migration-, persistence-, fixture-, and test-wide change
+  rather than incidental cleanup in a review-contract slice. Authorship derives
+  from durable journal attribution: `completeStagedPush` persists the live
+  journal row as `originType: "human"` with `actorUserId` when the push carries
   `pushedByUserId` (writer-confirmed Apply). Otherwise it folds branch-local
   undo/redo and inspects the remaining active agent mutations: exactly one
   shared turn produces `originType: "agent"` with that `actorTurnId`; no active
