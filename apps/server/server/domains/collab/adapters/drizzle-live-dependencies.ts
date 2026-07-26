@@ -51,13 +51,6 @@ export function createDrizzleLiveTurnDependencyStore(
   };
 }
 
-export async function hasDependentLaterLiveRows(
-  db: LiveDependencyDb,
-  input: { documentId: string; threadId: ThreadId; turnId: TurnId },
-): Promise<boolean> {
-  return (await checkDependentLaterLiveRows(db, input)).hasDependents;
-}
-
 export async function checkDependentLaterLiveRows(
   db: LiveDependencyDb,
   input: { documentId: string; threadId: ThreadId; turnId: TurnId },

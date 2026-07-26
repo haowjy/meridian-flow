@@ -14,8 +14,6 @@ import type {
 } from "../domain/trail-read-kernel.js";
 import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 
-export type ChangeTrailReader = ReturnType<typeof createDrizzleChangeTrailReader>;
-
 export function createDrizzleChangeTrailReader(
   db: Database,
   documentAccess: {

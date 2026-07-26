@@ -7,8 +7,6 @@ type CachedDocumentSnapshot = {
   stateVector: Map<number, number> | null;
 };
 
-export type DocumentContainment = ReturnType<typeof createDocumentContainment>;
-
 /**
  * Retains one exact snapshot for each current document state. Yjs update events
  * invalidate the snapshot synchronously, including for delete-only mutations

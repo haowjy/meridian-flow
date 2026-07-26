@@ -169,7 +169,7 @@ empty positional anchors with a visible seam whose focused-operation state is
 emphasized, so their cards can scroll the manuscript without adding text. An active preview
 without a model is an invariant violation, logged loudly and ignored safely.
 
-`reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
+`reviewableDraftsFromGroup` is the presentation seam for draft lifecycle rows. It
 keeps active drafts visible and hides older terminal undo receipts when a newer
 active draft exists in the same document group; the server reviewable list still
 contains the full lifecycle history so the `DraftDock` reviewed rows and the

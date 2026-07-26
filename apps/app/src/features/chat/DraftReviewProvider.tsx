@@ -33,7 +33,6 @@ export type DraftReviewContextValue = {
   groups: ThreadDraftGroup[];
   drafts: ThreadDraftsStatus;
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
-  reviewableDraftsForGroup: (group: ThreadDraftGroup | null | undefined) => ReviewableDrafts;
   reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
   nowMs: number;
   activeEditorDocumentId: string | null;
@@ -96,12 +95,6 @@ function DraftReviewScope({
       return groups.find((group) => group.documentId === documentId) ?? null;
     },
     [groups],
-  );
-
-  const reviewableDraftsForGroup = useCallback(
-    (group: ThreadDraftGroup | null | undefined): ReviewableDrafts =>
-      reviewableDraftsFromGroup(group, nowMs),
-    [nowMs],
   );
 
   const reviewRoomNameForDraft = useCallback(
@@ -210,7 +203,6 @@ function DraftReviewScope({
       groups,
       drafts,
       groupForDocument,
-      reviewableDraftsForGroup,
       reviewRoomNameForDraft,
       nowMs,
       activeEditorDocumentId,
@@ -221,7 +213,6 @@ function DraftReviewScope({
       groups,
       drafts,
       groupForDocument,
-      reviewableDraftsForGroup,
       reviewRoomNameForDraft,
       nowMs,
       activeEditorDocumentId,

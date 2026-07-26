@@ -20,7 +20,6 @@ const reservedNamespaceIndexes = new WeakMap<Y.Doc, ReservedRangeIndex>();
 let provenanceEnumerationCount = 0;
 
 export type { DocumentAuthorityId } from "@meridian/contracts";
-export const INITIAL_DOCUMENT_AUTHORITY_GENERATION = 1n;
 export type SafetyBirthClass = "writer_protected" | "agent";
 
 export type ProvenanceTargetFactV1 = {

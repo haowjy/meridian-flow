@@ -118,10 +118,6 @@ msgstr "{hours}小时"
 msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
-#: src/features/chat/tool-renderers.tsx
-msgid "{name} changed while the AI was working. It needs to read the document again before editing."
-msgstr ""
-
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{pendingChangeCount} changes waiting for review"
 msgstr ""
@@ -1270,6 +1266,10 @@ msgstr ""
 msgid "Only on this device"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Only part of this change could be reversed."
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see its uploads."
 msgstr ""
@@ -1452,6 +1452,10 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redo"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redo is no longer available because the manuscript changed."
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
@@ -1765,10 +1769,6 @@ msgid "That change can't be undone because later edits depend on it."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change could remove recent writing, so it wasn't applied."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
 msgstr ""
 
@@ -1816,10 +1816,6 @@ msgstr ""
 msgid "The changes moved on. Review the related changes and confirm again."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
-msgid "The document changed while the AI was working. It needs to read it again before editing."
-msgstr ""
-
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr ""
@@ -1859,6 +1855,10 @@ msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "This change is no longer reversible."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -1968,6 +1968,10 @@ msgstr ""
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "撤销"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undo is no longer available."
+msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"

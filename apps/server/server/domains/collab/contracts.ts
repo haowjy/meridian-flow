@@ -5,7 +5,7 @@ import type {
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import type { TrailRestoreResult } from "@meridian/contracts";
-import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -29,8 +29,6 @@ import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-h
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
-
-export type SchemaType = YjsTrackedSchemaType;
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }

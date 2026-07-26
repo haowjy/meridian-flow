@@ -36,11 +36,6 @@ export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
 export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
-export type ReadFormat = ReadCommand["format"];
-export type QueryWriteCommand = ReadCommand | DiffCommand;
-export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
-export type HistoryWriteCommand = UndoCommand | RedoCommand;
-
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });

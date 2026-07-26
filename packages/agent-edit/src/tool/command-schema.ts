@@ -97,9 +97,7 @@ export const WriteCommandSchema = z.discriminatedUnion("command", [
   RedoCommandSchema,
 ]);
 
-export const QUERY_WRITE_COMMANDS = ["read", "diff"] as const;
 export const MUTATING_WRITE_COMMANDS = ["create", "insert", "replace"] as const;
-export const HISTORY_WRITE_COMMANDS = ["undo", "redo"] as const;
 
 export type WriteCommandCategory = "query" | "mutating" | "history";
 

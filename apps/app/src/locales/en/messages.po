@@ -118,10 +118,6 @@ msgstr "{hours}h"
 msgid "{minutes}m"
 msgstr "{minutes}m"
 
-#: src/features/chat/tool-renderers.tsx
-msgid "{name} changed while the AI was working. It needs to read the document again before editing."
-msgstr "{name} changed while the AI was working. It needs to read the document again before editing."
-
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{pendingChangeCount} changes waiting for review"
 msgstr "{pendingChangeCount} changes waiting for review"
@@ -1270,6 +1266,10 @@ msgstr "One surface for every chat in this project. Jump into any chat, or start
 msgid "Only on this device"
 msgstr "Only on this device"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Only part of this change could be reversed."
+msgstr "Only part of this change could be reversed."
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see its uploads."
 msgstr "Open a chat to see its uploads."
@@ -1453,6 +1453,10 @@ msgstr "Reconnecting… attempt {0}"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redo"
 msgstr "Redo"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redo is no longer available because the manuscript changed."
+msgstr "Redo is no longer available because the manuscript changed."
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
@@ -1765,10 +1769,6 @@ msgid "That change can't be undone because later edits depend on it."
 msgstr "That change can't be undone because later edits depend on it."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change could remove recent writing, so it wasn't applied."
-msgstr "That change could remove recent writing, so it wasn't applied."
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
 msgstr "That change couldn't be made in {name}."
 
@@ -1816,10 +1816,6 @@ msgstr "The changes moved on. Refreshed the list."
 msgid "The changes moved on. Review the related changes and confirm again."
 msgstr "The changes moved on. Review the related changes and confirm again."
 
-#: src/features/chat/tool-renderers.tsx
-msgid "The document changed while the AI was working. It needs to read it again before editing."
-msgstr "The document changed while the AI was working. It needs to read it again before editing."
-
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1860,6 +1856,10 @@ msgstr "This browser cannot display the PDF inline."
 #: src/features/project/dock/DockChangesView.tsx
 msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
 msgstr "This change builds on earlier AI changes. Apply those first, or use Apply all."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "This change is no longer reversible."
+msgstr "This change is no longer reversible."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is too old to undo."
@@ -1968,6 +1968,10 @@ msgstr "Type your answer…"
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "Undo"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undo is no longer available."
+msgstr "Undo is no longer available."
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"

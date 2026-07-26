@@ -222,12 +222,6 @@ export function writeToolFailureCopy(tool: ToolView): string {
         : t`The requested passage wasn't specific enough.`;
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
-    case "destructive_write_rejected":
-      return t`That change could remove recent writing, so it wasn't applied.`;
-    case "rejected_response_requires_reread":
-      return name
-        ? t`${name} changed while the AI was working. It needs to read the document again before editing.`
-        : t`The document changed while the AI was working. It needs to read it again before editing.`;
     case "partial_failure":
       return name
         ? t`Some changes to ${name} couldn't be completed.`
