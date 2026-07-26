@@ -245,6 +245,167 @@ if (!enabled || !databaseUrl) {
       });
     }, 120_000);
 
+    it("upgrades populated change-trail count constraints", async () => {
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0064_writer_impact",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES (
+              '00000000-0000-4000-8000-000000000021',
+              'change-trail-migration-fixture',
+              'change-trail-migration@test.invalid'
+            );
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES (
+              '00000000-0000-4000-8000-000000000022',
+              '00000000-0000-4000-8000-000000000021',
+              'Change trail migration fixture',
+              'change-trail-migration-fixture'
+            );
+            INSERT INTO threads (
+              id, project_id, created_by_user_id, title, kind, status
+            )
+            VALUES
+              (
+                '00000000-0000-4000-8000-000000000023',
+                '00000000-0000-4000-8000-000000000022',
+                '00000000-0000-4000-8000-000000000021',
+                'Building trail',
+                'primary',
+                'idle'
+              ),
+              (
+                '00000000-0000-4000-8000-000000000024',
+                '00000000-0000-4000-8000-000000000022',
+                '00000000-0000-4000-8000-000000000021',
+                'Settled trail',
+                'primary',
+                'idle'
+              );
+            INSERT INTO change_trail_shells (
+              id, thread_id, owner_kind, state, version, change_count,
+              swept_change_count, document_count, settled_at
+            )
+            VALUES
+              (
+                '00000000-0000-4000-8000-000000000025',
+                '00000000-0000-4000-8000-000000000023',
+                'shared',
+                'building',
+                1,
+                0,
+                0,
+                0,
+                NULL
+              ),
+              (
+                '00000000-0000-4000-8000-000000000026',
+                '00000000-0000-4000-8000-000000000024',
+                'shared',
+                'settled',
+                2,
+                3,
+                1,
+                1,
+                '2026-07-26T12:00:00Z'
+              );
+            INSERT INTO change_trail_delivery_outbox (
+              event_id, thread_id, trail_id, version, event_kind,
+              change_count, swept_change_count, document_count
+            )
+            VALUES
+              (
+                '00000000-0000-4000-8000-000000000027',
+                '00000000-0000-4000-8000-000000000023',
+                '00000000-0000-4000-8000-000000000025',
+                1,
+                'updated',
+                0,
+                0,
+                0
+              ),
+              (
+                '00000000-0000-4000-8000-000000000028',
+                '00000000-0000-4000-8000-000000000024',
+                '00000000-0000-4000-8000-000000000026',
+                2,
+                'settled',
+                3,
+                1,
+                1
+              );
+          `);
+        },
+        verify: async (target) => {
+          const shells = await target<
+            {
+              state: string;
+              change_count: number;
+              document_count: number;
+              settled_at: string | null;
+            }[]
+          >`
+            SELECT state, change_count, document_count, settled_at::text
+            FROM change_trail_shells
+            ORDER BY state
+          `;
+          expect(shells).toEqual([
+            {
+              state: "building",
+              change_count: 0,
+              document_count: 0,
+              settled_at: null,
+            },
+            {
+              state: "settled",
+              change_count: 3,
+              document_count: 1,
+              settled_at: "2026-07-26 12:00:00+00",
+            },
+          ]);
+
+          const outbox = await target<
+            { event_kind: string; change_count: number; document_count: number }[]
+          >`
+            SELECT event_kind, change_count, document_count
+            FROM change_trail_delivery_outbox
+            ORDER BY event_kind
+          `;
+          expect(outbox).toEqual([
+            { event_kind: "settled", change_count: 3, document_count: 1 },
+            { event_kind: "updated", change_count: 0, document_count: 0 },
+          ]);
+
+          await expect(
+            target.unsafe(`
+              INSERT INTO change_trail_delivery_outbox (
+                event_id, thread_id, trail_id, version, event_kind,
+                change_count, document_count
+              )
+              VALUES (
+                '00000000-0000-4000-8000-000000000029',
+                '00000000-0000-4000-8000-000000000023',
+                '00000000-0000-4000-8000-000000000025',
+                2,
+                'updated',
+                -1,
+                0
+              )
+            `),
+          ).rejects.toThrow("change_trail_delivery_outbox_counts_valid");
+          await expect(
+            target.unsafe(`
+              UPDATE change_trail_shells
+              SET settled_at = NULL
+              WHERE id = '00000000-0000-4000-8000-000000000026'
+            `),
+          ).rejects.toThrow("change_trail_shells_state_counts_valid");
+        },
+      });
+    }, 120_000);
+
     it("deletes branch-local writer-impact storage", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       const migration = await readFile(
