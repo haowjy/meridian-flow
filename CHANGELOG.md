@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: the production document transport now has contract coverage for
+  synchronous initial status delivery.
 - `packages/database`: new Yjs head rows now default to the shared collaboration
   schema version instead of a separately maintained number.
 - `apps/server`: draft display attribution and physical Discard reconstruction
