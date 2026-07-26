@@ -1,6 +1,6 @@
 /**
  * DraftInlineReviewExtension — projection-only change highlighting for the
- * read-only draft review editor.
+ * draft review editor.
  *
  * Owns a single `DecorationSet` describing every hunk in the current server
  * review model. Insertions tint content already present in the server draft;
@@ -10,7 +10,8 @@
  * Lifecycle inside the plugin:
  *  - `setInlineReviewModel` command → rebuild the DecorationSet from scratch
  *    (decode `Y.RelativePosition` anchors → absolute positions).
- *  - Remote sync transactions rebuild from relative anchors.
+ *  - Remote sync transactions rebuild from relative anchors; local writer
+ *    typing maps the existing set through the transaction.
  *  - `setInlineReviewActiveOperation` command → rebuild in place so the
  *    focused operation picks up the emphasis class.
  *

@@ -306,9 +306,7 @@ export function createEditorConfig({
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
-    // A branch room is a comparison surface. The server rejects client-authored
-    // branch updates too, but the editor must never invite or stage them.
-    editable: enableDraftInlineReview ? false : editable,
+    editable,
     autofocus,
     ...(resolvedEditorProps ? { editorProps: resolvedEditorProps } : {}),
   };

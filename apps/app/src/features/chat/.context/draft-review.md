@@ -61,11 +61,12 @@ the inline-review runtime and highlights + scrolls the manuscript span. Each car
 carries hover-revealed Apply/Discard verbs — the only mutating targets on the
 card — driving `controller.acceptOperation` / `controller.discardOperation`.
 
-The review editor is read-only. Draft content changes only through agent writes
-and explicit Apply/Discard commands; ordinary TipTap input is disabled and the
-server rejects client-authored branch-room updates. Draft review has no
-per-card Undo command. After Apply, recovery belongs to trail-backed Restore or
-turn-receipt Undo/Redo rather than browser Ctrl+Z or a client mutation origin.
+The review editor is editable. A draft branch is a Yjs room and the writer is
+one more peer in it, so ordinary TipTap input is admitted and lands in the draft
+branch — never in live — alongside agent writes. Dispositions are separate:
+Apply/Discard are server commands, so draft review has no per-card Undo command.
+After Apply, recovery belongs to trail-backed Restore or turn-receipt Undo/Redo
+rather than browser Ctrl+Z or a client mutation origin.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
 the TipTap inline-review extension and reports model availability identities.

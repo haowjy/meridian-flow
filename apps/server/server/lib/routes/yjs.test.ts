@@ -1,6 +1,6 @@
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
-import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
+import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
@@ -21,14 +21,9 @@ function services(stale: boolean) {
     eventSink: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
+      admitBranchWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
-}
-
-function updateWithText(text: string): Uint8Array {
-  const document = new Y.Doc({ gc: false });
-  document.getText("content").insert(0, text);
-  return Y.encodeStateAsUpdate(document);
 }
 
 function gatewayServices() {
@@ -126,114 +121,77 @@ describe("Yjs branch handshake route guard", () => {
     expect(persisted.getText("content").toString()).toBe("live advanced");
   });
 
-  it("rejects client-authored branch updates before returning them to Hocuspocus", async () => {
+  it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
+    const admitBranchWriterUpdate = vi.fn(async () => {
+      throw new Error("reserved provenance");
+    });
     const closeTransport = vi.fn();
     const document = new Y.Doc();
 
     await expect(
       admitWriterSync({
-        services: services(false),
+        services: {
+          ...services(false),
+          documentSync: { admitBranchWriterUpdate } as never,
+        },
         documentName,
         document,
         syncType: messageYjsUpdate,
-        payload: updateWithText("writer edit"),
+        payload,
         userId: "user-1" as never,
         closeTransport,
         context: {
           branchSyncState: new Map([["branch_1:3", "passed"]]),
         },
       }),
-    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
+    ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
+    expect(admitBranchWriterUpdate).toHaveBeenCalledWith({
+      branchId: "branch_1",
+      expectedGeneration: 3,
+      update: new Uint8Array([1, 2, 3]),
+      origin: { type: "user", userId: "user-1" },
+      document,
+    });
     expect(closeTransport).toHaveBeenCalledWith({
       code: 1008,
-      reason: "branch-review-read-only",
+      reason: "branch-update-admission-failed",
     });
   });
 
-  it("allows contained branch sync acknowledgements", async () => {
-    const document = new Y.Doc({ gc: false });
-    document.getText("content").insert(0, "server draft");
+  it("waits for branch durability before returning the update to Hocuspocus", async () => {
+    let commit: (() => void) | undefined;
+    const admitBranchWriterUpdate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          commit = resolve;
+        }),
+    );
+    const admission = admitWriterSync({
+      services: {
+        ...services(false),
+        documentSync: { admitBranchWriterUpdate } as never,
+      },
+      documentName,
+      document: new Y.Doc(),
+      syncType: messageYjsUpdate,
+      payload,
+      userId: "user-1" as never,
+      context: {
+        branchSyncState: new Map([["branch_1:3", "passed"]]),
+      },
+    });
 
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document,
-        syncType: messageYjsSyncStep2,
-        payload: Y.encodeStateAsUpdate(document),
-        userId: "user-1" as never,
-        context: {
-          branchSyncState: new Map([["branch_1:3", "passed"]]),
-        },
-      }),
-    ).resolves.toBeUndefined();
-  });
+    await Promise.resolve();
+    let returned = false;
+    void admission.then(() => {
+      returned = true;
+    });
+    await Promise.resolve();
+    expect(returned).toBe(false);
 
-  it("rejects a V1 update with trailing bytes", async () => {
-    const document = new Y.Doc({ gc: false });
-    const canonical = Y.encodeStateAsUpdate(document);
-    const withTrailingByte = Uint8Array.from([...canonical, 255]);
-
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document,
-        syncType: messageYjsUpdate,
-        payload: withTrailingByte,
-        userId: "user-1" as never,
-        context: {
-          branchSyncState: new Map([["branch_1:3", "passed"]]),
-        },
-      }),
-    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
-  });
-
-  it("rejects a state-changing V2 update", async () => {
-    const source = new Y.Doc({ gc: false });
-    source.getText("content").insert(0, "writer edit");
-
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc({ gc: false }),
-        syncType: messageYjsUpdate,
-        payload: Y.encodeStateAsUpdateV2(source),
-        userId: "user-1" as never,
-        context: {
-          branchSyncState: new Map([["branch_1:3", "passed"]]),
-        },
-      }),
-    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
-  });
-
-  it("rejects a deletion for content the branch has not received yet", async () => {
-    const source = new Y.Doc({ gc: false });
-    const text = source.getText("content");
-    text.insert(0, "future insertion");
-    const insertion = Y.encodeStateAsUpdate(source);
-    const afterInsert = Y.encodeStateVector(source);
-    text.delete(0, text.length);
-    const deletionOnly = Y.encodeStateAsUpdate(source, afterInsert);
-    const document = new Y.Doc({ gc: false });
-
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document,
-        syncType: messageYjsUpdate,
-        payload: deletionOnly,
-        userId: "user-1" as never,
-        context: {
-          branchSyncState: new Map([["branch_1:3", "passed"]]),
-        },
-      }),
-    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
-
-    Y.applyUpdate(document, insertion);
-    expect(document.getText("content").toString()).toBe("future insertion");
+    commit?.();
+    await expect(admission).resolves.toBeUndefined();
+    expect(returned).toBe(true);
   });
 
   it("rejects update-first sync messages", async () => {
@@ -279,7 +237,7 @@ describe("Yjs branch handshake route guard", () => {
     expect(state.get("branch_1:3")).toBe("rejected");
   });
 
-  it("allows a fresh client to pass step1 but not mutate the review room", async () => {
+  it("allows a fresh client to pass step1 then send updates", async () => {
     const state = new Map<string, BranchHandshakeState>();
     await admitWriterSync({
       services: services(false),
@@ -296,11 +254,11 @@ describe("Yjs branch handshake route guard", () => {
         documentName,
         document: new Y.Doc(),
         syncType: messageYjsUpdate,
-        payload: updateWithText("writer edit"),
+        payload,
         userId: "user-1" as never,
         context: { branchSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "branch-review-read-only", code: 1008 });
+    ).resolves.toBeUndefined();
     expect(state.get("branch_1:3")).toBe("passed");
   });
 

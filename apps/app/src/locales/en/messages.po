@@ -1382,10 +1382,6 @@ msgstr "Read"
 msgid "Read file"
 msgstr "Read file"
 
-#: src/features/editor/EditorView.tsx
-msgid "Read-only draft review"
-msgstr "Read-only draft review"
-
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
 msgstr "Read-only live document"

@@ -56,8 +56,11 @@ The review manuscript is the server draft projection, not a track-changes
 composition. Inline decorations may style ranges that exist in that projection,
 but must not inject deleted live prose or blocks. Zero-content seams mark
 pure-deletion locations for visible Changes-card navigation. Before/after
-content belongs in the dock's Changes cards. The review editor is always
-read-only and omits formatting controls.
+content belongs in the dock's Changes cards. The review editor stays editable:
+the draft is a Yjs room and the writer is one more peer in it, so keystrokes in
+review land in the draft branch rather than live. The review header is the
+interim signal for which surface you are on; stronger visual draft scoping is
+owned by the writer-UX pass.
 
 ### Rejected placements
 

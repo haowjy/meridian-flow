@@ -159,7 +159,6 @@ function SessionEditorView({
 }: SessionEditorViewProps) {
   const { controller } = useDraftReview();
   const inReview = Boolean(reviewDraftId);
-  const editorEditable = editable && !inReview;
   const registry = getDocumentSessionRegistry();
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
@@ -282,7 +281,7 @@ function SessionEditorView({
         schemaType,
         cursorProvider: session.cursorProvider,
         user,
-        editable: editorEditable,
+        editable,
         placeholder: t`Start writing…`,
         autofocus: false,
         figureRenderContext: { projectId, documentId },
@@ -292,13 +291,11 @@ function SessionEditorView({
         markerAgentName,
         editorProps: {
           attributes: {
-            class: editorProseClass(showToolbar && editorEditable ? "docked" : "none"),
-            "aria-label":
-              ariaLabel ??
-              (inReview ? t`Read-only draft review` : t`Collaborative document editor`),
+            class: editorProseClass(showToolbar ? "docked" : "none"),
+            "aria-label": ariaLabel ?? t`Collaborative document editor`,
           },
           handleTextInput(view, from, _to, text) {
-            if (!editorEditable || text !== " ") return false;
+            if (!editable || text !== " ") return false;
             const commandText = "/figure";
             const textBefore = view.state.selection.$from.parent.textBetween(
               0,
@@ -312,7 +309,7 @@ function SessionEditorView({
             return true;
           },
           handleDrop(view, event) {
-            if (!editorEditable) return false;
+            if (!editable) return false;
             const file = droppedImageFile(event);
             if (!file) return false;
             event.preventDefault();
@@ -353,11 +350,11 @@ function SessionEditorView({
               return true;
             },
             dragenter(_view, event) {
-              if (editorEditable && droppedImageFile(event as DragEvent)) setDragActive(true);
+              if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
               return false;
             },
             dragover(_view, event) {
-              if (!editorEditable || !droppedImageFile(event as DragEvent)) return false;
+              if (!editable || !droppedImageFile(event as DragEvent)) return false;
               event.preventDefault();
               setDragActive(true);
               return true;
@@ -383,7 +380,7 @@ function SessionEditorView({
       schemaType,
       session,
       user,
-      editorEditable,
+      editable,
       ariaLabel,
       showCollaborationDecorations,
       inReview,
@@ -495,7 +492,7 @@ function SessionEditorView({
       <TrackedEditorCanvas
         editor={editor}
         toolbar={
-          showToolbar && editorEditable ? (
+          showToolbar ? (
             <EditorToolbar
               editor={editor}
               onFigureButtonClick={() => figureInputRef.current?.click()}
@@ -513,7 +510,7 @@ function SessionEditorView({
           );
         }}
         dropOverlay={
-          editorEditable && dragActive ? (
+          editable && dragActive ? (
             <div className="meridian-editor-drop-overlay" aria-hidden>
               <UploadCloud className="size-8" />
               <span>

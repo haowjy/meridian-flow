@@ -174,29 +174,21 @@ async function admitBranchSync(
     context: input.context,
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
-  if (documentContainsUpdate(input.document, input.payload)) return;
-  input.closeTransport?.({ code: 1008, reason: "branch-review-read-only" });
-  throw permissionDenied("branch-review-read-only", 1008);
-}
-
-function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
+  // A draft branch room is a collaborative room like any other: the writer is
+  // one more peer in it. Client frames run the same durable admission the
+  // agent's own branch writes do.
   try {
-    const canonicalV1 = Y.convertUpdateFormatV2ToV1(Y.convertUpdateFormatV1ToV2(update));
-    if (
-      canonicalV1.length !== update.length ||
-      canonicalV1.some((byte, index) => byte !== update[index])
-    ) {
-      return false;
-    }
-    // Exact snapshot containment accounts for delete sets that reference
-    // structs the room has not received yet. Applying such an update to a
-    // clone appears inert while still planting a pending future deletion.
-    // The round trip above also proves the V1 decoder consumed the full frame:
-    // Yjs otherwise accepts trailing bytes and can read V2 frames as empty V1.
-    return Y.snapshotContainsUpdate(Y.snapshot(document), update);
+    await input.services.documentSync.admitBranchWriterUpdate({
+      branchId: room.branchId,
+      expectedGeneration: room.generation,
+      update: input.payload,
+      origin: { type: "user", userId: input.userId },
+      document: input.document,
+    });
+    return;
   } catch {
-    // Malformed update frames are never harmless acknowledgements.
-    return false;
+    input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
+    throw permissionDenied("branch-update-admission-failed", 1008);
   }
 }
 

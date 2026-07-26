@@ -100,8 +100,8 @@ composer mode, and review state live in
 ## Draft-review boundary
 
 Inline review is the only draft-review surface. It uses server-backed
-Apply/Discard disposition commands; the read-only review editor never
-uses browser mutation history. See
+Apply/Discard disposition commands; dispositions never ride browser mutation
+history, even though the review editor itself stays editable. See
 [`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
 preview, and projection contracts.
 

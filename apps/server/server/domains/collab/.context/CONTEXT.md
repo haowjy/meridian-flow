@@ -122,15 +122,19 @@ durable, pull deltas use the branch coordinator's existing update publisher so l
 Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
 persistence-only.
 
-**Review rooms are read-only.** The Yjs gateway admits branch handshake frames
-and canonical V1 acknowledgements whose complete bytes are exactly contained by
-the current room snapshot. It rejects V2 updates, V1 frames with trailing bytes,
-malformed frames, and any update that would mutate the branch document,
-including deletion sets for structs the room has not received yet. Branch
-mutations originate from server-side agent and disposition commands, not
-browser editing. No branch-room `onStore` path may
-re-persist or re-checkpoint to make such a mutation durable — it already is.
-`onChange` does not own branch persistence.
+**Branch mutations are durable before they reach a Hocuspocus room.** A draft
+branch room is a collaborative room: writer frames from a review editor are
+admitted like any other peer's, alongside server-side agent and disposition
+commands. No branch-room `onStore` path may re-persist or re-checkpoint to make
+a mutation durable — it already is. Live and branch writer frames use the same
+sequence: authority/generation validation, exact-containment acknowledgement,
+fresh-authorship validation, then durable append. Branch admission runs that
+sequence against one locked branch snapshot through the awaited `beforeSync`
+hook, before Hocuspocus apply/broadcast/ack. `onChange` does not own branch
+persistence. `admitBranchWriterUpdate` registers the whole admission with
+`trackAppend` before validation's first `await`, so a `storeHocuspocusBranch` or
+graceful-shutdown drain cannot miss an admission Hocuspocus is already
+processing — do not move registration after an `await`.
 `storeHocuspocusBranch` only drains pending branch admissions; calling
 `checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
 `AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`

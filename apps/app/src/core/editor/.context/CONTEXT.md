@@ -90,8 +90,9 @@ commands, and the lightweight hunk model used by the plugin.
   `Y.RelativePosition` decode is separated from
   decoration construction so anchor handling can be unit-tested without a DOM.
 - Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
-  RelativePositions. The editor is read-only; the extension has no local typing
-  or optimistic attribution path. Review dispositions never use browser
+  RelativePositions; local writer typing maps the existing set through the
+  transaction. The extension has no optimistic attribution path — the next
+  server model owns writer attribution. Review dispositions never use browser
   mutation origins or collaborative history; Ctrl+Z is not a review restore
   mechanism.
 - Editor-side click seam: mousedown on any decoration DOM

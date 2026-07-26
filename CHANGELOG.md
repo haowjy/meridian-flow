@@ -46,16 +46,12 @@
   mark elevation instead of durable trail classification.
 - `apps/app`: draft review manuscripts now render the server draft projection
   without splicing removed live text into proposed prose.
-- `apps/app`, `apps/server`: draft review rooms are read-only in TipTap and
-  reject client-authored Yjs branch mutations.
-- `apps/app`, `apps/server`: review hardening now rejects pending deletion-only
-  branch updates and keeps deletion-card navigation without injecting prose.
+- `apps/app`, `apps/server`: review hardening keeps deletion-card navigation
+  without injecting prose.
 - `apps/app`: draft review no longer carries browser-side mutation or undo
   wiring for server-owned dispositions.
 - `apps/server`: the durable settlement DB oracle now reads the latest push
   deterministically when a scenario produces multiple completed pushes.
-- `apps/server`: read-only draft rooms now admit only canonical V1 sync
-  acknowledgements, rejecting trailing data and V2 payloads.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
   their shared popover restores the change or opens its originating turn.

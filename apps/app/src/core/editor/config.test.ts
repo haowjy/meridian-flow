@@ -6,7 +6,7 @@ import * as Y from "yjs";
 import { createEditorConfig } from "./config";
 
 describe("createEditorConfig", () => {
-  it("keeps draft review read-only even when its host requests an editable editor", () => {
+  it("keeps a draft review editor editable — the writer is one more peer in the draft room", () => {
     const document = new Y.Doc();
 
     const config = createEditorConfig({
@@ -16,6 +16,6 @@ describe("createEditorConfig", () => {
       enableDraftInlineReview: true,
     });
 
-    expect(config.editable).toBe(false);
+    expect(config.editable).toBe(true);
   });
 });
