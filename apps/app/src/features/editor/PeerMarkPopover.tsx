@@ -144,7 +144,7 @@ export function PeerMarkPopover({
               </div>
             ) : null}
 
-            <div className="flex items-center gap-2 border-border-subtle border-t pt-3">
+            <div className="flex flex-wrap items-center gap-2 border-border-subtle border-t pt-3">
               {hasDiff ? (
                 <Button
                   size="sm"
