@@ -4,14 +4,11 @@
  *
  * Key decision: a session's lifecycle is driven by the union of retained
  * **open-document sets** (desktop context tabs, mobile single-file viewer),
- * NOT by any view's mount. Previously `EditorView` created
- * a `DocumentSession` on mount and `destroy()`d it on unmount, so leaving the
- * Context destination tore down every Yjs session + its transport subscription
- * (re-syncing + reconnecting on return). With the registry, views are pure
- * consumers (`get`); the session survives view unmount and is destroyed only
- * when every opener has released that document from its open set, after a
- * short grace window so rapid release→retain (e.g. React strict mode) does
- * not detach the Hocuspocus provider on the shared socket.
+ * NOT by any view's mount. Views are pure consumers (`get`); the session
+ * survives view unmount and is destroyed only when every opener has released
+ * that document from its open set, after a short grace window so rapid
+ * release→retain (e.g. React strict mode) does not detach the Hocuspocus
+ * provider on the shared socket.
  *
  * The Hocuspocus adapter owns the shared socket; this registry owns the
  * per-room sessions on the same process-wide plane.

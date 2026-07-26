@@ -67,7 +67,7 @@ export type ProjectViewProps = {
   activeThreadId: string | null;
   /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
-  /** Active context folder retained in route state for future context navigation. */
+  /** Active context folder, when `screen=context`. */
   activeContextFolder: string | null;
   /** Active context file path, when `screen=context`. */
   activeContextPath: string | null;
@@ -173,8 +173,6 @@ function HydratedProject(props: ResolvedProjectViewProps) {
   if (usePhone === null) return null;
   return usePhone ? <MobileProject {...props} /> : <DesktopProject {...props} />;
 }
-
-/* ── Desktop project ─────────────────────────────────────────────── */
 
 /** A PaneHeader expand control derived from a stable surface id. */
 function expandToggle(

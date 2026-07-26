@@ -94,7 +94,7 @@ describe("orchestrator model-request debug capture", () => {
     });
 
     for await (const _event of handle.events) {
-      // drain
+      // The debug record is finalized only after the event stream is consumed.
     }
 
     const records = modelRequestDebug.listByTurn(thread.id, handle.assistantTurnId);

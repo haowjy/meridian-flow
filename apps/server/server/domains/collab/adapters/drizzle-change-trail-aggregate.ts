@@ -1,4 +1,4 @@
-/** Compatibility factory for the change-trail aggregate persistence port. */
+/** Drizzle persistence and terminal reconciliation for change-trail aggregates. */
 import { createHash } from "node:crypto";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

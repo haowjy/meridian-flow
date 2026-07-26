@@ -67,7 +67,6 @@ describe("decodeAnchor", () => {
 
     const decoded = decodeAnchor(encoded);
     expect(decoded).not.toBeNull();
-    // Encoded byte payload should match if we re-encode.
     if (decoded) {
       expect(Buffer.from(Y.encodeRelativePosition(decoded)).toString("base64")).toBe(encoded);
     }

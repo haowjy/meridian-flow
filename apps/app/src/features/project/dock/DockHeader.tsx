@@ -26,12 +26,7 @@ export type DockHeaderProps = {
   view: DockView;
   views: readonly DockView[];
   onSelectView: (view: DockView) => void;
-  /** Collapse the whole dock. Omitted only where the header isn't rendered. */
   onClose?: () => void;
-  /**
-   * The chat select/rename dropdown, supplied by the chat occupant. Rendered
-   * in the left slot only while the Chat view is active.
-   */
   threadSelect?: ReactNode;
 };
 
@@ -109,7 +104,6 @@ function DockViewSwitch({
   );
 }
 
-/** The one place dock view labels are spelled. */
 function DockViewLabel({ view }: { view: DockView }) {
   switch (view) {
     case "chat":

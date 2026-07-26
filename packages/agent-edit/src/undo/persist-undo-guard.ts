@@ -6,7 +6,7 @@ import {
   persistUndoPlanWatermark,
 } from "./persist-undo-watermark.js";
 
-/** Shared refusal copy for persist-time dependency races (matches turn-reversal UX). */
+/** Shared dependency-conflict copy for persist-time races and turn reversal. */
 export const PERSIST_UNDO_DEPENDENT_MESSAGE =
   "This turn has later live edits depending on it. View the change instead of undoing it.";
 

@@ -532,9 +532,8 @@ async function writeMutationRows(
   rows: BranchJournalRow[],
   authoredRows: Array<{ id: number }>,
 ): Promise<void> {
-  // Apply materializes only handles whose final branch state is active. Handles
-  // eliminated by Draft undo are deliberately squashed instead of being
-  // recreated as active live mutations with content that no longer exists.
+  // Apply materializes only handles whose folded branch-reversal state remains
+  // active; inactive handles must not reappear as live mutations.
   const mutationRows = activeBranchAgentWriteRows(rows);
   if (mutationRows.length === 0) return;
   await db

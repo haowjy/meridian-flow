@@ -4,7 +4,7 @@
  * Owns the thread-list read so `EditorView` never holds the query result: that
  * array's identity changes on every refetch, and the thread list is invalidated
  * by every turn start, stream frame and disposition. Feeding a store instead
- * keeps the editor's dependency array free of turn-rate churn.
+ * keeps turn-rate churn out of the editor's construction state.
  */
 import { useEffect, useState } from "react";
 

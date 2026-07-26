@@ -8,9 +8,6 @@
  * - `EditorMountIdentity` holds every fact TipTap can only learn at
  *   construction, and `editorMountKey()` turns it into the React key that owns
  *   the mount. A remount is therefore a key decision at one boundary.
- * - `useMountedEditor()` builds the editor from that identity and hands
- *   `useEditor` no dependency array, so there is no list for a later live
- *   option to sneak into.
  * - Everything that may change while the writer keeps typing arrives as
  *   `EditorSurfaceOptions` and reaches the running editor through TipTap's own
  *   `setOptions` sync (plus `setEditable`, which that sync deliberately skips).
@@ -124,8 +121,7 @@ export function useMountedEditor({
     [construction, surface.editable, surface.editorProps],
   );
 
-  // No dependency array: TipTap 3 then syncs changed options onto the live
-  // instance with `setOptions()` instead of rebuilding it.
+  // TipTap 3 syncs changed options onto the live instance instead of rebuilding it.
   const editor = useEditor(options);
 
   useEffect(() => {

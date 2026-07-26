@@ -1,4 +1,3 @@
-/** Review cards expose selective Discard but never imply operation-scoped Apply. */
 import type { ReviewOperation } from "@meridian/contracts/drafts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
