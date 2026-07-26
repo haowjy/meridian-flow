@@ -9,7 +9,8 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Dev env resolution (`.env` loading + per-worktree rewrite of every registered DB URL)
 - Per-worktree Postgres DB administration (ensure / drop / extensions / reserved guards)
 - Per-run local DB test provisioning, ownership, cleanup, and stale-run GC
-- Schema application via `drizzle-kit migrate` (`prepare-db.ts`)
+- Schema application via the programmatic Drizzle migrator with file-aware
+  PostgreSQL failures (`migrate-db.ts`, called by `prepare-db.ts`)
 - `pnpm dev` orchestration (tmux + portless + dev modes + readiness + tailscale)
 - Dev session planning (canonical env, redacted commands, internal API origin)
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
