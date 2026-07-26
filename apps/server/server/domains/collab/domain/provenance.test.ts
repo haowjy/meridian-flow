@@ -327,13 +327,13 @@ describe("sweep observation evidence", () => {
           precedingUpdates: [],
           update: new Uint8Array(),
           observedBaseUpdateSeq: 10,
-          retainedRoots: [],
+          rootFloor: { key: "empty", roots: [] },
         },
         {
           precedingUpdates: [],
           update: new Uint8Array(),
           observedBaseUpdateSeq: 11,
-          retainedRoots: [],
+          rootFloor: { key: "empty", roots: [] },
         },
       ],
     });
@@ -386,7 +386,7 @@ describe("sweep observation evidence", () => {
           precedingUpdates: [],
           update: new Uint8Array(),
           observedBaseUpdateSeq: 10,
-          retainedRoots: [],
+          rootFloor: { key: "empty", roots: [] },
         },
       ],
     });
@@ -432,7 +432,10 @@ describe("sweep observation evidence", () => {
           precedingUpdates: [],
           update: new Uint8Array(),
           observedBaseUpdateSeq: 10,
-          retainedRoots: journalInsertionRanges(checkpointUpdate),
+          rootFloor: {
+            key: "checkpoint",
+            roots: journalInsertionRanges(checkpointUpdate),
+          },
         },
       ],
     });

@@ -46,25 +46,33 @@ export function materializeSweepEvidence(input: {
     precedingUpdates: readonly Uint8Array[];
     update: Uint8Array;
     observedBaseUpdateSeq: number;
-    /** Neutral checkpoint floor: later sync payloads cannot claim these old roots. */
-    retainedRoots: readonly WriterLineageRange[];
+    rootFloor: {
+      /** Stable within one materialization so candidates can share first-birth replay. */
+      key: string;
+      /** Neutral checkpoint roots: later sync payloads cannot claim these old roots. */
+      roots: readonly WriterLineageRange[];
+    };
   }[];
 }): SweepEvidence {
+  const firstBirthRowsByFloor = new Map<string, readonly FirstBirthRow[]>();
   return {
-    candidates: input.candidates.map((candidate) => ({
-      precedingUpdates: candidate.precedingUpdates,
-      update: candidate.update,
-      byUser: [
-        ...recentWriterRootsByUser(
-          input.rows,
-          candidate.observedBaseUpdateSeq,
-          candidate.retainedRoots,
+    candidates: input.candidates.map((candidate) => {
+      let firstBirthRows = firstBirthRowsByFloor.get(candidate.rootFloor.key);
+      if (!firstBirthRows) {
+        firstBirthRows = materializeFirstBirthRows(input.rows, candidate.rootFloor.roots);
+        firstBirthRowsByFloor.set(candidate.rootFloor.key, firstBirthRows);
+      }
+      return {
+        precedingUpdates: candidate.precedingUpdates,
+        update: candidate.update,
+        byUser: [...recentWriterRootsByUser(firstBirthRows, candidate.observedBaseUpdateSeq)].map(
+          ([userId, rootsAfterObservationWatermark]) => ({
+            userId,
+            rootsAfterObservationWatermark,
+          }),
         ),
-      ].map(([userId, rootsAfterObservationWatermark]) => ({
-        userId,
-        rootsAfterObservationWatermark,
-      })),
-    })),
+      };
+    }),
   };
 }
 
@@ -156,32 +164,52 @@ function affectedBlockIdentities(input: {
   );
 }
 
-function recentWriterRootsByUser(
+type FirstBirthRow = {
+  journalRowId: bigint;
+  originType: string | null;
+  actorUserId: string | null;
+  roots: readonly WriterLineageRange[];
+};
+
+function materializeFirstBirthRows(
   rows: readonly {
     journalRowId: bigint;
     originType: string | null;
     actorUserId: string | null;
     update: Uint8Array;
   }[],
-  observedBaseUpdateSeq: number,
   retainedRoots: readonly WriterLineageRange[],
-): Map<UserId, WriterLineageRange[]> {
-  const rootsByUser = new Map<UserId, WriterLineageRange[]>();
+): FirstBirthRow[] {
   let coveredRoots = normalizeLineageRanges(retainedRoots);
-  for (const row of rows) {
+  return rows.map((row) => {
     const insertedRoots = normalizeLineageRanges(journalInsertionRanges(row.update));
     const firstBornRoots = subtractLineageRanges(insertedRoots, coveredRoots);
     coveredRoots = normalizeLineageRanges([...coveredRoots, ...insertedRoots]);
+    return {
+      journalRowId: row.journalRowId,
+      originType: row.originType,
+      actorUserId: row.actorUserId,
+      roots: firstBornRoots,
+    };
+  });
+}
+
+function recentWriterRootsByUser(
+  rows: readonly FirstBirthRow[],
+  observedBaseUpdateSeq: number,
+): Map<UserId, WriterLineageRange[]> {
+  const rootsByUser = new Map<UserId, WriterLineageRange[]>();
+  for (const row of rows) {
     if (
       row.originType !== "human" ||
       !row.actorUserId ||
       row.journalRowId <= BigInt(observedBaseUpdateSeq) ||
-      firstBornRoots.length === 0
+      row.roots.length === 0
     ) {
       continue;
     }
     const userId = row.actorUserId as UserId;
-    rootsByUser.set(userId, [...(rootsByUser.get(userId) ?? []), ...firstBornRoots]);
+    rootsByUser.set(userId, [...(rootsByUser.get(userId) ?? []), ...row.roots]);
   }
   for (const [userId, roots] of rootsByUser) {
     rootsByUser.set(userId, normalizeLineageRanges(roots));

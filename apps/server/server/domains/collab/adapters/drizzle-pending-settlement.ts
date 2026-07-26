@@ -670,9 +670,13 @@ async function readPendingSettlement(
         `Pending branch push settlement ${pushId} has no authority admission`,
       );
     }
-    const checkpoints = await db
+    const latestObservationWatermark = sweepCandidates.reduce(
+      (latest, { observedBaseUpdateSeq }) => Math.max(latest, observedBaseUpdateSeq),
+      0,
+    );
+    const checkpointMetadata = await db
       .select({
-        state: documentYjsCheckpoints.state,
+        id: documentYjsCheckpoints.id,
         upToSeq: documentYjsCheckpoints.upToSeq,
       })
       .from(documentYjsCheckpoints)
@@ -681,9 +685,32 @@ async function readPendingSettlement(
           eq(documentYjsCheckpoints.documentId, row.outbox.documentId),
           eq(documentYjsCheckpoints.authorityId, authority.authorityId),
           eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+          lte(documentYjsCheckpoints.upToSeq, latestObservationWatermark),
         ),
       )
       .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id));
+    const selectedCheckpoints = sweepCandidates.map((candidate) => {
+      const checkpoint = checkpointMetadata.find(
+        ({ upToSeq }) => upToSeq <= candidate.observedBaseUpdateSeq,
+      );
+      if (!checkpoint) {
+        throw new ProvenanceMaterializationError(
+          `Pending branch push settlement ${pushId} has no neutral root floor`,
+        );
+      }
+      return { candidate, checkpointId: checkpoint.id };
+    });
+    const checkpointIds = [...new Set(selectedCheckpoints.map(({ checkpointId }) => checkpointId))];
+    const checkpointStates = await db
+      .select({
+        id: documentYjsCheckpoints.id,
+        state: documentYjsCheckpoints.state,
+      })
+      .from(documentYjsCheckpoints)
+      .where(inArray(documentYjsCheckpoints.id, checkpointIds));
+    const rootsByCheckpoint = new Map(
+      checkpointStates.map(({ id, state }) => [id, journalInsertionRanges(new Uint8Array(state))]),
+    );
     const attributedRows = await db
       .select({
         journalRowId: documentYjsUpdates.id,
@@ -705,18 +732,16 @@ async function readPendingSettlement(
         documentYjsUpdates.id,
       );
     sweepEvidence = materializeSweepEvidence({
-      candidates: sweepCandidates.map((candidate) => {
-        const checkpoint = checkpoints.find(
-          ({ upToSeq }) => upToSeq <= candidate.observedBaseUpdateSeq,
-        );
-        if (!checkpoint) {
+      candidates: selectedCheckpoints.map(({ candidate, checkpointId }) => {
+        const roots = rootsByCheckpoint.get(checkpointId);
+        if (!roots) {
           throw new ProvenanceMaterializationError(
-            `Pending branch push settlement ${pushId} has no neutral root floor`,
+            `Pending branch push settlement ${pushId} lost its neutral root floor`,
           );
         }
         return {
           ...candidate,
-          retainedRoots: journalInsertionRanges(new Uint8Array(checkpoint.state)),
+          rootFloor: { key: String(checkpointId), roots },
         };
       }),
       rows: attributedRows.map((attribution) => ({
