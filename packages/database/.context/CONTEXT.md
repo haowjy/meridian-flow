@@ -56,6 +56,12 @@ append-only in the production lifecycle: compaction deletes retained
 the `documents` cascade. Do not document this relationship as custom SQL or as an
 absent FK.
 
+`document_yjs_heads.schema_version` takes its Drizzle default directly from
+`COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`; do not restore a
+second literal or comment-maintained copy. A schema-version bump still requires
+an additive migration that advances the Postgres column default for deployed
+databases.
+
 ### Billing storage
 
 Billing has no `user_subscriptions` table in the current schema. Stripe customer

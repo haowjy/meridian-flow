@@ -1,5 +1,13 @@
 # Client transport seams
 
+## Document status
+
+Every `DocumentSessionTransportProvider.subscribeStatus` implementation emits
+its current connection state synchronously before the subscription call
+returns, then emits every later transition. `DocumentSession` relies on that
+initial callback to derive an honest first status; a deferred initial emission
+creates a timing-dependent gap between the transport and session snapshots.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with

@@ -15,7 +15,10 @@ Yjs document session. It must stay structurally aligned with
   live rooms use the bare document id; review rooms use the opaque,
   generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
-  Collaboration binds to a concrete Y.Doc/fragment at construction.
+  Collaboration binds to a concrete Y.Doc/fragment at construction. A review
+  mount requires both `reviewDraftId` and `reviewRoomName`; neither selects the
+  live surface, while either one alone is invalid and must fail rather than
+  falling back to live.
 - `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
   the contract:
   - `EditorMountIdentity` is a discriminated union over the two surfaces (live

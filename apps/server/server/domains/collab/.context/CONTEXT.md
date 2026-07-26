@@ -76,6 +76,14 @@ transport address.
 Propagation is sync-only. Cold attribution uses persisted branch journal rows
 and live journal metadata; memory-only runtime maps are never an attribution
 authority.
+
+Review operations keep two internal journal-row identities separate.
+`SourceUpdateIds` name the logical source rows used for operation attribution
+and presentation; `PhysicalSourceUpdateIds` name every physical row needed to
+reconstruct Discard, including reversal rows. Discard classes use the physical
+set. Neither identity is wire data, and callers must not substitute one for the
+other just because both are represented by numbers at runtime.
+
 Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
 maximum), on branch review room open/reconnect, and at agent tool boundaries. The
 room trigger is fire-and-forget; Hocuspocus admission never waits for the pull. Once
