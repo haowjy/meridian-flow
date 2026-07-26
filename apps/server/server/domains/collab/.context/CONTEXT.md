@@ -374,7 +374,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   not reuse destructive-safety birth classes. The checkpoint state supplies a
   neutral covered-root floor, and authority-order replay assigns only
   previously unseen insertion ranges, so a later sync update cannot claim
-  historical or AI roots it repeats.
+  historical or AI roots it repeats. Materialization scans checkpoint metadata,
+  loads only the distinct full states selected for candidate watermarks, and
+  caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
 - **Writer Apply is branch-scoped, not preview-scoped**:
