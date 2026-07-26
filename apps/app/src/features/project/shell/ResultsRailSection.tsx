@@ -8,17 +8,12 @@
  * reads as one IA. The row composition is its own primitive because results
  * carry attribution + a click affordance that the document sections don't.
  *
- * Anchor situation: producing-turn anchors are not yet supported by the
- * chat view (only `data-turn-id` exists at the DOM level; there is no
- * router-driven scroll-to-turn). The row's click-through therefore
- * navigates to the producing thread only and relies on top-of-thread
- * landing for now. The producing `turnId` rides along on the navigation
- * search param so a future deep-link layer can pick it up without a
- * protocol change.
+ * The click-through is a REVEAL, not a navigation: it hands the producing
+ * thread + turn to `requestConversationReveal`, and the shell brings that
+ * conversation up on whatever surface already hosts it on the current screen.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { useNavigate } from "@tanstack/react-router";
 import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Sparkles } from "lucide-react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
@@ -26,6 +21,7 @@ import { useProjectAgents } from "@/client/query/useProjectAgents";
 import { useProjectResults } from "@/client/query/useProjectResults";
 import { Badge } from "@/components/ui/badge";
 import { resolveAgentFromCatalog } from "@/features/agents/resolve-agent";
+import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { relativeTime } from "@/features/project/relative-time";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
 
@@ -61,7 +57,6 @@ export function ResultsRailBody({
   onOpenResult: (result: ProjectResultItem) => void;
 }) {
   const { status } = model;
-  const navigate = useNavigate();
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -87,19 +82,14 @@ export function ResultsRailBody({
               projectId={projectId}
               result={result}
               onOpen={() => onOpenResult(result)}
-              onOpenProducingThread={() => {
-                // Navigate to the producing thread. The chat view doesn't
-                // currently support an in-thread turn anchor (only DOM-level
-                // `data-turn-id` exists; no router-driven scroll-to-turn),
-                // so we land at the top of the thread for now. The
-                // producing `turnId` is intentionally not carried in
-                // routing state — there is no consumer yet, and adding it
-                // would create a dangling URL surface to keep clean.
-                void navigate({
-                  to: "/chat/$threadId",
-                  params: { threadId: result.threadId },
-                });
-              }}
+              onOpenProducingThread={() =>
+                requestConversationReveal({
+                  threadId: result.threadId,
+                  turnId: result.turnId,
+                  // The turn is the target; a result has no change row inside it.
+                  changeId: null,
+                })
+              }
             />
           ))}
         </ul>

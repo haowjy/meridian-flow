@@ -102,7 +102,9 @@ export function TurnEditsReceipt({
   const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   useEffect(() => {
-    if (reveal?.turnId !== turn.id) return;
+    // Only a reveal naming a change row belongs to this receipt; a turn-level
+    // reveal lands on the turn without forcing its edit list open.
+    if (reveal?.turnId !== turn.id || reveal.changeId === null) return;
     setActiveReveal(reveal);
     setExpanded(true);
   }, [reveal, turn.id]);

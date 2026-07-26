@@ -22,10 +22,7 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
-import {
-  completeConversationReveal,
-  usePendingConversationReveal,
-} from "@/features/chat/conversation-reveal";
+import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -33,6 +30,7 @@ import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { useDockViewStore } from "./dock/dock-view-store";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -112,18 +110,6 @@ export function ProjectView(props: ProjectViewProps) {
   const activeWork = works?.find((work) => work.id === workId) ?? null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
-  const selectThreadRef = useRef(props.onSelectThread);
-  selectThreadRef.current = props.onSelectThread;
-  const pendingConversationReveal = usePendingConversationReveal();
-  useEffect(() => {
-    if (!pendingConversationReveal) return;
-    selectThreadRef.current(pendingConversationReveal.threadId);
-    // Shared trails deliberately have no turn receipt to target. Opening their
-    // conversation is still useful, but the selection itself completes the request.
-    if (pendingConversationReveal.turnId === null) {
-      completeConversationReveal(pendingConversationReveal);
-    }
-  }, [pendingConversationReveal]);
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -214,6 +200,19 @@ function DesktopProject(props: ResolvedProjectViewProps) {
   const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
     useProjectSurfacePrefsActions();
   useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
+  const setDockView = useDockViewStore((state) => state.setDockView);
+
+  // Opening a conversation reveals it where the writer already is. Desktop
+  // mounts the chat surface on every screen — centered on Chat, docked on
+  // Home/Editor — so a reveal only has to un-park the surface and point it at
+  // the thread. `onSelectDockThread` sets `?thread` and leaves `?screen` alone.
+  useConversationRevealRouting((threadId) => {
+    if (layout.chat.slot === "dock") {
+      setDockCollapsed(false);
+      setDockView(props.activeScreen, "chat");
+    }
+    props.onSelectDockThread(threadId);
+  });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
   // Collapse/expand calls targeting a surface that is currently the dock

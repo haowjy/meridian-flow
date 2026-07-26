@@ -36,7 +36,7 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { useConversationReveal } from "./conversation-reveal";
+import { completeConversationReveal, useConversationReveal } from "./conversation-reveal";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
@@ -109,7 +109,11 @@ export function TurnList({
   useEffect(() => {
     if (conversationReveal?.turnId == null) return;
     const index = visibleTurns.findIndex((turn) => turn.id === conversationReveal.turnId);
-    if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
+    if (index < 0) return;
+    virtualizer.scrollToIndex(index, { align: "center" });
+    // The turn IS the target when no change row was named — nothing deeper will
+    // complete the handshake, so landing on it finishes the reveal.
+    if (conversationReveal.changeId === null) completeConversationReveal(conversationReveal);
   }, [conversationReveal, virtualizer, visibleTurns]);
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
