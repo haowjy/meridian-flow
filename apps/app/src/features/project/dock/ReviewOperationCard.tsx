@@ -4,7 +4,7 @@
  * Closure=card (spec §5.3): each card renders ONE closure class — a quiet verb
  * (Rewrote / Added / Removed, or `Merged` for a CRDT merge artifact, or
  * `New document` for a draft-created doc) over the intended change, plus a
- * single Apply/Create and a single Discard. Contributing turns are attributed
+ * single Discard and a single Apply/Create. Contributing turns are attributed
  * on the card and writer edits that joined the class show an informational
  * "Includes your edits" badge. There is NO dependency prompt anywhere: applying
  * or discarding acts on the whole class at once — the writer never learns the
@@ -96,12 +96,13 @@ export function ReviewOperationCard({
 }
 
 /**
- * The proposal's Apply/Create + Discard cluster. Reveals on card hover/focus
- * (matching the doc row's hover-Review verb), but stays visible while this card
- * is in-flight so its state can't hide. Verbs disable while ANY review
- * disposition is in flight (`controller.isDisposing`) so the writer can't stack
- * overlapping accepts/discards. One Apply (or Create for a new document) and one
- * Discard act on the whole closure class — no second-step confirm exists.
+ * The proposal's Discard + Apply/Create cluster, in the one order every draft
+ * action row uses: Discard immediately left of the Apply verb. Reveals on card
+ * hover/focus (matching the doc row's hover-Review verb), but stays visible
+ * while this card is in-flight so its state can't hide. Verbs disable while ANY
+ * review disposition is in flight (`controller.isDisposing`) so the writer can't
+ * stack overlapping accepts/discards. One Apply (or Create for a new document)
+ * and one Discard act on the whole closure class — no second-step confirm exists.
  */
 function CardVerbs({
   proposal,
@@ -136,6 +137,13 @@ function CardVerbs({
       )}
     >
       <VerbButton
+        tone="muted"
+        disabled={disabled}
+        onClick={() => void controller.discardOperation(operationId)}
+      >
+        <Trans>Discard</Trans>
+      </VerbButton>
+      <VerbButton
         tone="primary"
         disabled={disabled}
         onClick={() => controller.acceptOperation(operationId, model)}
@@ -143,13 +151,6 @@ function CardVerbs({
         {/* `Create` (not `Apply`) is the one place the verb diverges: applying
             a document that does not yet exist is honestly a creation. */}
         {isNewDocument ? <Trans>Create</Trans> : <Trans>Apply</Trans>}
-      </VerbButton>
-      <VerbButton
-        tone="muted"
-        disabled={disabled}
-        onClick={() => void controller.discardOperation(operationId)}
-      >
-        <Trans>Discard</Trans>
       </VerbButton>
     </div>
   );

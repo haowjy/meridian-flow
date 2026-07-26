@@ -10,6 +10,10 @@
  * Single doc: name inline, clicking the strip opens review directly.
  * Multi doc: "N documents" with chevron, clicking toggles expand/collapse.
  *
+ * Verb order follows the one draft-action grammar: the action that commits is
+ * rightmost, Discard sits immediately left of it, and anything backing out
+ * (Keep, Cancel) is leftmost.
+ *
  * All visibility derives from `DraftReviewProvider` state (never raw queries),
  * so the dock, the editor bar, and the transcript can never disagree about what
  * is pending.
@@ -174,6 +178,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <span className="whitespace-nowrap text-ink-muted">
                 <Trans>Discard all changes?</Trans>
               </span>
+              <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
+                <Trans>Keep</Trans>
+              </QuietButton>
               <QuietButton
                 onClick={() => {
                   setConfirmingDiscardAll(false);
@@ -182,9 +189,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 disabled={dock.isBusy}
               >
                 <Trans>Discard</Trans>
-              </QuietButton>
-              <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
-                <Trans>Keep</Trans>
               </QuietButton>
             </>
           ) : (

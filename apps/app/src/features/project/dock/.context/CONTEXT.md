@@ -109,7 +109,7 @@ flowchart LR
     Occupant -->|dock placement| DockHeader
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per op]
-    Card --> Verbs[Apply / Discard]
+    Card --> Verbs[Discard / Apply]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,

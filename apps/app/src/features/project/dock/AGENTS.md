@@ -7,8 +7,9 @@ grid slot. It has per-screen view sets (Chat-main: Context | Changes;
 Context-main: Chat | Changes) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: every document with
-pending AI changes, grouped with per-operation review cards carrying Apply /
-Discard.
+pending AI changes, grouped with per-operation review cards carrying Discard /
+Apply. It works on every screen, with or without a mounted manuscript, so
+entering review never has to leave the screen the writer is on.
 
 This is NOT the chat surface or the context rail — those are the dock's
 *occupants* (`ChatSurface`, `ContextSidebar`), wrapped by `DockShell`. The dock
@@ -84,7 +85,7 @@ finds an active draft.
 | `DockHeader.tsx` | Single `h-10` header: left slot (chat title), contained segmented switch, close |
 | `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
 | `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
-| `ReviewOperationCard.tsx` | Per-operation card with Apply / Discard |
+| `ReviewOperationCard.tsx` | Per-operation card with Discard / Apply |
 | `operation-change-text.ts` | Pure card-body text extraction from operations/hunks |
 
 ## Downlinks
