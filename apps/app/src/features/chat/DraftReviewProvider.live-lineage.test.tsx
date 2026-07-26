@@ -343,7 +343,6 @@ function activeGroup(): ThreadDraftGroup {
         status: "active",
         lastActorTurnId: null,
         updatedAt: "2026-01-01T00:00:00.000Z",
-        partialAcceptedOperationCount: 0,
         proposedOperationCount: 1,
         wordsAdded: null,
         wordsRemoved: null,

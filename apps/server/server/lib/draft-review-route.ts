@@ -228,7 +228,6 @@ function serializeThreadDraft(
     createdDocument?: boolean;
   },
   lifecycle?: {
-    partialAcceptedOperationCount: number | null;
     proposedOperationCount: number | null;
   },
 ): ThreadDraftListItem {
@@ -240,7 +239,6 @@ function serializeThreadDraft(
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
-    partialAcceptedOperationCount: lifecycle?.partialAcceptedOperationCount ?? null,
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
     wordsAdded: draft.wordsAdded ?? null,
     wordsRemoved: draft.wordsRemoved ?? null,

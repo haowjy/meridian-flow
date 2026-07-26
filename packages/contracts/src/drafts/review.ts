@@ -10,7 +10,6 @@ export interface ThreadDraftListItem {
   status: "active";
   lastActorTurnId: string | null;
   updatedAt: string;
-  partialAcceptedOperationCount?: number | null;
   proposedOperationCount?: number | null;
   wordsAdded: number | null;
   wordsRemoved: number | null;
@@ -18,8 +17,8 @@ export interface ThreadDraftListItem {
    * the draft creates a document that does not yet exist in the
    * writer's live project (spec §5.5) — empty live root, no prior push_lineage.
    * Drives the dock row `New` badge + additions-only stats and the review
-   * card's `New document` / `Create` variant. Derived server-side from the
-   * branching model; consumed here. Absent/false = edit of a live document.
+   * card's `New document` variant. Derived server-side from the branching
+   * model; consumed here. Absent/false = edit of a live document.
    */
   isNewDocument?: boolean;
 }
@@ -41,8 +40,8 @@ type ActiveDraftPreviewBase = {
   notice?: { code: "branch_corrupt_reset"; message: string };
   /**
    * mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
-   * open review can render the all-additions `New document` / `Create` card
-   * variant without a second lookup. Produced by the server preview builder.
+   * open review can render the all-additions `New document` card variant
+   * without a second lookup. Produced by the server preview builder.
    */
   isNewDocument?: boolean;
 };

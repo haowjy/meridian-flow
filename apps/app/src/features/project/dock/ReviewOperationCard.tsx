@@ -39,10 +39,10 @@ export function ReviewOperationCard({
   onFocus: () => void;
 }) {
   return (
-    // A `div[role=button]` (not a `<button>`) so the mutating Apply/Discard
-    // buttons can nest inside without an invalid button-in-button. The body
-    // click is focus/scroll only; the verbs fence propagation themselves.
-    // biome-ignore lint/a11y/useSemanticElements: a real <button> can't nest the Apply/Discard buttons.
+    // A `div[role=button]` (not a `<button>`) so the mutating Discard button can
+    // nest inside without an invalid button-in-button. The body click is
+    // focus/scroll only; Discard fences its own propagation.
+    // biome-ignore lint/a11y/useSemanticElements: a real <button> can't nest the Discard button.
     <div
       role="button"
       tabIndex={0}
