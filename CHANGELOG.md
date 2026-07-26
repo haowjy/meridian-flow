@@ -7,7 +7,8 @@
 - `tools/dev`: `db:migrate` now reports the failing migration file and underlying
   PostgreSQL error instead of exiting silently.
 - `tools/dev`: `db:migrate` now derives its target from the current checkout, so
-  non-interactive worktree shells cannot inherit the main development database.
+  non-interactive worktree shells cannot inherit the main development database,
+  and refuses registered main databases without explicit human opt-in.
 - `apps/server`: tracked document creation now commits the content row, initial
   Yjs authority/content, and manifest membership atomically; bootstrap and
   manifest-aware repair no longer leave ghost documents (#355).

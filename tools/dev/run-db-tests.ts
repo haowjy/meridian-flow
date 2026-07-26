@@ -63,7 +63,7 @@ async function main(): Promise<void> {
       console.log(`DB tests: created owned database ${targetDb}.`);
       const migrationExit = await run(
         repoRoot,
-        ["exec", "tsx", "tools/dev/migrate-db.ts", "--use-ambient-database-url"],
+        ["exec", "tsx", "tools/dev/migrate-db.ts", "--managed-test-database"],
         databaseUrl,
       );
       if (migrationExit !== 0)
