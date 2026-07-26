@@ -15,7 +15,7 @@ import {
   markdownMarkCodecs,
   markdownRequiredBlockNames,
 } from "./markdown/index.js";
-import { mdxBlockCodecs, mdxRequiredBlockNames } from "./mdx/index.js";
+import { mdxBlockCodecs } from "./mdx/index.js";
 
 const schema = buildDocumentSchema();
 const components = {
@@ -95,7 +95,6 @@ describe("codec presets", () => {
   it("registers every fiction-schema node handled by the MDX codec", () => {
     mdxCodec({ schema, components });
     const schemaRequiredBlocks = sorted(requiredBlockNamesForSchema(schema));
-    expect(sorted(mdxRequiredBlockNames)).toEqual(schemaRequiredBlocks);
     expect(sorted(mdxBlockCodecs(components).map((block) => block.name))).toEqual(
       schemaRequiredBlocks,
     );

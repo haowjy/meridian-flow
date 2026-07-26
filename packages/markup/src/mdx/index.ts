@@ -20,10 +20,6 @@ export function mdxBlockCodecs(components?: ComponentRegistry): readonly BlockCo
   ];
 }
 
-export const mdxRequiredBlockNames: readonly string[] = Object.freeze(
-  mdxBlockCodecs().map((codec) => codec.name),
-);
-
 export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin {
   return {
     blocks: mdxBlockCodecs(options?.components),

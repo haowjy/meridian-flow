@@ -12,6 +12,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
+import {
+  abandonConversationReveal,
+  peekConversationReveal,
+} from "@/test-support/conversation-reveal";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -35,13 +39,9 @@ vi.mock("@/client/change-trails", async (importOriginal) => ({
   readChangeTrail: mocks.readChangeTrail,
 }));
 
-const {
-  abandonConversationReveal,
-  peekConversationReveal,
-  requestConversationReveal,
-  useConversationRevealRouting,
-  useTurnReveal,
-} = await import("./conversation-reveal");
+const { requestConversationReveal, useConversationRevealRouting, useTurnReveal } = await import(
+  "./conversation-reveal"
+);
 const { TurnEditsReceipt } = await import("./TurnEditsReceipt");
 
 const CHANGE_TARGET = {

@@ -4,7 +4,6 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type * as Y from "yjs";
 import {
-  relativePositionForIndex,
   relativePositionRuntimeFromState,
   resolveRelativeRange,
 } from "../relative-position-runtime";
@@ -118,11 +117,3 @@ export const LiveRangeNavigationExtension = Extension.create({
     ];
   },
 });
-
-export function relativePositionForEditorIndex(
-  editor: Editor,
-  index: number,
-): Y.RelativePosition | null {
-  const runtime = relativePositionRuntimeFromState(editor.state);
-  return runtime ? relativePositionForIndex(runtime, index) : null;
-}

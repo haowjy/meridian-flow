@@ -43,7 +43,3 @@ export function getAppServerConfig(): AppServerConfig {
 export function getAppRuntimeConfig(): RuntimeConfig {
   return getAppServerConfig().runtime;
 }
-
-export function resetAppServerConfigForTests(): void {
-  cachedConfig = null;
-}

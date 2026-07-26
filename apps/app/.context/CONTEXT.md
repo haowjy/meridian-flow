@@ -106,15 +106,6 @@ Both transports emit this shape; the reducer consumes this shape.
 client-generated UUID → navigate immediately → call `threads-api.ts` → reconcile
 on response. The Composer's submit-from-Home flow follows it.
 
-`src/lib/deferred-project-chat.ts` is the existing-project variant for a
-client-only thread that should not be created on the server until first send. It
-seeds an optimistic thread, marks **only the thread id** pending creation, and
-leaves `pendingCreation.projectIds` untouched because the project already
-exists. `DeferredFirstSendLatch` guards the create+submit path against
-double-submit; if first-send fails after an optimistic user turn is appended,
-`removeOptimisticUserTurn(threadId, optimisticTurnId)` removes that local user
-turn while preserving the pending thread row for retry.
-
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),
 deterministic reconcile path on response or failure.

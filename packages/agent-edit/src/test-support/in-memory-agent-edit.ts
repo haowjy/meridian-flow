@@ -20,7 +20,7 @@ import type {
   WriteMutationRow,
 } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
-import { guardPersistUndo } from "../undo/persist-undo-guard.js";
+import { guardPersistUndo } from "./persist-undo-guard.js";
 
 export type StoredAgentEditMutation = {
   wId: number;

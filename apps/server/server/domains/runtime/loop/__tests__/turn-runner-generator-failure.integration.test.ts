@@ -12,10 +12,10 @@ import {
   createInMemoryRepositories,
   createThreadEventHub,
 } from "../../../threads/index.js";
-import { createInertGateway } from "../../gateway/test-gateway.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTurnRunner } from "../turn-runner.js";
+import { createInertGateway } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 describe("turn-runner generator failure", () => {

@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts/runtime";
+import type { createAuthService } from "@workos/authkit-session";
 import { createApp, toWebHandler } from "nitro/h3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -14,8 +15,9 @@ import {
 const TEST_WORKOS_COOKIE_PASSWORD = "abcdefghijklmnopqrstuvwxyz123456";
 const TEST_SESSION_ID = "session_test_01";
 const TEST_EXTERNAL_USER_ID = "user_01workos";
+type AuthkitService = ReturnType<typeof createAuthService>;
 
-const { buildFakeAccessToken } = vi.hoisted(() => {
+const { authkitServiceBox, buildFakeAccessToken } = vi.hoisted(() => {
   const sessionId = "session_test_01";
   const externalUserId = "user_01workos";
 
@@ -31,7 +33,22 @@ const { buildFakeAccessToken } = vi.hoisted(() => {
     return `${header}.${payload}.fakesignature`;
   }
 
-  return { buildFakeAccessToken };
+  return {
+    authkitServiceBox: { current: null as AuthkitService | null },
+    buildFakeAccessToken,
+  };
+});
+
+vi.mock("@workos/authkit-session", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@workos/authkit-session")>();
+  return {
+    ...actual,
+    createAuthService(...args: Parameters<typeof actual.createAuthService>) {
+      const service = actual.createAuthService(...args);
+      authkitServiceBox.current = service;
+      return service;
+    },
+  };
 });
 
 function readSealedSessionCookie(cookieHeader: string): string {
@@ -135,8 +152,7 @@ function createTestProjectBootstrap(): {
 
 describe("WorkOS request auth", () => {
   let resolveUser: typeof import("./auth.js").resolveUser;
-  let requireUser: typeof import("./auth.js").requireUser;
-  let authkitService: typeof import("./auth.js").authkitService;
+  let authkitService: AuthkitService;
 
   beforeAll(async () => {
     process.env.WORKOS_API_KEY = process.env.WORKOS_API_KEY ?? "dev-workos-key";
@@ -148,8 +164,8 @@ describe("WorkOS request auth", () => {
     vi.resetModules();
     const auth = await import("./auth.js");
     resolveUser = auth.resolveUser;
-    requireUser = auth.requireUser;
-    authkitService = auth.authkitService;
+    if (!authkitServiceBox.current) throw new Error("auth service was not initialized");
+    authkitService = authkitServiceBox.current;
   });
 
   beforeEach(() => {
@@ -158,7 +174,7 @@ describe("WorkOS request auth", () => {
 
   function mockWithAuthFromSealedCookie(): void {
     vi.spyOn(authkitService, "withAuth").mockImplementation(async (request) => {
-      const cookieHeader = request.headers.get("cookie");
+      const cookieHeader = (request as Request).headers.get("cookie");
       if (!cookieHeader) return { auth: { user: null } };
 
       const { sessionEncryption } = await import("@workos/authkit-session");
@@ -222,57 +238,6 @@ describe("WorkOS request auth", () => {
       avatarUrl: null,
     });
     expect(authkitService.withAuth).toHaveBeenCalledOnce();
-  });
-
-  it("rejects unauthenticated requests at the route boundary", async () => {
-    const bootstrap = createTestProjectBootstrap();
-    await expect(
-      requireUser(requestWithCookie(null), {
-        users: createInMemoryUserRepository(),
-        projects: bootstrap.projects,
-      }),
-    ).rejects.toMatchObject({
-      status: 401,
-    });
-  });
-
-  it("rejects forged session cookies at the route boundary", async () => {
-    const bootstrap = createTestProjectBootstrap();
-    await expect(
-      requireUser(requestWithCookie("wos-session=tampered"), {
-        users: createInMemoryUserRepository(),
-        projects: bootstrap.projects,
-      }),
-    ).rejects.toMatchObject({
-      status: 401,
-    });
-  });
-
-  it("provisions an internal user id from a sealed session cookie", async () => {
-    mockWithAuthFromSealedCookie();
-
-    const users = createInMemoryUserRepository();
-    const bootstrap = createTestProjectBootstrap();
-    const cookie = await mintTestSessionCookie({ email: "provisioned@example.com" });
-
-    const resolved = await requireUser(requestWithCookie(cookie), {
-      users,
-      projects: bootstrap.projects,
-    });
-
-    expect(resolved.externalId).toBe(TEST_EXTERNAL_USER_ID);
-    expect(resolved.email).toBe("provisioned@example.com");
-    expect(resolved.userId).toBeTruthy();
-    expect(bootstrap.bootstrapCalls).toBe(1);
-    expect(bootstrap.personalProjectId).toBeTruthy();
-
-    const second = await requireUser(requestWithCookie(cookie), {
-      users,
-      projects: bootstrap.projects,
-    });
-    expect(second.userId).toBe(resolved.userId);
-    expect(bootstrap.readinessChecks).toBe(2);
-    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 });
 

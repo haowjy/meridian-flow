@@ -7,11 +7,13 @@
  */
 import { act } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
   abandonConversationReveal,
-  type ChangeRevealRequest,
   peekConversationReveal,
+} from "@/test-support/conversation-reveal";
+import { withReactRoot } from "@/test-support/react-dom-harness";
+import {
+  type ChangeRevealRequest,
   requestConversationReveal,
   type TurnRevealRequest,
   useChangeReveal,
