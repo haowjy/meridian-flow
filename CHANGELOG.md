@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `packages/database`: migration 0060 now upgrades populated settled change-trail
+  delivery rows without inventing counts for superseded trail versions.
 - `apps/server`: tracked document creation now commits the content row, initial
   Yjs authority/content, and manifest membership atomically; bootstrap and
   manifest-aware repair no longer leave ghost documents (#355).
