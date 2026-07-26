@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `packages/database`: pending-notice migrations now preserve thread-addressed
+  queue entries and deliberately discard recipient-less pre-release entries.
 - `packages/database`: publication-lineage migrations now preserve branch
   generations when upgrading databases with existing pushes.
 - `apps/app`: the production document transport now has contract coverage for

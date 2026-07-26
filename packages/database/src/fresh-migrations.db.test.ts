@@ -179,6 +179,72 @@ if (!enabled || !databaseUrl) {
       }
     });
 
+    it("keeps thread notices and deliberately discards notices without a recipient", async () => {
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0063_milky_celestials",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES (
+              '00000000-0000-4000-8000-000000000011',
+              'pending-notice-migration-fixture',
+              'pending-notice-migration@test.invalid'
+            );
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES (
+              '00000000-0000-4000-8000-000000000012',
+              '00000000-0000-4000-8000-000000000011',
+              'Pending notice migration fixture',
+              'pending-notice-migration-fixture'
+            );
+            INSERT INTO threads (
+              id, project_id, created_by_user_id, title, kind, status
+            )
+            VALUES (
+              '00000000-0000-4000-8000-000000000013',
+              '00000000-0000-4000-8000-000000000012',
+              '00000000-0000-4000-8000-000000000011',
+              'Pending notice migration fixture',
+              'primary',
+              'idle'
+            );
+            INSERT INTO pending_notices (
+              kind, scope_kind, scope_id, message, data
+            )
+            VALUES
+              (
+                'awareness_degraded',
+                'thread',
+                '00000000-0000-4000-8000-000000000013',
+                'recoverable thread notice',
+                '{}'
+              ),
+              (
+                'checkpoint_sweep',
+                'document',
+                '00000000-0000-4000-8000-000000000014',
+                'recipient-less document notice',
+                '{}'
+              );
+          `);
+        },
+        verify: async (target) => {
+          const rows = await target<{ message: string; thread_id: string }[]>`
+            SELECT message, thread_id
+            FROM pending_notices
+            ORDER BY id
+          `;
+          expect(rows).toEqual([
+            {
+              message: "recoverable thread notice",
+              thread_id: "00000000-0000-4000-8000-000000000013",
+            },
+          ]);
+        },
+      });
+    }, 120_000);
+
     it("deletes branch-local writer-impact storage", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       const migration = await readFile(
