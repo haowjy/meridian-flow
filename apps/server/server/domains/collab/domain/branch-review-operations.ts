@@ -16,8 +16,8 @@ import {
   type BranchReviewService,
   type PushCommitStore,
 } from "./branch-push-contracts.js";
-import { assertNoPendingIntegration, BranchPeerIntegrationError } from "./branch-push-plan.js";
-import { hasDependentLaterRows } from "./journal-dependencies.js";
+import { assertNoPendingIntegration } from "./branch-push-plan.js";
+import { createBranchTurnReversalPlanner } from "./branch-turn-reversal-plan.js";
 
 type Dependencies = {
   branchStore: BranchStore;
@@ -31,6 +31,7 @@ type Dependencies = {
 
 export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
   const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
+  const prepareBranchTurnReversal = createBranchTurnReversalPlanner(deps);
 
   function broadcastAfterCommit(input: { branchId: string; update: Uint8Array }): void {
     const broadcast = () => deps.branchCoordinator?.broadcastUpdate?.(input);
@@ -154,110 +155,42 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
       }
   > {
     return withActiveWorkDraftBranchLock([turnInput.branchId], async ([branch]) => {
-      if (turnInput.direction === "undo") {
-        const rows = await deps.journalReadStore.listJournalRowsForTurn({
-          branchId: branch.branchId,
-          generation: branch.generation,
-          threadId: turnInput.threadId,
-          turnId: turnInput.turnId,
-          statuses: ["active", "rollback_pending"],
-        });
-        const journalIds = rows.map((row) => row.id).sort((a, b) => a - b);
-        if (journalIds.length === 0) {
-          return { status: "nothing_to_undo" as const, branchId: branch.branchId, journalIds };
-        }
-        const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
-        const laterRows = reviewableRows.filter(
-          (row) => row.id > Math.max(...journalIds) && row.turnId !== turnInput.turnId,
-        );
-        if (hasDependentLaterRows(rows, laterRows)) {
-          return { status: "cant_undo_dependent" as const, branchId: branch.branchId, journalIds };
-        }
-
-        const liveDoc = await loadLiveDoc(branch.documentId);
-        const selected = new Set(journalIds);
-        let peer: Y.Doc | null = null;
-        const branchDoc = materializeBranch(branch);
-        try {
-          try {
-            peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
-          } catch (cause) {
-            if (cause instanceof BranchPeerIntegrationError) {
-              return {
-                status: "cant_undo_dependent" as const,
-                branchId: branch.branchId,
-                journalIds,
-              };
-            }
-            throw cause;
-          }
-          const reversalUpdate = Y.encodeStateAsUpdate(peer, branch.stateVector);
-          Y.applyUpdate(branchDoc, reversalUpdate);
-          await deps.commitStore.commitDiscard({
-            branch,
-            journalRows: rows,
-            state: Y.encodeStateAsUpdate(branchDoc),
-            stateVector: Y.encodeStateVector(branchDoc),
-            reviewedByUserId: turnInput.reviewedByUserId,
-          });
-          broadcastAfterCommit({
-            branchId: branch.branchId,
-            update: reversalUpdate,
-          });
-          return { status: "reversed" as const, branchId: branch.branchId, journalIds };
-        } finally {
-          liveDoc.destroy();
-          peer?.destroy();
-          branchDoc.destroy();
-        }
-      }
-
-      const rows = await deps.journalReadStore.listJournalRowsForTurn({
-        branchId: branch.branchId,
-        generation: branch.generation,
+      const prepared = await prepareBranchTurnReversal({
+        branch,
         threadId: turnInput.threadId,
         turnId: turnInput.turnId,
-        statuses: ["discarded"],
+        direction: turnInput.direction,
       });
-      const selected = new Set(rows.map((row) => row.id));
-      if (selected.size === 0) {
-        return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
-      }
-      const liveDoc = await loadLiveDoc(branch.documentId);
-      const branchRows = (
-        await deps.journalReadStore.listJournalRowsForBranch({
+      if (!prepared.ok) {
+        return {
+          status: prepared.status,
           branchId: branch.branchId,
-          generation: branch.generation,
-        })
-      ).filter(
-        (row) =>
-          row.status === "active" || row.status === "rollback_pending" || selected.has(row.id),
-      );
-      const peer = buildRedoPeer({ liveDoc, rows: branchRows, selectedIds: selected });
-      const branchDoc = materializeBranch(branch);
-      try {
-        const redoUpdate = syncPeer(peer, branchDoc);
-        await deps.commitStore.commitTurnRedo({
+          journalIds: prepared.journalIds,
+        };
+      }
+      if (turnInput.direction === "undo") {
+        await deps.commitStore.commitDiscard({
           branch,
-          journalRows: rows,
-          state: Y.encodeStateAsUpdate(branchDoc),
-          stateVector: Y.encodeStateVector(branchDoc),
+          journalRows: prepared.journalRows,
+          state: prepared.state,
+          stateVector: prepared.stateVector,
           reviewedByUserId: turnInput.reviewedByUserId,
         });
-        broadcastAfterCommit({
-          branchId: branch.branchId,
-          update: redoUpdate,
+      } else {
+        await deps.commitStore.commitTurnRedo({
+          branch,
+          journalRows: prepared.journalRows,
+          state: prepared.state,
+          stateVector: prepared.stateVector,
+          reviewedByUserId: turnInput.reviewedByUserId,
         });
-        return {
-          status: "reconciled" as const,
-          branchId: branch.branchId,
-          journalIds: [...selected].sort((a, b) => a - b),
-        };
-      } finally {
-        liveDoc.destroy();
-        peer.destroy();
-        branchDoc.destroy();
       }
+      broadcastAfterCommit({ branchId: branch.branchId, update: prepared.publishUpdate });
+      return {
+        status: prepared.status,
+        branchId: branch.branchId,
+        journalIds: prepared.journalIds,
+      };
     });
   }
 
@@ -331,46 +264,6 @@ function buildReversalPeer(input: {
   assertNoPendingIntegration(
     peer,
     "selective_discard_peer_after_undo",
-    input.rows.map((row) => row.id),
-  );
-  return peer;
-}
-
-function buildRedoPeer(input: {
-  liveDoc: Y.Doc;
-  rows: BranchJournalRow[];
-  selectedIds: ReadonlySet<number>;
-}): Y.Doc {
-  const peer = createCollabYDoc({ gc: false });
-  Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
-  const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const redoOrigin = Symbol("turn-redo-target");
-  const otherOrigin = Symbol("turn-redo-survivor");
-  const undoManager = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([redoOrigin]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-  });
-  undoManager.stopCapturing();
-  for (const row of input.rows) {
-    Y.applyUpdate(peer, row.updateData, input.selectedIds.has(row.id) ? redoOrigin : otherOrigin);
-  }
-  assertNoPendingIntegration(
-    peer,
-    "turn_redo_peer",
-    input.rows.map((row) => row.id),
-  );
-  undoManager.stopCapturing();
-  while (undoManager.undoStack.length > 0) {
-    undoManager.undo();
-    undoManager.stopCapturing();
-  }
-  while (undoManager.redoStack.length > 0) {
-    undoManager.redo();
-    undoManager.stopCapturing();
-  }
-  assertNoPendingIntegration(
-    peer,
-    "turn_redo_peer_after_redo",
     input.rows.map((row) => row.id),
   );
   return peer;

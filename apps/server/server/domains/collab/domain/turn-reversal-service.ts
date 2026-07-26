@@ -229,8 +229,25 @@ function mergeDocumentScopeResults(
     grouped.set(document.uri, group);
   }
   return [...grouped.entries()].map(([uri, results]) => {
-    const status = aggregateStatus(direction, results);
+    const status = aggregateSameDocumentScopeStatus(direction, results);
     const text = results.find((result) => result.text)?.text;
     return { uri, status, ...(text ? { text } : {}) };
   });
+}
+
+function aggregateSameDocumentScopeStatus(
+  direction: "undo" | "redo",
+  results: readonly DocumentReversalResult[],
+): DocumentReversalResult["status"] {
+  const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const statuses = results.map((result) => result.status);
+  if (
+    statuses.every(
+      (status) => status === "reversed" || status === "reconciled" || status === noOp,
+    ) &&
+    statuses.some((status) => status === "reversed" || status === "reconciled")
+  ) {
+    return statuses.includes("reconciled") ? "reconciled" : "reversed";
+  }
+  return aggregateStatus(direction, results);
 }

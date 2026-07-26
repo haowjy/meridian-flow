@@ -102,8 +102,9 @@ propagation between them.
   `persistRedo` repeat the plan watermark guard under `lockDocumentMutation`.
   Freshness is writer-owned: later human rows stale the plan, while system
   reversal/bookkeeping and agent rows do not. Draft reversal remains a separate
-  generation-local authority and rejects any branch advance after planning
-  under the branch snapshot CAS.
+  generation-local authority: `branch-turn-reversal-plan.ts` prepares both
+  receipt availability and command execution, while the branch snapshot CAS
+  rejects advances after planning.
 - **Draft write undo is generation-local**: a response/document folds to one
   durable handle; undo/redo stages a typed-generation system row and projects it
   in the same Work-draft commit. Never delegate an active Draft generation to
@@ -127,10 +128,11 @@ propagation between them.
 - **Reversal availability is dependency-based**: canonical dependency checks may
   refuse a lossy undo. Destructive effects from an allowed agent reversal are
   reported without changing the reversal outcome.
-- **Cross-scope reversal publishes after commit**: branch and live durability
-  share one transaction; branch broadcasts, live Y.Doc application, runtime
-  synchronization, and projection refresh are deferred until it commits.
-  Rollback must leave every process-local projection untouched.
+- **Cross-scope reversal is durable-atomic and runtime-staged**: branch and live
+  durability share one transaction; branch broadcasts, live Y.Doc application,
+  runtime synchronization, and projection refresh run after it commits, with
+  per-document journal recovery. Rollback must leave every process-local
+  projection untouched.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   reporting-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push

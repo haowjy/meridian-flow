@@ -7,24 +7,20 @@ import {
   branchWriteJournal,
   documentBranches,
 } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { hasDependentLaterRows } from "../domain/journal-dependencies.js";
+import { and, eq, sql } from "drizzle-orm";
+import type { BranchSnapshot } from "../domain/branch-coordinator.js";
+import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
+import { createBranchTurnReversalPlanner } from "../domain/branch-turn-reversal-plan.js";
 import {
   controlForTurnReceiptState,
   type TurnReceiptChip,
   type TurnReceiptState,
   type TurnReceiptStateStore,
 } from "../domain/turn-receipt.js";
+import { createDrizzleBranchJournalReadStore } from "./drizzle-branch-push.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 type TurnReceiptDb = Database;
-
-type JournalDependencyRow = {
-  id: number;
-  branchId: string;
-  generation: number;
-  updateData: Uint8Array | Buffer;
-};
 
 const RECEIPT_PRIORITY: readonly TurnReceiptState[] = [
   "cant_undo_dependent",
@@ -99,7 +95,22 @@ async function branchStates(
   turnId: TurnId,
 ): Promise<TurnReceiptState[]> {
   const currentRows = await db
-    .select({ status: branchWriteJournal.status, count: sql<number>`count(*)::int` })
+    .select({
+      journalStatus: branchWriteJournal.status,
+      branchId: documentBranches.id,
+      documentId: documentBranches.documentId,
+      kind: documentBranches.kind,
+      upstreamBranchId: documentBranches.upstreamBranchId,
+      workId: documentBranches.workId,
+      threadId: documentBranches.threadId,
+      pushPolicy: documentBranches.pushPolicy,
+      status: documentBranches.status,
+      generation: documentBranches.generation,
+      state: documentBranches.state,
+      stateVector: documentBranches.stateVector,
+      discardedStateVector: documentBranches.discardedStateVector,
+      schemaVersion: documentBranches.schemaVersion,
+    })
     .from(branchWriteJournal)
     .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
     .where(
@@ -109,20 +120,35 @@ async function branchStates(
         eq(documentBranches.status, "active"),
         eq(branchWriteJournal.generation, documentBranches.generation),
       ),
-    )
-    .groupBy(branchWriteJournal.status);
+    );
 
   const states: TurnReceiptState[] = [];
-  const statuses = new Set(currentRows.map((row) => row.status));
-  if (statuses.has("active")) {
-    states.push(
-      (await hasLaterActiveBranchRows(db, threadId, turnId))
-        ? "cant_undo_dependent"
-        : "branch-active",
-    );
+  const journalReadStore = createDrizzleBranchJournalReadStore(db);
+  const prepareBranchTurnReversal = createBranchTurnReversalPlanner({
+    journalReadStore,
+    journal: createDrizzleJournal(db),
+  });
+  for (const { branch, statuses } of groupBranchCandidates(currentRows).values()) {
+    if (statuses.has("active")) {
+      const undo = await prepareBranchTurnReversal({
+        branch,
+        threadId,
+        turnId,
+        direction: "undo",
+      });
+      states.push(undo.ok ? "branch-active" : reversalRefusalState(undo.status));
+    }
+    if (statuses.has("discarded")) {
+      const redo = await prepareBranchTurnReversal({
+        branch,
+        threadId,
+        turnId,
+        direction: "redo",
+      });
+      states.push(redo.ok ? "branch-reversed" : "expired");
+    }
+    if (statuses.has("rollback_pending")) states.push("rollback-pending");
   }
-  if (statuses.has("discarded")) states.push("branch-reversed");
-  if (statuses.has("rollback_pending")) states.push("rollback-pending");
   if (states.length > 0) return states;
 
   const [historical] = await db
@@ -132,61 +158,35 @@ async function branchStates(
   return (historical?.count ?? 0) > 0 ? ["expired"] : [];
 }
 
-async function hasLaterActiveBranchRows(db: TurnReceiptDb, threadId: ThreadId, turnId: TurnId) {
-  const selectedRows = await db
-    .select({
-      id: branchWriteJournal.id,
-      branchId: branchWriteJournal.branchId,
-      generation: branchWriteJournal.generation,
-      updateData: branchWriteJournal.updateData,
-    })
-    .from(branchWriteJournal)
-    .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
-    .where(
-      and(
-        eq(branchWriteJournal.threadId, threadId),
-        eq(branchWriteJournal.turnId, turnId),
-        inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        eq(documentBranches.status, "active"),
-        eq(branchWriteJournal.generation, documentBranches.generation),
-      ),
-    );
-  if (selectedRows.length === 0) return false;
-
-  for (const [branchKey, rows] of groupDependencyRows(selectedRows)) {
-    const [branchId, generationText] = branchKey.split(":");
-    const generation = Number(generationText);
-    const maxSelectedId = Math.max(...rows.map((row) => row.id));
-    const laterRows = await db
-      .select({
-        id: branchWriteJournal.id,
-        branchId: branchWriteJournal.branchId,
-        generation: branchWriteJournal.generation,
-        updateData: branchWriteJournal.updateData,
-      })
-      .from(branchWriteJournal)
-      .where(
-        and(
-          eq(branchWriteJournal.branchId, branchId as string),
-          eq(branchWriteJournal.generation, generation),
-          sql`${branchWriteJournal.id} > ${maxSelectedId}`,
-          eq(branchWriteJournal.status, "active"),
-        ),
-      );
-    if (hasDependentLaterRows(rows, laterRows)) return true;
-  }
-  return false;
+function reversalRefusalState(
+  status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo",
+): TurnReceiptState {
+  return status === "cant_undo_dependent" ? "cant_undo_dependent" : "expired";
 }
 
-function groupDependencyRows(
-  rows: readonly JournalDependencyRow[],
-): Map<string, JournalDependencyRow[]> {
-  const groups = new Map<string, JournalDependencyRow[]>();
+function groupBranchCandidates<
+  Row extends {
+    journalStatus: BranchJournalRow["status"];
+    branchId: string;
+  } & Omit<BranchSnapshot, "branchId">,
+>(
+  rows: readonly Row[],
+): Map<string, { branch: BranchSnapshot; statuses: Set<BranchJournalRow["status"]> }> {
+  const groups = new Map<
+    string,
+    { branch: BranchSnapshot; statuses: Set<BranchJournalRow["status"]> }
+  >();
   for (const row of rows) {
-    const key = `${row.branchId}:${row.generation}`;
-    const group = groups.get(key) ?? [];
-    group.push(row);
-    groups.set(key, group);
+    const existing = groups.get(row.branchId);
+    if (existing) {
+      existing.statuses.add(row.journalStatus);
+      continue;
+    }
+    const { journalStatus, ...branch } = row;
+    groups.set(row.branchId, {
+      branch,
+      statuses: new Set([journalStatus]),
+    });
   }
   return groups;
 }

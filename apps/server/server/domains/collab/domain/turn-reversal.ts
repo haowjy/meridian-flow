@@ -115,11 +115,10 @@ export function aggregateStatus(
 ): DocumentReversalResult["status"] {
   const statuses = documents.map((document) => document.status);
   const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const successes = new Set(["reversed", "reconciled"]);
 
   if (statuses.every((status) => status === noOp)) return noOp;
-  if (
-    statuses.every((status) => status === "reversed" || status === "reconciled" || status === noOp)
-  ) {
+  if (statuses.every((status) => successes.has(status))) {
     return statuses.includes("reconciled") ? "reconciled" : "reversed";
   }
   if (statuses.includes("cant_undo_dependent")) return "cant_undo_dependent";

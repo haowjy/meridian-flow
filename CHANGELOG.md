@@ -4,8 +4,8 @@
 
 - `apps/app`, `apps/server`, `packages/agent-edit`: receipt Undo/Redo now uses
   planner-owned eligibility, preserves redo across system and agent rows,
-  withdraws it after writer edits, surfaces raced command refusals, and commits
-  multi-document live/draft reversals atomically.
+  withdraws it after writer edits, surfaces raced command refusals, and rolls
+  multi-document durable reversals back together before publishing runtime state.
 - `apps/app`: folded activity summaries now report only counted document reads
   and edits, without document names, generic step counts, or error signals.
 - `apps/app`: receipt document names now share canonical writer-facing naming

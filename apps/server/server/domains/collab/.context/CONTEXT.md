@@ -223,9 +223,9 @@ fail only when a command reaches them.
   later writer (`human:*`) row but ignores the undo's system row, other system
   bookkeeping, and later agent rows. Persist-time guards repeat the writer-only
   watermark check under the document lock, covering a writer admission between
-  planning and persistence. Active Work-draft receipts remain branch-derived:
-  their authority is the branch generation, journal status, and dependency
-  check rather than the live planner.
+  planning and persistence. Active Work-draft receipt and command paths both use
+  `branch-turn-reversal-plan.ts`; its authority is branch generation, journal
+  status, dependency analysis, and successful peer reconstruction.
 - **Receipt command refusals are semantic outcomes**: the reverse endpoint may
   return `nothing_to_undo`, `nothing_to_redo`, `cant_undo_dependent`, `expired`,
   or `partial` with HTTP 200 when state races the projection. The app invalidates
@@ -247,13 +247,16 @@ fail only when a command reaches them.
   transitions both reject the stale reversal for replanning.
   After Apply advances to an empty generation, reversal lookup falls back to the
   live store so pushed writes retain their normal undo path.
-- **Turn reversal is cross-scope atomic**: production persists branch and live
-  changes in one ambient Drizzle transaction. Branch broadcasts, live Y.Doc
-  application, runtime synchronization, and projection refresh are deferred
-  until that transaction commits; rollback publishes none of them. Branch
-  candidates are restricted to the command's authorized document set. Branch
-  redo reconstructs from active survivors plus only the selected discarded
-  target, so another undone turn stays discarded.
+- **Turn reversal is durable-atomic and runtime-staged**: production persists
+  branch and live changes in one ambient Drizzle transaction. A targeted
+  document no-op mixed with success aborts the whole transaction. Branch
+  broadcasts, live Y.Doc application, runtime synchronization, and projection
+  refresh run only after commit, with per-document journal recovery; rollback
+  publishes none of them. Cross-room publication is serialized, not a
+  simultaneous transport primitive. Branch candidates are restricted to the
+  command's authorized document set. Branch redo reconstructs from active
+  survivors plus only the selected discarded target, so another undone turn
+  stays discarded.
 - **Draft handles name durable response groups**: response buffering and branch
   projection fold all same-document mutations in one response into one
   `branch_write_journal` row. Every write in that group therefore receives the

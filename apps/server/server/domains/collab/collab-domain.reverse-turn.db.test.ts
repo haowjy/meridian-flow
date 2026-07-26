@@ -355,6 +355,85 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(reversals).toHaveLength(0);
     });
 
+    it("rolls back redo when one targeted live document has become ineligible", async () => {
+      await db.insert(documents).values({
+        id: CREATED_DOC_ID,
+        contextSourceId: SOURCE_ID,
+        name: "chapter-two",
+        extension: "md",
+        fileType: "markdown",
+      });
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
+      for (const [documentId, markdown] of [
+        [DOC_ID, "First base."],
+        [CREATED_DOC_ID, "Second base."],
+      ] as const) {
+        await collab.writeDocument({
+          documentId: documentId as never,
+          markdown,
+          origin: { type: "user", actorUserId: USER_ID as never },
+          threadId: THREAD_ID as never,
+        });
+        await expect(
+          collab.agentEdit().write(
+            {
+              command: "insert",
+              file: `${documentId}.md`,
+              documentId,
+              content: `Redo target for ${documentId}.`,
+            },
+            { sessionId: "session-atomic-redo", threadId: THREAD_ID, turnId: TURN_ID },
+          ),
+        ).resolves.toMatchObject({ status: "success" });
+      }
+      await expect(
+        collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction: "undo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "reversed" });
+      await collab.writeDocument({
+        documentId: CREATED_DOC_ID as never,
+        markdown: "Writer invalidated redo for the second document.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
+      ).resolves.toEqual(expect.objectContaining({ control: "redo" }));
+      await expect(
+        collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction: "redo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "partial" });
+
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain(`Redo target for ${DOC_ID}.`);
+      await expectMarkdown(
+        collab,
+        CREATED_DOC_ID,
+        "Writer invalidated redo for the second document.",
+      );
+      const reversalStatuses = await db
+        .select({ status: documentYjsReversals.status })
+        .from(documentYjsReversals)
+        .where(
+          and(
+            eq(documentYjsReversals.threadId, THREAD_ID as never),
+            eq(documentYjsReversals.turnId, TURN_ID as never),
+          ),
+        );
+      expect(reversalStatuses).toHaveLength(2);
+      expect(reversalStatuses.every((row) => row.status === "reversed")).toBe(true);
+    });
+
     it.each([
       "manual",
       "auto",
@@ -449,6 +528,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({ turnId: TURN_ID, status: "active" }),
         expect.objectContaining({ turnId: TURN_2_ID, status: "discarded" }),
       ]);
+    });
+
+    it("uses the branch command planner for rollback-pending dependency receipts", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "manual" });
+      await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "Planner dependency target.",
+        },
+        { sessionId: "session-branch-planner", threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          find: "Planner dependency target.",
+          content: "Rollback-pending dependent rewrite.",
+        },
+        { sessionId: "session-branch-planner", threadId: THREAD_ID, turnId: TURN_2_ID },
+      );
+      await db
+        .update(branchWriteJournal)
+        .set({ status: "rollback_pending" })
+        .where(eq(branchWriteJournal.turnId, TURN_2_ID as never));
+
+      await expect(
+        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
+      ).resolves.toEqual(
+        expect.objectContaining({ state: "cant_undo_dependent", control: "view_change" }),
+      );
+      await expect(
+        collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction: "undo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "cant_undo_dependent" });
     });
 
     it("withdraws redo after a writer edit lands following undo", async () => {
