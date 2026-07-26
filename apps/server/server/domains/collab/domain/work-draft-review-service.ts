@@ -11,7 +11,6 @@ import type {
   BranchPushService,
   BranchReviewService,
   PushToLiveResult,
-  WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
@@ -19,6 +18,7 @@ import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
+import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export function createWorkDraftReviewService(input: {
   branches: ApplicationBranchStore;
@@ -26,7 +26,7 @@ export function createWorkDraftReviewService(input: {
   branchJournal: BranchJournalReadStore;
   branchPush: BranchPushService;
   branchReview: BranchReviewService;
-  workPushPolicy: WorkPushPolicyStore;
+  workDraftPending: WorkDraftPending;
   liveCoordinator: {
     withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
   };
@@ -61,18 +61,8 @@ export function createWorkDraftReviewService(input: {
     projectId?: ProjectId,
   ): Promise<ReviewableDraft[]> {
     const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
-    const branchIds = await input.workPushPolicy.listActiveWorkDraftBranchIdsForWork(workId);
     const drafts: ReviewableDraft[] = [];
-    for (const branchId of branchIds) {
-      const branch = await input.branches.getBranch(branchId);
-      if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
-        continue;
-      }
-      const rows = await input.branchJournal.listReviewableJournalRows(
-        branch.branchId,
-        branch.generation,
-      );
-      if (rows.length === 0) continue;
+    for (const { branch, rows } of await input.workDraftPending.list(workId)) {
       const uri = await input.resolveDocumentUri(branch.documentId);
       drafts.push({
         id: branch.branchId,

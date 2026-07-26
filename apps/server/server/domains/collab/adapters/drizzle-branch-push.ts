@@ -278,23 +278,6 @@ export function createDrizzlePushCommitStore(
 
 export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicyStore {
   return {
-    async countUnpushedRowsForWork(workId) {
-      const [{ count } = { count: 0 }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(branchWriteJournal)
-        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
-        .where(
-          and(
-            eq(documentBranches.workId, workId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-            eq(branchWriteJournal.generation, documentBranches.generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
-        );
-      return count;
-    },
-
     async listActiveWorkDraftBranchIdsForWork(workId) {
       const rows = await db
         .select({ id: documentBranches.id })

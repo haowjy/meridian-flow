@@ -58,6 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../domain/branch-coordinator.js"
     );
     const { createBranchPushService } = await import("../../domain/branch-push.js");
+    const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
@@ -311,12 +312,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source: "agent",
         threadId: THREAD_ID as never,
       });
-      const pushStore = createDrizzleWorkPushPolicyStore(db);
-      await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(1);
+      const pendingDrafts = createWorkDraftPending({
+        branches: store,
+        branchJournal: createDrizzleBranchJournalReadStore(db),
+        workDraftIndex: createDrizzleWorkPushPolicyStore(db),
+      });
+      await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(1);
 
       await coordinator.resetFromDoc(work.branchId, live);
 
-      await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(0);
       const rows = await db
         .select({ generation: branchWriteJournal.generation, status: branchWriteJournal.status })
         .from(branchWriteJournal)

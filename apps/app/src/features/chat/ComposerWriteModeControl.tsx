@@ -37,6 +37,7 @@ export function ComposerWriteModeControl({ projectId, work }: { projectId: strin
   const updateWriteMode = useUpdateWorkWriteMode(projectId, work.id);
   const workDrafts = useWorkDrafts(projectId, work.id);
   const { openAiDraft } = useAiDraftLauncher();
+  const draftsLoaded = workDrafts.groups !== null;
   const pendingGroups = activeDockedDraftGroups(workDrafts.groups);
   const firstPendingGroup =
     [...pendingGroups]
@@ -51,9 +52,9 @@ export function ComposerWriteModeControl({ projectId, work }: { projectId: strin
   return (
     <AiWriteModeControl
       value={work.aiWriteMode}
-      disabled={updateWriteMode.isPending || workDrafts.groups == null}
-      pendingChangeCount={pendingGroups.length}
-      reviewChangesAvailable={firstPendingDraft !== null}
+      disabled={updateWriteMode.isPending || !draftsLoaded}
+      pendingChangeCount={draftsLoaded ? pendingGroups.length : null}
+      reviewChangesAvailable={draftsLoaded ? firstPendingDraft !== null : null}
       onSelectDraft={() => updateWriteMode.mutate("draft")}
       onReviewChanges={() => {
         if (!firstPendingGroup || !firstPendingDraft) return;
@@ -94,10 +95,10 @@ function AiWriteModeControl({
   /**
    * Content-aware pending document count shared with the dock. This is only a
    * fast path for opening the popover while the server request determines the
-   * authoritative journal-row count.
+   * authoritative reviewable Work-draft count.
    */
   pendingChangeCount: number | null;
-  reviewChangesAvailable: boolean;
+  reviewChangesAvailable: boolean | null;
   onSelectDraft: () => void;
   onReviewChanges: () => void;
   /**
@@ -250,10 +251,14 @@ function AiWriteModeControl({
             <Button
               variant="secondary"
               size="sm"
-              disabled={applying || !reviewChangesAvailable}
+              disabled={applying || reviewChangesAvailable !== true}
               onClick={reviewChanges}
             >
-              <Trans>Review changes</Trans>
+              {reviewChangesAvailable === null ? (
+                <Trans>Checking pending changes…</Trans>
+              ) : (
+                <Trans>Review changes</Trans>
+              )}
             </Button>
             <Button
               size="sm"

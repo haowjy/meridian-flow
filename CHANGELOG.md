@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: Auto-apply switches and draft review now share one
+  content-branch count, ignoring manifest-only bookkeeping left after review.
 - `apps/app`, `apps/server`, `packages/contracts`: draft review now exposes only
   active cards, removes the dead per-card Undo client and wire contracts, and
   reconciles remotely settled draft-created tabs against live project membership.

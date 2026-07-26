@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /** Pending-draft signal and review resolution entry for the composer mode control. */
 import type { Work } from "@meridian/contracts/protocol";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const openAiDraft = vi.fn();
@@ -10,6 +11,7 @@ const mutateAsync = vi.fn(async () => ({
   status: "confirmation_required" as const,
   pendingChangeCount: 1,
 }));
+let workDraftGroups: ThreadDraftGroup[] | null;
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -22,7 +24,29 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({
-    groups: [
+    groups: workDraftGroups,
+  }),
+}));
+vi.mock("@/client/query/useWorks", () => ({
+  useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
+}));
+vi.mock("./useAiDraftLauncher", () => ({
+  useAiDraftLauncher: () => ({ openAiDraft }),
+}));
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PopoverAnchor: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
+  PopoverHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+}));
+
+const { ComposerWriteModeControl } = await import("./ComposerWriteModeControl");
+
+describe("ComposerWriteModeControl", () => {
+  beforeEach(() => {
+    workDraftGroups = [
       {
         documentId: "document-zulu",
         documentName: "Zulu",
@@ -59,27 +83,12 @@ vi.mock("@/client/query/useWorkDrafts", () => ({
           },
         ],
       },
-    ],
-  }),
-}));
-vi.mock("@/client/query/useWorks", () => ({
-  useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
-}));
-vi.mock("./useAiDraftLauncher", () => ({
-  useAiDraftLauncher: () => ({ openAiDraft }),
-}));
-vi.mock("@/components/ui/popover", () => ({
-  Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PopoverAnchor: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PopoverDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
-  PopoverHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PopoverTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
-}));
+    ];
+    openAiDraft.mockClear();
+    mutate.mockClear();
+    mutateAsync.mockClear();
+  });
 
-const { ComposerWriteModeControl } = await import("./ComposerWriteModeControl");
-
-describe("ComposerWriteModeControl", () => {
   it("signals pending drafts without disabling Auto-apply and opens the shared review flow", async () => {
     await withReactRoot(
       <ComposerWriteModeControl projectId="project-1" work={draftWork()} />,
@@ -98,6 +107,19 @@ describe("ComposerWriteModeControl", () => {
           }),
           "draft-alpha",
         );
+      },
+    );
+  });
+
+  it("labels Review as checking while the reviewable projection is loading", async () => {
+    workDraftGroups = null;
+
+    await withReactRoot(
+      <ComposerWriteModeControl projectId="project-1" work={draftWork()} />,
+      () => {
+        const checking = button("Checking pending changes…");
+        expect(checking.disabled).toBe(true);
+        expect(radio("direct").disabled).toBe(false);
       },
     );
   });

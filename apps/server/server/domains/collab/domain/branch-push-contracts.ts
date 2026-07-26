@@ -258,7 +258,6 @@ export type PushCommitStore = {
 };
 
 export type WorkPushPolicyStore = {
-  countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
 };

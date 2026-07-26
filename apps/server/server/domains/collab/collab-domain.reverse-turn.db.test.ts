@@ -936,6 +936,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
       });
       expect(drafts).toHaveLength(1);
+      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(drafts.length);
       // The dock's Review verb navigates by contextPath; null here silently
       // breaks review-from-dock for every document. The leading slash is
       // load-bearing: the client's findContextFile matches route paths
@@ -946,6 +947,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextPath: "/chapter.md",
       });
       expect(drafts[0]).not.toHaveProperty("createdDocument");
+    });
+
+    it("ignores a lingering manifest-only branch when switching a settled Work to auto", async () => {
+      const collab = createTestCollab();
+      await collab.recordManifestDocumentCreated(DOC_ID as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+      });
+
+      const manifestRows = await db
+        .select({ status: branchWriteJournal.status, updateMeta: branchWriteJournal.updateMeta })
+        .from(branchWriteJournal)
+        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
+        .where(
+          and(
+            eq(documentBranches.workId, WORK_ID as never),
+            eq(branchWriteJournal.status, "active"),
+            sql`${branchWriteJournal.updateMeta}->>'kind' = 'manifest_membership'`,
+          ),
+        );
+      expect(manifestRows).toEqual([
+        {
+          status: "active",
+          updateMeta: {
+            kind: "manifest_membership",
+            present: true,
+            documentId: DOC_ID,
+          },
+        },
+      ]);
+
+      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      await expect(
+        collab.draftReview.list({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+        }),
+      ).resolves.toEqual([]);
+      await expect(
+        collab.setWorkPushPolicy({
+          workId: WORK_ID as never,
+          policy: "auto",
+          pushedByUserId: USER_ID as never,
+        }),
+      ).resolves.toEqual({ status: "updated", policy: "auto" });
     });
 
     it("materializes a new document and its live manifest entry on partial create accept", async () => {

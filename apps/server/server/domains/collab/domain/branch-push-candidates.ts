@@ -7,6 +7,7 @@ import {
   BranchPushCommitConflictError,
   type CandidateBatch,
 } from "./branch-push-contracts.js";
+import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
 
 type CandidateSource = {
   branch: BranchSnapshot;
@@ -121,13 +122,4 @@ function selectedRows(
     throw new BranchPushCommitConflictError(source.branch.branchId);
   }
   return rows;
-}
-
-function manifestMembershipRowDocumentId(row: BranchJournalRow): DocumentId | null {
-  const meta = row.updateMeta;
-  if (typeof meta !== "object" || meta === null) return null;
-  const record = meta as { kind?: unknown; documentId?: unknown };
-  return record.kind === "manifest_membership" && typeof record.documentId === "string"
-    ? (record.documentId as DocumentId)
-    : null;
 }

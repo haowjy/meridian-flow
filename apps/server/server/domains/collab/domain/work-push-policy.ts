@@ -2,6 +2,7 @@
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { BranchStore } from "./branch-coordinator.js";
 import type { PushToLiveResult, WorkPushPolicyStore } from "./branch-push-contracts.js";
+import type { WorkDraftPending } from "./work-draft-pending.js";
 
 type PushToLive = (input: {
   branchId: string;
@@ -12,6 +13,7 @@ type PushToLive = (input: {
 export function createWorkPushPolicy(input: {
   branchStore: BranchStore;
   workPushPolicyStore: WorkPushPolicyStore;
+  workDraftPending: WorkDraftPending;
   pushToLive: PushToLive;
 }) {
   return {
@@ -42,22 +44,18 @@ export function createWorkPushPolicy(input: {
         await input.workPushPolicyStore.updateWorkDraftPushPolicy(policyInput.workId, "manual");
         return { status: "updated" as const, policy: "manual" as const };
       }
-      const unpushedCount = await input.workPushPolicyStore.countUnpushedRowsForWork(
-        policyInput.workId,
-      );
-      if (unpushedCount > 0 && !policyInput.confirmedPush) {
+      const pendingDrafts = await input.workDraftPending.list(policyInput.workId);
+      if (pendingDrafts.length > 0 && !policyInput.confirmedPush) {
         return {
           status: "confirmation_required" as const,
-          unpushedCount,
-          reason: `Switching to Auto-apply will apply ${unpushedCount} pending changes.`,
+          unpushedCount: pendingDrafts.length,
+          reason: `Switching to Auto-apply will apply ${pendingDrafts.length} pending changes.`,
         };
       }
-      if (unpushedCount > 0) {
-        for (const branchId of await input.workPushPolicyStore.listActiveWorkDraftBranchIdsForWork(
-          policyInput.workId,
-        )) {
+      if (pendingDrafts.length > 0) {
+        for (const { branch } of pendingDrafts) {
           await input.pushToLive({
-            branchId,
+            branchId: branch.branchId,
             pushedByUserId: policyInput.pushedByUserId,
             resetPolicy: "auto",
           });

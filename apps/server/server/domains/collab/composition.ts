@@ -93,6 +93,7 @@ import {
   createTurnReversalService,
   type ThreadContextReversalResolver,
 } from "./domain/turn-reversal-service.js";
+import { createWorkDraftPending } from "./domain/work-draft-pending.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
@@ -210,6 +211,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.notices,
   );
   const workPushPolicy = createDrizzleWorkPushPolicyStore(deps.db);
+  const workDraftPending = createWorkDraftPending({
+    branches,
+    branchJournal,
+    workDraftIndex: workPushPolicy,
+  });
   const writerIngress = createWriterIngressBinding();
   const branchPush = createBranchPushService({
     branchStore: branches,
@@ -324,7 +330,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchJournal,
     branchPush,
     branchReview,
-    workPushPolicy,
+    workDraftPending,
     liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
@@ -438,7 +444,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
       pushToLive: branchPush.pushToLive,
       pushSelectedToLive: branchPush.pushSelectedToLive,
-      countUnpushedRowsForWork: workPushPolicy.countUnpushedRowsForWork,
+      countUnpushedRowsForWork: workDraftPending.count,
       setWorkPushPolicy: branchPush.setWorkPushPolicy,
       markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },
