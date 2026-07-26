@@ -125,6 +125,15 @@ function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
 }
 
+function mergeTabMetadata(existing: ContextTab, incoming: ContextTab): ContextTab {
+  const merged = { ...existing, ...incoming } as ContextTab;
+  if (incoming.kind !== "tracked" || incoming.draftOnly) return merged;
+  // A tracked tab from the live context tree proves that a draft-created
+  // document was committed; omitted optional fields must not retain the marker.
+  const { draftOnly: _draftOnly, ...liveTab } = merged;
+  return liveTab as ContextTab;
+}
+
 function sliceFor(state: ContextTabsState, projectId: string): ProjectTabsSlice {
   return state.byProject[projectId] ?? emptySlice();
 }
@@ -192,7 +201,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             ? slice.tabs.map((t) =>
                 // Refresh metadata for an already-open tab — file may have been
                 // renamed (or appear in a new scheme) since it was first opened.
-                t.documentId === tab.documentId ? { ...t, ...tab } : t,
+                t.documentId === tab.documentId ? mergeTabMetadata(t, tab) : t,
               )
             : [...slice.tabs, tab];
           return patchSlice(state, projectId, { ...slice, tabs: nextTabs });

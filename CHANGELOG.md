@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 - `apps/app`, `apps/server`, `packages/contracts`: draft review now exposes only
-  active cards and removes the dead per-card Undo client and wire contracts.
+  active cards, removes the dead per-card Undo client and wire contracts, and
+  reconciles remotely settled draft-created tabs against live project membership.
 - `apps/app`, `apps/server`, `packages/agent-edit`: receipt Undo/Redo now uses
   planner-owned eligibility, preserves redo across system and agent rows,
   withdraws it after writer edits, surfaces raced command refusals, and rolls

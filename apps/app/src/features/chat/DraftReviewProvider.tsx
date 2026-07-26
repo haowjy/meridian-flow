@@ -1,5 +1,6 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -12,12 +13,15 @@ import {
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { projectContextTreeQueryOptions } from "@/client/query/useProjectContextTree";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
   useWorkDrafts,
 } from "@/client/query/useWorkDrafts";
+import { useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { findContextFileByDocumentId } from "@/features/project/context/context-tree";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
 export type DraftReviewContextValue = {
@@ -105,6 +109,40 @@ function DraftReviewScope({
       groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [];
     if (documentDrafts.some((draft) => draft.draftId === activeSelection.draftId)) return;
     controller.exitReview();
+    if (!projectId || !workId) return;
+    const tabs = useContextTabsStore.getState();
+    const tab = tabs.byProject[projectId]?.tabs.find(
+      (candidate) => candidate.documentId === activeSelection.documentId,
+    );
+    if (tab?.kind !== "tracked" || !tab.draftOnly) return;
+
+    // The active-only list cannot say why a remote disposition removed the
+    // draft. For draft-created documents, manifest membership is authoritative:
+    // Apply materializes the document; Discard does not.
+    const treeQuery = projectContextTreeQueryOptions(projectId, "manuscript", null);
+    void queryClient
+      .cancelQueries({ queryKey: treeQuery.queryKey })
+      .then(() => queryClient.fetchQuery({ ...treeQuery, staleTime: 0 }))
+      .then(({ tree }) => {
+        const currentTabs = useContextTabsStore.getState();
+        const currentTab = currentTabs.byProject[projectId]?.tabs.find(
+          (candidate) => candidate.documentId === activeSelection.documentId,
+        );
+        if (currentTab?.kind !== "tracked" || !currentTab.draftOnly) return;
+        const currentDrafts =
+          queryClient.getQueryData<ThreadDraftListItem[]>(
+            projectQueryKeys.workDrafts(projectId, workId),
+          ) ?? [];
+        if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
+        currentTabs.resolveDraftOnlyTab(
+          projectId,
+          activeSelection.documentId,
+          findContextFileByDocumentId(tree, activeSelection.documentId) ? "committed" : "discarded",
+        );
+      })
+      // A failed membership check must leave the tab intact rather than guess
+      // that a remotely accepted document was discarded.
+      .catch(() => undefined);
   }, [
     controller.exitReview,
     controller.inlineReview,
@@ -112,6 +150,9 @@ function DraftReviewScope({
     drafts.status,
     effectiveProjectId,
     groups,
+    projectId,
+    queryClient,
+    workId,
   ]);
 
   useEffect(() => {
