@@ -38,7 +38,14 @@ export function ComposerWriteModeControl({ projectId, work }: { projectId: strin
   const workDrafts = useWorkDrafts(projectId, work.id);
   const { openAiDraft } = useAiDraftLauncher();
   const pendingGroups = activeDockedDraftGroups(workDrafts.groups);
-  const firstPendingGroup = pendingGroups[0] ?? null;
+  const firstPendingGroup =
+    [...pendingGroups]
+      .sort((left, right) =>
+        (left.documentName ?? left.documentId)
+          .toLowerCase()
+          .localeCompare((right.documentName ?? right.documentId).toLowerCase()),
+      )
+      .at(0) ?? null;
   const firstPendingDraft = firstPendingGroup?.drafts[0] ?? null;
 
   return (

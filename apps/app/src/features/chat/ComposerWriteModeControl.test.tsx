@@ -24,15 +24,35 @@ vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({
     groups: [
       {
-        documentId: "document-1",
-        documentName: "Chapter 1",
-        contextPath: "work://manuscript/chapter-1.md",
+        documentId: "document-zulu",
+        documentName: "Zulu",
+        contextPath: "work://manuscript/zulu.md",
         drafts: [
           {
-            draftId: "draft-1",
-            documentId: "document-1",
-            documentName: "Chapter 1",
-            contextPath: "work://manuscript/chapter-1.md",
+            draftId: "draft-zulu",
+            documentId: "document-zulu",
+            documentName: "Zulu",
+            contextPath: "work://manuscript/zulu.md",
+            status: "active",
+            lastActorTurnId: null,
+            updatedAt: "2026-07-25T13:00:00.000Z",
+            appliedAt: null,
+            discardedAt: null,
+            wordsAdded: 1,
+            wordsRemoved: 0,
+          },
+        ],
+      },
+      {
+        documentId: "document-alpha",
+        documentName: "Alpha",
+        contextPath: "work://manuscript/alpha.md",
+        drafts: [
+          {
+            draftId: "draft-alpha",
+            documentId: "document-alpha",
+            documentName: "Alpha",
+            contextPath: "work://manuscript/alpha.md",
             status: "active",
             lastActorTurnId: null,
             updatedAt: "2026-07-25T12:00:00.000Z",
@@ -68,19 +88,19 @@ describe("ComposerWriteModeControl", () => {
     await withReactRoot(
       <ComposerWriteModeControl projectId="project-1" work={draftWork()} />,
       () => {
-        expect(document.body.textContent).toContain("Draft(1)");
+        expect(document.body.textContent).toContain("Draft(2)");
         const draft = radio("draft");
         const direct = radio("direct");
-        expect(draft.getAttribute("aria-description")).toBe("1 changes waiting for review");
+        expect(draft.getAttribute("aria-description")).toBe("2 changes waiting for review");
         expect(direct.disabled).toBe(false);
 
         button("Review changes").click();
         expect(openAiDraft).toHaveBeenCalledWith(
           expect.objectContaining({
-            documentId: "document-1",
-            contextPath: "work://manuscript/chapter-1.md",
+            documentId: "document-alpha",
+            contextPath: "work://manuscript/alpha.md",
           }),
-          "draft-1",
+          "draft-alpha",
         );
       },
     );
