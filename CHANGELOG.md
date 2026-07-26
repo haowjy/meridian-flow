@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `packages/database`: publication-lineage migrations now preserve branch
+  generations when upgrading databases with existing pushes.
 - `apps/app`: the production document transport now has contract coverage for
   synchronous initial status delivery.
 - `packages/database`: new Yjs head rows now default to the shared collaboration
