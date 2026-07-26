@@ -29,15 +29,16 @@ Bulk Apply/Discard is one controller command over a captured target list; the
 dock does not infer command completion from busy/idle render edges. Apply
 addresses the current branch rather than preview operation ids or a revision
 token. The server settles the complete branch state at command time, including
-writer rows created after the last preview. Apply/Discard failures are session
-outcomes rendered by the review header rather than ignored promises.
-A batch stops at its first failure; transport failures surface through the
-dock's typed error state. Apply always merges through Yjs, including when the
-writer changed the same passage after the draft was cut. The durable receipt
-preserves each branch row's actor attribution. Active AI handles retain their
-normal live Undo dependency semantics; writer rows may therefore make an AI
-turn Undo unavailable. Best-effort sweep evidence only elevates a receiving
-writer's swept mark when that writer's post-observation edit was overwritten.
+writer rows created after the last preview. The client therefore treats preview
+operations and revisions as evidence, not command scope. Apply/Discard failures
+are session outcomes rendered by the review header rather than ignored
+promises. A batch stops at its first failure; transport failures surface through
+the dock's typed error state.
+
+Cross-cutting server policy:
+[whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-apply-whole-current-branch.md)
+and
+[live-only sweep projection](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/ai-change-event-projections.md).
 
 On Apply or whole-draft Discard, the controller clears the review surface so
 the editor rebinds from the review branch room to the live manuscript room. The server

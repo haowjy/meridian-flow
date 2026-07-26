@@ -2,33 +2,8 @@
 
 ## Architecture
 
-### `src/tool/` module map
-
 `write.ts` is the composition façade; behavior belongs in the module that owns
-its concern. Production modules (excluding colocated tests) are:
-
-| Module | Responsibility |
-|---|---|
-| `command-schema.ts` | Canonical validation schema for model-facing write commands. |
-| `coordinator.ts` | Translates live-document coordinator failures into tool results. |
-| `document-renderer.ts` | Parses agent input and renders document blocks for reads and echoes. |
-| `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
-| `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
-| `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
-| `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
-| `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
-| `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
-| `types.ts` | Public command, context, outcome, lifecycle event, and response result types. |
-| `write-commands.ts` | Implements read/create/insert/replace handlers. |
-| `write-deps.ts` | Defines public write-tool construction options. |
-| `write-dispatch.ts` | Dispatches validated commands to supplied command/reversal handlers. |
-| `write-helpers.ts` | Shared parsing, identity, and error helpers. |
-| `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
-| `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
-| `write-reversal.ts` | Selects, submits, persists, and reports write-level undo/redo. |
-| `undo/reversal-reconstruction.ts` | Synthesizes one cold undo/redo update, including plain-text order repair. |
-| `write.ts` | Wires the modules into the public `WriteTool`; it contains no command implementation. |
-| `test-support/` | Shared package-test journals, harnesses, scenarios, and assertions. |
+its concern.
 
 ### Codec pipeline
 ```
