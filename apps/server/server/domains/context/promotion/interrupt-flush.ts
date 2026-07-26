@@ -1,8 +1,7 @@
 /**
  * Interrupt flush manifest + rehydrate: bulk-promote generated artifacts at a
  * interrupt boundary; restore bytes from the manifest when the writable file
- * context is recreated. Mirror of input-ingest — reuses parent-folder helpers
- * and objectStore.get.
+ * context is recreated.
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import { objectStoreKeyFromStorageUrl } from "../../storage/object-storage-url.js";
