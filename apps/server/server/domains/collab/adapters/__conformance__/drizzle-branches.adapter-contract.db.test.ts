@@ -43,6 +43,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       createDrizzleBranchJournalReadStore,
       createDrizzlePushCommitStore,
+      createDrizzleWorkDraftPendingStore,
       createDrizzleWorkPushPolicyStore,
     } = await import("../drizzle-branch-push.js");
     const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
@@ -138,6 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journalReadStore,
         commitStore,
         workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
+        workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
         settlementStore: createDrizzlePendingSettlementStore(
           db,
           serializer,
@@ -312,11 +314,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source: "agent",
         threadId: THREAD_ID as never,
       });
-      const pendingDrafts = createWorkDraftPending({
-        branches: store,
-        branchJournal: createDrizzleBranchJournalReadStore(db),
-        workDraftIndex: createDrizzleWorkPushPolicyStore(db),
-      });
+      const pendingDrafts = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
       await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(1);
 
       await coordinator.resetFromDoc(work.branchId, live);

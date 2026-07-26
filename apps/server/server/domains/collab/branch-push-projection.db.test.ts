@@ -24,6 +24,7 @@ import * as Y from "yjs";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
@@ -176,6 +177,7 @@ describe("branch-push durable projection", () => {
       journalReadStore,
       commitStore,
       workPushPolicyStore,
+      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         durableProjectionSerializer,
@@ -365,6 +367,7 @@ describe("branch-push durable projection", () => {
       journalReadStore,
       commitStore,
       workPushPolicyStore,
+      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore,
       branchCoordinator,
       journal: persistence.journal,
@@ -537,6 +540,7 @@ describe("branch-push durable projection", () => {
       journalReadStore,
       commitStore,
       workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
+      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         engine,

@@ -994,6 +994,81 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual({ status: "updated", policy: "auto" });
     });
 
+    it("publishes a new document with its manifest entry when confirming auto mode", async () => {
+      await db.insert(documents).values({
+        id: CREATED_DOC_ID,
+        contextSourceId: SOURCE_ID,
+        name: "confirmed-auto-create",
+        extension: "md",
+        fileType: "markdown",
+      });
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      const responseId = "response-confirmed-auto-create";
+      await collab.recordManifestDocumentCreated(CREATED_DOC_ID as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "create",
+            file: "confirmed-auto-create.md",
+            documentId: CREATED_DOC_ID,
+            content: "# Confirmed auto create\n\nPublished with membership.",
+          },
+          {
+            sessionId: "session-confirmed-auto-create",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId,
+            createdDocument: true,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      const drafts = await collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+      });
+      expect(drafts).toHaveLength(1);
+      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(drafts.length);
+      await expect(
+        collab.setWorkPushPolicy({
+          workId: WORK_ID as never,
+          policy: "auto",
+          pushedByUserId: USER_ID as never,
+        }),
+      ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 1 });
+      await expect(
+        collab.setWorkPushPolicy({
+          workId: WORK_ID as never,
+          policy: "auto",
+          confirmedPush: true,
+          pushedByUserId: USER_ID as never,
+        }),
+      ).resolves.toEqual({ status: "updated", policy: "auto" });
+
+      await expect(
+        collab.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+      ).resolves.toMatchObject({ members: expect.arrayContaining([CREATED_DOC_ID]) });
+      await expect(readMarkdown(collab, CREATED_DOC_ID)).resolves.toContain(
+        "Published with membership.",
+      );
+      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      await expect(
+        collab.draftReview.list({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+        }),
+      ).resolves.toEqual([]);
+    });
+
     it("materializes a new document and its live manifest entry on partial create accept", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);

@@ -423,6 +423,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             ? { contentJournalIds: pushInput.contentJournalIds }
             : {}),
           ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+          ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
         });
         if (built.kind === "no_active_rows") {
           return mapNoActiveRows(await noActiveRows(built.branch));
@@ -443,12 +444,22 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   const workPushPolicy = createWorkPushPolicy({
     branchStore: input.branchStore,
     workPushPolicyStore: input.workPushPolicyStore,
-    workDraftPending: createWorkDraftPending({
-      branches: input.branchStore,
-      branchJournal: input.journalReadStore,
-      workDraftIndex: input.workPushPolicyStore,
-    }),
+    workDraftPending: createWorkDraftPending(input.workDraftPendingStore),
     pushToLive,
+    applyPendingDraft: ({ draft, pushedByUserId }) =>
+      draft.manifestEntry
+        ? pushToLiveWithManifestEntry({
+            branchId: draft.branch.branchId,
+            manifestBranchId: draft.manifestEntry.branchId,
+            manifestEntryDocumentId: draft.manifestEntry.documentId,
+            ...(pushedByUserId ? { pushedByUserId } : {}),
+            resetPolicy: "auto",
+          })
+        : pushToLive({
+            branchId: draft.branch.branchId,
+            ...(pushedByUserId ? { pushedByUserId } : {}),
+            resetPolicy: "auto",
+          }),
   });
 
   return {

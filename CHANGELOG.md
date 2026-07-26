@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 - `apps/app`, `apps/server`: Auto-apply switches and draft review now share one
-  content-branch count, ignoring manifest-only bookkeeping left after review.
+  efficient content-branch authority, ignoring manifest-only bookkeeping left
+  after review while still publishing required new-document membership.
 - `apps/app`, `apps/server`, `packages/contracts`: draft review now exposes only
   active cards, removes the dead per-card Undo client and wire contracts, and
   reconciles remotely settled draft-created tabs against live project membership.

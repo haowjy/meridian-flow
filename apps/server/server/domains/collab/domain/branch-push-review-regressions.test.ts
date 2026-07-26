@@ -237,9 +237,6 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 
 function unsupportedWorkPolicyStore(): WorkPushPolicyStore {
   return {
-    async listActiveWorkDraftBranchIdsForWork() {
-      throw new Error("review regression store does not support work policy reads");
-    },
     async updateWorkDraftPushPolicy() {
       throw new Error("review regression store does not support work policy writes");
     },
@@ -289,6 +286,11 @@ function serviceFixture(input: {
       journalReadStore: stores,
       commitStore: stores,
       workPushPolicyStore: unsupportedWorkPolicyStore(),
+      workDraftPendingStore: {
+        async listReviewableEvidenceForWork() {
+          throw new Error("review regression store does not support pending Work reads");
+        },
+      },
       settlementStore: settlements,
       journal: input.journal,
       liveCoordinator,

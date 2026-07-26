@@ -27,6 +27,7 @@ import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
@@ -211,11 +212,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.notices,
   );
   const workPushPolicy = createDrizzleWorkPushPolicyStore(deps.db);
-  const workDraftPending = createWorkDraftPending({
-    branches,
-    branchJournal,
-    workDraftIndex: workPushPolicy,
-  });
+  const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
+  const workDraftPending = createWorkDraftPending(workDraftPendingStore);
   const writerIngress = createWriterIngressBinding();
   const branchPush = createBranchPushService({
     branchStore: branches,
@@ -223,6 +221,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journalReadStore: branchJournal,
     commitStore: pushCommits,
     workPushPolicyStore: workPushPolicy,
+    workDraftPendingStore,
     settlementStore: pendingSettlements,
     branchCoordinator,
     journal: persistence.journal,

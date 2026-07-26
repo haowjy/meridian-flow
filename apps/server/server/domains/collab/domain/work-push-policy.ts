@@ -2,7 +2,7 @@
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { BranchStore } from "./branch-coordinator.js";
 import type { PushToLiveResult, WorkPushPolicyStore } from "./branch-push-contracts.js";
-import type { WorkDraftPending } from "./work-draft-pending.js";
+import type { PendingWorkDraft, WorkDraftPending } from "./work-draft-pending.js";
 
 type PushToLive = (input: {
   branchId: string;
@@ -10,11 +10,17 @@ type PushToLive = (input: {
   resetPolicy?: "auto";
 }) => Promise<PushToLiveResult>;
 
+type ApplyPendingDraft = (input: {
+  draft: PendingWorkDraft;
+  pushedByUserId?: UserId;
+}) => Promise<PushToLiveResult>;
+
 export function createWorkPushPolicy(input: {
   branchStore: BranchStore;
   workPushPolicyStore: WorkPushPolicyStore;
   workDraftPending: WorkDraftPending;
   pushToLive: PushToLive;
+  applyPendingDraft: ApplyPendingDraft;
 }) {
   return {
     async pushAutoBranchAfterThreadPeerWrite(autoInput: {
@@ -53,11 +59,10 @@ export function createWorkPushPolicy(input: {
         };
       }
       if (pendingDrafts.length > 0) {
-        for (const { branch } of pendingDrafts) {
-          await input.pushToLive({
-            branchId: branch.branchId,
-            pushedByUserId: policyInput.pushedByUserId,
-            resetPolicy: "auto",
+        for (const draft of pendingDrafts) {
+          await input.applyPendingDraft({
+            draft,
+            ...(policyInput.pushedByUserId ? { pushedByUserId: policyInput.pushedByUserId } : {}),
           });
         }
       }

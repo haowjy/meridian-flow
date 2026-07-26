@@ -37,7 +37,6 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
     deferUntilCommit: vi.fn(() => false),
   };
   const workPushPolicyStore: WorkPushPolicyStore = {
-    listActiveWorkDraftBranchIdsForWork: vi.fn(async () => []),
     updateWorkDraftPushPolicy: vi.fn(async (_workId, policy) => {
       events.push(`policy:${policy}`);
     }),
@@ -56,14 +55,35 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
       reason: "no_active_rows" as const,
     };
   });
+  const applyPendingDraft = vi.fn(
+    async ({ draft }: { draft: Awaited<ReturnType<WorkDraftPending["list"]>>[number] }) => {
+      events.push(`push:${draft.branch.branchId}`);
+      return {
+        status: "noop" as const,
+        branchId: draft.branch.branchId,
+        documentId: draft.branch.documentId,
+        branchGeneration: draft.branch.generation,
+        reason: "no_active_rows" as const,
+      };
+    },
+  );
   const policy = createWorkPushPolicy({
     branchStore,
     workPushPolicyStore,
     workDraftPending,
     pushToLive,
+    applyPendingDraft,
   });
 
-  return { branchStore, events, policy, pushToLive, workDraftPending, workPushPolicyStore };
+  return {
+    applyPendingDraft,
+    branchStore,
+    events,
+    policy,
+    pushToLive,
+    workDraftPending,
+    workPushPolicyStore,
+  };
 }
 
 describe("work push policy", () => {
@@ -141,17 +161,18 @@ describe("work push policy", () => {
       }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
     expect(harness.events).toEqual(["push:branch-a", "push:branch-b", "policy:auto"]);
-    expect(harness.pushToLive).toHaveBeenCalledWith({
-      branchId: "branch-a",
+    expect(harness.applyPendingDraft).toHaveBeenCalledWith({
+      draft: expect.objectContaining({
+        branch: expect.objectContaining({ branchId: "branch-a" }),
+      }),
       pushedByUserId: USER_ID,
-      resetPolicy: "auto",
     });
   });
 
   it("does not enable auto policy when a confirmed push fails", async () => {
     const harness = createHarness();
     vi.mocked(harness.workDraftPending.list).mockResolvedValue(pendingDrafts("branch-a"));
-    harness.pushToLive.mockRejectedValue(new Error("push failed"));
+    harness.applyPendingDraft.mockRejectedValue(new Error("push failed"));
 
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", confirmedPush: true }),
@@ -162,7 +183,12 @@ describe("work push policy", () => {
 
 function pendingDrafts(...branchIds: string[]) {
   return branchIds.map((branchId) => ({
-    branch: { ...workDraft("manual"), branchId },
+    branch: {
+      branchId,
+      documentId: workDraft("manual").documentId,
+      workId: WORK_ID,
+      generation: 1,
+    },
     rows: [],
   }));
 }

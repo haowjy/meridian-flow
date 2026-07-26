@@ -12,6 +12,7 @@ import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
+import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -258,7 +259,6 @@ export type PushCommitStore = {
 };
 
 export type WorkPushPolicyStore = {
-  listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
 };
 
@@ -298,6 +298,7 @@ export type BranchPushService = {
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
     signal?: AbortSignal;
+    resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
@@ -351,6 +352,7 @@ export type BranchPushServiceInput = {
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
   workPushPolicyStore: WorkPushPolicyStore;
+  workDraftPendingStore: WorkDraftPendingStore;
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;

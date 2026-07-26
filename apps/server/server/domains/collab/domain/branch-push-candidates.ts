@@ -66,6 +66,7 @@ export function buildCompanionCandidates(input: {
   manifestEntryDocumentId: DocumentId;
   contentJournalIds?: readonly number[];
   pushedByUserId?: UserId;
+  resetPolicy?: "auto";
 }): CandidateBatchBuildResult {
   let contentRows = input.content.rows;
   if (input.contentJournalIds) {
@@ -106,6 +107,7 @@ export function buildCompanionCandidates(input: {
       ],
       receiptId: randomUUID(),
       ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
+      ...(input.resetPolicy ? { resetPolicy: input.resetPolicy } : {}),
     },
   };
 }

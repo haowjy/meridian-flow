@@ -8,7 +8,7 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -24,6 +24,10 @@ import {
 } from "../domain/branch-push-contracts.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import type {
+  WorkDraftPendingEvidence,
+  WorkDraftPendingStore,
+} from "../domain/ports/work-draft-pending-store.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
@@ -278,20 +282,6 @@ export function createDrizzlePushCommitStore(
 
 export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicyStore {
   return {
-    async listActiveWorkDraftBranchIdsForWork(workId) {
-      const rows = await db
-        .select({ id: documentBranches.id })
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.workId, workId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        );
-      return rows.map((row) => row.id);
-    },
-
     async updateWorkDraftPushPolicy(workId, policy) {
       await runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db)
@@ -309,6 +299,53 @@ export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicySt
           .set({ aiWriteMode: aiWriteModeProjection(policy), updatedAt: new Date() })
           .where(eq(works.id, workId));
       });
+    },
+  };
+}
+
+export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
+  return {
+    async listReviewableEvidenceForWork(workId) {
+      const rows = await db
+        .select({
+          branchId: documentBranches.id,
+          documentId: documentBranches.documentId,
+          generation: documentBranches.generation,
+          journal: branchWriteJournal,
+        })
+        .from(documentBranches)
+        .innerJoin(
+          branchWriteJournal,
+          and(
+            eq(branchWriteJournal.branchId, documentBranches.id),
+            eq(branchWriteJournal.generation, documentBranches.generation),
+            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+          ),
+        )
+        .where(
+          and(
+            eq(documentBranches.workId, workId),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        )
+        .orderBy(asc(documentBranches.id), asc(branchWriteJournal.id));
+
+      const evidence = new Map<string, WorkDraftPendingEvidence>();
+      for (const row of rows) {
+        const branch = evidence.get(row.branchId) ?? {
+          branch: {
+            branchId: row.branchId,
+            documentId: row.documentId,
+            workId,
+            generation: row.generation,
+          },
+          rows: [],
+        };
+        branch.rows.push(mapJournalRow(row.journal));
+        evidence.set(row.branchId, branch);
+      }
+      return [...evidence.values()];
     },
   };
 }

@@ -1,16 +1,19 @@
 /** Canonical pending-review predicate for Work draft branches. */
-import type { WorkId } from "@meridian/contracts/runtime";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
-import type {
-  BranchJournalReadStore,
-  BranchJournalRow,
-  WorkPushPolicyStore,
-} from "./branch-push-contracts.js";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { BranchJournalRow } from "./branch-push-contracts.js";
 import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
+import type {
+  WorkDraftPendingEvidence,
+  WorkDraftPendingStore,
+} from "./ports/work-draft-pending-store.js";
 
 export type PendingWorkDraft = {
-  branch: BranchSnapshot;
+  branch: WorkDraftPendingEvidence["branch"];
   rows: BranchJournalRow[];
+  manifestEntry?: {
+    branchId: string;
+    documentId: DocumentId;
+  };
 };
 
 export type WorkDraftPending = {
@@ -18,25 +21,22 @@ export type WorkDraftPending = {
   count(workId: WorkId): Promise<number>;
 };
 
-export function createWorkDraftPending(input: {
-  branches: Pick<BranchStore, "getBranch">;
-  branchJournal: Pick<BranchJournalReadStore, "listReviewableJournalRows">;
-  workDraftIndex: Pick<WorkPushPolicyStore, "listActiveWorkDraftBranchIdsForWork">;
-}): WorkDraftPending {
+export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftPending {
   async function list(workId: WorkId): Promise<PendingWorkDraft[]> {
-    const branchIds = await input.workDraftIndex.listActiveWorkDraftBranchIdsForWork(workId);
-    const pending: PendingWorkDraft[] = [];
-    for (const branchId of branchIds) {
-      const branch = await input.branches.getBranch(branchId);
-      if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
-        continue;
+    const evidence = await store.listReviewableEvidenceForWork(workId);
+    const manifestEntries = new Map<DocumentId, PendingWorkDraft["manifestEntry"]>();
+    for (const { branch, rows } of evidence) {
+      for (const row of rows) {
+        const documentId = manifestMembershipRowDocumentId(row);
+        if (documentId) manifestEntries.set(documentId, { branchId: branch.branchId, documentId });
       }
-      const rows = (
-        await input.branchJournal.listReviewableJournalRows(branch.branchId, branch.generation)
-      ).filter((row) => manifestMembershipRowDocumentId(row) === null);
-      if (rows.length > 0) pending.push({ branch, rows });
     }
-    return pending;
+    return evidence.flatMap(({ branch, rows }) => {
+      const contentRows = rows.filter((row) => manifestMembershipRowDocumentId(row) === null);
+      if (contentRows.length === 0) return [];
+      const manifestEntry = manifestEntries.get(branch.documentId);
+      return [{ branch, rows: contentRows, ...(manifestEntry ? { manifestEntry } : {}) }];
+    });
   }
 
   return {

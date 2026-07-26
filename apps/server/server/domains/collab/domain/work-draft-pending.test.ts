@@ -1,7 +1,6 @@
 /** Canonical pending Work-draft classification contracts. */
 import type { WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
 import { createWorkDraftPending } from "./work-draft-pending.js";
 
@@ -19,48 +18,39 @@ describe("pending Work drafts", () => {
           journalRow(3, {
             kind: "manifest_membership",
             present: true,
-            documentId: "00000000-0000-4000-8000-000000000004",
+            documentId: content.documentId,
           }),
         ],
       ],
     ]);
     const pending = createWorkDraftPending({
-      branches: {
-        getBranch: vi.fn(async (branchId) => (branchId === content.branchId ? content : manifest)),
-      },
-      branchJournal: {
-        listReviewableJournalRows: vi.fn(async (branchId) => rows.get(branchId) ?? []),
-      },
-      workDraftIndex: {
-        listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [
-          content.branchId,
-          manifest.branchId,
-        ]),
-      },
+      listReviewableEvidenceForWork: vi.fn(async () => [
+        { branch: content, rows: rows.get("content") ?? [] },
+        { branch: manifest, rows: rows.get("manifest") ?? [] },
+      ]),
     });
 
     await expect(pending.list(WORK_ID)).resolves.toEqual([
-      { branch: content, rows: rows.get("content") },
+      {
+        branch: content,
+        rows: rows.get("content"),
+        manifestEntry: {
+          branchId: manifest.branchId,
+          documentId: content.documentId,
+        },
+      },
     ]);
     await expect(pending.count(WORK_ID)).resolves.toBe(1);
   });
 });
 
-function workDraft(branchId: string): BranchSnapshot {
+function workDraft(branchId: string) {
   return {
     branchId,
     documentId: "00000000-0000-4000-8000-000000000003",
-    kind: "work_draft",
-    upstreamBranchId: null,
     workId: WORK_ID,
-    threadId: null,
-    pushPolicy: "manual",
-    status: "active",
     generation: 1,
-    state: new Uint8Array(),
-    stateVector: new Uint8Array(),
-    schemaVersion: 1,
-  } as BranchSnapshot;
+  } as const;
 }
 
 function journalRow(id: number, updateMeta?: unknown): BranchJournalRow {

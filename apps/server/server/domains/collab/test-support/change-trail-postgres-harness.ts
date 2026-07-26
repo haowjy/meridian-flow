@@ -28,6 +28,7 @@ export const {
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
 const {
   createDrizzleBranchJournalReadStore,
+  createDrizzleWorkDraftPendingStore,
   createDrizzlePushCommitStore,
   createDrizzleWorkPushPolicyStore,
 } = await import("../adapters/drizzle-branch-push.js");
@@ -320,6 +321,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     notices,
   );
   const durableWorkPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
+  const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
@@ -394,6 +396,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     journalReadStore: durableBranchJournalReadStore,
     commitStore: durablePushCommitStore,
     workPushPolicyStore: durableWorkPushPolicyStore,
+    workDraftPendingStore: durableWorkDraftPendingStore,
     settlementStore,
     branchCoordinator,
     journal: persistence.journal,
@@ -576,11 +579,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchJournal: durableBranchJournalReadStore,
     branchPush,
     branchReview,
-    workDraftPending: createWorkDraftPending({
-      branches: branchStore,
-      branchJournal: durableBranchJournalReadStore,
-      workDraftIndex: durableWorkPushPolicyStore,
-    }),
+    workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
     liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
