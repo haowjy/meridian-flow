@@ -263,8 +263,10 @@ describe("change trail (postgres)", () => {
     expect(await harness.trailRowMembership()).toMatchObject({
       shells: [expect.objectContaining({ state: "settling", version: 2 })],
       details: [],
-      outbox: [expect.objectContaining({ eventKind: "updated", version: 2 })],
     });
+    expect(await harness.trailEventSequence()).toEqual([
+      expect.objectContaining({ eventKind: "updated", version: 2 }),
+    ]);
 
     await harness.pollTrails();
     expect(await harness.trailRowMembership()).toMatchObject({
@@ -278,11 +280,11 @@ describe("change trail (postgres)", () => {
         }),
       ],
       details: [],
-      outbox: [
-        expect.objectContaining({ eventKind: "updated", version: 2 }),
-        expect.objectContaining({ eventKind: "settled", version: 3 }),
-      ],
     });
+    expect(await harness.trailEventSequence()).toEqual([
+      expect.objectContaining({ eventKind: "updated", version: 2 }),
+      expect.objectContaining({ eventKind: "settled", version: 3 }),
+    ]);
   });
 
   it("retries an auto-push without re-entering the shared branch mutex", async () => {
