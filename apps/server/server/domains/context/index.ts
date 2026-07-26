@@ -25,8 +25,6 @@ export {
 } from "./context-source-provisioning.js";
 export * from "./corpus-import/index.js";
 export * from "./figures/index.js";
-export * from "./input-ingest/input-ingest-service.js";
-export * from "./input-ingest/run-input-paths.js";
 export type {
   AdapterFault,
   AdapterFileEntry,

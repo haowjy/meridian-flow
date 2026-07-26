@@ -488,7 +488,7 @@ describe("change-trail event projection", () => {
         trailId: "trail-1",
         turnId: "turn-1",
         version: 3,
-        counts: { changes: 4, swept: 1, documents: 2 },
+        counts: { changes: 4, documents: 2 },
       },
       {
         type: "turn.change_trail_settled",
@@ -498,7 +498,7 @@ describe("change-trail event projection", () => {
         turnId: "turn-1",
         version: 4,
         shell: {
-          counts: { changes: 4, swept: 1, documents: 2 },
+          counts: { changes: 4, documents: 2 },
           documents: [
             { documentId: "document-1", title: "Chapter 1" },
             { documentId: "document-2", title: "Chapter 2" },
@@ -519,7 +519,7 @@ describe("change-trail event projection", () => {
           trailId: "trail-1",
           turnId: "turn-1",
           version: 3,
-          counts: { changes: 4, swept: 1, documents: 2 },
+          counts: { changes: 4, documents: 2 },
         },
       },
       {
@@ -532,7 +532,7 @@ describe("change-trail event projection", () => {
           turnId: "turn-1",
           version: 4,
           shell: {
-            counts: { changes: 4, swept: 1, documents: 2 },
+            counts: { changes: 4, documents: 2 },
             documents: [
               { documentId: "document-1", title: "Chapter 1" },
               { documentId: "document-2", title: "Chapter 2" },

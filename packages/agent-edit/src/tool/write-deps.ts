@@ -7,6 +7,7 @@ import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
+import type { TurnDiffQuery } from "../ports/turn-diff-query.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import type {
   ResponseCommitterTransitionDetail,
@@ -20,6 +21,7 @@ export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
+  turnDiffQuery?: TurnDiffQuery;
   codec: AgentEditCodec;
   model: AgentEditModel;
   /** Durable lookup authority for the response that authored a mutation. */
@@ -39,6 +41,8 @@ export interface CreateWriteToolOptions {
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
+  /** Stage live reversal projection until the host transaction commits. */
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   closedResponseTombstoneCap?: number;
   /** Commit-phase seam for deterministic race injection and host observability. */
   afterResponsePreflight?: (responseId: string) => Promise<void> | void;

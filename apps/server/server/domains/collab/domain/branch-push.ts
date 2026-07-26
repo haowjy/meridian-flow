@@ -5,15 +5,10 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
-import {
-  buildCompanionCandidates,
-  buildSelectedRowCandidates,
-  buildWholeBranchCandidates,
-} from "./branch-push-candidates.js";
+import { buildCompanionCandidates, buildWholeBranchCandidates } from "./branch-push-candidates.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
-  type BranchPushConflictEcho,
   BranchPushRetryExhaustedError,
   type BranchPushService,
   type BranchPushServiceInput,
@@ -21,42 +16,34 @@ import {
   type PendingLiveSettlement,
   type PushCandidate,
   type PushLineageRow,
-  type PushReceiptPayload,
-  type PushSweptTrail,
   type PushToLiveResult,
 } from "./branch-push-contracts.js";
 import {
   assertNoPendingIntegration,
   assertRowsIntegrated,
-  buildReceipt,
-  conflictEchoFrom,
   stablePushIdempotencyKey,
   wholeBranchPushUpdate,
 } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
-import { buildDurablePushTrail, projectPushSweep } from "./branch-trail-projection.js";
+import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import { createWorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
 type ComputedCandidate = {
   candidate: PushCandidate;
   branch: BranchSnapshot;
   pushUpdate: Uint8Array;
-  receipt: PushReceiptPayload;
   idempotencyKey: string;
-  rowBaselineStates: ReadonlyMap<number, Uint8Array>;
-  conflictEcho?: BranchPushConflictEcho;
 };
 
 type BatchPipelineResult =
-  | { kind: "return"; value: PushToLiveResult }
   | { kind: "conflict"; push: PushLineageRow; phases: readonly ComputedCandidate[] }
   | {
       kind: "committed";
       pushes: readonly PushLineageRow[];
       phases: readonly ComputedCandidate[];
-      swept: readonly (PushSweptTrail | undefined)[];
       liveAfterPush: ReadonlyMap<DocumentId, Uint8Array>;
       branchReset?: { branchId: string; fromGeneration: number };
     };
@@ -71,7 +58,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     liveCoordinator: input.liveCoordinator,
     model: input.model,
     codec: attributionCodec,
+    changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
+    sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,
   });
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
@@ -94,30 +83,14 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     branch: BranchSnapshot,
   ): Promise<ComputedCandidate> {
     const rows = candidate.rows;
-    const pushKind = candidate.materialization === "whole" ? "whole" : "selective";
-    const baselineSnapshots = new Map(
-      await Promise.all(
-        [...new Set(rows.map((row) => row.draftBaseUpdateSeq))].map(
-          async (seq) =>
-            [seq, await input.journal.read(branch.documentId, { until: seq })] as const,
-        ),
-      ),
-    );
-    const rowBaselineStates = new Map<number, Uint8Array>();
-    for (const [seq, snapshot] of baselineSnapshots) {
-      const doc = createCollabYDoc({ gc: false });
-      if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-      for (const journalRow of snapshot.updates) Y.applyUpdate(doc, journalRow.update);
-      rowBaselineStates.set(seq, Y.encodeStateAsUpdate(doc));
-      doc.destroy();
-    }
     const liveDoc = await loadLiveDoc(branch.documentId);
-    const afterDoc = createCollabYDoc({ gc: false });
+    let afterDoc: Y.Doc | null = null;
     let branchDoc: Y.Doc | null = null;
     try {
       let pushUpdate: Uint8Array;
-      if (candidate.materialization === "selected_rows") {
-        const operation = "selective_push_peer";
+      if (candidate.kind === "manifest") {
+        const operation = "manifest_membership_push";
+        afterDoc = createCollabYDoc({ gc: false });
         Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
         for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
         assertNoPendingIntegration(
@@ -130,43 +103,21 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       } else {
         branchDoc = materializeBranch(branch);
         pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
-        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
-        Y.applyUpdate(afterDoc, pushUpdate);
       }
-      const receipt = buildReceipt({
-        model: input.model,
-        documentId: branch.documentId,
-        branch,
-        pushKind,
-        beforeDoc: liveDoc,
-        afterDoc,
-      });
       return {
         candidate,
         branch,
         pushUpdate,
-        receipt,
         idempotencyKey: stablePushIdempotencyKey({
           branchId: branch.branchId,
           generation: branch.generation,
           journalIds: rows.map((row) => row.id),
-          pushKind,
+          publicationKind: candidate.kind,
         }),
-        rowBaselineStates,
-        ...(pushKind === "whole"
-          ? {
-              conflictEcho: conflictEchoFrom({
-                currentBranch: branch,
-                currentRows: rows,
-                currentReceipt: receipt,
-                priorPushes: await input.journalReadStore.listPushesForDocument(branch.documentId),
-              }),
-            }
-          : {}),
       };
     } finally {
       branchDoc?.destroy();
-      afterDoc.destroy();
+      afterDoc?.destroy();
       liveDoc.destroy();
     }
   }
@@ -177,15 +128,13 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     receiptId: string,
   ) =>
     preparePushUnderLiveLock(
-      { journal: input.journal, model: input.model, attributionCodec },
+      { model: input.model, attributionCodec },
       {
         branch: phase.branch,
         rows: phase.candidate.rows,
         pushUpdate: phase.pushUpdate,
-        receipt: phase.receipt,
         idempotencyKey: phase.idempotencyKey,
         receiptId,
-        rowBaselineStates: phase.rowBaselineStates,
       },
       lockCutUpdate,
       receiptId,
@@ -198,10 +147,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Omit<PendingLiveSettlement, "push"> {
     return transition.prepare({
       documentTitle,
-      provenanceView: [],
+      sweepEvidence: null,
       lockCutUpdate: prepared.lockCutUpdate,
       pushUpdate: prepared.prepared.pushUpdate,
-      beforeContentRef: prepared.beforeContentRef,
       trail,
     });
   }
@@ -233,48 +181,15 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             ),
           ),
         );
-        const refused = prepared.find(
-          (candidate, index) =>
-            phases[index]?.candidate.conflictPolicy === "refuse" &&
-            candidate.conflictedBlocks.length > 0,
-        );
-        if (refused) {
-          return {
-            kind: "return" as const,
-            value: {
-              kind: "return" as const,
-              value: {
-                status: "push_concurrent_conflict" as const,
-                reason: "draft_base_divergence" as const,
-                conflictedBlocks: refused.conflictedBlocks,
-                conflicts: refused.conflicts,
-              },
-            },
-          };
-        }
         const titles = await Promise.all(
           phases.map((phase) => resolveDocumentTitle(phase.candidate.documentId)),
-        );
-        const projectedSweeps = await Promise.all(
-          prepared.map(async (candidate, index) => {
-            const policy = phases[index]?.candidate.sweepPolicy;
-            if (policy !== "project" || candidate.blindConflictedBlocks.length === 0) {
-              return undefined;
-            }
-            if (phases[index]?.candidate.noticePolicy === "required" && !input.notices) {
-              throw new Error("apply_and_trail requires a durable notice recorder");
-            }
-            return projectPushSweep(candidate);
-          }),
         );
         const pushes = prepared.map((candidate, index) => {
           const phase = phases[index] as ComputedCandidate;
           const documentTitle = titles[index] ?? "Untitled document";
-          const swept = projectedSweeps[index];
           const trail = buildDurablePushTrail({
             prepared: candidate,
             documentTitle,
-            ...(swept ? { swept } : {}),
           });
           return {
             ...candidate.prepared,
@@ -294,11 +209,10 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             push,
             phases,
           }),
-          finish: ({ pushes: committed, swept: lateSweeps, docs }) => ({
+          finish: ({ pushes: committed, docs }) => ({
             kind: "committed" as const,
             pushes: committed,
             phases,
-            swept: lateSweeps.map((lateSweep, index) => lateSweep ?? projectedSweeps[index]),
             liveAfterPush: new Map(
               phases.map((phase) => [
                 phase.candidate.documentId,
@@ -323,7 +237,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       kind: "committed",
       pushes: locked.pushes,
       phases,
-      swept: locked.swept,
       liveAfterPush: locked.liveAfterPush,
       ...(branchReset ? { branchReset } : {}),
     };
@@ -409,9 +322,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       status: "pushed" as const,
       push: result.pushes[0] as PushLineageRow,
       update: phase.pushUpdate,
-      ...(phase.conflictEcho ? { conflictEcho: phase.conflictEcho } : {}),
       ...(result.branchReset ? { branchReset: result.branchReset } : {}),
-      ...(result.swept[0] ? { swept: result.swept[0] } : {}),
     };
   }
 
@@ -421,7 +332,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       if (source.rows.length === 0) return mapNoActiveRows(await noActiveRows(source.branch));
       const batch = buildWholeBranchCandidates({
         source,
-        conflictPolicy: pushInput.overlapPolicy ?? "refuse",
         ...((pushInput.resetPolicy ?? source.branch.pushPolicy) === "auto"
           ? { resetPolicy: "auto" as const }
           : {}),
@@ -433,35 +343,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         lease,
         pushInput.signal,
       );
-      if (result.kind === "return") return result.value;
       if (result.kind === "conflict") {
-        return {
-          status: "already_pushed",
-          push: result.push,
-          ...(result.phases[0]?.conflictEcho
-            ? { conflictEcho: result.phases[0].conflictEcho }
-            : {}),
-        };
+        return { status: "already_pushed", push: result.push };
       }
-      return mapCommitted(result);
-    });
-
-  const pushSelectedToLive: BranchPushService["pushSelectedToLive"] = (pushInput) =>
-    withActiveWorkDraftBranchLock([pushInput.branchId], async ([branch], lease) => {
-      const source = await sourceFor(branch as BranchSnapshot);
-      const batch = buildSelectedRowCandidates({
-        source,
-        journalIds: pushInput.journalIds,
-        ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-      });
-      const result = await executeCandidateBatch(
-        batch,
-        branchMap([source.branch]),
-        lease,
-        pushInput.signal,
-      );
-      if (result.kind === "return") return result.value;
-      if (result.kind === "conflict") return { status: "already_pushed", push: result.push };
       return mapCommitted(result);
     });
 
@@ -478,22 +362,15 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           content,
           manifest,
           manifestEntryDocumentId: pushInput.manifestEntryDocumentId,
-          ...(pushInput.contentJournalIds
-            ? { contentJournalIds: pushInput.contentJournalIds }
-            : {}),
-          conflictPolicy: pushInput.overlapPolicy ?? "refuse",
           ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+          ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
         });
-        if (built.kind === "no_active_rows") {
-          return mapNoActiveRows(await noActiveRows(built.branch));
-        }
         const result = await executeCandidateBatch(
-          built.batch,
+          built,
           branchMap([content.branch, manifest.branch]),
           lease,
           pushInput.signal,
         );
-        if (result.kind === "return") return result.value;
         if (result.kind === "conflict") {
           throw new BranchPushCommitConflictError(content.branch.branchId);
         }
@@ -504,12 +381,26 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   const workPushPolicy = createWorkPushPolicy({
     branchStore: input.branchStore,
     workPushPolicyStore: input.workPushPolicyStore,
+    workDraftPending: createWorkDraftPending(input.workDraftPendingStore),
     pushToLive,
+    applyPendingDraft: ({ draft, pushedByUserId }) =>
+      draft.manifestEntry
+        ? pushToLiveWithManifestEntry({
+            branchId: draft.branch.branchId,
+            manifestBranchId: draft.manifestEntry.branchId,
+            manifestEntryDocumentId: draft.manifestEntry.documentId,
+            ...(pushedByUserId ? { pushedByUserId } : {}),
+            resetPolicy: "auto",
+          })
+        : pushToLive({
+            branchId: draft.branch.branchId,
+            ...(pushedByUserId ? { pushedByUserId } : {}),
+            resetPolicy: "auto",
+          }),
   });
 
   return {
     pushToLive,
-    pushSelectedToLive,
     pushToLiveWithManifestEntry,
     recoverPendingLiveSettlements: transition.recover,
     ...workPushPolicy,

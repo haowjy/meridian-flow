@@ -24,5 +24,5 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.
 
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) for migration workflow, Yjs head
-FK contract, and schema map.
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md) for migration workflow and the
+Yjs head FK contract.

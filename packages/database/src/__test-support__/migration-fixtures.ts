@@ -13,10 +13,33 @@ interface MigrationJournal {
   entries: Array<{ tag: string }>;
 }
 
+async function writeMigrationPrefix(input: {
+  sourceDirectory: string;
+  targetDirectory: string;
+  journal: MigrationJournal;
+  entryCount: number;
+}): Promise<void> {
+  const entries = input.journal.entries.slice(0, input.entryCount);
+  await writeFile(
+    join(input.targetDirectory, "meta/_journal.json"),
+    JSON.stringify({ ...input.journal, entries }, null, 2),
+  );
+  for (const entry of entries) {
+    await copyFile(
+      join(input.sourceDirectory, `${entry.tag}.sql`),
+      join(input.targetDirectory, `${entry.tag}.sql`),
+    );
+  }
+}
+
 export async function withPopulatedMigrationDatabase(input: {
   databaseUrl: string;
   seedBefore: string;
   seed: (sql: MigrationFixtureSql) => Promise<void>;
+  checkpoint?: {
+    after: string;
+    verify: (sql: MigrationFixtureSql) => Promise<void>;
+  };
   verify: (sql: MigrationFixtureSql) => Promise<void>;
 }): Promise<void> {
   const sourceUrl = new URL(input.databaseUrl);
@@ -34,20 +57,25 @@ export async function withPopulatedMigrationDatabase(input: {
   if (seedIndex < 1) {
     throw new Error(`Cannot seed before unknown or initial migration: ${input.seedBefore}`);
   }
+  const checkpointIndex = input.checkpoint
+    ? journal.entries.findIndex((entry) => entry.tag === input.checkpoint?.after)
+    : -1;
+  if (input.checkpoint && checkpointIndex < 0) {
+    throw new Error(`Cannot verify after unknown migration: ${input.checkpoint.after}`);
+  }
+  if (input.checkpoint && checkpointIndex < seedIndex) {
+    throw new Error(`Cannot verify checkpoint before seeded migration: ${input.checkpoint.after}`);
+  }
 
   const prefixDirectory = await mkdtemp(join(tmpdir(), "meridian-migrations-"));
   try {
     await mkdir(join(prefixDirectory, "meta"));
-    await writeFile(
-      join(prefixDirectory, "meta/_journal.json"),
-      JSON.stringify({ ...journal, entries: journal.entries.slice(0, seedIndex) }, null, 2),
-    );
-    for (const entry of journal.entries.slice(0, seedIndex)) {
-      await copyFile(
-        join(migrationsDirectory, `${entry.tag}.sql`),
-        join(prefixDirectory, `${entry.tag}.sql`),
-      );
-    }
+    await writeMigrationPrefix({
+      sourceDirectory: migrationsDirectory,
+      targetDirectory: prefixDirectory,
+      journal,
+      entryCount: seedIndex,
+    });
 
     const admin = postgres(adminUrl.toString(), { max: 1 });
     let databaseCreated = false;
@@ -59,6 +87,16 @@ export async function withPopulatedMigrationDatabase(input: {
         const db = drizzle(target);
         await migrate(db, { migrationsFolder: prefixDirectory });
         await input.seed(target);
+        if (input.checkpoint) {
+          await writeMigrationPrefix({
+            sourceDirectory: migrationsDirectory,
+            targetDirectory: prefixDirectory,
+            journal,
+            entryCount: checkpointIndex + 1,
+          });
+          await migrate(db, { migrationsFolder: prefixDirectory });
+          await input.checkpoint.verify(target);
+        }
         await migrate(db, { migrationsFolder: migrationsDirectory });
         await input.verify(target);
       } finally {

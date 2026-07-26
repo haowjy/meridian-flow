@@ -2,7 +2,7 @@ import { getAuthkit } from "@workos/authkit-tanstack-react-start";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleDevLogin } from "@/routes/api/auth/dev-login";
-import { getAppServerConfig, resetAppServerConfigForTests } from "@/server/config";
+import { getAppServerConfig } from "@/server/config";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 
 const TEST_PASSWORD = "abcdefghijklmnopqrstuvwxyz123456";
@@ -53,7 +53,6 @@ function mockEnabledDevLoginConfig(
 describe("handleDevLogin gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetAppServerConfigForTests();
   });
 
   it("returns 404 when dev autologin is disabled (production gate)", async () => {

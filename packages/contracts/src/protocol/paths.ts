@@ -25,6 +25,7 @@ export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
 export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
+export const API_AUTH_ME_PATH = "/api/auth/me";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
 
 export function apiProjectsHomePath(): string {
@@ -63,36 +64,20 @@ export function apiProjectWorkDocumentDraftPath(
   return `${apiProjectWorksPath(projectId)}/${workId}/documents/${documentId}/draft`;
 }
 
-export function apiProjectWorkDocumentDraftAcceptPath(
+export function apiProjectWorkDocumentDraftApplyPath(
   projectId: string,
   workId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/accept`;
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
 }
 
-export function apiProjectWorkDocumentDraftRejectPath(
+export function apiProjectWorkDocumentDraftDiscardPath(
   projectId: string,
   workId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/reject`;
-}
-
-export function apiProjectWorkDocumentDraftUndoAcceptPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/undo-accept`;
-}
-
-export function apiProjectWorkDocumentDraftUndoRejectPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/undo-reject`;
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/discard`;
 }
 
 /** (user, project)-scoped UI preferences — user resolved from auth. */

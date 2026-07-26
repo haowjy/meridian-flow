@@ -1,5 +1,6 @@
-/** Work-draft listing, repair, preview, accept, and reject orchestration. */
+/** Work-draft listing, repair, preview, Apply, and Discard orchestration. */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -11,7 +12,6 @@ import type {
   BranchPushService,
   BranchReviewService,
   PushToLiveResult,
-  WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
@@ -19,6 +19,7 @@ import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
+import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export function createWorkDraftReviewService(input: {
   branches: ApplicationBranchStore;
@@ -26,11 +27,11 @@ export function createWorkDraftReviewService(input: {
   branchJournal: BranchJournalReadStore;
   branchPush: BranchPushService;
   branchReview: BranchReviewService;
-  workPushPolicy: WorkPushPolicyStore;
+  workDraftPending: WorkDraftPending;
   liveCoordinator: {
     withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
   };
-  documents: Pick<MarkdownDocumentEngine, "readAsMarkdown" | "serializeDocument">;
+  documents: Pick<MarkdownDocumentEngine, "serializeDocument">;
   model: YProsemirrorDocumentModel;
   agentEdit: ThreadPeerAgentEditCore;
   resolveDocumentUri(documentId: string): Promise<string | null>;
@@ -61,30 +62,15 @@ export function createWorkDraftReviewService(input: {
     projectId?: ProjectId,
   ): Promise<ReviewableDraft[]> {
     const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
-    const branchIds = await input.workPushPolicy.listActiveWorkDraftBranchIdsForWork(workId);
     const drafts: ReviewableDraft[] = [];
-    for (const branchId of branchIds) {
-      const branch = await input.branches.getBranch(branchId);
-      if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
-        continue;
-      }
-      const rows = await input.branchJournal.listReviewableJournalRows(
-        branch.branchId,
-        branch.generation,
-      );
-      if (rows.length === 0) continue;
+    for (const { branch, rows } of await input.workDraftPending.list(workId)) {
       const uri = await input.resolveDocumentUri(branch.documentId);
       drafts.push({
-        id: branch.branchId,
+        draftId: branch.branchId,
         documentId: branch.documentId,
         workId,
         status: "active",
-        branchId: branch.branchId,
-        generation: branch.generation,
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
-        appliedAt: null,
-        discardedAt: null,
-        undoneAt: null,
         wordsAdded: null,
         wordsRemoved: null,
         updatedAt: new Date(),
@@ -108,6 +94,7 @@ export function createWorkDraftReviewService(input: {
     projectId?: ProjectId;
     documentId: DocumentId;
     workId: WorkId;
+    draftId: string;
   }) {
     const liveState = await input.liveCoordinator.withDocument(
       command.documentId,
@@ -143,6 +130,7 @@ export function createWorkDraftReviewService(input: {
           liveDoc,
         });
       }
+      if (branch.branchId !== command.draftId) throw new Error("draft_not_found");
       try {
         const draftUpdates = (
           await input.branchJournal.listReviewableJournalRows(branch.branchId, branch.generation)
@@ -158,11 +146,11 @@ export function createWorkDraftReviewService(input: {
           draftDoc: branch.doc,
           model: input.model,
           draftUpdates,
-          partitionClosureClasses: true,
         });
         return {
           status: "active" as const,
-          branchId: branch.branchId,
+          draftId: command.draftId,
+          reviewRoomName: branchRoomName(branch.branchId, branch.generation),
           live: liveState.markdown,
           markdown: await input.documents.serializeDocument(command.documentId, branch.doc),
           isNewDocument: await isDraftOnlyManifestDocument(command),
@@ -186,7 +174,6 @@ export function createWorkDraftReviewService(input: {
     workId: WorkId;
     documentId: DocumentId;
     branchId: string;
-    journalIds?: readonly number[];
     userId: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
@@ -202,7 +189,6 @@ export function createWorkDraftReviewService(input: {
           branchId: command.branchId,
           manifestBranchId: manifestBranch.branchId,
           manifestEntryDocumentId: command.documentId,
-          ...(command.journalIds ? { contentJournalIds: command.journalIds } : {}),
           pushedByUserId: command.userId,
           signal: command.signal,
         });
@@ -230,196 +216,127 @@ export function createWorkDraftReviewService(input: {
     }
   }
 
+  async function resolveActiveWorkDraft(command: {
+    draftId: string;
+    documentId: DocumentId;
+    workId: WorkId;
+  }) {
+    const branch = await input.branches.getBranch(command.draftId);
+    return branch?.kind === "work_draft" &&
+      branch.status === "active" &&
+      branch.workId === command.workId &&
+      branch.documentId === command.documentId
+      ? branch
+      : null;
+  }
+
+  async function applyWorkDraft(command: {
+    projectId?: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    signal?: AbortSignal;
+  }) {
+    const branch = await resolveActiveWorkDraft(command);
+    if (!branch) return { status: "not_found" as const, draftId: command.draftId };
+
+    if (
+      command.projectId &&
+      (await isDraftOnlyManifestDocument({
+        projectId: command.projectId,
+        workId: command.workId,
+        documentId: command.documentId,
+      }))
+    ) {
+      await pushNewDocumentToLiveWithManifest({
+        projectId: command.projectId,
+        workId: command.workId,
+        documentId: command.documentId,
+        branchId: branch.branchId,
+        userId: command.userId,
+        signal: command.signal,
+      });
+    } else {
+      await input.branchPush.pushToLive({
+        branchId: branch.branchId,
+        pushedByUserId: command.userId,
+        signal: command.signal,
+      });
+    }
+    return { status: "applied" as const, draftId: command.draftId };
+  }
+
+  async function discardWorkDraft(command: {
+    projectId?: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId?: UserId;
+    threadId?: string;
+    operationIds?: string[];
+  }) {
+    const branch = await resolveActiveWorkDraft(command);
+    if (!branch) return { status: "discarded" as const, draftId: command.draftId };
+
+    if (command.operationIds && command.operationIds.length > 0) {
+      const preview = await previewWorkDraftBranch(command);
+      const requestedClassIds = new Set(
+        preview.operations
+          .filter((operation) => command.operationIds?.includes(operation.operationId))
+          .map((operation) => operation.closureClassId),
+      );
+      const updateIds = new Set<number>();
+      for (const operation of preview.operations) {
+        if (!requestedClassIds.has(operation.closureClassId)) continue;
+        for (const id of operation.discardUpdateIds) updateIds.add(id);
+      }
+      await input.branchReview.discardSelected({
+        branchId: branch.branchId,
+        journalIds: [...updateIds],
+        reviewedByUserId: command.userId,
+      });
+    } else {
+      if (
+        command.projectId &&
+        (await isDraftOnlyManifestDocument({
+          projectId: command.projectId,
+          workId: command.workId,
+          documentId: command.documentId,
+        }))
+      ) {
+        await removeNewDocumentFromWorkManifest({
+          projectId: command.projectId,
+          workId: command.workId,
+          documentId: command.documentId,
+        });
+      }
+      await input.liveCoordinator.withDocument(command.documentId, async (liveDoc) =>
+        input.branchCoordinator.resetFromDoc(branch.branchId, liveDoc),
+      );
+      await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
+    }
+    return { status: "discarded" as const, draftId: command.draftId };
+  }
+
   return {
     draftReview: {
       async list(command) {
-        return command.workId
-          ? listReviewableWorkDraftBranches(command.workId, command.projectId)
-          : [];
+        return listReviewableWorkDraftBranches(command.workId, command.projectId);
       },
       async preview(command) {
-        if (command.workId) {
-          const branchPreview = await previewWorkDraftBranch({
-            projectId: command.projectId,
-            documentId: command.documentId,
-            workId: command.workId,
-          });
-          if (branchPreview) return branchPreview;
-        }
-        const live = await input.documents.readAsMarkdown(command.documentId);
-        if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", live: live.value };
+        return previewWorkDraftBranch(command);
       },
-      async accept(command) {
-        if (command.workId) {
-          const branch = command.branchId ? await input.branches.getBranch(command.branchId) : null;
-          if (
-            branch?.kind === "work_draft" &&
-            branch.status === "active" &&
-            branch.workId === command.workId &&
-            branch.documentId === command.documentId
-          ) {
-            const selectedOperationIds = command.operationIds;
-            if (
-              command.draftRevisionToken !== undefined &&
-              command.draftRevisionToken !== branch.generation
-            ) {
-              return {
-                status: "stale_draft" as const,
-                draftId: branch.branchId,
-                draftRevisionToken: branch.generation,
-              };
-            }
-            const preview = await previewWorkDraftBranch({
-              projectId: command.projectId,
-              documentId: command.documentId,
-              workId: command.workId,
-            });
-            if (preview?.status !== "active") throw new Error("draft_not_found");
-            const requested = new Set(selectedOperationIds);
-            const operationIds = new Set<string>();
-            for (const operation of preview.operations) {
-              if (!requested.has(operation.operationId)) continue;
-              for (const id of operation.acceptClosureOperationIds ?? [operation.operationId]) {
-                operationIds.add(id);
-              }
-            }
-            const updateIds = new Set<number>();
-            for (const operation of preview.operations) {
-              if (!operationIds.has(operation.operationId)) continue;
-              for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
-            }
-            if (preview.isNewDocument && command.projectId) {
-              const pushed = await pushNewDocumentToLiveWithManifest({
-                projectId: command.projectId,
-                workId: command.workId,
-                documentId: command.documentId,
-                branchId: branch.branchId,
-                journalIds: [...updateIds],
-                userId: command.userId,
-                signal: command.signal,
-              });
-              if (pushed.status === "push_concurrent_conflict") {
-                return {
-                  status: "concurrent_conflict" as const,
-                  reason: pushed.reason,
-                  conflictedBlocks: pushed.conflictedBlocks,
-                  conflicts: pushed.conflicts,
-                };
-              }
-            } else {
-              const pushed = await input.branchPush.pushSelectedToLive({
-                branchId: branch.branchId,
-                journalIds: [...updateIds],
-                pushedByUserId: command.userId,
-                signal: command.signal,
-              });
-              if (pushed.status === "push_concurrent_conflict") {
-                return {
-                  status: "concurrent_conflict" as const,
-                  reason: pushed.reason,
-                  conflictedBlocks: pushed.conflictedBlocks,
-                  conflicts: pushed.conflicts,
-                };
-              }
-            }
-            const appliedEveryPreviewedOperation = preview.operations.every((operation) =>
-              requested.has(operation.operationId),
-            );
-            if (appliedEveryPreviewedOperation) {
-              return {
-                status: "applied" as const,
-                draftId: branch.branchId,
-                branchId: branch.branchId,
-                appliedUpdateSeq: 0,
-              };
-            }
-            return {
-              status: "partial_applied" as const,
-              draftId: branch.branchId,
-              appliedUpdateSeq: 0,
-              acceptedOperationIds: [...operationIds].sort(),
-              writeId: [...updateIds].sort((left, right) => left - right).join(","),
-            };
-          }
-        }
-        return {
-          status: "not_found" as const,
-          draftId: command.draftId ?? command.branchId ?? "",
-        };
+      async applyWorkDraft(command) {
+        return applyWorkDraft(command);
       },
-      async reject(command) {
-        if (command.workId) {
-          const branch = command.branchId ? await input.branches.getBranch(command.branchId) : null;
-          if (
-            branch?.kind === "work_draft" &&
-            branch.status === "active" &&
-            branch.workId === command.workId &&
-            branch.documentId === command.documentId
-          ) {
-            if (command.operationIds && command.operationIds.length > 0) {
-              const preview = await previewWorkDraftBranch({
-                projectId: command.projectId,
-                documentId: command.documentId,
-                workId: command.workId,
-              });
-              if (preview?.status !== "active") throw new Error("draft_not_found");
-              const requested = new Set(command.operationIds);
-              const operationIds = new Set<string>();
-              for (const operation of preview.operations) {
-                if (!requested.has(operation.operationId)) continue;
-                for (const id of operation.rejectClosureOperationIds ?? [operation.operationId]) {
-                  operationIds.add(id);
-                }
-              }
-              const updateIds = new Set<number>();
-              for (const operation of preview.operations) {
-                if (!operationIds.has(operation.operationId)) continue;
-                for (const id of operation.directionalClosure.reject.updateIds) updateIds.add(id);
-              }
-              await input.branchReview.discardSelected({
-                branchId: branch.branchId,
-                journalIds: [...updateIds],
-                reviewedByUserId: command.userId,
-              });
-            } else {
-              if (
-                command.projectId &&
-                (await isDraftOnlyManifestDocument({
-                  projectId: command.projectId,
-                  workId: command.workId,
-                  documentId: command.documentId,
-                }))
-              ) {
-                await removeNewDocumentFromWorkManifest({
-                  projectId: command.projectId,
-                  workId: command.workId,
-                  documentId: command.documentId,
-                });
-              }
-              await input.liveCoordinator.withDocument(command.documentId, async (liveDoc) =>
-                input.branchCoordinator.resetFromDoc(branch.branchId, liveDoc),
-              );
-              await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
-            }
-            return {
-              status: "discarded" as const,
-              draftId: branch.branchId,
-              branchId: branch.branchId,
-            };
-          }
-        }
-        return {
-          status: "discarded" as const,
-          draftId: command.draftId ?? command.branchId ?? "",
-        };
+      async discardWorkDraft(command) {
+        return discardWorkDraft(command);
       },
     },
     draftSessionStats: {
       async listActiveDraftsByWork(command) {
-        return (await listReviewableWorkDraftBranches(command.workId)).filter(
-          (draft): draft is ReviewableDraft & { status: "active" } => draft.status === "active",
-        );
+        return listReviewableWorkDraftBranches(command.workId);
       },
     },
   };

@@ -24,22 +24,17 @@ import { DockHeader } from "./DockHeader";
 import { useDockView, withoutEmptyChanges } from "./dock-view-store";
 
 export type DockShellProps = {
-  /** `center` renders the passthrough; `dock` renders the tabbed header. */
   placement: "center" | "dock";
-  /** The active screen — selects the dock view set and its remembered choice. */
   screen: ScreenKey;
-  /** Collapse the whole dock (dock placement only). */
   onClose?: () => void;
-  /** Chat select/rename dropdown for the left slot when Chat is the view. */
   threadSelect?: ReactNode;
-  /** The occupant's native body — always mounted. */
   children: ReactNode;
 };
 
 export function DockShell({ placement, screen, onClose, threadSelect, children }: DockShellProps) {
   const dockView = useDockView(screen);
-  const { groups, nowMs } = useDraftReview();
-  const hasChanges = hasDockChanges(groups, nowMs);
+  const { groups } = useDraftReview();
+  const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
   const { setView } = dockView;
   const inDock = placement === "dock";

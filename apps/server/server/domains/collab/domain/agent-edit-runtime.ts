@@ -58,6 +58,7 @@ export function createAgentEditRuntime(input: {
       semanticProvenance,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+      deferUntilCommit: input.deferUntilCommit,
       ...input.observability,
     }),
   );

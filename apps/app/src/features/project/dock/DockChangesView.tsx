@@ -10,8 +10,8 @@
  * The document CURRENTLY under inline review expands to proposal cards read
  * from the live preview (`useDraftPreview`): the flat operation list is
  * partitioned into closure classes (`partitionClosureClasses`), one card per
- * class (spec §5.3). This module orchestrates: it fetches the preview, builds
- * the inline-review model once, partitions the classes, renders the card list,
+ * class (spec §5.3). This module orchestrates: it fetches the preview,
+ * partitions the classes, renders the card list,
  * and renders the single session message line. The card + verb rendering lives
  * in `ReviewOperationCard`; the closure partition + card-body text extraction
  * live in `closure-classes` / `operation-change-text`.
@@ -23,14 +23,8 @@ import { FileCheck2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { NewBadge } from "@/components/app/NewBadge";
-import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import {
-  type DockRow,
-  dockRows,
-  documentBasename,
-  hasDockChanges,
-} from "@/features/chat/docked-drafts";
+import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import type {
@@ -42,11 +36,11 @@ import { partitionClosureClasses } from "./closure-classes";
 import { ReviewOperationCard } from "./ReviewOperationCard";
 
 export function DockChangesView({ className }: { className?: string }) {
-  const { groups, nowMs, controller } = useDraftReview();
+  const { groups, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
 
-  const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
-  const hasChanges = hasDockChanges(groups, nowMs);
+  const rows = useMemo(() => dockRows(groups), [groups]);
+  const hasChanges = rows.length > 0;
 
   const inlineReview = controller.inlineReview;
   const preview = useDraftPreview(
@@ -189,9 +183,8 @@ function ChangesDocumentGroup({
  * click echo, keyed by class: clicking a card body scrolls the manuscript and
  * rings the card; the editor is the source of truth for the span.
  *
- * The inline-review model (anchors decoded) is built once here and threaded to
- * every card's Apply, which needs the representative operation's accept-closure
- * ids and the live revision token the accept confirms against.
+ * Each card can selectively discard its represented closure. Applying remains
+ * a document-level command in the review header.
  */
 function ReviewOperationCards({
   preview,
@@ -205,22 +198,11 @@ function ReviewOperationCards({
   isNewDocument: boolean;
 }) {
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
-  const model = useMemo(
-    () =>
-      buildInlineReviewModel({
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-        operations: preview.operations,
-        hunks: preview.hunks,
-        conflictLabel: t`edited since this draft was written`,
-      }),
-    [preview],
-  );
   const proposals = useMemo(
     () => partitionClosureClasses(preview.operations, preview.hunks),
     [preview],
   );
-  // One review session runs one accept/discard message at a time, so a single
+  // One review session runs one Apply/Discard message at a time, so a single
   // quiet line under the cards is enough — no per-card message plumbing.
   const message = currentReviewMessage(controller);
   return (
@@ -229,16 +211,13 @@ function ReviewOperationCards({
         <ReviewOperationCard
           key={proposal.classId}
           proposal={proposal}
-          model={model}
           controller={controller}
           draftId={draftId}
           isNewDocument={isNewDocument}
           active={activeClassId === proposal.classId}
           onFocus={() => {
             setActiveClassId(proposal.classId);
-            // Focus the class's representative op; the editor emphasizes its
-            // hunks. (Whole-class emphasis for multi-op classes needs multi-op
-            // focus — tracked as an S4-merge follow-up.)
+            // The representative operation is the class's editor-navigation anchor.
             controller.focusReviewOperation(proposal.primaryOperation.operationId);
           }}
         />
@@ -252,18 +231,6 @@ function ReviewOperationCards({
           role={message.tone === "error" ? "alert" : undefined}
         >
           <ReviewMessageText code={message.code} />
-          {/* A per-card Apply is reversible while its "Change applied" receipt
-              stands; the write id rides the message. */}
-          {message.writeId ? (
-            <button
-              type="button"
-              onClick={() => controller.undoAcceptOperation()}
-              disabled={controller.isDisposing}
-              className="focus-ring shrink-0 rounded-sm font-medium text-primary disabled:opacity-50"
-            >
-              <Trans>Undo</Trans>
-            </button>
-          ) : null}
         </p>
       ) : null}
     </div>
@@ -272,18 +239,17 @@ function ReviewOperationCards({
 
 /**
  * The one active review message, resolved from the controller's coded state:
- * an accept message when present, otherwise a discard error. The controller
+ * an Apply message when present, otherwise a Discard error. The controller
  * emits only codes (it is a state machine with no writer-facing strings); the
  * copy is localized here.
  */
 function currentReviewMessage(
   controller: DraftReviewController,
-): { code: InlineReviewMessageCode; tone: "info" | "error"; writeId?: string } | null {
+): { code: InlineReviewMessageCode; tone: "info" | "error" } | null {
   if (controller.inlineReviewMessage) {
     return {
       code: controller.inlineReviewMessage.code,
       tone: controller.inlineReviewMessage.tone ?? "info",
-      writeId: controller.inlineReviewMessage.writeId,
     };
   }
   if (controller.inlineDiscardError) {
@@ -292,40 +258,13 @@ function currentReviewMessage(
   return null;
 }
 
-/** Localized copy for each controller message code. */
 function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
   switch (code) {
-    case "open-review-first":
-      return <Trans>Open the latest review before applying a change.</Trans>;
-    case "change-moved":
-      return <Trans>That change moved. Refreshed to the latest changes.</Trans>;
     case "apply-failed":
       return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
-    case "change-applied":
-      return <Trans>Change applied.</Trans>;
-    case "changes-moved-refreshed":
-      return <Trans>The changes moved on. Refreshed the list.</Trans>;
-    case "apply-dependencies-first":
-      return (
-        <Trans>
-          This change builds on earlier AI changes. Apply those first, or use Apply all.
-        </Trans>
-      );
-    case "changes-moved-confirm-again":
-      return <Trans>The changes moved on. Review the related changes and confirm again.</Trans>;
-    case "discard-stale":
-      return <Trans>Couldn't discard. Your latest edits are still syncing, try again soon.</Trans>;
-    case "discard-finalized":
-      return <Trans>Couldn't discard. This draft may already be applied or discarded.</Trans>;
     case "discard-offline":
       return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
     case "discard-failed":
       return <Trans>Couldn't discard. Try again.</Trans>;
-    case "discard-not-settled":
-      return <Trans>That change is still in the draft. Try again before applying the draft.</Trans>;
-    case "change-restored":
-      return <Trans>Change restored.</Trans>;
-    case "undo-failed":
-      return <Trans>Couldn't undo that change. Nothing happened.</Trans>;
   }
 }

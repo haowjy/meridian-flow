@@ -89,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("S2 Restore and S10 hard-delete evidence survive cold composition", () => runScenario(true));
+    it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
 
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
 
@@ -197,18 +197,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const trails = await db.select().from(schema.changeTrailShells);
       expect(trails).toHaveLength(1);
       const [trail] = trails;
-      expect(trail?.sweptChangeCount).toBe(1);
+      expect(trail?.changeCount).toBeGreaterThan(0);
       const [details] = await db.select().from(schema.changeTrailDocumentDetails);
-      const sweptBodies = (
-        (details?.changes ?? []) as Array<{
-          writerProtection?: { kind: string; body?: { markdown?: string } };
-        }>
-      ).flatMap((change) =>
-        change.writerProtection?.kind === "sweep"
-          ? [change.writerProtection.body?.markdown?.trim()]
-          : [],
+      const beforeBodies = (
+        (details?.changes ?? []) as Array<{ beforeText?: string | null }>
+      ).flatMap((change) => {
+        if (!change.beforeText) return [];
+        const separator = change.beforeText.indexOf("|");
+        return [
+          (separator < 0 ? change.beforeText : change.beforeText.slice(separator + 1)).trim(),
+        ];
+      });
+      expect(beforeBodies).toContain(writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.");
+      expect(details?.changes).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ writerImpact: expect.anything() })]),
       );
-      expect(sweptBodies).toEqual([writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed."]);
       await room.disconnect();
       await unloadRuntime(runtime.hocuspocus);
 
@@ -220,50 +223,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const cold = await ports.documentSync.readAsMarkdown(DOC_ID);
         expect(cold.ok && cold.value).toContain("Agent final.");
 
-        const coldRoom = await runtime.hocuspocus.openDirectConnection(DOC_ID);
-        if (!coldRoom.document) throw new Error("cold production room is unavailable");
-        const intervening = new Y.Doc({ gc: false });
-        Y.applyUpdate(intervening, Y.encodeStateAsUpdate(coldRoom.document));
-        const before = Y.encodeStateVector(intervening);
-        const paragraph = new Y.XmlElement("paragraph");
-        paragraph.push([new Y.XmlText("Intervening writer edit.")]);
-        intervening.getXmlFragment("prosemirror").push([paragraph]);
-        const update = Y.encodeStateAsUpdate(intervening, before);
-        await ports.documentSync.admitLiveWriterUpdate({
-          documentId: DOC_ID,
-          document: coldRoom.document,
-          update,
-          origin: { type: "user", userId: USER_ID },
-          expectedGeneration: 1n,
-        });
-        Y.applyUpdate(coldRoom.document, update);
-        intervening.destroy();
-
-        const change = (
-          (details?.changes ?? []) as Array<{
-            changeId: string;
-            writerProtection?: { kind: string };
-          }>
-        ).find((candidate) => candidate.writerProtection?.kind === "sweep");
-        if (!trail || !change) throw new Error("S2 trail has no restorable swept change");
-        const action = {
-          threadId: THREAD_ID,
-          trailId: trail.id,
-          changeId: change.changeId,
-          action: "restore" as const,
-          userId: USER_ID,
-        };
-        await expect(ports.documentSync.applyTrailForwardAction(action)).resolves.toEqual({
-          status: "applied",
-        });
-        await expect(ports.documentSync.applyTrailForwardAction(action)).resolves.toEqual({
-          status: "already_applied",
-        });
-        const restored = await ports.documentSync.readAsMarkdown(DOC_ID);
-        if (!restored.ok) throw new Error(JSON.stringify(restored.error));
-        expect(restored.value).toContain("Intervening writer edit.");
-        expect(restored.value.match(/Writer V2 unseen\./g)).toHaveLength(1);
-        await coldRoom.disconnect();
         await unloadRuntime(runtime.hocuspocus);
 
         await db
@@ -279,17 +238,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         const retained = reloaded as {
           anchorState?: "available" | "deleted";
-          changes?: Array<{
-            writerProtection?: { kind?: string; body?: { markdown?: string } };
-            forwardActions?: { restore?: { status?: string } };
-          }>;
+          changes?: Array<{ beforeText?: string | null }>;
         };
-        const retainedSweep = retained.changes?.find(
-          (candidate) => candidate.writerProtection?.kind === "sweep",
+        const retainedChange = retained.changes?.find((candidate) =>
+          candidate.beforeText?.includes("Writer V2 unseen."),
         );
         expect(retained.anchorState).toBe("deleted");
-        expect(retainedSweep?.writerProtection?.body?.markdown?.trim()).toBe("Writer V2 unseen.");
-        expect(retainedSweep?.forwardActions?.restore?.status).toBe("applied");
+        expect(retainedChange?.beforeText).toContain("Writer V2 unseen.");
         await unloadRuntime(runtime.hocuspocus);
       }
     }

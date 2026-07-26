@@ -4,19 +4,17 @@
  *
  * Key decision: a session's lifecycle is driven by the union of retained
  * **open-document sets** (desktop context tabs, mobile single-file viewer),
- * NOT by any view's mount. Previously `EditorView` created
- * a `DocumentSession` on mount and `destroy()`d it on unmount, so leaving the
- * Context destination tore down every Yjs session + its transport subscription
- * (re-syncing + reconnecting on return). With the registry, views are pure
- * consumers (`get`); the session survives view unmount and is destroyed only
- * when every opener has released that document from its open set, after a
- * short grace window so rapid release→retain (e.g. React strict mode) does
- * not detach the Hocuspocus provider on the shared socket.
+ * NOT by any view's mount. Views are pure consumers (`get`); the session
+ * survives view unmount and is destroyed only when every opener has released
+ * that document from its open set, after a short grace window so rapid
+ * release→retain (e.g. React strict mode) does not detach the Hocuspocus
+ * provider on the shared socket.
  *
  * The Hocuspocus adapter owns the shared socket; this registry owns the
  * per-room sessions on the same process-wide plane.
  */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import type { UserId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
@@ -37,6 +35,7 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 // (before-prod); watch server liveDocumentCount metric
 
 export class DocumentSessionRegistry {
+  private ownUserId: UserId | null = null;
   private readonly sessions = new Map<string, DocumentSession>();
   /** opener id → Yjs room keys plus whether first acquisition must stay detached. */
   private readonly retainedByOwner = new Map<
@@ -59,6 +58,14 @@ export class DocumentSessionRegistry {
    */
   get(documentId: string): DocumentSession {
     return this.getRoom(documentId);
+  }
+
+  /**
+   * Read an existing session without acquiring lifecycle ownership. Unlike
+   * {@link get}, this neither creates a session nor cancels deferred teardown.
+   */
+  peek(roomKey: string): DocumentSession | undefined {
+    return this.sessions.get(roomKey);
   }
 
   /**
@@ -117,6 +124,7 @@ export class DocumentSessionRegistry {
     const session = new DocumentSession({
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
+      ownUserId: this.ownUserId,
     });
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
@@ -132,6 +140,21 @@ export class DocumentSessionRegistry {
     }
     if (room.kind === "live") this.maybeWarnLiveDocCap();
     return session;
+  }
+
+  setOwnUserId(userId: UserId): void {
+    if (this.ownUserId === userId) return;
+    // Sessions are process-local authenticated state; never retain a prior
+    // account's marker suppression identity across an account switch.
+    if (this.ownUserId !== null) {
+      this.destroyAll();
+    } else {
+      // Warm hosts can materialize a session before the authenticated layout
+      // supplies its user. Bring those stores onto the authenticated identity
+      // instead of leaving self-admission suppression permanently disabled.
+      for (const session of this.sessions.values()) session.markerStore.setOwnUserId(userId);
+    }
+    this.ownUserId = userId;
   }
 
   /** Whether a session currently exists for a room key. */
@@ -304,4 +327,8 @@ export function getDocumentSessionRegistry(): DocumentSessionRegistry {
     sharedRegistry = new DocumentSessionRegistry();
   }
   return sharedRegistry;
+}
+
+export function configureDocumentSessionUser(userId: UserId): void {
+  getDocumentSessionRegistry().setOwnUserId(userId);
 }

@@ -39,12 +39,20 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import { useTurnRevealLanding } from "./useTurnRevealLanding";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
   threadId: string;
   /** Settled history with the live turn merged in by id, oldest first. */
   turns: Turn[];
+  /**
+   * Whether the thread's history request has resolved. The transcript owns the
+   * "that turn isn't here" verdict for a conversation reveal, and it can only
+   * give it once loading is over — before that, a missing turn is one that
+   * hasn't arrived yet.
+   */
+  historySettled: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
@@ -61,6 +69,7 @@ const TOP_INSET = 24;
 export function TurnList({
   threadId,
   turns,
+  historySettled,
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
@@ -103,6 +112,16 @@ export function TurnList({
   //      exactly what "was it above the viewport" should be judged against.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
+
+  // Turn stage of a conversation reveal. The transcript owns the landing (and
+  // the verdict when the turn isn't here); the scroll capability stays here.
+  useTurnRevealLanding({
+    threadId,
+    turns: visibleTurns,
+    historySettled,
+    viewportRef,
+    scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
+  });
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
   // append, on measured streaming-row growth, and on composer-inset change — and

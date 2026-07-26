@@ -10,18 +10,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
-const { acceptDraftMock } = vi.hoisted(() => ({
-  acceptDraftMock: vi.fn(),
+const { applyDraftMock } = vi.hoisted(() => ({
+  applyDraftMock: vi.fn(),
 }));
 
 vi.mock("@/client/api/drafts-api", () => ({
-  acceptDraft: acceptDraftMock,
-  rejectDraft: vi.fn(),
-  undoAcceptDraft: vi.fn(),
-  undoRejectDraft: vi.fn(),
+  applyDraft: applyDraftMock,
+  discardDraft: vi.fn(),
 }));
 
-const { useAcceptDraft } = await import("./useDraftReviewMutations");
+const { useApplyDraft } = await import("./useDraftReviewMutations");
 const { projectQueryKeys } = await import("./project-query-keys");
 
 // TanStack Query batches observer notifications through setTimeout; a
@@ -31,7 +29,7 @@ const flushNotifications = () =>
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-describe("useAcceptDraft pending lifecycle", () => {
+describe("useApplyDraft pending lifecycle", () => {
   it("holds isPending until the workDrafts refetch settles", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -40,10 +38,10 @@ describe("useAcceptDraft pending lifecycle", () => {
     let fetchCount = 0;
     let treeFetchCount = 0;
     let releaseRefetch: (() => void) | undefined;
-    const harnessRef: { accept: ReturnType<typeof useAcceptDraft> | null } = { accept: null };
+    const harnessRef: { apply: ReturnType<typeof useApplyDraft> | null } = { apply: null };
 
     function Harness() {
-      harnessRef.accept = useAcceptDraft();
+      harnessRef.apply = useApplyDraft();
       // Mounted subscriber so invalidateQueries actually refetches the key.
       useQuery({
         queryKey: projectQueryKeys.workDrafts("project-1", "work-1"),
@@ -65,7 +63,7 @@ describe("useAcceptDraft pending lifecycle", () => {
       return null;
     }
 
-    acceptDraftMock.mockResolvedValue({ status: "applied" });
+    applyDraftMock.mockResolvedValue({ status: "applied", draftId: "branch-1" });
 
     try {
       await withReactRoot(
@@ -77,14 +75,11 @@ describe("useAcceptDraft pending lifecycle", () => {
           expect(treeFetchCount).toBe(1);
 
           act(() => {
-            harnessRef.accept?.mutate({
+            harnessRef.apply?.mutate({
               projectId: "project-1",
               workId: "work-1",
               documentId: "doc-1",
               draftId: "branch-1",
-              branchId: "branch-1",
-              draftRevisionToken: 1,
-              operationIds: ["operation-1"],
             });
           });
           // Flush the resolved server call and the onSuccess invalidation kickoff.
@@ -92,17 +87,17 @@ describe("useAcceptDraft pending lifecycle", () => {
 
           // Server call is done and the workDrafts refetch is in flight — the
           // mutation must still report pending or verbs re-enable on stale rows.
-          expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+          expect(applyDraftMock).toHaveBeenCalledTimes(1);
           expect(fetchCount).toBe(2);
           expect(treeFetchCount).toBe(2);
-          expect(harnessRef.accept?.isPending).toBe(true);
+          expect(harnessRef.apply?.isPending).toBe(true);
 
           await act(async () => {
             releaseRefetch?.();
           });
           await flushNotifications();
-          expect(harnessRef.accept?.isPending).toBe(false);
-          expect(harnessRef.accept?.isSuccess).toBe(true);
+          expect(harnessRef.apply?.isPending).toBe(false);
+          expect(harnessRef.apply?.isSuccess).toBe(true);
         },
         { drainMacrotask: true },
       );

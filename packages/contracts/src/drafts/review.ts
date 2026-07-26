@@ -7,12 +7,9 @@ export interface ThreadDraftListItem {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  status: "active" | "closed";
+  status: "active";
   lastActorTurnId: string | null;
   updatedAt: string;
-  appliedAt: string | null;
-  discardedAt: string | null;
-  partialAcceptedOperationCount?: number | null;
   proposedOperationCount?: number | null;
   wordsAdded: number | null;
   wordsRemoved: number | null;
@@ -20,8 +17,8 @@ export interface ThreadDraftListItem {
    * the draft creates a document that does not yet exist in the
    * writer's live project (spec §5.5) — empty live root, no prior push_lineage.
    * Drives the dock row `New` badge + additions-only stats and the review
-   * card's `New document` / `Create` variant. Derived server-side from the
-   * branching model; consumed here. Absent/false = edit of a live document.
+   * card's `New document` variant. Derived server-side from the branching
+   * model; consumed here. Absent/false = edit of a live document.
    */
   isNewDocument?: boolean;
 }
@@ -32,10 +29,9 @@ export interface ThreadDraftListResponse {
 
 type ActiveDraftPreviewBase = {
   status: "active";
-  branchId?: string;
-  draftId?: string;
+  draftId: string;
   /** Hocuspocus room name for inline branch review; already generation-fenced. */
-  reviewRoomName?: string;
+  reviewRoomName: string;
   live: string;
   preview: string;
   liveRevisionToken: number;
@@ -43,8 +39,8 @@ type ActiveDraftPreviewBase = {
   notice?: { code: "branch_corrupt_reset"; message: string };
   /**
    * mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
-   * open review can render the all-additions `New document` / `Create` card
-   * variant without a second lookup. Produced by the server preview builder.
+   * open review can render the all-additions `New document` card variant
+   * without a second lookup. Produced by the server preview builder.
    */
   isNewDocument?: boolean;
 };
@@ -55,29 +51,28 @@ export type DraftPreviewResponse =
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })
-  | { status: "gone"; live: string };
+  | { status: "gone"; draftId: string; live: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
   operationId: string;
-  acceptClosureOperationIds?: string[];
-  rejectClosureOperationIds?: string[];
-  rejectSourceUpdateIds: number[];
   actorTurnId?: string;
   /**
    * Server-vended closure-class id. Every operation in one journal-backed
    * hunk-sharing closure class carries the same id; the review surface renders
    * one proposal card per distinct id.
    */
-  closureClassId?: string;
+  closureClassId: string;
   kind: "agent" | "writer";
   contribution: ReviewOperationContribution;
   classification: ReviewOperationClassification;
   beforeExcerpt?: string;
   afterExcerpt?: string;
   hunkCount: number;
+  /** Writer responsible for a writer-origin operation. */
+  actorUserId?: string;
 }
 
 export interface ReviewHunkSpan {
@@ -89,8 +84,6 @@ export interface ReviewHunkSpan {
 type ReviewHunkBase = {
   hunkId: string;
   operationIds: string[];
-  /** Stable block hashes touched by this hunk, used to mark push conflicts. */
-  blockHashes?: string[];
   anchor: {
     relStart: string;
     relEnd: string;
@@ -121,51 +114,8 @@ export type ReviewBlockHunk = ReviewHunkBase & {
 
 export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
-export type DraftAcceptResponse =
-  | { status: "applied"; draftId?: string; branchId?: string }
-  | { status: "partial_applied"; draftId: string; writeId: string }
-  | DraftApplyRefusal
-  | { status: "stale_draft"; draftId: string; draftRevisionToken: number };
+export type DraftApplyResponse = { status: "applied"; draftId: string };
+export type DraftApplyRequest = { draftId: string };
 
-export type DraftApplyConflict = {
-  blockId: string;
-  journalIds: number[];
-  draftBaseUpdateSeq: number;
-  effect: "overwrite" | "delete" | "resurrection" | "enclosed_insertion";
-  evidence:
-    | "human_live_change"
-    | "human_live_deletion"
-    | "human_live_insertion"
-    | "ambiguous_protected_divergence";
-  captured: {
-    base: string | null;
-    live: string | null;
-    proposed: string | null;
-  };
-  why: string;
-};
-
-/** Manual Apply refusal. A review click never changes this evidence. */
-export type DraftApplyRefusal = {
-  status: "concurrent_conflict";
-  reason: "draft_base_divergence";
-  conflictedBlocks: string[];
-  conflicts: DraftApplyConflict[];
-};
-
-type DraftAcceptRequestBase = {
-  draftRevisionToken: number;
-  /** Exact operation set shown by the preview this Apply confirms. */
-  operationIds: string[];
-};
-
-export type DraftAcceptRequest =
-  | (DraftAcceptRequestBase & { draftId: string; branchId?: never })
-  | (DraftAcceptRequestBase & { branchId: string; draftId?: never });
-
-export type DraftRejectResponse = { status: "discarded"; draftId?: string; branchId?: string };
-export type DraftRejectRequest =
-  | { draftId: string; branchId?: never; operationIds?: string[] }
-  | { branchId: string; draftId?: never; operationIds?: string[] };
-export type DraftUndoResponse = { status: "not_found"; draftId: string };
-export type DraftUndoAcceptRequest = { draftId: string; writeId?: string };
+export type DraftDiscardResponse = { status: "discarded"; draftId: string };
+export type DraftDiscardRequest = { draftId: string; operationIds?: string[] };

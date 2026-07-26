@@ -8,6 +8,7 @@ import {
   parseDocumentAddress,
   type ReversalStore,
   type SemanticProvenanceWriter,
+  type TurnDiffQuery,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
@@ -73,6 +74,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   semanticProvenance: SemanticProvenanceWriter;
+  turnDiffQuery: TurnDiffQuery;
   observability: AgentEditObservability;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
@@ -119,6 +121,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
         codec: input.codec,
         model: input.model,
         semanticProvenance: input.semanticProvenance,
+        turnDiffQuery: input.turnDiffQuery,
         defaultThreadId: threadId,
         undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
         createRuntimeDoc: () => createCollabYDoc({ gc: false }),

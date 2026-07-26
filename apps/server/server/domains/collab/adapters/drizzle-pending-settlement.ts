@@ -1,5 +1,5 @@
 /** Drizzle persistence authority for pending branch-push settlement. */
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
@@ -18,6 +18,7 @@ import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -35,13 +36,13 @@ import type {
   PendingSettlementStore,
   SettlementAdmission,
 } from "../domain/ports/pending-settlement-store.js";
-import { materializeProvenanceForDoc } from "../domain/provenance.js";
+import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
+import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
-import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -67,7 +68,6 @@ export async function stagePendingSettlementWithinTx(
     documentTitle: prepared.pendingLiveSettlement.documentTitle,
     lockCutUpdate: Buffer.from(prepared.pendingLiveSettlement.lockCutUpdate),
     pushUpdate: Buffer.from(prepared.pendingLiveSettlement.pushUpdate),
-    beforeContentRef: prepared.pendingLiveSettlement.beforeContentRef,
     trailSeed,
     claimToken: prepared.pendingLiveSettlement.claim.token,
     claimEpoch: 1,
@@ -99,6 +99,7 @@ export function createDrizzlePendingSettlementStore(
   projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
   notices?: NoticePort,
+  eventSink?: EventSink,
 ): PendingSettlementStore {
   return {
     async joinAdmission(input) {
@@ -120,11 +121,11 @@ export function createDrizzlePendingSettlementStore(
           .for("update")
           .limit(1);
         if (!owned) return false;
-        if (input.replacement) {
-          await changeTrails.replacePushContribution(String(input.push.id), input.replacement, {
-            refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
-          });
-        }
+        const committed = input.replacement
+          ? await changeTrails.replacePushContribution(String(input.push.id), input.replacement, {
+              refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
+            })
+          : [];
         if (input.trail?.transactionalNotice && owned.classifiedJoinVersion !== input.joinVersion) {
           await notices?.record({
             ...input.trail.transactionalNotice,
@@ -145,7 +146,7 @@ export function createDrizzlePendingSettlementStore(
           })
           .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
           .returning({ pushId: branchPushSettlementOutbox.pushId });
-        return Boolean(settled);
+        return settled ? committed : false;
       });
     },
 
@@ -168,7 +169,7 @@ export function createDrizzlePendingSettlementStore(
     },
 
     async loadLiveSettlement(pushId) {
-      return readPendingSettlement(db, pushId);
+      return readPendingSettlement(db, pushId, eventSink);
     },
 
     async withCompletionFence(input, complete) {
@@ -307,7 +308,7 @@ export function createDrizzlePendingSettlementStore(
       });
       if (!claimed) return null;
       try {
-        return await readPendingSettlement(db, input.pushId);
+        return await readPendingSettlement(db, input.pushId, eventSink);
       } catch (cause) {
         await db
           .update(branchPushSettlementOutbox)
@@ -397,27 +398,61 @@ async function completeStagedPush(
     return;
   }
 
+  const journalRows =
+    staged.push.journalIds.length > 0
+      ? (
+          await db
+            .select()
+            .from(branchWriteJournal)
+            .where(inArray(branchWriteJournal.id, staged.push.journalIds))
+            .orderBy(branchWriteJournal.id)
+        ).map(mapJournalRow)
+      : [];
   const authority = await allocateDocumentAdmission(db, documentId);
-  const [updateRow] = await db
+  const authoredRows =
+    journalRows.length > 0
+      ? await db
+          .insert(documentYjsUpdates)
+          .values(
+            journalRows.map((row, batchOrdinal) => ({
+              documentId,
+              authorityId: authority.authorityId,
+              authorityGeneration: authority.generation,
+              admissionSequence: authority.admissionSequence,
+              batchOrdinal,
+              updateData: Buffer.from(row.updateData),
+              originType:
+                row.source === "writer"
+                  ? ("human" as const)
+                  : row.turnId
+                    ? ("agent" as const)
+                    : ("system" as const),
+              actorUserId: row.source === "writer" ? row.actorUserId : null,
+              actorTurnId: row.source === "agent" ? row.turnId : null,
+            })),
+          )
+          .returning({ id: documentYjsUpdates.id })
+      : [];
+  const [canonicalRow] = await db
     .insert(documentYjsUpdates)
     .values({
       documentId,
       authorityId: authority.authorityId,
       authorityGeneration: authority.generation,
       admissionSequence: authority.admissionSequence,
-      batchOrdinal: 0,
+      batchOrdinal: journalRows.length,
       updateData: staged.outbox.pushUpdate,
-      // A writer-confirmed Apply is writer authorship at the live-journal seam.
-      // Downstream conflict and sweep classifiers deliberately derive protection
-      // from this durable attribution rather than from push-specific metadata.
-      originType: staged.push.pushedByUserId ? "human" : "system",
-      actorUserId: staged.push.pushedByUserId,
+      // Exact authored rows preserve attribution and reversal targets. This
+      // aggregate system row resolves any omitted causal dependencies on replay.
+      originType: "reconcile",
+      actorUserId: null,
+      actorTurnId: null,
     })
     .returning({ id: documentYjsUpdates.id });
-  if (!updateRow) throw new Error(`Failed to complete staged push ${pushId}`);
+  if (!canonicalRow) throw new Error(`Failed to complete staged push ${pushId}`);
   const [updated] = await db
     .update(pushLineage)
-    .set({ upstreamUpdateSeq: updateRow.id })
+    .set({ upstreamUpdateSeq: canonicalRow.id })
     .where(and(eq(pushLineage.id, pushId), isNull(pushLineage.upstreamUpdateSeq)))
     .returning({ id: pushLineage.id });
   if (!updated) throw new Error(`Staged push ${pushId} was completed concurrently`);
@@ -429,14 +464,6 @@ async function completeStagedPush(
         .where(eq(documentBranches.id, staged.push.branchId))
         .limit(1)
     : [];
-  const journalRows =
-    staged.push.journalIds.length > 0
-      ? await db
-          .select()
-          .from(branchWriteJournal)
-          .where(inArray(branchWriteJournal.id, staged.push.journalIds))
-          .orderBy(branchWriteJournal.id)
-      : [];
   if (branchRow) {
     const branch: BranchSnapshot = {
       branchId: branchRow.id,
@@ -455,9 +482,9 @@ async function completeStagedPush(
         : null,
       schemaVersion: branchRow.schemaVersion,
     };
-    await writeMutationRows(db, branch, journalRows.map(mapJournalRow), updateRow.id);
+    await writeMutationRows(db, branch, journalRows, authoredRows);
     const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
-    await upsertHead(db, documentId, updateRow.id, durable.stateVector);
+    await upsertHead(db, documentId, canonicalRow.id, durable.stateVector);
     await projectionEffects.applyPushCompletion({
       documentId: branch.documentId,
       markdown: durable.markdownProjection,
@@ -467,7 +494,7 @@ async function completeStagedPush(
   }
   await joinAdmissionWithinTx(db, {
     documentId,
-    source: { kind: "staged_push", id: String(updateRow.id) },
+    source: { kind: "staged_push", id: String(canonicalRow.id) },
     update: staged.outbox.pushUpdate,
     excludePushId: String(pushId),
   });
@@ -503,37 +530,36 @@ async function writeMutationRows(
   db: DrizzleDb,
   branch: BranchSnapshot,
   rows: BranchJournalRow[],
-  updateSeq: number,
+  authoredRows: Array<{ id: number }>,
 ): Promise<void> {
-  // Apply materializes only handles whose final branch state is active. Handles
-  // eliminated by Draft undo are deliberately squashed instead of being
-  // recreated as active live mutations with content that no longer exists.
+  // Apply materializes only handles whose folded branch-reversal state remains
+  // active; inactive handles must not reappear as live mutations.
   const mutationRows = activeBranchAgentWriteRows(rows);
   if (mutationRows.length === 0) return;
   await db
     .insert(agentEditMutations)
     .values(
-      mutationRows.map((row) => ({
-        wId: row.wId,
-        documentId: branch.documentId,
-        threadId: row.threadId,
-        turnId: row.turnId,
-        writeId: `push:${branch.branchId}:${row.id}`,
-        status: "active" as const,
-        createdSeq: updateSeq,
-      })),
+      mutationRows.map((row) => {
+        const rowIndex = rows.findIndex((candidate) => candidate.id === row.id);
+        const updateSeq = rowIndex < 0 ? undefined : authoredRows[rowIndex]?.id;
+        if (!updateSeq)
+          throw new Error(`Missing live attribution for branch journal row ${row.id}`);
+        return {
+          wId: row.wId,
+          documentId: branch.documentId,
+          threadId: row.threadId,
+          turnId: row.turnId,
+          writeId: `push:${branch.branchId}:${row.id}`,
+          status: "active" as const,
+          createdSeq: updateSeq,
+        };
+      }),
     )
     .onConflictDoNothing();
 }
 
 function _representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
   const ids = new Set(rows.map((row) => row.threadId));
-  const [id] = ids;
-  return ids.size === 1 && id !== null ? id : null;
-}
-
-function _representativeTurnId(rows: BranchJournalRow[]): TurnId | null {
-  const ids = new Set(rows.map((row) => row.turnId));
   const [id] = ids;
   return ids.size === 1 && id !== null ? id : null;
 }
@@ -559,11 +585,10 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
     branchId: row.branchId,
+    branchGeneration: row.branchGeneration,
     documentId: row.documentId,
-    pushKind: row.pushKind,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
-    receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
     receiptId: row.receiptId,
     threadId: row.threadId,
@@ -574,6 +599,7 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
 async function readPendingSettlement(
   db: DrizzleDb,
   pushId: number,
+  eventSink?: EventSink,
 ): Promise<PendingLiveSettlement> {
   const [row] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -593,83 +619,158 @@ async function readPendingSettlement(
     .from(branchPushOutboxUpdates)
     .where(eq(branchPushOutboxUpdates.pushId, pushId))
     .orderBy(branchPushOutboxUpdates.ordinal);
-  const provenanceDoc = createCollabYDoc({ gc: false });
-  Y.applyUpdate(provenanceDoc, row.outbox.lockCutUpdate);
-  for (const { update } of updates) Y.applyUpdate(provenanceDoc, update);
-  const authority = row.push.upstreamUpdateSeq
-    ? (
-        await db
-          .select({
-            authorityId: documentYjsUpdates.authorityId,
-            generation: documentYjsUpdates.authorityGeneration,
-          })
-          .from(documentYjsUpdates)
-          .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
-          .limit(1)
-      )[0]
-    : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
-  if (!authority) {
-    provenanceDoc.destroy();
-    throw new Error(`Pending branch push settlement ${pushId} has no authority admission`);
-  }
-  const attributedRows = await db
-    .select({
-      authorityId: documentYjsUpdates.authorityId,
-      generation: documentYjsUpdates.authorityGeneration,
-      admissionSequence: documentYjsUpdates.admissionSequence,
-      batchOrdinal: documentYjsUpdates.batchOrdinal,
-      journalRowId: documentYjsUpdates.id,
-      originType: documentYjsUpdates.originType,
-      actorUserId: documentYjsUpdates.actorUserId,
-      update: documentYjsUpdates.updateData,
-    })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, row.outbox.documentId),
-        eq(documentYjsUpdates.authorityId, authority.authorityId),
-        eq(documentYjsUpdates.authorityGeneration, authority.generation),
-      ),
-    )
-    .orderBy(
-      documentYjsUpdates.admissionSequence,
-      documentYjsUpdates.batchOrdinal,
-      documentYjsUpdates.id,
+  let sweepEvidence: PendingLiveSettlement["sweepEvidence"] = null;
+  try {
+    const candidateRows =
+      row.push.journalIds.length > 0
+        ? await db
+            .select({
+              source: branchWriteJournal.source,
+              draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq,
+              update: branchWriteJournal.updateData,
+            })
+            .from(branchWriteJournal)
+            .where(inArray(branchWriteJournal.id, row.push.journalIds))
+            .orderBy(branchWriteJournal.id)
+        : [];
+    const sweepCandidates = candidateRows.flatMap((candidate, index) =>
+      candidate.source === "agent"
+        ? [
+            {
+              precedingUpdates: candidateRows
+                .slice(0, index)
+                .map(({ update }) => new Uint8Array(update)),
+              update: new Uint8Array(candidate.update),
+              observedBaseUpdateSeq: candidate.draftBaseUpdateSeq,
+            },
+          ]
+        : [],
     );
-  const watermarkRow = attributedRows.at(-1);
-  const retained = watermarkRow
-    ? await createDrizzleProvenanceReader(db).materialize({
-        documentId: row.outbox.documentId,
-        authorityId: authority.authorityId,
-        generation: authority.generation,
-        watermark: {
-          admissionSequence: watermarkRow.admissionSequence,
-          batchOrdinal: watermarkRow.batchOrdinal,
-          journalRowId: BigInt(watermarkRow.journalRowId),
-        },
+    if (sweepCandidates.length === 0) {
+      throw new ProvenanceMaterializationError(
+        `Pending branch push settlement ${pushId} has no agent observation watermark`,
+      );
+    }
+    const authority = row.push.upstreamUpdateSeq
+      ? (
+          await db
+            .select({
+              authorityId: documentYjsUpdates.authorityId,
+              generation: documentYjsUpdates.authorityGeneration,
+            })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
+            .limit(1)
+        )[0]
+      : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
+    if (!authority) {
+      throw new ProvenanceMaterializationError(
+        `Pending branch push settlement ${pushId} has no authority admission`,
+      );
+    }
+    const latestObservationWatermark = sweepCandidates.reduce(
+      (latest, { observedBaseUpdateSeq }) => Math.max(latest, observedBaseUpdateSeq),
+      0,
+    );
+    const checkpointMetadata = await db
+      .select({
+        id: documentYjsCheckpoints.id,
+        upToSeq: documentYjsCheckpoints.upToSeq,
       })
-    : null;
-  const provenanceView = materializeProvenanceForDoc({
-    doc: provenanceDoc,
-    retainedAttributions: retained?.attributionManifest.attributions,
-    fallbackBirthClass: "writer_protected",
-    rows: attributedRows.map((attribution) => ({
-      ...attribution,
-      journalRowId: BigInt(attribution.journalRowId),
-      update: new Uint8Array(attribution.update),
-    })),
-  });
-  retained?.doc.destroy();
-  provenanceDoc.destroy();
+      .from(documentYjsCheckpoints)
+      .where(
+        and(
+          eq(documentYjsCheckpoints.documentId, row.outbox.documentId),
+          eq(documentYjsCheckpoints.authorityId, authority.authorityId),
+          eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+          lte(documentYjsCheckpoints.upToSeq, latestObservationWatermark),
+        ),
+      )
+      .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id));
+    const selectedCheckpoints = sweepCandidates.map((candidate) => {
+      const checkpoint = checkpointMetadata.find(
+        ({ upToSeq }) => upToSeq <= candidate.observedBaseUpdateSeq,
+      );
+      if (!checkpoint) {
+        throw new ProvenanceMaterializationError(
+          `Pending branch push settlement ${pushId} has no neutral root floor`,
+        );
+      }
+      return { candidate, checkpointId: checkpoint.id };
+    });
+    const checkpointIds = [...new Set(selectedCheckpoints.map(({ checkpointId }) => checkpointId))];
+    const checkpointStates = await db
+      .select({
+        id: documentYjsCheckpoints.id,
+        state: documentYjsCheckpoints.state,
+      })
+      .from(documentYjsCheckpoints)
+      .where(inArray(documentYjsCheckpoints.id, checkpointIds));
+    const rootsByCheckpoint = new Map(
+      checkpointStates.map(({ id, state }) => [id, journalInsertionRanges(new Uint8Array(state))]),
+    );
+    const attributedRows = await db
+      .select({
+        journalRowId: documentYjsUpdates.id,
+        originType: documentYjsUpdates.originType,
+        actorUserId: documentYjsUpdates.actorUserId,
+        update: documentYjsUpdates.updateData,
+      })
+      .from(documentYjsUpdates)
+      .where(
+        and(
+          eq(documentYjsUpdates.documentId, row.outbox.documentId),
+          eq(documentYjsUpdates.authorityId, authority.authorityId),
+          eq(documentYjsUpdates.authorityGeneration, authority.generation),
+        ),
+      )
+      .orderBy(
+        documentYjsUpdates.admissionSequence,
+        documentYjsUpdates.batchOrdinal,
+        documentYjsUpdates.id,
+      );
+    sweepEvidence = materializeSweepEvidence({
+      candidates: selectedCheckpoints.map(({ candidate, checkpointId }) => {
+        const roots = rootsByCheckpoint.get(checkpointId);
+        if (!roots) {
+          throw new ProvenanceMaterializationError(
+            `Pending branch push settlement ${pushId} lost its neutral root floor`,
+          );
+        }
+        return {
+          ...candidate,
+          rootFloor: { key: String(checkpointId), roots },
+        };
+      }),
+      rows: attributedRows.map((attribution) => ({
+        ...attribution,
+        journalRowId: BigInt(attribution.journalRowId),
+        update: new Uint8Array(attribution.update),
+      })),
+    });
+  } catch (cause) {
+    if (!(cause instanceof ProvenanceMaterializationError)) throw cause;
+    if (eventSink) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.change_event",
+        name: "sweep_projection.unavailable",
+        payload: {
+          pushId,
+          documentId: row.outbox.documentId,
+          ...unknownToEventPayload(cause),
+        },
+      });
+    }
+  }
   return {
     push: mapLineage(row.push),
     documentTitle: row.outbox.documentTitle,
     lockCutUpdate: row.outbox.lockCutUpdate,
     pushUpdate: row.outbox.pushUpdate,
     postCutUpdates: updates.map(({ update }) => update),
-    beforeContentRef: row.outbox.beforeContentRef,
     trail,
-    provenanceView,
+    sweepEvidence,
     joinVersion: row.outbox.joinVersion,
     settledJoinVersion: row.outbox.settledJoinVersion,
     claim: {

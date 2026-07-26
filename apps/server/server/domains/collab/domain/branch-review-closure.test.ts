@@ -1,25 +1,23 @@
-/** Unit coverage for server-vended review closure classes. */
+/** Unit coverage for server-vended selective-Discard classes. */
 
 import { describe, expect, it } from "vitest";
-import { enrichAcceptClosureOperationIds } from "./branch-review-closure.js";
-import type {
-  DraftReviewHunkInternal,
-  DraftReviewOperationInternal,
+import { assignDiscardClasses } from "./branch-review-closure.js";
+import {
+  asPhysicalSourceUpdateIds,
+  asSourceUpdateIds,
+  type DraftReviewHunkInternal,
+  type DraftReviewOperationInternal,
 } from "./draft-review-types.js";
 
 function op(
   id: string,
-  acceptUpdateIds: number[],
-  rejectUpdateIds = acceptUpdateIds,
-): DraftReviewOperationInternal {
+  sourceUpdateIds: number[],
+  discardUpdateIds = sourceUpdateIds,
+): Omit<DraftReviewOperationInternal, "closureClassId"> {
   return {
     operationId: id,
-    rejectSourceUpdateIds: rejectUpdateIds,
-    sourceUpdateIds: acceptUpdateIds,
-    directionalClosure: {
-      accept: { updateIds: acceptUpdateIds },
-      reject: { updateIds: rejectUpdateIds },
-    },
+    sourceUpdateIds: asSourceUpdateIds(sourceUpdateIds),
+    discardUpdateIds: asPhysicalSourceUpdateIds(discardUpdateIds),
     kind: "agent",
     contribution: "added",
     classification: "addition",
@@ -36,39 +34,47 @@ function hunk(id: string, operationIds: string[]): DraftReviewHunkInternal {
   };
 }
 
-describe("enrichAcceptClosureOperationIds", () => {
-  it("vends one class for an A<-B dependency and carries the full closure row set", () => {
-    const operations = enrichAcceptClosureOperationIds({
-      operations: [op("a", [1]), op("b", [1, 2])],
+describe("assignDiscardClasses", () => {
+  it("joins operations whose discard closures share a physical row", () => {
+    const operations = assignDiscardClasses({
+      operations: [op("a", [1], [1, 2]), op("b", [2], [2])],
       hunks: [hunk("h1", ["a"]), hunk("h2", ["b"])],
-      updates: [],
-      partitionClasses: true,
     });
 
     expect(new Set(operations.map((operation) => operation.closureClassId))).toEqual(
       new Set(["closure:a+b"]),
     );
-    expect(operations.map((operation) => operation.acceptClosureOperationIds)).toEqual([
-      ["a", "b"],
-      ["a", "b"],
-    ]);
-    expect(operations.map((operation) => operation.directionalClosure.accept.updateIds)).toEqual([
+    expect(operations.map((operation) => operation.sourceUpdateIds)).toEqual([[1], [2]]);
+    expect(operations.map((operation) => operation.discardUpdateIds)).toEqual([
       [1, 2],
       [1, 2],
     ]);
   });
 
-  it("keeps disjoint operations in separate closure classes", () => {
-    const operations = enrichAcceptClosureOperationIds({
-      operations: [op("a", [1]), op("b", [2])],
+  it("does not join operations only because one Apply source set contains the other", () => {
+    const operations = assignDiscardClasses({
+      operations: [op("a", [1], [1]), op("b", [1, 2], [2])],
       hunks: [hunk("h1", ["a"]), hunk("h2", ["b"])],
-      updates: [],
-      partitionClasses: true,
     });
 
     expect(operations.map((operation) => operation.closureClassId)).toEqual([
       "closure:a",
       "closure:b",
+    ]);
+  });
+
+  it("joins operations that share a visible hunk", () => {
+    const operations = assignDiscardClasses({
+      operations: [op("a", [1]), op("b", [2])],
+      hunks: [hunk("h1", ["a", "b"])],
+    });
+
+    expect(new Set(operations.map((operation) => operation.closureClassId))).toEqual(
+      new Set(["closure:a+b"]),
+    );
+    expect(operations.map((operation) => operation.discardUpdateIds)).toEqual([
+      [1, 2],
+      [1, 2],
     ]);
   });
 });

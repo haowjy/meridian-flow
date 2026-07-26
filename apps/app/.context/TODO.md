@@ -1,35 +1,5 @@
 # TODO — apps/app deferred work
 
-## Draft review UX — undo & review rearchitecture
-
-Design: [inline-diff-decoration-architecture.md] and [undo-draft-review-design.md]
-in `meridian-flow-docs/work/human-undo-affordance/design/`.
-
-- **Chat surface consolidation.** Port `ActivityRow`, `UndoWriteButton`,
-  `WriteDiffExpand`, `ReadPreviewExpand` from `tool-row-expand` prototype.
-  Replace `TurnChangeFooter` with prototype footer family. Do NOT build
-  `ReceiptRow`. Delete `DraftReviewCard`.
-
-- **`AccumulatedDraftFooter`.** Built on prototype `ReviewFooter` /
-  `SettledFooter` silhouette. Multi-document draft accumulation. Batch actions
-  only (Apply all / Discard all). Per-document actions live in `DraftReviewBar`
-  once the writer enters review, not in the footer.
-
-- **Vocabulary alignment.** Writer-facing copy: **Apply / Discard** everywhere.
-  Internal origin symbol: `HUNK_REJECT_ORIGIN`. Delete stale `HUNK_ACCEPT_ORIGIN`,
-  `yjsPayload`, `sourceWriteIds` references from design docs before coding.
-
-- **v1 scope: whole-draft apply only.** Per-hunk reject/discard is the core review
-  interaction. Per-hunk apply is deferred — no `HunkStatus`, no partial-apply
-  lifecycle, no mixed-state footer logic.
-
-- **Supporting doc reconciliation.** `undo-draft-review-design.md` still has stale
-  live-doc-model references (geometry table, hunk contract, review entry). Align
-  with the primary architecture doc or narrow to UX-only material.
-
-[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
-[undo-draft-review-design.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/undo-draft-review-design.md
-
 ## Editor UX gaps — deferred, tracked
 
 - **Temp-doc save row: persistent band vs save-time affordance.**

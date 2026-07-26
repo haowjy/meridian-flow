@@ -105,9 +105,7 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
   );
 }
 
-/* ── Shared row contract ──────────────────────────────────────────────
- *
- * Both `ThreadUploadDocumentItem` and `ThreadRecentDocumentItem` carry the
+/* Both `ThreadUploadDocumentItem` and `ThreadRecentDocumentItem` carry the
  * same display fields (`documentId`, `name`, `extension`, `sizeBytes`,
  * `editable`/`fileType`). One `DocumentRow` renders both — sourcing/timestamp
  * differences belong to the data layer, not the row visuals.
@@ -121,16 +119,10 @@ type RailDocument = {
   fileType: DocumentFileType | null;
 };
 
-/* ── Section primitives ──────────────────────────────────────────────── */
-
 type RailMessages = {
-  /** Section is disabled (no thread selected, etc.). */
   disabled: string;
-  /** Query is loading for the first time. */
   loading: string;
-  /** Query resolved with zero rows. */
   empty: string;
-  /** Query errored — surfaced alongside a Retry affordance. */
   error: string;
 };
 
@@ -227,7 +219,7 @@ function formatFileDetail(extension: string, sizeBytes: number | null): string {
   const ext = extension.replace(/^\./, "").toUpperCase();
   if (sizeBytes == null) return ext || "";
   const size = formatBytes(sizeBytes);
-  return ext ? `${ext} · ${size}` : size;
+  return ext ? `${ext} (${size})` : size;
 }
 
 function formatBytes(bytes: number): string {

@@ -67,7 +67,6 @@ describe("decodeAnchor", () => {
 
     const decoded = decodeAnchor(encoded);
     expect(decoded).not.toBeNull();
-    // Encoded byte payload should match if we re-encode.
     if (decoded) {
       expect(Buffer.from(Y.encodeRelativePosition(decoded)).toString("base64")).toBe(encoded);
     }
@@ -94,21 +93,6 @@ describe("decodeAnchor", () => {
   });
 });
 
-describe("concurrent conflict mapping", () => {
-  it("flags only hunks whose block hash conflicted", () => {
-    const doc = new Y.Doc();
-    const hunk = { ...makeAnchoredHunk(doc, "h1", "op-1"), blockHashes: ["block-a"] };
-    const model = buildInlineReviewModel({
-      draftRevisionToken: 1,
-      operations: [],
-      hunks: [hunk],
-      conflictedBlocks: new Set(["block-a"]),
-    });
-
-    expect(model.hunks[0]).toMatchObject({ hunkId: "h1", concurrentConflict: true });
-  });
-});
-
 describe("buildInlineReviewModel", () => {
   it("keeps hunks with resolvable anchors and drops the rest", () => {
     const doc = new Y.Doc();
@@ -126,7 +110,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -157,7 +141,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -165,7 +149,7 @@ describe("buildInlineReviewModel", () => {
         },
         {
           operationId: "op-b",
-          rejectSourceUpdateIds: [2],
+          closureClassId: "closure:op-b",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -220,7 +204,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -261,7 +245,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -297,7 +281,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -322,7 +306,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "rewrote",
           classification: "rewrite",
@@ -407,7 +391,7 @@ describe("hunkKind", () => {
   function operation(id: string, kind: "agent" | "writer"): ReviewOperation {
     return {
       operationId: id,
-      rejectSourceUpdateIds: [1],
+      closureClassId: `closure:${id}`,
       kind,
       contribution: "edited",
       classification: "rewrite",

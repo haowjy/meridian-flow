@@ -1,15 +1,13 @@
 # features/editor — contracts and architecture
 
-Reference depth. There is no `AGENTS.md` for this directory yet — the
-`EditorToolbar` component is surfaced through the context viewer
-(`features/project/context/`), which owns the editor mount host.
+Reference depth for the app-facing editor surface. Read
+[`AGENTS.md`](../AGENTS.md) first.
 
 ## Toolbar — placement contract
 
-The formatting toolbar is a **docked prose-aligned row** above the scroll
-area (tab-direction E, settled 2026-07-13 — promoted from the former
-"reserve option C"). No card chrome, no rule beneath it: the row is bare
-controls sitting on canvas, separated from the prose by whitespace only.
+The formatting toolbar is a **docked prose-aligned row** above the scroll area.
+No card chrome, no rule beneath it: the row is bare controls sitting on canvas,
+separated from the prose by whitespace only.
 
 `EditorToolbar` owns the control cluster and command dispatch.
 `EditorSurfaceFrame` owns the placement invariant around it: an in-flow
@@ -49,18 +47,26 @@ Two self-contained surfaces, both resolving their own state from
   jade primary pill far right — the same order as the dock.
 
 The chip and header are mutually exclusive by the chip's own inline-review
-check, not by a shared slot. (The former `EditorBannerSlot`/`belowToolbar`
-tenancy mechanism was deleted 2026-07-21 when the review strip moved above
-the identity bar.)
+check, not by a shared slot.
+
+The review manuscript is the server draft projection, not a track-changes
+composition. Inline decorations may style ranges that exist in that projection,
+but must not inject deleted live prose or blocks. Zero-content seams mark
+pure-deletion locations for visible Changes-card navigation. Before/after
+content belongs in the dock's Changes cards. The review editor stays editable:
+the draft is a Yjs room and the writer is one more peer in it, so keystrokes in
+review land in the draft branch rather than live. The review header is the
+interim signal for which surface you are on; stronger visual draft scoping is
+owned by the writer-UX pass.
 
 ### Rejected placements
 
 | Placement | Reason rejected |
 |---|---|
-| Floating card pinned top-left (2026-07-13 → tab-direction E) | Card chrome broke the no-lines stack; overlay covered the first line and needed a `pt-16` reserve |
+| Floating card pinned top-left | Card chrome broke the no-lines stack; overlay covered the first line and needed a `pt-16` reserve |
 | Centered over the page | Balanced but least connected to chrome or text; still covers first line |
 | Corner-right palette | Out of the writing path but further from reach |
-| Full-width strip above editor (pre-`e4cd4e66`) | Mismatched the centered text column; read as stray chrome |
+| Full-width strip above editor | Mismatched the centered text column; read as stray chrome |
 
 ## Component API
 
@@ -86,11 +92,38 @@ makes remote collab cursors render as a phantom row between paragraphs.
 Presses on interactive or live-status children inside the scroller keep
 native behavior; both hosts opt in.
 
-## Deferred
+## Peer mark popover
 
-- **Block-level `+` gutter handle** ("Turn into" / "Insert" menu on the
-  current paragraph). Additive to the formatting toolbar, never a
-  replacement. A real build, parked for a future slice.
-- **Fade-on-scroll** for the toolbar row. New interaction behavior
-  (fade in on focus, slide away in flow) → its own slice; placement
-  settles first.
+`PeerMarkPopover.tsx` is the anchored evidence surface for one live
+session peer mark. The marker projection itself (`SessionMarkerStore` +
+`PeerMarkerExtension`) lives in
+[`core/editor`](../../../core/editor/.context/CONTEXT.md); this component is
+editor-host chrome, not a ProseMirror plugin.
+
+`EditorView`'s click and keyboard handlers resolve the closest
+`[data-peer-mark]` element to a live `SessionMarker` from the session's
+`markerStore` and set it as the popover target; the popover is suppressed
+during inline draft review (`inReview`), since markers are a live-document
+surface and branch rooms have a different anchor space.
+
+Detail comes from the shared trail-detail cache in
+[`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
+it for every agent mark on screen, so the popover normally opens with its
+evidence already available; while a first read is genuinely in flight the
+actions row is withheld rather than rendered half-empty, and only actor and
+time show. The resting surface contains actor, time, and conversation
+navigation. A single Before/After control reveals the same trail-backed excerpt
+renderer used by the turn receipt; swept status adds no popover narration.
+Trail evidence is read-only: receipt Undo/Redo is the sole reversal authority
+for AI changes. *Open conversation* routes through
+`requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
+popover closes and the chat side expands the owning turn receipt and brings the
+exact row into view.
+
+Trail-row navigation addresses a matching live session mark first, preserving
+its range/tick anatomy and emphasis treatment. Generic temporary range
+navigation remains the fallback after that mark has cleared or expired.
+
+Popover focus follows activation. Pointer open prevents Radix autofocus and
+pointer close restores the captured editor selection and caret. Keyboard
+activation moves focus into the popover; Escape/close returns focus to the mark.

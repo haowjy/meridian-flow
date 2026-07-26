@@ -33,9 +33,11 @@ process fold in chronological position. Interrupts end a segment; their cards
 remain visible after resolution even though tool protocol rows fold on settle.
 
 The full model lives in
-[`.context/turn-composition.md`](.context/turn-composition.md); draft receipts
-and review state live in
-[`.context/draft-editing.md`](.context/draft-editing.md).
+[`.context/turn-composition.md`](.context/turn-composition.md); draft receipts,
+composer mode, and review state live in
+[`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
+[`.context/composer-write-mode.md`](.context/composer-write-mode.md), and
+[`.context/draft-review.md`](.context/draft-review.md).
 
 ## Key rules
 
@@ -66,95 +68,13 @@ and review state live in
   activity runs and visible frontiers. No raw tool block should reach `TurnBlockStep`.
 - **Don't auto-open process disclosures during streaming.**
 
-## Entry points
+## Draft-review boundary
 
-| File | What it does |
-|---|---|
-| `AssistantTurn.tsx` | Top-level turn render — sorts blocks, partitions, mounts zones |
-| `partition-turn-segments.ts` | Structural interrupt segmentation + run grouping for Thinking/Activity zones |
-| `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then groups adjacent logical tool runs |
-| `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle |
-| `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts route through `onRespondToInterrupt` |
-| `placeholders.ts` | Lingui `msg` descriptor pools + per-page-load localStorage rotation + `useSyncExternalStore` SSR guard. Rotation is internal to Composer; hero variant overrides by prop |
-| `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior. Unknown tools show name only; all registered renderers use `toolVerb()` for status-aware present/past tense |
-| `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent tool runs as sibling `ToolRow`s |
-| `ActivityRow.tsx` | Timeline-row primitive; each row owns its rail segment and exports the shared text inset |
-| `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsCard.tsx` | Per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo, and writer-safety evidence. No draft Review/Apply/Discard. |
-| `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams. Returns null for plain-insert-only trails (no writerProtection) |
-| `block-render-key.ts` | Positional render keys |
-| `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
-| `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
-| `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
-| `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
-| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
-| `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
-| `draft-apply-disposition.ts` | Shared revision acquisition and response policy for whole-draft and per-card Apply |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
-| `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
-| `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
-
-## Draft review lifecycle
-
-Inline review is the only draft review surface. Whole-draft "Apply all" runs the
-`acceptDraft` path; each dock Changes card also carries per-card Apply/Discard,
-and a per-card Apply's "Change applied" receipt carries an Undo.
-The controller is the single client review-session owner. Its reducer owns
-`surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
-message target, inline messages, and per-draft discard pending state. Use
-controller transitions instead of pairing local `close` calls; `exitReview` is
-the single clear-all path.
-
-Per-card Apply routes the closure-card `acceptDraft` mutation with
-`operationIds`; the server receives the vended closure class as one card, so
-there is no dependency confirmation state. Every disposition is serialized by
-one lock (`controller.isDisposing` / `acceptIsBlocked`): while any whole-draft or
-per-card Apply/Discard/Undo is in flight, all mutating controls disable and a
-second card click is ignored rather than clearing the in-flight card's pending
-state. Per-card Discard routes to the server discard mutation with
-`operationIds`; the server performs reversal-peer sync and the card settles when
-the next preview refetch drops the operation. Keep that pending state and timer
-in the controller/session path, keyed by draft id; do not add module-global or
-component-local review/discard state.
-
-On success, `applySucceeded` clears the active surface so the editor rebinds from
-the draft room back to the live manuscript room. If accept returns
-`status: "stale_draft"`, inline review reloads the refreshed draft id from the
-response. Whole-draft discard uses the same cleanup path.
-
-Review mode is a full-width editor plus the dock's `Changes` view — there is no
-in-editor review split. The editor's review chrome is
-`features/editor/DraftReviewHeader` (below the toolbar, review-only): LEFT
-"Back to live" exit, RIGHT whole-draft "Apply all" / "Discard all", all
-delegating to the controller. The dock's `DockChangesView` expands the reviewed
-document to operation cards read from the live preview; a card body click calls
-`controller.focusReviewOperation(operationId)`, which reads the review editor off
-the inline-review runtime and highlights + scrolls the manuscript span. Each card
-carries hover-revealed Apply/Discard verbs — the only mutating targets on the
-card — driving `controller.acceptOperation` / `controller.discardOperation`.
-
-`useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
-the TipTap inline-review extension and reports model availability identities. An
-active preview without a model is an invariant violation, logged loudly and
-ignored safely.
-
-`reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
-keeps active drafts visible and hides older terminal undo receipts when a newer
-active draft exists in the same document group; the server reviewable list still
-contains the full lifecycle history so the `DraftDock` reviewed rows and the
-editor bar's minimal terminal Undo receipt can show undo where it remains useful.
-
-## Block type reference
-
-From `@meridian/contracts` `BlockType`: `reasoning` | `thinking` | `text` |
-`tool_use` | `tool_result` | `image` | `custom`.
-
-- **reasoning run** = `reasoning` | `thinking` (rendered in `TurnBlockStep`, italic prose)
-- **activity run** = everything else (text/image/custom rendered directly; tool_use/tool_result
-  normalized into ToolViews and rendered as sibling `ToolRow`s by
-  `DeliverySegments`)
+Inline review is the only draft-review surface. It uses server-backed
+Apply/Discard disposition commands; dispositions never ride browser mutation
+history, even though the review editor itself stays editable. See
+[`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
+preview, and projection contracts.
 
 ## Transcript viewport (TurnList)
 
@@ -176,7 +96,9 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 → TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
 → useChatFollowScroll.ts header comment (state machine invariants +
   re-armable 180ms guard + near-bottom-wins ordering)
+→ [KB: chat scroll follow-state decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat-scroll-follow-state.md)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Draft Review Lifecycle KB decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md)
+→ [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
+→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-editable-branch.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher

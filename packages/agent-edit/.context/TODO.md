@@ -1,57 +1,20 @@
 # TODO — agent-edit deferred work
 
-North-star: the agent-editing protocol (find/replace, block-hash addressing,
-resolve→apply) usable on any CRDT, any tool vocabulary, extractable as a library.
-We do **not** build the public surface from one implementation — a second
-implementation forces the contract shapes.
+Keep the agent-editing protocol reusable across CRDT and tool implementations,
+but do not freeze a public abstraction until a second implementation exposes
+the seam it needs.
 
-Source of truth: design doc `agent-edit-write-loop/design/crdt-text-port.md`
-(meridian-flow-docs work area).
+## Selective Discard reconstruction reuse
 
-**Landed:** the resolver→apply kernel is CRDT-neutral (`BlockRef`/`DocHandle`,
-neutral `AgentEditModel` seam; Yjs lives only in `model/` + runtime/undo plumbing),
-Tier 2 construction is behind an adapter verb, and the write-command schema is one
-Zod source (`tool/command-schema.ts`; `view`→`read`; query/write/history split).
-Below is what remains deferred.
+Work-draft selective Discard and live undo both reconstruct a peer from ordered
+Yjs updates, but Discard reverses every branch journal row in a server-vended
+class, including rows from different actors. A reusable agent-edit primitive
+would need to accept multiple update identities without importing branch-review
+concepts.
 
-## High-priority bug — reversal chain freezes on concurrent edit (#114)
-
-A grouped/redo reversal chain goes fully dead when a human makes a concurrent
-edit that *overlaps a touched block* (not the changed range):
-`evaluateRedoEligibility()`/`planRedo()` returns `nothing_to_redo` for any later
-forward update, and `reversal-lineage.ts` hard-fails the whole closure as
-`cant_undo_dependent`. Undo/redo silently stops working, with no warning.
-
-Intended: **best-effort reverse + warning, not a dead chain**
-("mangled-but-intact > silent blocking" — the offline-peer philosophy).
-Done =
-- relax redo gating so a later forward update degrades to best-effort redo +
-  warning, not `nothing_to_redo`;
-- relax undo dependency blocking so a same-block/adjacent concurrent edit yields
-  a warning/mangle-risk result, not `cant_undo_dependent`, and reversal proceeds;
-- keep closure integrity (shared redo boundary) but never freeze the boundary on
-  one concurrent edit;
-- regression: grouped-redo → same-block different-range human edit → chain stays
-  reversible; undo succeeds with later human edit → redo still attempts best-effort.
-
-Note: the "should reversal proceed under concurrency?" policy is split across
-`reversal-plan.ts`, `reconstruction.ts`, and `write-reversal.ts`; consider a
-single reversal-conflict-policy module.
-
-[#114]: https://github.com/haowjy/meridian-flow/issues/114
-
-## Draft review reject path — reconstruction reuse
-
-The editable-draft review architecture uses the same cold-reconstruction
-pattern as live undo (`packages/agent-edit/src/undo/reconstruction.ts`) to
-reverse hunk updates on the draft Y.Doc. Key difference: reject reverses
-ALL updates contributing to a hunk (AI + writer), not just one write's
-mutations. The `reconstructInverse` function needs to handle multiple
-`sourceUpdateIds` spanning different actors.
-
-**Invariant:** active draft update rows are never compacted. Reject depends
-on immutable, individually addressable ordered update rows. This is a collab
-domain invariant enforced at the storage layer, not in agent-edit.
+Active Work-draft journal rows must remain immutable and individually
+addressable. Collab storage owns that invariant; agent-edit should not infer it
+from a snapshot.
 
 Design: [inline-diff-decoration-architecture.md] in
 `meridian-flow-docs/work/human-undo-affordance/design/`.

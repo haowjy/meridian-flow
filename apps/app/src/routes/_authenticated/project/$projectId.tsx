@@ -126,7 +126,10 @@ function RouteComponent() {
   }
 
   function handleSelectDockThread(threadId: string) {
-    patchSearch({ thread: threadId || undefined });
+    // The dock only changes which conversation it shows, never the screen — so
+    // pin the RESOLVED screen. `?screen` is absent on a default Home landing,
+    // and a bare `?thread` there would resolve the writer onto Chat.
+    patchSearch({ screen: resolvedScreen, thread: threadId || undefined });
   }
 
   function handleSelectContextScheme(nextScheme: ProjectContextTreeScheme) {

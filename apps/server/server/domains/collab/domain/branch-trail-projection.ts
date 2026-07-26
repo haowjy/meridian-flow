@@ -1,14 +1,13 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
 import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { NoticeInput, NoticePort } from "../../notices/index.js";
+import type { NoticePort } from "../../notices/index.js";
 import type {
   BranchJournalRow,
   PreparedPush,
-  PushReceiptPayload,
-  PushSweptTrail,
+  PublicationBlockChange,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
@@ -22,7 +21,6 @@ import {
   canonicalBlockKey,
   deletionBoundaryTarget,
   liveBlockTarget,
-  navigationForSweptBlock,
   normalizeTrailPushes,
   type RawTrailChange,
   type ReplacementOperation,
@@ -48,14 +46,17 @@ export function journalAttributionByChangedBlock(input: {
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
-  const operations: Array<{
+  const journalOperations: Array<{
     removedBlockHashes: string[];
     insertedBlockIds: string[];
     ambiguous?: boolean;
+    removedIndex: number | null;
+    insertedIndex: number | null;
+    journalRowIndex: number;
   }> = [];
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
-    for (const row of input.rows) {
+    for (const [journalRowIndex, row] of input.rows.entries()) {
       const before = canonicalSnapshot(input.model, scratch);
       Y.applyUpdate(scratch, row.updateData);
       const after = canonicalSnapshot(input.model, scratch);
@@ -83,12 +84,43 @@ export function journalAttributionByChangedBlock(input: {
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
       if (deleted.length > 0 || inserted.length > 0) {
-        operations.push({
+        journalOperations.push({
           removedBlockHashes: deleted.map((block) => block.hash),
           insertedBlockIds: inserted.map((block) => block.hash),
           ambiguous: deleted.length !== 1 || inserted.length !== 1,
+          removedIndex:
+            deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
+          insertedIndex:
+            inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
+          journalRowIndex,
         });
       }
+    }
+    const operations: typeof journalOperations = [];
+    for (let index = 0; index < journalOperations.length; index += 1) {
+      const deletion = journalOperations[index];
+      const insertion = journalOperations[index + 1];
+      if (
+        deletion?.removedBlockHashes.length === 1 &&
+        deletion.insertedBlockIds.length === 0 &&
+        insertion?.removedBlockHashes.length === 0 &&
+        insertion.insertedBlockIds.length === 1 &&
+        insertion.journalRowIndex === deletion.journalRowIndex + 1 &&
+        deletion.removedIndex !== null &&
+        deletion.removedIndex === insertion.insertedIndex
+      ) {
+        operations.push({
+          removedBlockHashes: deletion.removedBlockHashes,
+          insertedBlockIds: insertion.insertedBlockIds,
+          ambiguous: false,
+          removedIndex: deletion.removedIndex,
+          insertedIndex: insertion.insertedIndex,
+          journalRowIndex: deletion.journalRowIndex,
+        });
+        index += 1;
+        continue;
+      }
+      operations.push(deletion as (typeof journalOperations)[number]);
     }
     return { ownersByBlock, operations };
   } finally {
@@ -110,21 +142,22 @@ function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
 }
 
 export function preparedTrailChanges(input: {
-  receipt: PushReceiptPayload;
+  documentId: DocumentId;
+  changedBlocks: readonly PublicationBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
-  conflictedBlocks: readonly string[];
-  before: readonly { hash: string; serialized: string }[];
+  before: readonly {
+    hash: string;
+    serialized: string;
+    clientID?: number;
+    clock?: number;
+  }[];
   blockIdentities: ReadonlyMap<string, CanonicalBlockIdentityV1>;
-  beforeBodies: ReadonlyMap<string, string>;
   afterIds: ReadonlySet<string>;
   afterById: ReadonlyMap<string, Y.XmlElement>;
   afterDoc: Y.Doc;
-  beforeContentRef: number | null;
-  resurrectionBodies?: ReadonlyMap<string, string>;
 }): RawTrailChange[] {
-  const swept = new Set(input.conflictedBlocks);
   const provenReplacements = new Map<string, string>();
   for (const operation of input.operations) {
     if (
@@ -139,103 +172,166 @@ export function preparedTrailChanges(input: {
     }
   }
   const replacementIds = new Set(provenReplacements.values());
-  return input.receipt.changedBlocks.flatMap((block, sequence) => {
+  const candidateContentRelocations = new Map<string, string>();
+  for (const target of input.changedBlocks) {
+    if (
+      target.beforeText === null ||
+      target.afterText === null ||
+      target.beforeText === target.afterText
+    ) {
+      continue;
+    }
+    const sources = input.changedBlocks.filter(
+      (candidate) =>
+        candidate.blockId !== target.blockId &&
+        !provenReplacements.has(candidate.blockId) &&
+        candidate.beforeText === target.afterText,
+    );
+    if (sources.length === 1) {
+      candidateContentRelocations.set(target.blockId, sources[0]?.blockId as string);
+    }
+  }
+  const sourceClaimCounts = new Map<string, number>();
+  for (const sourceId of candidateContentRelocations.values()) {
+    sourceClaimCounts.set(sourceId, (sourceClaimCounts.get(sourceId) ?? 0) + 1);
+  }
+  const directContentRelocations = new Map(
+    [...candidateContentRelocations].filter(
+      ([, sourceId]) => sourceClaimCounts.get(sourceId) === 1,
+    ),
+  );
+  const changedBlockById = new Map(input.changedBlocks.map((block) => [block.blockId, block]));
+  const contentRelocations = new Map<string, string>();
+  for (const [targetId, sourceId] of directContentRelocations) {
+    const visited = new Set([targetId]);
+    let cursorId: string | undefined = sourceId;
+    while (cursorId && !visited.has(cursorId)) {
+      visited.add(cursorId);
+      const cursor = changedBlockById.get(cursorId);
+      if (cursor?.afterText === null) {
+        contentRelocations.set(targetId, sourceId);
+        break;
+      }
+      cursorId = directContentRelocations.get(cursorId);
+    }
+  }
+  const relocatedSourceIds = new Set(contentRelocations.values());
+  const survivingAfterBlockByIdentity = new Map<
+    string,
+    { blockId: string; block: Y.XmlElement; identity: CanonicalBlockIdentityV1 }
+  >();
+  for (const [blockId, block] of input.afterById) {
+    const identity = input.blockIdentities.get(blockId);
+    if (identity) {
+      survivingAfterBlockByIdentity.set(canonicalBlockKey(identity), { blockId, block, identity });
+    }
+  }
+  return input.changedBlocks.flatMap((block, sequence) => {
+    if (relocatedSourceIds.has(block.blockId)) return [];
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
+    const beforeSnapshot = input.before[beforeIndex];
     const nextId = input.before
       .slice(beforeIndex + 1)
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
     const previousId = [...input.before.slice(0, Math.max(0, beforeIndex))]
       .reverse()
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
-    const isSwept = swept.has(block.blockId);
-    const resurrectionBody = input.resurrectionBodies?.get(block.blockId);
-    const wholeDocumentReplacement =
-      isSwept &&
-      input.before.length === 1 &&
-      input.before[0]?.hash === block.blockId &&
-      !nextId &&
-      !previousId
-        ? input.afterDoc.getXmlFragment("prosemirror").get(0)
-        : null;
-    const safeNextBoundary =
-      wholeDocumentReplacement instanceof Y.XmlElement ? wholeDocumentReplacement : null;
     const ordinaryNavigation =
       block.afterText !== null && input.afterById.get(block.blockId)
         ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
         : deletionBoundaryTarget({
             doc: input.afterDoc,
-            next: nextId ? input.afterById.get(nextId) : safeNextBoundary,
+            next: nextId ? input.afterById.get(nextId) : null,
             previous: previousId ? input.afterById.get(previousId) : null,
           });
-    const sweptNavigation =
-      isSwept && resurrectionBody === undefined
-        ? navigationForSweptBlock({
-            affectedBlockHash: block.blockId,
-            afterDoc: input.afterDoc,
-            operations: input.operations,
-            nextSurvivor: nextId ? input.afterById.get(nextId) : safeNextBoundary,
-            previousSurvivor: previousId ? input.afterById.get(previousId) : null,
-          })
-        : null;
-    const replacementId =
-      sweptNavigation?.outcome === "modify" ? provenReplacements.get(block.blockId) : undefined;
-    const replacement = replacementId
-      ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
-      : undefined;
-    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
     const beforeIdentity =
-      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
-    const afterIdentity =
-      block.afterText === null
+      block.beforeText === null
         ? null
-        : (input.blockIdentities.get(replacementId ?? block.blockId) ?? null);
+        : beforeSnapshot?.clientID !== undefined && beforeSnapshot.clock !== undefined
+          ? {
+              documentId: input.documentId,
+              clientID: beforeSnapshot.clientID,
+              clock: beforeSnapshot.clock,
+            }
+          : (input.blockIdentities.get(block.blockId) ?? null);
+    const sameIdentityAfter =
+      block.beforeText !== null && block.afterText !== null && beforeIdentity
+        ? survivingAfterBlockByIdentity.get(canonicalBlockKey(beforeIdentity))
+        : undefined;
+    const contentRelocated = contentRelocations.has(block.blockId);
+    const replacementId = sameIdentityAfter?.blockId ?? provenReplacements.get(block.blockId);
+    const replacement = replacementId
+      ? input.changedBlocks.find((candidate) => candidate.blockId === replacementId)
+      : undefined;
+    const replacementBlock =
+      sameIdentityAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
+    const beforeBody = bodyFromHashline(block.beforeText);
+    const afterBody = bodyFromHashline(block.afterText);
+    // A textblock can retain its Yjs identity while its entire body is removed.
+    // Project that as a deletion at the surviving empty block, rather than as
+    // an invisible modification range over zero text.
+    const emptiedSurvivingBlock =
+      sameIdentityAfter !== undefined &&
+      block.beforeText !== null &&
+      beforeBody.status === "available" &&
+      beforeBody.markdown.length > 0 &&
+      block.afterText !== null &&
+      afterBody.status === "available" &&
+      afterBody.markdown.length === 0;
+    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
+    const afterIdentity = emptiedSurvivingBlock
+      ? null
+      : contentRelocated
+        ? null
+        : (sameIdentityAfter?.identity ??
+          (replacementId !== undefined
+            ? (input.blockIdentities.get(replacementId) ?? null)
+            : block.afterText === null
+              ? null
+              : (input.blockIdentities.get(block.blockId) ?? null)));
     const location: TrailProjectionLocation = {
       kind:
-        sweptNavigation?.outcome ??
-        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
+        emptiedSurvivingBlock || contentRelocated
+          ? "delete"
+          : replacementId !== undefined
+            ? "modify"
+            : block.beforeText === null
+              ? "insert"
+              : block.afterText === null
+                ? "delete"
+                : "modify",
       beforeIdentity,
       afterIdentity,
-      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
+      navigation:
+        emptiedSurvivingBlock || contentRelocated
+          ? deletionBoundaryTarget({
+              doc: input.afterDoc,
+              next: sameIdentityAfter?.block ?? input.afterById.get(block.blockId) ?? null,
+            })
+          : sameIdentityAfter
+            ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
+            : replacementBlock
+              ? liveBlockTarget(input.afterDoc, replacementBlock)
+              : ordinaryNavigation,
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
     return owners.map((owner, ownerIndex) => ({
       changeId: `${input.receiptId}:${canonicalBlockKey(stableIdentity)}`,
-      documentId: input.receipt.documentId,
+      documentId: input.documentId,
       pushId: null,
       receiptId: input.receiptId,
       kind: location.kind,
-      beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,
-      afterTextAtReceipt: replacement?.afterText ?? block.afterText,
+      afterTextAtReceipt: contentRelocated
+        ? null
+        : sameIdentityAfter
+          ? block.afterText
+          : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
-      swept: isSwept
-        ? {
-            affectedBlockHash: block.blockId,
-            affectedBlockIdentity: stableIdentity,
-            removed: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
-            beforeContentRef: input.beforeContentRef,
-          }
-        : null,
-      ...(resurrectionBody !== undefined
-        ? {
-            writerProtection: {
-              kind: "resurrection" as const,
-              body: bodyFromHashline(resurrectionBody),
-            },
-          }
-        : isSwept
-          ? {
-              writerProtection: {
-                kind: "sweep" as const,
-                body: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
-              },
-            }
-          : {}),
       owner,
       sequence: sequence * 1000 + ownerIndex,
     }));
@@ -278,7 +374,7 @@ export async function persistDurableTrailRecord(
 export function trailContributionReplacement(
   record: DurableTrailRecord,
   push: { id: number },
-  kind: "refine" | "empty",
+  contribution: DurableTrailRecord["changes"] = record.changes,
 ): TrailContributionReplacement {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
@@ -291,45 +387,30 @@ export function trailContributionReplacement(
       journalOwners: record.journalOwners,
     })),
   );
+  const normalizedContribution = normalizeTrailPushes(
+    record.threadIds.map((threadId) => ({
+      pushId,
+      receiptId: record.receiptId,
+      threadId,
+      changes: contribution.map((change) => ({ ...change, pushId })),
+      journalOwners: record.journalOwners,
+    })),
+  );
+  const contributionByOwner = new Map(
+    normalizedContribution.map((trail) => [JSON.stringify(trail.owner), trail.changes]),
+  );
   return {
-    kind,
     targets: trails.map((trail) => ({
       owner: trail.owner,
-      classifications: trail.changes,
+      changes: contributionByOwner.get(JSON.stringify(trail.owner)) ?? [],
     })),
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
-  };
-}
-
-export function projectPushSweep(prepared: PreparedPush): PushSweptTrail {
-  const sweptChanges = prepared.trailChanges.filter((change) => change.swept !== null);
-  return {
-    affectedBlockHashes: prepared.blindConflictedBlocks,
-    capturedDeletedBodies: sweptChanges.map((change) => ({
-      hash: change.swept?.affectedBlockHash as string,
-      body:
-        change.swept?.removed.status === "available"
-          ? change.swept.removed.markdown
-          : "body_unavailable",
-    })),
-    beforeContentRef: prepared.beforeContentRef,
-    receiptId: prepared.prepared.receiptId as string,
-    locations: sweptChanges.map((change) => ({
-      changeId: change.changeId,
-      affectedBlockHash: change.swept?.affectedBlockHash as string,
-      outcome: change.kind === "modify" ? "modify" : "delete",
-      navigation: change.navigation,
-    })),
-    // Push-target reversal is not an exposed contract yet. Retaining a
-    // baseline alone must never be presented as an undo affordance.
-    reversible: false,
   };
 }
 
 export function buildDurablePushTrail(input: {
   prepared: PreparedPush;
   documentTitle: string;
-  swept?: PushSweptTrail;
 }): DurableTrailRecord {
   const journalOwners = input.prepared.prepared.journalRows.map((row) =>
     row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,
@@ -344,25 +425,5 @@ export function buildDurablePushTrail(input: {
     threadIds: [...threadIds],
     journalOwners,
     changes: input.prepared.trailChanges,
-    ...(input.swept
-      ? {
-          transactionalNotice: {
-            kind: "push_swept",
-            scope: {
-              kind: "document",
-              documentId: input.prepared.prepared.branch.documentId,
-            },
-            writerVisible: true,
-            message:
-              "AI applied changes that removed words not yet synced to the agent — View change",
-            data: {
-              documentId: input.prepared.prepared.branch.documentId,
-              documentName: input.documentTitle,
-              pushId: "pending",
-              ...input.swept,
-            },
-          } satisfies NoticeInput,
-        }
-      : {}),
   };
 }

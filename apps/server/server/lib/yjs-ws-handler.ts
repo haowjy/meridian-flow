@@ -5,7 +5,7 @@ import {
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
-import { encodeSafetyNoticeWsMessage, parseYjsRoomName } from "@meridian/contracts/protocol";
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
@@ -34,7 +34,6 @@ export type YjsGatewayServices = {
   documentAccess: AppServices["documentAccess"];
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
-  notices: AppServices["notices"];
 };
 
 export async function hasLiveManifestMembership(
@@ -50,41 +49,6 @@ export async function hasLiveManifestMembership(
   await documentSync.reconcileProjectManifest(projectId as never);
   membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
   return membership.members.includes(documentId);
-}
-
-type WriterNoticeDocument = {
-  getConnectionsCount(): number;
-  broadcastStateless(payload: string): void;
-};
-
-export function subscribeWriterNoticeTransport(input: {
-  notices: AppServices["notices"];
-  documentsForId(documentId: string): Promise<readonly WriterNoticeDocument[]>;
-  eventSink: AppServices["eventSink"];
-}): () => void {
-  return input.notices.subscribeWriterVisible((event) => {
-    void (async () => {
-      const documents = (await input.documentsForId(event.documentId)).filter(
-        (document) => document.getConnectionsCount() > 0,
-      );
-      if (documents.length === 0) return;
-      const payload = encodeSafetyNoticeWsMessage({
-        documentId: event.documentId as never,
-        kind: event.kind,
-        message: event.message,
-        data: event.data,
-      });
-      for (const document of documents) document.broadcastStateless(payload);
-      await input.notices.drainForWriter(event.documentId);
-    })().catch((cause) => {
-      emitEvent(input.eventSink, {
-        level: "warn",
-        source: "collab.hocuspocus",
-        name: "writer_notice.delivery_failed",
-        payload: { documentId: event.documentId, cause: String(cause) },
-      });
-    });
-  });
 }
 
 function permissionDenied(
@@ -210,6 +174,9 @@ async function admitBranchSync(
     context: input.context,
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
+  // A draft branch room is a collaborative room like any other: the writer is
+  // one more peer in it. Client frames run the same durable admission the
+  // agent's own branch writes do.
   try {
     await input.services.documentSync.admitBranchWriterUpdate({
       branchId: room.branchId,
@@ -253,39 +220,6 @@ function updateIdentity(update: Uint8Array): string {
 }
 
 export function createHocuspocus(services: YjsGatewayServices): Hocuspocus {
-  const documentsForId = async (documentId: string): Promise<WriterNoticeDocument[]> => {
-    const matches: WriterNoticeDocument[] = [];
-    for (const [roomName, document] of hocuspocus.documents) {
-      const room = parseYjsRoomName(roomName);
-      if (!room) continue;
-      if (room.kind === "live") {
-        if (room.documentId === documentId) matches.push(document);
-        continue;
-      }
-      const branch = await services.documentSync.resolveBranchHocuspocusRoom(
-        room.branchId,
-        room.generation,
-      );
-      if (branch?.documentId === documentId) matches.push(document);
-    }
-    return matches;
-  };
-  const deliverPendingWriterNotices = async (documentId: string): Promise<void> => {
-    const documents = (await documentsForId(documentId)).filter(
-      (document) => document.getConnectionsCount() > 0,
-    );
-    if (documents.length === 0) return;
-    const notices = await services.notices.drainForWriter(documentId);
-    for (const notice of notices) {
-      const payload = encodeSafetyNoticeWsMessage({
-        documentId: documentId as never,
-        kind: notice.kind,
-        message: notice.message,
-        data: notice.data,
-      });
-      for (const document of documents) document.broadcastStateless(payload);
-    }
-  };
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -322,16 +256,6 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus {
           });
         });
       }
-      setTimeout(() => {
-        void deliverPendingWriterNotices(documentId).catch((cause) => {
-          emitEvent(services.eventSink, {
-            level: "warn",
-            source: "collab.hocuspocus",
-            name: "writer_notice.reconnect_delivery_failed",
-            payload: { documentId, cause: String(cause) },
-          });
-        });
-      }, 0);
     },
     async beforeHandleMessage({ context }) {
       const userId = context.userId as UserId | undefined;
@@ -389,11 +313,6 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus {
       }
       await services.documentSync.storeHocuspocusBranch(room.branchId, document);
     },
-  });
-  subscribeWriterNoticeTransport({
-    notices: services.notices,
-    documentsForId,
-    eventSink: services.eventSink,
   });
   services.documentSync.bindHocuspocus(hocuspocus);
   return hocuspocus;
@@ -475,6 +394,5 @@ export function selectYjsGatewayServices(app: AppServices): YjsGatewayServices {
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
     eventSink: app.eventSink,
-    notices: app.notices,
   };
 }

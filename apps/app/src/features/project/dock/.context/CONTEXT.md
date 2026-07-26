@@ -51,12 +51,11 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 
 ### Changes availability
 
-`hasDockChanges(groups, nowMs)` in `features/chat/docked-drafts.ts` is the
-single predicate for both the Changes segment and the Changes view's empty
-branch. It derives from `dockRows`, so active drafts and recent reviewed
-receipts remain reachable, while expired receipts do not keep a dead
-destination alive. If Changes is selected when its final row disappears,
-`DockShell` immediately renders the native view and updates the session choice.
+`dockRows(groups)` in `features/chat/docked-drafts.ts` is the shared active-row
+projection. `DockShell` uses its `hasDockChanges` wrapper for segment
+visibility, while `DockChangesView` renders those rows and owns its empty
+branch. When the final row disappears, `DockShell` immediately renders the
+native view and updates the session choice.
 
 ### Slot material contract
 
@@ -78,9 +77,7 @@ level). It does not own a review session — it consumes the shared controller a
 drives these actions:
 
 - `controller.focusReviewOperation(operationId)` — click-to-scroll on cards
-- `controller.acceptOperation(operationId, model)` — per-card Apply
 - `controller.discardOperation(operationId)` — per-card Discard
-- `controller.undoAcceptOperation()` — per-card Undo (write-id from message)
 - `controller.isDisposing` — global disposition lock
 
 The review session owner is `useDraftReviewController` in the chat feature; the
@@ -110,8 +107,8 @@ flowchart LR
     DockShell -->|dock: view=changes| Changes[DockChangesView]
     Occupant -->|dock placement| DockHeader
     Changes --> DocGroup[ChangesDocumentGroup per doc]
-    DocGroup --> Card[ReviewOperationCard per op]
-    Card --> Verbs[Apply / Discard / Undo]
+    DocGroup --> Card[ReviewOperationCard per Discard class]
+    Card --> Verbs[Selective Discard]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,
@@ -163,16 +160,16 @@ Adding click-to-edit or inline editing in the card body would require resolving
 the same Yjs anchors the inline-review extension uses, which is not practical
 for a non-editor component. Keep card interactions as focus + verbs.
 
-### Per-card Discard needs a real journal
+### Selective Discard needs a real branch journal
 
-The per-card Discard path reconstructs an inverse Yjs update from the draft
-journal. Synthetic or seeded drafts (QA fixtures created via direct DB inserts
-without real draft rows) have no journal or incomplete journals — the
-reconstruction fails silently or produces a no-op update. QA/probe drafts must
-come from real chat flows where the agent wrote to a draft.
+Selective Discard reconstructs a peer from the individually addressable,
+reviewable Work-draft journal rows and reverses the server-vended class.
+Synthetic QA branches created from snapshots or direct database inserts do not
+provide that evidence. QA/probe branches must come from real chat flows where
+the agent wrote to a Work draft.
 
-This is the same trap that has surfaced 4× across the draft-undo and
-dock-tabs arcs. See [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
+This has repeatedly surfaced in draft-review probes. See
+[KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
 
 ## Rationale
 
@@ -191,9 +188,8 @@ so switching screens and coming back restores it.
 
 ### Combined region unit = card unit
 
-The dock renders whatever operation units the server hands it. Combining
-dependent regions into one unit happens upstream (server/model). The card never
-merges or splits operations — one server operation = one card = one accept/discard
-granularity. This is the same combined-unit model the draft-simplify lane depends
-on: see the cross-lane note at
-`work/draft-simplify/notes/heads-up-dock-tabs.md`.
+The dock renders the Discard classes the server hands it. Combining dependent
+regions into one unit happens upstream. The card groups directly by the
+required `closureClassId` and never repairs or reconstructs class membership.
+One server Discard class = one card = one selective-Discard granularity. Apply
+is document-level and is not a card action.

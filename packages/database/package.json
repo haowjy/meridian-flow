@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@meridian/contracts": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"
   },

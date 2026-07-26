@@ -15,7 +15,6 @@
  * live draft, client just receives them.
  */
 
-import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
@@ -38,16 +37,9 @@ export interface UseInlineReviewSyncOptions {
   /** When true, actually connect the extension. Callers pass true when
    *  `reviewDraftId` is set on the editor view. */
   enabled: boolean;
-  conflictedBlocks?: ReadonlySet<string>;
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
-  onInlineModelAvailable?: (
-    identity: string,
-    documentId: string,
-    draftId: string,
-    operationIds: readonly string[],
-    revision: { draftRevisionToken: number; branchId?: string },
-  ) => void;
+  onInlineModelAvailable?: (identity: string, documentId: string, draftId: string) => void;
   /** Fatal review-session invariant: active preview exists, but no inline model can be built. */
   onReviewSessionUnavailable?: () => void;
 }
@@ -89,8 +81,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       return;
     }
 
-    const reviewId = preview.branchId ?? preview.draftId;
-    if (!reviewId) return;
+    const reviewId = preview.draftId;
 
     if (!preview.inlineModelPresent) {
       const fatalIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
@@ -115,40 +106,20 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     const hunks = preview.hunks;
     if (!documentId) return;
 
-    const conflictIdentity = [...(options.conflictedBlocks ?? [])].sort().join(",");
-    const identity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}:${conflictIdentity}`;
-    if (lastPushedIdentityRef.current === identity) return;
+    const previewIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
+    if (lastPushedIdentityRef.current === previewIdentity) return;
 
     const model = buildInlineReviewModel({
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,
       operations,
       hunks,
-      conflictedBlocks: options.conflictedBlocks,
-      conflictLabel: t`edited since this draft was written`,
     });
     editor.commands.setInlineReviewModel(model);
-    lastPushedIdentityRef.current = identity;
+    lastPushedIdentityRef.current = previewIdentity;
     lastFatalIdentityRef.current = null;
-    onInlineModelAvailable?.(
-      identity,
-      documentId,
-      reviewId,
-      operations.map((operation) => operation.operationId),
-      {
-        draftRevisionToken: preview.draftRevisionToken,
-        ...(preview.branchId ? { branchId: preview.branchId } : {}),
-      },
-    );
-  }, [
-    editor,
-    enabled,
-    preview,
-    documentId,
-    options.conflictedBlocks,
-    onInlineModelAvailable,
-    onReviewSessionUnavailable,
-  ]);
+    onInlineModelAvailable?.(previewIdentity, documentId, reviewId);
+  }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
   // session is the already-retained document session, so this observes the

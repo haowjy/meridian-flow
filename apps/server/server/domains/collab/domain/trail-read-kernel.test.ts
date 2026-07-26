@@ -5,7 +5,6 @@ import {
   bodyFromHashline,
   deletionBoundaryTarget,
   liveBlockTarget,
-  navigationForSweptBlock,
   normalizeTrailPushes,
   type RawTrailChange,
   validateLiveBlockTarget,
@@ -31,14 +30,11 @@ function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
     pushId: "push-a",
     receiptId: "receipt-a",
     kind: "modify",
-    beforeBlockId: "block-a",
-    afterBlockId: "block-a",
     beforeBlockIdentity: { documentId: "doc-a", clientID: 1, clock: 1 },
     afterBlockIdentity: { documentId: "doc-a", clientID: 1, clock: 1 },
     beforeText: "before",
     afterTextAtReceipt: "after",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    swept: null,
     owner: { threadId: "thread-a", turnId: "turn-a" },
     sequence: 1,
     ...overrides,
@@ -54,48 +50,11 @@ describe("trail navigation", () => {
     });
   });
 
-  it("does not guess a replacement when operation correspondence is ambiguous", () => {
-    const { doc, blocks } = docWithBlocks("new-a", "new-b");
-    const result = navigationForSweptBlock({
-      affectedBlockHash: "old",
-      afterDoc: doc,
-      operations: [
-        {
-          removedBlockHashes: ["old"],
-          insertedBlocks: [
-            { blockId: "new-a", block: blocks[0] },
-            { blockId: "new-b", block: blocks[1] },
-          ],
-        },
-      ],
-    });
-    expect(result).toEqual({
-      outcome: "delete",
-      navigation: { kind: "unavailable", reason: "capture_failed" },
-    });
-  });
-
   it("rejects a modify target after its block is deleted even if anchors resolve", () => {
     const { doc, blocks } = docWithBlocks("target", "neighbor");
     const target = liveBlockTarget(doc, blocks[0]);
     doc.getXmlFragment("prosemirror").delete(0, 1);
     expect(validateLiveBlockTarget({ doc, target })).toBe(false);
-  });
-
-  it("proves exactly one replacement and validates its surviving identity", () => {
-    const { doc, blocks } = docWithBlocks("replacement");
-    const result = navigationForSweptBlock({
-      affectedBlockHash: "old",
-      afterDoc: doc,
-      operations: [
-        {
-          removedBlockHashes: ["old"],
-          insertedBlocks: [{ blockId: "replacement", block: blocks[0] }],
-        },
-      ],
-    });
-    expect(result.outcome).toBe("modify");
-    expect(validateLiveBlockTarget({ doc, target: result.navigation })).toBe(true);
   });
 
   it("captures only the body suffix of a protocol hashline", () => {
@@ -141,7 +100,7 @@ describe("trail normalization", () => {
     expect(cancelled[0].changes).toEqual([]);
   });
 
-  it("folds one canonical block when a display-hash prefix widens", () => {
+  it("folds repeated changes with the same canonical block identity", () => {
     const identity = { documentId: "doc-a", clientID: 42, clock: 7 };
     const trails = normalizeTrailPushes([
       {
@@ -152,15 +111,11 @@ describe("trail normalization", () => {
         changes: [
           change({
             changeId: "canonical-change",
-            beforeBlockId: "abcd",
-            afterBlockId: "abcd",
             beforeBlockIdentity: identity,
             afterBlockIdentity: identity,
           }),
           change({
             changeId: "must-not-split",
-            beforeBlockId: "abcdef",
-            afterBlockId: "abcdef",
             beforeBlockIdentity: identity,
             afterBlockIdentity: identity,
             beforeText: "after",
@@ -197,8 +152,6 @@ describe("trail normalization", () => {
           change({
             changeId: "c2",
             documentId: "doc-b",
-            beforeBlockId: "block-b",
-            afterBlockId: "block-b",
             beforeBlockIdentity: { documentId: "doc-b", clientID: 2, clock: 1 },
             afterBlockIdentity: { documentId: "doc-b", clientID: 2, clock: 1 },
             sequence: 2,
@@ -214,35 +167,10 @@ describe("trail normalization", () => {
       { pushId: "push-a", receiptId: "receipt-a", ordinal: 0 },
       { pushId: "p2", receiptId: "r2", ordinal: 1 },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 2, swept: 0, documents: 2 });
+    expect(trails[0].counts).toEqual({ changes: 2, documents: 2 });
   });
 
-  it("classifies an unattributable swept effect as shared", () => {
-    const swept = change({
-      swept: {
-        affectedBlockHash: "hash",
-        removed: { status: "available", markdown: "lost" },
-        beforeContentRef: 1,
-      },
-    });
-    const trails = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [
-          { threadId: "thread-a", turnId: "turn-a" },
-          { threadId: "thread-a", turnId: "turn-b" },
-        ],
-        changes: [swept],
-      },
-    ]);
-    expect(trails).toHaveLength(1);
-    expect(trails[0].owner).toEqual({ kind: "shared", threadId: "thread-a", turnId: null });
-    expect(trails[0].counts.swept).toBe(1);
-  });
-
-  it("counts an addition but not as swept", () => {
+  it("counts an addition without writer impact", () => {
     const trails = normalizeTrailPushes([
       {
         pushId: "p1",
@@ -252,6 +180,6 @@ describe("trail normalization", () => {
         changes: [change({ kind: "insert", beforeText: null })],
       },
     ]);
-    expect(trails[0].counts).toEqual({ changes: 1, swept: 0, documents: 1 });
+    expect(trails[0].counts).toEqual({ changes: 1, documents: 1 });
   });
 });

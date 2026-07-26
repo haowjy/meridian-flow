@@ -5,9 +5,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { JsonValue } from "@meridian/contracts/protocol";
-import { documentDisplayName, isContextUri } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
-import { normalizeToolResultRows } from "./tool-result-preview";
 
 export type ThinkingDigestWriteMode = "direct" | "draft";
 
@@ -15,10 +13,8 @@ export function thinkingDigest(
   tools: readonly ToolView[],
   writeMode: ThinkingDigestWriteMode,
 ): string | null {
-  const exploredDocuments = new Set<string>();
+  const readDocuments = new Set<string>();
   const editedDocuments = new Set<string>();
-  let uncountedExploreOps = 0;
-  let steps = 0;
 
   for (const tool of tools) {
     const input = inputObject(tool);
@@ -26,68 +22,45 @@ export function thinkingDigest(
     const path = stringField(input, "path");
 
     if (tool.isError) {
-      steps += 1;
-    } else if (tool.toolName === "write" && command === "read") {
-      if (path) exploredDocuments.add(documentIdentity(path));
-      else uncountedExploreOps += 1;
-    } else if (tool.toolName === "grep") {
-      const resultDocuments = normalizeToolResultRows(tool.output ?? undefined)
-        .map((row) => row.title)
-        .filter(isContextUri);
-      if (resultDocuments.length > 0) {
-        for (const uri of resultDocuments) exploredDocuments.add(documentIdentity(uri));
-      } else {
-        uncountedExploreOps += 1;
-      }
-    } else if (tool.toolName === "ls") {
+      continue;
+    }
+    if (tool.toolName === "write" && command === "read") {
+      if (path) readDocuments.add(documentIdentity(path));
     } else if (tool.toolName === "write") {
       if (path) editedDocuments.add(documentIdentity(path));
-      else steps += 1;
-    } else {
-      steps += 1;
     }
   }
 
-  if (exploredDocuments.size === 0) steps += uncountedExploreOps;
-
   const clauses: string[] = [];
-  if (exploredDocuments.size > 0) {
+  if (readDocuments.size > 0) {
     clauses.push(
-      plural(exploredDocuments.size, {
-        one: "explored # document",
-        other: "explored # documents",
+      plural(readDocuments.size, {
+        one: "read # document",
+        other: "read # documents",
       }),
     );
   }
   if (editedDocuments.size > 0) {
-    clauses.push(editClause([...editedDocuments], writeMode));
-  }
-  if (steps > 0) {
-    clauses.push(plural(steps, { one: "+1 step", other: "+# steps" }));
+    const carryDocumentNoun = readDocuments.size > 0;
+    clauses.push(
+      writeMode === "draft"
+        ? carryDocumentNoun
+          ? t`drafted ${editedDocuments.size}`
+          : plural(editedDocuments.size, {
+              one: "drafted # document",
+              other: "drafted # documents",
+            })
+        : carryDocumentNoun
+          ? t`edited ${editedDocuments.size}`
+          : plural(editedDocuments.size, {
+              one: "edited # document",
+              other: "edited # documents",
+            }),
+    );
   }
 
   const digest = clauses.join(", ");
   return digest ? capitalizeFirst(digest) : null;
-}
-
-function editClause(documentUris: string[], writeMode: ThinkingDigestWriteMode): string {
-  if (documentUris.length !== 1) {
-    return writeMode === "draft"
-      ? plural(documentUris.length, {
-          one: "drafted # document",
-          other: "drafted # documents",
-        })
-      : plural(documentUris.length, {
-          one: "edited # document",
-          other: "edited # documents",
-        });
-  }
-
-  const displayName = documentDisplayName(documentUris[0] ?? "");
-  const name = displayName.qualifier
-    ? `${displayName.title} (${displayName.qualifier})`
-    : displayName.title;
-  return writeMode === "draft" ? t`drafted ${name}` : t`edited ${name}`;
 }
 
 function inputObject(tool: ToolView): Record<string, JsonValue> {

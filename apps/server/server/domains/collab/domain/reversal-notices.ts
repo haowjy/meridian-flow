@@ -36,30 +36,6 @@ export function createDocumentPresentationResolver(resolveDocumentUri: DocumentU
   };
 }
 
-export async function recordLateSweepNotice(input: {
-  notices: NoticePort;
-  resolveDocumentUri: DocumentUriResolver;
-  threadId: string;
-  documentId: string;
-  lateSweep: DestructiveSweepReport;
-}): Promise<void> {
-  const uri = await input.resolveDocumentUri(input.documentId);
-  await input.notices.record({
-    kind: "late_sweep",
-    scope: { kind: "thread", threadId: input.threadId },
-    message: "Content was modified — View change",
-    data: {
-      documentId: input.documentId,
-      documentName: documentTitleFromUri(uri) ?? input.documentId,
-      uri,
-      affectedBlockHashes: input.lateSweep.affectedBlockHashes,
-      capturedDeletedBodies: input.lateSweep.capturedDeletedBodies ?? [],
-      beforeContentRef: input.lateSweep.beforeContentRef,
-    },
-    writerVisible: true,
-  });
-}
-
 export async function recordAwarenessDegradedNotice(input: {
   notices: NoticePort;
   resolveDocumentUri: DocumentUriResolver;
@@ -78,7 +54,6 @@ export async function recordAwarenessDegradedNotice(input: {
     message:
       "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
     data: { documentIds: [...input.documentIds], documentNames },
-    writerVisible: false,
   });
 }
 
@@ -158,33 +133,9 @@ export function createPostDurabilityNoticeService(deps: {
           }),
       );
     },
-    recordLateSweep(input) {
-      return recordNoticeAfterDurability(
-        {
-          notices: deps.notices,
-          diagnostics: deps.diagnostics,
-          threadId: input.threadId,
-          documentIds: [input.documentId],
-          kind: "late_sweep",
-          responseId: input.responseId,
-          affectedBlockHashes: input.lateSweep.affectedBlockHashes,
-          recordDegraded: () =>
-            recordAwarenessDegradedNotice({
-              notices: deps.notices,
-              resolveDocumentUri: deps.documentUriResolver,
-              threadId: input.threadId,
-              documentIds: [input.documentId],
-            }),
-        },
-        () =>
-          recordLateSweepNotice({
-            notices: deps.notices,
-            resolveDocumentUri: deps.documentUriResolver,
-            threadId: input.threadId,
-            documentId: input.documentId,
-            lateSweep: input.lateSweep,
-          }),
-      );
+    recordLateSweep() {
+      // The mutation echo and durable trail already report this effect.
+      return Promise.resolve();
     },
   };
 }
@@ -223,17 +174,11 @@ export function createReversalNoticePort(deps: {
           sweptContent: input.sweptContent,
           beforeContentRef: input.beforeContentRef,
         },
-        writerVisible: false,
       });
     },
-    async recordLateSweep(input) {
-      await recordLateSweepNotice({
-        notices: deps.notices,
-        resolveDocumentUri: deps.documentUriResolver,
-        threadId: input.threadId,
-        documentId: input.docId,
-        lateSweep: input.report,
-      });
+    recordLateSweep() {
+      // The mutation echo and durable trail already report this effect.
+      return Promise.resolve();
     },
   };
 }

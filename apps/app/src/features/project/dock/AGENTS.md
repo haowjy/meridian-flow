@@ -7,8 +7,10 @@ grid slot. It has per-screen view sets (Chat-main: Context | Changes;
 Context-main: Chat | Changes) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: every document with
-pending AI changes, grouped with per-operation review cards carrying Apply /
-Discard / Undo.
+pending AI changes, grouped into server-vended Discard-class cards carrying
+selective Discard. Document-level Apply all stays in the review header. It works on every
+screen, with or without a mounted manuscript, so
+entering review never has to leave the screen the writer is on.
 
 This is NOT the chat surface or the context rail — those are the dock's
 *occupants* (`ChatSurface`, `ContextSidebar`), wrapped by `DockShell`. The dock
@@ -28,7 +30,7 @@ body.
 
 `useDockView(screen)` resolves the active view from a session-only store. The
 native view is always present; Changes joins it only while `hasDockChanges`
-finds an active draft or a reviewed receipt with reachable undo.
+finds an active draft.
 
 ## Key rules
 
@@ -59,9 +61,9 @@ finds an active draft or a reviewed receipt with reachable undo.
    a complete boundary. The active segment may use page paper only inside that
    boundary; it never connects to the page like a tab chip.
 
-7. **Empty Changes is absent.** `hasDockChanges` is the one visibility
-   predicate used by both `DockShell` and `DockChangesView`. It includes recent
-   reviewed receipts; do not replace it with the active-only draft rule.
+7. **Empty Changes is absent.** `dockRows` is the shared active-row projection.
+   `DockShell` uses its `hasDockChanges` wrapper for segment visibility, while
+   `DockChangesView` renders the projected rows directly.
 
 ## Anti-patterns
 
@@ -75,17 +77,6 @@ finds an active draft or a reviewed receipt with reachable undo.
   than starting fresh.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the
   tailwind-merge trap in `.context/CONTEXT.md`.
-
-## Files
-
-| File | Role |
-|---|---|
-| `DockShell.tsx` | View container shell: passthrough in center, header + Changes overlay in dock |
-| `DockHeader.tsx` | Single `h-10` header: left slot (chat title), contained segmented switch, close |
-| `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
-| `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
-| `ReviewOperationCard.tsx` | Per-operation card with Apply / Discard / undo receipt |
-| `operation-change-text.ts` | Pure card-body text extraction from operations/hunks |
 
 ## Downlinks
 

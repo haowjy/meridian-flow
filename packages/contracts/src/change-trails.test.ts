@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import { parseTrailChangesV1, type TrailChangeV1 } from "./change-trails.js";
+
+function validChange(): TrailChangeV1 {
+  return {
+    changeId: "change-1",
+    ordinal: 0,
+    documentId: "document-1",
+    pushId: "push-1",
+    receiptId: "receipt-1",
+    kind: "modify",
+    beforeBlockIdentity: { documentId: "document-1", clientID: 7, clock: 11 },
+    afterBlockIdentity: { documentId: "document-1", clientID: 7, clock: 11 },
+    beforeText: "before",
+    afterTextAtReceipt: "after",
+    navigation: {
+      kind: "live_block_range",
+      relStart: "relative-start",
+      relEnd: "relative-end",
+      targetBlockId: { clientID: 7, clock: 11 },
+    },
+  };
+}
+
+describe("change-trail Yjs identities", () => {
+  it.each([
+    ["canonical clientID", (change: TrailChangeV1) => change.beforeBlockIdentity, "clientID", -1],
+    ["canonical clock", (change: TrailChangeV1) => change.beforeBlockIdentity, "clock", -1],
+  ] as const)("rejects an out-of-range %s", (_case, selectIdentity, field, value) => {
+    const change = validChange();
+    const identity = selectIdentity(change);
+    if (!identity) throw new Error("invalid test fixture");
+    identity[field] = value;
+
+    expect(() => parseTrailChangesV1([change])).toThrow("Corrupt change-trail detail");
+  });
+});

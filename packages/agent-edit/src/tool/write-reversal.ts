@@ -117,6 +117,7 @@ export function createWriteReversal(deps: {
   codec: AgentEditCodec;
   undoClientId?: number;
   reversalNoticePort?: ReversalNoticePort;
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
@@ -274,16 +275,14 @@ export function createWriteReversal(deps: {
     const reversal = await executePrepared({ ...input, plans: prepared.plans });
     if (!reversal.ok) return reversal.response;
     if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
+    const sync = reversal.sync ?? { echo: [], reconciled: false };
 
     const metaLines = [`status: ${reversal.status}`];
     if (reversal.targetCount > 0)
       metaLines.push(`${input.direction}: ${reversal.targetCount} edit(s)`);
-    if (reversal.sync.concurrentEdits)
-      metaLines.push(...formatConcurrent(reversal.sync.concurrentEdits));
+    if (sync.concurrentEdits) metaLines.push(...formatConcurrent(sync.concurrentEdits));
 
-    const echoLines = reversal.sync.echo
-      .flatMap((hunk) => hunk.blocks)
-      .filter((line) => line.length > 0);
+    const echoLines = sync.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
     const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
     if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
     return {
@@ -475,7 +474,7 @@ export function createWriteReversal(deps: {
     | {
         ok: true;
         status: "reversed" | "reconciled";
-        sync: SyncedMutationSummary;
+        sync?: SyncedMutationSummary;
         targetCount: number;
       }
     | { ok: false; response: InternalWriteResult }
@@ -488,6 +487,7 @@ export function createWriteReversal(deps: {
     );
 
     let journalCommitKind: JournalCommitKind | undefined;
+    let projectionDeferred = false;
     let mutation: SyncedMutationSummary | InternalWriteResult | null;
     try {
       mutation = await withLiveDocument(
@@ -513,10 +513,12 @@ export function createWriteReversal(deps: {
           if (!persisted.ok) return persisted.response ?? null;
           journalCommitKind = persisted.journalCommitKind;
 
-          let applied: Awaited<ReturnType<MutationCommit["applyCommittedUpdateWithRecheck"]>>;
-          try {
-            applied = await mutationCommit.applyCommittedUpdateWithRecheck(
-              liveDoc,
+          const applyToLiveDocument = async (
+            targetDoc: Y.Doc,
+            preflight?: Awaited<ReturnType<MutationCommit["captureCommitPreflight"]>>,
+          ): Promise<SyncedMutationSummary> => {
+            const applied = await mutationCommit.applyCommittedUpdateWithRecheck(
+              targetDoc,
               {
                 docId: input.docId,
                 runtime: input.runtime,
@@ -529,56 +531,82 @@ export function createWriteReversal(deps: {
                 update,
                 liveOrigin: reversalOrigin(input.actor, first.plan),
               },
-              capturedPreflight,
+              preflight,
             );
+            const lateSweep = applied.lateSweep;
+            for (const concurrent of applied.concurrent.updates) {
+              if (concurrent.update.length > 0) {
+                Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
+              }
+            }
+            Y.applyUpdate(input.runtime.doc, update, reversalOrigin(input.actor, first.plan));
+
+            const sweptContent = lateSweep !== undefined;
+            if (lateSweep) {
+              await recordLateSweep({
+                threadId: input.session.threadId,
+                docId: input.docId,
+                direction: input.direction,
+                report: lateSweep,
+              });
+            }
+            if (input.actor.type === "user") {
+              for (const prepared of input.plans) {
+                await recordReversalNotice({
+                  threadId: input.session.threadId,
+                  writeHandles: [...prepared.plan.writeIds],
+                  writeHandleTurns: prepared.plan.writeTurnIds,
+                  docId: input.docId,
+                  direction: input.direction,
+                  sweptContent,
+                  beforeContentRef: sweptContent
+                    ? (input.interactionContext.liveJournalSeq ?? null)
+                    : null,
+                });
+              }
+            }
+
+            const summary = mutationCommit.summarizeMutationEcho(
+              {
+                runtime: input.runtime,
+                before,
+                touchedHashes,
+                deletedHashes,
+              },
+              applied.concurrent.detection,
+            );
+            return sweptContent ? { ...summary, reconciled: true } : summary;
+          };
+
+          const deferred = deps.deferUntilCommit?.(async () => {
+            try {
+              const projected = await withLiveDocument(
+                deps.coordinator,
+                input.docId,
+                input.commandName,
+                input.docId,
+                (committedDoc) => applyToLiveDocument(committedDoc),
+              );
+              if (!projected || "status" in projected) {
+                throw new Error(`Committed reversal projection unavailable for ${input.docId}`);
+              }
+              runtimeStore.markSynced(input.session, input.docId, input.runtime);
+            } catch (cause) {
+              await recoverDurableReversal(input, cause);
+            }
+          });
+          if (deferred) {
+            projectionDeferred = true;
+            return { echo: [], reconciled: false };
+          }
+
+          try {
+            return await applyToLiveDocument(liveDoc, capturedPreflight);
           } catch (cause) {
             if (persisted.journalCommitKind !== "durable") throw cause;
             await recoverDurableReversal(input, cause);
             return { echo: [], reconciled: false };
           }
-          const lateSweep = applied.lateSweep;
-          for (const concurrent of applied.concurrent.updates) {
-            if (concurrent.update.length > 0) {
-              Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
-            }
-          }
-          Y.applyUpdate(input.runtime.doc, update, reversalOrigin(input.actor, first.plan));
-
-          const sweptContent = lateSweep !== undefined;
-          if (lateSweep) {
-            await recordLateSweep({
-              threadId: input.session.threadId,
-              docId: input.docId,
-              direction: input.direction,
-              report: lateSweep,
-            });
-          }
-          if (input.actor.type === "user") {
-            for (const prepared of input.plans) {
-              await recordReversalNotice({
-                threadId: input.session.threadId,
-                writeHandles: [...prepared.plan.writeIds],
-                writeHandleTurns: prepared.plan.writeTurnIds,
-                docId: input.docId,
-                direction: input.direction,
-                sweptContent,
-                beforeContentRef: sweptContent
-                  ? (input.interactionContext.liveJournalSeq ?? null)
-                  : null,
-              });
-            }
-          }
-
-          const summary = mutationCommit.summarizeMutationEcho(
-            {
-              runtime: input.runtime,
-              before,
-              touchedHashes,
-              deletedHashes,
-            },
-            applied.concurrent.detection,
-          );
-          return sweptContent ? { ...summary, reconciled: true } : summary;
         },
       );
     } catch (cause) {
@@ -606,8 +634,13 @@ export function createWriteReversal(deps: {
     }
     return {
       ok: true,
-      status: mutation.reconciled ? "reconciled" : "reversed",
-      sync: mutation,
+      status:
+        projectionDeferred && input.direction === "redo"
+          ? "reconciled"
+          : mutation.reconciled
+            ? "reconciled"
+            : "reversed",
+      ...(projectionDeferred ? {} : { sync: mutation }),
       targetCount: input.plans.reduce(
         (count, prepared) => count + prepared.plan.writeIds.length,
         0,

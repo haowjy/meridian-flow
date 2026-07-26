@@ -27,7 +27,6 @@ import {
   mockProviderConfig,
   type StreamEvent,
 } from "../../gateway/index.js";
-import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import type { InterruptToolHandlerContext, ToolExecutor, ToolHandler } from "../../tools/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
@@ -38,6 +37,7 @@ import {
   type PermissionGate,
   resolveProfile,
 } from "../permissions/index.js";
+import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 describe("runtime loop integration", () => {

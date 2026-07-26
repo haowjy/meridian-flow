@@ -2,7 +2,7 @@
  * DraftReviewHeader — the editor's chrome while a document is under inline
  * review. A thin strip above the identity bar: "Back to live" exit on the
  * left, whole-draft Apply all / Discard all on the right. Matches the dock
- * strip's geometry (min-h-7, bg-dock-surface, text-caption).
+ * strip's geometry.
  */
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, Loader2 } from "lucide-react";
@@ -17,8 +17,12 @@ export type DraftReviewHeaderProps = {
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
   const { controller } = useDraftReview();
   const busy = controller.isDisposing;
-  const staleMessage =
-    controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
+  const commandError =
+    controller.inlineReviewMessage?.tone === "error" &&
+    (controller.inlineReviewMessage.code === "apply-failed" ||
+      controller.inlineReviewMessage.code === "discard-offline")
+      ? controller.inlineReviewMessage.code
+      : null;
 
   return (
     <section
@@ -38,15 +42,19 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         <ChevronLeft className="size-3" aria-hidden />
         <Trans>Back to live</Trans>
       </button>
-      {staleMessage ? (
+      {commandError ? (
         <p className="text-destructive text-xs" role="alert">
-          {staleMessage}
+          {commandError === "apply-failed" ? (
+            <Trans>Couldn't apply. Check your connection and try again.</Trans>
+          ) : (
+            <Trans>Couldn't discard. Check your connection and try again.</Trans>
+          )}
         </p>
       ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
-          onClick={() => controller.reject(documentId, draftId)}
+          onClick={() => controller.discard(documentId, draftId)}
           disabled={busy}
           className="text-button"
         >
@@ -54,11 +62,11 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         </button>
         <button
           type="button"
-          onClick={() => controller.accept(documentId, draftId)}
-          disabled={busy}
+          onClick={() => controller.apply(documentId, draftId)}
+          disabled={busy || !controller.canApplyReviewedDraft}
           className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
         >
-          {controller.isAccepting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
           <Trans>Apply all</Trans>
         </button>
       </div>

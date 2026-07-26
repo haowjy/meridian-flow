@@ -61,7 +61,7 @@ function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): React
   return tool.status === "complete" ? complete : active;
 }
 
-function DocumentName({ path }: { path: string }) {
+export function DocumentName({ path }: { path: string }) {
   const displayName = documentDisplayName(path);
   return (
     <span className="flex min-w-0 items-baseline gap-1.5">
@@ -222,12 +222,6 @@ export function writeToolFailureCopy(tool: ToolView): string {
         : t`The requested passage wasn't specific enough.`;
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
-    case "destructive_write_rejected":
-      return t`That change could remove recent writing, so it wasn't applied.`;
-    case "rejected_response_requires_reread":
-      return name
-        ? t`${name} changed while the AI was working. It needs to read the document again before editing.`
-        : t`The document changed while the AI was working. It needs to read it again before editing.`;
     case "partial_failure":
       return name
         ? t`Some changes to ${name} couldn't be completed.`

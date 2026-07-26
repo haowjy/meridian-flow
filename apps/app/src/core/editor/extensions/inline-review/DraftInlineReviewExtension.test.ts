@@ -1,105 +1,90 @@
-/** Extension integration tests for optimistic inline-review overlays. */
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { EditorState, type Transaction } from "@tiptap/pm/state";
-import { ySyncPluginKey } from "@tiptap/y-tiptap";
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+/** Mounted editor behavior for inline review navigation. */
+import { Editor } from "@tiptap/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Awareness } from "y-protocols/awareness";
+import * as Y from "yjs";
+import { createEditorConfig } from "../../config";
+import { buildInlineReviewModel } from "./model";
 
-import {
-  buildInlineReviewPlugin,
-  coalesceRanges,
-  draftInlineReviewPluginKey,
-  getInlineReviewPluginState,
-} from "./DraftInlineReviewExtension";
+let editor: Editor;
 
-function createReviewState(): EditorState {
-  const schema = buildDocumentSchema();
-  return EditorState.create({
-    schema,
-    doc: schema.node("doc", null, [schema.node("paragraph", null)]),
-    plugins: [buildInlineReviewPlugin({ initialModel: null })],
-  });
+function encodeAnchor(position: Y.RelativePosition): string {
+  return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
 }
 
-function apply(state: EditorState, configure: (tr: Transaction) => Transaction): EditorState {
-  return state.apply(configure(state.tr));
-}
-
-describe("coalesceRanges", () => {
-  it("merges adjacent single-char ranges (three keystrokes → one range)", () => {
-    const merged = coalesceRanges([
-      { from: 10, to: 11 },
-      { from: 11, to: 12 },
-      { from: 12, to: 13 },
-    ]);
-    expect(merged).toEqual([{ from: 10, to: 13 }]);
-  });
-
-  it("merges overlapping ranges", () => {
-    const merged = coalesceRanges([
-      { from: 5, to: 12 },
-      { from: 10, to: 20 },
-    ]);
-    expect(merged).toEqual([{ from: 5, to: 20 }]);
-  });
-
-  it("keeps disjoint ranges separate", () => {
-    const merged = coalesceRanges([
-      { from: 5, to: 8 },
-      { from: 20, to: 25 },
-    ]);
-    expect(merged).toEqual([
-      { from: 5, to: 8 },
-      { from: 20, to: 25 },
-    ]);
-  });
-
-  it("sorts input before merging", () => {
-    const merged = coalesceRanges([
-      { from: 30, to: 35 },
-      { from: 10, to: 15 },
-      { from: 15, to: 20 },
-    ]);
-    expect(merged).toEqual([
-      { from: 10, to: 20 },
-      { from: 30, to: 35 },
-    ]);
-  });
-
-  it("drops empty (from >= to) ranges", () => {
-    const merged = coalesceRanges([
-      { from: 5, to: 5 },
-      { from: 10, to: 8 },
-      { from: 20, to: 25 },
-    ]);
-    expect(merged).toEqual([{ from: 20, to: 25 }]);
-  });
-
-  it("returns [] for empty input", () => {
-    expect(coalesceRanges([])).toEqual([]);
-  });
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
 });
 
-describe("DraftInlineReviewExtension plugin", () => {
-  it("tracks only local typing as optimistic writer overlay and clears it on set-model", () => {
-    let state = createReviewState();
+afterEach(() => {
+  editor?.destroy();
+  vi.unstubAllGlobals();
+});
 
-    state = apply(state, (tr) => tr.insertText("abc", 1));
-    expect(getInlineReviewPluginState(state)?.optimisticRanges).toEqual([{ from: 1, to: 4 }]);
-    expect(getInlineReviewPluginState(state)?.optimisticDecorations.find()).toHaveLength(1);
-
-    state = apply(state, (tr) => {
-      tr.insertText(" remote", 4);
-      tr.setMeta(ySyncPluginKey, { isChangeOrigin: true });
-      return tr;
+describe("DraftInlineReviewExtension", () => {
+  it("focuses and scrolls a visible pure-deletion seam without restoring deleted prose", () => {
+    const document = new Y.Doc({ gc: false });
+    const fragment = document.getXmlFragment("prosemirror");
+    const paragraph = new Y.XmlElement("paragraph");
+    const text = new Y.XmlText();
+    fragment.insert(0, [paragraph]);
+    paragraph.insert(0, [text]);
+    text.insert(0, "Surviving manuscript.");
+    const anchor = encodeAnchor(Y.createRelativePositionFromTypeIndex(text, 0));
+    const root = globalThis.document.createElement("div");
+    globalThis.document.body.append(root);
+    editor = new Editor({
+      element: root,
+      ...createEditorConfig({
+        document,
+        awareness: new Awareness(document),
+        enableDraftInlineReview: true,
+      }),
     });
-    expect(getInlineReviewPluginState(state)?.optimisticRanges).toEqual([{ from: 1, to: 4 }]);
-
-    state = apply(state, (tr) => {
-      tr.setMeta(draftInlineReviewPluginKey, { kind: "set-model", model: null });
-      tr.setMeta("addToHistory", false);
-      return tr;
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 1,
+      operations: [
+        {
+          operationId: "op-ai",
+          closureClassId: "closure:op-ai",
+          kind: "agent",
+          contribution: "edited",
+          classification: "rewrite",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "delete-1",
+          operationIds: ["op-ai"],
+          anchor: { relStart: anchor, relEnd: anchor },
+          kind: "text",
+          spans: [],
+          deletedText: "Removed live-only sentence.",
+        },
+      ],
     });
-    expect(getInlineReviewPluginState(state)?.optimisticRanges).toEqual([]);
-    expect(getInlineReviewPluginState(state)?.optimisticDecorations.find()).toHaveLength(0);
+
+    expect(editor.commands.setInlineReviewModel(model)).toBe(true);
+    const idle = root.querySelector<HTMLElement>('[data-review-operations~="op-ai"]');
+    expect(idle?.classList.contains("meridian-review-deletion-anchor")).toBe(true);
+    expect(idle?.textContent).toBe("");
+    expect(root.textContent).toContain("Surviving manuscript.");
+    expect(root.textContent).not.toContain("Removed live-only sentence.");
+
+    expect(editor.commands.setInlineReviewActiveOperation("op-ai")).toBe(true);
+    const focused = root.querySelector<HTMLElement>('[data-review-operations~="op-ai"]');
+    expect(focused).not.toBe(idle);
+    expect(focused?.classList.contains("meridian-review-emphasized")).toBe(true);
+
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(focused, "scrollIntoView", { value: scrollIntoView });
+    expect(editor.commands.scrollInlineReviewOperationIntoView("op-ai")).toBe(true);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "auto" });
   });
 });

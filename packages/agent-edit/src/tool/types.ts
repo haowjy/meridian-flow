@@ -31,15 +31,11 @@ export type WriteCommand = z.infer<typeof WriteCommandSchema>;
 export type WriteCommandName = WriteCommand["command"];
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
 export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
+export type DiffCommand = Extract<WriteCommand, { command: "diff" }>;
 export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
 export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
-export type ReadFormat = ReadCommand["format"];
-export type QueryWriteCommand = ReadCommand;
-export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceCommand;
-export type HistoryWriteCommand = UndoCommand | RedoCommand;
-
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
@@ -79,10 +75,10 @@ export interface ResponseLifecycleErrorDetail {
 
 /**
  * A mutation-bearing write claimed for a document was dropped from an open
- * response (writer-discarded card / thread invalidation) while other docs in
- * the same response stayed staged and eventually committed. The model already
- * saw `tool_result status: "success"` for the dropped write; this event makes
- * the non-durability loud alongside the durable commit of the survivors.
+ * response by thread invalidation while other documents in the same response
+ * stayed staged and eventually committed. The model already saw `tool_result
+ * status: "success"` for the dropped write; this event makes the non-durability
+ * loud alongside the durable commit of the survivors.
  */
 export interface ResponseClaimDiscardedEntry {
   documentId: string;

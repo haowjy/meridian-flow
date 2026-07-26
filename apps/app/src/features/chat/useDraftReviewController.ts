@@ -2,65 +2,51 @@
  * useDraftReviewController — shared state machine for reviewing AI document drafts.
  *
  * The dock Changes cards and editor header both address the same inline review
- * session; this controller keeps whole-draft apply/discard, per-card
- * Apply/Discard, review closure, and editor focus state on one
- * path so review surfaces cannot drift. Per-card Apply routes the closure-aware
- * `acceptDraft` mutation with `operationIds`; per-card Discard routes through
- * the same server-backed discard mutation with `operationIds`. Apply revision
- * acquisition and response interpretation live in `draft-apply-disposition`.
+ * session; this controller keeps whole-draft apply/discard, selective
+ * per-card Discard, review closure, and editor focus state on one path so
+ * review surfaces cannot drift. Apply commits the whole current branch.
  */
 
-import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type * as Y from "yjs";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import {
-  useAcceptDraft,
-  useRejectDraft,
-  useUndoDraftAccept,
-} from "@/client/query/useDraftReviewMutations";
+import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
-import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
-  acquireDraftApplyRequest,
-  type DraftApplyPreview,
-  type DraftApplyRequest,
-  type DraftApplyScope,
-  dispositionForDraftApply,
-} from "./draft-apply-disposition";
-import type { DraftApplyRefusal } from "./draft-apply-refusal";
-import {
-  acceptIsBlocked,
-  conflictForSelection,
+  type DraftBatchErrorCode,
+  type DraftCommandOutcome,
+  type DraftReviewCommandPorts,
   type DraftReviewSelection,
-  discardCanStart,
+  DraftReviewSession,
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
   type InlineReviewMessage,
   type InlineReviewMessageCode,
-  inlineDiscardIsPending,
   inlineReviewFromState,
-  pendingDiscardIdsForDraft,
-  pendingDiscardIdsSettledByPreview,
-} from "./draft-review-controller-transitions";
+} from "./draft-review-session";
 
 export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
 
 /**
- * The single review-runtime claim. It carries the active draft identifiers and
- * doc so any review surface can route server-backed per-card dispositions.
- * Registration is claim-based
- * on the editor identity (see register/release below).
+ * The single review-runtime claim: the mounted editor a review card can scroll
+ * to, plus the selection it is showing. Dispositions do NOT read it — they take
+ * their selection from review state so the Changes rail works on screens with no
+ * manuscript pane. Registration is claim-based on the editor identity
+ * (see register/release below).
  */
 export type InlineReviewRuntime = {
   editor: Editor;
-  draftDoc: Y.Doc;
-  projectId: string;
-  workId: string;
   documentId: string;
   draftId: string;
 };
@@ -68,44 +54,29 @@ export type InlineReviewRuntime = {
 export type DraftReviewController = {
   projectId: string;
   workId: string;
-  /** Focused thread owning this review surface; threads accept/reject/undo cache invalidation. */
+  /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
   reviewRoomName: string | null;
   reviewRoomError: boolean;
-  staleDraft: DraftReviewSelection | null;
-  staleDraftMessage: string | null;
-  isAccepting: boolean;
-  isRejecting: boolean;
+  isApplying: boolean;
+  isDiscarding: boolean;
   isPending: boolean;
   isInlineDiscardPending: boolean;
-  /** True while a per-card Apply is in flight (its own mutation, not Apply all). */
-  isOperationAccepting: boolean;
-  /** True while a per-card Apply's Undo is in flight. */
-  isOperationUndoing: boolean;
+  canApplyReviewedDraft: boolean;
   /**
-   * The global disposition lock: any accept/discard in flight in the session.
+   * The global disposition lock: any Apply/Discard in flight in the session.
    * Every mutating control disables on it so dispositions can't overlap.
    */
   isDisposing: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
-  /** The operation whose per-card Apply is in flight, or null. */
-  acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
-  needsRereview: boolean;
-  conflictedBlocks: ReadonlySet<string>;
-  applyRefusal: DraftApplyRefusal | null;
+  dockDispositionError: DraftBatchErrorCode | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
-  inlineReviewModelAvailable: (
-    identity: string,
-    documentId: string,
-    draftId: string,
-    operationIds: readonly string[],
-    revision: { draftRevisionToken: number; branchId?: string },
-  ) => void;
+  inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
   /**
    * Claim/release the single review-runtime slot. Registration is claim-based:
    * only the editor that holds the claim can release it. This matters because
@@ -122,11 +93,13 @@ export type DraftReviewController = {
    * can drive the manuscript without holding the editor handle itself.
    */
   focusReviewOperation: (operationId: string) => void;
-  acceptOperation: (operationId: string, model: InlineReviewModel) => Promise<void>;
-  undoAcceptOperation: () => void;
-  discardOperation: (operationId: string) => Promise<void>;
-  accept: (documentId: string, draftId: string) => Promise<void>;
-  reject: (documentId: string, draftId: string) => void;
+  discardOperation: (operationId: string) => Promise<DraftCommandOutcome>;
+  apply: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
+  discard: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
+  disposeDrafts: (
+    mode: "apply" | "discard",
+    drafts: readonly DraftReviewSelection[],
+  ) => Promise<DraftCommandOutcome[]>;
 };
 
 export function useDraftReviewController(
@@ -135,21 +108,29 @@ export function useDraftReviewController(
   threadId: string | null = null,
 ): DraftReviewController {
   const queryClient = useQueryClient();
-  const acceptMutation = useAcceptDraft();
-  // A dedicated accept mutation for per-card Apply keeps its in-flight state
-  // separate from whole-draft Apply all, so the two surfaces never disable
-  // each other by sharing one `isPending`.
-  const operationAcceptMutation = useAcceptDraft();
-  const undoAcceptMutation = useUndoDraftAccept();
-  const rejectMutation = useRejectDraft();
+  const applyMutation = useApplyDraft();
+  const discardMutation = useDiscardDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
+  const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
+  const reviewSession = useMemo(
+    () =>
+      new DraftReviewSession(() => {
+        const ports = commandPortsRef.current;
+        if (!ports) throw new Error("Draft review command ports are not ready.");
+        return ports;
+      }),
+    [],
+  );
+  const dispositionLock = reviewSession.disposition;
+  const disposition = useSyncExternalStore(
+    dispositionLock.subscribe,
+    dispositionLock.getSnapshot,
+    dispositionLock.getSnapshot,
+  );
   const [reviewRoomName, setReviewRoomName] = useState<string | null>(null);
   const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  const applyInFlightRef = useRef(false);
-  const displayedPreviewRef = useRef<(DraftApplyPreview & { identity: string }) | null>(null);
-  const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
     null,
   );
@@ -157,37 +138,25 @@ export function useDraftReviewController(
   stateRef.current = state;
 
   const inlineReview = inlineReviewFromState(state);
-  const staleDraft = state.staleDraft;
-  const isInlineDiscardPending = inlineDiscardIsPending(state);
-  const acceptingOperationId = state.acceptingOperationId;
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
-  const applyRefusal = state.applyRefusal;
-  const concurrentConflict = conflictForSelection(state, inlineReview);
-  const needsRereview = concurrentConflict !== null;
-  const conflictedBlocks = useMemo(
-    () => new Set(concurrentConflict?.conflictedBlocks ?? []),
-    [concurrentConflict],
-  );
+  const dockDispositionError = state.dockDispositionError;
 
-  const staleDraftMessage = staleDraft
-    ? "The draft changed — review the latest changes before applying."
-    : null;
-  const isAccepting = acceptMutation.isPending;
-  const isRejecting = rejectMutation.isPending;
-  const isOperationAccepting = operationAcceptMutation.isPending;
-  const isOperationUndoing = undoAcceptMutation.isPending;
-  const isPending = isAccepting || isRejecting;
-  // The global disposition lock: any accept/discard/undo in flight anywhere in
-  // the review session. Every mutating control (whole-draft Apply all / Discard
-  // all AND every per-card verb, including Undo) disables on this, so the writer
-  // can never stack two overlapping dispositions against the same draft.
-  const isDisposing =
-    isPending ||
-    isOperationAccepting ||
-    acceptingOperationId !== null ||
-    isInlineDiscardPending ||
-    isOperationUndoing;
+  const activeDisposition = disposition.busy ? disposition.target : null;
+  const isApplying = activeDisposition?.kind === "apply-draft";
+  const isDiscarding = activeDisposition?.kind === "discard-draft";
+  const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
+  const isPending = isApplying || isDiscarding;
+  const isDisposing = disposition.busy;
+  const canApplyReviewedDraft =
+    state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
+  const pendingInlineDiscardIds = useCallback(
+    (draftId: string | null | undefined): ReadonlySet<string> =>
+      activeDisposition?.kind === "discard-operation" && activeDisposition.draftId === draftId
+        ? new Set([activeDisposition.operationId])
+        : EMPTY_OPERATION_IDS,
+    [activeDisposition],
+  );
 
   useEffect(() => {
     if (inlineReview) return;
@@ -216,7 +185,7 @@ export function useDraftReviewController(
             current.attemptId !== attemptId
           )
             return;
-          if (preview.status === "active") setReviewRoomName(preview.reviewRoomName ?? null);
+          if (preview.status === "active") setReviewRoomName(preview.reviewRoomName);
         })
         .catch(() => {
           const current = activeReviewRequestRef.current;
@@ -236,39 +205,47 @@ export function useDraftReviewController(
     [projectId, queryClient, workId],
   );
 
-  const applyDisposition = useCallback(
-    (
-      scope: DraftApplyScope,
-      documentId: string,
-      draftId: string,
-      response: DraftAcceptResponse,
-    ) => {
-      const disposition = dispositionForDraftApply(scope, response);
-      if (disposition.refreshDraftId) {
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-        });
-        loadInlineReviewRoom(documentId, disposition.refreshDraftId);
-      }
-      if (disposition.transition.kind === "operation") {
-        dispatch({
-          type: "operationAcceptSucceeded",
-          message: disposition.transition.message,
-        });
-      } else {
-        dispatch({
-          type: "applySucceeded",
-          documentId,
-          draftId,
-          response: disposition.transition.response,
-        });
-      }
-      if (disposition.materializedDocument) {
-        useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
-      }
+  commandPortsRef.current = {
+    apply: async ({ documentId, draftId }) => {
+      await applyMutation.mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        draftId,
+      });
     },
-    [loadInlineReviewRoom, projectId, queryClient, workId],
-  );
+    discard: async ({ documentId, draftId }, input) => {
+      await discardMutation.mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        draftId,
+        ...input,
+      });
+    },
+    operationDiscardStarted: () => {
+      dispatch({ type: "discardStarted" });
+    },
+    batchStarted: () => {
+      dispatch({ type: "batchStarted" });
+    },
+    batchSettled: (error) => {
+      dispatch({ type: "batchSettled", error });
+    },
+    draftApplied: ({ documentId, draftId }) => {
+      dispatch({ type: "applySucceeded", documentId, draftId });
+      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
+    },
+    draftFailed: (selection, code) => {
+      dispatch({ type: "draftCommandFailed", selection, code });
+    },
+    draftDiscarded: ({ documentId, draftId }) => {
+      dispatch({ type: "discardSucceeded", draftId });
+      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
+    },
+  };
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
@@ -304,33 +281,8 @@ export function useDraftReviewController(
   }, []);
 
   const inlineReviewModelAvailable = useCallback(
-    (
-      identity: string,
-      documentId: string,
-      draftId: string,
-      operationIds: readonly string[],
-      revision: { draftRevisionToken: number; branchId?: string },
-    ) => {
-      displayedPreviewRef.current = {
-        identity,
-        documentId,
-        draftId,
-        operationIds: [...operationIds],
-        draftRevisionToken: revision.draftRevisionToken,
-        ...(revision.branchId ? { branchId: revision.branchId } : {}),
-      };
+    (identity: string, documentId: string, draftId: string) => {
       dispatch({ type: "inlineModelAvailable", identity, documentId, draftId });
-      // A refreshed preview that no longer carries a pending-discard operation is
-      // the settle signal: the reject synced and the change is gone. Clear its
-      // stickiness timer and mark it settled.
-      for (const operationId of pendingDiscardIdsSettledByPreview(stateRef.current, {
-        documentId,
-        draftId,
-        operationIds,
-      })) {
-        clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
-        dispatch({ type: "discardSettled", draftId, operationId });
-      }
     },
     [],
   );
@@ -355,273 +307,44 @@ export function useDraftReviewController(
     editor.commands.scrollInlineReviewOperationIntoView(operationId);
   }, []);
 
-  const pendingInlineDiscardIds = useCallback(
-    (draftId: string | null | undefined) => pendingDiscardIdsForDraft(stateRef.current, draftId),
-    [],
-  );
-
-  useEffect(() => {
-    return () => {
-      for (const timer of pendingDiscardTimersRef.current.values()) window.clearTimeout(timer);
-      pendingDiscardTimersRef.current.clear();
-    };
-  }, []);
-
-  const acceptOperation = useCallback(
-    async (operationId: string, model: InlineReviewModel) => {
+  const discardOperation = useCallback(
+    async (operationId: string): Promise<DraftCommandOutcome> => {
+      // The review selection comes from state, not from the editor runtime:
+      // the disposition is server-backed, so a Changes card must work on
+      // screens where the manuscript is not mounted.
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline) {
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: "open-review-first", tone: "error" },
-        });
-        return;
-      }
-      // A second Apply while one is already in flight is ignored — it must NOT
-      // dispatch a failure, which would clear the real `acceptingOperationId`
-      // and make the busy card look idle mid-mutation.
-      if (applyInFlightRef.current || operationAcceptMutation.isPending) return;
-      const operation = model.operations.find((candidate) => candidate.operationId === operationId);
-      if (!operation) {
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftPreview(
-            projectId,
-            workId,
-            inline.documentId,
-            inline.draftId,
-          ),
-        });
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: "change-moved", tone: "error" },
-        });
-        return;
-      }
-      applyInFlightRef.current = true;
-      dispatch({ type: "operationAcceptStarted", operationId });
-      let request: DraftApplyRequest;
-      try {
-        request = await acquireDraftApplyRequest({
-          scope: "operation",
-          draftId: inline.draftId,
-          operationId,
-          loadLatestPreview: () =>
-            latestPreviewRevisionTokens(
-              queryClient,
-              projectId,
-              workId,
-              inline.documentId,
-              inline.draftId,
-            ),
-        });
-      } catch {
-        applyInFlightRef.current = false;
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: "apply-failed", tone: "error" },
-        });
-        return;
-      }
-      operationAcceptMutation.mutate(
-        {
-          projectId,
-          workId,
-          threadId,
-          documentId: inline.documentId,
-          ...request,
-        },
-        {
-          onSuccess(response) {
-            applyDisposition("operation", inline.documentId, inline.draftId, response);
-            applyInFlightRef.current = false;
-          },
-          onError() {
-            applyInFlightRef.current = false;
-            dispatch({
-              type: "operationAcceptFailed",
-              message: { code: "apply-failed", tone: "error" },
-            });
-          },
-        },
-      );
-    },
-    [operationAcceptMutation, queryClient, projectId, workId, threadId, applyDisposition],
-  );
-
-  // Reverse the most recent per-card Apply. The `writeId` rides on the
-  // "Change applied" message; undo is only offered while that message stands.
-  const undoAcceptOperation = useCallback(() => {
-    const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-    const writeId = stateRef.current.inlineReviewMessage?.writeId;
-    if (!inline || !writeId || undoAcceptMutation.isPending) return;
-    undoAcceptMutation.mutate(
-      {
-        projectId,
-        workId,
-        threadId,
-        documentId: inline.documentId,
-        draftId: inline.draftId,
-        writeId,
-      },
-      {
-        onSuccess() {
-          dispatch({
-            type: "operationUndoAcceptSucceeded",
-            message: { code: "change-restored" },
-          });
-        },
-        onError() {
-          dispatch({
-            type: "operationUndoAcceptFailed",
-            message: { code: "undo-failed", tone: "error" },
-          });
-        },
-      },
-    );
-  }, [projectId, undoAcceptMutation, workId, threadId]);
-
-  const discardOperation = useCallback(
-    async (operationId: string) => {
-      const runtime = inlineRuntimeRef.current;
-      if (!runtime?.draftId || inlineDiscardIsPending(stateRef.current, runtime.draftId)) return;
-      if (!discardCanStart(stateRef.current, runtime.draftId)) return;
-      dispatch({ type: "discardStarted", draftId: runtime.draftId, operationId });
-      try {
-        const { draftRevisionToken: _draftRevisionToken, branchId } =
-          await latestPreviewRevisionTokens(
-            queryClient,
-            projectId,
-            workId,
-            runtime.documentId,
-            runtime.draftId,
-          );
-        await rejectMutation.mutateAsync({
-          projectId,
-          workId,
-          threadId,
-          documentId: runtime.documentId,
-          draftId: runtime.draftId,
-          branchId,
-          operationIds: [operationId],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDrafts(projectId, workId),
-        });
-        // Stickiness backstop: the discard committed, but the settle signal comes
-        // from the next preview refetch dropping the operation. If that never
-        // arrives, surface an error rather than leaving the card stuck pending.
-        const timer = window.setTimeout(() => {
-          pendingDiscardTimersRef.current.delete(discardTimerKey(runtime.draftId, operationId));
-          if (!pendingDiscardIdsForDraft(stateRef.current, runtime.draftId).has(operationId))
-            return;
-          dispatch({
-            type: "discardFailed",
-            draftId: runtime.draftId,
-            operationId,
-            code: "discard-not-settled",
-          });
-        }, 4500);
-        pendingDiscardTimersRef.current.set(discardTimerKey(runtime.draftId, operationId), timer);
-      } catch {
+      if (!inline) return { kind: "failed", code: "discard-failed" };
+      const outcome = await reviewSession.discardOperation(inline, operationId);
+      if (outcome.kind === "failed") {
         dispatch({
           type: "discardFailed",
-          draftId: runtime.draftId,
-          operationId,
-          code: "discard-offline",
+          code: outcome.code,
         });
       }
+      return outcome;
     },
-    [queryClient, projectId, workId, threadId, rejectMutation],
+    [reviewSession],
   );
 
-  const accept = useCallback(
-    async (documentId: string, draftId: string) => {
-      if (applyInFlightRef.current) return;
-      if (
-        acceptIsBlocked({
-          isPending,
-          isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
-          isOperationAccepting: operationAcceptMutation.isPending,
-          isOperationUndoing: undoAcceptMutation.isPending,
-        })
-      ) {
-        return;
-      }
-      const displayedPreview = displayedPreviewRef.current;
-      if (
-        !displayedPreview ||
-        displayedPreview.documentId !== documentId ||
-        displayedPreview.draftId !== draftId ||
-        displayedPreview.operationIds.length === 0
-      ) {
-        return;
-      }
-      applyInFlightRef.current = true;
-      const request = acquireDraftApplyRequest({
-        scope: "draft",
-        preview: displayedPreview,
-      });
-      dispatch({ type: "applyStarted" });
-      acceptMutation.mutate(
-        {
-          projectId,
-          workId,
-          threadId,
-          documentId,
-          ...request,
-        },
-        {
-          onSuccess(response) {
-            applyDisposition("draft", documentId, draftId, response);
-            applyInFlightRef.current = false;
-          },
-          onError() {
-            applyInFlightRef.current = false;
-          },
-        },
-      );
-    },
-    [
-      acceptMutation,
-      isPending,
-      operationAcceptMutation,
-      undoAcceptMutation,
-      projectId,
-      workId,
-      threadId,
-      applyDisposition,
-    ],
+  const apply = useCallback(
+    (documentId: string, draftId: string): Promise<DraftCommandOutcome> =>
+      reviewSession.applyReviewedDraft({ documentId, draftId }),
+    [reviewSession],
   );
 
-  const reject = useCallback(
-    async (documentId: string, draftId: string) => {
-      // Discard all joins the disposition lock: no whole-draft reject while any
-      // per-card Apply/Discard (or whole-draft accept) is mid-flight.
-      if (isDisposing) return;
-      const { branchId } = await latestPreviewRevisionTokens(
-        queryClient,
-        projectId,
-        workId,
-        documentId,
-        draftId,
-      );
-      rejectMutation.mutate(
-        { projectId, workId, threadId, documentId, draftId, branchId },
-        {
-          onSuccess() {
-            dispatch({ type: "rejectSucceeded", draftId });
-            // A discarded draft on a NEW document leaves nothing behind — the
-            // document was never committed to the tree, so its
-            // launcher-synthesized tab must not outlive the draft (a ghost
-            // tab silently accepts typing into a document that evaporates on
-            // reload). No-op for existing documents.
-            useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
-          },
-        },
-      );
-    },
-    [isDisposing, rejectMutation, queryClient, projectId, workId, threadId],
+  const discard = useCallback(
+    (documentId: string, draftId: string): Promise<DraftCommandOutcome> =>
+      reviewSession.discardDraft({ documentId, draftId }),
+    [reviewSession],
+  );
+
+  const disposeDrafts = useCallback(
+    (
+      mode: "apply" | "discard",
+      drafts: readonly DraftReviewSelection[],
+    ): Promise<DraftCommandOutcome[]> => reviewSession.disposeDrafts(mode, drafts),
+    [reviewSession],
   );
 
   return useMemo(
@@ -632,22 +355,16 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      staleDraft,
-      staleDraftMessage,
-      isAccepting,
-      isRejecting,
+      isApplying,
+      isDiscarding,
       isPending,
       isInlineDiscardPending,
-      isOperationAccepting,
-      isOperationUndoing,
+      canApplyReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
-      acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
-      needsRereview,
-      conflictedBlocks,
-      applyRefusal,
+      dockDispositionError,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -655,11 +372,10 @@ export function useDraftReviewController(
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       focusReviewOperation,
-      acceptOperation,
-      undoAcceptOperation,
       discardOperation,
-      accept,
-      reject,
+      apply,
+      discard,
+      disposeDrafts,
     }),
     [
       projectId,
@@ -668,22 +384,16 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      staleDraft,
-      staleDraftMessage,
-      isAccepting,
-      isRejecting,
+      isApplying,
+      isDiscarding,
       isPending,
       isInlineDiscardPending,
-      isOperationAccepting,
-      isOperationUndoing,
+      canApplyReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
-      acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
-      needsRereview,
-      conflictedBlocks,
-      applyRefusal,
+      dockDispositionError,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -691,54 +401,12 @@ export function useDraftReviewController(
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       focusReviewOperation,
-      acceptOperation,
-      undoAcceptOperation,
       discardOperation,
-      accept,
-      reject,
+      apply,
+      discard,
+      disposeDrafts,
     ],
   );
 }
 
-type DraftPreviewRevisionTokens = {
-  draftRevisionToken: number;
-  liveRevisionToken: number | null;
-  operationIds: string[];
-  branchId?: string;
-};
-
-async function latestPreviewRevisionTokens(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-  documentId: string,
-  draftId: string,
-): Promise<DraftPreviewRevisionTokens> {
-  const queryKey = projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId);
-  const preview = await getDraftPreview(projectId, workId, documentId, draftId);
-  queryClient.setQueryData(queryKey, preview);
-  return preview.status === "active"
-    ? {
-        draftRevisionToken: preview.draftRevisionToken,
-        liveRevisionToken: preview.liveRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
-        ...(preview.branchId ? { branchId: preview.branchId } : {}),
-      }
-    : { draftRevisionToken: -1, liveRevisionToken: null, operationIds: [] };
-}
-
-function clearPendingDiscardTimer(
-  timers: Map<string, number>,
-  draftId: string,
-  operationId: string,
-): void {
-  const key = discardTimerKey(draftId, operationId);
-  const timer = timers.get(key);
-  if (timer == null) return;
-  window.clearTimeout(timer);
-  timers.delete(key);
-}
-
-function discardTimerKey(draftId: string, operationId: string): string {
-  return `${draftId}:${operationId}`;
-}
+const EMPTY_OPERATION_IDS = new Set<string>();

@@ -3,12 +3,6 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { createDrizzleDocumentAccess } from "../../../lib/document-access.js";
-import {
-  createDrizzleTrailForwardActions,
-  planTrailForwardAction,
-} from "../adapters/drizzle-trail-forward-actions.js";
-import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -32,15 +26,6 @@ export type CrossWorkProbeResult = {
   };
   bApply: {
     status: string;
-    reason?: string;
-    conflictedBlockCount: number;
-    conflictEcho: unknown;
-  };
-  rereview: {
-    initialStatus: string | null;
-    selectedOperationIds: string[];
-    applyStatus: string | null;
-    manuscriptAfterApply: string | null;
   };
   manuscript: {
     beforeAApply: string;
@@ -55,9 +40,6 @@ export type CrossWorkProbeResult = {
     trailChanges: unknown[];
     notices: unknown[];
     deliveredEvents: unknown[];
-    restoreActionable: boolean;
-    restoreOutcome: string | null;
-    manuscriptAfterRestore: string | null;
   };
   echo: unknown;
 };
@@ -92,10 +74,8 @@ export async function runCrossWorkProbe(
     branchCoordinator,
     realBranchPush,
     trailDelivery,
-    hocuspocus,
     model,
     markupCodec,
-    agentEditCodec,
     deliveredEvents,
   } = fixture;
   await db.insert(schema.works).values({
@@ -257,55 +237,25 @@ export async function runCrossWorkProbe(
           projectId: PROJECT_ID,
           workId: WORK_B_ID,
           documentId: ALPHA_ID,
+          draftId: branchB.branchId,
         })
       : null;
   const bResult =
     reviewedPreview?.status === "active"
-      ? await collab.draftReview.accept({
+      ? await collab.draftReview.applyWorkDraft({
           projectId: PROJECT_ID,
           workId: WORK_B_ID,
           documentId: ALPHA_ID,
-          branchId: branchB.branchId,
+          draftId: reviewedPreview.draftId,
           userId: USER_ID as never,
-          draftRevisionToken: reviewedPreview.draftRevisionToken,
-          operationIds: reviewedPreview.operations.map((operation) => operation.operationId),
         })
       : await realBranchPush.pushToLive({
           branchId: branchB.branchId,
           pushedByUserId: USER_ID as never,
-          ...(probeCase === "auto" ? { overlapPolicy: "apply_and_trail" as const } : {}),
         });
   const afterBApply = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
     serializeMarkdown(fixture, doc),
   );
-  let rereviewSelectedOperationIds: string[] = [];
-  let rereviewApplyStatus: string | null = null;
-  let manuscriptAfterRereview: string | null = null;
-  if (probeCase === "manual" && bResult.status === "concurrent_conflict") {
-    const refreshedPreview = await collab.draftReview.preview({
-      projectId: PROJECT_ID,
-      workId: WORK_B_ID,
-      documentId: ALPHA_ID,
-    });
-    if (refreshedPreview.status === "active") {
-      rereviewSelectedOperationIds = refreshedPreview.operations
-        .filter((operation) => JSON.stringify(operation).includes("Work B echo probe."))
-        .map((operation) => operation.operationId);
-      const rereviewResult = await collab.draftReview.accept({
-        projectId: PROJECT_ID,
-        workId: WORK_B_ID,
-        documentId: ALPHA_ID,
-        branchId: branchB.branchId,
-        userId: USER_ID as never,
-        draftRevisionToken: refreshedPreview.draftRevisionToken,
-        operationIds: rereviewSelectedOperationIds,
-      });
-      rereviewApplyStatus = rereviewResult.status;
-      manuscriptAfterRereview = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-        serializeMarkdown(fixture, doc),
-      );
-    }
-  }
   await trailDelivery.drain();
 
   const bTrailIds = new Set(
@@ -317,78 +267,12 @@ export async function runCrossWorkProbe(
     bTrailIds.has(row.trailId),
   );
   const trailChanges = detailRows.flatMap((row) => (Array.isArray(row.changes) ? row.changes : []));
-  const swept = "swept" in bResult ? bResult.swept : undefined;
-  const capturedBodies = [
-    ...(swept?.capturedDeletedBodies.flatMap((body) =>
-      typeof body.body === "string" && body.body !== "body_unavailable" ? [body.body] : [],
-    ) ?? []),
-    ...trailChanges.flatMap((change) => {
-      const protection = asRecord(change).writerProtection;
-      const body = asRecord(asRecord(protection).body);
-      return typeof body.markdown === "string" ? [body.markdown] : [];
-    }),
-  ];
-  const protectedTrail = trailChanges.some(
-    (change) => asRecord(asRecord(change).writerProtection).kind === "sweep",
-  );
-  let restoreActionable = false;
-  let restoreOutcome: string | null = null;
-  let manuscriptAfterRestore: string | null = null;
-  if (probeCase === "auto") {
-    const restorable = detailRows
-      .flatMap((row) =>
-        parseTrailChangesV1(Array.isArray(row.changes) ? row.changes : []).map((change) => ({
-          row,
-          change,
-        })),
-      )
-      .find(({ change }) => {
-        return change.writerProtection?.kind === "sweep";
-      });
-    if (restorable) {
-      restoreActionable = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-        Boolean(
-          planTrailForwardAction({
-            liveDoc: doc,
-            change: restorable.change,
-            action: "restore",
-            model,
-            codec: agentEditCodec,
-          }),
-        ),
-      );
-      if (!restoreActionable) throw new Error("protected sweep row has no Restore action");
-      for (const doc of hocuspocus.documents.values()) doc.destroy();
-      hocuspocus.documents.clear();
-      const restored = await createDrizzleTrailForwardActions({
-        db,
-        documentAccess: createDrizzleDocumentAccess(db),
-        coordinator: liveCoordinator,
-        model,
-        codec: agentEditCodec,
-        durableProjectionSerializer: {
-          async serializeDocument(_documentId, doc) {
-            return agentEditCodec.serialize(model.projectBlocks(toDocHandle(doc)));
-          },
-        },
-      }).apply({
-        threadId: THREAD_B_ID,
-        trailId: restorable.row.trailId,
-        changeId: restorable.change.changeId,
-        action: "restore",
-        userId: USER_ID as never,
-      });
-      restoreOutcome = restored.status;
-      manuscriptAfterRestore = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-        serializeMarkdown(fixture, doc),
-      );
-    }
-  }
-  const bConflict =
-    bResult.status === "push_concurrent_conflict" || bResult.status === "concurrent_conflict"
-      ? bResult
-      : undefined;
-
+  const capturedBodies = trailChanges.flatMap((change) => {
+    const beforeText = asRecord(change).beforeText;
+    if (typeof beforeText !== "string") return [];
+    const separator = beforeText.indexOf("|");
+    return [separator < 0 ? beforeText : beforeText.slice(separator + 1)];
+  });
   return {
     case: probeCase,
     aApply: {
@@ -397,20 +281,11 @@ export async function runCrossWorkProbe(
     },
     bApply: {
       status: bResult.status,
-      ...(bConflict ? { reason: bConflict.reason } : {}),
-      conflictedBlockCount: bConflict?.conflictedBlocks.length ?? 0,
-      conflictEcho: serializable("conflictEcho" in bResult ? bResult.conflictEcho : null),
-    },
-    rereview: {
-      initialStatus: probeCase === "manual" ? bResult.status : null,
-      selectedOperationIds: rereviewSelectedOperationIds,
-      applyStatus: rereviewApplyStatus,
-      manuscriptAfterApply: manuscriptAfterRereview,
     },
     manuscript: { beforeAApply, afterAApply, beforeBApply, afterBApply },
     approvedTextSurvived: afterBApply.includes("Writer-approved Work A text."),
     protection: {
-      classification: swept || protectedTrail ? "protected" : "ordinary",
+      classification: "ordinary",
       capturedBodies: [...new Set(capturedBodies)],
       trailChanges: serializable(trailChanges) as unknown[],
       notices: serializable(await db.select().from(schema.pendingNotices)) as unknown[],
@@ -419,9 +294,6 @@ export async function runCrossWorkProbe(
           (event) => asRecord(event).threadId === (THREAD_B_ID as unknown as string),
         ),
       ) as unknown[],
-      restoreActionable,
-      restoreOutcome,
-      manuscriptAfterRestore,
     },
     echo,
   };

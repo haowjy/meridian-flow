@@ -157,6 +157,26 @@ describe("selectUndoClosure", () => {
     expect(closure.ok && [...closure.targetSeqs]).toEqual([4]);
   });
 
+  it("ignores canonical reconciliation coverage when checking dependencies", () => {
+    const updates = textUpdates().map((update) =>
+      update.seq === 5
+        ? { ...update, meta: { ...update.meta, origin: "system:reconcile" } }
+        : update,
+    );
+    const closure = selectUndoClosure({
+      snapshot: { checkpoint: null, updates },
+      reversals: [reversal("w1", "redone", 2, 4)],
+      rowsByHandle: new Map([["w1", [mutation("w1", 1)]]]),
+      selectedHandles: ["w1"],
+      candidateHandles: ["w1"],
+      reversalOpSeqs: new Set([2, 4]),
+      isScopeSelection: false,
+    });
+
+    expect(closure.ok && closure.handles).toEqual(["w1"]);
+    expect(closure.ok && [...closure.targetSeqs]).toEqual([4]);
+  });
+
   it("refuses unexplained later deletes against the selected handle's retained history", () => {
     const updates = textUpdates();
     const closure = selectUndoClosure({

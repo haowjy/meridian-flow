@@ -29,8 +29,6 @@ export interface ResolvedReviewSpan {
 interface ResolvedReviewHunkBase {
   hunkId: string;
   operationIds: string[];
-  blockHashes?: string[];
-  concurrentConflict?: boolean;
   /** Resolves to the start of the insertion / caret for a pure deletion. */
   relStart: Y.RelativePosition;
   /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
@@ -77,8 +75,6 @@ export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHun
 
 /** The full plugin input: hunks + operations + a revision token from the server. */
 export interface InlineReviewModel {
-  /** Localized copy for the conflict chip; supplied by the React localization seam. */
-  conflictLabel: string;
   /** Server-issued token identifying the live base the model was computed against. */
   liveRevisionToken?: number;
   /** Server-issued token identifying the draft state the model was computed against. */
@@ -121,8 +117,6 @@ export function buildInlineReviewModel(input: {
   draftRevisionToken: number;
   operations: ReviewOperation[];
   hunks: ReviewHunk[];
-  conflictedBlocks?: ReadonlySet<string>;
-  conflictLabel?: string;
 }): InlineReviewModel {
   const resolved: ResolvedReviewHunk[] = [];
   for (const hunk of input.hunks) {
@@ -132,10 +126,6 @@ export function buildInlineReviewModel(input: {
     const base = {
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
-      blockHashes: hunk.blockHashes ?? [],
-      ...((hunk.blockHashes ?? []).some((hash) => input.conflictedBlocks?.has(hash))
-        ? { concurrentConflict: true }
-        : {}),
       relStart,
       relEnd,
       ...(hunk.mergeArtifact ? { mergeArtifact: true } : {}),
@@ -168,7 +158,6 @@ export function buildInlineReviewModel(input: {
     });
   }
   return {
-    conflictLabel: input.conflictLabel ?? "",
     ...(input.liveRevisionToken === undefined
       ? {}
       : { liveRevisionToken: input.liveRevisionToken }),
@@ -203,7 +192,6 @@ export function hunkKind(
   return "agent";
 }
 
-/** Index operations by id for O(1) lookup by the plugin. */
 export function indexOperations(
   operations: readonly ReviewOperation[],
 ): Map<string, ReviewOperation> {

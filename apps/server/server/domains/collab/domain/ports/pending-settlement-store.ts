@@ -7,7 +7,10 @@ import type {
   SettlementClaim,
   TrailContributionReplacement,
 } from "../branch-push-contracts.js";
-import type { DurableTrailRecord } from "./change-trail-persistence.js";
+import type {
+  CommittedChangeTrailProjection,
+  DurableTrailRecord,
+} from "./change-trail-persistence.js";
 
 export type SettlementAdmission = {
   documentId: DocumentId;
@@ -35,7 +38,7 @@ export type PendingSettlementStore = {
     replacement?: TrailContributionReplacement;
     claim: SettlementClaim;
     joinVersion: number;
-  }): Promise<boolean>;
+  }): Promise<false | readonly CommittedChangeTrailProjection[]>;
   withCompletionFence(
     input: {
       pushId: number;

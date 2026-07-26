@@ -87,13 +87,10 @@ export function buildContext(input: BuildContextInput): {
     );
   }
 
-  // Working state injected as a separate system message so the model sees
-  // persistent scratch state at every turn.
   if (input.thread.workingState) {
     messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
   }
 
-  // Group blocks by turn, then sort each group by sequence number.
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
     if (block.pruned) continue;
@@ -126,9 +123,6 @@ export function buildContext(input: BuildContextInput): {
     if (turn.role === "assistant") {
       const assistantParts: ContentPart[] = [];
       for (const block of turnBlocks) {
-        // tool_result blocks split the assistant message: flush accumulated
-        // content parts as an assistant message, then emit the tool result
-        // as a separate tool-role message.
         if (block.blockType === "tool_result") {
           if (assistantParts.length > 0) {
             const message = assistant(assistantParts.slice());
@@ -280,32 +274,25 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function safetyNoticeSystemMessage(notices: readonly Notice[]): Message | null {
-  const content = formatSafetyNotices(notices);
+export function noticeSystemMessage(notices: readonly Notice[]): Message | null {
+  const content = formatNotices(notices);
   return content ? system(content) : null;
 }
 
-export function formatSafetyNotices(notices: readonly Notice[]): string {
+export function formatNotices(notices: readonly Notice[]): string {
   const sections: string[] = [];
   const undoNotices = notices.filter((notice) => notice.kind === "undo");
   if (undoNotices.length > 0) sections.push(formatUndoNotices(undoNotices));
   for (const notice of notices) {
     if (notice.kind === "undo") continue;
-    sections.push(formatSafetyNotice(notice));
+    sections.push(formatNotice(notice));
   }
   return sections.filter(Boolean).join("\n\n");
 }
 
-function formatSafetyNotice(notice: Notice): string {
+function formatNotice(notice: Notice): string {
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
-  if (
-    notice.kind === "late_sweep" ||
-    notice.kind === "push_swept" ||
-    notice.kind === "checkpoint_sweep"
-  ) {
-    return "";
-  }
   if (notice.kind === "awareness_degraded") {
     const documentNames = Array.isArray(notice.data.documentNames)
       ? notice.data.documentNames.filter(

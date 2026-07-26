@@ -2,6 +2,13 @@
 
 ## Port interfaces
 
+### TurnDiffQuery (`src/ports/turn-diff-query.ts`)
+
+Read-only host seam for the current turn's folded, shell-state-aware change
+trail. Agent-edit renders prose windows and never reads collab tables or CRDT
+identities; shared-shell effects are flagged without attributing them to the
+turn.
+
 ### UpdateJournal / ReversalStore (`src/ports/update-journal.ts`)
 The persistence seam is split by concern:
 
@@ -42,6 +49,12 @@ projection restores or evicts the runtime before reporting failure. A failed
 projection after a durable reversal recovers from the journal and reports the
 committed outcome; diagnostics must not turn that committed effect into an
 `internal_error`.
+Hosts that wrap several reversal scopes in one transaction provide
+`deferUntilCommit`. Agent-edit then persists and reports the planned reversal
+without changing the coordinated or thread-runtime Y.Doc; the callback performs
+the final concurrent recheck, live apply, and runtime synchronization only
+after commit. A rollback that discards the callback therefore leaves no
+process-local reversal residue.
 
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
@@ -155,13 +168,18 @@ adapters, snapshots, provenance algebra, and Yjs utilities live on the explicit
 `@meridian/agent-edit/integration` entry instead of the default façade. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
-`getAvailability` is the source of truth for whether write-level undo/redo will
-attempt work: undo requires active mutation metadata plus the retained earliest
-forward row for that turn; redo requires a retained reversed record/update, the
-retained earliest forward row for the reversed turn, and the existing linear-redo
-eligibility check. `invalidateThread` evicts cached runtime state and drops buffered
-response updates for a document/thread so the next access rebuilds runtime state
-from the live document and journal.
+`getAvailability` delegates to the same `planUndo` / `planRedo` entry points that
+execute write-level reversal. Undo requires active mutation metadata plus the
+retained earliest forward row for that turn; redo requires a retained reversed
+record/update, the retained earliest forward row for the reversed turn, and no
+later writer-authored (`human:*`) journal row. `evaluateRedoEligibility` owns
+that retained-journal predicate. System reversal/bookkeeping and agent rows do
+not stale redo. Both directions carry the reconstruction watermark into
+persistence, where the adapter repeats the writer-only race check under its
+document lock. `invalidateThread`
+evicts cached runtime state and drops buffered response updates for a
+document/thread so the next access rebuilds runtime state from the live document
+and journal.
 
 Cold/restart/hosted reversals derive their live-journal watermark from durable
 reconstruction when the host does not supply an `InteractionContext`.
@@ -185,9 +203,9 @@ before and after the synchronous Yjs apply. The final recheck and apply have no
 await between them. The shared lifecycle-neutral classifier consumes those
 visible occurrences and durable writer/agent provenance, returning eligible
 ranges plus final-rendering projections. Agent writes always commit through Yjs
-merge; classification controls only writer-facing sweep capture and trails. The
-echo informs the agent, the trail informs the writer, and agent-only destruction
-stays silent.
+merge; classification controls only best-effort live-session swept elevation.
+The echo informs the agent, the durable trail records every edit for the writer,
+and missing provenance yields no elevation rather than blocking.
 
 Immediate writes, local-runtime synchronization, and response phase-C projection
 compose the same lock-scoped apply kernel. When journal entries are supplied,

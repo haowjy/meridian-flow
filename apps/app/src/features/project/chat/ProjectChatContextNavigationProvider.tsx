@@ -6,7 +6,10 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback } from "react";
 
 import { ChatContextNavigationProvider } from "@/features/chat/ChatContextNavigation";
-import { contextRouteTargetFromUri } from "@/lib/context-uri";
+import {
+  contextRouteTargetFromUri,
+  canOpenContextUri as isContextUriRoutable,
+} from "@/lib/context-uri";
 
 type SelectContextPath = (
   path: string,
@@ -32,9 +35,16 @@ export function ProjectChatContextNavigationProvider({
     },
     [activeWorkId, onSelectContextPath],
   );
+  const canOpenContextUri = useCallback(
+    (uri: string) => isContextUriRoutable(uri, activeWorkId),
+    [activeWorkId],
+  );
 
   return (
-    <ChatContextNavigationProvider onOpenContextUri={onSelectContextPath ? openContextUri : null}>
+    <ChatContextNavigationProvider
+      onOpenContextUri={onSelectContextPath ? openContextUri : null}
+      canOpenContextUri={onSelectContextPath ? canOpenContextUri : null}
+    >
       {children}
     </ChatContextNavigationProvider>
   );

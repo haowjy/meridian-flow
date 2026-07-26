@@ -39,8 +39,6 @@ export interface RunTurnPort {
   finalizeGeneratorFailure(input: FinalizeGeneratorFailureInput): Promise<void>;
 }
 
-export const noopFinalizeGeneratorFailure: RunTurnPort["finalizeGeneratorFailure"] = async () => {};
-
 export function createLateBindRunTurnPort(): RunTurnPort & { bind(target: RunTurnPort): void } {
   let target: RunTurnPort | null = null;
   return {

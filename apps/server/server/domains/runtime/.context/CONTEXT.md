@@ -139,7 +139,8 @@ facet.
   before finalizing the turn as cancelled.
 - **Response write settlement is report-only** — ordinary Yjs merge always
   commits. Destructive effects are echoed to the model and writer-lineage
-  sweeps are recorded for the trail and Restore.
+  overlap may elevate receiving-writer-specific session marks. Trail evidence
+  stays lifecycle-neutral and read-only.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.

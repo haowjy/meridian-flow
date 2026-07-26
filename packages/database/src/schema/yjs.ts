@@ -7,12 +7,12 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
   bigserial,
-  boolean,
   check,
   index,
   integer,
@@ -38,7 +38,6 @@ type DocumentBranchPushPolicy = "manual" | "auto";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
-type PushKind = "whole" | "selective";
 type BranchPushSettlementState = "pending" | "blocked" | "completed";
 type BranchPushSettlementClaimKind = "warm" | "recovery";
 type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
@@ -145,14 +144,13 @@ export const pushLineage = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     branchId: text("branch_id").references(() => documentBranches.id, { onDelete: "set null" }),
+    branchGeneration: integer("branch_generation").notNull(),
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    pushKind: text("push_kind").$type<PushKind>().notNull(),
     journalIds: bigint("journal_ids", { mode: "number" }).array().notNull(),
     upstreamUpdateSeq: bigint("upstream_update_seq", { mode: "number" }),
-    receiptPayload: jsonb("receipt_payload"),
     pushedByUserId: uuid("pushed_by_user_id")
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
@@ -169,7 +167,7 @@ export const pushLineage = pgTable(
   (table) => [
     uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
     index("push_lineage_document").on(table.documentId),
-    index("push_lineage_branch").on(table.branchId),
+    index("push_lineage_branch").on(table.branchId, table.branchGeneration),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
   ],
@@ -191,7 +189,6 @@ export const branchPushSettlementOutbox = pgTable(
     lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
     trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
-    beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
     classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
       .notNull()
@@ -287,7 +284,6 @@ export const changeTrailShells = pgTable(
     state: text("state").$type<ChangeTrailState>().notNull().default("building"),
     version: integer("version").notNull().default(1),
     changeCount: integer("change_count").notNull(),
-    sweptChangeCount: integer("swept_change_count").notNull(),
     documentCount: integer("document_count").notNull(),
     documents: jsonb("documents")
       .$type<Array<{ documentId: string; title: string }>>()
@@ -313,7 +309,7 @@ export const changeTrailShells = pgTable(
     ),
     check(
       "change_trail_shells_state_counts_valid",
-      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
+      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
     ),
   ],
 );
@@ -326,6 +322,11 @@ export const changeTrailDocumentOccurrences = pgTable(
       .notNull()
       .references(() => changeTrailShells.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    /**
+     * Durable replace-set cursor for marker delivery. This lives on the
+     * non-sensitive occurrence so an empty refinement cannot reset the cursor.
+     */
+    projectionRevision: integer("projection_revision").notNull().default(0),
   },
   (table) => [primaryKey({ columns: [table.trailId, table.documentId] })],
 );
@@ -365,7 +366,6 @@ export const changeTrailDeliveryOutbox = pgTable(
     version: integer("version").notNull(),
     eventKind: text("event_kind").$type<ChangeTrailEventKind>().notNull(),
     changeCount: integer("change_count").notNull(),
-    sweptChangeCount: integer("swept_change_count").notNull(),
     documentCount: integer("document_count").notNull(),
     documents: jsonb("documents")
       .$type<Array<{ documentId: string; title: string }>>()
@@ -391,7 +391,7 @@ export const changeTrailDeliveryOutbox = pgTable(
     ),
     check(
       "change_trail_delivery_outbox_counts_valid",
-      sql`${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0`,
+      sql`${table.changeCount} >= 0 AND ${table.documentCount} >= 0`,
     ),
   ],
 );
@@ -628,41 +628,15 @@ export const pendingNotices = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     kind: text("kind").notNull(),
-    scopeKind: text("scope_kind").$type<"thread" | "document">().notNull(),
-    scopeId: uuid("scope_id").notNull(),
-    writerDocumentId: uuid("writer_document_id")
-      .$type<DocumentId>()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    message: text("message").notNull(),
-    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
-    writerVisible: boolean("writer_visible").notNull().default(false),
-    writerConsumed: boolean("writer_consumed").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("pending_notices_writer").on(table.writerDocumentId, table.writerConsumed),
-    check("pending_notices_scope_valid", sql`${table.scopeKind} IN ('thread', 'document')`),
-  ],
-);
-
-export const pendingNoticeDeliveries = pgTable(
-  "pending_notice_deliveries",
-  {
-    noticeId: bigint("notice_id", { mode: "number" })
-      .notNull()
-      .references(() => pendingNotices.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .references(() => documents.id, { onDelete: "cascade" }),
+    message: text("message").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    createdAt: createdAt(),
   },
-  (table) => [
-    primaryKey({ columns: [table.noticeId, table.threadId] }),
-    index("pending_notice_deliveries_thread").on(table.threadId, table.documentId),
-  ],
+  (table) => [index("pending_notices_thread").on(table.threadId, table.createdAt, table.id)],
 );
 
 export const agentEditWidCounters = pgTable(
@@ -689,8 +663,7 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     .notNull()
     .default(sql`1`),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
-  /** Must stay aligned with COLLAB_SCHEMA_VERSION in @meridian/prosemirror-schema. */
-  schemaVersion: integer("schema_version").notNull().default(3),
+  schemaVersion: integer("schema_version").notNull().default(COLLAB_SCHEMA_VERSION),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
   // SET NULL is effectively unreachable: checkpoints delete only via document cascade,

@@ -24,6 +24,7 @@ import * as Y from "yjs";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
@@ -171,10 +172,12 @@ describe("branch-push durable projection", () => {
     );
     const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
     const branchPush = createBranchPushService({
+      changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
       commitStore,
       workPushPolicyStore,
+      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         durableProjectionSerializer,
@@ -359,10 +362,12 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const branchPush = createBranchPushService({
+      changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
       commitStore,
       workPushPolicyStore,
+      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore,
       branchCoordinator,
       journal: persistence.journal,
@@ -412,10 +417,18 @@ describe("branch-push durable projection", () => {
       .where(eq(branchPushSettlementOutbox.pushId, pending.pushId));
     expect(completed?.state).toBe("completed");
     const journalAfterRecovery = await db
-      .select({ id: documentYjsUpdates.id })
+      .select({
+        id: documentYjsUpdates.id,
+        originType: documentYjsUpdates.originType,
+        actorTurnId: documentYjsUpdates.actorTurnId,
+      })
       .from(documentYjsUpdates)
-      .where(eq(documentYjsUpdates.documentId, documentId));
-    expect(journalAfterRecovery).toHaveLength(1);
+      .where(eq(documentYjsUpdates.documentId, documentId))
+      .orderBy(documentYjsUpdates.id);
+    expect(journalAfterRecovery).toEqual([
+      expect.objectContaining({ originType: "agent", actorTurnId: turnId }),
+      expect.objectContaining({ originType: "reconcile", actorTurnId: null }),
+    ]);
     const [documentAfterRecovery] = await db
       .select({ markdownProjection: documents.markdownProjection })
       .from(documents)
@@ -530,10 +543,12 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const branchPush = createBranchPushService({
+      changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
       commitStore,
       workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
+      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         engine,

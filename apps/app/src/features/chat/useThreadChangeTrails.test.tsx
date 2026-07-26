@@ -43,7 +43,7 @@ const shell = (trailId: string): ChangeTrailShell => ({
   state: "settled",
   version: 1,
   changeCount: 1,
-  sweptChangeCount: 0,
+  documentCount: 1,
   documents: [{ documentId: `document-${trailId}`, title: "Chapter 1" }],
   wordsAdded: 2,
   wordsRemoved: 2,

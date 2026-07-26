@@ -17,6 +17,7 @@ import {
   createBranchAgentEditDiagnostics,
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
+  createSweepProjectionDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import {
   SILENT_POST_DURABILITY_NOTICES,
@@ -26,6 +27,7 @@ import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
@@ -43,13 +45,11 @@ import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
-import {
-  createDrizzleTrailForwardActions,
-  type TrailDocumentAccess,
-} from "./adapters/drizzle-trail-forward-actions.js";
+import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
+import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import { createWriterIngressBinding } from "./adapters/writer-ingress-binding.js";
 import { createCheckpointService } from "./checkpoints.js";
@@ -90,12 +90,13 @@ import {
   createTurnReversalService,
   type ThreadContextReversalResolver,
 } from "./domain/turn-reversal-service.js";
+import { createWorkDraftPending } from "./domain/work-draft-pending.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-type CollabDocumentAccess = TrailDocumentAccess & {
+type CollabDocumentAccess = {
   canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
   canAccessProjectDocument(
     userId: UserId,
@@ -152,6 +153,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const documentPresentation = createDocumentPresentationResolver(documentUriResolver);
   const lookups = createDrizzleCollabLookups(deps.db);
   const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
+  const turnDiffQuery = createDrizzleTurnDiffQuery(
+    deps.db,
+    persistence.journal.documentsForTurn.bind(persistence.journal),
+  );
   const projectionEffects = createDrizzleDocumentProjectionEffects(deps.db);
   const projectionDiagnostics = createDocumentProjectionDiagnostics(deps.eventSink);
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
@@ -193,6 +198,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     projectionEffects,
     changeTrails,
     deps.notices,
+    deps.eventSink,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(
@@ -202,6 +208,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.notices,
   );
   const workPushPolicy = createDrizzleWorkPushPolicyStore(deps.db);
+  const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
+  const workDraftPending = createWorkDraftPending(workDraftPendingStore);
   const writerIngress = createWriterIngressBinding();
   const branchPush = createBranchPushService({
     branchStore: branches,
@@ -209,14 +217,19 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journalReadStore: branchJournal,
     commitStore: pushCommits,
     workPushPolicyStore: workPushPolicy,
+    workDraftPendingStore,
     settlementStore: pendingSettlements,
     branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
     model: runtime.model,
     codec: runtime.markupCodec,
-    notices: deps.notices,
+    changeEventDelivery: createHocuspocusChangeEventDelivery({
+      hocuspocus: hocuspocusBinding.require,
+      eventSink: deps.eventSink,
+    }),
     writerIngressBarrier: writerIngress.barrier,
+    sweepProjectionDiagnostics: createSweepProjectionDiagnostics(deps.eventSink),
     resolveDocumentTitle: documentPresentation.resolveTitle,
   });
   const branchReview = createBranchReviewOperations({
@@ -226,6 +239,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     journal: persistence.journal,
     criticalSections,
+    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const agentEdit = createBranchThreadPeerAgentEditCore({
@@ -245,6 +259,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: runtime.model,
     codec: runtime.codec,
     semanticProvenance: runtime.semanticProvenance,
+    turnDiffQuery,
     observability,
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
     responseTransactionSettlement: {
@@ -310,7 +325,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchJournal,
     branchPush,
     branchReview,
-    workPushPolicy,
+    workDraftPending,
     liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
@@ -342,9 +357,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: persistence.store,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
     markdownDocuments: runtime.markdownDocuments,
-    notices: deps.notices,
-    model: runtime.model,
-    codec: runtime.codec,
     replaceAuthorityGeneration,
   });
   const lineage = createTurnLiveLineageReadModel({
@@ -353,12 +365,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
   });
   const turnReversal = createTurnReversalService({
+    atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     live: {
       reversalStore: persistence.journal,
       agentEdit: runtime.liveUtilityCore,
       resolveDocumentUri: documentUriResolver,
       checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
       refreshDocumentProjection: projectionRefresher.refresh,
+      deferUntilCommit: deferUntilDrizzleCommit,
     },
     agentEdit,
     branchReview,
@@ -370,15 +384,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
-  const trailForwardActions = createDrizzleTrailForwardActions({
-    db: deps.db,
-    documentAccess: deps.documentAccess,
-    coordinator: liveCoordinator,
-    model: runtime.model,
-    codec: runtime.codec,
-    durableProjectionSerializer: runtime.markdownDocuments,
-  });
-
   return createCollabFacade({
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
@@ -418,14 +423,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     attribution: createDocumentAttribution({
       latestUpdate: persistence.store.latestUpdate,
     }),
-    trailForwardActions: {
-      applyTrailForwardAction: trailForwardActions.apply,
-    },
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
       pushToLive: branchPush.pushToLive,
-      pushSelectedToLive: branchPush.pushSelectedToLive,
-      countUnpushedRowsForWork: workPushPolicy.countUnpushedRowsForWork,
+      countUnpushedRowsForWork: workDraftPending.count,
       setWorkPushPolicy: branchPush.setWorkPushPolicy,
       markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },

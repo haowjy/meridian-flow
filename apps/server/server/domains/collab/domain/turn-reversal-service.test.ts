@@ -129,3 +129,124 @@ describe("reverseThreadContext", () => {
     );
   });
 });
+
+describe("cross-scope reversal", () => {
+  it("does not reverse branch documents excluded by the authorized live lineage", async () => {
+    const reverseBranchTurn = vi.fn();
+    const liveReverse = vi.fn(async () => ({
+      command: "undo",
+      status: "reversed",
+      isError: false,
+      text: "ok",
+    }));
+    const service = createTurnReversalService({
+      live: {
+        reversalStore: { documentsForTurn: async () => [] } as unknown as ReversalStore,
+        agentEdit: { reverse: liveReverse } as never,
+        resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
+        checkDependentLaterLiveRows: async () => ({ hasDependents: false, checkedUntilSeq: 0 }),
+        refreshDocumentProjection: async () => undefined,
+      },
+      agentEdit: { reverse: vi.fn() } as never,
+      branchReview: { reverseBranchTurn } as never,
+      branchJournal: {
+        listJournalRowsForTurn: async () => [{ branchId: "branch-denied" }],
+      } as never,
+      branches: {
+        getBranch: async () => ({ documentId: "denied" }),
+      } as never,
+      resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
+      listEditedDocumentsForTurn: async () => [],
+      documentAccess: {
+        canAccessDocument: async () => true,
+        canAccessProjectDocument: async () => true,
+      },
+      threadContext: {
+        requireThreadOwner: async () => ({ projectId: "project-1" as never }),
+        resolveContextDocument: async () => ({ documentId: null }),
+      },
+    });
+
+    await expect(
+      service.reverseTurn({
+        threadId: "thread-1" as never,
+        turnId: "turn-1" as never,
+        direction: "undo",
+        actor: { type: "user", userId: "user-1" },
+        documentIds: ["allowed" as never],
+      }),
+    ).resolves.toMatchObject({
+      status: "reversed",
+      documents: [{ uri: "manuscript://allowed.md", status: "reversed" }],
+    });
+    expect(reverseBranchTurn).not.toHaveBeenCalled();
+    expect(liveReverse).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a live reversal when the transaction-local branch scope refuses", async () => {
+    let liveReversed = false;
+    let atomicCalls = 0;
+    const atomic = async <T>(operation: () => Promise<T>): Promise<T> => {
+      atomicCalls += 1;
+      const before = liveReversed;
+      try {
+        return await operation();
+      } catch (cause) {
+        liveReversed = before;
+        throw cause;
+      }
+    };
+    const service = createTurnReversalService({
+      atomic,
+      live: {
+        reversalStore: {
+          documentsForTurn: async () => ["document-live"],
+        } as unknown as ReversalStore,
+        agentEdit: {
+          reverse: async () => {
+            liveReversed = true;
+            return { command: "undo", status: "reversed", isError: false, text: "ok" };
+          },
+        } as never,
+        resolveDocumentUri: async () => "manuscript://live.md",
+        checkDependentLaterLiveRows: async () => ({ hasDependents: false, checkedUntilSeq: 0 }),
+        refreshDocumentProjection: async () => undefined,
+      },
+      agentEdit: { reverse: vi.fn() } as never,
+      branchReview: {
+        reverseBranchTurn: async () => ({
+          status: "cant_undo_dependent",
+          branchId: "branch-1",
+          journalIds: [1],
+        }),
+      } as never,
+      branchJournal: {
+        listJournalRowsForTurn: async () => [{ branchId: "branch-1" }],
+      } as never,
+      branches: {
+        getBranch: async () => ({ documentId: "document-branch" }),
+      } as never,
+      resolveDocumentUri: async () => "manuscript://branch.md",
+      listEditedDocumentsForTurn: async () => [],
+      documentAccess: {
+        canAccessDocument: async () => true,
+        canAccessProjectDocument: async () => true,
+      },
+      threadContext: {
+        requireThreadOwner: async () => ({ projectId: "project-1" as never }),
+        resolveContextDocument: async () => ({ documentId: null }),
+      },
+    });
+
+    await expect(
+      service.reverseTurn({
+        threadId: "thread-1" as never,
+        turnId: "turn-1" as never,
+        direction: "undo",
+        actor: { type: "user", userId: "user-1" },
+      }),
+    ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+    expect(atomicCalls).toBe(1);
+    expect(liveReversed).toBe(false);
+  });
+});

@@ -15,9 +15,9 @@ type TrailEventValue = {
   trailId: string;
   turnId: string | null;
   version: number;
-  counts?: { changes: number; swept: number; documents: number };
+  counts?: { changes: number; documents: number };
   shell?: {
-    counts: { changes: number; swept: number; documents: number };
+    counts: { changes: number; documents: number };
     documents: Array<{ documentId: string; title: string }>;
     wordsAdded: number | null;
     wordsRemoved: number | null;

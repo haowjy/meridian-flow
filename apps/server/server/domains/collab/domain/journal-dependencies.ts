@@ -92,19 +92,6 @@ function isYId(value: unknown): value is YId {
   );
 }
 
-export function suppliedRangesForRows(rows: readonly JournalDependencyRow[]): ClockRange[] {
-  return rows.flatMap((row) => suppliedRanges(decodeUpdateForDependencies(row.updateData)));
-}
-
-export function updateDeletesOutsideRanges(
-  updateData: Uint8Array,
-  ownedRanges: readonly ClockRange[],
-): boolean {
-  return deleteRanges(decodeUpdateForDependencies(updateData)).some(
-    (deleted) => !ownedRanges.some((owned) => rangesOverlap(owned, deleted)),
-  );
-}
-
 export function rangeCovers(candidate: ClockRange, expected: ClockRange): boolean {
   return (
     candidate.client === expected.client &&

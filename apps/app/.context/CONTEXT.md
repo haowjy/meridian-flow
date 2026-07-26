@@ -30,12 +30,14 @@ not ignore sibling paths merely sharing a prefix such as `logs-other`.
 
 ## State + transport seams
 
-Hocuspocus stateless `safety_notice` messages enter through the existing
-document transport and are retained on `DocumentSession`. No production visual
-surface currently reads or dismisses that state. `beforeContentRef` is retained
-in the notice payload, but the client has no reconstruction endpoint keyed by
-that reference.
+Writer-facing AI change reporting uses durable Trail evidence, receipt
+Undo/Redo, and session change marks. Trail evidence and peer marks are
+read-only; `DocumentSession` owns collaboration state only and does not retain
+a parallel safety-notice presentation model.
 
+Session change-mark self-suppression uses the canonical internal Meridian
+`UserId` from `/api/auth/me`, matching `change_event.admittedByUserId`. WorkOS
+external ids authenticate the shell but never identify collaboration records.
 Two interfaces are the only paths between the visual layer and the substrate:
 
 - **`ThreadStoreState` / `ThreadStoreActions`** (`src/client/stores/thread-store/types.ts`) —
@@ -103,15 +105,6 @@ Both transports emit this shape; the reducer consumes this shape.
 `src/lib/optimistic-project.ts` is the template for client-led writes:
 client-generated UUID → navigate immediately → call `threads-api.ts` → reconcile
 on response. The Composer's submit-from-Home flow follows it.
-
-`src/lib/deferred-project-chat.ts` is the existing-project variant for a
-client-only thread that should not be created on the server until first send. It
-seeds an optimistic thread, marks **only the thread id** pending creation, and
-leaves `pendingCreation.projectIds` untouched because the project already
-exists. `DeferredFirstSendLatch` guards the create+submit path against
-double-submit; if first-send fails after an optimistic user turn is appended,
-`removeOptimisticUserTurn(threadId, optimisticTurnId)` removes that local user
-turn while preserving the pending thread row for retry.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),

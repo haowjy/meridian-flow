@@ -13,8 +13,7 @@
  *  - `closeTab` removes the tab and returns the right-hand neighbour (or the
  *    left-hand neighbour when the right side is empty) so the route owner can
  *    choose where `?path=` should move when the closed tab was active.
- *  - `reorderTabs` moves a tab to a new index (pin is deferred — this is the
- *    primitive a future pin/unpin will compose with).
+ *  - `reorderTabs` moves a tab to a new index.
  *
  * The ordered per-project desk is persisted device-locally. Project entry
  * validates restored routes against current trees before they remain usable.
@@ -90,7 +89,7 @@ type ContextTabsActions = {
   selectTab: (projectId: string, documentId: string | null) => void;
   /**
    * Resolve a draft-only tab when its backing draft reaches a terminal state:
-   * `committed` (accepted — the document now exists in the tree, so keep the
+   * `committed` (applied — the document now exists in the tree, so keep the
    * tab and drop the marker) or `discarded` (the document never existed
    * outside the draft — close the tab so it can't linger as an editable
    * ghost over a document that no longer loads). No-op for tabs without the
@@ -123,6 +122,15 @@ const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], activeTabId: null };
 
 function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
+}
+
+function mergeTabMetadata(existing: ContextTab, incoming: ContextTab): ContextTab {
+  const merged = { ...existing, ...incoming } as ContextTab;
+  if (incoming.kind !== "tracked" || incoming.draftOnly) return merged;
+  // A tracked tab from the live context tree proves that a draft-created
+  // document was committed; omitted optional fields must not retain the marker.
+  const { draftOnly: _draftOnly, ...liveTab } = merged;
+  return liveTab as ContextTab;
 }
 
 function sliceFor(state: ContextTabsState, projectId: string): ProjectTabsSlice {
@@ -192,7 +200,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             ? slice.tabs.map((t) =>
                 // Refresh metadata for an already-open tab — file may have been
                 // renamed (or appear in a new scheme) since it was first opened.
-                t.documentId === tab.documentId ? { ...t, ...tab } : t,
+                t.documentId === tab.documentId ? mergeTabMetadata(t, tab) : t,
               )
             : [...slice.tabs, tab];
           return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
@@ -380,7 +388,7 @@ export function rehydrateContextDesks(
   pendingUntitled = isUntitledPending;
   const byProject = deviceDesk.setUser(userId, isUntitledPending);
   useContextTabsStore.setState({ byProject, _deskHydrated: true });
-  // Rewrites legacy/stale exclusions immediately, including completed untitleds.
+  // Rewrites stale exclusions immediately, including completed untitleds.
   deviceDesk.replace(byProject, isUntitledPending);
 }
 

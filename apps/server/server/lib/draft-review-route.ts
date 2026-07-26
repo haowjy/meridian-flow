@@ -1,13 +1,12 @@
-/** Route core for authenticated AI draft preview/accept/reject over Work-scoped draft documents. */
+/** Route core for authenticated AI draft preview/Apply/Discard over Work-scoped draft documents. */
 
 import type {
-  DraftAcceptResponse,
+  DraftApplyResponse,
+  DraftDiscardResponse,
   DraftPreviewResponse,
-  DraftRejectResponse,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
-import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { AppServices } from "./app.js";
@@ -79,7 +78,7 @@ export async function handleWorkDraftPreviewRequest(
     projectId: ProjectId;
     workId: WorkId;
     documentId: DocumentId;
-    draftId?: string;
+    draftId: string;
     userId: UserId;
   },
 ): Promise<DraftPreviewResponse> {
@@ -89,12 +88,8 @@ export async function handleWorkDraftPreviewRequest(
 
   const base = {
     status: "active" as const,
-    ...(preview.branchId
-      ? {
-          branchId: preview.branchId,
-          reviewRoomName: branchRoomName(preview.branchId, preview.draftRevisionToken),
-        }
-      : { draftId: preview.draftId }),
+    draftId: preview.draftId,
+    reviewRoomName: preview.reviewRoomName,
     live: preview.live,
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
@@ -110,56 +105,43 @@ export async function handleWorkDraftPreviewRequest(
   };
 }
 
-export async function handleWorkDraftAcceptRequest(
+export async function handleApplyWorkDraftRequest(
   deps: DraftRouteServices,
   input: {
     projectId: ProjectId;
     workId: WorkId;
     documentId: DocumentId;
-    draftId?: string;
-    branchId?: string;
+    draftId: string;
     userId: UserId;
-    draftRevisionToken: number;
-    operationIds: string[];
     signal?: AbortSignal;
   },
-): Promise<DraftAcceptResponse> {
+): Promise<DraftApplyResponse> {
   await requireDraftWorkAccess(deps, input);
-  if (input.branchId && input.draftId) {
-    throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
-  }
-  const result = await callDraftReview(deps.documentSync.draftReview.accept(input));
-  return mapAcceptResult(result);
-}
-
-export async function handleWorkDraftRejectRequest(
-  deps: DraftRouteServices,
-  input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId?: string;
-    branchId?: string;
-    userId: UserId;
-    operationIds?: string[];
-  },
-): Promise<DraftRejectResponse> {
-  await requireDraftWorkAccess(deps, input);
-  if (input.branchId && input.draftId) {
-    throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
-  }
-  const result = await callDraftReview(deps.documentSync.draftReview.reject(input));
-  if (result.status === "discarded")
-    return result.branchId ? { status: "discarded", branchId: result.branchId } : result;
+  const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
+  if (result.status === "applied") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
-function toWireReviewOperation<
-  T extends { directionalClosure?: unknown; actorUserId?: unknown; sourceUpdateIds?: unknown },
->(operation: T) {
+export async function handleDiscardWorkDraftRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    operationIds?: string[];
+  },
+): Promise<DraftDiscardResponse> {
+  await requireDraftWorkAccess(deps, input);
+  return callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
+}
+
+function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
+  operation: T,
+) {
   const {
-    directionalClosure: _directionalClosure,
-    actorUserId: _actorUserId,
+    discardUpdateIds: _discardUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
     ...wire
   } = operation;
@@ -178,24 +160,6 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     }
     throw cause;
   }
-}
-
-function mapAcceptResult(
-  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["accept"]>>,
-): DraftAcceptResponse {
-  if (result.status === "applied")
-    return result.branchId
-      ? { status: "applied", branchId: result.branchId }
-      : { status: "applied", draftId: result.draftId };
-  if (result.status === "partial_applied") {
-    return { status: "partial_applied", draftId: result.draftId, writeId: result.writeId };
-  }
-  if (result.status === "stale_draft") return result;
-  if (result.status === "concurrent_conflict") return result;
-  if (result.status === "discarded") {
-    throw createError({ statusCode: 410, message: "Draft is no longer active" });
-  }
-  throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
 async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
@@ -224,38 +188,32 @@ async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
 
 function serializeThreadDraft(
   draft: {
-    id: string;
+    draftId: string;
     documentId: string;
     documentName: string | null;
     contextPath: string | null;
-    status: "active" | "closed";
+    status: "active";
     lastActorTurnId: string | null;
     updatedAt: Date;
-    appliedAt: Date | null;
-    discardedAt: Date | null;
     wordsAdded?: number | null;
     wordsRemoved?: number | null;
     createdDocument?: boolean;
   },
   lifecycle?: {
-    partialAcceptedOperationCount: number | null;
     proposedOperationCount: number | null;
   },
 ): ThreadDraftListItem {
   return {
-    draftId: draft.id,
+    draftId: draft.draftId,
     documentId: draft.documentId,
     documentName: draft.documentName,
     contextPath: draft.contextPath,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
-    appliedAt: draft.appliedAt?.toISOString() ?? null,
-    discardedAt: draft.discardedAt?.toISOString() ?? null,
-    partialAcceptedOperationCount: lifecycle?.partialAcceptedOperationCount ?? null,
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
-    wordsAdded: draft.status === "active" ? (draft.wordsAdded ?? null) : null,
-    wordsRemoved: draft.status === "active" ? (draft.wordsRemoved ?? null) : null,
+    wordsAdded: draft.wordsAdded ?? null,
+    wordsRemoved: draft.wordsRemoved ?? null,
     ...(draft.createdDocument ? { isNewDocument: true } : {}),
   };
 }

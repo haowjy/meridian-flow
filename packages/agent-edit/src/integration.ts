@@ -61,6 +61,12 @@ export type {
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
+  TurnDiffChange,
+  TurnDiffQuery,
+  TurnDiffResult,
+  TurnDiffTrailState,
+} from "./ports/turn-diff-query.js";
+export type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
@@ -107,13 +113,14 @@ export type {
   PersistUndoWatermarkUpdate,
 } from "./undo/persist-undo-watermark.js";
 export {
-  hasLaterNonSystemUpdateAfterWatermark,
-  isLaterNonSystemUpdateAfterWatermark,
+  hasLaterWriterUpdateAfterWatermark,
+  isLaterWriterUpdateAfterWatermark,
   persistUndoPlanWatermark,
 } from "./undo/persist-undo-watermark.js";
 export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
 export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
-export type { ReversalSelection } from "./undo/reversal-plan.js";
+export type { ReversalPlan, ReversalSelection } from "./undo/reversal-plan.js";
+export { planRedo, planUndo } from "./undo/reversal-plan.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

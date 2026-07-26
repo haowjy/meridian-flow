@@ -3,16 +3,13 @@
  * review pending AI changes. Lives in the breadcrumb row alongside "Rename" /
  * "Choose a home". Jade-tinted pill matching the identity bar's chip grammar.
  *
- * Adapts its label to the number of reviewable drafts on this document:
- * one draft → "Review draft", multiple → "Review N drafts".
- *
  * Self-contained: resolves its own draft state from DraftReviewProvider
  * context, so the identity bar just mounts it and passes the documentId.
  */
-import { Plural } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { pendingReviewDraft, pendingReviewDraftCount } from "@/features/chat/docked-drafts";
+import { pendingReviewDraft } from "@/features/chat/docked-drafts";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
 import { cn } from "@/lib/utils";
@@ -22,7 +19,7 @@ export type DraftReviewChipProps = {
 };
 
 export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
-  const { controller, groupForDocument, nowMs } = useDraftReview();
+  const { controller, groupForDocument } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
 
   // Don't show during inline review — the review header handles that state.
@@ -30,10 +27,8 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
 
   const group = groupForDocument(documentId);
   if (!group) return null;
-  const draft = pendingReviewDraft(group, nowMs);
+  const draft = pendingReviewDraft(group);
   if (!draft) return null;
-
-  const count = pendingReviewDraftCount(group, nowMs);
 
   return (
     <button
@@ -57,7 +52,7 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
       )}
     >
       <span aria-hidden className="size-1.5 rounded-full bg-primary" />
-      <Plural value={count} one="Review draft" other="Review # drafts" />
+      <Trans>Review draft</Trans>
     </button>
   );
 }

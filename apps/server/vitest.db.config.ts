@@ -20,8 +20,10 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-journal.recovery-redo.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-branches.manifest-race.db.test.ts",
+  "apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-change-trail-dispatcher.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-document-activity.db.test.ts",
+  "apps/server/server/domains/collab/adapters/drizzle-turn-diff-query.db.test.ts",
   "apps/server/server/domains/collab/branch-push-projection.db.test.ts",
   "apps/server/server/domains/collab/branch-push-settlement-oracle.db.test.ts",
   "apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts",
@@ -45,7 +47,6 @@ const expectedSuites = [
   "apps/server/server/lib/routes/context-create-untitled.db.test.ts",
   "apps/server/server/lib/routes/context-move.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
-  "packages/database/src/event-journal.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database}/**/*.db.test.ts", {

@@ -12,7 +12,6 @@ export interface DraftReviewHunkSpanInternal {
 type DraftReviewHunkBaseInternal = {
   hunkId: string;
   operationIds: string[];
-  blockHashes?: string[];
   mergeArtifact?: boolean;
   anchor: {
     relStart: string;
@@ -36,19 +35,29 @@ export type DraftReviewBlockHunkInternal = DraftReviewHunkBaseInternal & {
 
 export type DraftReviewHunkInternal = DraftReviewTextHunkInternal | DraftReviewBlockHunkInternal;
 
-export type DraftReviewDirectionalClosure = {
-  accept: { operationIds?: string[]; updateIds: number[] };
-  reject: { operationIds?: string[]; updateIds: number[] };
+declare const sourceUpdateIdBrand: unique symbol;
+declare const physicalSourceUpdateIdBrand: unique symbol;
+
+export type SourceUpdateId = number & { readonly [sourceUpdateIdBrand]: true };
+export type PhysicalSourceUpdateId = number & {
+  readonly [physicalSourceUpdateIdBrand]: true;
 };
+export type SourceUpdateIds = SourceUpdateId[];
+export type PhysicalSourceUpdateIds = PhysicalSourceUpdateId[];
+
+export function asSourceUpdateIds(updateIds: readonly number[]): SourceUpdateIds {
+  return [...updateIds] as SourceUpdateIds;
+}
+
+export function asPhysicalSourceUpdateIds(updateIds: readonly number[]): PhysicalSourceUpdateIds {
+  return [...updateIds] as PhysicalSourceUpdateIds;
+}
 
 export interface DraftReviewOperationInternal {
   operationId: string;
-  acceptClosureOperationIds?: string[];
-  rejectClosureOperationIds?: string[];
-  closureClassId?: string;
-  rejectSourceUpdateIds: number[];
-  sourceUpdateIds: number[];
-  directionalClosure: DraftReviewDirectionalClosure;
+  closureClassId: string;
+  discardUpdateIds: PhysicalSourceUpdateIds;
+  sourceUpdateIds: SourceUpdateIds;
   actorTurnId?: string;
   actorUserId?: string;
   kind: "agent" | "writer";

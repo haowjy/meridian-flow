@@ -1,6 +1,5 @@
 /**
- * DraftDock — the composer-attached strip that is the SINGLE actionable surface
- * for a Work's pending AI changes.
+ * DraftDock — the composer-attached strip for a Work's pending AI changes.
  *
  * Visual model: a jade-tinted strip that sits BEHIND the composer (narrower
  * via horizontal margin, top corners rounded) — the composer keeps its own
@@ -11,6 +10,10 @@
  * Single doc: name inline, clicking the strip opens review directly.
  * Multi doc: "N documents" with chevron, clicking toggles expand/collapse.
  *
+ * Verb order follows the one draft-action grammar: the action that commits is
+ * rightmost, Discard sits immediately left of it, and anything backing out
+ * (Keep, Cancel) is leftmost.
+ *
  * All visibility derives from `DraftReviewProvider` state (never raw queries),
  * so the dock, the editor bar, and the transcript can never disagree about what
  * is pending.
@@ -18,7 +21,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -30,60 +33,19 @@ import { useAiDraftLauncher } from "./useAiDraftLauncher";
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
 export function useDraftDock({ generating }: { generating: boolean }) {
-  const { groups, controller, nowMs } = useDraftReview();
+  const { groups, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
 
   const applyDraft = useCallback(
     (row: DockRow) => {
-      return controller.accept(row.documentId, row.draft.draftId);
+      return controller.disposeDrafts("apply", [
+        { documentId: row.documentId, draftId: row.draft.draftId },
+      ]);
     },
     [controller],
   );
 
-  const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
-  const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
-
-  // Sequential Apply all / Discard all. The shared accept/reject mutation and
-  // its `isPending` gate make concurrent disposition unsafe, so we run one
-  // draft at a time against a snapshot queue captured at bulk start — the pump
-  // must not abort when the work-drafts query is still stale after a reject.
-  type BulkTarget = { documentId: string; draftId: string };
-  const [bulk, setBulk] = useState<{
-    mode: "apply" | "discard";
-    inFlightDraftId: string | null;
-    observedPending: boolean;
-    /** Snapshot captured at bulk start — the pump must not depend on live query rows. */
-    queue: BulkTarget[];
-  } | null>(null);
-  useEffect(() => {
-    if (!bulk) return;
-    if (bulk.queue.length === 0) {
-      setBulk(null);
-      return;
-    }
-    if (controller.isDisposing) {
-      if (bulk.inFlightDraftId && !bulk.observedPending) {
-        setBulk({ ...bulk, observedPending: true });
-      }
-      return;
-    }
-    if (bulk.inFlightDraftId) {
-      if (!bulk.observedPending) return;
-      const remaining = bulk.queue.filter((item) => item.draftId !== bulk.inFlightDraftId);
-      setBulk({ mode: bulk.mode, inFlightDraftId: null, observedPending: false, queue: remaining });
-      return;
-    }
-    const next = bulk.queue[0];
-    if (!next) return;
-    setBulk({ ...bulk, inFlightDraftId: next.draftId, observedPending: false });
-    const run =
-      bulk.mode === "apply"
-        ? controller.accept(next.documentId, next.draftId)
-        : controller.reject(next.documentId, next.draftId);
-    void Promise.resolve(run).catch(() => {
-      setBulk(null);
-    });
-  }, [bulk, controller.isDisposing, controller.accept, controller.reject]);
+  const rows = useMemo(() => dockRows(groups), [groups]);
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -114,43 +76,39 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const model = {
     generating,
     rows,
-    pendingRows,
-    reviewedCount: rows.filter((row) => row.state === "reviewed").length,
-    totalCount: rows.length,
     aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
-    mounted: pendingRows.length > 0,
-    inFlightDraftId: bulk?.inFlightDraftId ?? null,
-    isBusy: controller.isDisposing || bulk !== null,
-    needsRereview: controller.needsRereview,
-    applyRefusal: controller.applyRefusal,
+    mounted: rows.length > 0,
+    isBusy: controller.isDisposing,
+    dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
     reviewFirst: () => {
-      const first = pendingRows[0];
+      const first = rows[0];
       if (first) reviewRow(first);
     },
     applyRow: applyDraft,
-    discardRow: (row: DockRow) => controller.reject(row.documentId, row.draft.draftId),
-    startApplyAll: () =>
-      setBulk({
-        mode: "apply",
-        inFlightDraftId: null,
-        observedPending: false,
-        queue: pendingRows.map((row) => ({
+    discardRow: (row: DockRow) =>
+      controller.disposeDrafts("discard", [
+        { documentId: row.documentId, draftId: row.draft.draftId },
+      ]),
+    startApplyAll: () => {
+      void controller.disposeDrafts(
+        "apply",
+        rows.map((row) => ({
           documentId: row.documentId,
           draftId: row.draft.draftId,
         })),
-      }),
-    startDiscardAll: () =>
-      setBulk({
-        mode: "discard",
-        inFlightDraftId: null,
-        observedPending: false,
-        queue: pendingRows.map((row) => ({
+      );
+    },
+    startDiscardAll: () => {
+      void controller.disposeDrafts(
+        "discard",
+        rows.map((row) => ({
           documentId: row.documentId,
           draftId: row.draft.draftId,
         })),
-      }),
+      );
+    },
   };
   return model;
 }
@@ -162,14 +120,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   if (!dock.mounted) return null;
 
   const multi = dock.rows.length > 1;
-  const guided = dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
   const single = dock.rows.length === 1;
-  const firstPending = dock.pendingRows[0] ?? null;
+  const firstPending = dock.rows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
-
-  function verbBusy(row: DockRow): boolean {
-    return dock.isBusy || dock.inFlightDraftId === row.draft.draftId;
-  }
 
   return (
     <div className="mx-2 rounded-t-lg bg-dock-surface" data-draft-dock="settled">
@@ -203,13 +156,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           </button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              dock.needsRereview ? "bg-status-warning" : "bg-jade-text",
-            )}
-          />
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
             {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
@@ -217,21 +164,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           {dock.aggregateStats ? (
             <span className="shrink-0 whitespace-nowrap text-ink-subtle">
               <DraftStatsLabel stats={dock.aggregateStats} />
-            </span>
-          ) : null}
-          {guided ? (
-            <span className="@max-[360px]:hidden shrink-0 whitespace-nowrap text-ink-subtle">
-              <Trans>
-                {dock.reviewedCount} of {dock.totalCount} reviewed
-              </Trans>
-            </span>
-          ) : null}
-          {dock.needsRereview ? (
-            <span
-              className="shrink-0 rounded-full border border-warning-border bg-warning-bg px-1.5 text-warning-foreground"
-              data-draft-dock-status="needs-rereview"
-            >
-              <Trans>needs re-review</Trans>
             </span>
           ) : null}
         </div>
@@ -246,6 +178,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <span className="whitespace-nowrap text-ink-muted">
                 <Trans>Discard all changes?</Trans>
               </span>
+              <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
+                <Trans>Keep</Trans>
+              </QuietButton>
               <QuietButton
                 onClick={() => {
                   setConfirmingDiscardAll(false);
@@ -254,9 +189,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 disabled={dock.isBusy}
               >
                 <Trans>Discard</Trans>
-              </QuietButton>
-              <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
-                <Trans>Keep</Trans>
               </QuietButton>
             </>
           ) : (
@@ -279,7 +211,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               >
                 {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
               </QuietButton>
-              {!guided && firstPending ? (
+              {firstPending ? (
                 <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
               ) : null}
             </>
@@ -287,7 +219,18 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         </div>
       </div>
 
-      {dock.applyRefusal ? <DraftApplyRefusalNotice refusal={dock.applyRefusal} /> : null}
+      {dock.dispositionError ? (
+        <p
+          className="border-border-subtle border-t px-3 py-2 text-destructive text-micro"
+          data-draft-dock-disposition-error={dock.dispositionError}
+        >
+          {dock.dispositionError === "apply-failed" ? (
+            <Trans>Couldn't apply. Check your connection and try again.</Trans>
+          ) : (
+            <Trans>Couldn't discard. Check your connection and try again.</Trans>
+          )}
+        </p>
+      ) : null}
 
       {multi && expanded ? (
         <div>
@@ -295,62 +238,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <DockRowLine
               key={row.documentId}
               row={row}
-              reviewAlways={guided && row.draft.draftId === firstPending?.draft.draftId}
-              busy={verbBusy(row)}
+              busy={dock.isBusy}
               onOpen={() => dock.openRow(row)}
               onReview={() => dock.reviewRow(row)}
             />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-export function DraftApplyRefusalNotice({
-  refusal,
-}: {
-  refusal: NonNullable<DraftDockModel["applyRefusal"]>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const explanationId = useId();
-  const explanation =
-    refusal.reason === "stale_draft"
-      ? t`This draft was updated after you opened it.`
-      : refusal.reason === "protected_resurrection"
-        ? t`Applying would bring back text you deleted:`
-        : t`The chapter changed after this draft was written:`;
-
-  return (
-    <div
-      className="border-border-subtle border-b bg-muted text-caption text-prose-foreground"
-      data-draft-apply-refusal={refusal.reason}
-      data-draft-apply-refusal-expanded={expanded}
-    >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={explanationId}
-        onClick={() => setExpanded((value) => !value)}
-        className="focus-ring flex w-full items-center gap-1.5 px-3 py-2 text-left hover:bg-card"
-      >
-        <ChevronRight
-          className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")}
-          aria-hidden
-        />
-        <span className="font-medium">
-          <Trans>Not applied</Trans>
-        </span>
-      </button>
-      {expanded ? (
-        <div id={explanationId} className="space-y-1 px-3 pb-2" data-draft-apply-refusal-details>
-          <p className="text-ink-muted" data-draft-apply-refusal-explanation>
-            {explanation}
-          </p>
-          {refusal.passages.map((passage) => (
-            <p key={passage.body} className="whitespace-pre-wrap text-prose-foreground">
-              {passage.body}
-            </p>
           ))}
         </div>
       ) : null}
@@ -365,13 +256,11 @@ export function DraftApplyRefusalNotice({
  */
 function DockRowLine({
   row,
-  reviewAlways,
   busy,
   onOpen,
   onReview,
 }: {
   row: DockRow;
-  reviewAlways: boolean;
   busy: boolean;
   onOpen: () => void;
   onReview: () => void;
@@ -379,24 +268,8 @@ function DockRowLine({
   const name = row.documentName ?? row.documentId;
   const stats = draftStats(row.draft);
 
-  if (row.state === "reviewed") {
-    return (
-      <DockRowShell onOpen={onOpen} className="text-ink-subtle">
-        <span aria-hidden className="shrink-0 text-jade-text">
-          ✓
-        </span>
-        <span className="min-w-0 flex-1 truncate">
-          <Trans>Reviewed {name}</Trans>
-        </span>
-      </DockRowShell>
-    );
-  }
-
   return (
-    <DockRowShell
-      onOpen={onOpen}
-      className={cn("text-prose-foreground", reviewAlways && "bg-jade-text/[0.06]")}
-    >
+    <DockRowShell onOpen={onOpen} className="text-prose-foreground">
       <span aria-hidden className="shrink-0 text-ink-subtle">
         ○
       </span>
@@ -412,12 +285,7 @@ function DockRowLine({
       {busy ? (
         <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
       ) : null}
-      <RowClickFence
-        className={cn(
-          "shrink-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
-          reviewAlways ? "opacity-100" : "opacity-0",
-        )}
-      >
+      <RowClickFence className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <ReviewPill onClick={onReview} disabled={busy} />
       </RowClickFence>
     </DockRowShell>

@@ -21,11 +21,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import {
-  type AutoBranchPushPort,
-  type BranchJournalRow,
-  branchUpdateMetaWithReplacementScopes,
-} from "./branch-push-contracts.js";
+import type { AutoBranchPushPort, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 import {
   type BranchReversalScope,
@@ -181,13 +177,6 @@ export function createBranchAgentEditCoordinator(input: {
               if (mutation?.mode !== "threadPeer") {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
-              const replacementScopes = pendingBatch.flatMap((entry) => {
-                const scope = entry.mutation?.semanticEditIr?.scope;
-                return scope && scope.length > 0 ? [scope] : [];
-              });
-              const replacementScopesComplete = pendingBatch.every(
-                (entry) => entry.mutation?.replacementScopeRecorded === true,
-              );
               const sourceHasBranchDelta = await sourceDocHasBranchDelta(
                 input.branchCoordinator,
                 workDraftBranchId,
@@ -217,11 +206,7 @@ export function createBranchAgentEditCoordinator(input: {
                 ...(mutation.branchJournalRevision !== undefined
                   ? { expectedJournalRevision: mutation.branchJournalRevision }
                   : {}),
-                updateMeta: branchUpdateMetaWithReplacementScopes(
-                  pending?.meta ?? null,
-                  replacementScopes,
-                  replacementScopesComplete,
-                ),
+                updateMeta: pending?.meta ?? null,
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
               if (!committed) return result;

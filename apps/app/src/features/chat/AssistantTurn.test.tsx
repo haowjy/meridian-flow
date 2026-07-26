@@ -37,6 +37,7 @@ vi.mock("@/client/query/useReverseMutation", () => ({
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
+  useChatContextRoutability: () => null,
 }));
 
 const { AssistantTurn } = await import("./AssistantTurn");
@@ -61,13 +62,13 @@ describe("AssistantTurn edit lineage", () => {
   it("renders no edit card without lineage documents", () => {
     documentsRef.current = [];
     const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
-    expect(html).not.toContain("data-turn-edits-card");
+    expect(html).not.toContain("data-turn-receipt");
   });
 
   it("renders the edit card from server lineage", () => {
     documentsRef.current = [{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }];
     const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
-    expect(html).toContain("data-turn-edits-card");
+    expect(html).toContain("data-turn-receipt");
     expect(html).toContain("Can&#x27;t undo");
   });
 
@@ -79,7 +80,7 @@ describe("AssistantTurn edit lineage", () => {
       { uri: "context://doc/chapter-3", path: "/chapter-3", scope: "live" },
     ];
     const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
-    expect(html).toContain("data-turn-edits-card");
+    expect(html).toContain("data-turn-receipt");
   });
 });
 
@@ -98,7 +99,7 @@ describe("AssistantTurn change view", () => {
       state,
       version,
       changeCount: 2,
-      sweptChangeCount: 0,
+      documentCount: 1,
       documents: [{ documentId: "document-1", title: "Chapter 1" }],
       wordsAdded: null,
       wordsRemoved: null,
@@ -117,10 +118,10 @@ describe("AssistantTurn change view", () => {
     );
 
     await act(async () => root.render(renderTrail(trail("building", 2))));
-    expect(host.querySelector("[data-turn-edits-card]")).toBeNull();
+    expect(host.querySelector("[data-turn-receipt]")).toBeNull();
 
     await act(async () => root.render(renderTrail(trail("settled", 3))));
-    expect(host.querySelector("[data-turn-edits-card]")).not.toBeNull();
+    expect(host.querySelector("[data-turn-receipt]")).not.toBeNull();
     expect(host.querySelector("[data-change-trail-state]")).toBeNull();
     expect(host.textContent).not.toContain("Finishing change record…");
 
@@ -130,7 +131,7 @@ describe("AssistantTurn change view", () => {
     document.body.append(reloadedHost);
     const reloadedRoot = createRoot(reloadedHost);
     await act(async () => reloadedRoot.render(renderTrail(trail("settled", 3))));
-    expect(reloadedHost.querySelector("[data-turn-edits-card]")).not.toBeNull();
+    expect(reloadedHost.querySelector("[data-turn-receipt]")).not.toBeNull();
     await act(async () => reloadedRoot.unmount());
   });
 });

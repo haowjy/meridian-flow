@@ -1,8 +1,8 @@
 /**
  * useWorkDrafts — reviewable AI draft list for one Work.
  *
- * Keeps the UI stack-ready by exposing drafts grouped by document even though
- * the backend currently returns at most one active draft per document.
+ * Groups the active list by document because review launchers and navigation
+ * operate at document scope.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
@@ -18,10 +18,6 @@ export type ThreadDraftGroup = {
   contextPath: string | null;
   drafts: ThreadDraftListItem[];
 };
-
-export function hasActivePartialAccept(draft: ThreadDraftListItem): boolean {
-  return draft.status === "active" && (draft.partialAcceptedOperationCount ?? 0) > 0;
-}
 
 export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
   const groups = new Map<string, ThreadDraftListItem[]>();
@@ -41,14 +37,9 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
     documentId,
     documentName: groupDrafts[0]?.documentName ?? null,
     contextPath: groupDrafts[0]?.contextPath ?? null,
-    // Active drafts first so group.drafts[0] always picks the actionable
-    // draft over terminal (applied/discarded) ones still within the
-    // retention window.
-    drafts: groupDrafts.sort((a, b) => {
-      if (a.status === "active" && b.status !== "active") return -1;
-      if (a.status !== "active" && b.status === "active") return 1;
-      return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
-    }),
+    drafts: groupDrafts.sort(
+      (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
+    ),
   }));
 }
 

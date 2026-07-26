@@ -4,14 +4,13 @@
  * covered by the browser-prober smoke — the plugin composes with the real
  * editor mount, and duplicating that here would just re-shape the fake.
  */
-import { createRequire } from "node:module";
 import type { ReviewOperation } from "@meridian/contracts/drafts";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Decoration } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { buildDecorations, inlineReviewClassNames } from "./decorations";
+import { buildDecorations } from "./decorations";
 import { buildInlineReviewModel } from "./model";
 
 function encodeAnchor(position: Y.RelativePosition): string {
@@ -61,23 +60,36 @@ describe("buildDecorations", () => {
   it("returns an empty set when the model has no hunks", () => {
     const resolver = makeResolver();
     const decorations = buildDecorations(
-      { conflictLabel: "", draftRevisionToken: 1, operations: [], hunks: [] },
+      { draftRevisionToken: 1, operations: [], hunks: [] },
       null,
       resolver,
     );
     expect(decorations.find()).toHaveLength(0);
   });
 
-  it("emits a widget decoration for a pure deletion whose anchor resolves", () => {
-    const resolver = makeResolver();
-    const relPos = Y.createRelativePositionFromTypeIndex(resolver.yFragment, 0);
-    const encoded = Buffer.from(Y.encodeRelativePosition(relPos)).toString("base64");
+  it("never composes removed live text into the server draft projection", () => {
+    const projection = "OP-ONE: the courtyard lay still.";
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    const yText = new Y.XmlText();
+    yFragment.insert(0, [yParagraph]);
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, projection);
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text(projection))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const resolver = { doc, yDoc, yFragment, mapping };
+    const relStart = Y.createRelativePositionFromTypeIndex(yText, 0);
+    const relEnd = Y.createRelativePositionFromTypeIndex(yText, projection.length);
     const model = buildInlineReviewModel({
       draftRevisionToken: 2,
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -88,10 +100,10 @@ describe("buildDecorations", () => {
         {
           hunkId: "h1",
           operationIds: ["op-a"],
-          anchor: { relStart: encoded, relEnd: encoded },
+          anchor: { relStart: encodeAnchor(relStart), relEnd: encodeAnchor(relEnd) },
           kind: "text",
           spans: [],
-          deletedText: "gone",
+          deletedText: "TOP-ONE: the courtyard had rearranged itself in the night",
         },
       ],
     });
@@ -99,40 +111,48 @@ describe("buildDecorations", () => {
     const decorations = buildDecorations(model, "op-a", resolver);
     const emitted = decorations.find();
     expect(emitted).toHaveLength(1);
+    expect(emitted.map(decorationFlavor)).toEqual(["inline"]);
+    expect(doc.textContent).toBe(projection);
     expect(decorationKinds(emitted, [{ operationId: "op-a", kind: "agent" }], "op-a")).toEqual(
-      new Set(["agent", "deletion", "emphasized"]),
+      new Set(["agent", "emphasized"]),
     );
   });
 
-  it("adds the edited-since-draft chip to a conflicted hunk", () => {
-    const resolver = makeResolver();
-    const relPos = Y.createRelativePositionFromTypeIndex(resolver.yFragment, 0);
-    const encoded = encodeAnchor(relPos);
+  it("anchors a pure text deletion for Changes navigation without restoring its text", () => {
+    const projection = "The surviving sentence.";
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    const yText = new Y.XmlText();
+    yFragment.insert(0, [yParagraph]);
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, projection);
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text(projection))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const anchor = encodeAnchor(Y.createRelativePositionFromTypeIndex(yText, 0));
     const model = buildInlineReviewModel({
-      draftRevisionToken: 1,
-      operations: [],
-      conflictedBlocks: new Set(["block-a"]),
-      conflictLabel: "edited since this draft was written",
+      draftRevisionToken: 3,
+      operations: [agentOperation],
       hunks: [
         {
-          hunkId: "h-conflict",
-          operationIds: [],
-          blockHashes: ["block-a"],
-          anchor: { relStart: encoded, relEnd: encoded },
+          hunkId: "h-text-delete",
+          operationIds: ["op-ai"],
+          anchor: { relStart: anchor, relEnd: anchor },
           kind: "text",
           spans: [],
-          deletedText: "old words",
+          deletedText: "Removed opening sentence.",
         },
       ],
     });
 
-    const widgets = buildDecorations(model, null, resolver)
-      .find()
-      .filter((decoration) => decorationFlavor(decoration) === "widget")
-      .map(renderWidget);
-
-    expect(widgets.some((dom) => dom.className === inlineReviewClassNames.conflictChip)).toBe(true);
-    expect(widgets.map((dom) => dom.textContent)).toContain("edited since this draft was written");
+    const emitted = buildDecorations(model, null, { doc, yDoc, yFragment, mapping }).find();
+    expect(emitted).toHaveLength(1);
+    expect(decorationFlavor(emitted[0])).toBe("widget");
+    expect(emitted[0].spec["data-review-operations"]).toBe("op-ai");
+    expect(doc.textContent).toBe(projection);
   });
 
   it("skips hunks whose start anchor points past the document (stale after edits)", () => {
@@ -147,7 +167,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -206,7 +226,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -214,7 +234,7 @@ describe("buildDecorations", () => {
         },
         {
           operationId: "op-writer",
-          rejectSourceUpdateIds: [2],
+          closureClassId: "closure:op-writer",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -287,7 +307,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-writer",
-          rejectSourceUpdateIds: [1, 2, 3],
+          closureClassId: "closure:op-writer",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -351,7 +371,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -359,7 +379,7 @@ describe("buildDecorations", () => {
         },
         {
           operationId: "op-writer",
-          rejectSourceUpdateIds: [2],
+          closureClassId: "closure:op-writer",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -413,7 +433,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -451,25 +471,6 @@ function decorationFlavor(decoration: Decoration): "inline" | "node" | "widget" 
   return probed.inline ? "inline" : "node";
 }
 
-/** Invoke a widget decoration's deferred DOM factory under a scratch JSDOM. */
-function renderWidget(decoration: Decoration): HTMLElement {
-  const require = createRequire(import.meta.url);
-  const { JSDOM } = require("jsdom") as {
-    JSDOM: new (html: string) => { window: { document: Document; close: () => void } };
-  };
-  const dom = new JSDOM("<!doctype html><html><body></body></html>");
-  const previousDocument = Reflect.get(globalThis, "document");
-  Reflect.set(globalThis, "document", dom.window.document);
-  try {
-    const type = (decoration as unknown as { type: { toDOM: () => HTMLElement } }).type;
-    return type.toDOM();
-  } finally {
-    if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
-    else Reflect.set(globalThis, "document", previousDocument);
-    dom.window.close();
-  }
-}
-
 /** doc(paragraph("abcd"), horizontal_rule) mirrored into a resolvable Yjs mapping. */
 function makeBlockResolver() {
   const yDoc = new Y.Doc();
@@ -495,7 +496,7 @@ function makeBlockResolver() {
 
 const agentOperation: ReviewOperation = {
   operationId: "op-ai",
-  rejectSourceUpdateIds: [1],
+  closureClassId: "closure:op-ai",
   kind: "agent",
   contribution: "added",
   classification: "addition",
@@ -533,7 +534,7 @@ describe("buildDecorations — block hunks", () => {
     expect(decoration.spec["data-review-operations"]).toBe("op-ai");
   });
 
-  it("renders a deleted horizontal rule as a block widget carrying the struck display", () => {
+  it("anchors a deleted block without injecting its content into the draft projection", () => {
     const { resolver, yFragment } = makeBlockResolver();
     // Zero-width anchor at the delete site (before the paragraph).
     const rel = Y.createRelativePositionFromTypeIndex(yFragment, 0);
@@ -555,23 +556,12 @@ describe("buildDecorations — block hunks", () => {
 
     const emitted = buildDecorations(model, null, resolver).find();
     expect(emitted).toHaveLength(1);
-    const [decoration] = emitted;
-    expect(decorationFlavor(decoration)).toBe("widget");
-    expect(decoration.from).toBe(0);
-    expect(decoration.spec["data-review-hunk"]).toBe("h-del");
-    expect(decoration.spec["data-review-operations"]).toBe("op-ai");
-
-    const dom = renderWidget(decoration);
-    expect(dom.tagName).toBe("DIV");
-    expect(dom.className).toContain(inlineReviewClassNames.removed);
-    expect(dom.className).toContain(inlineReviewClassNames.removedBlock);
-    expect(dom.getAttribute("data-review-block-type")).toBe("horizontal_rule");
-    expect(dom.getAttribute("data-review-hunk")).toBe("h-del");
-    expect(dom.getAttribute("data-review-operations")).toBe("op-ai");
-    expect(dom.textContent).toBe("───");
+    expect(decorationFlavor(emitted[0])).toBe("widget");
+    expect(emitted[0].spec["data-review-operations"]).toBe("op-ai");
+    expect(resolver.doc.textContent).toBe("abcd");
   });
 
-  it("renders a change hunk as struck old block above the highlighted new node", () => {
+  it("renders only the proposed block for a changed block", () => {
     const { resolver, yFragment } = makeBlockResolver();
     const relStart = Y.createRelativePositionFromTypeIndex(yFragment, 1);
     const relEnd = Y.createRelativePositionFromTypeIndex(yFragment, 2);
@@ -592,13 +582,11 @@ describe("buildDecorations — block hunks", () => {
     });
 
     const emitted = buildDecorations(model, null, resolver).find();
-    expect(emitted).toHaveLength(2);
-    const widget = emitted.find((decoration) => decorationFlavor(decoration) === "widget");
-    const node = emitted.find((decoration) => decorationFlavor(decoration) === "node");
-    expect(widget?.from).toBe(6);
+    expect(emitted).toHaveLength(1);
+    const node = emitted[0];
+    expect(decorationFlavor(node)).toBe("node");
     expect(node?.from).toBe(6);
     expect(node?.to).toBe(7);
-    expect(renderWidget(widget as Decoration).textContent).toBe("old item");
   });
 
   it("keeps text and block hunks independent in a mixed document", () => {

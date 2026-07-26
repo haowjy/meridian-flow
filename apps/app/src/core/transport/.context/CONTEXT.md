@@ -1,5 +1,20 @@
 # Client transport seams
 
+## Document status
+
+Every `DocumentSessionTransportProvider.subscribeStatus` implementation emits
+its current connection state synchronously before the subscription call
+returns, then emits every later transition. `DocumentSession` relies on that
+initial callback to derive an honest first status; a deferred initial emission
+creates a timing-dependent gap between the transport and session snapshots.
+
+## Stateless document messages
+
+`HocuspocusDocumentTransport` parses the extensible stateless payload once with
+the contracts parser, ignores unknown message types, and exposes typed,
+per-message subscriptions. Live `DocumentSession`s subscribe to
+`change_event`; branch sessions deliberately do not.
+
 ## Dev-only wire observation
 
 The two client sockets use their canonical transport seams. `TappedWebSocket`

@@ -9,7 +9,6 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { mergeTrailChanges } from "../adapters/drizzle-change-trail-aggregate.js";
-import { planTrailForwardAction } from "../adapters/drizzle-trail-forward-actions.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createOfflineReconciliation } from "./offline-reconciliation.js";
 import type { NormalizedTrail, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -24,7 +23,7 @@ const model = yProsemirrorModel(schema);
 const agentCodec = createAgentEditCodec(codec);
 
 describe("offline reconciliation", () => {
-  it("reports hidden writer content once using the ordinary swept trail shape", async () => {
+  it("records hidden writer content once in the ordinary receipt shape", async () => {
     const scenario = await setup({
       origin: "human:writer",
       editDeletedBlock: true,
@@ -37,39 +36,8 @@ describe("offline reconciliation", () => {
       documentId: DOCUMENT_ID,
       kind: "delete",
       navigation: { kind: "deletion_boundary" },
-      writerProtection: { kind: "sweep" },
-      swept: {
-        removed: { status: "available", markdown: "Writer offline revision" },
-      },
-      reversible: false,
+      beforeText: expect.stringContaining("Writer offline revision"),
     });
-    expect(
-      planTrailForwardAction({
-        liveDoc: scenario.liveDoc,
-        change: scenario.changes[0] as TrailChangeV1,
-        action: "restore",
-        model,
-        codec: agentCodec,
-      }),
-    ).not.toBeNull();
-  });
-
-  it("reports writer content using the ordinary recoverable trail", async () => {
-    const scenario = await setup({
-      origin: "human:writer",
-      editDeletedBlock: true,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toHaveLength(1);
-    expect(
-      planTrailForwardAction({
-        liveDoc: scenario.liveDoc,
-        change: scenario.changes[0] as TrailChangeV1,
-        action: "restore",
-        model,
-        codec: agentCodec,
-      }),
-    ).not.toBeNull();
   });
 
   it("reports an offline writer revision even when the block was agent-origin", async () => {
@@ -79,10 +47,7 @@ describe("offline reconciliation", () => {
     });
     await scenario.reconcile();
     expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({
-      kind: "delete",
-      writerProtection: { kind: "sweep" },
-    });
+    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
   });
 
   it("reports an offline writer revision when the agent actor has no response", async () => {
@@ -93,10 +58,7 @@ describe("offline reconciliation", () => {
     });
     await scenario.reconcile();
     expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({
-      kind: "delete",
-      writerProtection: { kind: "sweep" },
-    });
+    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
   });
 });
 
@@ -150,6 +112,7 @@ async function setup(input: {
       async record(record) {
         const incoming = record.trails.flatMap((trail: NormalizedTrail) => trail.changes);
         changes = mergeTrailChanges(changes, incoming);
+        return [];
       },
     },
     model,

@@ -2,33 +2,8 @@
 
 ## Architecture
 
-### `src/tool/` module map
-
 `write.ts` is the composition façade; behavior belongs in the module that owns
-its concern. Production modules (excluding colocated tests) are:
-
-| Module | Responsibility |
-|---|---|
-| `command-schema.ts` | Canonical validation schema for model-facing write commands. |
-| `coordinator.ts` | Translates live-document coordinator failures into tool results. |
-| `document-renderer.ts` | Parses agent input and renders document blocks for reads and echoes. |
-| `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
-| `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
-| `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
-| `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
-| `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
-| `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
-| `types.ts` | Public command, context, outcome, lifecycle event, and response result types. |
-| `write-commands.ts` | Implements read/create/insert/replace handlers. |
-| `write-deps.ts` | Defines public write-tool construction options. |
-| `write-dispatch.ts` | Dispatches validated commands to supplied command/reversal handlers. |
-| `write-helpers.ts` | Shared parsing, identity, and error helpers. |
-| `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
-| `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
-| `write-reversal.ts` | Selects, submits, persists, and reports write-level undo/redo. |
-| `undo/reversal-reconstruction.ts` | Synthesizes one cold undo/redo update, including plain-text order repair. |
-| `write.ts` | Wires the modules into the public `WriteTool`; it contains no command implementation. |
-| `test-support/` | Shared package-test journals, harnesses, scenarios, and assertions. |
+its concern.
 
 ### Codec pipeline
 ```
@@ -103,6 +78,12 @@ doc+thread+turn reversal is still `status: "reversed"` inside the append
 transaction, marks it `status: "redone"`, and returns `consumed: false` without
 appending when another session already used it.
 
+Redo staleness is writer-specific. A later `human:*` journal row withdraws redo;
+system reversal/bookkeeping rows and later agent rows do not. The planner and
+persist-time watermark guard use that same classification. `planUndo()` and
+`planRedo()` are the shared authority for read-model availability and command
+execution, so those paths cannot disagree except across a race.
+
 Lineage has two distinct persisted authorities.
 `document_yjs_reversals.redo_update_seq` records the current active redo closure
 (state): handles that are active because of the same redo update must undo
@@ -110,10 +91,14 @@ together. `document_yjs_reversal_ops` records durable reversal op identity
 (history): old undo/redo update seqs are exempt from dependency blocking even
 when the current state has moved on. Both authorities compact with the retained
 Yjs update log so closure and dependency checks only target retained update seqs.
+Hosts may append a `system:reconcile` update after separately attributed rows in
+the same admission to make cold replay causally complete. That row is coverage
+for those authored rows, not a later semantic edit, so lineage dependency
+evaluation ignores it; the authored rows remain the reversal targets.
 The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
 journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
 handles, candidate handles, and reversal-op seqs, then receive the undo closure or
-refusal verdict. The helper steps behind that API (compatible groups, boundary
+unavailable verdict. The helper steps behind that API (compatible groups, boundary
 expansion, seq ownership, dependency evaluation) are private implementation
 details.
 

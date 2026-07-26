@@ -2,18 +2,25 @@
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { BranchStore } from "./branch-coordinator.js";
 import type { PushToLiveResult, WorkPushPolicyStore } from "./branch-push-contracts.js";
+import type { PendingWorkDraft, WorkDraftPending } from "./work-draft-pending.js";
 
 type PushToLive = (input: {
   branchId: string;
   pushedByUserId?: UserId;
-  overlapPolicy?: "refuse" | "apply_and_trail";
   resetPolicy?: "auto";
+}) => Promise<PushToLiveResult>;
+
+type ApplyPendingDraft = (input: {
+  draft: PendingWorkDraft;
+  pushedByUserId?: UserId;
 }) => Promise<PushToLiveResult>;
 
 export function createWorkPushPolicy(input: {
   branchStore: BranchStore;
   workPushPolicyStore: WorkPushPolicyStore;
+  workDraftPending: WorkDraftPending;
   pushToLive: PushToLive;
+  applyPendingDraft: ApplyPendingDraft;
 }) {
   return {
     async pushAutoBranchAfterThreadPeerWrite(autoInput: {
@@ -30,7 +37,6 @@ export function createWorkPushPolicy(input: {
       return input.pushToLive({
         branchId: autoInput.workDraftBranchId,
         pushedByUserId: autoInput.pushedByUserId,
-        overlapPolicy: "apply_and_trail",
       });
     },
 
@@ -44,25 +50,19 @@ export function createWorkPushPolicy(input: {
         await input.workPushPolicyStore.updateWorkDraftPushPolicy(policyInput.workId, "manual");
         return { status: "updated" as const, policy: "manual" as const };
       }
-      const unpushedCount = await input.workPushPolicyStore.countUnpushedRowsForWork(
-        policyInput.workId,
-      );
-      if (unpushedCount > 0 && !policyInput.confirmedPush) {
+      const pendingDrafts = await input.workDraftPending.list(policyInput.workId);
+      if (pendingDrafts.length > 0 && !policyInput.confirmedPush) {
         return {
           status: "confirmation_required" as const,
-          unpushedCount,
-          reason: `Switching to Auto-apply will apply ${unpushedCount} pending changes.`,
+          unpushedCount: pendingDrafts.length,
+          reason: `Switching to Auto-apply will apply ${pendingDrafts.length} pending changes.`,
         };
       }
-      if (unpushedCount > 0) {
-        for (const branchId of await input.workPushPolicyStore.listActiveWorkDraftBranchIdsForWork(
-          policyInput.workId,
-        )) {
-          await input.pushToLive({
-            branchId,
-            pushedByUserId: policyInput.pushedByUserId,
-            resetPolicy: "auto",
-            overlapPolicy: "apply_and_trail",
+      if (pendingDrafts.length > 0) {
+        for (const draft of pendingDrafts) {
+          await input.applyPendingDraft({
+            draft,
+            ...(policyInput.pushedByUserId ? { pushedByUserId: policyInput.pushedByUserId } : {}),
           });
         }
       }

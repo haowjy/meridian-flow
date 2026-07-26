@@ -20,7 +20,6 @@ const reservedNamespaceIndexes = new WeakMap<Y.Doc, ReservedRangeIndex>();
 let provenanceEnumerationCount = 0;
 
 export type { DocumentAuthorityId } from "@meridian/contracts";
-export const INITIAL_DOCUMENT_AUTHORITY_GENERATION = 1n;
 export type SafetyBirthClass = "writer_protected" | "agent";
 
 export type ProvenanceTargetFactV1 = {
@@ -65,6 +64,11 @@ export type ProvenanceRun = {
   birthClass: SafetyBirthClass;
 };
 
+export type RootLineageRun = {
+  target: WriterLineageRange;
+  root: WriterLineageRange;
+};
+
 export type ProvenanceMaterialization = {
   doc: Y.Doc;
   visible: ProvenanceRun[];
@@ -86,7 +90,7 @@ export function insertionAttributions(
     index.add(attribution.range, attribution, sameAttribution);
   }
   for (const row of rows) {
-    for (const range of insertionRanges(row.update)) {
+    for (const range of journalInsertionRanges(row.update)) {
       const attribution = {
         range,
         birthClass: birthClassFromAttribution(row),
@@ -114,7 +118,7 @@ export function materializeProvenanceForDoc(input: {
     attributions.add(attribution.range, attribution, sameAttribution);
   }
   for (const row of input.rows) {
-    for (const range of insertionRanges(row.update)) {
+    for (const range of journalInsertionRanges(row.update)) {
       attributions.addUncovered(range, {
         range,
         birthClass: birthClassFromAttribution(row),
@@ -172,7 +176,7 @@ export function materializeProvenanceView(input: {
   const rows = [...input.rows].sort(compareReplayKey);
   validateReplayRows(rows, input.manifest.floor, input.watermark, input);
   for (const row of rows) {
-    for (const range of insertionRanges(row.update)) {
+    for (const range of journalInsertionRanges(row.update)) {
       attributions.addUncovered(range, {
         range,
         birthClass: birthClassFromAttribution(row),
@@ -191,6 +195,27 @@ function provenanceRunsForDoc(
   attributions: RangeIndex<AttributionRunV1>,
   fallbackBirthClass?: SafetyBirthClass,
 ): ProvenanceRun[] {
+  const visible: ProvenanceRun[] = [];
+  for (const run of materializeRootLineageForDoc(doc)) {
+    for (let offset = 0; offset < run.root.length; offset += 1) {
+      const root = unit(run.root, offset);
+      const attribution = attributions.valueAt(root);
+      if (!attribution && !fallbackBirthClass) {
+        throw blocked("Provenance root has no retained journal attribution");
+      }
+      appendRun(visible, {
+        target: unit(run.target, offset),
+        root,
+        birthClass: attribution?.birthClass ?? fallbackBirthClass ?? "agent",
+      });
+    }
+  }
+  return visible;
+}
+
+/** Materializes only the visible target-to-root relation. Attention policy
+ * consumes this neutral relation without assigning destructive-safety classes. */
+export function materializeRootLineageForDoc(doc: Y.Doc): RootLineageRun[] {
   const assignments = readTargetFacts(doc);
   // Admission validates targets while they are visible. After deletion Yjs may
   // discard the parent ancestry needed to re-prove historical fragment membership,
@@ -203,7 +228,7 @@ function provenanceRunsForDoc(
     }
   }
 
-  const visible: ProvenanceRun[] = [];
+  const visible: RootLineageRun[] = [];
   for (const target of visibleProseStringRanges(doc)) {
     for (let offset = 0; offset < target.length; offset += 1) {
       const targetUnit = unit(target, offset);
@@ -211,15 +236,7 @@ function provenanceRunsForDoc(
       const rootUnit = assignment
         ? unit(assignment.root, targetUnit.clock - assignment.target.clock)
         : targetUnit;
-      const attribution = attributions.valueAt(rootUnit);
-      if (!attribution && !fallbackBirthClass) {
-        throw blocked("Provenance root has no retained journal attribution");
-      }
-      appendRun(visible, {
-        target: targetUnit,
-        root: rootUnit,
-        birthClass: attribution?.birthClass ?? fallbackBirthClass ?? "agent",
-      });
+      appendRootLineageRun(visible, { target: targetUnit, root: rootUnit });
     }
   }
 
@@ -607,7 +624,7 @@ function validateReplayRows(
   }
 }
 
-function insertionRanges(update: Uint8Array): WriterLineageRange[] {
+export function journalInsertionRanges(update: Uint8Array): WriterLineageRange[] {
   return (Y.decodeUpdate(update) as DecodedUpdate).structs.map((value) => {
     const struct = asStruct(value);
     return { clientID: struct.id.client, clock: struct.id.clock, length: struct.length };
@@ -827,6 +844,25 @@ function appendRun(target: ProvenanceRun[], unitRun: ProvenanceRun): void {
     target: { ...unitRun.target },
     root: { ...unitRun.root },
     birthClass: unitRun.birthClass,
+  });
+}
+
+function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun): void {
+  const previous = target.at(-1);
+  if (
+    previous &&
+    previous.target.clientID === unitRun.target.clientID &&
+    end(previous.target) === unitRun.target.clock &&
+    previous.root.clientID === unitRun.root.clientID &&
+    end(previous.root) === unitRun.root.clock
+  ) {
+    previous.target.length += 1;
+    previous.root.length += 1;
+    return;
+  }
+  target.push({
+    target: { ...unitRun.target },
+    root: { ...unitRun.root },
   });
 }
 

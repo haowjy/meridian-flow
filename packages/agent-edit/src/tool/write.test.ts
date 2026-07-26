@@ -33,6 +33,17 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("retains the diff command name when malformed diff arguments are rejected", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const result = await ctx.core.write(
+      { command: "diff", file: "not-allowed-for-diff" } as never,
+      context,
+    );
+
+    expect(result.command).toBe("diff");
+    expectOutcome(result, "invalid_write", true);
+  });
+
   it("reports degraded awareness when destructive reporting fails after append", async () => {
     const ctx = harness(
       { "chapter.md": "Writer protected." },

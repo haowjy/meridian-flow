@@ -2,6 +2,8 @@
 
 Reusable Yjs agent-edit core: model-facing document read/write, response-scoped
 commit buffering, write handles, and cold undo/redo over host-provided ports.
+`write(command: "diff")` reads the current turn's folded trail through a
+host-provided read-only query port.
 
 ## Mental model
 
@@ -25,10 +27,9 @@ immediate writes use the journal kind returned by submission to restore or recov
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
 - Destructive policy is report-only: Yjs merge never blocks an agent write.
-  Echo informs the agent; provenance-classified sweep trails inform the writer.
+  Echo reports best-effort direct-write destructive evidence. That evidence never
+  feeds branch-settlement sweep or apply authority.
 - Keep the kernel CRDT-neutral but be honest that v1 content currency is
   ProseMirror via `@meridian/markup`.
-- Do not add draft-scope persistence, `scope_id`, or compatibility shims for the
-  deleted draft subsystem.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)

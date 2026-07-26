@@ -1,20 +1,55 @@
 import { act, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const invalidateQueriesMock = vi.fn();
-const exitReviewMock = vi.fn();
+const cancelQueriesMock = vi.fn();
+const fetchQueryMock = vi.fn();
+const getQueryDataMock = vi.fn();
+const queryClientMock = {
+  cancelQueries: cancelQueriesMock,
+  fetchQuery: fetchQueryMock,
+  getQueryData: getQueryDataMock,
+  invalidateQueries: invalidateQueriesMock,
+};
 const resolveDraftOnlyTabMock = vi.fn();
+const exitReviewMock = vi.fn();
 let currentGroups: ThreadDraftGroup[] = [];
 let currentInlineReview: { documentId: string; draftId: string } | null = null;
+let currentReviewRoomName: string | null = null;
+let currentTabIsDraftOnly = false;
 let rerenderProvider: (() => void) | null = null;
+let controllerMounts = 0;
+let controllerUnmounts = 0;
 
 const docUpdateHandlers = new Map<string, Set<() => void>>();
 
 vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+  queryOptions: (options: unknown) => options,
+  useQueryClient: () => queryClientMock,
+}));
+vi.mock("@/client/stores", () => ({
+  useContextTabsStore: {
+    getState: () => ({
+      byProject: {
+        "project-1": {
+          tabs: currentTabIsDraftOnly
+            ? [
+                {
+                  kind: "tracked",
+                  documentId: "doc-terminal",
+                  draftOnly: true,
+                },
+              ]
+            : [],
+        },
+      },
+      resolveDraftOnlyTab: resolveDraftOnlyTabMock,
+    }),
+  },
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({
@@ -22,18 +57,20 @@ vi.mock("@/client/query/useWorkDrafts", () => ({
     status: currentGroups.length === 0 ? "empty" : "ready",
   }),
 }));
-vi.mock("@/client/stores", () => ({
-  useThreadStore: (selector: (state: { now: number }) => number) => selector({ now: 0 }),
-  useContextTabsStore: {
-    getState: () => ({ resolveDraftOnlyTab: resolveDraftOnlyTabMock }),
-  },
-}));
 vi.mock("./useDraftReviewController", () => ({
-  useDraftReviewController: () => ({
-    exitReview: exitReviewMock,
-    inlineReview: currentInlineReview,
-    reviewRoomName: null,
-  }),
+  useDraftReviewController: () => {
+    useEffect(() => {
+      controllerMounts += 1;
+      return () => {
+        controllerUnmounts += 1;
+      };
+    }, []);
+    return {
+      exitReview: exitReviewMock,
+      inlineReview: currentInlineReview,
+      reviewRoomName: currentReviewRoomName,
+    };
+  },
 }));
 vi.mock("@/core/editor/document-session-registry", () => ({
   getDocumentSessionRegistry: () => ({
@@ -54,6 +91,18 @@ vi.mock("@/core/editor/document-session-registry", () => ({
         },
       };
     },
+    getRoom: (roomName: string) => ({
+      document: {
+        on: (event: string, handler: () => void) => {
+          if (event !== "update") return;
+          docUpdateHandlers.get(roomName)?.add(handler);
+        },
+        off: (event: string, handler: () => void) => {
+          if (event !== "update") return;
+          docUpdateHandlers.get(roomName)?.delete(handler);
+        },
+      },
+    }),
     has: (documentId: string) => docUpdateHandlers.has(documentId),
   }),
 }));
@@ -101,11 +150,19 @@ async function withProvider(documentId: string, run: () => Promise<void> | void)
 describe("DraftReviewProvider live lineage invalidation", () => {
   beforeEach(() => {
     invalidateQueriesMock.mockClear();
-    exitReviewMock.mockClear();
+    cancelQueriesMock.mockReset();
+    cancelQueriesMock.mockResolvedValue(undefined);
+    fetchQueryMock.mockReset();
+    getQueryDataMock.mockReset();
     resolveDraftOnlyTabMock.mockClear();
+    exitReviewMock.mockClear();
     docUpdateHandlers.clear();
     currentGroups = [];
     currentInlineReview = null;
+    currentReviewRoomName = null;
+    currentTabIsDraftOnly = false;
+    controllerMounts = 0;
+    controllerUnmounts = 0;
     vi.useFakeTimers();
   });
 
@@ -143,13 +200,46 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
-  it("resolves a draft-only tab as discarded when its active draft disappears", async () => {
+  it("exits review when the active draft vanishes", async () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
 
     await withReactRoot(<ProviderHarness />, async () => {
       exitReviewMock.mockClear();
-      resolveDraftOnlyTabMock.mockClear();
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(exitReviewMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("commits a draft-only tab when a remotely accepted draft vanishes", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    getQueryDataMock.mockReturnValue([]);
+    fetchQueryMock.mockResolvedValue(contextTreeResponse(true));
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
+        "project-1",
+        "doc-terminal",
+        "committed",
+      );
+    });
+  });
+
+  it("discards a draft-only tab when a remotely rejected draft vanishes", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    getQueryDataMock.mockReturnValue([]);
+    fetchQueryMock.mockResolvedValue(contextTreeResponse(false));
+
+    await withReactRoot(<ProviderHarness />, async () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
@@ -158,7 +248,83 @@ describe("DraftReviewProvider live lineage invalidation", () => {
         "doc-terminal",
         "discarded",
       );
-      expect(exitReviewMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps a draft-only tab when remote membership cannot be verified", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    getQueryDataMock.mockReturnValue([]);
+    fetchQueryMock.mockRejectedValue(new Error("offline"));
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps a draft-only tab when a replacement active draft appears during reconciliation", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    getQueryDataMock.mockReturnValue(activeGroup().drafts);
+    fetchQueryMock.mockResolvedValue(contextTreeResponse(false));
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("attaches the draft-room observer when its room name arrives after selection", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    docUpdateHandlers.set("branch:draft-terminal", new Set());
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentReviewRoomName = "branch:draft-terminal";
+      await act(async () => rerenderProvider?.());
+      invalidateQueriesMock.mockClear();
+
+      emitDocumentUpdate("branch:draft-terminal");
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+
+      expect(invalidateQueriesMock).toHaveBeenCalledWith({
+        queryKey: projectQueryKeys.workDraftPreview(
+          "project-1",
+          "work-1",
+          "doc-terminal",
+          "draft-terminal",
+        ),
+      });
+    });
+  });
+
+  it("remounts the review session when the Work identity changes", async () => {
+    let switchWork: (() => void) | null = null;
+
+    function ScopedHarness() {
+      const [workId, setWorkId] = useState("work-1");
+      switchWork = () => setWorkId("work-2");
+      return (
+        <DraftReviewProvider projectId="project-1" workId={workId} threadId="thread-1">
+          <div />
+        </DraftReviewProvider>
+      );
+    }
+
+    await withReactRoot(<ScopedHarness />, async () => {
+      expect(controllerMounts).toBe(1);
+      await act(async () => switchWork?.());
+      expect(controllerUnmounts).toBe(1);
+      expect(controllerMounts).toBe(2);
     });
   });
 });
@@ -177,13 +343,38 @@ function activeGroup(): ThreadDraftGroup {
         status: "active",
         lastActorTurnId: null,
         updatedAt: "2026-01-01T00:00:00.000Z",
-        appliedAt: null,
-        discardedAt: null,
-        partialAcceptedOperationCount: 0,
         proposedOperationCount: 1,
         wordsAdded: null,
         wordsRemoved: null,
       },
     ],
+  };
+}
+
+function contextTreeResponse(materialized: boolean) {
+  return {
+    projectId: "project-1",
+    scheme: "manuscript",
+    tree: {
+      kind: "dir",
+      name: "Manuscript",
+      path: "/",
+      uri: "manuscript://",
+      children: materialized
+        ? [
+            {
+              kind: "file",
+              documentId: "doc-terminal",
+              name: "terminal.md",
+              path: "/terminal.md",
+              uri: "manuscript://terminal.md",
+              provisionalName: false,
+              editable: true,
+              filetype: "markdown",
+              schemaType: "prosemirror",
+            },
+          ]
+        : [],
+    },
   };
 }

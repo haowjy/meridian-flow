@@ -1,90 +1,22 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
 import type {
-  TrailForwardAction,
-  TrailForwardActionResult,
-  TrailForwardActionStateV1,
+  ChangeTrailDetailResponseV1,
+  ChangeTrailDocumentDetailV1,
+  ChangeTrailShellV1,
+  TrailChangeV1,
 } from "@meridian/contracts";
-import { getJson, postJson } from "./api/http-client";
+import { getJson } from "./api/http-client";
 
-export type { TrailForwardAction, TrailForwardActionResult, TrailForwardActionStateV1 };
+export type { ChangeTrailDocumentDetailV1, ChangeTrailShellV1, TrailChangeV1 };
 
-export type ChangeTrailShell = {
-  trailId: string;
-  owner:
-    | { kind: "turn"; threadId: string; turnId: string }
-    | { kind: "shared"; threadId: string; turnId: null };
-  state: "building" | "settling" | "settled";
-  version: number;
-  changeCount: number;
-  sweptChangeCount: number;
-  documents: Array<{ documentId: string; title: string }>;
-  wordsAdded: number | null;
-  wordsRemoved: number | null;
-  updatedAt: string;
-  settledAt: string | null;
-};
-
-export type TrailChange = {
-  changeId: string;
-  ordinal: number;
-  documentId: string | null;
-  pushId?: string | null;
-  receiptId?: string | null;
-  kind: "insert" | "modify" | "delete";
-  beforeBlockId?: string | null;
-  afterBlockId?: string | null;
-  beforeBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
-  beforeText: string | null;
-  afterTextAtReceipt: string | null;
-  /** Canonical live block retained for server-side Restore fallback planning. */
-  afterBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
-  navigation:
-    | {
-        kind: "live_block_range";
-        relStart: string;
-        relEnd: string;
-        targetBlockId: { clientID: number; clock: number };
-      }
-    | {
-        kind: "deletion_boundary";
-        position: string;
-        affinity: "before_next" | "after_previous" | "document_start";
-      }
-    | { kind: "unavailable"; reason: string };
-  swept: null | {
-    removed: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
-  };
-  /** Writer-protection evidence; absent on ordinary historical rows. */
-  writerProtection?:
-    | {
-        kind: "sweep";
-        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
-      }
-    | {
-        kind: "resurrection";
-        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
-      };
-  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
-  reversible: boolean;
-};
-
-export type ChangeTrailDocument =
-  | {
-      documentId: string;
-      unavailable: true;
-    }
-  | {
-      trailId: string;
-      documentId: string;
-      documentTitle: string;
-      wordsAdded: number | null;
-      wordsRemoved: number | null;
-      changes: TrailChange[];
-      anchorState: "available" | "deleted";
-    };
+export type ChangeTrailShell = ChangeTrailShellV1;
+export type TrailChange = TrailChangeV1;
+export type ChangeTrailDocument = ChangeTrailDocumentDetailV1;
 export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPending: boolean };
 
 export const emptyTrailShellState = (): TrailShellState => ({ byId: {}, gapPending: false });
+export const changeTrailDetailKey = (threadId: string, trailId: string) =>
+  ["change-trail-detail", threadId, trailId] as const;
 
 export type TrailShellTransition = {
   kind: "updated" | "settled";
@@ -92,9 +24,9 @@ export type TrailShellTransition = {
   trailId: string;
   turnId: string | null;
   version: number;
-  counts?: { changes: number; swept: number; documents: number };
+  counts?: { changes: number; documents: number };
   shell?: {
-    counts: { changes: number; swept: number; documents: number };
+    counts: { changes: number; documents: number };
     documents: Array<{ documentId: string; title: string }>;
     wordsAdded: number | null;
     wordsRemoved: number | null;
@@ -114,8 +46,7 @@ export function applyTrailShellTransition(
     (prior
       ? {
           changes: prior.changeCount,
-          swept: prior.sweptChangeCount,
-          documents: prior.documents.length,
+          documents: prior.documentCount,
         }
       : null);
   // Delivery events carry lifecycle counts, not presentation metadata. A
@@ -129,7 +60,7 @@ export function applyTrailShellTransition(
     state: transition.kind === "settled" ? "settled" : "building",
     version: transition.version,
     changeCount: counts.changes,
-    sweptChangeCount: counts.swept,
+    documentCount: counts.documents,
     documents: transition.shell?.documents ?? prior.documents,
     wordsAdded: transition.shell ? transition.shell.wordsAdded : prior.wordsAdded,
     wordsRemoved: transition.shell ? transition.shell.wordsRemoved : prior.wordsRemoved,
@@ -165,21 +96,15 @@ export async function readChangeTrail(
   threadId: string,
   trailId: string,
 ): Promise<ChangeTrailDocument[]> {
-  const result = await getJson<{ version: 1; trailId: string; documents: ChangeTrailDocument[] }>(
+  const result = await getJson<ChangeTrailDetailResponseV1>(
     `/api/threads/${threadId}/change-trails/${trailId}`,
   );
   return result.documents;
 }
 
-/** Forward writer actions are server-owned so validation and journal persistence share one lock. */
-export async function applyTrailForwardAction(input: {
-  threadId: string;
-  trailId: string;
-  changeId: string;
-  action: TrailForwardAction;
-}): Promise<TrailForwardActionResult> {
-  return postJson<TrailForwardActionResult>(
-    `/api/threads/${input.threadId}/change-trails/${input.trailId}/changes/${input.changeId}/${input.action}`,
-    {},
-  );
+/** Decode the display body carried by the trail's hashline serialization. */
+export function bodyFromTrailHashline(serialized: string | null): string | null {
+  if (serialized === null) return null;
+  const separator = serialized.indexOf("|");
+  return separator < 0 ? serialized : serialized.slice(separator + 1);
 }

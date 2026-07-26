@@ -12,13 +12,75 @@ Yjs document session. It must stay structurally aligned with
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
 - `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
-  live rooms use the bare document id, draft-review rooms use
-  `draft:<draftId>` from `@meridian/contracts/protocol`. Switching live ↔ draft
-  is a session identity change and must remount the TipTap editor because
-  Collaboration binds to a concrete Y.Doc/fragment at construction.
-- Live sessions may use versioned IndexedDB persistence. Draft review sessions
-  do not: the draft Hocuspocus room is server-persisted and short-lived, and a
-  local draft cache risks stale recovery across review sessions.
+  live rooms use the bare document id; review rooms use the opaque,
+  generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
+  review is a session identity change and must remount the TipTap editor because
+  Collaboration binds to a concrete Y.Doc/fragment at construction. A review
+  mount requires both `reviewDraftId` and `reviewRoomName`; neither selects the
+  live surface, while either one alone is invalid and must fail rather than
+  falling back to live.
+- `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
+  the contract:
+  - `EditorMountIdentity` is a discriminated union over the two surfaces (live
+    room, optionally detached, versus a generation-fenced review room) plus the
+    construction facts both share: document, project, schema type, and whether
+    CollaborationCaret is installed. Every field changes which extensions exist
+    or which shared document backs them, so `editorMountKey()` renders it into
+    the React key that owns the mount, and `editorRoomKey()` names the room the
+    session registry must supply. Callers derive both from the same identity, so
+    a session swap cannot arrive without a new mount.
+  - `useMountedEditor()` freezes construction on first render and calls
+    `useEditor` with no dependency array. TipTap 3 then reconciles changed
+    options onto the live instance with `setOptions()`; the extension array's
+    identity is stable, so its option comparison finds nothing to do on an
+    ordinary re-render.
+  - `EditorSurfaceOptions` (editability and ProseMirror `editorProps`) is
+    everything that may change mid-mount. Editability needs its own
+    `setEditable()` call because TipTap's option sync deliberately re-asserts
+    the running editable flag. A caller that rebuilds `editorProps` every render
+    pays an extra `view.setProps` — never a rebuild — so editor handlers do not
+    have to be identity-stable; they read live editability off `view.editable`
+    rather than closing over props.
+  - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
+    refetch and a live surface change keep the same editor and UndoManager while
+    a room change replaces them.
+- Live sessions may use versioned IndexedDB persistence. Review sessions do not:
+  the branch room is server-persisted and generation-fenced, and a local cache
+  risks recovering state into the wrong review generation.
+- Live peer marks are the session projection of durable trail changes. Their
+  anchored popover lazy-reads trail detail and the originating thread snapshot.
+  The popover is evidence and navigation only; producing-turn receipt Undo/Redo
+  is the sole reversal authority for AI changes.
+- Peer-mark manuscript color describes the change, not the thread identity:
+  added/modified marks use jade and deletions use crimson. Ordinary ranges rest
+  as an underline only; a sweep is the sole resting warning tint. Per-thread
+  hues belong only to identity chrome such as the hover label and popover dot.
+  Localized mark and trail verbs come from `change-mark-labels.ts`; do not
+  duplicate English labels in the ProseMirror extension or UI surfaces.
+  The thread name inside a mark label arrives through `AgentNameStore`, a
+  subscribable lookup the projection repaints from. It is a store rather than a
+  resolver callback because the editor is built once per room: a closure over
+  the thread-list query would re-key the editor on every refetch, and thread
+  titles land after the turn that created the mark. An untitled thread
+  contributes no name, so the label falls back to "AI".
+- Live `DocumentSession`s own an ephemeral `SessionMarkerStore` sidecar.
+  Change-event replace sets survive editor remounts during the registry's
+  retention window but are never persisted or projected into branch rooms.
+  Every accepted replace set advances its group revision before changes admitted
+  by the current writer are filtered, so an all-self set still clears older
+  marks and fences delayed replays. Unresolved anchors expire on their own timer
+  even while the editor is idle; store teardown cancels that timer.
+  The ProseMirror projection clears a whole mark only for a local writer edit
+  through its range or tick; remote sync, selection, and boundary-adjacent typing
+  never clear it.
+- Deletion marks are caret-sized inline ticks. A boundary anchor resolves into
+  the first or last descendant textblock on its affinity side, falling back to
+  the opposite adjacent container; never leave the widget between block nodes
+  as an anonymous line. Deletions use crimson for their tick and focus ring.
+- Collaboration awareness is a browser protocol boundary: theme-owned cursor
+  colors must be resolved before publication and serialized as concrete
+  six-digit RGB hex. CSS variables and OKLCH strings are valid token sources,
+  not valid y-prosemirror awareness colors.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
@@ -44,56 +106,45 @@ Yjs document session. It must stay structurally aligned with
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
 
-## Draft review — view extension and reject runtime
+## Draft review — projection-only view extension
 
 Colocated under `extensions/inline-review/`. The extension is a ProseMirror
 plugin that owns a single `DecorationSet` describing every hunk in the current
 server review model. Keep this directory view-only: plugin state, decorations,
 commands, and the lightweight hunk model used by the plugin.
 
-- Only installed when the editor is bound to a draft room. The
-  `enableDraftInlineReview` flag on `createEditorExtensions` picks it up when
-  `EditorView` receives `reviewDraftId`; live editors never pay for it.
+- Only installed when the editor is bound to a review branch room. The
+  `enableDraftInlineReview` flag on `createEditorExtensions` follows the
+  `review` variant of `EditorMountIdentity`, which needs both a draft id and its
+  generation-fenced room name; live editors never pay for it.
 - The plugin is the sole owner of decoration state. React talks to it via TipTap
   commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
   `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.
-- Anchor resolution routes through the y-prosemirror binding
-  (`ySyncPluginKey` state). `Y.RelativePosition` decode is separated from
+- Anchor resolution routes through the shared `relative-position-runtime.ts`
+  extraction of the y-prosemirror binding (`ySyncPluginKey` state).
+  `Y.RelativePosition` decode is separated from
   decoration construction so anchor handling can be unit-tested without a DOM.
-- Local edits map decorations via `DecorationSet.map`. Full re-resolution from
-  RelativePositions runs only when a new model arrives from
-  `useInlineReviewSync` (debounced refetch of `useDraftPreview`).
-- Fallback: when `reviewMode: "panel"` comes back from the server, callers
-  route the writer to the docked `DraftDiffPanel` — the plugin is passive here.
+- Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
+  RelativePositions; local writer typing maps the existing set through the
+  transaction. The extension has no optimistic attribution path — the next
+  server model owns writer attribution. Review dispositions never use browser
+  mutation origins or collaborative history; Ctrl+Z is not a review restore
+  mechanism.
 - Editor-side click seam: mousedown on any decoration DOM
   (`[data-review-operations]`) dispatches
   `setInlineReviewActiveOperation` for the first listed operation. This is
   the editor→sidebar direction of bidirectional linking; the sidebar
   reads plugin state via `useEditorState` and reacts (scroll card into
-  view + emphasise). The event is not swallowed — the writer's caret
-  placement inside real editable text is preserved.
+  view + emphasise). Pure deletions use an empty, visible navigation seam with
+  focused-operation emphasis; its DOM contains no manuscript text.
 
 Attribution → highlight color (agent = jade, writer = gold), review palette
 lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 
 The plugin paints **one decoration per `ReviewHunk.spans` entry** rather
 than one per hunk, so nested authorship (a writer edit inside an AI
-insertion) renders in each owner's own color — gold inside green, matching
-the mock. Hunks with no resolvable spans fall back to whole-hunk coloring
-via `hunkKind`. Alongside model decorations, the plugin owns an
-**optimistic writer overlay**: local user transactions (`!ySyncPluginKey.isChangeOrigin`
-+ not `addToHistory: false`) add gold spans to `optimisticDecorations`
-covering the just-typed ranges. `set-model` clears the overlay — the
-refreshed server model is authoritative and its own writer spans take
-over. `props.decorations` merges the overlay onto the model set.
-
-Operation rejection runtime lives next to the editor core in
-`core/editor/inline-review-runtime.ts`, not in the extension barrel. It decodes
-draft journals, reconstructs inverse Yjs updates, and applies the tracked reject
-origin. That code depends on persisted journal semantics and Yjs undo-manager
-runtime behavior, so keeping it outside `extensions/inline-review/` preserves the
-extension boundary: view model in the extension, reconstruction side effect in
-the runtime module.
+insertion) renders in each owner's own color — gold inside green. Hunks with no
+resolvable spans fall back to whole-hunk coloring via `hunkKind`.
 
 ## Change-trail navigation
 
@@ -106,24 +157,12 @@ zero-width deletion anchors render a caret-like boundary rather than inventing
 a replacement range. Chat supplies route resolution, but must not decode,
 validate, or map anchors itself.
 
-## Per-operation discard (dock Changes cards)
+## Selective Discard (dock Changes cards)
 
-The dock Changes view's per-card **Discard** rejects one operation without
-re-editing the draft. The command fetches the immutable draft journal for the
-model's `draftRevisionToken` (cached per revision), decodes base64 bytes into a
-`JournalSnapshot`, reconstructs the inverse for that operation's server-provided
-`rejectSourceUpdateIds`, calls `undoManager.stopCapturing()`, then applies the
-inverse to the draft Y.Doc with `HUNK_REJECT_ORIGIN`. The inverse syncs through
-Hocuspocus as a normal draft update row; decorations disappear on the normal
-debounced preview refetch. A stale state-vector refetches preview and retries.
-The controller state machine owns pending/settling state by draft id; the card
-only names the operation.
-
-Collaboration passes `yUndoOptions.trackedOrigins = [HUNK_REJECT_ORIGIN]`
-uniformly for live and draft editors. TipTap/y-tiptap still adds its own
-`ySyncPluginKey` origin for typing; live editors never emit the reject origin,
-so the config is inert outside draft review, but Ctrl+Z can restore a discarded
-operation while it is under review.
+Each card's **Discard** is a server disposition command for its authoritative
+Discard class. It never edits the review Y.Doc from the browser. The review
+session's synchronous disposition lock serializes commands, and the awaited
+preview refetch replaces the projection and decorations before the lock releases.
 
 ## Math extension decision
 

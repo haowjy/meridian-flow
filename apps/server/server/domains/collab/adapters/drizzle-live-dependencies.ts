@@ -51,13 +51,6 @@ export function createDrizzleLiveTurnDependencyStore(
   };
 }
 
-export async function hasDependentLaterLiveRows(
-  db: LiveDependencyDb,
-  input: { documentId: string; threadId: ThreadId; turnId: TurnId },
-): Promise<boolean> {
-  return (await checkDependentLaterLiveRows(db, input)).hasDependents;
-}
-
 export async function checkDependentLaterLiveRows(
   db: LiveDependencyDb,
   input: { documentId: string; threadId: ThreadId; turnId: TurnId },
@@ -161,7 +154,7 @@ function dedupeBySeq(rows: readonly LiveDependencyRow[]): LiveDependencyRow[] {
 }
 
 function isNonSystemLiveDependencyRow(row: LaterLiveDependencyRow): boolean {
-  return row.originType !== "system";
+  return row.originType !== "system" && row.originType !== "reconcile";
 }
 
 async function latestLiveUpdateSeq(db: LiveDependencyDb, documentId: string): Promise<number> {

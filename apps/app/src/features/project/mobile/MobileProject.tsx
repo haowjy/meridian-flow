@@ -15,6 +15,7 @@ import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { ProjectViewProps } from "../ProjectView";
@@ -43,6 +44,9 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
   useEffect(() => setCreating(null), [contextLocation]);
+  // The phone shows one view at a time and has no rail to reveal into, so this
+  // is the one shell where opening a conversation still switches the view.
+  useConversationRevealRouting(props.onSelectThread);
   const crumbs = contextBreadcrumbSegments(props);
 
   return (
@@ -62,9 +66,6 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        // One trailing slot, screen-dependent identity — see trailingAction()
-        // for the chat ⇄ results toggle and the Files browser's `+` create
-        // menu.
         actions={trailingAction(props, setCreating)}
       />
       <main className="main-pane min-h-0 flex-1 overflow-hidden">

@@ -11,7 +11,6 @@ import {
   createThreadEventHub,
 } from "../../../threads/index.js";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
-import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import {
   createToolExecutor,
   createToolRegistry,
@@ -20,6 +19,7 @@ import {
 } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
+import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 async function collectEvents(handle: { events: AsyncIterable<OrchestratorEvent> }) {

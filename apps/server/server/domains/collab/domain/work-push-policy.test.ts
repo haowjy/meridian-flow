@@ -3,6 +3,7 @@ import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
+import type { WorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
 const WORK_ID = "00000000-0000-4000-8000-000000000001" as WorkId;
@@ -36,11 +37,13 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
     deferUntilCommit: vi.fn(() => false),
   };
   const workPushPolicyStore: WorkPushPolicyStore = {
-    countUnpushedRowsForWork: vi.fn(async () => 0),
-    listActiveWorkDraftBranchIdsForWork: vi.fn(async () => []),
     updateWorkDraftPushPolicy: vi.fn(async (_workId, policy) => {
       events.push(`policy:${policy}`);
     }),
+  };
+  const workDraftPending: WorkDraftPending = {
+    list: vi.fn(async () => []),
+    count: vi.fn(async () => 0),
   };
   const pushToLive = vi.fn(async ({ branchId }: { branchId: string }) => {
     events.push(`push:${branchId}`);
@@ -52,9 +55,35 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
       reason: "no_active_rows" as const,
     };
   });
-  const policy = createWorkPushPolicy({ branchStore, workPushPolicyStore, pushToLive });
+  const applyPendingDraft = vi.fn(
+    async ({ draft }: { draft: Awaited<ReturnType<WorkDraftPending["list"]>>[number] }) => {
+      events.push(`push:${draft.branch.branchId}`);
+      return {
+        status: "noop" as const,
+        branchId: draft.branch.branchId,
+        documentId: draft.branch.documentId,
+        branchGeneration: draft.branch.generation,
+        reason: "no_active_rows" as const,
+      };
+    },
+  );
+  const policy = createWorkPushPolicy({
+    branchStore,
+    workPushPolicyStore,
+    workDraftPending,
+    pushToLive,
+    applyPendingDraft,
+  });
 
-  return { branchStore, events, policy, pushToLive, workPushPolicyStore };
+  return {
+    applyPendingDraft,
+    branchStore,
+    events,
+    policy,
+    pushToLive,
+    workDraftPending,
+    workPushPolicyStore,
+  };
 }
 
 describe("work push policy", () => {
@@ -90,7 +119,6 @@ describe("work push policy", () => {
     expect(harness.pushToLive).toHaveBeenCalledWith({
       branchId: "work-draft",
       pushedByUserId: USER_ID,
-      overlapPolicy: "apply_and_trail",
     });
   });
 
@@ -100,14 +128,16 @@ describe("work push policy", () => {
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "manual" }),
     ).resolves.toEqual({ status: "updated", policy: "manual" });
-    expect(harness.workPushPolicyStore.countUnpushedRowsForWork).not.toHaveBeenCalled();
+    expect(harness.workDraftPending.list).not.toHaveBeenCalled();
     expect(harness.pushToLive).not.toHaveBeenCalled();
     expect(harness.events).toEqual(["policy:manual"]);
   });
 
   it("requires confirmation before applying pending work", async () => {
     const harness = createHarness();
-    vi.mocked(harness.workPushPolicyStore.countUnpushedRowsForWork).mockResolvedValue(2);
+    vi.mocked(harness.workDraftPending.list).mockResolvedValue(
+      pendingDrafts("branch-a", "branch-b"),
+    );
 
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto" }),
@@ -118,11 +148,9 @@ describe("work push policy", () => {
 
   it("pushes every active draft before enabling auto policy", async () => {
     const harness = createHarness();
-    vi.mocked(harness.workPushPolicyStore.countUnpushedRowsForWork).mockResolvedValue(2);
-    vi.mocked(harness.workPushPolicyStore.listActiveWorkDraftBranchIdsForWork).mockResolvedValue([
-      "branch-a",
-      "branch-b",
-    ]);
+    vi.mocked(harness.workDraftPending.list).mockResolvedValue(
+      pendingDrafts("branch-a", "branch-b"),
+    );
 
     await expect(
       harness.policy.setWorkPushPolicy({
@@ -133,21 +161,18 @@ describe("work push policy", () => {
       }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
     expect(harness.events).toEqual(["push:branch-a", "push:branch-b", "policy:auto"]);
-    expect(harness.pushToLive).toHaveBeenCalledWith({
-      branchId: "branch-a",
+    expect(harness.applyPendingDraft).toHaveBeenCalledWith({
+      draft: expect.objectContaining({
+        branch: expect.objectContaining({ branchId: "branch-a" }),
+      }),
       pushedByUserId: USER_ID,
-      resetPolicy: "auto",
-      overlapPolicy: "apply_and_trail",
     });
   });
 
   it("does not enable auto policy when a confirmed push fails", async () => {
     const harness = createHarness();
-    vi.mocked(harness.workPushPolicyStore.countUnpushedRowsForWork).mockResolvedValue(1);
-    vi.mocked(harness.workPushPolicyStore.listActiveWorkDraftBranchIdsForWork).mockResolvedValue([
-      "branch-a",
-    ]);
-    harness.pushToLive.mockRejectedValue(new Error("push failed"));
+    vi.mocked(harness.workDraftPending.list).mockResolvedValue(pendingDrafts("branch-a"));
+    harness.applyPendingDraft.mockRejectedValue(new Error("push failed"));
 
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", confirmedPush: true }),
@@ -155,3 +180,15 @@ describe("work push policy", () => {
     expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).not.toHaveBeenCalled();
   });
 });
+
+function pendingDrafts(...branchIds: string[]) {
+  return branchIds.map((branchId) => ({
+    branch: {
+      branchId,
+      documentId: workDraft("manual").documentId,
+      workId: WORK_ID,
+      generation: 1,
+    },
+    rows: [],
+  }));
+}

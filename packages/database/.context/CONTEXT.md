@@ -56,6 +56,12 @@ append-only in the production lifecycle: compaction deletes retained
 the `documents` cascade. Do not document this relationship as custom SQL or as an
 absent FK.
 
+`document_yjs_heads.schema_version` takes its Drizzle default directly from
+`COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`; do not restore a
+second literal or comment-maintained copy. A schema-version bump still requires
+an additive migration that advances the Postgres column default for deployed
+databases.
+
 ### Billing storage
 
 Billing has no `user_subscriptions` table in the current schema. Stripe customer
@@ -89,9 +95,27 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
    (functions are applied separately, after migrate).
 
+Migrations that transform existing rows need a populated upgrade scenario in
+`fresh-migrations.db.test.ts`. Use `withPopulatedMigrationDatabase` to apply the
+committed prefix, seed the pre-migration shape, apply the remaining chain, and
+assert the intended disposition. Preserve or backfill recoverable facts; make
+deliberate pre-release deletion explicit; and fail closed when required evidence
+is missing rather than inventing a plausible value.
+
 The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over
 re-squashing.
+
+### Merge renumbering
+
+Never renumber a migration already present on `main`. When merging a branch
+whose ordinals collide with newly deployed ones, renumber only the branch
+migrations behind the deployed tail and regenerate their snapshots. The
+journal tail must maintain strictly monotonic `when` timestamps; renumbering
+ordinals without advancing timestamps can make an incremental database skip
+the renumbered entries while a fresh database applies them normally. A
+monotonic-order regression test (`fresh-migrations.db.test.ts`) covers the
+changed tail after any renumber.
 
 ## Transaction model (lives in apps/server)
 
@@ -107,20 +131,4 @@ independent, non-nested scope.
 
 The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
-vs string `mode` split is a known inconsistency, not a pattern to extend — see
-the [schema map](schema-map.md) for the full column inventory and hazard list.
-
-## Schema map (regenerate-on-demand)
-
-A durable orientation map of the whole DB layer lives next to this file:
-
-- [`schema-map.md`](schema-map.md) — package layout, per-table column inventory,
-  relationships, and the timestamp-mode / `Date`-binding hazard list.
-- [`schema-map/index.html`](schema-map/index.html) — interactive ER view (open in
-  a browser; click any table for its purpose, columns, and source links).
-
-It is **regenerated on demand, not auto-maintained**. Each map records when it was
-last regenerated vs. when the DB layer source last changed
-(`git log -1 --date=short --format=%cd -- packages/database/src`). If the source
-is newer than the regen date, treat the map as stale and rebuild it from the
-current `src/schema/*.ts` definitions.
+vs string `mode` split is a known inconsistency, not a pattern to extend.

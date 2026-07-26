@@ -17,8 +17,6 @@ function change(
         : input.afterTextAtReceipt === null
           ? "delete"
           : "modify",
-    beforeBlockId: input.beforeText === null ? null : input.changeId,
-    afterBlockId: input.afterTextAtReceipt === null ? null : input.changeId,
     beforeBlockIdentity:
       input.beforeText === null
         ? null
@@ -36,8 +34,6 @@ function change(
             clock: 0,
           },
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    swept: null,
-    reversible: false,
     ...input,
   };
 }
@@ -101,7 +97,7 @@ describe("mergeTrailChanges", () => {
 });
 
 describe("refinePushChanges", () => {
-  it("preserves ordinary rows when completed sweep classification is empty", () => {
+  it("preserves ordinary rows when an empty replacement is empty", () => {
     const ordinary = change({
       changeId: "o",
       documentId: "doc-a",
@@ -111,50 +107,5 @@ describe("refinePushChanges", () => {
     });
 
     expect(refinePushChanges([ordinary], [])).toEqual([ordinary]);
-  });
-
-  it("replaces classified rows, demotes rejected sweep candidates, and creates no duplicates", () => {
-    const rejected = change({
-      changeId: "r",
-      documentId: "doc-a",
-      beforeText: "before-r|Observed body.",
-      afterTextAtReceipt: null,
-      pushId: "7",
-      swept: {
-        affectedBlockHash: "before-r",
-        removed: { status: "available", markdown: "Observed body." },
-        beforeContentRef: null,
-      },
-      writerProtection: {
-        kind: "sweep",
-        body: { status: "available", markdown: "Observed body." },
-      },
-    });
-    const provisional = change({
-      changeId: "s",
-      documentId: "doc-a",
-      beforeText: "before-s|Unseen body.",
-      afterTextAtReceipt: null,
-      pushId: "7",
-    });
-    const classified = {
-      ...provisional,
-      swept: {
-        affectedBlockHash: "before-s",
-        removed: { status: "available" as const, markdown: "Unseen body." },
-        beforeContentRef: null,
-      },
-      writerProtection: {
-        kind: "sweep" as const,
-        body: { status: "available" as const, markdown: "Unseen body." },
-      },
-    };
-
-    const refined = refinePushChanges([rejected, provisional], [classified]);
-    expect(refined).toEqual([
-      expect.objectContaining({ changeId: "r", swept: null }),
-      expect.objectContaining({ changeId: "s", swept: classified.swept }),
-    ]);
-    expect(refined[0]).not.toHaveProperty("writerProtection");
   });
 });

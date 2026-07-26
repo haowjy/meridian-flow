@@ -162,6 +162,9 @@ Supported modes:
 Policy:
 
 - Errors always exit non-zero.
+- `ADD_NOT_NULL_WITHOUT_DEFAULT` is enforced across the current unreleased
+  migration tail beginning at `0060`; released migration `0059` and earlier
+  remain exempt and rely on executable migration tests.
 - Warnings exit non-zero only with `--strict`.
 - The squashed `0000_` baseline is warning-exempt; `DELETE_WITHOUT_WHERE` remains
   an error there too.

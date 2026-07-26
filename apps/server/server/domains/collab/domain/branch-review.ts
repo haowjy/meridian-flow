@@ -1,6 +1,5 @@
 /** Branch-backed review wire types for work-draft cards. */
 
-import type { DraftApplyConflict } from "@meridian/contracts";
 import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type {
   DraftReviewHunkInternal,
@@ -8,16 +7,11 @@ import type {
 } from "./draft-review-types.js";
 
 export type ReviewableDraft = {
-  id: string;
+  draftId: string;
   documentId: DocumentId;
   workId: WorkId;
-  status: "active" | "closed";
-  branchId?: string;
-  generation?: number;
+  status: "active";
   lastActorTurnId: TurnId | null;
-  appliedAt: Date | null;
-  discardedAt: Date | null;
-  undoneAt: Date | null;
   updatedAt: Date;
   documentName: string | null;
   contextPath: string | null;
@@ -26,9 +20,11 @@ export type ReviewableDraft = {
   createdDocument?: boolean;
 };
 
-export type ActiveDraft = ReviewableDraft & { status: "active" };
+export type ActiveDraft = ReviewableDraft;
 
 export type DraftReviewPreview = {
+  draftId: string;
+  reviewRoomName: string;
   live: string;
   markdown: string;
   isNewDocument?: boolean;
@@ -40,25 +36,10 @@ export type DraftReviewPreview = {
   notice?: { code: "branch_corrupt_reset"; message: string };
 };
 
-export type DraftAcceptResult =
-  | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
-  | {
-      status: "concurrent_conflict";
-      reason: "draft_base_divergence";
-      conflictedBlocks: string[];
-      conflicts: DraftApplyConflict[];
-    }
-  | { status: "applied"; draftId: string; branchId?: string; appliedUpdateSeq: number }
-  | {
-      status: "partial_applied";
-      draftId: string;
-      appliedUpdateSeq: number;
-      acceptedOperationIds: string[];
-      writeId: string;
-    }
-  | { status: "discarded"; draftId: string; branchId?: string }
+export type DraftApplyResult =
+  | { status: "applied"; draftId: string }
   | { status: "not_found"; draftId: string };
 
-export type DraftRejectResult = { status: "discarded"; draftId: string; branchId?: string };
+export type DraftDiscardResult = { status: "discarded"; draftId: string };
 
 export { createBranchReviewOperations } from "./branch-review-operations.js";

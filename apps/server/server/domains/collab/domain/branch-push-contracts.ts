@@ -1,27 +1,21 @@
 /** Neutral branch-push contracts shared across collab domain services and adapters. */
 import type {
   DocumentCoordinator,
-  LineageRange,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DraftApplyConflict } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
 import type * as Y from "yjs";
-import type { NoticePort } from "../../notices/index.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
+import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
+import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import type { ProvenanceRun } from "./provenance.js";
-import type {
-  NavigationTargetV1,
-  NormalizedTrail,
-  RawTrailChange,
-  TrailChangeV1,
-} from "./trail-read-kernel.js";
+import type { SweepEvidence } from "./sweep-policy.js";
+import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
   constructor(readonly branchId: string) {
@@ -66,35 +60,6 @@ export function branchJournalRevision(
     .join(",");
 }
 
-export function branchUpdateMetaWithReplacementScopes(
-  updateMeta: unknown,
-  replacementScopes: readonly (readonly LineageRange[])[],
-  replacementScopesComplete: boolean,
-): unknown {
-  return {
-    ...(isRecord(updateMeta) ? updateMeta : {}),
-    replacementScopes: replacementScopes.map((scope) => scope.map((range) => ({ ...range }))),
-    replacementScopesComplete,
-  };
-}
-
-export function replacementScopesFromBranchRow(row: Pick<BranchJournalRow, "updateMeta">): {
-  complete: boolean;
-  scopes: LineageRange[][];
-} {
-  if (!isRecord(row.updateMeta) || !Array.isArray(row.updateMeta.replacementScopes)) {
-    return { complete: false, scopes: [] };
-  }
-  return {
-    complete: row.updateMeta.replacementScopesComplete === true,
-    scopes: row.updateMeta.replacementScopes.flatMap((scope) =>
-      Array.isArray(scope) && scope.length > 0 && scope.every(isLineageRange)
-        ? [scope.map((range) => ({ ...range }))]
-        : [],
-    ),
-  };
-}
-
 export type AutoBranchPushPort = {
   pushAutoBranchAfterThreadPeerWrite(input: {
     workDraftBranchId: string;
@@ -102,47 +67,23 @@ export type AutoBranchPushPort = {
   }): Promise<{ status: string; [key: string]: unknown }>;
 };
 
-export type ReceiptBlockChange = {
+export type PublicationBlockChange = {
   blockId: string;
   beforeText: string | null;
   afterText: string | null;
-  beforeWordCount: number;
-  afterWordCount: number;
-  wordDelta: number;
-};
-
-export type PushReceiptPayload = {
-  version: 1;
-  documentId: DocumentId;
-  branchId: string;
-  branchGeneration: number;
-  pushKind: "whole" | "selective";
-  changedBlocks: ReceiptBlockChange[];
-  totalWordDelta: number;
 };
 
 export type PushLineageRow = {
   id: number;
   branchId: string | null;
+  branchGeneration: number;
   documentId: DocumentId;
-  pushKind: "whole" | "selective";
   journalIds: number[];
   upstreamUpdateSeq: number | null;
-  receiptPayload: PushReceiptPayload | null;
   idempotencyKey: string;
   receiptId?: string | null;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
-};
-
-export type BranchPushConflictEcho = {
-  overlappingBlockIds: string[];
-  current: Array<
-    Pick<BranchJournalRow, "id" | "branchId" | "source" | "threadId" | "turnId" | "wId">
-  >;
-  concurrentPushes: Array<
-    Pick<PushLineageRow, "id" | "branchId" | "threadId" | "turnId" | "journalIds">
-  >;
 };
 
 export type PushToLiveResult =
@@ -151,16 +92,8 @@ export type PushToLiveResult =
       push: PushLineageRow;
       update: Uint8Array;
       branchReset?: { branchId: string; fromGeneration: number };
-      conflictEcho?: BranchPushConflictEcho;
-      swept?: PushSweptTrail;
     }
-  | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
-  | {
-      status: "push_concurrent_conflict";
-      reason: "draft_base_divergence";
-      conflictedBlocks: string[];
-      conflicts: DraftApplyConflict[];
-    }
+  | { status: "already_pushed"; push: PushLineageRow }
   | {
       status: "noop";
       branchId: string;
@@ -173,7 +106,6 @@ export type PreparedPushCommit = {
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   pushUpdate: Uint8Array;
-  receiptPayload: PushReceiptPayload;
   idempotencyKey: string;
   receiptId?: string;
   pushedByUserId?: UserId;
@@ -184,10 +116,6 @@ export type PreparedPushCommit = {
 };
 
 export type PreparedPush = {
-  conflictedBlocks: string[];
-  blindConflictedBlocks: string[];
-  conflicts: DraftApplyConflict[];
-  beforeContentRef: number | null;
   trailChanges: RawTrailChange[];
   lockCutUpdate: Uint8Array;
   prepared: Omit<
@@ -202,14 +130,18 @@ export type PendingLiveSettlement = {
   lockCutUpdate: Uint8Array;
   pushUpdate: Uint8Array;
   postCutUpdates: readonly Uint8Array[];
-  beforeContentRef: number | null;
   trail: DurableTrailRecord;
-  provenanceView: readonly ProvenanceRun[];
+  /** Optional evidence for live-session sweep elevation; never settlement authority. */
+  sweepEvidence: SweepEvidence | null;
   joinVersion: number;
   settledJoinVersion: number | null;
   claim: SettlementClaim;
   attemptCount: number;
   state: "pending";
+};
+
+export type SweepProjectionDiagnostics = {
+  unavailable(input: { pushId: number; documentId: DocumentId; cause: unknown }): void;
 };
 
 export type SettlementClaim = {
@@ -223,13 +155,13 @@ export type CompletionFenceResult = "applied" | "already_applied" | "retry";
 
 type TrailContributionTarget = {
   owner: NormalizedTrail["owner"];
-  classifications: readonly TrailChangeV1[];
+  changes: readonly TrailChangeV1[];
 };
 
 export type TrailContributionReplacement = {
   targets: readonly TrailContributionTarget[];
   documentTitles: ReadonlyMap<string, string>;
-} & ({ kind: "refine" } | { kind: "empty" });
+};
 
 export type PreparedDiscardCommit = {
   branch: BranchSnapshot;
@@ -245,11 +177,8 @@ export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
   rows: BranchJournalRow[];
+  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
   kind: "content" | "manifest";
-  materialization: "whole" | "selected_rows";
-  conflictPolicy: "refuse" | "apply_and_trail";
-  sweepPolicy: "project" | "none";
-  noticePolicy: "required" | "best_effort";
 };
 
 export type CandidateBatch = {
@@ -268,7 +197,6 @@ export type BranchJournalReadStore = {
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
   latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
-  listPushesForDocument(documentId: DocumentId): Promise<PushLineageRow[]>;
   listJournalRowsForTurn(input: {
     branchId?: string;
     generation?: number;
@@ -304,8 +232,6 @@ export type PushCommitStore = {
 };
 
 export type WorkPushPolicyStore = {
-  countUnpushedRowsForWork(workId: WorkId): Promise<number>;
-  listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
 };
 
@@ -330,23 +256,15 @@ export type BranchPushService = {
     branchId: string;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
-    overlapPolicy?: "refuse" | "apply_and_trail";
     resetPolicy?: "auto";
-  }): Promise<PushToLiveResult>;
-  pushSelectedToLive(input: {
-    branchId: string;
-    journalIds: readonly number[];
-    pushedByUserId?: UserId;
-    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;
     manifestEntryDocumentId: DocumentId;
-    contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
     signal?: AbortSignal;
-    overlapPolicy?: "refuse" | "apply_and_trail";
+    resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
@@ -395,25 +313,12 @@ export type BranchReviewService = {
   >;
 };
 
-export interface PushSweptTrail {
-  affectedBlockHashes: readonly string[];
-  capturedDeletedBodies: readonly { hash: string; body: string | "body_unavailable" }[];
-  beforeContentRef: number | null;
-  receiptId: string;
-  locations: readonly {
-    changeId: string;
-    affectedBlockHash: string;
-    outcome: "modify" | "delete";
-    navigation: NavigationTargetV1;
-  }[];
-  reversible: boolean;
-}
-
 export type BranchPushServiceInput = {
   branchStore: BranchStore;
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
   workPushPolicyStore: WorkPushPolicyStore;
+  workDraftPendingStore: WorkDraftPendingStore;
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
@@ -423,26 +328,11 @@ export type BranchPushServiceInput = {
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: MarkupCodec;
+  changeEventDelivery: ChangeEventDelivery;
   pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
-  notices?: NoticePort;
   writerIngressBarrier?: WriterIngressBarrier;
+  sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };
-
-function isLineageRange(value: unknown): value is LineageRange {
-  if (!isRecord(value)) return false;
-  return (
-    Number.isSafeInteger(value.clientID) &&
-    Number.isSafeInteger(value.clock) &&
-    Number.isSafeInteger(value.length) &&
-    (value.clientID as number) >= 0 &&
-    (value.clock as number) >= 0 &&
-    (value.length as number) > 0
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}

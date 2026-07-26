@@ -107,6 +107,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     codec: options.codec,
     undoClientId,
     reversalNoticePort: options.reversalNoticePort,
+    deferUntilCommit: options.deferUntilCommit,
     onInvariantViolation: options.onInvariantViolation,
     onReversalNoticeFailed: options.onReversalNoticeFailed,
   });
@@ -137,7 +138,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtimeStore,
     threadOrigins,
   });
-  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
+  const dispatch = createWriteDispatch({
+    commands,
+    reversal: reversalEndpoints,
+    turnDiffQuery: options.turnDiffQuery,
+  });
 
   const write: WriteFunction = async (command, context = {}) => {
     const parsed = WriteCommandSchema.safeParse(command);

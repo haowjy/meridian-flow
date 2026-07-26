@@ -1,19 +1,10 @@
 /** Checkpoint, restore, and listing service for collab documents. */
-import type {
-  AgentEditCodec,
-  DocumentCoordinator,
-  YProsemirrorDocumentModel,
-} from "@meridian/agent-edit/integration";
-import {
-  isDocumentNotFoundError,
-  snapshotBlocks,
-  toDocHandle,
-} from "@meridian/agent-edit/integration";
+import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
+import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
-import type { NoticePort } from "../notices/index.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
 import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 
@@ -52,9 +43,6 @@ type CheckpointServiceDeps = {
   store: CheckpointStore;
   latestUpdateSeq(documentId: string): Promise<number>;
   markdownDocuments: CheckpointMarkdownDocuments;
-  notices?: NoticePort;
-  model?: YProsemirrorDocumentModel;
-  codec?: AgentEditCodec;
   replaceAuthorityGeneration?(
     documentId: DocumentId,
     checkpointId: string,
@@ -88,15 +76,6 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
       try {
         const restored = createCollabYDoc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
-        const { model, codec } = deps;
-        const safetySnapshot =
-          deps.notices && model && codec
-            ? await deps.coordinator.withDocument(documentId, async (liveDoc) => ({
-                before: snapshotBlocks(toDocHandle(liveDoc), model, codec),
-                after: snapshotBlocks(toDocHandle(restored), model, codec),
-                beforeContentRef: await deps.latestUpdateSeq(documentId),
-              }))
-            : null;
         if (deps.replaceAuthorityGeneration) {
           await deps.replaceAuthorityGeneration(documentId as DocumentId, checkpointId);
         } else {
@@ -106,27 +85,6 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
             SYSTEM_ORIGIN,
           );
           if (!result.ok) return result;
-        }
-        if (safetySnapshot) {
-          const afterHashes = new Set(safetySnapshot.after.map(({ hash }) => hash));
-          const discarded = safetySnapshot.before.filter(({ hash }) => !afterHashes.has(hash));
-          await deps.notices?.record({
-            kind: "checkpoint_sweep",
-            scope: { kind: "document", documentId },
-            writerVisible: true,
-            message:
-              discarded.length > 0
-                ? `Checkpoint restore discarded ${discarded.length} block${discarded.length === 1 ? "" : "s"}.`
-                : "Checkpoint restore completed without discarding blocks.",
-            data: {
-              sweptBlockHashes: discarded.map(({ hash }) => hash),
-              capturedDeletedBodies: discarded.map(({ hash, serialized }) => ({
-                hash,
-                body: serialized.slice(serialized.indexOf("|") + 1),
-              })),
-              beforeContentRef: safetySnapshot.beforeContentRef,
-            },
-          });
         }
         return Ok(undefined);
       } catch (cause) {

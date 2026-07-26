@@ -15,4 +15,7 @@ distinguishes a legacy raw row from a not-yet-recorded draft create at the
 command boundary rather than via incidental timing. Feeds the pending
 efficiency-architecture review alongside #284/#303 gates.
 
-**Affected paths:** `composition.ts`, `adapters/drizzle-branches.ts`
+**Affected paths:** `composition.ts`, `adapters/drizzle-branches.ts`. Preserve
+`domain/work-draft-pending.ts` as the independent pending-review authority;
+lifecycle consolidation must not make active branch status a proxy for
+reviewable content.

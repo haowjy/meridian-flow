@@ -1,0 +1,316 @@
+// @vitest-environment jsdom
+import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
+import { Editor } from "@tiptap/core";
+import { ySyncPluginKey } from "@tiptap/y-tiptap";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Awareness } from "y-protocols/awareness";
+import * as Y from "yjs";
+import { activateLocale } from "@/lib/i18n";
+import { relativePositionForEditorIndex } from "@/test-support/editor-relative-position";
+import { createAgentNameStore } from "../agent-name-store";
+import { createEditorConfig } from "../config";
+import { SessionMarkerStore } from "../session-marker-store";
+
+let editor: Editor;
+let store: SessionMarkerStore;
+
+function encode(position: Y.RelativePosition): string {
+  const bytes = Y.encodeRelativePosition(position);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function addMarker(
+  kind: "range" | "boundary",
+  from: number,
+  to = from,
+  suffix = "",
+  pureDeletionOffset: number | null = null,
+  swept = false,
+  affinity: "before_next" | "after_previous" | "document_start" = "before_next",
+): void {
+  const start = relativePositionForEditorIndex(editor, from);
+  const end = relativePositionForEditorIndex(editor, to);
+  if (!start || !end) throw new Error("editor binding unavailable");
+  const navigation =
+    kind === "range"
+      ? {
+          kind: "live_block_range" as const,
+          relStart: encode(start),
+          relEnd: encode(end),
+          targetBlockId: { clientID: 1, clock: 0 },
+        }
+      : {
+          kind: "deletion_boundary" as const,
+          position: encode(start),
+          affinity,
+        };
+  const message: ChangeEventWsMessage = {
+    type: "change_event",
+    documentId: "doc-1",
+    threadId: "thread-1",
+    trailId: `trail-${kind}${suffix}`,
+    projectionRevision: 1,
+    author: { kind: "agent", threadId: "thread-1", turnId: "turn-1" },
+    changes: [
+      {
+        admittedByUserId: null,
+        changeId: `${kind}-mark${suffix}`,
+        kind: kind === "range" ? "modify" : "delete",
+        navigation,
+        swept: swept ?? false,
+        excerpt: null,
+        pureDeletionOffset,
+      },
+    ],
+    truncated: false,
+  };
+  store.replaceGroup(message);
+  store.reconcileAnchors(() => true);
+}
+
+function dismissed(id: string): boolean {
+  return store.getSnapshot().find((marker) => marker.changeId === id)?.dismissed ?? false;
+}
+
+beforeEach(() => {
+  const doc = new Y.Doc({ gc: false });
+  store = new SessionMarkerStore("me");
+  editor = new Editor({
+    element: document.createElement("div"),
+    ...createEditorConfig({
+      document: doc,
+      awareness: new Awareness(doc),
+      markerStore: store,
+    }),
+  });
+  editor.commands.setContent({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+  });
+});
+
+afterEach(() => {
+  editor.destroy();
+  activateLocale("en");
+});
+
+describe("peer marker writer self-clear", () => {
+  it("clears a range for an interior insertion but not insertion at its start boundary", () => {
+    addMarker("range", 2, 5);
+    editor.commands.insertContentAt(2, "x");
+    expect(dismissed("range-mark")).toBe(false);
+    editor.commands.insertContentAt(4, "x");
+    expect(dismissed("range-mark")).toBe(true);
+  });
+
+  it("does not clear a range for insertion at its end boundary", () => {
+    addMarker("range", 2, 5);
+    editor.commands.insertContentAt(5, "x");
+    expect(dismissed("range-mark")).toBe(false);
+  });
+
+  it("keeps a range when normal editor typing inserts exactly at its start", () => {
+    addMarker("range", 2, 5, "-typed");
+    editor.commands.setTextSelection(2);
+    editor.commands.insertContent("x");
+    expect(dismissed("range-mark-typed")).toBe(false);
+    expect(editor.view.dom.querySelector('[data-peer-mark="range-mark-typed"]')).not.toBeNull();
+  });
+
+  it("clears a range for an overlapping deletion but not caret movement", () => {
+    addMarker("range", 2, 5);
+    editor.commands.setTextSelection(3);
+    expect(dismissed("range-mark")).toBe(false);
+    editor.commands.deleteRange({ from: 4, to: 6 });
+    expect(dismissed("range-mark")).toBe(true);
+  });
+
+  it("clears a boundary for insertion at the seam and deletion covering it", () => {
+    addMarker("boundary", 3);
+    editor.commands.insertContentAt(3, "x");
+    expect(dismissed("boundary-mark")).toBe(true);
+
+    addMarker("boundary", 4, 4, "-delete");
+    editor.commands.deleteRange({ from: 2, to: 5 });
+    expect(dismissed("boundary-mark-delete")).toBe(true);
+  });
+
+  it("does not clear for a remote y-sync transaction", () => {
+    addMarker("range", 2, 5);
+    const tr = editor.state.tr.insertText("x", 3).setMeta(ySyncPluginKey, {
+      isChangeOrigin: true,
+    });
+    editor.view.dispatch(tr);
+    expect(dismissed("range-mark")).toBe(false);
+  });
+
+  it("clears a pure-deletion tick only at its effective position", () => {
+    addMarker("range", 1, 6, "-before", 2);
+    editor.commands.insertContentAt(2, "x");
+    expect(dismissed("range-mark-before")).toBe(false);
+
+    addMarker("range", 1, 7, "-at", 2);
+    editor.commands.insertContentAt(3, "x");
+    expect(dismissed("range-mark-at")).toBe(true);
+
+    addMarker("range", 1, 8, "-after", 2);
+    editor.commands.insertContentAt(6, "x");
+    expect(dismissed("range-mark-after")).toBe(false);
+  });
+
+  it("projects range and boundary markers with their final forms", () => {
+    addMarker("range", 2, 5);
+    addMarker("boundary", 6);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--range")?.textContent).toBe("ell");
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--tick")).not.toBeNull();
+  });
+
+  it("projects swept severity and deletion anatomy as semantic attributes", () => {
+    addMarker("range", 2, 5, "-swept", null, true);
+    addMarker("range", 1, 6, "-deletion", 2, true);
+    addMarker("boundary", 6, 6, "-swept", null, true);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    expect(
+      editor.view.dom
+        .querySelector('[data-peer-mark="range-mark-swept"]')
+        ?.getAttribute("data-peer-mark-swept"),
+    ).toBe("true");
+    const deletionTick = editor.view.dom.querySelector(
+      '[data-peer-mark="range-mark-deletion"].meridian-peer-mark--tick',
+    );
+    expect(deletionTick?.getAttribute("data-peer-mark-deletion")).toBe("true");
+    expect(deletionTick?.getAttribute("data-peer-mark-swept")).toBe("true");
+    expect(
+      editor.view.dom.querySelector(
+        '[data-peer-mark="boundary-mark-swept"].meridian-peer-mark--tick',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("nudges block-boundary deletion ticks into adjacent prose", () => {
+    editor.commands.setContent("<p>Before.</p><p>After.</p>");
+    const boundary = editor.state.doc.child(0).nodeSize;
+    addMarker("boundary", boundary, boundary, "-next");
+    addMarker("boundary", boundary, boundary, "-previous", null, false, "after_previous");
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    const next = editor.view.dom.querySelector(
+      '[data-peer-mark="boundary-mark-next"].meridian-peer-mark--tick',
+    );
+    const previous = editor.view.dom.querySelector(
+      '[data-peer-mark="boundary-mark-previous"].meridian-peer-mark--tick',
+    );
+    expect(next?.parentElement?.textContent).toContain("After.");
+    expect(previous?.parentElement?.textContent).toContain("Before.");
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--seam")).toBeNull();
+  });
+
+  it("nudges document-boundary ticks into nested textblocks", () => {
+    editor.commands.setContent("<ul><li><p>Nested prose.</p></li></ul>");
+    addMarker("boundary", 0, 0, "-start", null, false, "document_start");
+    addMarker(
+      "boundary",
+      editor.state.doc.content.size,
+      editor.state.doc.content.size,
+      "-end",
+      null,
+      false,
+      "after_previous",
+    );
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    const start = editor.view.dom.querySelector('[data-peer-mark="boundary-mark-start"]');
+    const end = editor.view.dom.querySelector('[data-peer-mark="boundary-mark-end"]');
+    expect(start?.parentElement?.tagName).toBe("P");
+    expect(end?.parentElement?.tagName).toBe("P");
+    expect(start?.parentElement?.textContent).toContain("Nested prose.");
+    expect(end?.parentElement?.textContent).toContain("Nested prose.");
+  });
+
+  it("rebuilds existing marker labels when the locale changes", async () => {
+    addMarker("range", 2, 5);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    // Drain rebuilds queued by anchor reconciliation so the assertion below
+    // isolates the name subscription.
+    await Promise.resolve();
+    await Promise.resolve();
+    const selector = '[data-peer-mark="range-mark"]';
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
+      "Show change details for AI replaced a passage",
+    );
+
+    activateLocale("zh");
+    await Promise.resolve();
+
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
+      "显示AI replaced a passage的更改详情",
+    );
+  });
+
+  it("emphasizes an addressed live marker without creating a second decoration", () => {
+    addMarker("boundary", 3);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+
+    expect(editor.commands.showPeerMarker("boundary-mark")).toBe(true);
+    expect(
+      editor.view.dom
+        .querySelector('[data-peer-mark="boundary-mark"]')
+        ?.getAttribute("data-peer-mark-emphasized"),
+    ).toBe("true");
+    expect(editor.view.dom.querySelector("[data-live-range-navigation]")).toBeNull();
+  });
+
+  it("projects a pure deletion as an inline tick instead of a range", () => {
+    editor.commands.setContent("<p>Beyond the seawall, three boats waited for morning.</p>");
+    addMarker("range", 0, editor.state.doc.content.size, "-deletion", 26);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    const tick = editor.view.dom.querySelector(".meridian-peer-mark--tick");
+    expect(tick).not.toBeNull();
+    expect(tick?.parentElement?.tagName).toBe("P");
+    expect(tick?.previousSibling?.textContent).toBe("Beyond the seawall, three ");
+    expect(tick?.nextSibling?.textContent).toBe("boats waited for morning.");
+    expect(editor.view.dom.querySelector(".meridian-peer-mark--range")).toBeNull();
+  });
+});
+
+describe("peer marker agent names", () => {
+  it("repaints labels when a thread title arrives after the mark", async () => {
+    const agentNames = createAgentNameStore();
+    editor.destroy();
+    const doc = new Y.Doc({ gc: false });
+    editor = new Editor({
+      element: document.createElement("div"),
+      ...createEditorConfig({
+        document: doc,
+        awareness: new Awareness(doc),
+        markerStore: store,
+        agentNames,
+      }),
+    });
+    editor.commands.setContent({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+    });
+    addMarker("range", 2, 5);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    // Drain rebuilds queued by anchor reconciliation so the assertion below
+    // isolates the name subscription.
+    await Promise.resolve();
+    await Promise.resolve();
+    const selector = '[data-peer-mark="range-mark"]';
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("data-peer-mark-label")).toBe(
+      "AI replaced a passage",
+    );
+
+    agentNames.replace(new Map([["thread-1", "Seawall rewrite"]]));
+    await Promise.resolve();
+
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("data-peer-mark-label")).toBe(
+      "Seawall rewrite replaced a passage",
+    );
+  });
+});

@@ -1,11 +1,11 @@
-# contracts/drafts — branch-review wire DTOs
+# contracts/drafts — Work-draft review wire DTOs
 
-This directory keeps the historical `drafts` API vocabulary used by the review
-UI, but the model is branch-backed. A `draftId` on the wire is a review-card id;
-new flows should prefer `branchId` when addressing sync or mutation operations.
+`draftId` is the only product identity for preview, Apply, and Discard. The
+server translates it to branch infrastructure inside the Work-draft domain;
+wire DTOs must not expose `branchId`. `reviewRoomName` is an opaque,
+generation-fenced transport address, not another application identity.
 
-Do not add lifecycle statuses such as `accepting`, `reactivating`, `applied`, or
-`discarded`. Reviewable work is active branch work or closed history derived from
-server state.
+The list contains current reviewable work only; completed review is not retained
+as a draft-list receipt.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)

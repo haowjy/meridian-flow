@@ -861,7 +861,7 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Recovered."]);
   });
 
-  it("keeps a post-journal response as the next undo target after live recovery", async () => {
+  it("keeps a post-journal response as the next undo target without invalidating redo", async () => {
     let ctx!: ReturnType<typeof harness>;
     ctx = harness(
       { "chapter.md": "Alpha." },
@@ -905,16 +905,16 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
 
     const redoBeforeUndo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redoBeforeUndo)).toBe("status: nothing_to_redo");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
+    expect(outcomeText(redoBeforeUndo)).toContain("status: reconciled");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["First.", "Beta.", "Gamma."]);
 
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
     expect(outcomeText(undo)).toContain("status: reversed");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["First.", "Beta."]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
     expect(outcomeText(redo)).toContain("status: reconciled");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["First.", "Beta.", "Gamma."]);
   });
 
   it("recovers all documents when a multi-document response fails during the second live merge", async () => {
@@ -1058,7 +1058,7 @@ describe("response staging", () => {
     );
     await ctx.core.write({ command: "insert", file: "beta.md", content: "Tail." }, responseContext);
 
-    // Writer-discards doc A's card while the response is still open with doc B staged.
+    // Thread invalidation drops doc A's claim while doc B remains staged.
     await ctx.core.invalidateThread("alpha.md", THREAD_ID);
 
     const result = await ctx.core.commitResponse(responseId);

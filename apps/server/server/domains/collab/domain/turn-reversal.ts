@@ -26,6 +26,7 @@ export interface ReverseTurnDeps {
     checkedUntilSeq: number;
   }>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
 }
 
 const CANT_UNDO_DEPENDENT_MESSAGE =
@@ -49,10 +50,12 @@ export async function reverseTurn(
   for (const documentId of documentIds) {
     const outcome = await reverseDocumentForTurn(deps, input, documentId);
     if (isSuccessfulReversal(outcome)) {
-      await deps.refreshDocumentProjection?.({
-        documentId: documentId as DocumentId,
-        threadId: input.threadId,
-      });
+      const refresh = () =>
+        deps.refreshDocumentProjection?.({
+          documentId: documentId as DocumentId,
+          threadId: input.threadId,
+        });
+      if (!deps.deferUntilCommit?.(refresh)) await refresh();
     }
     documents.push(
       await documentReversalResult({
@@ -112,11 +115,10 @@ export function aggregateStatus(
 ): DocumentReversalResult["status"] {
   const statuses = documents.map((document) => document.status);
   const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const successes = new Set(["reversed", "reconciled"]);
 
   if (statuses.every((status) => status === noOp)) return noOp;
-  if (
-    statuses.every((status) => status === "reversed" || status === "reconciled" || status === noOp)
-  ) {
+  if (statuses.every((status) => successes.has(status))) {
     return statuses.includes("reconciled") ? "reconciled" : "reversed";
   }
   if (statuses.includes("cant_undo_dependent")) return "cant_undo_dependent";

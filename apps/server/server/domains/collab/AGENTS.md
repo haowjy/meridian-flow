@@ -10,8 +10,10 @@ propagation between them.
 - **Live document** is the canonical Yjs journal (`document_yjs_updates`).
 - **Thread peer** is the agent's per-thread branch. Agent-edit writes there, not
   directly to live, and each write is pushed into the Work draft journal.
-- **Work draft** is the writer-review branch for a Work. Review compares the
-  work-draft Y.Doc with live and pushes/discards selected journal rows.
+- **Work draft** is the single writer-review branch for one document and Work.
+  Every thread peer in that Work pushes into the same branch. Review compares
+  its Y.Doc with live. Apply pushes the whole current branch; Discard may reverse
+  selected journal rows. Turns are not independent physical drafts.
 - **Journal is the durable record.** Runtime state is memory-only; restarts cold
   reconstruct from the live journal plus branch state/journal rows.
 - **The durable authority head is fenced.** Each live document has one durable
@@ -19,54 +21,18 @@ propagation between them.
 - Checkpoint restore replaces the durable authority generation. It never applies
   checkpoint bytes to the current Y.Doc; the transport fences each connection to
   its opened generation and rejects retired-identity insertion or delete-set replay.
-- **Safety provenance is journal-derived.** Ordinary prose birth class comes
-  from authenticated journal attribution. Certified semantic mutations may add
-  sparse continuation/restoration facts in the reserved Yjs provenance types,
-  atomically with their prose update; ordinary authorship adds no reserved fact.
-- **Closure means card review.** `branch-review-closure.ts` computes
-  journal-backed closure classes so review cards apply/discard coherent sets.
-
-## What lives here
-
-- `domain/document-mutation-policy.ts` is the sole content-admission policy module:
-  its operation-specific capabilities validate fresh authorship, certified semantic
-  edits, caller-frozen identity replication, and fenced snapshot replacement before
-  persistence; push planning and settlement remain owned by their transition modules.
-- Branch pulls and certified thread-peer commits enter that capability through the
-  branch coordinator adapter; response-transaction persistence remains one durable unit.
-- `composition.ts` is a wiring-only production root. Application behavior lives
-  in the required review, effective-read, response-finalization, reversal,
-  projection, and thread-peer services under `domain/`; `collab-facade.ts` only
-  assembles those services into the public surface. `adapters/declared-stubs.ts`
-  owns explicit unsupported behavior; production and in-memory compositions use it
-  rather than leaving optional runtime dependencies.
-- `domain/branch-critical-sections.ts` owns branch/document lock ordering;
-  `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts` owns
-  immutable-base Manual Apply policy, and `branch-trail-projection.ts` owns
-  trail/notice projection. `branch-push-candidates.ts` builds whole, selective,
-  and companion candidate outcomes; `branch-push.ts` runs ready batches through
-  their one shared pipeline;
-  `branch-push-transition.ts` is the sole ordering owner for settlement
-  drain/reload/materialization/classification/refinement/fenced completion and
-  delivery across every push mode. `branch-review*.ts` is a separately composed
-  service for discard/undo/redo.
-- `domain/ports/pending-settlement-store.ts` is the required settlement
-  persistence boundary. `adapters/drizzle-pending-settlement.ts` owns the
-  settlement outbox, recovery claims, completion fence, and the one admission
-  join writer shared by journal and staged-push transactions.
-- `domain/ports/change-trail-persistence.ts` is the persistence boundary.
-  `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
-  dispatcher, work processor, and reconciler remain separate lifecycle owners.
-- `domain/draft-review-*` is the review diff/presentation pipeline over branch
-  docs. The name is UI vocabulary; it is not the old persisted draft subsystem.
-- `adapters/drizzle-*` are production persistence adapters for live journal,
-  branches, the required journal-read/push-commit/work-policy ports, pending
-  settlement, turn lineage, receipts, and Hocuspocus coordination.
+- **Reserved provenance is for direct-write safety, not sweep.** Ordinary prose
+  safety attribution comes from the authenticated journal. Certified semantic
+  mutations may add sparse continuation/restoration facts in reserved Yjs
+  types. Branch-settlement sweep uses recipient-native writer lineage intervals
+  instead.
+- **Discard class means card review.** `branch-review-closure.ts` joins
+  operations only through shared discard rows and hunks, then vends the required
+  class identity. The client never reconstructs classes. Apply is
+  document-scoped and publishes the whole current branch.
 
 ## Rules
 
-- Do not reintroduce `document_yjs_drafts`, draft-scoped agent-edit state,
-  `scope_id`, accept/reactivation lifecycle, or draft Hocuspocus rooms.
 - Keep package imports one-way: server adapters import `@meridian/agent-edit`;
   the package must not import server code.
 - Novel live Hocuspocus writer updates append to the journal in `beforeSync`,
@@ -91,37 +57,56 @@ propagation between them.
   the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
   reads go through `readEffectiveMarkdown` / `readEffectiveHashlines`.
-- **Undo is intrinsically guarded**: live `persistUndo` runs the dependency
-  check under `lockDocumentMutation`; Draft reversal commits reject any branch
-  journal advance after planning under the branch snapshot CAS.
-- **Draft write undo is generation-local**: a response/document folds to one
+- **Live reversal has one planner authority**: receipt availability and command
+  execution both use agent-edit `planUndo` / `planRedo`; `persistUndo` and
+  `persistRedo` repeat the plan watermark guard under `lockDocumentMutation`.
+  Freshness is writer-owned: later human rows stale the plan, while system
+  reversal/bookkeeping and agent rows do not. Draft reversal remains a separate
+  generation-local authority: `branch-turn-reversal-plan.ts` prepares both
+  receipt availability and command execution, while the branch snapshot CAS
+  rejects advances after planning.
+- **Work-draft write reversal is generation-local**: a response/document folds to one
   durable handle; undo/redo stages a typed-generation system row and projects it
   in the same Work-draft commit. Never delegate an active Draft generation to
   live reversal persistence. One command pins its branch authority through
-  persistence; reconstruction finishes from the authoritative branch state so
-  selectively reviewed rows cannot reappear. Persistence fences both appended
-  rows and status-only Apply/review transitions.
+  persistence; reconstruction finishes from the authoritative branch state.
+  Persistence fences both appended rows and status-only reversal/review
+  transitions.
 - **All branch Y.Docs are `gc: false`**: delete sets are preserved; tombstones
   are never cleaned. The undo dependency predicate depends on full struct history.
 - **Push lock ordering**: `BranchCriticalSections` acquires sorted branch locks
   (per `branchId`) then sorted live document coordinator locks. Never bypass it
   or reverse this order.
-- **Draft Apply safety is row-based**: each draft journal row owns an immutable
-  live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
-  resurrection after that base, including writer insertions positioned inside
-  the candidate's replaced scope. Auto-apply never gates and trails only effects
-  that destroy writer-owned roots according to durable provenance.
+- **Draft Apply settles the whole current branch**: every writer Apply and
+  auto-push integrates through Yjs. Writer rows created after preview are
+  included with their actor attribution. The final reconciliation row carries
+  the complete pushed update for causal replay coverage; authored rows remain
+  the attribution and dependency records. Settlement sweep policy treats each
+  agent row's `draftBaseUpdateSeq` as that candidate's own observation
+  watermark and elevates a live-session mark only for a receiving writer whose
+  later edit that candidate overwrote. Unknown, historical, AI, and
+  other-writer roots are ordinary for that recipient. Compact per-writer root
+  evidence preserves first admission when sync updates repeat old structs, is
+  evaluated by neutral interval operations, and is delivered only to
+  authenticated connections; it never changes the durable receipt or vetoes a
+  push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
-  Echo informs the agent; writer-lineage sweeps are captured for the trail and
-  Restore; agent-only destruction is silent.
+  Echo informs the agent; swept changes elevate ephemeral marks. Trail evidence
+  and peer-mark popovers remain read-only; receipt Undo/Redo is the sole
+  reversal authority for AI changes. Agent-only destruction is silent.
 - **Reversal availability is dependency-based**: canonical dependency checks may
   refuse a lossy undo. Destructive effects from an allowed agent reversal are
   reported without changing the reversal outcome.
+- **Cross-scope reversal is durable-atomic and runtime-staged**: branch and live
+  durability share one transaction; branch broadcasts, live Y.Doc application,
+  runtime synchronization, and projection refresh run after it commits, with
+  per-document journal recovery. Rollback must leave every process-local
+  projection untouched.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   reporting-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push
-  enforce this; reversal `executePrepared` snapshots around persistence and uses
-  the same final synchronous recheck-and-apply seam.
+  enforce this; reversal `executePrepared` uses the same final synchronous
+  recheck-and-apply seam, inline or after transaction commit.
 - All seed and text-write callers use `domain/markdown-document.ts`; it resolves
   filetype and constructs content for the document's actual schema. The
   markdown-only seeding that caused #196 is historical, not the current engine.
@@ -142,6 +127,7 @@ propagation between them.
   queries. Success-path wire events are tracked in
   [#239](https://github.com/haowjy/meridian-flow/issues/239).
 
+→ [`.context/draft-live-model.html`](.context/draft-live-model.html) — visual explainer of the draft/live consent model (open in a browser)
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`domains/notices/AGENTS.md`](../notices/AGENTS.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)

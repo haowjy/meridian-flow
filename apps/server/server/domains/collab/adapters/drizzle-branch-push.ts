@@ -8,7 +8,7 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -24,6 +24,10 @@ import {
 } from "../domain/branch-push-contracts.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import type {
+  WorkDraftPendingEvidence,
+  WorkDraftPendingStore,
+} from "../domain/ports/work-draft-pending-store.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
@@ -175,23 +179,11 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         .select()
         .from(pushLineage)
         .where(
-          and(
-            eq(pushLineage.branchId, branchId),
-            sql`${pushLineage.receiptPayload}->>'branchGeneration' = ${String(generation)}`,
-          ),
+          and(eq(pushLineage.branchId, branchId), eq(pushLineage.branchGeneration, generation)),
         )
         .orderBy(sql`${pushLineage.id} DESC`)
         .limit(1);
       return row ? mapLineage(row) : null;
-    },
-
-    async listPushesForDocument(documentId) {
-      const rows = await db
-        .select()
-        .from(pushLineage)
-        .where(eq(pushLineage.documentId, documentId))
-        .orderBy(desc(pushLineage.id));
-      return rows.map(mapLineage);
     },
   };
 }
@@ -278,37 +270,6 @@ export function createDrizzlePushCommitStore(
 
 export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicyStore {
   return {
-    async countUnpushedRowsForWork(workId) {
-      const [{ count } = { count: 0 }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(branchWriteJournal)
-        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
-        .where(
-          and(
-            eq(documentBranches.workId, workId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-            eq(branchWriteJournal.generation, documentBranches.generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
-        );
-      return count;
-    },
-
-    async listActiveWorkDraftBranchIdsForWork(workId) {
-      const rows = await db
-        .select({ id: documentBranches.id })
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.workId, workId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        );
-      return rows.map((row) => row.id);
-    },
-
     async updateWorkDraftPushPolicy(workId, policy) {
       await runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db)
@@ -326,6 +287,56 @@ export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicySt
           .set({ aiWriteMode: aiWriteModeProjection(policy), updatedAt: new Date() })
           .where(eq(works.id, workId));
       });
+    },
+  };
+}
+
+export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
+  return {
+    async listReviewableEvidenceForWork(workId) {
+      const rows = await db
+        .select({
+          branchId: documentBranches.id,
+          documentId: documentBranches.documentId,
+          generation: documentBranches.generation,
+          journal: {
+            turnId: branchWriteJournal.turnId,
+            updateMeta: branchWriteJournal.updateMeta,
+          },
+        })
+        .from(documentBranches)
+        .innerJoin(
+          branchWriteJournal,
+          and(
+            eq(branchWriteJournal.branchId, documentBranches.id),
+            eq(branchWriteJournal.generation, documentBranches.generation),
+            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+          ),
+        )
+        .where(
+          and(
+            eq(documentBranches.workId, workId),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        )
+        .orderBy(asc(documentBranches.id), asc(branchWriteJournal.id));
+
+      const evidence = new Map<string, WorkDraftPendingEvidence>();
+      for (const row of rows) {
+        const branch = evidence.get(row.branchId) ?? {
+          branch: {
+            branchId: row.branchId,
+            documentId: row.documentId,
+            workId,
+            generation: row.generation,
+          },
+          rows: [],
+        };
+        branch.rows.push(row.journal);
+        evidence.set(row.branchId, branch);
+      }
+      return [...evidence.values()];
     },
   };
 }
@@ -488,11 +499,10 @@ async function commitPreparedPush(
     .insert(pushLineage)
     .values({
       branchId: input.branch.branchId,
+      branchGeneration: input.branch.generation,
       documentId: input.branch.documentId,
-      pushKind: input.receiptPayload.pushKind,
       journalIds: input.journalRows.map((row) => row.id),
       upstreamUpdateSeq: null,
-      receiptPayload: input.receiptPayload,
       pushedByUserId: input.pushedByUserId ?? null,
       threadId: representativeThreadId(input.journalRows),
       turnId: representativeTurnId(input.journalRows),
@@ -562,11 +572,10 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
     branchId: row.branchId,
+    branchGeneration: row.branchGeneration,
     documentId: row.documentId,
-    pushKind: row.pushKind,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
-    receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
     receiptId: row.receiptId,
     threadId: row.threadId,

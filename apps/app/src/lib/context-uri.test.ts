@@ -1,25 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { contextRouteTargetFromUri, displayContextPath } from "@/lib/context-uri";
+import { canOpenContextUri, contextRouteTargetFromUri } from "@/lib/context-uri";
 
 const WORK_ID = "123e4567-e89b-12d3-a456-426614174000";
 const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000000";
-
-describe("displayContextPath", () => {
-  it("keeps the filename of a bare scratch URI (no UUID authority)", () => {
-    // Regression: bare `scratch://<file>` must not treat the filename as a Work-id
-    // authority, which previously produced an empty display path / unlabeled link.
-    expect(displayContextPath("scratch://probe-cycle-3.mdx", "fallback")).toBe(
-      "/probe-cycle-3.mdx",
-    );
-  });
-
-  it("strips a real UUID work authority from the display path", () => {
-    expect(displayContextPath(`scratch://${WORK_ID}/notes/beat.md`, "fallback")).toBe(
-      "/notes/beat.md",
-    );
-  });
-});
 
 describe("contextRouteTargetFromUri", () => {
   it("maps non-work canonical URIs to route path tuples", () => {
@@ -59,5 +43,14 @@ describe("contextRouteTargetFromUri", () => {
 
   it("degrades a bare scratch URI when there is no displayed work", () => {
     expect(contextRouteTargetFromUri("scratch://probe-cycle-3.mdx", null)).toBeNull();
+  });
+});
+
+describe("canOpenContextUri", () => {
+  it("uses the same work-aware resolution policy as navigation", () => {
+    expect(canOpenContextUri("manuscript://arc/chapter-1.mdx", null)).toBe(true);
+    expect(canOpenContextUri("scratch://notes/beat.md", WORK_ID)).toBe(true);
+    expect(canOpenContextUri("scratch://notes/beat.md", null)).toBe(false);
+    expect(canOpenContextUri(`scratch://${OTHER_WORK_ID}/notes/beat.md`, WORK_ID)).toBe(false);
   });
 });

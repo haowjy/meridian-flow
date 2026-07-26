@@ -1,6 +1,9 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import type { DraftReviewApi } from "./contracts.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -20,6 +23,16 @@ import {
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
+}
+
+async function currentDraftId(
+  draftReview: DraftReviewApi,
+  input: { projectId?: ProjectId; workId: WorkId; documentId: DocumentId },
+): Promise<string> {
+  const drafts = await draftReview.list(input);
+  const draft = drafts.find((candidate) => candidate.documentId === input.documentId);
+  if (!draft) throw new Error("missing reviewable draft");
+  return draft.draftId;
 }
 
 describe("change trail (postgres)", () => {
@@ -141,42 +154,7 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("rolls back an attempted late-sweep notice with its ambient transaction, then persists it on commit", async () => {
-    const harness = createHarness();
-    const responseId = "late-sweep-notice-response";
-    await harness.seedAndStageDestructive(responseId);
-
-    await expect(
-      runInDrizzleTransaction(db, async () => {
-        await expect(harness.commit(responseId)).resolves.toMatchObject({
-          status: "committed",
-          documents: [
-            expect.objectContaining({
-              documentId: ALPHA_ID,
-              lateSweep: expect.objectContaining({ affectedBlockHashes: expect.any(Array) }),
-            }),
-          ],
-        });
-        throw new Error("failure after late-sweep notice recording");
-      }),
-    ).rejects.toThrow("failure after late-sweep notice recording");
-
-    expect(harness.noticeRecordAttempts()).toBeGreaterThan(0);
-    expect(await harness.noticeRows()).toEqual([]);
-
-    const commitHarness = createHarness();
-    const commitResponseId = "late-sweep-notice-commit-response";
-    await commitHarness.seedAndStageDestructive(commitResponseId, BETA_ID);
-    await expect(commitHarness.commit(commitResponseId)).resolves.toMatchObject({
-      status: "committed",
-      documents: [expect.objectContaining({ lateSweep: expect.any(Object) })],
-    });
-    expect(await commitHarness.noticeRows()).toEqual([
-      expect.objectContaining({ kind: "late_sweep", scopeKind: "thread", scopeId: THREAD_ID }),
-    ]);
-  });
-
-  it("persists a writer edit journaled after the response read as swept", async () => {
+  it("reports a writer sweep journaled after the observation cut", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
     await harness.seedProbeTimelineSweep(responseId);
@@ -196,21 +174,13 @@ describe("change trail (postgres)", () => {
     await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
 
     const trail = await harness.trailRows();
-    expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 3, changeCount: expect.any(Number) }),
-    ]);
+    expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
     expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
       expect.objectContaining({
         changes: expect.arrayContaining([
           expect.objectContaining({
             beforeText: expect.stringContaining("Writer concurrent edit"),
-            swept: expect.objectContaining({
-              removed: expect.objectContaining({
-                status: "available",
-                markdown: expect.stringContaining("Writer concurrent edit"),
-              }),
-            }),
           }),
         ]),
       }),
@@ -239,7 +209,6 @@ describe("change trail (postgres)", () => {
     expect(trail.shells).toEqual([
       expect.objectContaining({
         state: "settled",
-        sweptChangeCount: 3,
         changeCount: expect.any(Number),
         documentCount: 1,
       }),
@@ -249,12 +218,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({
         changes: expect.arrayContaining([
           expect.objectContaining({
-            swept: expect.objectContaining({
-              removed: expect.objectContaining({
-                status: "available",
-                markdown: expect.stringContaining("Writer concurrent edit"),
-              }),
-            }),
             beforeText: expect.stringContaining("Writer concurrent edit: Writer block."),
           }),
         ]),
@@ -262,7 +225,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("refuses a stale whole-document Apply that encloses a writer insertion", async () => {
+  it("merges a stale whole-document Apply with a writer insertion", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000835";
     await harness.seedWriterDocument("Writer-approved root.", responseId);
@@ -294,32 +257,140 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
     });
-    if (preview.status !== "active" || !preview.branchId) {
+    if (preview.status !== "active" || !preview.draftId) {
       throw new Error("missing draft preview");
     }
 
-    const beforeApply = await harness.liveMarkdown(ALPHA_ID);
-    const result = await fixture.collab.draftReview.accept({
+    const result = await fixture.collab.draftReview.applyWorkDraft({
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
-      branchId: preview.branchId,
+      draftId: preview.draftId,
       userId: USER_ID as never,
-      draftRevisionToken: preview.draftRevisionToken,
-      operationIds: preview.operations.map((operation) => operation.operationId),
     });
 
     const [afterRow] = await db.select().from(schema.branchWriteJournal);
     expect(afterRow?.draftBaseUpdateSeq).toBe(beforeRow.draftBaseUpdateSeq);
-    expect(result).toMatchObject({
-      status: "concurrent_conflict",
-      reason: "draft_base_divergence",
-    });
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeApply);
+    expect(result).toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("STALE DRAFT PROPOSAL");
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 
-  it("applies a stale selective edit that does not enclose a writer insertion", async () => {
+  it("applies writer edits added to the draft after the reviewed preview", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000845";
+    await harness.seedWriterDocument("Original draft root.", responseId);
+    await harness.stageCertifiedReplace({
+      responseId,
+      find: "Original draft root.",
+      content: "AI DRAFT PROPOSAL",
+    });
+    const fixture = harness.crossWorkProbeFixture();
+    const reviewed = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
+    });
+    if (reviewed.status !== "active" || !reviewed.draftId) {
+      throw new Error("missing reviewed draft preview");
+    }
+    const branch = await fixture.liveCoordinator.withDocument(ALPHA_ID, (liveDoc) =>
+      fixture.branchStore.resolveWorkDraftBranchForWork({
+        documentId: ALPHA_ID,
+        workId: WORK_ID,
+        liveDoc,
+      }),
+    );
+    const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
+    if (!block) throw new Error("draft writer block missing");
+    const draftTextLength = fixture.model.getText(block).length;
+    fixture.model.applyTextEdit(
+      toDocHandle(branch.doc),
+      block,
+      { from: draftTextLength, to: draftTextLength },
+      " WRITER DRAFT MARKER",
+    );
+    const committed = await fixture.branchCoordinator.commitSyncFromDoc({
+      branchId: branch.branchId,
+      sourceDoc: branch.doc,
+      expectedGeneration: branch.generation,
+      source: "writer",
+      actorUserId: USER_ID as never,
+      threadId: null,
+      turnId: null,
+      wId: null,
+      updateMeta: null,
+    });
+    branch.doc.destroy();
+    expect(committed).toBe(true);
+
+    const current = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
+    });
+    expect(current).toMatchObject({
+      status: "active",
+      operations: expect.arrayContaining([
+        expect.objectContaining({ kind: "writer", actorUserId: USER_ID }),
+      ]),
+    });
+
+    await expect(
+      fixture.collab.draftReview.applyWorkDraft({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: reviewed.draftId,
+        userId: USER_ID as never,
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("AI DRAFT PROPOSAL");
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("WRITER DRAFT MARKER");
+    await expect(
+      fixture.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+    await expect(
+      fixture.collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      db
+        .select({ id: schema.branchWriteJournal.id })
+        .from(schema.branchWriteJournal)
+        .where(
+          and(
+            eq(schema.branchWriteJournal.branchId, reviewed.draftId),
+            inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
+          ),
+        ),
+    ).resolves.toEqual([]);
+  });
+
+  it("preserves an unrelated live writer insertion while applying the branch", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000836";
     await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
@@ -348,26 +419,29 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
     });
-    if (preview.status !== "active" || !preview.branchId) {
+    if (preview.status !== "active" || !preview.draftId) {
       throw new Error("missing draft preview");
     }
 
     await expect(
-      fixture.collab.draftReview.accept({
+      fixture.collab.draftReview.applyWorkDraft({
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: preview.branchId,
+        draftId: preview.draftId,
         userId: USER_ID as never,
-        draftRevisionToken: preview.draftRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
       }),
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 
-  it("does not join separate selective edits into an enclosing replacement scope", async () => {
+  it("preserves a live writer insertion between two branch edits", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000837";
     await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
@@ -427,19 +501,22 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
-    });
-    if (preview.status !== "active" || !preview.branchId) {
-      throw new Error("missing draft preview");
-    }
-    await expect(
-      fixture.collab.draftReview.accept({
+      draftId: await currentDraftId(fixture.collab.draftReview, {
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: preview.branchId,
+      }),
+    });
+    if (preview.status !== "active" || !preview.draftId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.applyWorkDraft({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: preview.draftId,
         userId: USER_ID as never,
-        draftRevisionToken: preview.draftRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
       }),
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toBe(
@@ -447,7 +524,7 @@ describe("change trail (postgres)", () => {
     );
   });
 
-  it("retains whole-document scope when a folded response refines an overwrite", async () => {
+  it("merges a folded whole-document overwrite with a later writer insertion", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000838";
     await harness.seedWriterDocument("First writer root.\n\nSecond writer root.", responseId);
@@ -508,24 +585,25 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
-    });
-    if (preview.status !== "active" || !preview.branchId) {
-      throw new Error("missing draft preview");
-    }
-    await expect(
-      fixture.collab.draftReview.accept({
+      draftId: await currentDraftId(fixture.collab.draftReview, {
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: preview.branchId,
-        userId: USER_ID as never,
-        draftRevisionToken: preview.draftRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
       }),
-    ).resolves.toMatchObject({
-      status: "concurrent_conflict",
-      reason: "draft_base_divergence",
     });
+    if (preview.status !== "active" || !preview.draftId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.applyWorkDraft({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: preview.draftId,
+        userId: USER_ID as never,
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("REFINED WHOLE DRAFT");
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain(
       "Writer insertion after overwrite base.",
     );

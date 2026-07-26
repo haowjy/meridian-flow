@@ -29,16 +29,6 @@ function isActiveSnapshot(liveState: ThreadLiveState): boolean {
   return liveState.runningTurnId !== null || liveState.status === "active";
 }
 
-export function lastSeenSeqFromSnapshotNextSeq(nextSeq: string): string | null {
-  try {
-    const next = BigInt(nextSeq);
-    if (next <= 1n) return null;
-    return (next - 1n).toString();
-  } catch {
-    return null;
-  }
-}
-
 export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string | null {
   if (!isActiveSnapshot(liveState)) return null;
   try {

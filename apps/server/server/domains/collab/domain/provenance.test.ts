@@ -1,5 +1,6 @@
 /** Contract tests for deterministic provenance replay and the reserved namespace. */
 
+import { normalizeLineageRanges } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -9,12 +10,14 @@ import {
   assertClientUpdateOutsideReservedNamespace,
   createSemanticProvenanceWriter,
   type DocumentAuthorityId,
+  journalInsertionRanges,
   materializeCandidateProvenance,
   materializeProvenanceView,
   PROVENANCE_TARGETS_TYPE,
   ProvenanceMaterializationError,
   ReservedNamespaceAdmissionError,
 } from "./provenance.js";
+import { materializeSweepEvidence } from "./sweep-policy.js";
 
 const authorityId = "00000000-0000-4000-8000-000000000100" as DocumentAuthorityId;
 const emptyManifest = (): AttributionManifestV1 => ({
@@ -166,6 +169,44 @@ describe("provenance materialization", () => {
     expect(result.visible[0]?.birthClass).toBe("writer_protected");
   });
 
+  it("keeps authored attribution ahead of the canonical replay update", () => {
+    const source = proseDoc("writer words");
+    const fullSync = Y.encodeStateAsUpdate(source);
+    const actorUserId = crypto.randomUUID();
+
+    const result = materializeProvenanceView({
+      authorityId,
+      generation: 1n,
+      manifest: emptyManifest(),
+      rows: [
+        {
+          authorityId,
+          generation: 1n,
+          admissionSequence: 1n,
+          batchOrdinal: 0,
+          journalRowId: 10n,
+          originType: "human",
+          actorUserId,
+          update: fullSync,
+        },
+        {
+          authorityId,
+          generation: 1n,
+          admissionSequence: 1n,
+          batchOrdinal: 1,
+          journalRowId: 11n,
+          originType: "reconcile",
+          actorUserId: null,
+          update: fullSync,
+        },
+      ],
+      watermark: { admissionSequence: 1n, batchOrdinal: 1, journalRowId: 11n },
+    });
+
+    expect(result.visible).toHaveLength(1);
+    expect(result.visible[0]?.birthClass).toBe("writer_protected");
+  });
+
   it("blocks missing replay rows and missing checkpoint attribution", () => {
     const doc = proseDoc("unattributed");
     const update = Y.encodeStateAsUpdate(doc);
@@ -261,6 +302,154 @@ describe("provenance materialization", () => {
   });
 });
 
+describe("sweep observation evidence", () => {
+  it("keeps each AI candidate's own observation watermark", () => {
+    const doc = proseDoc("writer words");
+    const update = Y.encodeStateAsUpdate(doc);
+    const actorUserId = crypto.randomUUID();
+    const rows = [
+      {
+        authorityId,
+        generation: 1n,
+        admissionSequence: 1n,
+        batchOrdinal: 0,
+        journalRowId: 11n,
+        originType: "human",
+        actorUserId,
+        update,
+      },
+    ];
+
+    const evidence = materializeSweepEvidence({
+      rows,
+      candidates: [
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 10,
+          rootFloor: { key: "empty", roots: [] },
+        },
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 11,
+          rootFloor: { key: "empty", roots: [] },
+        },
+      ],
+    });
+
+    expect(evidence.candidates[0]?.byUser).toEqual([
+      expect.objectContaining({ userId: actorUserId }),
+    ]);
+    expect(evidence.candidates[1]?.byUser).toEqual([]);
+    doc.destroy();
+  });
+
+  it("keeps every recipient while excluding historical, AI, and unknown roots", () => {
+    const recentWriters = Array.from({ length: 101 }, () => crypto.randomUUID());
+    const historicalDoc = proseDoc("historical");
+    const historicalUpdate = Y.encodeStateAsUpdate(historicalDoc);
+    const evidence = materializeSweepEvidence({
+      rows: [
+        {
+          journalRowId: 10n,
+          originType: "human",
+          actorUserId: crypto.randomUUID(),
+          update: historicalUpdate,
+        },
+        {
+          journalRowId: 11n,
+          originType: "agent",
+          actorUserId: null,
+          update: updateForProse("agent"),
+        },
+        {
+          journalRowId: 12n,
+          originType: null,
+          actorUserId: null,
+          update: updateForProse("unknown"),
+        },
+        ...recentWriters.map((actorUserId, index) => {
+          const writerDoc = proseDoc(`writer-${index}`);
+          const update = Y.encodeStateAsUpdate(writerDoc);
+          writerDoc.destroy();
+          return {
+            journalRowId: BigInt(13 + index),
+            originType: "human",
+            actorUserId,
+            update,
+          };
+        }),
+      ],
+      candidates: [
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 10,
+          rootFloor: { key: "empty", roots: [] },
+        },
+      ],
+    });
+
+    expect(evidence.candidates[0]?.byUser.map(({ userId }) => userId)).toEqual(recentWriters);
+    expect(
+      evidence.candidates[0]?.byUser.every(
+        ({ rootsAfterObservationWatermark }) => rootsAfterObservationWatermark.length > 0,
+      ),
+    ).toBe(true);
+    historicalDoc.destroy();
+  });
+
+  it("attributes only a human row's first-born roots when its update repeats older structs", () => {
+    const doc = proseDoc("checkpoint text");
+    const checkpointUpdate = Y.encodeStateAsUpdate(doc);
+    const afterCheckpoint = Y.encodeStateVector(doc);
+    appendVisibleText(doc, "old agent text");
+    const agentUpdate = Y.encodeStateAsUpdate(doc, afterCheckpoint);
+    const beforeNovel = Y.encodeStateVector(doc);
+    appendVisibleText(doc, "new writer text");
+    const novelUpdate = Y.encodeStateAsUpdate(doc, beforeNovel);
+    const repeatedWithNovel = Y.encodeStateAsUpdate(doc);
+    const actorUserId = crypto.randomUUID();
+
+    const evidence = materializeSweepEvidence({
+      rows: [
+        {
+          journalRowId: 11n,
+          originType: "agent",
+          actorUserId: null,
+          update: agentUpdate,
+        },
+        {
+          journalRowId: 12n,
+          originType: "human",
+          actorUserId,
+          update: repeatedWithNovel,
+        },
+      ],
+      candidates: [
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 10,
+          rootFloor: {
+            key: "checkpoint",
+            roots: journalInsertionRanges(checkpointUpdate),
+          },
+        },
+      ],
+    });
+
+    expect(evidence.candidates[0]?.byUser).toEqual([
+      {
+        userId: actorUserId,
+        rootsAfterObservationWatermark: normalizeLineageRanges(journalInsertionRanges(novelUpdate)),
+      },
+    ]);
+    doc.destroy();
+  });
+});
+
 describe("hostile reserved namespace guard", () => {
   it.each([
     ["ordinary-client overwrite", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([{}])],
@@ -325,6 +514,13 @@ function proseDoc(value: string): Y.Doc {
   paragraph.push([new Y.XmlText(value)]);
   doc.getXmlFragment("prosemirror").push([paragraph]);
   return doc;
+}
+
+function updateForProse(value: string): Uint8Array {
+  const doc = proseDoc(value);
+  const update = Y.encodeStateAsUpdate(doc);
+  doc.destroy();
+  return update;
 }
 
 function appendCertifiedCarry(

@@ -4,8 +4,7 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { TrailForwardActionResult } from "@meridian/contracts";
-import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -19,8 +18,8 @@ import type { Result } from "../../shared/result.js";
 import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
-  DraftAcceptResult,
-  DraftRejectResult,
+  DraftApplyResult,
+  DraftDiscardResult,
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
@@ -29,8 +28,6 @@ import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-h
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
-
-export type SchemaType = YjsTrackedSchemaType;
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }
@@ -260,43 +257,32 @@ export type DocumentCheckpoints = {
 };
 
 export type DraftReviewApi = {
-  list(input: {
-    projectId?: ProjectId;
-    workId?: WorkId;
-    threadId?: ThreadId;
-  }): Promise<ReviewableDraft[]>;
+  list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
   preview(input: {
     projectId?: ProjectId;
-    workId?: WorkId;
-    threadId?: ThreadId;
+    workId: WorkId;
     documentId: DocumentId;
-    draftId?: string;
+    draftId: string;
   }): Promise<
-    | ({ status: "active"; draftId?: string; branchId?: string } & DraftReviewPreview)
-    | { status: "gone"; live: string }
+    ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
   >;
-  accept(input: {
+  applyWorkDraft(input: {
     projectId?: ProjectId;
-    workId?: WorkId;
-    threadId?: ThreadId;
+    workId: WorkId;
     documentId: DocumentId;
-    draftId?: string;
-    branchId?: string;
+    draftId: string;
     userId: UserId;
-    draftRevisionToken?: number;
-    operationIds: string[];
     signal?: AbortSignal;
-  }): Promise<DraftAcceptResult>;
-  reject(input: {
+  }): Promise<DraftApplyResult>;
+  discardWorkDraft(input: {
     projectId?: ProjectId;
-    workId?: WorkId;
+    workId: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
-    draftId?: string;
-    branchId?: string;
+    draftId: string;
     userId?: UserId;
     operationIds?: string[];
-  }): Promise<DraftRejectResult>;
+  }): Promise<DraftDiscardResult>;
 };
 
 export type DraftSessionStats = {
@@ -317,11 +303,6 @@ export type TurnLiveLineageAccess = {
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
-  pushSelectedToLive(input: {
-    branchId: string;
-    journalIds: readonly number[];
-    pushedByUserId?: UserId;
-  }): Promise<unknown>;
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   setWorkPushPolicy(input: {
     workId: WorkId;
@@ -376,16 +357,6 @@ export type DocumentAttribution = {
   }>;
 };
 
-export type TrailForwardActionAccess = {
-  applyTrailForwardAction(input: {
-    threadId: ThreadId;
-    trailId: string;
-    changeId: string;
-    action: "restore" | "delete-again";
-    userId: UserId;
-  }): Promise<TrailForwardActionResult>;
-};
-
 export type CollabDomain = CollabTransport &
   DocumentAuthorityHeads &
   AgentEditAccess &
@@ -396,7 +367,6 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
-  TrailForwardActionAccess &
   BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts &

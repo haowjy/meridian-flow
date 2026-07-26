@@ -45,7 +45,7 @@ describe("in-memory pending settlement store", () => {
         claim: joined.claim,
         joinVersion: joined.joinVersion,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual([]);
 
     const complete = vi.fn(() => "applied" as const);
     const fenceInput = {
@@ -104,18 +104,16 @@ function pendingSettlement(pushId: number): PendingLiveSettlement {
     push: {
       id: pushId,
       branchId: null,
+      branchGeneration: 1,
       documentId: DOCUMENT_ID,
-      pushKind: "whole",
       journalIds: [],
       upstreamUpdateSeq: null,
-      receiptPayload: null,
       idempotencyKey: `push-${pushId}`,
     },
     documentTitle: "Chapter",
     lockCutUpdate: new Uint8Array(),
     pushUpdate: new Uint8Array(),
     postCutUpdates: [],
-    beforeContentRef: null,
     trail: {
       documentId: DOCUMENT_ID,
       documentTitle: "Chapter",
@@ -124,7 +122,7 @@ function pendingSettlement(pushId: number): PendingLiveSettlement {
       journalOwners: [],
       changes: [],
     },
-    provenanceView: [],
+    sweepEvidence: null,
     joinVersion: 0,
     settledJoinVersion: null,
     claim: {

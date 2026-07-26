@@ -207,7 +207,7 @@ describe("write reversal retention", () => {
     expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
   });
 
-  it("blocks redo after a forward write follows an undo", async () => {
+  it("keeps redo available after later agent work", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
     const { ctx } = scenario;
     await scenario.simpleReplace("turn-redo-gate");
@@ -226,8 +226,32 @@ describe("write reversal retention", () => {
 
     expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
       undo: true,
-      redo: false,
+      redo: true,
       undoWriteId: "w2",
+      redoWriteId: "w1",
+    });
+    expect(
+      outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
+    ).toContain("status: reconciled");
+  });
+
+  it("blocks redo after a writer update follows an undo", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Alpha sword." });
+    const { ctx } = scenario;
+    await scenario.simpleReplace("turn-redo-writer-gate");
+    await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    const writerDoc = new Y.Doc({ gc: false });
+    writerDoc.getMap("writer").set("changed", true);
+    await ctx.journal.append("chapter.md", Y.encodeStateAsUpdate(writerDoc), {
+      origin: "human:user-1",
+      seq: 0,
+    });
+    writerDoc.destroy();
+
+    expect(await ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
+      undo: false,
+      redo: false,
     });
     expect(
       outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),

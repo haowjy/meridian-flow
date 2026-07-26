@@ -24,8 +24,6 @@ type JournalMutationBase = {
   systemOrigin?: string;
   /** Certified semantic input bound to this exact lowered Yjs update. */
   semanticEditIr?: SemanticEditIRV1;
-  /** Staged host classified whether this mutation carries a replacement scope. */
-  replacementScopeRecorded?: true;
 };
 
 export type JournalMutation = JournalMutationBase &
@@ -84,9 +82,8 @@ export interface WriteMutationRow {
  * undo bytes.
  *
  * The dependency check is performed inside the persistence transaction (after
- * the document mutation advisory lock) so the verdict is authoritative — no
- * caller-derived watermark can be racy, and the optional `guard` parameter
- * that previously thread-served that race is gone.
+ * the document mutation advisory lock) so the verdict is authoritative and no
+ * caller-derived watermark can race it.
  */
 export type PersistUndoResult =
   | { persisted: true; journalCommitKind?: JournalCommitKind }

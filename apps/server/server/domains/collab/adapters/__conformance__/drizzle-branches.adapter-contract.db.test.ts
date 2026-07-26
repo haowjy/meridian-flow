@@ -43,6 +43,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       createDrizzleBranchJournalReadStore,
       createDrizzlePushCommitStore,
+      createDrizzleWorkDraftPendingStore,
       createDrizzleWorkPushPolicyStore,
     } = await import("../drizzle-branch-push.js");
     const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
@@ -58,6 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../domain/branch-coordinator.js"
     );
     const { createBranchPushService } = await import("../../domain/branch-push.js");
+    const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
@@ -137,6 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journalReadStore,
         commitStore,
         workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
+        workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
         settlementStore: createDrizzlePendingSettlementStore(
           db,
           serializer,
@@ -311,12 +314,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source: "agent",
         threadId: THREAD_ID as never,
       });
-      const pushStore = createDrizzleWorkPushPolicyStore(db);
-      await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(1);
+      const pendingDrafts = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
+      await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(1);
 
       await coordinator.resetFromDoc(work.branchId, live);
 
-      await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(0);
       const rows = await db
         .select({ generation: branchWriteJournal.generation, status: branchWriteJournal.status })
         .from(branchWriteJournal)
@@ -634,6 +637,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const schema = buildDocumentSchema();
       const branchPush = createBranchPushService({
+        changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(
           markdownProjectionSerializer(yProsemirrorModel(schema), mdxCodec({ schema })),
@@ -737,7 +741,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           if (failSecondTrailRecord && trailRecordCalls === 2) {
             throw new Error("injected companion trail failure");
           }
-          await realChangeTrails.record(input);
+          return realChangeTrails.record(input);
         },
         replacePushContribution: (
           pushId: Parameters<typeof realChangeTrails.replacePushContribution>[0],
@@ -748,6 +752,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           realChangeTrails.reopenOwners(owners),
       };
       const branchPush = createBranchPushService({
+        changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(markdownProjectionSerializer(model, codec), failingChangeTrails),
         branchCoordinator: coordinator,
@@ -770,7 +775,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: branchA.branchId,
         manifestBranchId: manifestBranch.branchId,
         manifestEntryDocumentId: CREATED_A as never,
-        contentJournalIds: [Number(contentARow.id)],
         pushedByUserId: USER_ID as never,
       };
       await expect(branchPush.pushToLiveWithManifestEntry(pushInput)).rejects.toThrow(
@@ -812,7 +816,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(trailDetails).toHaveLength(1);
       expect(new Set(trailReceiptIds)).toEqual(new Set([lineageRows[0]?.receiptId]));
-      expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "selective"]);
       expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
       const [reviewedContentRow] = await db
         .select({
@@ -845,7 +848,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       manifest.doc.destroy();
     });
 
-    it("finds push lineage by bigint journal-id overlap", async () => {
+    it("finds push lineage by typed branch generation and bigint journal-id overlap", async () => {
       const pushStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
@@ -868,8 +871,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!journalRow) throw new Error("missing journal row");
       await db.insert(pushLineage).values({
         branchId: branch.branchId,
+        branchGeneration: branch.generation,
         documentId: DOC_ID as never,
-        pushKind: "selective",
         journalIds: [journalRow.id],
         idempotencyKey: "bigint-overlap",
       });
@@ -881,6 +884,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(journalRow.id).toBeGreaterThan(2147483647);
       expect(rows).toEqual([expect.objectContaining({ journalIds: [journalRow.id] })]);
+      await expect(
+        pushStore.latestPushForBranch(branch.branchId, branch.generation),
+      ).resolves.toMatchObject({
+        branchId: branch.branchId,
+        branchGeneration: branch.generation,
+      });
+      await expect(
+        pushStore.latestPushForBranch(branch.branchId, branch.generation + 1),
+      ).resolves.toBeNull();
     });
 
     it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
@@ -933,15 +945,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
           ],
           pushUpdate: update,
-          receiptPayload: {
-            version: 1,
-            documentId: DOC_ID as never,
-            branchId: branch.branchId,
-            branchGeneration: branch.generation,
-            pushKind: "whole",
-            changedBlocks: [],
-            totalWordDelta: 0,
-          },
           idempotencyKey: "stale-branch",
           trail: {
             documentId: DOC_ID,
@@ -956,7 +959,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
             postCutUpdates: [],
-            provenanceView: [],
+            sweepEvidence: null,
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
@@ -967,7 +970,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             attemptCount: 0,
             state: "pending",
-            beforeContentRef: null,
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",
@@ -999,15 +1001,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branch: fresh,
           journalRows: freshRows,
           pushUpdate: update,
-          receiptPayload: {
-            version: 1,
-            documentId: DOC_ID as never,
-            branchId: fresh.branchId,
-            branchGeneration: fresh.generation,
-            pushKind: "whole",
-            changedBlocks: [],
-            totalWordDelta: 0,
-          },
           idempotencyKey: "inactive-row",
           trail: {
             documentId: DOC_ID,
@@ -1022,7 +1015,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
             postCutUpdates: [],
-            provenanceView: [],
+            sweepEvidence: null,
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
@@ -1033,7 +1026,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             attemptCount: 0,
             state: "pending",
-            beforeContentRef: null,
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",

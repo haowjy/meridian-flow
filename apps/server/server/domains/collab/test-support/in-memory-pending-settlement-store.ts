@@ -191,7 +191,7 @@ export function createInMemoryPendingSettlementStore(options?: {
           ...state.pending,
           settledJoinVersion: input.joinVersion,
         };
-        return true;
+        return [];
       });
     },
 

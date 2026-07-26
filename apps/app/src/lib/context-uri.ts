@@ -32,10 +32,6 @@ export function contextUriFromWritePath(path: string): string {
     : canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
 }
 
-export function displayContextPath(uri: string, fallback: string): string {
-  return parseContextUri(uri)?.path ?? fallback;
-}
-
 export function contextRouteTargetFromUri(
   uri: string,
   activeWorkId: string | null,
@@ -52,6 +48,10 @@ export function contextRouteTargetFromUri(
   const workId = parsed.authority ?? activeWorkId;
   if (!workId || (parsed.authority && parsed.authority !== activeWorkId)) return null;
   return { scheme: parsed.scheme, path: parsed.path, workId };
+}
+
+export function canOpenContextUri(uri: string, activeWorkId: string | null): boolean {
+  return contextRouteTargetFromUri(uri, activeWorkId) !== null;
 }
 
 function formatContextPath(value: string): string {

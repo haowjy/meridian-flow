@@ -16,6 +16,8 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import type { AgentNameStore } from "./agent-name-store";
+import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import {
@@ -38,9 +40,10 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
-import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import type { SessionMarkerStore } from "./session-marker-store";
 
 export type EditorUser = {
   name: string;
@@ -70,6 +73,10 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
+  /** Live-session sidecar; omitted for branch/draft rooms. */
+  markerStore?: SessionMarkerStore;
+  /** Writer-facing thread names for agent-authored session marks. */
+  agentNames?: AgentNameStore;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -82,30 +89,13 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 const lowlight = createLowlight(common);
 
 /**
- * Collaboration cursor palette. Token references, not resolved colors:
- * CollaborationCaret writes these into inline styles, where `var()` still
- * resolves against the active theme.
+ * Collaboration cursor default. The composition path resolves its token before
+ * publishing awareness because y-prosemirror accepts concrete colors only.
  */
-const CURSOR_COLORS = [
-  "var(--color-collab-cursor-1)",
-  "var(--color-collab-cursor-2)",
-  "var(--color-collab-cursor-3)",
-  "var(--color-collab-cursor-4)",
-  "var(--color-collab-cursor-5)",
-  "var(--color-collab-cursor-6)",
-  "var(--color-collab-cursor-7)",
-  "var(--color-collab-cursor-8)",
-] as const;
-
 const DEFAULT_USER: EditorUser = {
   name: "Meridian Researcher",
-  color: CURSOR_COLORS[4],
+  color: COLLABORATION_CURSOR_COLORS[4],
 };
-
-export const COLLABORATION_Y_UNDO_TRACKED_ORIGINS = [
-  REVIEW_APPLY_ORIGIN,
-  REVIEW_DISCARD_ORIGIN,
-] as const;
 
 /** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(awareness: Awareness): string {
@@ -115,7 +105,8 @@ function pickCursorColor(awareness: Awareness): string {
       taken.add(state.user.color as string);
     }
   }
-  return CURSOR_COLORS.find((c) => !taken.has(c)) ?? CURSOR_COLORS[0];
+  const palette = COLLABORATION_CURSOR_COLORS.map(resolveCollaborationColor);
+  return palette.find((color) => !taken.has(color)) ?? palette[0];
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
@@ -179,11 +170,6 @@ function createCollaborationExtensions({
       // Passing the concrete Y.XmlFragment keeps the shared type name at the
       // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-      // y-tiptap always tracks ProseMirror typing (`ySyncPluginKey`) and augments
-      // that default with this list. The review UndoManager is session-local: text-level
-      // review apply/discard can use browser undo, while container-level disposition
-      // routes to the server discard path and this manager is destroyed with the editor.
-      yUndoOptions: { trackedOrigins: [...COLLABORATION_Y_UNDO_TRACKED_ORIGINS] },
     }),
   ];
 
@@ -225,6 +211,8 @@ export function createEditorExtensions({
   figureRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
+  markerStore,
+  agentNames,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -237,6 +225,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
     ...collaboration,
+    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
 }
@@ -289,6 +278,8 @@ export function createEditorConfig({
   figureRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
+  markerStore,
+  agentNames,
   editable = true,
   autofocus = false,
   placeholder,
@@ -311,6 +302,8 @@ export function createEditorConfig({
         figureRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
+        markerStore,
+        agentNames,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

@@ -11,32 +11,25 @@ import {
   useMemo,
   useState,
 } from "react";
-import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { projectContextTreeQueryOptions } from "@/client/query/useProjectContextTree";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
   useWorkDrafts,
 } from "@/client/query/useWorkDrafts";
-import { useContextTabsStore, useThreadStore } from "@/client/stores";
+import { useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { findContextFileByDocumentId } from "@/features/project/context/context-tree";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
-
-export type ReviewableDrafts = {
-  visible: ThreadDraftListItem[];
-  active: ThreadDraftListItem[];
-};
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
   groups: ThreadDraftGroup[];
   drafts: ThreadDraftsStatus;
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
-  reviewableDraftsForDocument: (documentId: string | null | undefined) => ReviewableDrafts;
-  reviewableDraftsForGroup: (group: ThreadDraftGroup | null | undefined) => ReviewableDrafts;
   reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
-  nowMs: number;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (documentId: string | null) => void;
 };
@@ -57,17 +50,34 @@ export function DraftReviewProvider({
   threadId = null,
   children,
 }: DraftReviewProviderProps) {
+  return (
+    <DraftReviewScope
+      key={`${projectId ?? ""}\0${workId ?? ""}`}
+      projectId={projectId}
+      workId={workId}
+      threadId={threadId}
+    >
+      {children}
+    </DraftReviewScope>
+  );
+}
+
+function DraftReviewScope({
+  projectId,
+  workId,
+  threadId = null,
+  children,
+}: DraftReviewProviderProps) {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
-  const nowMs = useThreadStore((state) => state.now);
+  const groups = drafts.groups ?? [];
   const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId, threadId);
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.
   const [activeEditorDocumentId, setActiveEditorDocumentId] = useState<string | null>(null);
-  const groups = drafts.groups ?? [];
 
   useEffect(() => {
     controller.exitReview();
@@ -79,18 +89,6 @@ export function DraftReviewProvider({
       return groups.find((group) => group.documentId === documentId) ?? null;
     },
     [groups],
-  );
-
-  const reviewableDraftsForGroup = useCallback(
-    (group: ThreadDraftGroup | null | undefined): ReviewableDrafts =>
-      reviewableDraftsFromGroup(group, nowMs),
-    [nowMs],
-  );
-
-  const reviewableDraftsForDocument = useCallback(
-    (documentId: string | null | undefined) =>
-      reviewableDraftsForGroup(groupForDocument(documentId)),
-    [groupForDocument, reviewableDraftsForGroup],
   );
 
   const reviewRoomNameForDraft = useCallback(
@@ -106,25 +104,64 @@ export function DraftReviewProvider({
     const activeSelection = controller.inlineReview;
     if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const activeDraft = groups
-      .flatMap((group) => group.drafts)
-      .find((draft) => draft.draftId === activeSelection.draftId);
-    if (activeDraft?.status === "active") return;
-    // The list only contains active drafts. Accept paths resolve "committed"
-    // before their refetch lands, so a vanished draft with this marker still set
-    // can only be discard exhaustion or external disappearance.
-    useContextTabsStore
-      .getState()
-      .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, "discarded");
+    if (controller.isDisposing) return;
+    const documentDrafts =
+      groups.find((group) => group.documentId === activeSelection.documentId)?.drafts ?? [];
+    if (documentDrafts.some((draft) => draft.draftId === activeSelection.draftId)) return;
     controller.exitReview();
-  }, [controller.inlineReview, drafts.status, groups, controller.exitReview, effectiveProjectId]);
+    if (!projectId || !workId) return;
+    const tabs = useContextTabsStore.getState();
+    const tab = tabs.byProject[projectId]?.tabs.find(
+      (candidate) => candidate.documentId === activeSelection.documentId,
+    );
+    if (tab?.kind !== "tracked" || !tab.draftOnly) return;
+
+    // The active-only list cannot say why a remote disposition removed the
+    // draft. For draft-created documents, manifest membership is authoritative:
+    // Apply materializes the document; Discard does not.
+    const treeQuery = projectContextTreeQueryOptions(projectId, "manuscript", null);
+    void queryClient
+      .cancelQueries({ queryKey: treeQuery.queryKey })
+      .then(() => queryClient.fetchQuery({ ...treeQuery, staleTime: 0 }))
+      .then(({ tree }) => {
+        const currentTabs = useContextTabsStore.getState();
+        const currentTab = currentTabs.byProject[projectId]?.tabs.find(
+          (candidate) => candidate.documentId === activeSelection.documentId,
+        );
+        if (currentTab?.kind !== "tracked" || !currentTab.draftOnly) return;
+        const currentDrafts =
+          queryClient.getQueryData<ThreadDraftListItem[]>(
+            projectQueryKeys.workDrafts(projectId, workId),
+          ) ?? [];
+        if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
+        currentTabs.resolveDraftOnlyTab(
+          projectId,
+          activeSelection.documentId,
+          findContextFileByDocumentId(tree, activeSelection.documentId) ? "committed" : "discarded",
+        );
+      })
+      // A failed membership check must leave the tab intact rather than guess
+      // that a remotely applied document was discarded.
+      .catch(() => undefined);
+  }, [
+    controller.exitReview,
+    controller.inlineReview,
+    controller.isDisposing,
+    drafts.status,
+    effectiveProjectId,
+    groups,
+    projectId,
+    queryClient,
+    workId,
+  ]);
 
   useEffect(() => {
-    const inline = controller.inlineReview;
-    if (!projectId || !workId || !inline) return;
-    const registry = getDocumentSessionRegistry();
+    const inlineDocumentId = controller.inlineReview?.documentId;
+    const inlineDraftId = controller.inlineReview?.draftId;
     const roomKey = controller.reviewRoomName;
-    if (!roomKey || !registry.has(roomKey)) return;
+    if (!projectId || !workId || !inlineDocumentId || !inlineDraftId || !roomKey) return;
+    const registry = getDocumentSessionRegistry();
+    if (!registry.has(roomKey)) return;
     const session = registry.getRoom(roomKey);
     let timer: number | null = null;
     const invalidateMountedDraft = () => {
@@ -138,8 +175,8 @@ export function DraftReviewProvider({
           queryKey: projectQueryKeys.workDraftPreview(
             projectId,
             workId,
-            inline.documentId,
-            inline.draftId,
+            inlineDocumentId,
+            inlineDraftId,
           ),
         });
       }, 50);
@@ -149,7 +186,14 @@ export function DraftReviewProvider({
       if (timer != null) window.clearTimeout(timer);
       session.document.off("update", invalidateMountedDraft);
     };
-  }, [controller.inlineReview, projectId, queryClient, workId]);
+  }, [
+    controller.inlineReview?.documentId,
+    controller.inlineReview?.draftId,
+    controller.reviewRoomName,
+    projectId,
+    queryClient,
+    workId,
+  ]);
 
   useEffect(() => {
     if (!threadId || !activeEditorDocumentId) return;
@@ -170,72 +214,20 @@ export function DraftReviewProvider({
     };
   }, [activeEditorDocumentId, queryClient, threadId]);
 
-  useEffect(() => {
-    const inline = controller.inlineReview;
-    if (!projectId || !workId || !inline) return;
-    const draft = groups
-      .flatMap((group) => group.drafts)
-      .find((candidate) => candidate.draftId === inline.draftId);
-    if (draft?.status !== "active") return;
-    void queryClient.invalidateQueries({
-      queryKey: projectQueryKeys.workDraftPreview(
-        projectId,
-        workId,
-        inline.documentId,
-        inline.draftId,
-      ),
-    });
-  }, [controller.inlineReview, groups, projectId, queryClient, workId]);
-
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,
       groups,
       drafts,
       groupForDocument,
-      reviewableDraftsForDocument,
-      reviewableDraftsForGroup,
       reviewRoomNameForDraft,
-      nowMs,
       activeEditorDocumentId,
       setActiveEditorDocumentId,
     }),
-    [
-      controller,
-      groups,
-      drafts,
-      groupForDocument,
-      reviewableDraftsForDocument,
-      reviewableDraftsForGroup,
-      reviewRoomNameForDraft,
-      nowMs,
-      activeEditorDocumentId,
-    ],
+    [controller, groups, drafts, groupForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
   );
 
   return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
-}
-
-export function reviewableDraftsFromGroup(
-  group: ThreadDraftGroup | null | undefined,
-  nowMs: number,
-): ReviewableDrafts {
-  const activeDrafts = group?.drafts.filter((draft) => draft.status === "active") ?? [];
-  const newestActiveUpdatedAt = activeDrafts.reduce(
-    (newest, draft) => Math.max(newest, Date.parse(draft.updatedAt) || 0),
-    0,
-  );
-  const visible =
-    group?.drafts.filter((draft) => {
-      if (draft.status === "active") return true;
-      if (!isDraftUndoable(draft, nowMs)) return false;
-      const terminalUpdatedAt = Date.parse(draft.updatedAt) || 0;
-      return newestActiveUpdatedAt === 0 || terminalUpdatedAt > newestActiveUpdatedAt;
-    }) ?? [];
-  return {
-    visible,
-    active: visible.filter((draft) => draft.status === "active"),
-  };
 }
 
 export function useDraftReview(): DraftReviewContextValue {

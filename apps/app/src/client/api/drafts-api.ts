@@ -2,24 +2,21 @@
  * drafts-api — HTTP client for AI document draft review endpoints.
  *
  * Typed wrappers for listing active thread drafts, reading live-vs-draft
- * markdown previews, and accepting/rejecting a draft without exposing route
+ * markdown previews, and applying/discarding a draft without exposing route
  * strings to query hooks.
  */
 import type {
-  DraftAcceptRequest,
-  DraftAcceptResponse,
+  DraftApplyRequest,
+  DraftApplyResponse,
+  DraftDiscardRequest,
+  DraftDiscardResponse,
   DraftPreviewResponse,
-  DraftRejectRequest,
-  DraftRejectResponse,
-  DraftUndoResponse,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
-  apiProjectWorkDocumentDraftAcceptPath,
+  apiProjectWorkDocumentDraftApplyPath,
+  apiProjectWorkDocumentDraftDiscardPath,
   apiProjectWorkDocumentDraftPath,
-  apiProjectWorkDocumentDraftRejectPath,
-  apiProjectWorkDocumentDraftUndoAcceptPath,
-  apiProjectWorkDocumentDraftUndoRejectPath,
   apiProjectWorkDraftsPath,
 } from "@meridian/contracts/protocol";
 
@@ -39,55 +36,35 @@ export async function getDraftPreview(
   draftId: string,
 ): Promise<DraftPreviewResponse> {
   const params = new URLSearchParams({ draftId });
-  return getJson<DraftPreviewResponse>(
+  const preview = await getJson<DraftPreviewResponse>(
     `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
   );
+  if (preview.status === "active" && !preview.reviewRoomName) {
+    throw new Error("Draft preview response is missing reviewRoomName");
+  }
+  return preview;
 }
 
-export async function acceptDraft(
+export async function applyDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  request: DraftAcceptRequest,
-): Promise<DraftAcceptResponse> {
-  return postJson<DraftAcceptResponse>(
-    apiProjectWorkDocumentDraftAcceptPath(projectId, workId, documentId),
+  request: DraftApplyRequest,
+): Promise<DraftApplyResponse> {
+  return postJson<DraftApplyResponse>(
+    apiProjectWorkDocumentDraftApplyPath(projectId, workId, documentId),
     request,
   );
 }
 
-export async function rejectDraft(
+export async function discardDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  request: DraftRejectRequest,
-): Promise<DraftRejectResponse> {
-  return postJson<DraftRejectResponse>(
-    apiProjectWorkDocumentDraftRejectPath(projectId, workId, documentId),
+  request: DraftDiscardRequest,
+): Promise<DraftDiscardResponse> {
+  return postJson<DraftDiscardResponse>(
+    apiProjectWorkDocumentDraftDiscardPath(projectId, workId, documentId),
     request,
-  );
-}
-
-export async function undoAcceptDraft(
-  projectId: string,
-  workId: string,
-  documentId: string,
-  body: { draftId: string; writeId?: string },
-): Promise<DraftUndoResponse> {
-  return postJson<DraftUndoResponse>(
-    apiProjectWorkDocumentDraftUndoAcceptPath(projectId, workId, documentId),
-    body,
-  );
-}
-
-export async function undoRejectDraft(
-  projectId: string,
-  workId: string,
-  documentId: string,
-  body: { draftId: string },
-): Promise<DraftUndoResponse> {
-  return postJson<DraftUndoResponse>(
-    apiProjectWorkDocumentDraftUndoRejectPath(projectId, workId, documentId),
-    body,
   );
 }

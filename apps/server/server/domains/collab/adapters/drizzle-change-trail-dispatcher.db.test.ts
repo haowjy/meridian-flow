@@ -80,7 +80,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         state: "settled",
         version: 1,
         changeCount: 2,
-        sweptChangeCount: 0,
         documentCount: 1,
         documents: [{ documentId: "current-document", title: "Current chapter" }],
         wordsAdded: 20,
@@ -226,7 +225,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           type: "turn.change_trail_settled",
           version: 2,
           shell: {
-            counts: { changes: 2, swept: 0, documents: 1 },
+            counts: { changes: 2, documents: 1 },
           },
         },
       ]);
@@ -245,7 +244,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           state: "building",
           version: 3,
           changeCount: 9,
-          sweptChangeCount: 4,
           documentCount: 2,
           documents: [{ documentId: "new-document", title: "New chapter" }],
           wordsAdded: 99,
@@ -265,7 +263,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(row?.payload).toMatchObject({
         type: "turn.change_trail_settled",
         shell: {
-          counts: { changes: 2, swept: 0, documents: 1 },
+          counts: { changes: 2, documents: 1 },
           documents: [{ documentId: "settled-document", title: "Settled chapter" }],
           wordsAdded: 12,
           wordsRemoved: 3,
@@ -282,7 +280,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           trailId: TRAIL_ID,
           changeCount: 2,
-          sweptChangeCount: 0,
           documentCount: 1,
           documents:
             event.eventKind === "settled"

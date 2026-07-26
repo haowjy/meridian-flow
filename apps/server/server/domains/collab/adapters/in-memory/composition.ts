@@ -182,11 +182,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    trailForwardActions: {
-      async applyTrailForwardAction() {
-        return { status: "anchor_unavailable" };
-      },
-    },
     branchPush: IN_MEMORY_BRANCH_PUSH_STUB,
     branchPeers: createInMemoryBranchPeerStub(
       runtime.markdownDocuments,
@@ -204,9 +199,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
     return 0;
   },
   async pushToLive() {
-    throw new Error("Branch push service is not configured");
-  },
-  async pushSelectedToLive() {
     throw new Error("Branch push service is not configured");
   },
   async countUnpushedRowsForWork() {
@@ -266,18 +258,18 @@ function createInMemoryDraftStub(documents: {
       async preview(input) {
         const live = await documents.readAsMarkdown(input.documentId);
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", live: live.value };
+        return { status: "gone", draftId: input.draftId, live: live.value };
       },
-      async accept(input) {
+      async applyWorkDraft(input) {
         return {
           status: "not_found",
-          draftId: input.draftId ?? input.branchId ?? "",
+          draftId: input.draftId,
         };
       },
-      async reject(input) {
+      async discardWorkDraft(input) {
         return {
           status: "discarded",
-          draftId: input.draftId ?? input.branchId ?? "",
+          draftId: input.draftId,
         };
       },
     },

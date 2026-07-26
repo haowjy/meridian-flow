@@ -1,8 +1,7 @@
-/** Checkpoint restore safety-notice producer coverage. */
+/** Checkpoint restore behavior coverage. */
 
 import {
   createAgentEditCodec,
-  type DocumentCoordinator,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
@@ -11,7 +10,6 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { Ok } from "../../shared/result.js";
-import type { NoticePort } from "../notices/index.js";
 import { createCheckpointService } from "./checkpoints.js";
 
 const DOC_ID = "chapter.md";
@@ -25,7 +23,7 @@ function document(markdown: string): Y.Doc {
   return doc;
 }
 
-describe("checkpoint restore notices", () => {
+describe("checkpoint restore", () => {
   it("uses authority-head snapshot replacement instead of merging checkpoint bytes", async () => {
     const liveDoc = document("new generation");
     const checkpointDoc = document("checkpoint generation");
@@ -69,18 +67,20 @@ describe("checkpoint restore notices", () => {
     );
   });
 
-  it("records discarded block hashes, bodies, and the pre-restore journal reference", async () => {
-    const liveDoc = document("Kept.\n\nDiscarded writer paragraph.");
+  it("restores without requiring the deleted writer-notice transport", async () => {
+    const liveDoc = document("Current generation.");
     const checkpointDoc = document("Kept.");
-    const coordinator: DocumentCoordinator = {
-      async withDocument(_docId, operation) {
-        return operation(liveDoc);
-      },
-      async recover() {},
-    };
-    const record = vi.fn<NoticePort["record"]>(async () => {});
+    const restoreFromYDoc = vi.fn(async (_documentId: string, restored: Y.Doc) => {
+      expect(model.serializeBlockLines(toDocHandle(restored), codec).join("\n")).toContain("Kept.");
+      return Ok(undefined);
+    });
     const service = createCheckpointService({
-      coordinator,
+      coordinator: {
+        async withDocument(_docId, operation) {
+          return operation(liveDoc);
+        },
+        async recover() {},
+      },
       store: {
         async createCheckpoint() {
           return "checkpoint-1";
@@ -101,41 +101,10 @@ describe("checkpoint restore notices", () => {
       async latestUpdateSeq() {
         return 42;
       },
-      markdownDocuments: {
-        async restoreFromYDoc() {
-          return Ok(undefined);
-        },
-      },
-      notices: {
-        record,
-        async drainForModelContext() {
-          return [];
-        },
-        async drainForWriter() {
-          return [];
-        },
-        subscribeWriterVisible() {
-          return () => {};
-        },
-      },
-      model,
-      codec,
+      markdownDocuments: { restoreFromYDoc },
     });
 
     await expect(service.restore(DOC_ID, "checkpoint-1")).resolves.toEqual(Ok(undefined));
-    expect(record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "checkpoint_sweep",
-        scope: { kind: "document", documentId: DOC_ID },
-        writerVisible: true,
-        data: expect.objectContaining({
-          beforeContentRef: 42,
-          sweptBlockHashes: expect.any(Array),
-          capturedDeletedBodies: expect.arrayContaining([
-            expect.objectContaining({ body: "Discarded writer paragraph." }),
-          ]),
-        }),
-      }),
-    );
+    expect(restoreFromYDoc).toHaveBeenCalledOnce();
   });
 });

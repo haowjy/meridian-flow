@@ -3,7 +3,12 @@
 import { isUuid } from "../../../../shared/uuid.js";
 import type { NoticeInput } from "../../../notices/index.js";
 import type { TrailContributionReplacement } from "../branch-push-contracts.js";
-import type { NormalizedTrail, RawTrailChange, TrailOwner } from "../trail-read-kernel.js";
+import type {
+  NormalizedTrail,
+  RawTrailChange,
+  TrailChangeV1,
+  TrailOwner,
+} from "../trail-read-kernel.js";
 import { parseTrailChangesV1 } from "../trail-read-kernel.js";
 
 export type DurableTrailRecord = {
@@ -58,9 +63,9 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
   const parsedChanges = parseTrailChangesV1(
     changes.map((change, ordinal) => {
       if (!isRecord(change)) throw new Error("Durable trail change must be an object");
-      return { ...change, ordinal, reversible: false };
+      return { ...change, ordinal };
     }),
-  ).map(({ ordinal: _ordinal, reversible: _reversible, ...change }, index) => ({
+  ).map(({ ordinal: _ordinal, ...change }, index) => ({
     ...change,
     ...(rawMetadata[index] as { owner: TrailOwner | null; sequence: number }),
   }));
@@ -97,15 +102,23 @@ export type ChangeTrailPersistence = {
   record(input: {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
-    /** Refines the current push's provisional trail without publishing a second version. */
-    refineCurrentVersion?: boolean;
-    /** Replaces this push's prior aggregate contribution with the supplied classification. */
-    replacePushId?: string;
-  }): Promise<void>;
+    settlementRefinement?: {
+      pushId: string;
+      currentVersion: boolean;
+    };
+  }): Promise<readonly CommittedChangeTrailProjection[]>;
   replacePushContribution(
     pushId: string,
     replacement: TrailContributionReplacement,
     context: { refineCurrentVersion: boolean },
-  ): Promise<void>;
+  ): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
+};
+
+export type CommittedChangeTrailProjection = {
+  trailId: string;
+  owner: NormalizedTrail["owner"];
+  documentId: string;
+  projectionRevision: number;
+  changes: Array<TrailChangeV1 & { admittedByUserId: string | null }>;
 };

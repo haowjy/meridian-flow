@@ -10,7 +10,7 @@ import {
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
-import type { WorkId } from "../ids.js";
+import type { UserId, WorkId } from "../ids.js";
 import type { Project, ProjectStatsResponse } from "../projects/index.js";
 import type {
   Block,
@@ -196,6 +196,19 @@ export type ProjectWorkingSet = {
 };
 
 export type AccountSettings = { workingSetSyncEnabled: boolean };
+
+/** Authenticated identity resolved through Meridian's user provisioning boundary. */
+export type AuthenticatedUser = {
+  /** Canonical internal identity used by Meridian domain and collaboration records. */
+  userId: UserId;
+  /** Identity-provider namespace; never use for Meridian record attribution. */
+  externalId: string;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
+};
+
+export type AuthMeResponse = { user: AuthenticatedUser };
 
 export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
