@@ -62,8 +62,9 @@ for ~200ms).
 3. Run Discard-all, then (with fresh drafts) Apply-all. PASS: one
    enabled→disabled transition at pump start, one disabled→enabled at the end,
    nothing in between. Any mid-pump enabled blip is the bug returning.
-4. Single-card check: apply one card; its verb must stay disabled until the
-   row reflects the new state.
+4. Single-card check: discard one card; its verb must stay disabled until the
+   row reflects the new state. Apply remains available only as the document-level
+   header command (`Apply all`), never on a card.
 
 ## Probe C — active-only disposition and recovery journey
 

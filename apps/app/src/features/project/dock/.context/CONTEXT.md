@@ -77,9 +77,6 @@ level). It does not own a review session — it consumes the shared controller a
 drives these actions:
 
 - `controller.focusReviewOperation(operationId)` — click-to-scroll on cards
-- `controller.acceptOperation(operationId, model)` — card entry point for
-  whole-current-branch Apply; the operation id is presentation context, not an
-  Apply boundary
 - `controller.discardOperation(operationId)` — per-card Discard
 - `controller.isDisposing` — global disposition lock
 
@@ -111,7 +108,7 @@ flowchart LR
     Occupant -->|dock placement| DockHeader
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per op]
-    Card --> Verbs[Selective Discard / whole-branch Apply]
+    Card --> Verbs[Selective Discard]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,
@@ -193,5 +190,5 @@ so switching screens and coming back restores it.
 
 The dock renders whatever operation units the server hands it. Combining
 dependent regions into one unit happens upstream (server/model). The card never
-merges or splits operations — one server operation = one card = one accept/discard
-granularity.
+merges or splits operations — one server operation = one card = one selective-Discard
+granularity. Apply is document-level and is not a card action.
