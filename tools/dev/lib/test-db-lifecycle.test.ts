@@ -52,6 +52,7 @@ describe("managed DB test lifecycle", () => {
 
     expect(isProcessAncestor(300, 500, parentOf)).toBe(true);
     expect(isProcessAncestor(400, 500, parentOf)).toBe(true);
+    expect(isProcessAncestor(500, 500, parentOf)).toBe(false);
     expect(isProcessAncestor(200, 500, parentOf)).toBe(false);
     expect(isProcessAncestor(0, 500, parentOf)).toBe(false);
     expect(isProcessAncestor(1, 500, parentOf)).toBe(false);

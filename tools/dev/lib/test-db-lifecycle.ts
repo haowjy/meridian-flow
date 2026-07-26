@@ -100,7 +100,7 @@ export function isProcessAncestor(
   }
 
   const seen = new Set<number>();
-  let currentPid: number | undefined = descendantPid;
+  let currentPid: number | undefined = resolveParent(descendantPid);
   while (currentPid !== undefined && currentPid > 1 && !seen.has(currentPid)) {
     if (currentPid === ancestorPid) return true;
     seen.add(currentPid);
