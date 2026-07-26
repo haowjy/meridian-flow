@@ -111,7 +111,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -142,7 +142,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -150,7 +150,7 @@ describe("buildInlineReviewModel", () => {
         },
         {
           operationId: "op-b",
-          rejectSourceUpdateIds: [2],
+          closureClassId: "closure:op-b",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -205,7 +205,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -246,7 +246,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -282,7 +282,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -307,7 +307,7 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "rewrote",
           classification: "rewrite",
@@ -392,7 +392,7 @@ describe("hunkKind", () => {
   function operation(id: string, kind: "agent" | "writer"): ReviewOperation {
     return {
       operationId: id,
-      rejectSourceUpdateIds: [1],
+      closureClassId: `closure:${id}`,
       kind,
       contribution: "edited",
       classification: "rewrite",

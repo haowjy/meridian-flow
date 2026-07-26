@@ -1,7 +1,9 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import type { DraftReviewApi } from "./contracts.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -21,6 +23,16 @@ import {
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
+}
+
+async function currentDraftId(
+  draftReview: DraftReviewApi,
+  input: { projectId?: ProjectId; workId: WorkId; documentId: DocumentId },
+): Promise<string> {
+  const drafts = await draftReview.list(input);
+  const draft = drafts.find((candidate) => candidate.documentId === input.documentId);
+  if (!draft) throw new Error("missing reviewable draft");
+  return draft.draftId;
 }
 
 describe("change trail (postgres)", () => {
@@ -245,16 +257,21 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
     });
-    if (preview.status !== "active" || !preview.branchId) {
+    if (preview.status !== "active" || !preview.draftId) {
       throw new Error("missing draft preview");
     }
 
-    const result = await fixture.collab.draftReview.accept({
+    const result = await fixture.collab.draftReview.applyWorkDraft({
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
-      branchId: preview.branchId,
+      draftId: preview.draftId,
       userId: USER_ID as never,
     });
 
@@ -279,8 +296,13 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
     });
-    if (reviewed.status !== "active" || !reviewed.branchId) {
+    if (reviewed.status !== "active" || !reviewed.draftId) {
       throw new Error("missing reviewed draft preview");
     }
     const branch = await fixture.liveCoordinator.withDocument(ALPHA_ID, (liveDoc) =>
@@ -317,6 +339,11 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
     });
     expect(current).toMatchObject({
       status: "active",
@@ -326,11 +353,11 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(
-      fixture.collab.draftReview.accept({
+      fixture.collab.draftReview.applyWorkDraft({
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: reviewed.branchId,
+        draftId: reviewed.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -356,7 +383,7 @@ describe("change trail (postgres)", () => {
         .from(schema.branchWriteJournal)
         .where(
           and(
-            eq(schema.branchWriteJournal.branchId, reviewed.branchId),
+            eq(schema.branchWriteJournal.branchId, reviewed.draftId),
             inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         ),
@@ -392,17 +419,22 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
+      draftId: await currentDraftId(fixture.collab.draftReview, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+      }),
     });
-    if (preview.status !== "active" || !preview.branchId) {
+    if (preview.status !== "active" || !preview.draftId) {
       throw new Error("missing draft preview");
     }
 
     await expect(
-      fixture.collab.draftReview.accept({
+      fixture.collab.draftReview.applyWorkDraft({
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: preview.branchId,
+        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -469,16 +501,21 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
-    });
-    if (preview.status !== "active" || !preview.branchId) {
-      throw new Error("missing draft preview");
-    }
-    await expect(
-      fixture.collab.draftReview.accept({
+      draftId: await currentDraftId(fixture.collab.draftReview, {
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: preview.branchId,
+      }),
+    });
+    if (preview.status !== "active" || !preview.draftId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.applyWorkDraft({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -548,16 +585,21 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
       documentId: ALPHA_ID,
-    });
-    if (preview.status !== "active" || !preview.branchId) {
-      throw new Error("missing draft preview");
-    }
-    await expect(
-      fixture.collab.draftReview.accept({
+      draftId: await currentDraftId(fixture.collab.draftReview, {
         projectId: PROJECT_ID as never,
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        branchId: preview.branchId,
+      }),
+    });
+    if (preview.status !== "active" || !preview.draftId) {
+      throw new Error("missing draft preview");
+    }
+    await expect(
+      fixture.collab.draftReview.applyWorkDraft({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });

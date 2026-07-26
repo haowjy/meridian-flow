@@ -2,8 +2,7 @@
  * partitionClosureClasses — closure=card partition (spec §5.3).
  *
  * The review surface renders one proposal card per closure class, never per
- * operation. These tests pin the grouping (server-vended id first, connected
- * components as the pre-wire fallback) and the per-card signals a card reads:
+ * operation. These tests pin direct server-vended grouping and the per-card signals a card reads:
  * summary verb, merged flag, "Includes your edits", and turn attribution.
  */
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
@@ -13,7 +12,7 @@ import { partitionClosureClasses } from "./closure-classes";
 
 function op(overrides: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
-    rejectSourceUpdateIds: [],
+    closureClassId: `closure:${overrides.operationId}`,
     kind: "agent",
     contribution: "added",
     classification: "addition",
@@ -46,46 +45,39 @@ describe("partitionClosureClasses", () => {
     expect(classes[1].operations.map((o) => o.operationId)).toEqual(["c"]);
   });
 
-  it("repairs divergent explicit ids with closure edges", () => {
+  it("does not reconstruct or repair server class identities", () => {
     const ops = [
       op({ operationId: "a", closureClassId: "closure:a" }),
       op({
         operationId: "b",
         closureClassId: "closure:a+b",
-        acceptClosureOperationIds: ["a", "b"],
       }),
     ];
     const classes = partitionClosureClasses(ops, []);
-    expect(classes).toHaveLength(1);
-    expect(classes[0].classId).toBe("closure:a+b");
-    expect(classes[0].operations.map((o) => o.operationId)).toEqual(["a", "b"]);
-  });
-
-  it("falls back to connected components over accept-closure ids", () => {
-    // No closureClassId → derive: a drags b (causal), c is independent.
-    const ops = [
-      op({ operationId: "a", acceptClosureOperationIds: ["a", "b"] }),
-      op({ operationId: "b" }),
-      op({ operationId: "c" }),
-    ];
-    const classes = partitionClosureClasses(ops, []);
     expect(classes).toHaveLength(2);
-    expect(classes[0].operations.map((o) => o.operationId).sort()).toEqual(["a", "b"]);
-    expect(classes[1].operations.map((o) => o.operationId)).toEqual(["c"]);
+    expect(classes.map((entry) => entry.classId)).toEqual(["closure:a", "closure:a+b"]);
   });
 
-  it("unions operations that share a hunk (hunk-sharing joins the class)", () => {
-    const ops = [op({ operationId: "a" }), op({ operationId: "b" })];
+  it("does not reconstruct hunk-sharing classes on the client", () => {
+    const ops = [
+      op({ operationId: "a", closureClassId: "closure:a" }),
+      op({ operationId: "b", closureClassId: "closure:b" }),
+    ];
     const hunks = [textHunk({ hunkId: "h", operationIds: ["a", "b"] })];
     const classes = partitionClosureClasses(ops, hunks);
-    expect(classes).toHaveLength(1);
-    expect(classes[0].operations.map((o) => o.operationId).sort()).toEqual(["a", "b"]);
+    expect(classes).toHaveLength(2);
   });
 
   it("flags includesWriterEdits when a writer op joins the class", () => {
     const ops = [
-      op({ operationId: "a", kind: "agent", acceptClosureOperationIds: ["a", "w"] }),
-      op({ operationId: "w", kind: "writer", contribution: "edited", classification: "rewrite" }),
+      op({ operationId: "a", kind: "agent", closureClassId: "closure:a+w" }),
+      op({
+        operationId: "w",
+        kind: "writer",
+        contribution: "edited",
+        classification: "rewrite",
+        closureClassId: "closure:a+w",
+      }),
     ];
     const [proposal] = partitionClosureClasses(ops, []);
     expect(proposal.includesWriterEdits).toBe(true);

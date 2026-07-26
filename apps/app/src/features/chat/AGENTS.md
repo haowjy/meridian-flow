@@ -94,7 +94,7 @@ composer mode, and review state live in
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: reveals Changes in the current screen's dock and enters inline review, never changing `?screen`; on the Editor screen it also opens the drafted document and collapses the left rail, restoring it on exit (capture mechanics in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: selection, whole-branch Apply, selective/whole Discard, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
-| `draft-review-session.ts` | Shared disposition lock, request acquisition, response policy, command sequencing, and review-session reducer |
+| `draft-review-session.ts` | Shared disposition lock, direct Apply/Discard command sequencing, and review-session reducer |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 
 ## Draft-review boundary

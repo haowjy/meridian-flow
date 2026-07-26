@@ -261,18 +261,18 @@ function createInMemoryDraftStub(documents: {
       async preview(input) {
         const live = await documents.readAsMarkdown(input.documentId);
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", live: live.value };
+        return { status: "gone", draftId: input.draftId, live: live.value };
       },
-      async accept(input) {
+      async applyWorkDraft(input) {
         return {
           status: "not_found",
-          draftId: input.draftId ?? input.branchId ?? "",
+          draftId: input.draftId,
         };
       },
-      async reject(input) {
+      async discardWorkDraft(input) {
         return {
           status: "discarded",
-          draftId: input.draftId ?? input.branchId ?? "",
+          draftId: input.draftId,
         };
       },
     },

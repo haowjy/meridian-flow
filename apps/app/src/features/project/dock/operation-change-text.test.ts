@@ -17,7 +17,7 @@ function operationChangeText(operation: ReviewOperation, hunks: ReviewHunk[]) {
 function op(overrides: Partial<ReviewOperation>): ReviewOperation {
   return {
     operationId: "4",
-    rejectSourceUpdateIds: [],
+    closureClassId: "closure:4",
     kind: "agent",
     contribution: "added",
     classification: "addition",

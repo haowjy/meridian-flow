@@ -25,10 +25,10 @@ propagation between them.
   from authenticated journal attribution. Certified semantic mutations may add
   sparse continuation/restoration facts in the reserved Yjs provenance types,
   atomically with their prose update; ordinary authorship adds no reserved fact.
-- **Closure means card review.** `branch-review-closure.ts` computes
-  journal-backed closure classes so cards explain coherent sets and Discard can
-  reverse one safely. Apply is document-scoped and publishes the whole current
-  branch.
+- **Discard class means card review.** `branch-review-closure.ts` joins
+  operations only through shared discard rows and hunks, then vends the required
+  class identity. The client never reconstructs classes. Apply is
+  document-scoped and publishes the whole current branch.
 
 ## What lives here
 

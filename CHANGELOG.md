@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/contracts`: selective Discard now uses
+  server-owned discard classes only; obsolete Apply closure and client-side
+  class reconstruction are gone.
+- `apps/app`, `apps/server`, `packages/contracts`: draft review now addresses
+  preview, Apply, and Discard with one required `draftId`; Apply no longer
+  depends on rendered change cards or client mutation phases.
 - `apps/app`, `apps/server`, `packages/contracts`: draft Apply now commits the
   whole current branch, including writer edits made after preview; review rows
   retain writer identity and mixed-author branches preserve receipt Undo safety.

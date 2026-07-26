@@ -1,5 +1,4 @@
-/** One command/state policy for draft review selection and disposition. */
-import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
+/** One command/state policy for Work-draft selection and disposition. */
 
 export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
@@ -13,21 +12,18 @@ export type DraftDispositionTarget =
   | { kind: "batch"; mode: "apply" | "discard"; count: number };
 
 export type DraftDispositionState =
-  | { phase: "idle" }
-  | {
-      phase: "acquiring" | "mutating" | "settling";
-      target: DraftDispositionTarget;
-    };
+  | { busy: false }
+  | { busy: true; target: DraftDispositionTarget };
 
 export type DraftDispositionReservation = symbol;
 
 /**
  * The session's synchronous disposition authority. Reservation happens before
- * any preview read or mutation promise is created, so every command observes
- * the same lock even before React can render its pending state.
+ * any mutation promise is created, so every command observes the same lock
+ * even before React can render its pending state.
  */
 export class DraftDispositionLock {
-  private state: DraftDispositionState = { phase: "idle" };
+  private state: DraftDispositionState = { busy: false };
   private owner: DraftDispositionReservation | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -39,29 +35,23 @@ export class DraftDispositionLock {
   };
 
   reserve(target: DraftDispositionTarget): DraftDispositionReservation | null {
-    if (this.state.phase !== "idle") return null;
+    if (this.state.busy) return null;
     const reservation = Symbol(target.kind);
     this.owner = reservation;
-    this.publish({ phase: "acquiring", target });
+    this.publish({ busy: true, target });
     return reservation;
-  }
-
-  advance(reservation: DraftDispositionReservation, phase: "mutating" | "settling"): boolean {
-    if (this.owner !== reservation || this.state.phase === "idle") return false;
-    this.publish({ phase, target: this.state.target });
-    return true;
   }
 
   retarget(reservation: DraftDispositionReservation, target: DraftDispositionTarget): boolean {
     if (this.owner !== reservation) return false;
-    this.publish({ phase: "acquiring", target });
+    this.publish({ busy: true, target });
     return true;
   }
 
   release(reservation: DraftDispositionReservation): boolean {
     if (this.owner !== reservation) return false;
     this.owner = null;
-    this.publish({ phase: "idle" });
+    this.publish({ busy: false });
     return true;
   }
 
@@ -79,40 +69,13 @@ export type DraftCommandOutcome =
 
 export type DraftBatchErrorCode = "apply-failed" | "discard-offline";
 
-export type DraftApplyPreview = {
-  documentId: string;
-  draftId: string;
-  operationIds: readonly string[];
-  draftRevisionToken: number;
-  branchId?: string;
-};
-
-export type DraftApplyRequest = {
-  draftId: string;
-  branchId?: string;
-};
-
-export type DraftApplyOutcome = {
-  command: Extract<DraftCommandOutcome, { kind: "applied" }>;
-  message: InlineReviewMessage | null;
-  refreshDraftId: string | null;
-  materializedDocument: boolean;
-};
-
 export type DraftReviewCommandPorts = {
-  loadPreview: (selection: DraftReviewSelection) => Promise<DraftApplyPreview>;
-  apply: (
-    selection: DraftReviewSelection,
-    request: DraftApplyRequest,
-  ) => Promise<DraftAcceptResponse>;
-  discard: (
-    selection: DraftReviewSelection,
-    input: { branchId?: string; operationIds?: string[] },
-  ) => Promise<void>;
+  apply: (selection: DraftReviewSelection) => Promise<void>;
+  discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
   operationDiscardStarted: () => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
-  applySettled: (selection: DraftReviewSelection, outcome: DraftApplyOutcome) => void;
+  draftApplied: (selection: DraftReviewSelection) => void;
   draftFailed: (
     selection: DraftReviewSelection,
     code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">,
@@ -122,22 +85,17 @@ export type DraftReviewCommandPorts = {
 
 /**
  * The complete disposition command facade. React supplies I/O ports; this
- * session owns reservation timing, preview choice, mutation sequencing, typed
- * outcomes, batches, and terminal callbacks.
+ * session owns reservation timing, mutation sequencing, batches, and terminal
+ * callbacks.
  */
 export class DraftReviewSession {
   readonly disposition = new DraftDispositionLock();
 
   constructor(private readonly ports: () => DraftReviewCommandPorts) {}
 
-  applyReviewedDraft(
-    selection: DraftReviewSelection,
-    preview: DraftApplyPreview,
-  ): Promise<DraftCommandOutcome> {
+  applyReviewedDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
     return this.withReservation({ kind: "apply-draft", ...selection }, (reservation, ports) =>
-      this.applyDraft(selection, reservation, ports, () =>
-        acquireDraftApplyRequest({ scope: "draft", preview }),
-      ),
+      this.applyDraft(selection, reservation, ports),
     );
   }
 
@@ -147,16 +105,12 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     return this.withReservation(
       { kind: "discard-operation", ...selection, operationId },
-      async (reservation, ports) => {
+      async (_reservation, ports) => {
         ports.operationDiscardStarted();
         try {
-          const preview = await ports.loadPreview(selection);
-          this.disposition.advance(reservation, "mutating");
           await ports.discard(selection, {
-            ...(preview.branchId ? { branchId: preview.branchId } : {}),
             operationIds: [operationId],
           });
-          this.disposition.advance(reservation, "settling");
           return { kind: "discarded" };
         } catch {
           return { kind: "failed", code: "discard-offline" };
@@ -184,7 +138,7 @@ export class DraftReviewSession {
     try {
       for (const draft of drafts) {
         const outcome = await (mode === "apply"
-          ? this.applyDraft(draft, reservation, ports, () => this.currentDraftRequest(draft))
+          ? this.applyDraft(draft, reservation, ports)
           : this.discardDraftWithReservation(draft, reservation, ports));
         outcomes.push(outcome);
         if (!batchOutcomeSucceeded(mode, outcome)) break;
@@ -196,30 +150,16 @@ export class DraftReviewSession {
     return outcomes;
   }
 
-  private applyDraft(
+  private async applyDraft(
     selection: DraftReviewSelection,
     reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
-    acquireRequest: () => DraftApplyRequest | Promise<DraftApplyRequest>,
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
-    return this.applyRequest(selection, reservation, ports, acquireRequest());
-  }
-
-  private async applyRequest(
-    selection: DraftReviewSelection,
-    reservation: DraftDispositionReservation,
-    ports: DraftReviewCommandPorts,
-    requestPromise: DraftApplyRequest | Promise<DraftApplyRequest>,
-  ): Promise<DraftCommandOutcome> {
     try {
-      const request = await requestPromise;
-      this.disposition.advance(reservation, "mutating");
-      const response = await ports.apply(selection, request);
-      this.disposition.advance(reservation, "settling");
-      const outcome = draftApplyOutcome(response);
-      ports.applySettled(selection, outcome);
-      return outcome.command;
+      await ports.apply(selection);
+      ports.draftApplied(selection);
+      return { kind: "applied" };
     } catch {
       ports.draftFailed(selection, "apply-failed");
       return { kind: "failed", code: "apply-failed" };
@@ -233,22 +173,13 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
     try {
-      const preview = await ports.loadPreview(selection);
-      this.disposition.advance(reservation, "mutating");
-      await ports.discard(selection, {
-        ...(preview.branchId ? { branchId: preview.branchId } : {}),
-      });
-      this.disposition.advance(reservation, "settling");
+      await ports.discard(selection);
       ports.draftDiscarded(selection);
       return { kind: "discarded" };
     } catch {
       ports.draftFailed(selection, "discard-offline");
       return { kind: "failed", code: "discard-offline" };
     }
-  }
-
-  private currentDraftRequest(selection: DraftReviewSelection): DraftApplyRequest {
-    return { draftId: selection.draftId };
   }
 
   private async withReservation(
@@ -284,13 +215,6 @@ function batchErrorCode(
     : null;
 }
 
-export function acquireDraftApplyRequest(input: {
-  scope: "draft";
-  preview: DraftApplyPreview;
-}): DraftApplyRequest {
-  return requestFromPreview(input.preview);
-}
-
 export type DraftReviewSelection = {
   documentId: string;
   draftId: string;
@@ -302,36 +226,14 @@ export type InlineDraftReview = DraftReviewSelection;
  * Stable identifiers for every writer-facing review message. The controller is
  * a state machine and must not carry localized copy; it emits a code and the
  * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
- * single source of message identity for both accept messages and discard errors.
+ * single source of message identity for both Apply messages and discard errors.
  */
-export type InlineReviewMessageCode =
-  | "apply-failed"
-  | "discard-stale"
-  | "discard-finalized"
-  | "discard-offline"
-  | "discard-failed";
+export type InlineReviewMessageCode = "apply-failed" | "discard-offline" | "discard-failed";
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;
   tone?: "info" | "error";
 };
-
-/** Interpret a server Apply response exactly once for every Apply surface. */
-export function draftApplyOutcome(_response: DraftAcceptResponse): DraftApplyOutcome {
-  return {
-    command: { kind: "applied" },
-    message: null,
-    refreshDraftId: null,
-    materializedDocument: true,
-  };
-}
-
-function requestFromPreview(preview: Omit<DraftApplyPreview, "documentId">): DraftApplyRequest {
-  return {
-    draftId: preview.draftId,
-    ...(preview.branchId ? { branchId: preview.branchId } : {}),
-  };
-}
 
 export type DraftReviewSurface =
   | { kind: "none" }
@@ -347,7 +249,7 @@ export type DraftReviewState = {
 export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
-  | { type: "applySucceeded"; documentId: string; draftId: string; outcome: DraftApplyOutcome }
+  | { type: "applySucceeded"; documentId: string; draftId: string }
   | { type: "discardStarted" }
   | { type: "discardFailed"; code: InlineReviewMessageCode }
   | { type: "batchStarted" }
@@ -357,7 +259,7 @@ export type DraftReviewAction =
       selection: DraftReviewSelection;
       code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">;
     }
-  | { type: "rejectSucceeded"; draftId: string }
+  | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
 
@@ -383,7 +285,7 @@ export function draftReviewReducer(
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
     case "applySucceeded":
-      return stateAfterAcceptResult(state, action);
+      return clearDraftReviewState(state, action.draftId);
     case "discardStarted":
       return {
         ...state,
@@ -399,7 +301,7 @@ export function draftReviewReducer(
       return surfaceMatchesDraft(state.surface, action.selection)
         ? { ...state, inlineReviewMessage: { code: action.code, tone: "error" } }
         : state;
-    case "rejectSucceeded":
+    case "discardSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
       if (state.surface.kind !== "inline") return state;
@@ -427,14 +329,6 @@ function inlineSurfaceForEnter(
 ): DraftReviewSurface {
   if (surfaceMatchesDraft(current, selection)) return current;
   return { kind: "inline", documentId: selection.documentId, draftId: selection.draftId };
-}
-
-function stateAfterAcceptResult(
-  state: DraftReviewState,
-  input: { documentId: string; draftId: string; outcome: DraftApplyOutcome },
-): DraftReviewState {
-  const { draftId } = input;
-  return clearDraftReviewState(state, draftId);
 }
 
 function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {

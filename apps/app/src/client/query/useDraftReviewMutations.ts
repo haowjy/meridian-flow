@@ -1,10 +1,10 @@
 /**
- * useDraftReviewMutations — accept/reject actions for AI document drafts.
+ * useDraftReviewMutations — Apply/Discard actions for Work drafts.
  */
 
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { acceptDraft, rejectDraft } from "@/client/api/drafts-api";
+import { applyDraft, discardDraft } from "@/client/api/drafts-api";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
@@ -16,21 +16,11 @@ type DraftReviewMutationBase = {
   threadId?: string | null;
   documentId: string;
   draftId: string;
-  branchId?: string;
 };
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
   operationIds?: string[];
 };
-
-export function reviewRequestId(
-  input: Pick<
-    DraftReviewMutationInput,
-    "projectId" | "workId" | "documentId" | "draftId" | "branchId"
-  >,
-): { draftId: string } | { branchId: string } {
-  return input.branchId ? { branchId: input.branchId } : { draftId: input.draftId };
-}
 
 function invalidateDraftReviewQueries(
   queryClient: QueryClient,
@@ -64,31 +54,16 @@ function invalidateDraftReviewQueries(
   ]).then(() => undefined);
 }
 
-export function useAcceptDraft() {
+export function useApplyDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ projectId, workId, documentId, draftId, branchId }: DraftReviewMutationBase) => {
-      const reviewId = reviewRequestId({
-        projectId,
-        workId,
-        documentId,
-        draftId,
-        branchId,
-      });
-      if ("branchId" in reviewId) {
-        return acceptDraft(projectId, workId, documentId, {
-          branchId: reviewId.branchId,
-        });
-      }
-      return acceptDraft(projectId, workId, documentId, {
-        draftId: reviewId.draftId,
-      });
-    },
+    mutationFn: ({ projectId, workId, documentId, draftId }: DraftReviewMutationBase) =>
+      applyDraft(projectId, workId, documentId, { draftId }),
     onSuccess: async (_response, variables) => {
       // A draft-only tab may have opened its live room before the document was
       // materialized, leaving a terminal authorization denial cached in the
-      // registry. Accept grants access; replace only that unavailable session
+      // registry. Apply grants access; replace only that unavailable session
       // so EditorView can bind a freshly authorized provider on review exit.
       await getDocumentSessionRegistry().restartUnavailableRoom(variables.documentId);
       void queryClient.invalidateQueries({
@@ -100,7 +75,7 @@ export function useAcceptDraft() {
   });
 }
 
-export function useRejectDraft() {
+export function useDiscardDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -109,11 +84,10 @@ export function useRejectDraft() {
       workId,
       documentId,
       draftId,
-      branchId,
       operationIds,
     }: DraftReviewMutationInput) =>
-      rejectDraft(projectId, workId, documentId, {
-        ...reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
+      discardDraft(projectId, workId, documentId, {
+        draftId,
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
       }),
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),

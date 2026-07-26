@@ -6,17 +6,17 @@
  * strings to query hooks.
  */
 import type {
-  DraftAcceptRequest,
-  DraftAcceptResponse,
+  DraftApplyRequest,
+  DraftApplyResponse,
+  DraftDiscardRequest,
+  DraftDiscardResponse,
   DraftPreviewResponse,
-  DraftRejectRequest,
-  DraftRejectResponse,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
-  apiProjectWorkDocumentDraftAcceptPath,
+  apiProjectWorkDocumentDraftApplyPath,
+  apiProjectWorkDocumentDraftDiscardPath,
   apiProjectWorkDocumentDraftPath,
-  apiProjectWorkDocumentDraftRejectPath,
   apiProjectWorkDraftsPath,
 } from "@meridian/contracts/protocol";
 
@@ -41,26 +41,26 @@ export async function getDraftPreview(
   );
 }
 
-export async function acceptDraft(
+export async function applyDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  request: DraftAcceptRequest,
-): Promise<DraftAcceptResponse> {
-  return postJson<DraftAcceptResponse>(
-    apiProjectWorkDocumentDraftAcceptPath(projectId, workId, documentId),
+  request: DraftApplyRequest,
+): Promise<DraftApplyResponse> {
+  return postJson<DraftApplyResponse>(
+    apiProjectWorkDocumentDraftApplyPath(projectId, workId, documentId),
     request,
   );
 }
 
-export async function rejectDraft(
+export async function discardDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  request: DraftRejectRequest,
-): Promise<DraftRejectResponse> {
-  return postJson<DraftRejectResponse>(
-    apiProjectWorkDocumentDraftRejectPath(projectId, workId, documentId),
+  request: DraftDiscardRequest,
+): Promise<DraftDiscardResponse> {
+  return postJson<DraftDiscardResponse>(
+    apiProjectWorkDocumentDraftDiscardPath(projectId, workId, documentId),
     request,
   );
 }

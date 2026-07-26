@@ -6,7 +6,7 @@ and draft-only-tab contracts.
 ## Architecture
 
 Inline review is the only manuscript preview surface. Apply is a document-level
-command that runs the whole-current-branch `acceptDraft` path; Discard may still
+command that publishes the whole current draft; Discard may still
 target one operation or the whole branch.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, and inline
@@ -58,7 +58,7 @@ branch, so review has one active row per document. The dock's `DockChangesView`
 expands the reviewed document to operation cards read from the live preview.
 Each card carries one hover-revealed Discard verb, the only mutating target on
 the card, driving `controller.discardOperation`. Whole-branch Apply remains in
-the review header so the UI cannot imply operation-scoped acceptance. Discard
+the review header so the UI cannot imply operation-scoped Apply. Discard
 takes its selection from review state, so a card disposes correctly with no
 manuscript mounted. Only the card-body click needs the editor: it calls
 `controller.focusReviewOperation(operationId)`, which reads the review editor off
@@ -143,7 +143,7 @@ composer's single **Review changes** action sorts a copy by
 document; it must not reorder the shared projection.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
-row + Yjs state) but absent from the live tree until accept. Its review tab
+row + Yjs state) but absent from the live tree until Apply. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
@@ -155,8 +155,8 @@ both route through
   keep the
   tab, drop the marker — after the awaited draft-list refresh but while the
   disposition lock remains held. Controls must not re-enable before that local
-  resolution; draft-group absence alone cannot distinguish accept from discard.
-- Whole-draft reject resolves `"discarded"` — close the tab.
+  resolution; draft-group absence alone cannot distinguish Apply from Discard.
+- Whole-draft Discard resolves `"discarded"` — close the tab.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
   `"committed"`; absence means `"discarded"`. A failed read leaves the tab
@@ -166,8 +166,8 @@ both route through
   `ContextPaneController` repairs the route when a lifecycle resolve removes
   the route-active tab.
 
-Server-side twin: rejecting a new-document draft also removes its entry from
-the work manifest branch — otherwise the next accept in that work pushes the
+Server-side twin: discarding a new-document draft also removes its entry from
+the work manifest branch — otherwise the next Apply in that work pushes the
 dead entry to live and the discarded document resurrects as an empty file
 (caught by a runtime probe; regression test in
 `collab-domain.reverse-turn.db.test.ts`).

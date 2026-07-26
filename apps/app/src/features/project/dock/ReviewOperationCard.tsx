@@ -103,8 +103,8 @@ function CardVerbs({
   controller: DraftReviewController;
   draftId: string;
 }) {
-  // Discard runs against the class's representative operation; its reject
-  // closure spans every operation in the class.
+  // Discard sends the class's representative operation; the server resolves
+  // that identifier to its authoritative Discard class.
   const operationId = proposal.primaryOperation.operationId;
   // This card is the one running a disposition — drives the visible pending
   // treatment (stays revealed); the disable itself is global (`isDisposing`).

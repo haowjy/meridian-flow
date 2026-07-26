@@ -6,12 +6,12 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 const resolveDraftOnlyTabMock = vi.fn();
 const wholeDraftResponse: unknown = null;
 let wholeDraftResponses: unknown[] = [];
-let acceptPromise: Promise<{ status: "applied"; draftId: string }> | null = null;
+let applyPromise: Promise<{ status: "applied"; draftId: string }> | null = null;
 const draftPreview = {
   status: "active",
+  draftId: "draft-1",
   draftRevisionToken: 1,
   liveRevisionToken: 0,
-  branchId: "branch-1",
   reviewRoomName: "branch:branch-1",
   operations: [
     { operationId: "operation-1" },
@@ -20,8 +20,8 @@ const draftPreview = {
   ],
 };
 const draftPreviews = new Map<string, typeof draftPreview>();
-const acceptMutateMock = vi.fn(async (_input: unknown) => {
-  if (acceptPromise) return acceptPromise;
+const applyMutateMock = vi.fn(async (_input: unknown) => {
+  if (applyPromise) return applyPromise;
   const response =
     wholeDraftResponses.length > 0
       ? wholeDraftResponses.shift()
@@ -31,9 +31,9 @@ const acceptMutateMock = vi.fn(async (_input: unknown) => {
   if (response instanceof Error) throw response;
   return response;
 });
-let rejectPromise: Promise<{ status: "discarded" }> | null = null;
-const rejectMutateMock = vi.fn(
-  async () => rejectPromise ?? Promise.resolve({ status: "discarded" as const }),
+let discardPromise: Promise<{ status: "discarded" }> | null = null;
+const discardMutateMock = vi.fn(
+  async () => discardPromise ?? Promise.resolve({ status: "discarded" as const }),
 );
 
 vi.mock("@tanstack/react-query", () => ({
@@ -47,8 +47,8 @@ vi.mock("@/client/api/drafts-api", () => ({
     Promise.resolve(draftPreviews.get(draftId) ?? draftPreview),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
-  useAcceptDraft: () => ({ mutateAsync: acceptMutateMock }),
-  useRejectDraft: () => ({ mutateAsync: rejectMutateMock }),
+  useApplyDraft: () => ({ mutateAsync: applyMutateMock }),
+  useDiscardDraft: () => ({ mutateAsync: discardMutateMock }),
 }));
 vi.mock("@/client/stores", () => ({
   useContextTabsStore: {
@@ -59,9 +59,9 @@ vi.mock("@/client/stores", () => ({
 const { useDraftReviewController } = await import("./useDraftReviewController");
 
 describe("useDraftReviewController", () => {
-  it("submits branch identity without preview operation evidence", async () => {
+  it("applies by product draft identity without rendered operation cards", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    acceptMutateMock.mockClear();
+    applyMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -73,24 +73,15 @@ describe("useDraftReviewController", () => {
 
     await withReactRoot(<Probe />, async () => {
       await act(async () => {
-        controller?.inlineReviewModelAvailable(
-          "draft-1:0:1",
-          "document-1",
-          "draft-1",
-          ["operation-1", "operation-2"],
-          { draftRevisionToken: 1, branchId: "branch-1" },
-        );
-      });
-      await act(async () => {
-        await controller?.accept("document-1", "draft-1");
+        await controller?.apply("document-1", "draft-1");
       });
 
-      expect(acceptMutateMock).toHaveBeenCalledWith(
+      expect(applyMutateMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          branchId: "branch-1",
+          draftId: "draft-1",
         }),
       );
-      expect(acceptMutateMock).not.toHaveBeenCalledWith(
+      expect(applyMutateMock).not.toHaveBeenCalledWith(
         expect.objectContaining({ operationIds: expect.anything() }),
       );
     });
@@ -112,21 +103,15 @@ describe("useDraftReviewController", () => {
       await act(async () => {
         controller?.enterInlineReview("document-1", "draft-1");
       });
-      expect(controller?.canAcceptReviewedDraft).toBe(false);
+      expect(controller?.canApplyReviewedDraft).toBe(false);
 
       await act(async () => {
-        controller?.inlineReviewModelAvailable(
-          "draft-1:0:1",
-          "document-1",
-          "draft-1",
-          ["operation-1", "operation-2"],
-          { draftRevisionToken: 1, branchId: "branch-1" },
-        );
+        controller?.inlineReviewModelAvailable("draft-1:0:1", "document-1", "draft-1");
       });
-      expect(controller?.canAcceptReviewedDraft).toBe(true);
+      expect(controller?.canApplyReviewedDraft).toBe(true);
 
       await act(async () => {
-        await controller?.accept("document-1", "draft-1");
+        await controller?.apply("document-1", "draft-1");
       });
       expect(controller?.inlineReviewMessage).toMatchObject({
         code: "apply-failed",
@@ -138,7 +123,7 @@ describe("useDraftReviewController", () => {
 
   it("acquires and applies every captured draft in a dock batch", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    acceptMutateMock.mockClear();
+    applyMutateMock.mockClear();
     draftPreviews.set("draft-1", {
       ...draftPreview,
       operations: [{ operationId: "operation-1a" }, { operationId: "operation-1b" }],
@@ -146,7 +131,7 @@ describe("useDraftReviewController", () => {
     draftPreviews.set("draft-2", {
       ...draftPreview,
       draftRevisionToken: 2,
-      branchId: "branch-2",
+      draftId: "draft-2",
       operations: [{ operationId: "operation-2a" }, { operationId: "operation-2b" }],
     });
 
@@ -169,8 +154,8 @@ describe("useDraftReviewController", () => {
       });
 
       expect(outcomes).toEqual([{ kind: "applied" }, { kind: "applied" }]);
-      expect(acceptMutateMock).toHaveBeenCalledTimes(2);
-      expect(acceptMutateMock).toHaveBeenNthCalledWith(
+      expect(applyMutateMock).toHaveBeenCalledTimes(2);
+      expect(applyMutateMock).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
           documentId: "document-2",
@@ -183,7 +168,7 @@ describe("useDraftReviewController", () => {
 
   it("discards a change with no editor mounted, so the Changes rail works off the Editor screen", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    rejectMutateMock.mockClear();
+    discardMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -206,13 +191,13 @@ describe("useDraftReviewController", () => {
       });
 
       expect(outcome).toEqual({ kind: "discarded" });
-      expect(rejectMutateMock).toHaveBeenCalledTimes(1);
+      expect(discardMutateMock).toHaveBeenCalledTimes(1);
     });
   });
 
   it("releases a discard reservation when preview settlement arrives before mutation completion", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    rejectMutateMock.mockClear();
+    discardMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -223,19 +208,13 @@ describe("useDraftReviewController", () => {
     }
 
     await withReactRoot(<Probe />, async () => {
-      let resolveReject!: (result: { status: "discarded" }) => void;
-      rejectPromise = new Promise((resolve) => {
-        resolveReject = resolve;
+      let resolveDiscard!: (result: { status: "discarded" }) => void;
+      discardPromise = new Promise((resolve) => {
+        resolveDiscard = resolve;
       });
       await act(async () => {
         controller?.enterInlineReview("document-1", "draft-1");
-        controller?.inlineReviewModelAvailable(
-          "draft-1:0:1",
-          "document-1",
-          "draft-1",
-          ["operation-1"],
-          { draftRevisionToken: 1, branchId: "branch-1" },
-        );
+        controller?.inlineReviewModelAvailable("draft-1:0:1", "document-1", "draft-1");
         controller?.registerInlineReviewRuntime({
           editor: {},
           documentId: "document-1",
@@ -246,24 +225,21 @@ describe("useDraftReviewController", () => {
       let discard: Promise<unknown> | undefined;
       await act(async () => {
         discard = controller?.discardOperation("operation-1");
-        await vi.waitFor(() => expect(rejectMutateMock).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(discardMutateMock).toHaveBeenCalledTimes(1));
       });
       await act(async () => {
-        controller?.inlineReviewModelAvailable("draft-1:0:2", "document-1", "draft-1", [], {
-          draftRevisionToken: 2,
-          branchId: "branch-1",
-        });
+        controller?.inlineReviewModelAvailable("draft-1:0:2", "document-1", "draft-1");
       });
       await act(async () => {
-        resolveReject({ status: "discarded" });
+        resolveDiscard({ status: "discarded" });
         await discard;
       });
-      rejectPromise = null;
+      discardPromise = null;
 
       await act(async () => {
-        await controller?.reject("document-2", "draft-2");
+        await controller?.discard("document-2", "draft-2");
       });
-      expect(rejectMutateMock).toHaveBeenCalledTimes(2);
+      expect(discardMutateMock).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -297,8 +273,8 @@ describe("useDraftReviewController", () => {
 
   it("locks every disposition while a whole-branch Apply is unsettled", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    acceptMutateMock.mockClear();
-    rejectMutateMock.mockClear();
+    applyMutateMock.mockClear();
+    discardMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -311,38 +287,32 @@ describe("useDraftReviewController", () => {
     await withReactRoot(<Probe />, async () => {
       await act(async () => {
         controller?.enterInlineReview("document-1", "draft-1");
-        controller?.inlineReviewModelAvailable(
-          "draft-1:0:1",
-          "document-1",
-          "draft-1",
-          ["operation-1", "operation-2"],
-          { draftRevisionToken: 1, branchId: "branch-1" },
-        );
+        controller?.inlineReviewModelAvailable("draft-1:0:1", "document-1", "draft-1");
       });
 
-      let resolveAccept!: (response: { status: "applied"; draftId: string }) => void;
-      acceptPromise = new Promise((resolve) => {
-        resolveAccept = resolve;
+      let resolveApply!: (response: { status: "applied"; draftId: string }) => void;
+      applyPromise = new Promise((resolve) => {
+        resolveApply = resolve;
       });
       const activeController = controller;
       if (!activeController) throw new Error("controller did not mount");
-      let wholeApply!: ReturnType<typeof activeController.accept>;
+      let wholeApply!: ReturnType<typeof activeController.apply>;
       await act(async () => {
-        wholeApply = activeController.accept("document-1", "draft-1");
+        wholeApply = activeController.apply("document-1", "draft-1");
         await Promise.resolve();
-        await activeController.accept("document-1", "draft-1");
+        await activeController.apply("document-1", "draft-1");
         await activeController.discardOperation("operation-2");
-        await activeController.reject("document-2", "draft-2");
+        await activeController.discard("document-2", "draft-2");
       });
 
-      expect(acceptMutateMock).toHaveBeenCalledOnce();
-      expect(rejectMutateMock).not.toHaveBeenCalled();
+      expect(applyMutateMock).toHaveBeenCalledOnce();
+      expect(discardMutateMock).not.toHaveBeenCalled();
 
       await act(async () => {
-        resolveAccept({ status: "applied", draftId: "draft-1" });
+        resolveApply({ status: "applied", draftId: "draft-1" });
         await wholeApply;
       });
-      acceptPromise = null;
+      applyPromise = null;
     });
   });
 });

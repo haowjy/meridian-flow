@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
 
-import { hunkSharingClosure } from "./branch-review-closure.js";
+import { assignDiscardClasses } from "./branch-review-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
 import type {
   DraftReviewHunkInternal,
@@ -793,11 +793,11 @@ type WriterGroup = {
  * - sourceUpdateIds: logical rows displayed as the operation's authoring source.
  * - physical rows: source rows plus restorative/delete rows that currently carry
  *   or reverse that logical operation while replaying the draft journal.
- * - rejectSourceUpdateIds: the connected-component union of physical rows for
- *   every operation sharing hunks with this operation.
+ * - discardUpdateIds: physical rows that currently carry or reverse the
+ *   logical operation.
  *
- * Invariant: reconstructing an undo of rejectSourceUpdateIds returns every
- * affected region in that connected component to the live-base state.
+ * Invariant: a Discard class joins every operation that shares a physical row
+ * or visible hunk, and every class member carries the class-wide row set.
  *
  * Span invariant: hunk spans are inserted-text-only, ordered, non-overlapping,
  * and cover the hunk's inserted ranges exactly once after writer operation id
@@ -928,11 +928,7 @@ function groupOperationsForHunks(
         {
           operationId: operation.operationId,
           sourceUpdateIds: operation.sourceUpdateIds,
-          rejectSourceUpdateIds: operation.physicalSourceUpdateIds,
-          directionalClosure: {
-            accept: { updateIds: operation.sourceUpdateIds },
-            reject: { updateIds: operation.physicalSourceUpdateIds },
-          },
+          discardUpdateIds: operation.physicalSourceUpdateIds,
           ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
           kind: "agent" as const,
           contribution: operationContribution(contributionByOperationId.get(operation.operationId)),
@@ -947,11 +943,7 @@ function groupOperationsForHunks(
       ({
         operationId: group.operationId ?? stableWriterOperationId(group.sourceUpdateIds),
         sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
-        rejectSourceUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
-        directionalClosure: {
-          accept: { updateIds: [...group.sourceUpdateIds].sort((a, b) => a - b) },
-          reject: { updateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b) },
-        },
+        discardUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
         actorUserId: group.actorUserId,
         kind: "writer",
         contribution: operationContribution(group.contribution),
@@ -961,71 +953,12 @@ function groupOperationsForHunks(
           attributedHunks,
         ),
         hunkCount: group.hunkIndexes.size,
-      }) satisfies DraftReviewOperationInternal,
+      }) satisfies Omit<DraftReviewOperationInternal, "closureClassId">,
   );
   const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
     operationSort(a.operationId, b.operationId),
   );
-  return { hunks, operations: applyRejectClosures(hunks, operations) };
-}
-
-function applyRejectClosures(
-  hunks: readonly DraftReviewHunkInternal[],
-  operations: readonly DraftReviewOperationInternal[],
-): DraftReviewOperationInternal[] {
-  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
-  const hunkIndexesByOperation = new Map<string, number[]>();
-  for (const [hunkIndex, operationIds] of operationIdsByHunk.entries()) {
-    for (const operationId of operationIds) {
-      hunkIndexesByOperation.set(operationId, [
-        ...(hunkIndexesByOperation.get(operationId) ?? []),
-        hunkIndex,
-      ]);
-    }
-  }
-
-  const operationsById = new Map(operations.map((operation) => [operation.operationId, operation]));
-  const rejectClosureByOperation = new Map<
-    string,
-    { operationIds: string[]; updateIds: number[] }
-  >();
-  for (const operation of operations) {
-    if (rejectClosureByOperation.has(operation.operationId)) continue;
-    const operationIds = hunkSharingClosure(
-      [operation.operationId],
-      operationIdsByHunk,
-      hunkIndexesByOperation,
-    ).sort(operationSort);
-    const updateIds = [
-      ...new Set(
-        operationIds.flatMap(
-          (operationId) =>
-            operationsById.get(operationId)?.directionalClosure.reject.updateIds ?? [],
-        ),
-      ),
-    ].sort((a, b) => a - b);
-    for (const operationId of operationIds) {
-      rejectClosureByOperation.set(operationId, { operationIds, updateIds });
-    }
-  }
-
-  return operations.map((operation) => {
-    const closure = rejectClosureByOperation.get(operation.operationId);
-    return {
-      ...operation,
-      ...(closure && closure.operationIds.length > 1
-        ? { rejectClosureOperationIds: closure.operationIds }
-        : {}),
-      rejectSourceUpdateIds: closure?.updateIds ?? operation.rejectSourceUpdateIds,
-      directionalClosure: {
-        accept: operation.directionalClosure.accept,
-        reject: {
-          operationIds: closure?.operationIds,
-          updateIds: closure?.updateIds ?? operation.directionalClosure.reject.updateIds,
-        },
-      },
-    };
-  });
+  return { hunks, operations: assignDiscardClasses({ hunks, operations }) };
 }
 
 function stableWriterOperationId(sourceUpdateIds: ReadonlySet<number>): string {

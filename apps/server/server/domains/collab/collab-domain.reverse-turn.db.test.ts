@@ -69,6 +69,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentAccess: createDrizzleDocumentAccess(db),
       });
 
+    async function currentDraftId(
+      collab: ReturnType<typeof createTestCollab>,
+      documentId: string,
+    ): Promise<string> {
+      const drafts = await collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+      });
+      const draft = drafts.find((candidate) => candidate.documentId === documentId);
+      if (!draft) throw new Error(`missing reviewable draft for ${documentId}`);
+      return draft.draftId;
+    }
+
     beforeEach(async () => {
       hocuspocus.documents.clear();
       await truncateDrizzleTables(db, [
@@ -514,8 +527,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const preview = await collab.draftReview.preview({
         workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
         documentId: DOC_ID as never,
+        draftId: await currentDraftId(collab, DOC_ID as never as string),
       });
       const serialized = JSON.stringify(preview);
       expect(serialized).toContain("First independent turn.");
@@ -893,8 +906,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
       const pending = await collab.draftReview.preview({
         workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
         documentId: DOC_ID as never,
+        draftId: await currentDraftId(collab, DOC_ID as never as string),
       });
       expect(pending.status).toBe("active");
       expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
@@ -1149,9 +1162,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         documentId: createdDocumentId as never,
+        draftId: await currentDraftId(collab, createdDocumentId as never as string),
       });
       expect(preview).toMatchObject({ status: "active", isNewDocument: true });
-      if (preview.status !== "active" || !preview.branchId) throw new Error("missing preview");
+      if (preview.status !== "active" || !preview.draftId) throw new Error("missing preview");
       await expect(
         collab.draftReview.list({
           projectId: PROJECT_ID as never,
@@ -1169,11 +1183,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!createOperation) throw new Error("missing create operation");
 
       await expect(
-        collab.draftReview.accept({
+        collab.draftReview.applyWorkDraft({
           projectId: PROJECT_ID as never,
           workId: WORK_ID as never,
           documentId: createdDocumentId as never,
-          branchId: preview.branchId,
+          draftId: preview.draftId,
           userId: USER_ID as never,
         }),
       ).resolves.toMatchObject({ status: "applied" });
@@ -1258,13 +1272,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         documentId: CREATED_DOC_ID as never,
+        draftId: await currentDraftId(collab, CREATED_DOC_ID as never as string),
       });
-      if (previewA.status !== "active" || !previewA.branchId) throw new Error("missing draft A");
-      await collab.draftReview.reject({
+      if (previewA.status !== "active" || !previewA.draftId) throw new Error("missing draft A");
+      await collab.draftReview.discardWorkDraft({
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         documentId: CREATED_DOC_ID as never,
-        branchId: previewA.branchId,
+        draftId: previewA.draftId,
         userId: USER_ID as never,
       });
 
@@ -1279,13 +1294,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         documentId: CREATED_DOC_B_ID as never,
+        draftId: await currentDraftId(collab, CREATED_DOC_B_ID as never as string),
       });
-      if (previewB.status !== "active" || !previewB.branchId) throw new Error("missing draft B");
-      await collab.draftReview.accept({
+      if (previewB.status !== "active" || !previewB.draftId) throw new Error("missing draft B");
+      await collab.draftReview.applyWorkDraft({
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         documentId: CREATED_DOC_B_ID as never,
-        branchId: previewB.branchId,
+        draftId: previewB.draftId,
         userId: USER_ID as never,
       });
 
@@ -1484,17 +1500,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(workDraft).toBeDefined();
       const preview = await collab.draftReview.preview({
         workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
         documentId: DOC_ID as never,
+        draftId: await currentDraftId(collab, DOC_ID as never as string),
       });
       expect(preview.status).toBe("active");
       const operationId = preview.status === "active" ? preview.operations[0]?.operationId : null;
       expect(operationId).toBeTruthy();
-      await collab.draftReview.reject({
+      await collab.draftReview.discardWorkDraft({
         workId: WORK_ID as never,
         threadId: THREAD_ID as never,
         documentId: DOC_ID as never,
-        branchId: workDraft.id,
+        draftId: workDraft.id,
         userId: USER_ID as never,
         operationIds: [operationId as string],
       });

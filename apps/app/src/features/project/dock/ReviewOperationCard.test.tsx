@@ -18,7 +18,7 @@ describe("ReviewOperationCard", () => {
   it("keeps Apply at the document level", () => {
     const operation: ReviewOperation = {
       operationId: "operation-1",
-      rejectSourceUpdateIds: [],
+      closureClassId: "closure:operation-1",
       kind: "agent",
       contribution: "added",
       classification: "addition",
