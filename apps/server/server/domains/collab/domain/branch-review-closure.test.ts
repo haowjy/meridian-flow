@@ -2,9 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 import { assignDiscardClasses } from "./branch-review-closure.js";
-import type {
-  DraftReviewHunkInternal,
-  DraftReviewOperationInternal,
+import {
+  asPhysicalSourceUpdateIds,
+  asSourceUpdateIds,
+  type DraftReviewHunkInternal,
+  type DraftReviewOperationInternal,
 } from "./draft-review-types.js";
 
 function op(
@@ -14,8 +16,8 @@ function op(
 ): Omit<DraftReviewOperationInternal, "closureClassId"> {
   return {
     operationId: id,
-    sourceUpdateIds,
-    discardUpdateIds,
+    sourceUpdateIds: asSourceUpdateIds(sourceUpdateIds),
+    discardUpdateIds: asPhysicalSourceUpdateIds(discardUpdateIds),
     kind: "agent",
     contribution: "added",
     classification: "addition",
@@ -42,6 +44,7 @@ describe("assignDiscardClasses", () => {
     expect(new Set(operations.map((operation) => operation.closureClassId))).toEqual(
       new Set(["closure:a+b"]),
     );
+    expect(operations.map((operation) => operation.sourceUpdateIds)).toEqual([[1], [2]]);
     expect(operations.map((operation) => operation.discardUpdateIds)).toEqual([
       [1, 2],
       [1, 2],

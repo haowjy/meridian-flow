@@ -5,10 +5,16 @@ import * as Y from "yjs";
 
 import { assignDiscardClasses } from "./branch-review-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
-import type {
-  DraftReviewHunkInternal,
-  DraftReviewOperationContribution,
-  DraftReviewOperationInternal,
+import {
+  asPhysicalSourceUpdateIds,
+  asSourceUpdateIds,
+  type DraftReviewHunkInternal,
+  type DraftReviewOperationContribution,
+  type DraftReviewOperationInternal,
+  type PhysicalSourceUpdateId,
+  type PhysicalSourceUpdateIds,
+  type SourceUpdateId,
+  type SourceUpdateIds,
 } from "./draft-review-types.js";
 
 export type ClockRange = { client: number; clock: number; length: number };
@@ -38,14 +44,14 @@ type DraftUpdateAttributionIndex = {
 
 type IndexedOperation = {
   operationId: string;
-  sourceUpdateIds: number[];
+  sourceUpdateIds: SourceUpdateIds;
   /**
    * Physical journal rows whose structs currently carry or reverse this logical
    * operation. Display attribution stays on sourceUpdateIds; Discard
    * reconstruction must target this physical closure so undoing Discard rows
    * over the draft journal returns affected regions to live-base state.
    */
-  physicalSourceUpdateIds: number[];
+  physicalSourceUpdateIds: PhysicalSourceUpdateIds;
   actorTurnId?: string;
   actorUserId?: string;
   kind: "agent" | "writer";
@@ -83,7 +89,7 @@ function indexDraftUpdates(input: {
   const aliases: RangeAlias[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
   const deletedContentByOperationId = new Map<string, DeletedContent>();
-  const physicalUpdateIdsByOperationId = new Map<string, Set<number>>();
+  const physicalUpdateIdsByOperationId = new Map<string, Set<PhysicalSourceUpdateId>>();
   const replayDoc = cloneDoc(input.baseDoc);
 
   try {
@@ -92,8 +98,8 @@ function indexDraftUpdates(input: {
       const actorUserId = update.actorTurnId ? null : (update.actorUserId ?? null);
       byOperationId.set(operationId, {
         operationId,
-        sourceUpdateIds: [update.id],
-        physicalSourceUpdateIds: [update.id],
+        sourceUpdateIds: asSourceUpdateIds([update.id]),
+        physicalSourceUpdateIds: asPhysicalSourceUpdateIds([update.id]),
         ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),
         ...(actorUserId ? { actorUserId } : {}),
         kind: actorUserId ? "writer" : "agent",
@@ -223,7 +229,7 @@ function indexDraftUpdates(input: {
     for (const operation of byOperationId.values()) {
       operation.physicalSourceUpdateIds = sortedUpdateIds(
         physicalUpdateIdsByOperationId.get(operation.operationId) ??
-          new Set(operation.sourceUpdateIds),
+          new Set(asPhysicalSourceUpdateIds(operation.sourceUpdateIds)),
       );
     }
   } finally {
@@ -266,16 +272,16 @@ function indexDraftUpdates(input: {
 }
 
 function addPhysicalUpdateId(
-  lookup: Map<string, Set<number>>,
+  lookup: Map<string, Set<PhysicalSourceUpdateId>>,
   operationId: string,
   updateId: number,
 ): void {
-  const updateIds = lookup.get(operationId) ?? new Set<number>();
-  updateIds.add(updateId);
+  const updateIds = lookup.get(operationId) ?? new Set<PhysicalSourceUpdateId>();
+  updateIds.add(updateId as PhysicalSourceUpdateId);
   lookup.set(operationId, updateIds);
 }
 
-function sortedUpdateIds(updateIds: ReadonlySet<number>): number[] {
+function sortedUpdateIds<UpdateId extends number>(updateIds: ReadonlySet<UpdateId>): UpdateId[] {
   return [...updateIds].sort((left, right) => left - right);
 }
 
@@ -777,8 +783,8 @@ type DraftReviewOperationGraph = {
 
 type WriterGroup = {
   operationId: string | null;
-  sourceUpdateIds: Set<number>;
-  physicalSourceUpdateIds: Set<number>;
+  sourceUpdateIds: Set<SourceUpdateId>;
+  physicalSourceUpdateIds: Set<PhysicalSourceUpdateId>;
   contribution: DraftOperationContributionFlags;
   actorUserId: string;
   hunkIndexes: Set<number>;
@@ -961,7 +967,7 @@ function groupOperationsForHunks(
   return { hunks, operations: assignDiscardClasses({ hunks, operations }) };
 }
 
-function stableWriterOperationId(sourceUpdateIds: ReadonlySet<number>): string {
+function stableWriterOperationId(sourceUpdateIds: ReadonlySet<SourceUpdateId>): string {
   const sorted = [...sourceUpdateIds].sort((a, b) => a - b);
   const min = sorted[0] ?? 0;
   const hash = createHash("sha256").update(sorted.join(",")).digest("hex").slice(0, 10);

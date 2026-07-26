@@ -3,6 +3,7 @@
 import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
+  PhysicalSourceUpdateIds,
 } from "./draft-review-types.js";
 
 /**
@@ -39,7 +40,7 @@ export function assignDiscardClasses(input: {
 
   const classByOperationId = new Map<
     string,
-    { closureClassId: string; discardUpdateIds: number[] }
+    { closureClassId: string; discardUpdateIds: PhysicalSourceUpdateIds }
   >();
   for (const operations of operationsByRoot.values()) {
     const operationIds = operations.map((operation) => operation.operationId).sort(operationSort);
