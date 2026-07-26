@@ -1,13 +1,12 @@
 /** The transcript's half of the reveal handshake: land the turn, or say it isn't here. */
 import { act, useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
   abandonConversationReveal,
   peekConversationReveal,
-  requestConversationReveal,
-  useConversationRevealRouting,
-} from "./conversation-reveal";
+} from "@/test-support/conversation-reveal";
+import { withReactRoot } from "@/test-support/react-dom-harness";
+import { requestConversationReveal, useConversationRevealRouting } from "./conversation-reveal";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
 const TURN_TARGET = { kind: "turn", threadId: "thread-1", turnId: "turn-2" } as const;

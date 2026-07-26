@@ -15,151 +15,30 @@
  * them in the thread. That handoff, not a timer, is what keeps a request from
  * outliving everything that could complete it.
  *
- * The deadline below is only a backstop for the one failure no surface can
- * report: a stage whose surface never mounts at all.
- *
  * Opening a conversation is a REVEAL, never a screen swap: the shell routes a
  * pending request onto whatever surface already hosts the conversation on the
  * writer's current screen (`useConversationRevealRouting`).
  */
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
-/** Where a reveal asks the writer to land. Each kind names its whole path. */
-export type ConversationRevealTarget =
-  | { kind: "thread"; threadId: string }
-  | { kind: "turn"; threadId: string; turnId: string }
-  | { kind: "change"; threadId: string; turnId: string; changeId: string };
+import {
+  type ChangeRevealRequest,
+  type ConversationRevealTarget,
+  type ConversationRevealView,
+  conversationRevealController,
+  type TurnRevealRequest,
+} from "./conversation-reveal-controller";
 
-/** Stage names ARE target kinds, shallowest first. */
-const STAGES = ["thread", "turn", "change"] as const;
-type Stage = (typeof STAGES)[number];
-
-/**
- * How long a stage may go without reporting before the request is dropped.
- * Reached only when a stage's surface never mounts (the thread failed to load,
- * the transcript is not on screen), since a mounted surface always reports.
- */
-const STAGE_BACKSTOP_MS = 10_000;
-
-type StageOutcome = {
-  /** The writer is now looking at this stage's target. */
-  landed: () => void;
-  /** This stage's data settled and its target is not in it. */
-  unavailable: () => void;
-};
-
-export type TurnRevealRequest = StageOutcome & { threadId: string; turnId: string };
-export type ChangeRevealRequest = StageOutcome & {
-  threadId: string;
-  turnId: string;
-  changeId: string;
-};
-type ThreadRevealRequest = { threadId: string; landed: () => void };
-
-/**
- * The single in-flight stage, split per owner. At most one field is non-null,
- * and each object is rebuilt only on a stage change so `useSyncExternalStore`
- * sees a stable snapshot between transitions.
- */
-type RevealView = {
-  thread: ThreadRevealRequest | null;
-  turn: TurnRevealRequest | null;
-  change: ChangeRevealRequest | null;
-};
-
-type Pending = { id: number; target: ConversationRevealTarget; stage: Stage };
-type Listener = () => void;
-
-const IDLE: RevealView = { thread: null, turn: null, change: null };
-
-let pending: Pending | null = null;
-let view: RevealView = IDLE;
-let nextRequestId = 1;
-let backstop: ReturnType<typeof setTimeout> | null = null;
-const listeners = new Set<Listener>();
-
-function subscribe(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function buildView(next: Pending | null): RevealView {
-  if (!next) return IDLE;
-  const { id, target, stage } = next;
-  const landed = () => settle(id, stage, "landed");
-  const unavailable = () => settle(id, stage, "unavailable");
-  // A stage never runs deeper than its target (see `deeperStage`), so the
-  // mismatched arms below are unreachable — they exist to keep the union
-  // narrowing total without a cast.
-  switch (stage) {
-    case "thread":
-      return { ...IDLE, thread: { threadId: target.threadId, landed } };
-    case "turn":
-      return target.kind === "thread"
-        ? IDLE
-        : {
-            ...IDLE,
-            turn: { threadId: target.threadId, turnId: target.turnId, landed, unavailable },
-          };
-    case "change":
-      return target.kind === "change"
-        ? {
-            ...IDLE,
-            change: {
-              threadId: target.threadId,
-              turnId: target.turnId,
-              changeId: target.changeId,
-              landed,
-              unavailable,
-            },
-          }
-        : IDLE;
-  }
-}
-
-function setPending(next: Pending | null): void {
-  pending = next;
-  view = buildView(next);
-  if (backstop !== null) clearTimeout(backstop);
-  backstop = next
-    ? setTimeout(() => settle(next.id, next.stage, "unavailable"), STAGE_BACKSTOP_MS)
-    : null;
-  for (const listener of listeners) listener();
-}
-
-/** The stage below `stage`, or null when `stage` is as deep as `target` goes. */
-function deeperStage(stage: Stage, target: Stage): Stage | null {
-  const index = STAGES.indexOf(stage);
-  return index < STAGES.indexOf(target) ? STAGES[index + 1] : null;
-}
-
-function settle(id: number, stage: Stage, outcome: "landed" | "unavailable"): void {
-  // Reports from a superseded request or an already-settled stage are stale:
-  // a child that lands during the same commit its parent reports in would
-  // otherwise reopen a finished request.
-  if (pending?.id !== id || pending.stage !== stage) return;
-  const deeper = outcome === "landed" ? deeperStage(stage, pending.target.kind) : null;
-  setPending(deeper === null ? null : { ...pending, stage: deeper });
-}
+export type { ChangeRevealRequest, ConversationRevealTarget, TurnRevealRequest };
 
 export function requestConversationReveal(target: ConversationRevealTarget): void {
-  setPending({ id: nextRequestId++, target, stage: "thread" });
+  conversationRevealController.request(target);
 }
 
-/** Drops the in-flight request without landing it. */
-export function abandonConversationReveal(): void {
-  setPending(null);
-}
-
-/** The target in flight — for diagnostics and assertions, never for rendering. */
-export function peekConversationReveal(): ConversationRevealTarget | null {
-  return pending?.target ?? null;
-}
-
-function useRevealStage<T>(select: (view: RevealView) => T | null): T | null {
+function useRevealStage<T>(select: (view: ConversationRevealView) => T | null): T | null {
   return useSyncExternalStore(
-    subscribe,
-    () => select(view),
+    conversationRevealController.subscribe,
+    () => select(conversationRevealController.snapshot()),
     () => null,
   );
 }
