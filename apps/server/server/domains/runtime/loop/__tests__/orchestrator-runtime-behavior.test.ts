@@ -12,7 +12,6 @@ import {
   createInMemoryRepositories,
 } from "../../../threads/index.js";
 import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/index.js";
-import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import {
   CORE_TOOL_NAMES,
   createCoreToolRegistrations,
@@ -23,6 +22,7 @@ import {
 } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
+import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestNoticePort, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 function gatewayFromResults(results: GenerateResult[]): Gateway {

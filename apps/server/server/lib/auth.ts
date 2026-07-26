@@ -60,9 +60,6 @@ const authkit = createAuthService({
   sessionStorageFactory: (config) => new ApiCookieSessionStorage(config),
 });
 
-/** Test seam: drive sealed `wos-session` cookies through `withAuth` in unit tests. */
-export const authkitService = authkit;
-
 /**
  * Deferred config validation flag.
  *

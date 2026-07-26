@@ -3,8 +3,8 @@ import { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { relativePositionForEditorIndex } from "@/test-support/editor-relative-position";
 import { createEditorConfig } from "../config";
-import { relativePositionForEditorIndex } from "./LiveRangeNavigationExtension";
 
 let editor: Editor;
 

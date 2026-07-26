@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { activateLocale } from "@/lib/i18n";
+import { relativePositionForEditorIndex } from "@/test-support/editor-relative-position";
 import { createAgentNameStore } from "../agent-name-store";
 import { createEditorConfig } from "../config";
 import { SessionMarkerStore } from "../session-marker-store";
-import { relativePositionForEditorIndex } from "./LiveRangeNavigationExtension";
 
 let editor: Editor;
 let store: SessionMarkerStore;

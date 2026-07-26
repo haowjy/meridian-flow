@@ -27,7 +27,6 @@ import {
   type MockOpenAIServer,
   type StreamEvent,
 } from "../../gateway/index.js";
-import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import { createChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createHelperResultDelivery } from "../../spawn/helper-result-delivery.js";
 import {
@@ -40,6 +39,7 @@ import { createSpawnToolRegistrations } from "../../tools/spawn-tools.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTurnRunner } from "../turn-runner.js";
+import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 describe("nested spawn runtime (P2b gate)", () => {

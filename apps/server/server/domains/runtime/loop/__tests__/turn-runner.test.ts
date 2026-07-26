@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../../observability/index.js";
-import { noopFinalizeGeneratorFailure } from "../run-turn-port.js";
 import { createTurnRunner, StaleConnectionTokenError } from "../turn-runner.js";
+import { noopFinalizeGeneratorFailure } from "./test-gateway.js";
 
 async function* emptyEvents() {
   // Empty async generator for turn-runner tests.

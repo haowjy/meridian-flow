@@ -21,7 +21,6 @@ import {
   createInMemoryRepositories,
 } from "../../../threads/index.js";
 import type { Gateway } from "../../gateway/index.js";
-import { createInertGateway } from "../../gateway/test-gateway.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolRegistry, type ToolExecutor } from "../../tools/index.js";
@@ -33,6 +32,7 @@ import {
   createPermissionGate,
   resolveProfile,
 } from "../permissions/index.js";
+import { createInertGateway } from "./test-gateway.js";
 
 function inertGateway(): Gateway {
   return createInertGateway();

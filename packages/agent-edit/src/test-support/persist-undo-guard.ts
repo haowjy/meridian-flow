@@ -4,7 +4,7 @@ import type { PersistUndoResult, ReversalStore, UpdateJournal } from "../ports/u
 import {
   hasLaterWriterUpdateAfterWatermark,
   persistUndoPlanWatermark,
-} from "./persist-undo-watermark.js";
+} from "../undo/persist-undo-watermark.js";
 
 /** Shared dependency-conflict copy for persist-time races and turn reversal. */
 export const PERSIST_UNDO_DEPENDENT_MESSAGE =
