@@ -15,6 +15,7 @@ import {
   ProvenanceMaterializationError,
   ReservedNamespaceAdmissionError,
 } from "./provenance.js";
+import { materializeSweepEvidence } from "./sweep-policy.js";
 
 const authorityId = "00000000-0000-4000-8000-000000000100" as DocumentAuthorityId;
 const emptyManifest = (): AttributionManifestV1 => ({
@@ -258,6 +259,41 @@ describe("provenance materialization", () => {
         ],
       }),
     ).toThrow("One provenance root unit cannot have two visible targets");
+  });
+});
+
+describe("sweep observation evidence", () => {
+  it("keeps each AI candidate's own observation watermark", () => {
+    const doc = proseDoc("writer words");
+    const update = Y.encodeStateAsUpdate(doc);
+    const actorUserId = crypto.randomUUID();
+    const rows = [
+      {
+        authorityId,
+        generation: 1n,
+        admissionSequence: 1n,
+        batchOrdinal: 0,
+        journalRowId: 11n,
+        originType: "human",
+        actorUserId,
+        update,
+      },
+    ];
+
+    const evidence = materializeSweepEvidence({
+      doc,
+      rows,
+      candidates: [
+        { precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 10 },
+        { precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 11 },
+      ],
+    });
+
+    expect(evidence.candidates[0]?.byUser).toEqual([
+      expect.objectContaining({ userId: actorUserId }),
+    ]);
+    expect(evidence.candidates[1]?.byUser).toEqual([]);
+    doc.destroy();
   });
 });
 

@@ -635,20 +635,26 @@ async function readPendingSettlement(
             .select({
               source: branchWriteJournal.source,
               draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq,
+              update: branchWriteJournal.updateData,
             })
             .from(branchWriteJournal)
             .where(inArray(branchWriteJournal.id, row.push.journalIds))
+            .orderBy(branchWriteJournal.id)
         : [];
-    const observedBaseUpdateSeq = candidateRows
-      .filter(({ source }) => source === "agent")
-      .reduce<number | null>(
-        (base, candidate) =>
-          base === null
-            ? candidate.draftBaseUpdateSeq
-            : Math.min(base, candidate.draftBaseUpdateSeq),
-        null,
-      );
-    if (observedBaseUpdateSeq === null) {
+    const sweepCandidates = candidateRows.flatMap((candidate, index) =>
+      candidate.source === "agent"
+        ? [
+            {
+              precedingUpdates: candidateRows
+                .slice(0, index)
+                .map(({ update }) => new Uint8Array(update)),
+              update: new Uint8Array(candidate.update),
+              observedBaseUpdateSeq: candidate.draftBaseUpdateSeq,
+            },
+          ]
+        : [],
+    );
+    if (sweepCandidates.length === 0) {
       throw new ProvenanceMaterializationError(
         `Pending branch push settlement ${pushId} has no agent observation watermark`,
       );
@@ -711,7 +717,7 @@ async function readPendingSettlement(
       sweepEvidence = materializeSweepEvidence({
         doc: provenanceDoc,
         retainedAttributions: retained?.attributionManifest.attributions,
-        observedBaseUpdateSeq,
+        candidates: sweepCandidates,
         rows: attributedRows.map((attribution) => ({
           ...attribution,
           journalRowId: BigInt(attribution.journalRowId),

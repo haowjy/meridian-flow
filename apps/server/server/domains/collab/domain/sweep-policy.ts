@@ -25,7 +25,11 @@ import { canonicalBlockKey } from "./trail-read-kernel.js";
 export const SWEEP_RECIPIENT_CAP = 100;
 
 export type SweepEvidence = {
-  byUser: ReadonlyArray<{ userId: UserId; provenance: readonly ProvenanceRun[] }>;
+  candidates: ReadonlyArray<{
+    precedingUpdates: readonly Uint8Array[];
+    update: Uint8Array;
+    byUser: ReadonlyArray<{ userId: UserId; provenance: readonly ProvenanceRun[] }>;
+  }>;
 };
 
 export type SweptChangeRecipients = ReadonlyMap<string, ReadonlySet<UserId>>;
@@ -33,7 +37,11 @@ export type SweptChangeRecipients = ReadonlyMap<string, ReadonlySet<UserId>>;
 export function materializeSweepEvidence(input: {
   doc: Y.Doc;
   rows: readonly AttributedJournalRow[];
-  observedBaseUpdateSeq: number;
+  candidates: readonly {
+    precedingUpdates: readonly Uint8Array[];
+    update: Uint8Array;
+    observedBaseUpdateSeq: number;
+  }[];
   retainedAttributions?: readonly AttributionRunV1[];
 }): SweepEvidence {
   const visible = materializeProvenanceForDoc({
@@ -42,27 +50,18 @@ export function materializeSweepEvidence(input: {
     retainedAttributions: input.retainedAttributions,
     fallbackBirthClass: "agent",
   });
-  const rootsByUser = new Map<UserId, WriterLineageRange[]>();
-  for (const row of input.rows) {
-    if (
-      row.originType !== "human" ||
-      !row.actorUserId ||
-      row.journalRowId <= BigInt(input.observedBaseUpdateSeq)
-    ) {
-      continue;
-    }
-    const userId = row.actorUserId as UserId;
-    rootsByUser.set(userId, [
-      ...(rootsByUser.get(userId) ?? []),
-      ...journalInsertionRanges(row.update),
-    ]);
-  }
-
   return {
-    byUser: [...rootsByUser.entries()].slice(-SWEEP_RECIPIENT_CAP).map(([userId, roots]) => ({
-      userId,
-      provenance: projectWriterProvenance(visible, roots),
-    })),
+    candidates: input.candidates.map((candidate) => {
+      const rootsByUser = recentWriterRootsByUser(input.rows, candidate.observedBaseUpdateSeq);
+      return {
+        precedingUpdates: candidate.precedingUpdates,
+        update: candidate.update,
+        byUser: [...rootsByUser.entries()].slice(-SWEEP_RECIPIENT_CAP).map(([userId, roots]) => ({
+          userId,
+          provenance: projectWriterProvenance(visible, roots),
+        })),
+      };
+    }),
   };
 }
 
@@ -73,54 +72,97 @@ export function detectSweptChanges(input: {
   codec: AgentEditCodec;
 }): SweptChangeRecipients {
   if (!input.pending.sweepEvidence) return new Map();
-  const before = snapshotBlocks(toDocHandle(input.prePushDoc), input.model, input.codec);
-  const afterDoc = createCollabYDoc({ gc: false });
-  try {
-    Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(input.prePushDoc));
-    Y.applyUpdate(afterDoc, input.pending.pushUpdate);
-    const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.codec);
-    const recipients = new Map<string, Set<UserId>>();
-    for (const evidence of input.pending.sweepEvidence.byUser) {
-      const afterProvenance = materializeCandidateProvenance(afterDoc, evidence.provenance);
-      const { affectedBefore } = classifyDestructiveSnapshotEffect({
-        before,
-        afterCandidate: after,
-        beforeProvenance: evidence.provenance.map((run) => ({
-          target: run.target,
-          root: run.root,
-          provenance: run.birthClass,
-        })),
-        afterCandidateProvenance: afterProvenance.map((run) => ({
-          target: run.target,
-          root: run.root,
-          provenance: run.birthClass,
-        })),
-      });
-      const affectedIdentities = new Set(
-        affectedBefore.map(({ block }) =>
-          canonicalBlockKey({
-            documentId: input.pending.push.documentId,
-            clientID: block.clientID,
-            clock: block.clock,
-          }),
-        ),
+  const recipients = new Map<string, Set<UserId>>();
+  for (const candidate of input.pending.sweepEvidence.candidates) {
+    const candidateBeforeDoc = createCollabYDoc({ gc: false });
+    const candidateAfterDoc = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(candidateBeforeDoc, Y.encodeStateAsUpdate(input.prePushDoc));
+      for (const update of candidate.precedingUpdates) Y.applyUpdate(candidateBeforeDoc, update);
+      Y.applyUpdate(candidateAfterDoc, Y.encodeStateAsUpdate(candidateBeforeDoc));
+      Y.applyUpdate(candidateAfterDoc, candidate.update);
+      const candidateBefore = snapshotBlocks(
+        toDocHandle(candidateBeforeDoc),
+        input.model,
+        input.codec,
       );
-      for (const change of input.pending.trail.changes) {
-        if (
-          !change.beforeBlockIdentity ||
-          !affectedIdentities.has(canonicalBlockKey(change.beforeBlockIdentity))
-        ) {
-          continue;
+      const candidateAfter = snapshotBlocks(
+        toDocHandle(candidateAfterDoc),
+        input.model,
+        input.codec,
+      );
+      for (const evidence of candidate.byUser) {
+        const beforeProvenance = materializeCandidateProvenance(
+          candidateBeforeDoc,
+          evidence.provenance,
+        );
+        const afterProvenance = materializeCandidateProvenance(
+          candidateAfterDoc,
+          evidence.provenance,
+        );
+        const { affectedBefore } = classifyDestructiveSnapshotEffect({
+          before: candidateBefore,
+          afterCandidate: candidateAfter,
+          beforeProvenance: beforeProvenance.map((run) => ({
+            target: run.target,
+            root: run.root,
+            provenance: run.birthClass,
+          })),
+          afterCandidateProvenance: afterProvenance.map((run) => ({
+            target: run.target,
+            root: run.root,
+            provenance: run.birthClass,
+          })),
+        });
+        const affectedIdentities = new Set(
+          affectedBefore.map(({ block }) =>
+            canonicalBlockKey({
+              documentId: input.pending.push.documentId,
+              clientID: block.clientID,
+              clock: block.clock,
+            }),
+          ),
+        );
+        for (const change of input.pending.trail.changes) {
+          if (
+            !change.beforeBlockIdentity ||
+            !affectedIdentities.has(canonicalBlockKey(change.beforeBlockIdentity))
+          ) {
+            continue;
+          }
+          const users = recipients.get(change.changeId) ?? new Set<UserId>();
+          users.add(evidence.userId);
+          recipients.set(change.changeId, users);
         }
-        const users = recipients.get(change.changeId) ?? new Set<UserId>();
-        users.add(evidence.userId);
-        recipients.set(change.changeId, users);
       }
+    } finally {
+      candidateBeforeDoc.destroy();
+      candidateAfterDoc.destroy();
     }
-    return recipients;
-  } finally {
-    afterDoc.destroy();
   }
+  return recipients;
+}
+
+function recentWriterRootsByUser(
+  rows: readonly AttributedJournalRow[],
+  observedBaseUpdateSeq: number,
+): Map<UserId, WriterLineageRange[]> {
+  const rootsByUser = new Map<UserId, WriterLineageRange[]>();
+  for (const row of rows) {
+    if (
+      row.originType !== "human" ||
+      !row.actorUserId ||
+      row.journalRowId <= BigInt(observedBaseUpdateSeq)
+    ) {
+      continue;
+    }
+    const userId = row.actorUserId as UserId;
+    rootsByUser.set(userId, [
+      ...(rootsByUser.get(userId) ?? []),
+      ...journalInsertionRanges(row.update),
+    ]);
+  }
+  return rootsByUser;
 }
 
 function projectWriterProvenance(
