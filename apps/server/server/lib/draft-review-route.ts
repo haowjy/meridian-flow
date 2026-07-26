@@ -119,9 +119,6 @@ export async function handleApplyWorkDraftRequest(
   await requireDraftWorkAccess(deps, input);
   const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
   if (result.status === "applied") return result;
-  if (result.status === "discarded") {
-    throw createError({ statusCode: 410, message: "Draft is no longer active" });
-  }
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 

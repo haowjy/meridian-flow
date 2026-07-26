@@ -38,7 +38,6 @@ export type DraftReviewPreview = {
 
 export type DraftApplyResult =
   | { status: "applied"; draftId: string }
-  | { status: "discarded"; draftId: string }
   | { status: "not_found"; draftId: string };
 
 export type DraftDiscardResult = { status: "discarded"; draftId: string };

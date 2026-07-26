@@ -61,27 +61,6 @@ export function assignDiscardClasses(input: {
   }));
 }
 
-export function hunkSharingClosure(
-  seedOperationIds: readonly string[],
-  operationIdsByHunk: readonly ReadonlySet<string>[],
-  hunkIndexesByOperation: ReadonlyMap<string, readonly number[]>,
-): string[] {
-  const selected = new Set(seedOperationIds);
-  const queue = [...seedOperationIds];
-  while (queue.length > 0) {
-    const operationId = queue.shift();
-    if (!operationId) continue;
-    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
-      for (const hunkOperationId of operationIdsByHunk[hunkIndex] ?? []) {
-        if (selected.has(hunkOperationId)) continue;
-        selected.add(hunkOperationId);
-        queue.push(hunkOperationId);
-      }
-    }
-  }
-  return [...selected].sort(operationSort);
-}
-
 class UnionFind {
   private readonly parent = new Map<string, string>();
 

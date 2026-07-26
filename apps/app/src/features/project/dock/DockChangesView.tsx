@@ -265,10 +265,6 @@ function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
   switch (code) {
     case "apply-failed":
       return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
-    case "discard-stale":
-      return <Trans>Couldn't discard. Your latest edits are still syncing, try again soon.</Trans>;
-    case "discard-finalized":
-      return <Trans>Couldn't discard. This draft may already be applied or discarded.</Trans>;
     case "discard-offline":
       return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
     case "discard-failed":

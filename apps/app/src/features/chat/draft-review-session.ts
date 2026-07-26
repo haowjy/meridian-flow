@@ -228,12 +228,7 @@ export type InlineDraftReview = DraftReviewSelection;
  * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
  * single source of message identity for both Apply messages and discard errors.
  */
-export type InlineReviewMessageCode =
-  | "apply-failed"
-  | "discard-stale"
-  | "discard-finalized"
-  | "discard-offline"
-  | "discard-failed";
+export type InlineReviewMessageCode = "apply-failed" | "discard-offline" | "discard-failed";
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;

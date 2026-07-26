@@ -51,7 +51,7 @@ export type DraftPreviewResponse =
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })
-  | { status: "gone"; live: string };
+  | { status: "gone"; draftId: string; live: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";

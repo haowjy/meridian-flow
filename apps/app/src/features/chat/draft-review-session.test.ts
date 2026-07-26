@@ -33,7 +33,7 @@ describe("DraftReviewSession", () => {
 });
 
 describe("DraftDispositionLock", () => {
-  it("reserves synchronously before acquisition and rejects every overlapping command", () => {
+  it("reserves synchronously before I/O and rejects every overlapping command", () => {
     const lock = new DraftDispositionLock();
     const first = lock.reserve({
       kind: "apply-draft",
