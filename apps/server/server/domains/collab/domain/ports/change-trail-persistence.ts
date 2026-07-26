@@ -63,9 +63,9 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
   const parsedChanges = parseTrailChangesV1(
     changes.map((change, ordinal) => {
       if (!isRecord(change)) throw new Error("Durable trail change must be an object");
-      return { ...change, ordinal, reversible: false };
+      return { ...change, ordinal };
     }),
-  ).map(({ ordinal: _ordinal, reversible: _reversible, ...change }, index) => ({
+  ).map(({ ordinal: _ordinal, ...change }, index) => ({
     ...change,
     ...(rawMetadata[index] as { owner: TrailOwner | null; sequence: number }),
   }));

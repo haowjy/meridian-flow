@@ -79,7 +79,7 @@ export function mergeTrailChanges(
     const combined: TrailChangeV1 = {
       ...change,
       changeId: prior.changeId,
-      beforeBlockId: prior.beforeBlockId,
+      beforeBlockIdentity: prior.beforeBlockIdentity,
       beforeText: prior.beforeText,
       kind:
         prior.beforeText === null

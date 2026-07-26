@@ -120,7 +120,7 @@ export function bodyFromHashline(serialized: string | null): HistoricalBody {
 }
 
 export type TrailOwner = { threadId: string; turnId: string };
-export type RawTrailChange = Omit<TrailChangeV1, "ordinal" | "reversible"> & {
+export type RawTrailChange = Omit<TrailChangeV1, "ordinal"> & {
   owner: TrailOwner | null;
   sequence: number;
 };
@@ -203,7 +203,7 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
           : change.afterTextAtReceipt === null
             ? "delete"
             : "modify",
-      beforeBlockId: previous.beforeBlockId,
+      beforeBlockIdentity: previous.beforeBlockIdentity,
       beforeText: previous.beforeText,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(identity);
@@ -212,7 +212,6 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
   return [...folded.values()].map(({ owner: _owner, sequence: _sequence, ...change }, ordinal) => ({
     ...change,
     ordinal,
-    reversible: false,
   }));
 }
 
@@ -221,15 +220,7 @@ export function canonicalBlockKey(identity: CanonicalBlockIdentityV1): string {
 }
 
 export function canonicalChangeKey(
-  change: Pick<
-    TrailChangeV1,
-    | "documentId"
-    | "changeId"
-    | "beforeBlockId"
-    | "afterBlockId"
-    | "beforeBlockIdentity"
-    | "afterBlockIdentity"
-  >,
+  change: Pick<TrailChangeV1, "changeId" | "beforeBlockIdentity" | "afterBlockIdentity">,
 ): string {
   const identity = change.beforeBlockIdentity ?? change.afterBlockIdentity;
   if (!identity) {

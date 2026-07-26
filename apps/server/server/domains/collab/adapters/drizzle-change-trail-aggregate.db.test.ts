@@ -33,8 +33,6 @@ function change(input: {
     pushId: input.pushId,
     receiptId: null,
     kind: input.before === null ? "insert" : "modify",
-    beforeBlockId: input.before === null ? null : input.id,
-    afterBlockId: input.after === null ? null : input.id,
     beforeBlockIdentity:
       input.before === null ? null : { documentId: ALPHA_ID, clientID: input.clientID, clock: 0 },
     afterBlockIdentity:
@@ -42,7 +40,6 @@ function change(input: {
     beforeText: input.before ?? `before-${input.id}|before ${input.id}`,
     afterTextAtReceipt: input.after ?? `after-${input.id}|after ${input.id}`,
     navigation: { kind: "unavailable", reason: "fixture" },
-    reversible: false,
   };
 }
 

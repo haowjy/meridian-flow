@@ -37,12 +37,11 @@ it("plans Restore at a validated live-root boundary", () => {
     pushId: null,
     receiptId: null,
     kind: "delete",
-    beforeBlockId: "before",
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    reversible: false,
   };
   if (change.navigation.kind !== "deletion_boundary") throw new Error("missing boundary");
   const scratch = createCollabYDoc({ gc: false });
@@ -85,13 +84,11 @@ it("restores before a fresh-replaced block when projection retained only its ide
     pushId: "push",
     receiptId: "receipt",
     kind: "delete",
-    beforeBlockId: "writer",
-    afterBlockId: "agent",
+    beforeBlockIdentity: null,
     afterBlockIdentity: { documentId: "doc", ...identity },
     beforeText: "writer|Writer V2.",
     afterTextAtReceipt: "agent|Agent replacement.",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    reversible: false,
   };
 
   const planned = planTrailRestore({ liveDoc: doc, change, model, codec });
@@ -117,12 +114,11 @@ it("does not apply a stale Restore when a WebSocket mutation lands during persis
     pushId: null,
     receiptId: null,
     kind: "delete",
-    beforeBlockId: "before",
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    reversible: false,
   };
 
   const result = await planAndPersistTrailRestore({
@@ -211,12 +207,11 @@ function restoreFixture() {
     pushId: null,
     receiptId: null,
     kind: "delete",
-    beforeBlockId: "before",
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "before|Restored.",
     afterTextAtReceipt: null,
     navigation: deletionBoundaryTarget({ doc, next }),
-    reversible: false,
   };
   return { codec, model, doc, change };
 }

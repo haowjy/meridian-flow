@@ -324,11 +324,6 @@ export function preparedTrailChanges(input: {
       pushId: null,
       receiptId: input.receiptId,
       kind: location.kind,
-      beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId:
-        emptiedSurvivingBlock || contentRelocated
-          ? null
-          : (replacementId ?? (block.afterText === null ? null : block.blockId)),
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,

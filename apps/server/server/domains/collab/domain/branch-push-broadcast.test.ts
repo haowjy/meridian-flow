@@ -41,12 +41,11 @@ function projectedChange(
     pushId,
     receiptId: null,
     kind: "insert",
-    beforeBlockId: null,
-    afterBlockId: changeId,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: null,
     afterTextAtReceipt: `${changeId}|${changeId} body`,
     navigation: { kind: "unavailable", reason: "fixture" },
-    reversible: false,
     admittedByUserId,
   };
 }

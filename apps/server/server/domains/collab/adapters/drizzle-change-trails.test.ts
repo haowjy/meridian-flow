@@ -17,8 +17,6 @@ function change(
         : input.afterTextAtReceipt === null
           ? "delete"
           : "modify",
-    beforeBlockId: input.beforeText === null ? null : input.changeId,
-    afterBlockId: input.afterTextAtReceipt === null ? null : input.changeId,
     beforeBlockIdentity:
       input.beforeText === null
         ? null
@@ -36,7 +34,6 @@ function change(
             clock: 0,
           },
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    reversible: false,
     ...input,
   };
 }

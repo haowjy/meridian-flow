@@ -96,8 +96,6 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
   expect(changes).toHaveLength(1);
   expect(changes[0]).toMatchObject({
     kind: "modify",
-    beforeBlockId: beforeId,
-    afterBlockId: afterId,
     beforeText: "Writer text.",
     afterTextAtReceipt: "Agent replacement.",
     navigation: { kind: "live_block_range" },
@@ -152,8 +150,6 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
   expect(emptiedChanges).toMatchObject([
     {
       kind: "delete",
-      beforeBlockId: afterId,
-      afterBlockId: null,
       afterBlockIdentity: null,
       navigation: { kind: "deletion_boundary" },
     },
@@ -243,8 +239,6 @@ it("projects identity-shifted surviving prose as deletion of the displaced passa
   expect(changes).toMatchObject([
     {
       kind: "delete",
-      beforeBlockId: fountainId,
-      afterBlockId: null,
       beforeText: "The fountain froze.",
       afterTextAtReceipt: null,
       navigation: { kind: "deletion_boundary" },
@@ -362,8 +356,6 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
   expect(changes).toMatchObject([
     {
       kind: "delete",
-      beforeBlockId: alphaId,
-      afterBlockId: null,
       beforeText: "Alpha.",
       afterTextAtReceipt: null,
       navigation: { kind: "deletion_boundary" },
@@ -478,19 +470,16 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
   expect(changes).toMatchObject([
     {
       kind: "modify",
-      beforeBlockId: alphaId,
       beforeText: "Alpha.",
       afterTextAtReceipt: "Bravo.",
     },
     {
       kind: "delete",
-      beforeBlockId: bravoId,
       beforeText: "Bravo.",
       afterTextAtReceipt: null,
     },
     {
       kind: "modify",
-      beforeBlockId: charlieId,
       beforeText: "Charlie.",
       afterTextAtReceipt: "Bravo.",
     },
@@ -606,14 +595,11 @@ it("does not relocate content from a structurally replaced source block", () => 
   expect(changes).toMatchObject([
     {
       kind: "modify",
-      beforeBlockId: alphaId,
       beforeText: "Alpha.",
       afterTextAtReceipt: "Bravo.",
     },
     {
       kind: "modify",
-      beforeBlockId: bravoId,
-      afterBlockId: xrayId,
       beforeText: "Bravo.",
       afterTextAtReceipt: "Xray.",
     },
@@ -795,7 +781,7 @@ it("projects a structurally adjacent whole-block replacement as one modification
   if (!change) throw new Error("missing projected change");
   const planned = planTrailRestore({
     liveDoc: afterDoc,
-    change: { ...change, ordinal: 0, reversible: false },
+    change: { ...change, ordinal: 0 },
     model,
     codec,
   });

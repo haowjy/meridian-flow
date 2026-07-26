@@ -150,14 +150,11 @@ export function createOfflineReconciliation(deps: {
       pushId: null,
       receiptId: `offline:${input.agentSeq}:${input.updateIdentity}`,
       kind: "delete",
-      beforeBlockId: input.writerBlock.hash,
-      afterBlockId: null,
       beforeBlockIdentity: blockIdentity,
       afterBlockIdentity: null,
       beforeText: input.writerBlock.serialized,
       afterTextAtReceipt: null,
       navigation: target,
-      reversible: false,
     };
     await deps.changeTrails.record({
       trails: [

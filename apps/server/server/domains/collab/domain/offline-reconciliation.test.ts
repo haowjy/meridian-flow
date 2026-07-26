@@ -38,7 +38,6 @@ describe("offline reconciliation", () => {
       kind: "delete",
       navigation: { kind: "deletion_boundary" },
       beforeText: expect.stringContaining("Writer offline revision"),
-      reversible: false,
     });
     expect(
       planTrailRestore({

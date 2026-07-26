@@ -30,8 +30,6 @@ function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
     pushId: "push-a",
     receiptId: "receipt-a",
     kind: "modify",
-    beforeBlockId: "block-a",
-    afterBlockId: "block-a",
     beforeBlockIdentity: { documentId: "doc-a", clientID: 1, clock: 1 },
     afterBlockIdentity: { documentId: "doc-a", clientID: 1, clock: 1 },
     beforeText: "before",
@@ -102,7 +100,7 @@ describe("trail normalization", () => {
     expect(cancelled[0].changes).toEqual([]);
   });
 
-  it("folds one canonical block when a display-hash prefix widens", () => {
+  it("folds repeated changes with the same canonical block identity", () => {
     const identity = { documentId: "doc-a", clientID: 42, clock: 7 };
     const trails = normalizeTrailPushes([
       {
@@ -113,15 +111,11 @@ describe("trail normalization", () => {
         changes: [
           change({
             changeId: "canonical-change",
-            beforeBlockId: "abcd",
-            afterBlockId: "abcd",
             beforeBlockIdentity: identity,
             afterBlockIdentity: identity,
           }),
           change({
             changeId: "must-not-split",
-            beforeBlockId: "abcdef",
-            afterBlockId: "abcdef",
             beforeBlockIdentity: identity,
             afterBlockIdentity: identity,
             beforeText: "after",
@@ -158,8 +152,6 @@ describe("trail normalization", () => {
           change({
             changeId: "c2",
             documentId: "doc-b",
-            beforeBlockId: "block-b",
-            afterBlockId: "block-b",
             beforeBlockIdentity: { documentId: "doc-b", clientID: 2, clock: 1 },
             afterBlockIdentity: { documentId: "doc-b", clientID: 2, clock: 1 },
             sequence: 2,

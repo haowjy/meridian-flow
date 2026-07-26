@@ -9,8 +9,6 @@ function validChange(): TrailChangeV1 {
     pushId: "push-1",
     receiptId: "receipt-1",
     kind: "modify",
-    beforeBlockId: null,
-    afterBlockId: null,
     beforeBlockIdentity: { documentId: "document-1", clientID: 7, clock: 11 },
     afterBlockIdentity: { documentId: "document-1", clientID: 7, clock: 11 },
     beforeText: "before",
@@ -21,7 +19,6 @@ function validChange(): TrailChangeV1 {
       relEnd: "relative-end",
       targetBlockId: { clientID: 7, clock: 11 },
     },
-    reversible: false,
   };
 }
 

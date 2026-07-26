@@ -29,11 +29,10 @@ function change(): TrailChange {
     pushId: null,
     receiptId: null,
     kind: "delete",
-    beforeBlockId: null,
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "block-1|Writer text.",
     afterTextAtReceipt: null,
     navigation: { kind: "unavailable", reason: "test" },
-    reversible: false,
   };
 }

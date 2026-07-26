@@ -749,7 +749,7 @@ async function observeSettlement(
   type ReceiptChange = {
     kind: unknown;
     beforeText: string | null;
-    beforeBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
+    beforeBlockIdentity: { documentId: string; clientID: number; clock: number } | null;
     restore?: unknown;
   };
   const changes = trail.details.flatMap((detail) => detail.changes as unknown as ReceiptChange[]);

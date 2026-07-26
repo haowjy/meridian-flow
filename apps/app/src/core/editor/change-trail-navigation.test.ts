@@ -13,8 +13,8 @@ function deletionChange(doc: Y.Doc): TrailChange {
     pushId: null,
     receiptId: null,
     kind: "delete",
-    beforeBlockId: null,
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "gone",
     afterTextAtReceipt: null,
     navigation: {
@@ -22,7 +22,6 @@ function deletionChange(doc: Y.Doc): TrailChange {
       position: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 0)),
       affinity: "document_start",
     },
-    reversible: false,
   };
 }
 

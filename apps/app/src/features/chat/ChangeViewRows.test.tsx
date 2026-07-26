@@ -28,12 +28,11 @@ const change: TrailChange = {
   pushId: "push-1",
   receiptId: "receipt-1",
   kind: "modify",
-  beforeBlockId: "block-1",
-  afterBlockId: "block-1",
+  beforeBlockIdentity: null,
+  afterBlockIdentity: null,
   beforeText: "block-1|Before text.",
   afterTextAtReceipt: "block-1|After text.",
   navigation: { kind: "unavailable", reason: "test" },
-  reversible: false,
 };
 
 describe("ChangeViewRows", () => {

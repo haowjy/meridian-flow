@@ -14,13 +14,12 @@ const settledChange: TrailChange = {
   pushId: null,
   receiptId: null,
   kind: "delete",
-  beforeBlockId: null,
-  afterBlockId: null,
+  beforeBlockIdentity: null,
+  afterBlockIdentity: null,
   beforeText: "block-1|Writer text.",
   afterTextAtReceipt: null,
   navigation: { kind: "unavailable", reason: "test" },
   restore: { status: "settled", outcome: "retry_exhausted" },
-  reversible: false,
 };
 const activeChange: TrailChange = { ...settledChange, restore: undefined };
 let currentChange = settledChange;

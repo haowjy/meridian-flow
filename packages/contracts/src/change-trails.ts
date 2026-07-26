@@ -49,15 +49,12 @@ export type TrailChangeV1 = {
   pushId: string | null;
   receiptId: string | null;
   kind: "insert" | "modify" | "delete";
-  beforeBlockId: string | null;
-  afterBlockId: string | null;
-  beforeBlockIdentity?: CanonicalBlockIdentityV1 | null;
-  afterBlockIdentity?: CanonicalBlockIdentityV1 | null;
+  beforeBlockIdentity: CanonicalBlockIdentityV1 | null;
+  afterBlockIdentity: CanonicalBlockIdentityV1 | null;
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation: NavigationTargetV1;
   restore?: TrailRestoreStateV1;
-  reversible: false;
 };
 
 export type ChangeTrailShellV1 = {
@@ -142,15 +139,12 @@ export const trailChangeV1Schema = z.object({
   pushId: z.string().nullable(),
   receiptId: z.string().nullable(),
   kind: z.enum(["insert", "modify", "delete"]),
-  beforeBlockId: z.string().nullable(),
-  afterBlockId: z.string().nullable(),
-  beforeBlockIdentity: canonicalBlockIdentityV1Schema.nullable().optional(),
-  afterBlockIdentity: canonicalBlockIdentityV1Schema.nullable().optional(),
+  beforeBlockIdentity: canonicalBlockIdentityV1Schema.nullable(),
+  afterBlockIdentity: canonicalBlockIdentityV1Schema.nullable(),
   beforeText: z.string().nullable(),
   afterTextAtReceipt: z.string().nullable(),
   navigation: navigationTargetV1Schema,
   restore: trailRestoreStateV1Schema.optional(),
-  reversible: z.literal(false),
 }) satisfies z.ZodType<TrailChangeV1>;
 
 export const changeTrailShellV1Schema: z.ZodType<ChangeTrailShellV1> = z.object({

@@ -10,12 +10,11 @@ function change(overrides: Partial<TrailChangeV1>): TrailChangeV1 {
     pushId: "push-1",
     receiptId: "receipt-1",
     kind: "modify",
-    beforeBlockId: null,
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "Before",
     afterTextAtReceipt: "After",
     navigation: { kind: "unavailable", reason: "fixture" },
-    reversible: false,
     ...overrides,
   };
 }

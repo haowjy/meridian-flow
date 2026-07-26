@@ -28,12 +28,11 @@ function change(documentId: string, id: string): TrailChangeV1 {
     pushId: null,
     receiptId: `receipt-${id}`,
     kind: "modify",
-    beforeBlockId: null,
-    afterBlockId: null,
+    beforeBlockIdentity: null,
+    afterBlockIdentity: null,
     beforeText: "Before",
     afterTextAtReceipt: "After",
     navigation: { kind: "unavailable", reason: "fixture" },
-    reversible: false,
   };
 }
 

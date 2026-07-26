@@ -85,12 +85,9 @@ if (!enabled || !databaseUrl) {
         pushId: "1",
         receiptId: "receipt",
         kind: "delete",
-        beforeBlockId: "before",
-        afterBlockId: null,
         beforeText: "before|body",
         afterTextAtReceipt: null,
         navigation: { kind: "unavailable", reason: "fixture" },
-        reversible: false,
       };
       const changes = [
         {
