@@ -37,7 +37,6 @@ type DocumentBranchPushPolicy = "manual" | "auto";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
-type PushKind = "whole" | "selective";
 type BranchPushSettlementState = "pending" | "blocked" | "completed";
 type BranchPushSettlementClaimKind = "warm" | "recovery";
 type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
@@ -144,14 +143,13 @@ export const pushLineage = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     branchId: text("branch_id").references(() => documentBranches.id, { onDelete: "set null" }),
+    branchGeneration: integer("branch_generation").notNull(),
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    pushKind: text("push_kind").$type<PushKind>().notNull(),
     journalIds: bigint("journal_ids", { mode: "number" }).array().notNull(),
     upstreamUpdateSeq: bigint("upstream_update_seq", { mode: "number" }),
-    receiptPayload: jsonb("receipt_payload"),
     pushedByUserId: uuid("pushed_by_user_id")
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
@@ -168,7 +166,7 @@ export const pushLineage = pgTable(
   (table) => [
     uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
     index("push_lineage_document").on(table.documentId),
-    index("push_lineage_branch").on(table.branchId),
+    index("push_lineage_branch").on(table.branchId, table.branchGeneration),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
   ],

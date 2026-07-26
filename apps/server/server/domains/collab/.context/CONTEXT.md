@@ -203,7 +203,9 @@ push until commit.
   plan.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
-- `push_lineage` records pushes to live and receipts.
+- `push_lineage` stores publication identity, typed branch generation, and
+  idempotency lineage. The change trail is the sole durable publication record;
+  lineage never duplicates block diffs.
 
 Human-origin edits produce one journal row per keystroke. A 50-character
 sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
@@ -297,15 +299,15 @@ journal-watermark fence above.
 history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
   branch-id order, then live coordinator locks in document-id order.
-- **One push commit seam**: whole, selective, and companion builders produce a
-  `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
-  Candidate data carries whole-vs-selected materialization, the shared receipt,
-  and optional reset/user metadata. A companion selection with no matching
-  active content rows is a builder outcome mapped to `noop` or `already_pushed`
-  before cardinality validation; non-empty partial matches remain conflicts.
-  Locked push and trail preparation lives in
-  `branch-push-preparation.ts`, trail projection lives in
-  `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders capture
+- **One push commit seam**: whole-content and manifest-companion builders
+  produce a `CandidateBatch` consumed by the single pipeline in
+  `branch-push.ts`. Content candidates always materialize the whole current
+  branch. Only the internal manifest candidate selects membership rows. Locked
+  preparation in `branch-push-preparation.ts` computes one block diff from the
+  live lock cut; `branch-trail-projection.ts` turns it into the sole durable
+  publication record, while typed `push_lineage.branch_generation` supports
+  generation-local idempotency queries without duplicating that diff.
+  `branch-push-transition.ts` alone orders capture
   through fenced completion. The transition projects the aggregate writer's exact
   committed replace-set and delivers it to connected bare-document rooms only
   after the completion fence reports applied/already-applied. Delivery is a

@@ -46,11 +46,11 @@ propagation between them.
   rather than leaving optional runtime dependencies.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts`
-  snapshots the live lock cut and prepares the push receipt/trail bundle, and
-  `branch-trail-projection.ts` owns trail projection.
-  `branch-push-candidates.ts` builds whole, selective,
-  and companion candidate outcomes; `branch-push.ts` runs ready batches through
-  their one shared pipeline;
+  computes the one lock-local block diff, and `branch-trail-projection.ts` turns
+  that diff into the sole durable publication record.
+  `branch-push-candidates.ts` builds whole-content pushes with an internal
+  selected manifest-membership companion; `branch-push.ts` runs ready batches
+  through their one shared pipeline;
   `branch-push-transition.ts` is the sole ordering owner for settlement
   drain/reload/materialization/fenced completion and delivery across every push
   mode. Its provenance-backed sweep detection is a best-effort live-session

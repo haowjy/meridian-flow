@@ -101,15 +101,6 @@ function preparedPush(
     branch: branch(documentId, liveDoc),
     journalRows: [],
     pushUpdate,
-    receiptPayload: {
-      version: 1,
-      documentId,
-      branchId: `branch-${documentId}`,
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [],
-      totalWordDelta: 0,
-    },
     idempotencyKey: `push-${pushId}`,
     trail,
     pendingLiveSettlement: transition.prepare({
@@ -126,11 +117,10 @@ function pushRow(prepared: PreparedPushCommit, id: number): PushLineageRow {
   return {
     id,
     branchId: prepared.branch.branchId,
+    branchGeneration: prepared.branch.generation,
     documentId: prepared.branch.documentId,
-    pushKind: "whole",
     journalIds: [],
     upstreamUpdateSeq: null,
-    receiptPayload: prepared.receiptPayload,
     idempotencyKey: prepared.idempotencyKey,
   };
 }

@@ -104,11 +104,10 @@ function pendingSettlement(pushId: number): PendingLiveSettlement {
     push: {
       id: pushId,
       branchId: null,
+      branchGeneration: 1,
       documentId: DOCUMENT_ID,
-      pushKind: "whole",
       journalIds: [],
       upstreamUpdateSeq: null,
-      receiptPayload: null,
       idempotencyKey: `push-${pushId}`,
     },
     documentTitle: "Chapter",

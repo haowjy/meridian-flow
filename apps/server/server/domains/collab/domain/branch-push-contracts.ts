@@ -67,47 +67,23 @@ export type AutoBranchPushPort = {
   }): Promise<{ status: string; [key: string]: unknown }>;
 };
 
-export type ReceiptBlockChange = {
+export type PublicationBlockChange = {
   blockId: string;
   beforeText: string | null;
   afterText: string | null;
-  beforeWordCount: number;
-  afterWordCount: number;
-  wordDelta: number;
-};
-
-export type PushReceiptPayload = {
-  version: 1;
-  documentId: DocumentId;
-  branchId: string;
-  branchGeneration: number;
-  pushKind: "whole" | "selective";
-  changedBlocks: ReceiptBlockChange[];
-  totalWordDelta: number;
 };
 
 export type PushLineageRow = {
   id: number;
   branchId: string | null;
+  branchGeneration: number;
   documentId: DocumentId;
-  pushKind: "whole" | "selective";
   journalIds: number[];
   upstreamUpdateSeq: number | null;
-  receiptPayload: PushReceiptPayload | null;
   idempotencyKey: string;
   receiptId?: string | null;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
-};
-
-export type BranchPushConflictEcho = {
-  overlappingBlockIds: string[];
-  current: Array<
-    Pick<BranchJournalRow, "id" | "branchId" | "source" | "threadId" | "turnId" | "wId">
-  >;
-  concurrentPushes: Array<
-    Pick<PushLineageRow, "id" | "branchId" | "threadId" | "turnId" | "journalIds">
-  >;
 };
 
 export type PushToLiveResult =
@@ -116,9 +92,8 @@ export type PushToLiveResult =
       push: PushLineageRow;
       update: Uint8Array;
       branchReset?: { branchId: string; fromGeneration: number };
-      conflictEcho?: BranchPushConflictEcho;
     }
-  | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
+  | { status: "already_pushed"; push: PushLineageRow }
   | {
       status: "noop";
       branchId: string;
@@ -131,7 +106,6 @@ export type PreparedPushCommit = {
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   pushUpdate: Uint8Array;
-  receiptPayload: PushReceiptPayload;
   idempotencyKey: string;
   receiptId?: string;
   pushedByUserId?: UserId;
@@ -203,8 +177,8 @@ export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
   rows: BranchJournalRow[];
+  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
   kind: "content" | "manifest";
-  materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
@@ -223,7 +197,6 @@ export type BranchJournalReadStore = {
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
   latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
-  listPushesForDocument(documentId: DocumentId): Promise<PushLineageRow[]>;
   listJournalRowsForTurn(input: {
     branchId?: string;
     generation?: number;
@@ -285,17 +258,10 @@ export type BranchPushService = {
     signal?: AbortSignal;
     resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
-  pushSelectedToLive(input: {
-    branchId: string;
-    journalIds: readonly number[];
-    pushedByUserId?: UserId;
-    signal?: AbortSignal;
-  }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;
     manifestEntryDocumentId: DocumentId;
-    contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
     signal?: AbortSignal;
     resetPolicy?: "auto";

@@ -775,7 +775,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: branchA.branchId,
         manifestBranchId: manifestBranch.branchId,
         manifestEntryDocumentId: CREATED_A as never,
-        contentJournalIds: [Number(contentARow.id)],
         pushedByUserId: USER_ID as never,
       };
       await expect(branchPush.pushToLiveWithManifestEntry(pushInput)).rejects.toThrow(
@@ -817,7 +816,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(trailDetails).toHaveLength(1);
       expect(new Set(trailReceiptIds)).toEqual(new Set([lineageRows[0]?.receiptId]));
-      expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "selective"]);
       expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
       const [reviewedContentRow] = await db
         .select({
@@ -850,7 +848,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       manifest.doc.destroy();
     });
 
-    it("finds push lineage by bigint journal-id overlap", async () => {
+    it("finds push lineage by typed branch generation and bigint journal-id overlap", async () => {
       const pushStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
@@ -873,8 +871,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!journalRow) throw new Error("missing journal row");
       await db.insert(pushLineage).values({
         branchId: branch.branchId,
+        branchGeneration: branch.generation,
         documentId: DOC_ID as never,
-        pushKind: "selective",
         journalIds: [journalRow.id],
         idempotencyKey: "bigint-overlap",
       });
@@ -886,6 +884,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(journalRow.id).toBeGreaterThan(2147483647);
       expect(rows).toEqual([expect.objectContaining({ journalIds: [journalRow.id] })]);
+      await expect(
+        pushStore.latestPushForBranch(branch.branchId, branch.generation),
+      ).resolves.toMatchObject({
+        branchId: branch.branchId,
+        branchGeneration: branch.generation,
+      });
+      await expect(
+        pushStore.latestPushForBranch(branch.branchId, branch.generation + 1),
+      ).resolves.toBeNull();
     });
 
     it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
@@ -938,15 +945,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
           ],
           pushUpdate: update,
-          receiptPayload: {
-            version: 1,
-            documentId: DOC_ID as never,
-            branchId: branch.branchId,
-            branchGeneration: branch.generation,
-            pushKind: "whole",
-            changedBlocks: [],
-            totalWordDelta: 0,
-          },
           idempotencyKey: "stale-branch",
           trail: {
             documentId: DOC_ID,
@@ -1003,15 +1001,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branch: fresh,
           journalRows: freshRows,
           pushUpdate: update,
-          receiptPayload: {
-            version: 1,
-            documentId: DOC_ID as never,
-            branchId: fresh.branchId,
-            branchGeneration: fresh.generation,
-            pushKind: "whole",
-            changedBlocks: [],
-            totalWordDelta: 0,
-          },
           idempotencyKey: "inactive-row",
           trail: {
             documentId: DOC_ID,

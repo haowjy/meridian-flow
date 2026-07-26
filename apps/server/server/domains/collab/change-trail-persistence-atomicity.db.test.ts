@@ -69,57 +69,6 @@ describe("change trail (postgres)", () => {
     await db.execute(sql.raw("DROP FUNCTION inject_change_trail_failure()"));
   });
 
-  it("atomically records selective-push trail state and rolls back when trail recording fails", async () => {
-    const success = createHarness();
-    const selected = await success.seedSelectivePush();
-    await expect(success.selectivePush(selected)).resolves.toMatchObject({ status: "pushed" });
-    expect(await success.trailRows()).toMatchObject({
-      shells: [{}],
-      details: [
-        {
-          changes: [expect.objectContaining({ kind: "insert" })],
-        },
-      ],
-      outbox: [{}],
-    });
-
-    await truncateDrizzleTables(db, [
-      schema.changeTrailDeliveryOutbox,
-      schema.changeTrailDocumentDetails,
-      schema.changeTrailShells,
-      schema.agentEditMutations,
-      schema.branchWriteJournal,
-      schema.pushLineage,
-      schema.documentBranches,
-      schema.documentYjsCheckpoints,
-      schema.documentYjsHeads,
-      schema.documentYjsUpdates,
-    ]);
-    const failed = createHarness();
-    const failedSelected = await failed.seedSelectivePush();
-    const before = await failed.liveMarkdown(ALPHA_ID);
-    await db.execute(
-      sql.raw(`
-        CREATE OR REPLACE FUNCTION inject_selective_trail_failure() RETURNS trigger
-        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected selective trail failure'; END $$;
-        CREATE TRIGGER inject_selective_trail_failure BEFORE INSERT ON change_trail_shells
-        FOR EACH ROW EXECUTE FUNCTION inject_selective_trail_failure();
-      `),
-    );
-    try {
-      await expect(failed.selectivePush(failedSelected)).rejects.toThrow();
-    } finally {
-      await db.execute(
-        sql.raw("DROP TRIGGER inject_selective_trail_failure ON change_trail_shells"),
-      );
-      await db.execute(sql.raw("DROP FUNCTION inject_selective_trail_failure()"));
-    }
-    expect(await failed.liveMarkdown(ALPHA_ID)).toBe(before);
-    expect(await failed.pushRows()).toEqual([]);
-    expect(await failed.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
-    expect(await failed.activePushJournalCount()).toBe(1);
-  });
-
   it("persists proven replacements as live ranges and deletes conservatively", async () => {
     const proven = createHarness();
     const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);

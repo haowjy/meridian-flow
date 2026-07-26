@@ -8,7 +8,7 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -179,23 +179,11 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         .select()
         .from(pushLineage)
         .where(
-          and(
-            eq(pushLineage.branchId, branchId),
-            sql`${pushLineage.receiptPayload}->>'branchGeneration' = ${String(generation)}`,
-          ),
+          and(eq(pushLineage.branchId, branchId), eq(pushLineage.branchGeneration, generation)),
         )
         .orderBy(sql`${pushLineage.id} DESC`)
         .limit(1);
       return row ? mapLineage(row) : null;
-    },
-
-    async listPushesForDocument(documentId) {
-      const rows = await db
-        .select()
-        .from(pushLineage)
-        .where(eq(pushLineage.documentId, documentId))
-        .orderBy(desc(pushLineage.id));
-      return rows.map(mapLineage);
     },
   };
 }
@@ -511,11 +499,10 @@ async function commitPreparedPush(
     .insert(pushLineage)
     .values({
       branchId: input.branch.branchId,
+      branchGeneration: input.branch.generation,
       documentId: input.branch.documentId,
-      pushKind: input.receiptPayload.pushKind,
       journalIds: input.journalRows.map((row) => row.id),
       upstreamUpdateSeq: null,
-      receiptPayload: input.receiptPayload,
       pushedByUserId: input.pushedByUserId ?? null,
       threadId: representativeThreadId(input.journalRows),
       turnId: representativeTurnId(input.journalRows),
@@ -585,11 +572,10 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
     branchId: row.branchId,
+    branchGeneration: row.branchGeneration,
     documentId: row.documentId,
-    pushKind: row.pushKind,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
-    receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
     receiptId: row.receiptId,
     threadId: row.threadId,

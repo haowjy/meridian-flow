@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`, `packages/database`: Apply now records one lock-local change
+  trail, with typed branch lineage instead of duplicate receipt JSON or a dead
+  selective-content push surface.
 - `apps/app`, `apps/server`, `packages/contracts`: draft Apply now commits the
   whole current branch, including writer edits made after preview; review rows
   retain writer identity and mixed-author branches preserve receipt Undo safety.
@@ -88,10 +91,6 @@
 - `apps/server`: ordinary collab writes retain independent activity/projection
   settlement, while completed branch pushes keep projection and activity inside
   the fenced settlement transaction.
-- `apps/server`: whole, selective, and companion branch pushes now share one
-  candidate-batch pipeline and required persistence ports without changing
-  selective error identity, empty companion results, or whole-only notice
-  requirements.
 - `apps/server`: final branch-push settlement restores receipt contributions
   that provisional aggregate folding had cancelled away.
 - `apps/server`: branch pushes and trail actions now use the filetype-aware

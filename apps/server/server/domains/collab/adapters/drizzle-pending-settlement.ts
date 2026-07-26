@@ -587,11 +587,10 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
     branchId: row.branchId,
+    branchGeneration: row.branchGeneration,
     documentId: row.documentId,
-    pushKind: row.pushKind,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
-    receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
     receiptId: row.receiptId,
     threadId: row.threadId,

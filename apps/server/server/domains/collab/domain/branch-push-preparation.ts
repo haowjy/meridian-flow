@@ -12,9 +12,8 @@ import type {
   BranchJournalRow,
   PreparedPush,
   PreparedPushCommit,
-  PushReceiptPayload,
 } from "./branch-push-contracts.js";
-import { buildReceipt } from "./branch-push-plan.js";
+import { publicationBlockChanges } from "./branch-push-plan.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
@@ -25,7 +24,6 @@ export type PushPreparationPhase = {
   branch: BranchSnapshot;
   rows: BranchJournalRow[];
   pushUpdate: Uint8Array;
-  receipt: PushReceiptPayload;
   idempotencyKey: string;
   receiptId: string;
 };
@@ -75,16 +73,14 @@ export async function preparePushUnderLiveLock(
           ] as const,
       ),
     );
-    const receipt = buildReceipt({
+    const changedBlocks = publicationBlockChanges({
       model: input.model,
-      documentId: phase.branch.documentId,
-      branch: phase.branch,
-      pushKind: phase.receipt.pushKind,
       beforeDoc: lockCutDoc,
       afterDoc,
     });
     const changes: RawTrailChange[] = preparedTrailChanges({
-      receipt,
+      documentId: phase.branch.documentId,
+      changedBlocks,
       receiptId,
       ownersByBlock: attribution.ownersByBlock,
       operations: attribution.operations.map((operation) => ({
@@ -107,7 +103,6 @@ export async function preparePushUnderLiveLock(
         branch: phase.branch,
         journalRows: phase.rows,
         pushUpdate: phase.pushUpdate,
-        receiptPayload: receipt,
         idempotencyKey: phase.idempotencyKey,
         receiptId,
       } satisfies Omit<PreparedPushCommit, "pushedByUserId" | "trail" | "pendingLiveSettlement">,
