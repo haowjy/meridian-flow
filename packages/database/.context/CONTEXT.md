@@ -98,7 +98,9 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 Migrations that transform existing rows need a populated upgrade scenario in
 `fresh-migrations.db.test.ts`. Use `withPopulatedMigrationDatabase` to apply the
 committed prefix, seed the pre-migration shape, apply the remaining chain, and
-assert the preserved data.
+assert the intended disposition. Preserve or backfill recoverable facts; make
+deliberate pre-release deletion explicit; and fail closed when required evidence
+is missing rather than inventing a plausible value.
 
 The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over
