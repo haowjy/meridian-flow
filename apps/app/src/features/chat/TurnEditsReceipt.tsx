@@ -255,7 +255,9 @@ function reversalRefusalCopy(status: ReversalOutcome["status"] | null): string |
   return null;
 }
 
-export function ChangeViewDetail({
+/** Authorized durable evidence for one settled trail, and the change stage's
+ * settle point. Private: the receipt is the only surface that owns it. */
+function ChangeViewDetail({
   threadId,
   shell,
   navigateToChange,
