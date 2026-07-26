@@ -83,7 +83,7 @@ function ChatScreenLoaded({
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
     isError,
-    isFetching,
+    settled: historySettled,
     refetch,
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
@@ -122,7 +122,7 @@ function ChatScreenLoaded({
             activeWork={activeWork}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
-            historySettled={!isFetching}
+            historySettled={historySettled}
             key={`${projectId}:${threadId}`}
           />
         </ProjectChatContextNavigationProvider>
