@@ -87,6 +87,8 @@ if (!enabled || !databaseUrl) {
         kind: "delete",
         beforeText: "before|body",
         afterTextAtReceipt: null,
+        beforeBlockIdentity: null,
+        afterBlockIdentity: null,
         navigation: { kind: "unavailable", reason: "fixture" },
       };
       const changes = [
