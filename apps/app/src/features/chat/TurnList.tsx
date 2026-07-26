@@ -36,16 +36,23 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { completeConversationReveal, useConversationReveal } from "./conversation-reveal";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import { useTurnRevealLanding } from "./useTurnRevealLanding";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
   threadId: string;
   /** Settled history with the live turn merged in by id, oldest first. */
   turns: Turn[];
+  /**
+   * Whether the thread's history request has resolved. The transcript owns the
+   * "that turn isn't here" verdict for a conversation reveal, and it can only
+   * give it once loading is over — before that, a missing turn is one that
+   * hasn't arrived yet.
+   */
+  historySettled: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
@@ -62,6 +69,7 @@ const TOP_INSET = 24;
 export function TurnList({
   threadId,
   turns,
+  historySettled,
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
@@ -69,7 +77,6 @@ export function TurnList({
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
-  const conversationReveal = useConversationReveal(threadId);
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
@@ -106,36 +113,15 @@ export function TurnList({
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
 
-  useEffect(() => {
-    if (conversationReveal?.turnId == null) return;
-    const index = visibleTurns.findIndex((turn) => turn.id === conversationReveal.turnId);
-    if (index < 0) return;
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-
-    const land = () => {
-      virtualizer.scrollToIndex(index, { align: "center" });
-      // The turn IS the target when no change row was named — nothing deeper
-      // will complete the handshake, so landing on it finishes the reveal.
-      if (conversationReveal.changeId === null) completeConversationReveal(conversationReveal);
-    };
-
-    // A reveal reaches a transcript that is still parked: revealing a docked
-    // chat un-collapses it in the same commit that delivers the request, and
-    // this viewport is 0×0 until that lands. Centering inside a zero-height
-    // scroller computes garbage, so wait for the surface to get its size.
-    if (viewport.clientHeight > 0) {
-      land();
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      if (viewport.clientHeight === 0) return;
-      observer.disconnect();
-      land();
-    });
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [conversationReveal, virtualizer, visibleTurns]);
+  // Turn stage of a conversation reveal. The transcript owns the landing (and
+  // the verdict when the turn isn't here); the scroll capability stays here.
+  useTurnRevealLanding({
+    threadId,
+    turns: visibleTurns,
+    historySettled,
+    viewportRef,
+    scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
+  });
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
   // append, on measured streaming-row growth, and on composer-inset change — and

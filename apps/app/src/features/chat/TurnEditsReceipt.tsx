@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
-import { type ConversationReveal, useConversationReveal } from "./conversation-reveal";
+import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { documentDisplayName } from "./document-display-name";
 import { DraftStatsLabel } from "./draft-stats";
 import { DocumentName } from "./tool-renderers";
@@ -67,8 +67,7 @@ export function TurnEditsReceipt({
   const openContextUri = useChatContextNavigation();
   const canOpenContextUri = useChatContextRoutability();
   const [expanded, setExpanded] = useState(false);
-  const reveal = useConversationReveal(threadId);
-  const [activeReveal, setActiveReveal] = useState<ConversationReveal | null>(null);
+  const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
   const [commandRefusal, setCommandRefusal] = useState<ReversalOutcome["status"] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
@@ -101,13 +100,20 @@ export function TurnEditsReceipt({
       : null;
   const undoUnavailable = receipt == null || receipt.control === "view_change";
 
+  // The change stage of a conversation reveal — only a reveal naming a change
+  // row inside THIS turn reaches here. The request is never copied into local
+  // state: display without the lifecycle is what let a request outlive
+  // everything that could finish it.
   useEffect(() => {
-    // Only a reveal naming a change row belongs to this receipt; a turn-level
-    // reveal lands on the turn without forcing its edit list open.
-    if (reveal?.turnId !== turn.id || reveal.changeId === null) return;
-    setActiveReveal(reveal);
+    if (!changeReveal) return;
+    // Change rows are durable trail evidence; without an authorized trail this
+    // receipt has no row to reveal, and the writer stays on the turn.
+    if (!hasEditedDocuments || !changeTrail || !navigateToChange) {
+      changeReveal.unavailable();
+      return;
+    }
     setExpanded(true);
-  }, [reveal, turn.id]);
+  }, [changeReveal, changeTrail, hasEditedDocuments, navigateToChange]);
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -214,7 +220,7 @@ export function TurnEditsReceipt({
               threadId={threadId}
               shell={changeTrail}
               navigateToChange={navigateToChange}
-              reveal={activeReveal}
+              reveal={changeReveal}
               documents={liveDocuments}
               onOpenContextUri={openContextUri}
               canOpenContextUri={canOpenContextUri}
@@ -261,12 +267,31 @@ export function ChangeViewDetail({
   threadId: string;
   shell: ChangeTrailShell;
   navigateToChange: NavigateToTrailChange;
-  reveal: ReturnType<typeof useConversationReveal>;
+  reveal: ChangeRevealRequest | null;
   documents?: TurnEditDocument[];
   onOpenContextUri?: ((uri: string) => void) | null;
   canOpenContextUri?: ((uri: string) => boolean) | null;
 }) {
   const { detail } = useAuthorizedChangeTrailDetail(threadId, shell, true);
+
+  // Where the change stage settles: a row can be revealed only if the loaded
+  // evidence carries it. A failed request or a trail that no longer holds the
+  // change both leave the writer on the turn instead of waiting forever.
+  useEffect(() => {
+    if (!reveal) return;
+    if (detail.isError) {
+      reveal.unavailable();
+      return;
+    }
+    if (!detail.data) return;
+    const rowExists = detail.data.some(
+      (document) =>
+        !("unavailable" in document) &&
+        document.changes.some((change) => change.changeId === reveal.changeId),
+    );
+    if (!rowExists) reveal.unavailable();
+  }, [detail.data, detail.isError, reveal]);
+
   if (shell.state !== "settled") return null;
   if (detail.isError) {
     return (

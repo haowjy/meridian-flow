@@ -83,11 +83,11 @@ export function ResultsRailBody({
               result={result}
               onOpen={() => onOpenResult(result)}
               onOpenProducingThread={() =>
+                // The turn is the target; a result has no change row inside it.
                 requestConversationReveal({
+                  kind: "turn",
                   threadId: result.threadId,
                   turnId: result.turnId,
-                  // The turn is the target; a result has no change row inside it.
-                  changeId: null,
                 })
               }
             />

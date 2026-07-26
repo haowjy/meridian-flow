@@ -4,11 +4,6 @@ import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  completeConversationReveal,
-  peekConversationReveal,
-  requestConversationReveal,
-} from "./conversation-reveal";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -44,8 +39,6 @@ describe("ChangeViewRows", () => {
   });
 
   afterEach(() => {
-    const pending = peekConversationReveal();
-    if (pending) completeConversationReveal(pending);
     document.body.replaceChildren();
   });
 
@@ -91,8 +84,13 @@ describe("ChangeViewRows", () => {
   });
 
   it("brings an explicit reveal into view without animated emphasis", async () => {
-    const reveal = { threadId: "thread-1", turnId: "turn-1", changeId: "change-1" };
-    requestConversationReveal(reveal);
+    const reveal = {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      changeId: "change-1",
+      landed: vi.fn(),
+      unavailable: vi.fn(),
+    };
     const container = document.createElement("div");
     const root = createRoot(container);
     await act(async () => {
@@ -109,7 +107,9 @@ describe("ChangeViewRows", () => {
     const row = container.querySelector('[data-change-view-row="modify"]');
     expect(row?.className).not.toContain("meridian-trail-row-emphasized");
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
-    expect(peekConversationReveal()).toBeNull();
+    // The row is the only thing that can land the change stage.
+    expect(reveal.landed).toHaveBeenCalledTimes(1);
+    expect(reveal.unavailable).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 

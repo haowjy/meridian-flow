@@ -48,6 +48,12 @@ export type ChatViewProps = {
   activeWork?: Work | null;
   snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
+  /**
+   * Whether the thread snapshot request has resolved. Feeds the transcript's
+   * conversation-reveal ownership: only a settled history can say a named turn
+   * is not in this conversation.
+   */
+  historySettled: boolean;
 };
 
 export function ChatView({
@@ -57,6 +63,7 @@ export function ChatView({
   activeWork = null,
   snapshotLiveState = null,
   snapshotNextSeq = null,
+  historySettled,
 }: ChatViewProps) {
   const actions = useThreadActions();
   const changeTrails = useThreadChangeTrails(threadId);
@@ -177,6 +184,7 @@ export function ChatView({
       <TurnList
         threadId={threadId}
         turns={turns}
+        historySettled={historySettled}
         tailFollowRevision={tailFollowRevision}
         ariaLabel={t`Chat`}
         onRespondToInterrupt={handleRespondToInterrupt}
