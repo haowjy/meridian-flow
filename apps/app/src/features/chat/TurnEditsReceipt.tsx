@@ -69,11 +69,11 @@ export function TurnEditsReceipt({
   const [expanded, setExpanded] = useState(false);
   const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
-  const [commandRefusal, setCommandRefusal] = useState<ReversalOutcome["status"] | null>(null);
+  const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  const guardCopy = reversalRefusalCopy(commandRefusal) ?? undoGuardCopy(receipt);
+  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undoGuardCopy(receipt);
   const liveDocuments = documents.filter((document) => document.scope === "live");
   const trailDocuments = changeTrail?.documents ?? [];
   // Asks the predicate about the full lineage, not the pre-filtered live subset.
@@ -126,14 +126,15 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      if (outcome.status !== "reversed" && outcome.status !== "reconciled") {
-        setCommandRefusal(outcome.status);
-        setExpanded(true);
-      } else {
-        setCommandRefusal(null);
-      }
+      const status = refusedReversalStatus(outcome.status);
+      setCommandRefusal(status ? { direction, status } : null);
+      if (status) setExpanded(true);
     } catch {
-      // Keep the chip available for retry; history cards do not carry error prose.
+      // A rejected request is a refusal the writer never asked for: the command
+      // is the only thing that can report it, so it says so here rather than
+      // leaving the click looking like it worked.
+      setCommandRefusal({ direction, status: "request_failed" });
+      setExpanded(true);
     } finally {
       setPending(false);
     }
@@ -211,7 +212,7 @@ export function TurnEditsReceipt({
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t py-1">
           {guardCopy ? (
-            <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason>
+            <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason role="status">
               {guardCopy}
             </p>
           ) : null}
@@ -244,15 +245,77 @@ export function TurnEditsReceipt({
   );
 }
 
-function reversalRefusalCopy(status: ReversalOutcome["status"] | null): string | null {
-  if (status === "nothing_to_redo") {
-    return t`Redo is no longer available because the manuscript changed.`;
+/**
+ * A reversal the writer asked for and did not get, plus the direction they
+ * asked in — the direction the receipt carries can flip under a refusal, and
+ * the copy has to name the command the writer actually pressed.
+ *
+ * `request_failed` covers everything that never reached a status: a rejected
+ * fetch, an HTTP error envelope, a dropped connection.
+ */
+type ReversalRefusal = {
+  direction: ReversalDirection;
+  status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
+};
+
+type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
+
+/** The reversal statuses that mean the manuscript changed as asked. */
+function refusedReversalStatus(
+  status: ReversalOutcome["status"],
+): ReversalRefusal["status"] | null {
+  if (status === "success" || status === "reversed" || status === "reconciled") return null;
+  return status;
+}
+
+/**
+ * Writer-facing copy for a refused reversal. Total by construction: the switch
+ * is exhaustive over the wire union, and the fallback covers a server that
+ * sends a status this client has never heard of. A refusal without copy is a
+ * click that does nothing and explains nothing, which is the one outcome this
+ * surface may never produce.
+ */
+function reversalRefusalCopy(refusal: ReversalRefusal): string {
+  switch (refusal.status) {
+    case "nothing_to_redo":
+      return t`Redo is no longer available because the manuscript changed.`;
+    case "nothing_to_undo":
+      return t`Undo is no longer available.`;
+    case "cant_undo_dependent":
+      return dependentChangeCopy();
+    case "expired":
+      return t`This change is no longer reversible.`;
+    case "partial":
+    case "partial_failure":
+      return t`Only part of this change could be reversed.`;
+    case "not_found":
+    case "document_not_found":
+      return t`That chapter is no longer available, so this change can't be reversed.`;
+    case "ambiguous_match":
+    case "invalid_write":
+      return t`This change no longer matches the chapter text, so it can't be reversed.`;
+    case "internal_error":
+    case "request_failed":
+      return reversalRetryCopy(refusal.direction);
+    default: {
+      // Unreachable for the typed union; kept live for a server that starts
+      // sending a status this build has never heard of.
+      const _exhaust: never = refusal.status;
+      void _exhaust;
+      return reversalRetryCopy(refusal.direction);
+    }
   }
-  if (status === "nothing_to_undo") return t`Undo is no longer available.`;
-  if (status === "cant_undo_dependent") return t`Later edits build on this change.`;
-  if (status === "expired") return t`This change is no longer reversible.`;
-  if (status === "partial") return t`Only part of this change could be reversed.`;
-  return null;
+}
+
+/** The one sentence for "later live edits depend on this", wherever it surfaces. */
+function dependentChangeCopy(): string {
+  return t`Later edits build on this change. View the change instead of undoing it.`;
+}
+
+function reversalRetryCopy(direction: ReversalDirection): string {
+  return direction === "redo"
+    ? t`Redo didn't go through. Try again.`
+    : t`Undo didn't go through. Try again.`;
 }
 
 /** Authorized durable evidence for one settled trail, and the change stage's
@@ -353,8 +416,11 @@ function ChangeViewDetail({
 }
 
 function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
+  // Same fact as the refused-command copy, so it is the same sentence: a
+  // receipt that rests on `cant_undo_dependent` and a command refused with it
+  // are the writer's one situation.
   if (receipt?.state === "cant_undo_dependent") {
-    return t`Later edits build on this change.`;
+    return dependentChangeCopy();
   }
   if (receipt?.control === "view_change" || receipt == null) {
     return t`This change is too old to undo.`;

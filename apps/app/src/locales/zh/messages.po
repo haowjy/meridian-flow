@@ -486,15 +486,7 @@ msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "Couldn't discard. This draft may already be applied or discarded."
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't discard. Try again."
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Couldn't discard. Your latest edits are still syncing, try again soon."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -933,7 +925,7 @@ msgid "Last name"
 msgstr "姓"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Later edits build on this change."
+msgid "Later edits build on this change. View the change instead of undoing it."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -1420,6 +1412,10 @@ msgid "Redo"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redo didn't go through. Try again."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redo is no longer available because the manuscript changed."
 msgstr ""
 
@@ -1729,6 +1725,10 @@ msgstr ""
 msgid "That change couldn't be made."
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "That chapter is no longer available, so this change can't be reversed."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
 msgstr ""
@@ -1800,6 +1800,10 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is too old to undo."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "This change no longer matches the chapter text, so it can't be reversed."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -1904,6 +1908,10 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo"
 msgstr "撤销"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undo didn't go through. Try again."
+msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
