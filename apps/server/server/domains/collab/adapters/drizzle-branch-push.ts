@@ -311,7 +311,10 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,
           generation: documentBranches.generation,
-          journal: branchWriteJournal,
+          journal: {
+            turnId: branchWriteJournal.turnId,
+            updateMeta: branchWriteJournal.updateMeta,
+          },
         })
         .from(documentBranches)
         .innerJoin(
@@ -342,7 +345,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           },
           rows: [],
         };
-        branch.rows.push(mapJournalRow(row.journal));
+        branch.rows.push(row.journal);
         evidence.set(row.branchId, branch);
       }
       return [...evidence.values()];

@@ -2,6 +2,8 @@
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { BranchJournalRow } from "../branch-push-contracts.js";
 
+export type WorkDraftPendingRowEvidence = Pick<BranchJournalRow, "turnId" | "updateMeta">;
+
 export type WorkDraftPendingEvidence = {
   branch: {
     branchId: string;
@@ -9,7 +11,7 @@ export type WorkDraftPendingEvidence = {
     workId: WorkId;
     generation: number;
   };
-  rows: BranchJournalRow[];
+  rows: WorkDraftPendingRowEvidence[];
 };
 
 export type WorkDraftPendingStore = {

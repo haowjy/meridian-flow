@@ -1,15 +1,15 @@
 /** Canonical pending-review predicate for Work draft branches. */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
-import type { BranchJournalRow } from "./branch-push-contracts.js";
 import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
 import type {
   WorkDraftPendingEvidence,
+  WorkDraftPendingRowEvidence,
   WorkDraftPendingStore,
 } from "./ports/work-draft-pending-store.js";
 
 export type PendingWorkDraft = {
   branch: WorkDraftPendingEvidence["branch"];
-  rows: BranchJournalRow[];
+  rows: WorkDraftPendingRowEvidence[];
   manifestEntry?: {
     branchId: string;
     documentId: DocumentId;
