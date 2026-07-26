@@ -17,8 +17,6 @@ export type DraftReviewHeaderProps = {
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
   const { controller } = useDraftReview();
   const busy = controller.isDisposing;
-  const staleMessage =
-    controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
   const commandError =
     controller.inlineReviewMessage?.tone === "error" &&
     (controller.inlineReviewMessage.code === "apply-failed" ||
@@ -44,11 +42,6 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         <ChevronLeft className="size-3" aria-hidden />
         <Trans>Back to live</Trans>
       </button>
-      {staleMessage ? (
-        <p className="text-destructive text-xs" role="alert">
-          {staleMessage}
-        </p>
-      ) : null}
       {commandError ? (
         <p className="text-destructive text-xs" role="alert">
           {commandError === "apply-failed" ? (

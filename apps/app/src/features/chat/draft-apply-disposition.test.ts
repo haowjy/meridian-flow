@@ -1,6 +1,6 @@
 /** Behavioral contract for the shared Apply disposition layer. */
 import type { DraftAcceptResponse } from "@meridian/contracts/drafts";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { acquireDraftApplyRequest, draftApplyOutcome } from "./draft-review-session";
 
 describe("draft Apply disposition", () => {
@@ -17,44 +17,9 @@ describe("draft Apply disposition", () => {
       materializedDocument: true,
     });
   });
-
-  it("maps a partial per-card Apply to its completion receipt", () => {
-    const response: DraftAcceptResponse = {
-      status: "partial_applied",
-      draftId: "draft-1",
-    };
-
-    expect(draftApplyOutcome("operation", response)).toEqual({
-      command: { kind: "partial-applied" },
-      message: { code: "change-applied" },
-      refreshDraftId: null,
-      materializedDocument: true,
-    });
-  });
-
-  it("refreshes stale responses while preserving each Apply surface's transition", () => {
-    const response: DraftAcceptResponse = {
-      status: "stale_draft",
-      draftId: "draft-2",
-      draftRevisionToken: 2,
-    };
-
-    expect(draftApplyOutcome("operation", response)).toEqual({
-      command: { kind: "stale", draftId: "draft-2" },
-      message: { code: "changes-moved-refreshed" },
-      refreshDraftId: "draft-2",
-      materializedDocument: false,
-    });
-    expect(draftApplyOutcome("draft", response)).toEqual({
-      command: { kind: "stale", draftId: "draft-2" },
-      message: null,
-      refreshDraftId: "draft-2",
-      materializedDocument: false,
-    });
-  });
 });
 
-describe("draft Apply revision acquisition", () => {
+describe("draft Apply request", () => {
   const displayedPreview = {
     documentId: "document-1",
     draftId: "draft-1",
@@ -63,36 +28,10 @@ describe("draft Apply revision acquisition", () => {
     operationIds: ["operation-1", "operation-2"],
   };
 
-  it("keeps whole-draft Apply pinned to the displayed preview", () => {
+  it("identifies the branch without pinning Apply to preview operations", () => {
     expect(acquireDraftApplyRequest({ scope: "draft", preview: displayedPreview })).toEqual({
       draftId: "draft-1",
       branchId: "branch-1",
-      draftRevisionToken: 4,
-      operationIds: ["operation-1", "operation-2"],
     });
-  });
-
-  it("refreshes per-card revision evidence but submits only the selected operation", async () => {
-    const loadLatestPreview = vi.fn().mockResolvedValue({
-      draftRevisionToken: 5,
-      liveRevisionToken: 3,
-      operationIds: ["operation-1", "operation-2", "operation-3"],
-      branchId: "branch-1",
-    });
-
-    await expect(
-      acquireDraftApplyRequest({
-        scope: "operation",
-        draftId: "draft-1",
-        operationId: "operation-2",
-        loadLatestPreview,
-      }),
-    ).resolves.toEqual({
-      draftId: "draft-1",
-      branchId: "branch-1",
-      draftRevisionToken: 5,
-      operationIds: ["operation-2"],
-    });
-    expect(loadLatestPreview).toHaveBeenCalledOnce();
   });
 });

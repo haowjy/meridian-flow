@@ -10,22 +10,24 @@ import { getDocumentSessionRegistry } from "@/core/editor/document-session-regis
 import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
-export type DraftReviewMutationInput = {
+type DraftReviewMutationBase = {
   projectId: string;
   workId: string;
   threadId?: string | null;
   documentId: string;
   draftId: string;
   branchId?: string;
-  draftRevisionToken?: number;
+};
+
+export type DraftReviewMutationInput = DraftReviewMutationBase & {
   operationIds?: string[];
 };
 
 export function reviewRequestId(
   input: Pick<
     DraftReviewMutationInput,
-    "projectId" | "workId" | "documentId" | "draftId" | "branchId" | "operationIds"
-  > & { operationIds?: string[] },
+    "projectId" | "workId" | "documentId" | "draftId" | "branchId"
+  >,
 ): { draftId: string } | { branchId: string } {
   return input.branchId ? { branchId: input.branchId } : { draftId: input.draftId };
 }
@@ -66,40 +68,21 @@ export function useAcceptDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      workId,
-      documentId,
-      draftId,
-      branchId,
-      draftRevisionToken,
-      operationIds,
-    }: DraftReviewMutationInput) => {
-      if (draftRevisionToken === undefined) {
-        throw new Error("Draft revision token is required to accept a draft.");
-      }
-      if (!operationIds || operationIds.length === 0) {
-        throw new Error("Previewed operation ids are required to accept a draft.");
-      }
+    mutationFn: ({ projectId, workId, documentId, draftId, branchId }: DraftReviewMutationBase) => {
       const reviewId = reviewRequestId({
         projectId,
         workId,
         documentId,
         draftId,
         branchId,
-        operationIds,
       });
       if ("branchId" in reviewId) {
         return acceptDraft(projectId, workId, documentId, {
           branchId: reviewId.branchId,
-          draftRevisionToken,
-          operationIds,
         });
       }
       return acceptDraft(projectId, workId, documentId, {
         draftId: reviewId.draftId,
-        draftRevisionToken,
-        operationIds,
       });
     },
     onSuccess: async (_response, variables) => {

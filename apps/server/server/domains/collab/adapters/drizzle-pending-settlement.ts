@@ -1,5 +1,5 @@
 /** Drizzle persistence authority for pending branch-push settlement. */
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
@@ -409,24 +409,49 @@ async function completeStagedPush(
             .orderBy(branchWriteJournal.id)
         ).map(mapJournalRow)
       : [];
-  const agentTurnId = representativeTurnId(activeBranchAgentWriteRows(journalRows));
   const authority = await allocateDocumentAdmission(db, documentId);
-  const [updateRow] = await db
-    .insert(documentYjsUpdates)
-    .values({
-      documentId,
-      authorityId: authority.authorityId,
-      authorityGeneration: authority.generation,
-      admissionSequence: authority.admissionSequence,
-      batchOrdinal: 0,
-      updateData: staged.outbox.pushUpdate,
-      // Admission and authorship are independent: clicking Apply does not make
-      // the writer the author of an AI mutation.
-      originType: agentTurnId ? "agent" : "system",
-      actorUserId: null,
-      actorTurnId: agentTurnId,
-    })
-    .returning({ id: documentYjsUpdates.id });
+  const authoredRows =
+    journalRows.length > 0
+      ? await db
+          .insert(documentYjsUpdates)
+          .values(
+            journalRows.map((row, batchOrdinal) => ({
+              documentId,
+              authorityId: authority.authorityId,
+              authorityGeneration: authority.generation,
+              admissionSequence: authority.admissionSequence,
+              batchOrdinal,
+              updateData: Buffer.from(row.updateData),
+              originType:
+                row.source === "writer"
+                  ? ("human" as const)
+                  : row.turnId
+                    ? ("agent" as const)
+                    : ("system" as const),
+              actorUserId: row.source === "writer" ? row.actorUserId : null,
+              actorTurnId: row.source === "agent" ? row.turnId : null,
+            })),
+          )
+          .returning({ id: documentYjsUpdates.id })
+      : [];
+  const [fallbackRow] =
+    journalRows.length === 0
+      ? await db
+          .insert(documentYjsUpdates)
+          .values({
+            documentId,
+            authorityId: authority.authorityId,
+            authorityGeneration: authority.generation,
+            admissionSequence: authority.admissionSequence,
+            batchOrdinal: 0,
+            updateData: staged.outbox.pushUpdate,
+            originType: "system",
+            actorUserId: null,
+            actorTurnId: null,
+          })
+          .returning({ id: documentYjsUpdates.id })
+      : [];
+  const updateRow = authoredRows.at(-1) ?? fallbackRow;
   if (!updateRow) throw new Error(`Failed to complete staged push ${pushId}`);
   const [updated] = await db
     .update(pushLineage)
@@ -460,7 +485,7 @@ async function completeStagedPush(
         : null,
       schemaVersion: branchRow.schemaVersion,
     };
-    await writeMutationRows(db, branch, journalRows, updateRow.id);
+    await writeMutationRows(db, branch, journalRows, authoredRows);
     const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
     await upsertHead(db, documentId, updateRow.id, durable.stateVector);
     await projectionEffects.applyPushCompletion({
@@ -508,7 +533,7 @@ async function writeMutationRows(
   db: DrizzleDb,
   branch: BranchSnapshot,
   rows: BranchJournalRow[],
-  updateSeq: number,
+  authoredRows: Array<{ id: number }>,
 ): Promise<void> {
   // Apply materializes only handles whose final branch state is active. Handles
   // eliminated by Draft undo are deliberately squashed instead of being
@@ -518,27 +543,27 @@ async function writeMutationRows(
   await db
     .insert(agentEditMutations)
     .values(
-      mutationRows.map((row) => ({
-        wId: row.wId,
-        documentId: branch.documentId,
-        threadId: row.threadId,
-        turnId: row.turnId,
-        writeId: `push:${branch.branchId}:${row.id}`,
-        status: "active" as const,
-        createdSeq: updateSeq,
-      })),
+      mutationRows.map((row) => {
+        const rowIndex = rows.findIndex((candidate) => candidate.id === row.id);
+        const updateSeq = rowIndex < 0 ? undefined : authoredRows[rowIndex]?.id;
+        if (!updateSeq)
+          throw new Error(`Missing live attribution for branch journal row ${row.id}`);
+        return {
+          wId: row.wId,
+          documentId: branch.documentId,
+          threadId: row.threadId,
+          turnId: row.turnId,
+          writeId: `push:${branch.branchId}:${row.id}`,
+          status: "active" as const,
+          createdSeq: updateSeq,
+        };
+      }),
     )
     .onConflictDoNothing();
 }
 
 function _representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
   const ids = new Set(rows.map((row) => row.threadId));
-  const [id] = ids;
-  return ids.size === 1 && id !== null ? id : null;
-}
-
-function representativeTurnId(rows: BranchJournalRow[]): TurnId | null {
-  const ids = new Set(rows.map((row) => row.turnId));
   const [id] = ids;
   return ids.size === 1 && id !== null ? id : null;
 }

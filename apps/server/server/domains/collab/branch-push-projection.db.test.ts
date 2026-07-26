@@ -417,10 +417,17 @@ describe("branch-push durable projection", () => {
       .where(eq(branchPushSettlementOutbox.pushId, pending.pushId));
     expect(completed?.state).toBe("completed");
     const journalAfterRecovery = await db
-      .select({ id: documentYjsUpdates.id })
+      .select({
+        id: documentYjsUpdates.id,
+        originType: documentYjsUpdates.originType,
+        actorTurnId: documentYjsUpdates.actorTurnId,
+      })
       .from(documentYjsUpdates)
-      .where(eq(documentYjsUpdates.documentId, documentId));
-    expect(journalAfterRecovery).toHaveLength(1);
+      .where(eq(documentYjsUpdates.documentId, documentId))
+      .orderBy(documentYjsUpdates.id);
+    expect(journalAfterRecovery).toEqual([
+      expect.objectContaining({ originType: "agent", actorTurnId: turnId }),
+    ]);
     const [documentAfterRecovery] = await db
       .select({ markdownProjection: documents.markdownProjection })
       .from(documents)

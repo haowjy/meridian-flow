@@ -248,8 +248,6 @@ export async function runCrossWorkProbe(
           documentId: ALPHA_ID,
           branchId: branchB.branchId,
           userId: USER_ID as never,
-          draftRevisionToken: reviewedPreview.draftRevisionToken,
-          operationIds: reviewedPreview.operations.map((operation) => operation.operationId),
         })
       : await realBranchPush.pushToLive({
           branchId: branchB.branchId,

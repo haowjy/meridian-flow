@@ -280,8 +280,6 @@ export type DraftReviewApi = {
     draftId?: string;
     branchId?: string;
     userId: UserId;
-    draftRevisionToken?: number;
-    operationIds: string[];
     signal?: AbortSignal;
   }): Promise<DraftAcceptResult>;
   reject(input: {

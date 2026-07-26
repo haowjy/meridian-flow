@@ -119,8 +119,6 @@ export async function handleWorkDraftAcceptRequest(
     draftId?: string;
     branchId?: string;
     userId: UserId;
-    draftRevisionToken: number;
-    operationIds: string[];
     signal?: AbortSignal;
   },
 ): Promise<DraftAcceptResponse> {
@@ -155,11 +153,10 @@ export async function handleWorkDraftRejectRequest(
 }
 
 function toWireReviewOperation<
-  T extends { directionalClosure?: unknown; actorUserId?: unknown; sourceUpdateIds?: unknown },
+  T extends { directionalClosure?: unknown; sourceUpdateIds?: unknown },
 >(operation: T) {
   const {
     directionalClosure: _directionalClosure,
-    actorUserId: _actorUserId,
     sourceUpdateIds: _sourceUpdateIds,
     ...wire
   } = operation;
@@ -187,10 +184,6 @@ function mapAcceptResult(
     return result.branchId
       ? { status: "applied", branchId: result.branchId }
       : { status: "applied", draftId: result.draftId };
-  if (result.status === "partial_applied") {
-    return { status: "partial_applied", draftId: result.draftId };
-  }
-  if (result.status === "stale_draft") return result;
   if (result.status === "discarded") {
     throw createError({ statusCode: 410, message: "Draft is no longer active" });
   }

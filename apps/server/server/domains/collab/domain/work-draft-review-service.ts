@@ -173,7 +173,6 @@ export function createWorkDraftReviewService(input: {
     workId: WorkId;
     documentId: DocumentId;
     branchId: string;
-    journalIds?: readonly number[];
     userId: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
@@ -189,7 +188,6 @@ export function createWorkDraftReviewService(input: {
           branchId: command.branchId,
           manifestBranchId: manifestBranch.branchId,
           manifestEntryDocumentId: command.documentId,
-          ...(command.journalIds ? { contentJournalIds: command.journalIds } : {}),
           pushedByUserId: command.userId,
           signal: command.signal,
         });
@@ -239,75 +237,41 @@ export function createWorkDraftReviewService(input: {
       },
       async accept(command) {
         if (command.workId) {
-          const branch = command.branchId ? await input.branches.getBranch(command.branchId) : null;
+          const reviewId = command.branchId ?? command.draftId;
+          const branch = reviewId ? await input.branches.getBranch(reviewId) : null;
           if (
             branch?.kind === "work_draft" &&
             branch.status === "active" &&
             branch.workId === command.workId &&
             branch.documentId === command.documentId
           ) {
-            const selectedOperationIds = command.operationIds;
             if (
-              command.draftRevisionToken !== undefined &&
-              command.draftRevisionToken !== branch.generation
+              command.projectId &&
+              (await isDraftOnlyManifestDocument({
+                projectId: command.projectId,
+                workId: command.workId,
+                documentId: command.documentId,
+              }))
             ) {
-              return {
-                status: "stale_draft" as const,
-                draftId: branch.branchId,
-                draftRevisionToken: branch.generation,
-              };
-            }
-            const preview = await previewWorkDraftBranch({
-              projectId: command.projectId,
-              documentId: command.documentId,
-              workId: command.workId,
-            });
-            if (preview?.status !== "active") throw new Error("draft_not_found");
-            const requested = new Set(selectedOperationIds);
-            const operationIds = new Set<string>();
-            for (const operation of preview.operations) {
-              if (!requested.has(operation.operationId)) continue;
-              for (const id of operation.acceptClosureOperationIds ?? [operation.operationId]) {
-                operationIds.add(id);
-              }
-            }
-            const updateIds = new Set<number>();
-            for (const operation of preview.operations) {
-              if (!operationIds.has(operation.operationId)) continue;
-              for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
-            }
-            if (preview.isNewDocument && command.projectId) {
               await pushNewDocumentToLiveWithManifest({
                 projectId: command.projectId,
                 workId: command.workId,
                 documentId: command.documentId,
                 branchId: branch.branchId,
-                journalIds: [...updateIds],
                 userId: command.userId,
                 signal: command.signal,
               });
             } else {
-              await input.branchPush.pushSelectedToLive({
+              await input.branchPush.pushToLive({
                 branchId: branch.branchId,
-                journalIds: [...updateIds],
                 pushedByUserId: command.userId,
                 signal: command.signal,
               });
             }
-            const appliedEveryPreviewedOperation = preview.operations.every((operation) =>
-              requested.has(operation.operationId),
-            );
-            if (appliedEveryPreviewedOperation) {
-              return {
-                status: "applied" as const,
-                draftId: branch.branchId,
-                branchId: branch.branchId,
-                appliedUpdateSeq: 0,
-              };
-            }
             return {
-              status: "partial_applied" as const,
+              status: "applied" as const,
               draftId: branch.branchId,
+              branchId: branch.branchId,
               appliedUpdateSeq: 0,
             };
           }

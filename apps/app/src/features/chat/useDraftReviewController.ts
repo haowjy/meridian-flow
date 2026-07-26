@@ -4,9 +4,8 @@
  * The dock Changes cards and editor header both address the same inline review
  * session; this controller keeps whole-draft apply/discard, per-card
  * Apply/Discard, review closure, and editor focus state on one
- * path so review surfaces cannot drift. Per-card Apply routes the closure-aware
- * `acceptDraft` mutation with `operationIds`; per-card Discard routes through
- * the same server-backed discard mutation with `operationIds`.
+ * path so review surfaces cannot drift. Every Apply commits the whole current
+ * branch; per-card Discard remains operation-scoped.
  */
 
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -64,8 +63,6 @@ export type DraftReviewController = {
   inlineReview: InlineDraftReview | null;
   reviewRoomName: string | null;
   reviewRoomError: boolean;
-  staleDraft: DraftReviewSelection | null;
-  staleDraftMessage: string | null;
   isAccepting: boolean;
   isRejecting: boolean;
   isPending: boolean;
@@ -127,10 +124,6 @@ export function useDraftReviewController(
 ): DraftReviewController {
   const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
-  // A dedicated accept mutation for per-card Apply keeps its in-flight state
-  // separate from whole-draft Apply all, so the two surfaces never disable
-  // each other by sharing one `isPending`.
-  const operationAcceptMutation = useAcceptDraft();
   const rejectMutation = useRejectDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
@@ -161,7 +154,6 @@ export function useDraftReviewController(
   stateRef.current = state;
 
   const inlineReview = inlineReviewFromState(state);
-  const staleDraft = state.staleDraft;
   const acceptingOperationId =
     disposition.phase !== "idle" && disposition.target.kind === "apply-operation"
       ? disposition.target.operationId
@@ -170,9 +162,6 @@ export function useDraftReviewController(
   const inlineDiscardError = state.inlineDiscardError;
   const dockDispositionError = state.dockDispositionError;
 
-  const staleDraftMessage = staleDraft
-    ? "The draft changed — review the latest changes before applying."
-    : null;
   const activeDisposition = disposition.phase === "idle" ? null : disposition.target;
   const isAccepting = activeDisposition?.kind === "apply-draft";
   const isRejecting = activeDisposition?.kind === "discard-draft";
@@ -285,8 +274,8 @@ export function useDraftReviewController(
         ...(preview.branchId ? { branchId: preview.branchId } : {}),
       };
     },
-    apply: ({ documentId }, scope, request) =>
-      (scope === "operation" ? operationAcceptMutation : acceptMutation).mutateAsync({
+    apply: ({ documentId }, _scope, request) =>
+      acceptMutation.mutateAsync({
         projectId,
         workId,
         threadId,
@@ -499,8 +488,6 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      staleDraft,
-      staleDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
@@ -533,8 +520,6 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      staleDraft,
-      staleDraftMessage,
       isAccepting,
       isRejecting,
       isPending,

@@ -76,6 +76,8 @@ export interface ReviewOperation {
   beforeExcerpt?: string;
   afterExcerpt?: string;
   hunkCount: number;
+  /** Writer responsible for a writer-origin operation. */
+  actorUserId?: string;
 }
 
 export interface ReviewHunkSpan {
@@ -117,20 +119,11 @@ export type ReviewBlockHunk = ReviewHunkBase & {
 
 export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
-export type DraftAcceptResponse =
-  | { status: "applied"; draftId?: string; branchId?: string }
-  | { status: "partial_applied"; draftId: string }
-  | { status: "stale_draft"; draftId: string; draftRevisionToken: number };
-
-type DraftAcceptRequestBase = {
-  draftRevisionToken: number;
-  /** Exact operation set shown by the preview this Apply confirms. */
-  operationIds: string[];
-};
+export type DraftAcceptResponse = { status: "applied"; draftId?: string; branchId?: string };
 
 export type DraftAcceptRequest =
-  | (DraftAcceptRequestBase & { draftId: string; branchId?: never })
-  | (DraftAcceptRequestBase & { branchId: string; draftId?: never });
+  | { draftId: string; branchId?: never }
+  | { branchId: string; draftId?: never };
 
 export type DraftRejectResponse = { status: "discarded"; draftId?: string; branchId?: string };
 export type DraftRejectRequest =

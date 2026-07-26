@@ -10,7 +10,7 @@ import {
 } from "./draft-review-session";
 
 describe("DraftReviewSession", () => {
-  it("keeps reviewed Apply pinned while dock Apply acquires every current preview", async () => {
+  it("applies the whole branch without acquiring operation-scoped evidence", async () => {
     const ports = commandPorts();
     const session = new DraftReviewSession(() => ports);
     const reviewed = {
@@ -33,8 +33,6 @@ describe("DraftReviewSession", () => {
       "draft",
       {
         draftId: "draft-1",
-        operationIds: ["reviewed-operation"],
-        draftRevisionToken: 1,
         branchId: "branch-1",
       },
     );
@@ -45,7 +43,7 @@ describe("DraftReviewSession", () => {
         { documentId: "document-2", draftId: "draft-2" },
       ]),
     ).resolves.toEqual([{ kind: "applied" }, { kind: "applied" }]);
-    expect(ports.loadPreview).toHaveBeenCalledTimes(2);
+    expect(ports.loadPreview).not.toHaveBeenCalled();
     expect(ports.apply).toHaveBeenCalledTimes(3);
   });
 });
@@ -123,30 +121,6 @@ describe("draft review derived identity", () => {
     });
 
     expect(inlineReviewFromState(draftReviewReducer(entered, action))).toBeNull();
-  });
-
-  it("keeps review open on the refreshed draft after a stale Apply", () => {
-    const entered = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
-      type: "enterInline",
-      documentId: "document-1",
-      draftId: "draft-1",
-    });
-    const refreshed = draftReviewReducer(entered, {
-      type: "applySucceeded",
-      documentId: "document-1",
-      draftId: "draft-1",
-      outcome: {
-        command: { kind: "stale", draftId: "draft-refreshed" },
-        message: null,
-        refreshDraftId: "draft-refreshed",
-        materializedDocument: false,
-      },
-    });
-
-    expect(inlineReviewFromState(refreshed)).toMatchObject({
-      documentId: "document-1",
-      draftId: "draft-refreshed",
-    });
   });
 
   it("preserves state and selection identity when the same preview reports twice", () => {

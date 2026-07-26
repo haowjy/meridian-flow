@@ -282,10 +282,6 @@ function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
       return <Trans>That change moved. Refreshed to the latest changes.</Trans>;
     case "apply-failed":
       return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
-    case "change-applied":
-      return <Trans>Change applied.</Trans>;
-    case "changes-moved-refreshed":
-      return <Trans>The changes moved on. Refreshed the list.</Trans>;
     case "apply-dependencies-first":
       return (
         <Trans>

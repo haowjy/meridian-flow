@@ -1175,8 +1175,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: createdDocumentId as never,
           branchId: preview.branchId,
           userId: USER_ID as never,
-          draftRevisionToken: preview.draftRevisionToken,
-          operationIds: [createOperation.operationId],
         }),
       ).resolves.toMatchObject({ status: "applied" });
 
@@ -1289,8 +1287,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: CREATED_DOC_B_ID as never,
         branchId: previewB.branchId,
         userId: USER_ID as never,
-        draftRevisionToken: previewB.draftRevisionToken,
-        operationIds: previewB.operations.map((operation) => operation.operationId),
       });
 
       const liveMembership = await collab.resolveManifestMembership({

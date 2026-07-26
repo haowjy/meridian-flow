@@ -74,8 +74,6 @@ export class DraftDispositionLock {
 export type DraftCommandOutcome =
   | { kind: "blocked" }
   | { kind: "applied" }
-  | { kind: "partial-applied" }
-  | { kind: "stale"; draftId: string }
   | { kind: "discarded" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
@@ -90,21 +88,13 @@ export type DraftApplyPreview = {
   branchId?: string;
 };
 
-type LatestDraftPreviewRevision = {
-  operationIds: readonly string[];
-  draftRevisionToken: number;
-  branchId?: string;
-};
-
 export type DraftApplyRequest = {
   draftId: string;
-  operationIds: string[];
-  draftRevisionToken: number;
   branchId?: string;
 };
 
 export type DraftApplyOutcome = {
-  command: Extract<DraftCommandOutcome, { kind: "applied" | "partial-applied" | "stale" }>;
+  command: Extract<DraftCommandOutcome, { kind: "applied" }>;
   message: InlineReviewMessage | null;
   refreshDraftId: string | null;
   materializedDocument: boolean;
@@ -162,25 +152,9 @@ export class DraftReviewSession {
       { kind: "apply-operation", ...selection, operationId },
       (reservation, ports) => {
         ports.operationApplyStarted(operationId);
-        return this.applyRequest(
-          selection,
-          "operation",
-          reservation,
-          ports,
-          acquireDraftApplyRequest({
-            scope: "operation",
-            draftId: selection.draftId,
-            operationId,
-            loadLatestPreview: async () => {
-              const preview = await ports.loadPreview(selection);
-              return {
-                operationIds: preview.operationIds,
-                draftRevisionToken: preview.draftRevisionToken,
-                ...(preview.branchId ? { branchId: preview.branchId } : {}),
-              };
-            },
-          }),
-        );
+        return this.applyRequest(selection, "operation", reservation, ports, {
+          draftId: selection.draftId,
+        });
       },
     );
   }
@@ -228,7 +202,7 @@ export class DraftReviewSession {
     try {
       for (const draft of drafts) {
         const outcome = await (mode === "apply"
-          ? this.applyDraft(draft, reservation, ports, () => this.currentDraftRequest(draft, ports))
+          ? this.applyDraft(draft, reservation, ports, () => this.currentDraftRequest(draft))
           : this.discardDraftWithReservation(draft, reservation, ports));
         outcomes.push(outcome);
         if (!batchOutcomeSucceeded(mode, outcome)) break;
@@ -259,10 +233,6 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     try {
       const request = await requestPromise;
-      if (request.operationIds.length === 0) {
-        if (scope === "draft") ports.draftFailed(selection, "apply-failed");
-        return { kind: "failed", code: "apply-failed" };
-      }
       this.disposition.advance(reservation, "mutating");
       const response = await ports.apply(selection, scope, request);
       this.disposition.advance(reservation, "settling");
@@ -296,12 +266,8 @@ export class DraftReviewSession {
     }
   }
 
-  private async currentDraftRequest(
-    selection: DraftReviewSelection,
-    ports: DraftReviewCommandPorts,
-  ): Promise<DraftApplyRequest> {
-    const preview = await ports.loadPreview(selection);
-    return acquireDraftApplyRequest({ scope: "draft", preview });
+  private currentDraftRequest(selection: DraftReviewSelection): DraftApplyRequest {
+    return { draftId: selection.draftId };
   }
 
   private async withReservation(
@@ -323,9 +289,7 @@ export class DraftReviewSession {
 }
 
 function batchOutcomeSucceeded(mode: "apply" | "discard", outcome: DraftCommandOutcome): boolean {
-  return mode === "apply"
-    ? outcome.kind === "applied" || outcome.kind === "partial-applied"
-    : outcome.kind === "discarded";
+  return mode === "apply" ? outcome.kind === "applied" : outcome.kind === "discarded";
 }
 
 function batchErrorCode(
@@ -342,32 +306,7 @@ function batchErrorCode(
 export function acquireDraftApplyRequest(input: {
   scope: "draft";
   preview: DraftApplyPreview;
-}): DraftApplyRequest;
-export function acquireDraftApplyRequest(input: {
-  scope: "operation";
-  draftId: string;
-  operationId: string;
-  loadLatestPreview: () => Promise<LatestDraftPreviewRevision>;
-}): Promise<DraftApplyRequest>;
-export function acquireDraftApplyRequest(
-  input:
-    | { scope: "draft"; preview: DraftApplyPreview }
-    | {
-        scope: "operation";
-        draftId: string;
-        operationId: string;
-        loadLatestPreview: () => Promise<LatestDraftPreviewRevision>;
-      },
-): DraftApplyRequest | Promise<DraftApplyRequest> {
-  if (input.scope === "operation") {
-    return input.loadLatestPreview().then((preview) =>
-      requestFromPreview({
-        ...preview,
-        draftId: input.draftId,
-        operationIds: [input.operationId],
-      }),
-    );
-  }
+}): DraftApplyRequest {
   return requestFromPreview(input.preview);
 }
 
@@ -388,8 +327,6 @@ export type InlineReviewMessageCode =
   | "open-review-first"
   | "change-moved"
   | "apply-failed"
-  | "change-applied"
-  | "changes-moved-refreshed"
   | "apply-dependencies-first"
   | "changes-moved-confirm-again"
   | "discard-stale"
@@ -404,34 +341,14 @@ export type InlineReviewMessage = {
 
 /** Interpret a server Apply response exactly once for every Apply surface. */
 export function draftApplyOutcome(
-  scope: DraftApplyScope,
-  response: DraftAcceptResponse,
+  _scope: DraftApplyScope,
+  _response: DraftAcceptResponse,
 ): DraftApplyOutcome {
-  const refreshDraftId = response.status === "stale_draft" ? response.draftId : null;
-  const materializedDocument =
-    response.status === "applied" ||
-    (scope === "operation" && response.status === "partial_applied");
-  if (response.status === "applied") {
-    return {
-      command: { kind: "applied" },
-      message: null,
-      refreshDraftId,
-      materializedDocument,
-    };
-  }
-  if (response.status === "partial_applied") {
-    return {
-      command: { kind: "partial-applied" },
-      message: scope === "operation" ? { code: "change-applied" } : null,
-      refreshDraftId,
-      materializedDocument,
-    };
-  }
   return {
-    command: { kind: "stale", draftId: response.draftId },
-    message: scope === "operation" ? { code: "changes-moved-refreshed" } : null,
-    refreshDraftId,
-    materializedDocument,
+    command: { kind: "applied" },
+    message: null,
+    refreshDraftId: null,
+    materializedDocument: true,
   };
 }
 
@@ -439,8 +356,6 @@ function requestFromPreview(preview: Omit<DraftApplyPreview, "documentId">): Dra
   return {
     draftId: preview.draftId,
     ...(preview.branchId ? { branchId: preview.branchId } : {}),
-    draftRevisionToken: preview.draftRevisionToken,
-    operationIds: [...preview.operationIds],
   };
 }
 
@@ -450,7 +365,6 @@ export type DraftReviewSurface =
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
-  staleDraft: DraftReviewSelection | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   dockDispositionError: DraftBatchErrorCode | null;
@@ -478,7 +392,6 @@ export type DraftReviewAction =
 
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
-  staleDraft: null,
   inlineReviewMessage: null,
   inlineDiscardError: null,
   dockDispositionError: null,
@@ -493,7 +406,6 @@ export function draftReviewReducer(
       return {
         ...state,
         surface: inlineSurfaceForEnter(state.surface, action),
-        staleDraft: null,
         inlineReviewMessage: null,
         inlineDiscardError: null,
       };
@@ -532,13 +444,11 @@ export function draftReviewReducer(
       return clearInlineState({
         ...state,
         surface: { kind: "none" },
-        staleDraft: null,
       });
     case "exitReview":
       return clearInlineState({
         ...state,
         surface: { kind: "none" },
-        staleDraft: null,
       });
     default:
       return state;
@@ -561,17 +471,7 @@ function stateAfterAcceptResult(
   state: DraftReviewState,
   input: { documentId: string; draftId: string; outcome: DraftApplyOutcome },
 ): DraftReviewState {
-  const { documentId, draftId, outcome } = input;
-  if (outcome.command.kind === "stale") {
-    return {
-      ...state,
-      surface: { kind: "inline", documentId, draftId: outcome.command.draftId },
-      staleDraft: { documentId, draftId: outcome.command.draftId },
-    };
-  }
-  if (outcome.command.kind === "partial-applied") {
-    return { ...state, staleDraft: null };
-  }
+  const { draftId } = input;
   return clearDraftReviewState(state, draftId);
 }
 
@@ -580,7 +480,6 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
   return {
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
-    staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
     inlineReviewMessage: currentDraftId === draftId ? null : state.inlineReviewMessage,
     inlineDiscardError: currentDraftId === draftId ? null : state.inlineDiscardError,
   };

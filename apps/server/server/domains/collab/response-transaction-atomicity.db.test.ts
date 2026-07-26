@@ -1,4 +1,5 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -255,8 +256,6 @@ describe("change trail (postgres)", () => {
       documentId: ALPHA_ID,
       branchId: preview.branchId,
       userId: USER_ID as never,
-      draftRevisionToken: preview.draftRevisionToken,
-      operationIds: preview.operations.map((operation) => operation.operationId),
     });
 
     const [afterRow] = await db.select().from(schema.branchWriteJournal);
@@ -266,7 +265,105 @@ describe("change trail (postgres)", () => {
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 
-  it("preserves an unrelated writer insertion while applying a stale selective edit", async () => {
+  it("applies writer edits added to the draft after the reviewed preview", async () => {
+    const harness = createHarness();
+    const responseId = "00000000-0000-4000-8000-000000000845";
+    await harness.seedWriterDocument("Original draft root.", responseId);
+    await harness.stageCertifiedReplace({
+      responseId,
+      find: "Original draft root.",
+      content: "AI DRAFT PROPOSAL",
+    });
+    const fixture = harness.crossWorkProbeFixture();
+    const reviewed = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    if (reviewed.status !== "active" || !reviewed.branchId) {
+      throw new Error("missing reviewed draft preview");
+    }
+    const branch = await fixture.liveCoordinator.withDocument(ALPHA_ID, (liveDoc) =>
+      fixture.branchStore.resolveWorkDraftBranchForWork({
+        documentId: ALPHA_ID,
+        workId: WORK_ID,
+        liveDoc,
+      }),
+    );
+    const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
+    if (!block) throw new Error("draft writer block missing");
+    const draftTextLength = fixture.model.getText(block).length;
+    fixture.model.applyTextEdit(
+      toDocHandle(branch.doc),
+      block,
+      { from: draftTextLength, to: draftTextLength },
+      " WRITER DRAFT MARKER",
+    );
+    const committed = await fixture.branchCoordinator.commitSyncFromDoc({
+      branchId: branch.branchId,
+      sourceDoc: branch.doc,
+      expectedGeneration: branch.generation,
+      source: "writer",
+      actorUserId: USER_ID as never,
+      threadId: null,
+      turnId: null,
+      wId: null,
+      updateMeta: null,
+    });
+    branch.doc.destroy();
+    expect(committed).toBe(true);
+
+    const current = await fixture.collab.draftReview.preview({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+    });
+    expect(current).toMatchObject({
+      status: "active",
+      operations: expect.arrayContaining([
+        expect.objectContaining({ kind: "writer", actorUserId: USER_ID }),
+      ]),
+    });
+
+    await expect(
+      fixture.collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId: ALPHA_ID,
+        branchId: reviewed.branchId,
+        userId: USER_ID as never,
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("AI DRAFT PROPOSAL");
+    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("WRITER DRAFT MARKER");
+    await expect(
+      fixture.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+    await expect(
+      fixture.collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      db
+        .select({ id: schema.branchWriteJournal.id })
+        .from(schema.branchWriteJournal)
+        .where(
+          and(
+            eq(schema.branchWriteJournal.branchId, reviewed.branchId),
+            inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
+          ),
+        ),
+    ).resolves.toEqual([]);
+  });
+
+  it("preserves an unrelated live writer insertion while applying the branch", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000836";
     await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
@@ -307,14 +404,12 @@ describe("change trail (postgres)", () => {
         documentId: ALPHA_ID,
         branchId: preview.branchId,
         userId: USER_ID as never,
-        draftRevisionToken: preview.draftRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
       }),
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
   });
 
-  it("preserves a writer insertion between separate stale selective edits", async () => {
+  it("preserves a live writer insertion between two branch edits", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000837";
     await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
@@ -385,8 +480,6 @@ describe("change trail (postgres)", () => {
         documentId: ALPHA_ID,
         branchId: preview.branchId,
         userId: USER_ID as never,
-        draftRevisionToken: preview.draftRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
       }),
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toBe(
@@ -466,8 +559,6 @@ describe("change trail (postgres)", () => {
         documentId: ALPHA_ID,
         branchId: preview.branchId,
         userId: USER_ID as never,
-        draftRevisionToken: preview.draftRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
       }),
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("REFINED WHOLE DRAFT");
