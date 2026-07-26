@@ -24,6 +24,7 @@ import {
 } from "@/client/working-set";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
+import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
@@ -192,10 +193,14 @@ function expandToggle(
  * only the props they need.
  */
 function DesktopProject(props: ResolvedProjectViewProps) {
+  // Inline review on the Editor screen holds the left rail collapsed to give
+  // the manuscript prose width. The hold is derived from review being open and
+  // never written to prefs, so the writer's saved rail state returns by itself.
+  const proseFocus = useReviewProseFocus(props.activeScreen);
   // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
   // merged SurfaceLayoutMap; that single subscription drives all layout-driven
   // re-renders — no separate whole-prefs subscription is needed.
-  const layout = useProjectLayout(props.activeScreen);
+  const layout = useProjectLayout(props.activeScreen, proseFocus.collapsedSlots);
 
   const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
     useProjectSurfacePrefsActions();
@@ -215,14 +220,17 @@ function DesktopProject(props: ResolvedProjectViewProps) {
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
-  // Collapse/expand calls targeting a surface that is currently the dock
-  // occupant drive the shared dock pref instead of the surface's own pref —
-  // the dock reads as one persistent sidebar across screens.
+  // The single writer-driven collapse entry. Calls targeting a surface that is
+  // currently the dock occupant drive the shared dock pref instead of the
+  // surface's own pref — the dock reads as one persistent sidebar across
+  // screens. An explicit expand also releases review's hold on the rail, so
+  // the control can never write a pref that changes nothing on screen.
   const setCollapsedFor = (surfaceId: SurfaceId, collapsed: boolean) => {
     if (layout[surfaceId].slot === "dock") {
       setDockCollapsed(collapsed);
       return;
     }
+    if (!collapsed) proseFocus.release();
     setSurfaceCollapsed(surfaceId, collapsed);
   };
   const close = (surfaceId: SurfaceId) => () => {
@@ -330,7 +338,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
         layout={layout}
         surfaces={stableSurfaces}
         onSetWidth={setSurfaceWidth}
-        onSetCollapsed={setSurfaceCollapsed}
+        onSetCollapsed={setCollapsedFor}
         onSetDockWidth={setDockWidth}
         onSetDockCollapsed={setDockCollapsed}
         bounds={SURFACE_WIDTH_BOUNDS}

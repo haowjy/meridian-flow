@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: entering draft review no longer overwrites the writer's saved
+  rail preference — review holds the left rail collapsed as a derived layout
+  state, so a second draft opened mid-review or a project change cannot leave
+  the rail collapsed after review ends.
 - `apps/app`, `apps/server`, `packages/contracts`: selective Discard now uses
   server-owned discard classes only; obsolete Apply closure and client-side
   class reconstruction are gone.

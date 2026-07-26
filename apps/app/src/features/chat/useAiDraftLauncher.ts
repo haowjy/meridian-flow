@@ -10,35 +10,22 @@
  *
  * On the Editor screen review also has a manuscript to land on, so there it
  * additionally points the editor at the drafted document (a tab switch inside
- * the same screen) and collapses the left rail to give the prose width. That
- * rail collapse is effect-restored: we watch `controller.inlineReview` and put
- * the rail back when it returns to `null`. The remembered dock view is left as
- * Changes — the writer switches back explicitly.
+ * the same screen). The prose width review gets there is NOT set here — the
+ * shell derives it from review being open (`review-prose-focus.ts`), so this
+ * launcher never touches the writer's saved rail preference. The remembered
+ * dock view is left as Changes — the writer switches back explicitly.
  */
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { useContextTabsActions } from "@/client/stores";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
-import { occupantOf, useProjectLayout } from "@/features/project/layout";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
 import type { ScreenKey } from "@/features/project/shell/screens";
 
 import { useDraftReview } from "./DraftReviewProvider";
-
-interface RailSnapshot {
-  left: boolean;
-}
-
-// Snapshot lives at module scope because the surface that CAPTURES it may
-// unmount before review ends — the editor surface remounts when review swaps
-// rooms, and a tab switch inside the Editor screen replaces the pane that
-// captured it. A per-hook `useRef` would be discarded across those hops. A
-// single-user client only ever has one review in flight, so a shared module
-// ref is enough.
-let priorRailSnapshot: RailSnapshot | null = null;
 
 export function useAiDraftLauncher() {
   const { controller } = useDraftReview();
@@ -50,28 +37,12 @@ export function useAiDraftLauncher() {
     path?: string;
   };
   const navigate = useNavigate();
-  // Mirrors the route's screen resolution — the dock view and rail occupant
-  // are read off the screen the writer is actually on.
+  // Mirrors the route's screen resolution — the dock view is read off the
+  // screen the writer is actually on.
   const screen: ScreenKey = search.screen ?? (search.thread ? "chat" : "home");
-  const layout = useProjectLayout(screen);
-  const { setSurfaceCollapsed, setDockCollapsed } = useProjectSurfacePrefsActions();
+  const { setDockCollapsed } = useProjectSurfacePrefsActions();
   const setDockView = useDockViewStore((state) => state.setDockView);
   const { openTab } = useContextTabsActions();
-
-  // Restore the left rail when review exits. The existence of
-  // `priorRailSnapshot` is the flag — any consumer whose review has ended and
-  // whose snapshot is still set is responsible for restoring. We don't track
-  // `wasInReview` in a per-instance ref because the editor surface remounts
-  // across enter/exit (the editor swaps rooms), which would reset any
-  // ref-based flag. `priorRailSnapshot` at module scope survives that hop.
-  useEffect(() => {
-    if (controller.inlineReview === null && priorRailSnapshot) {
-      const snap = priorRailSnapshot;
-      priorRailSnapshot = null;
-      const leftId = occupantOf(layout, "rail-l");
-      if (leftId) setSurfaceCollapsed(leftId, snap.left);
-    }
-  }, [controller.inlineReview, layout, setSurfaceCollapsed]);
 
   const openAiDraft = useCallback(
     (
@@ -99,17 +70,10 @@ export function useAiDraftLauncher() {
       }
 
       // Only the Editor screen has a manuscript for the inline diff to land on.
-      // There, give review the prose width and point the editor at the drafted
-      // document — a tab switch within this screen, never a screen change. The
-      // server sends the canonical manuscript path; document names are not
-      // unique and lose folder context.
+      // There, point the editor at the drafted document — a tab switch within
+      // this screen, never a screen change. The server sends the canonical
+      // manuscript path; document names are not unique and lose folder context.
       if (screen === "context") {
-        const leftId = occupantOf(layout, "rail-l");
-        // Capture the left rail before collapsing so restore-on-exit puts it
-        // back the way we found it.
-        priorRailSnapshot = { left: leftId ? layout[leftId].collapsed : false };
-        if (leftId) setSurfaceCollapsed(leftId, true);
-
         const targetPath = group.contextPath ?? undefined;
         const showsTarget = search.scheme === "manuscript" && search.path === targetPath;
         if (!showsTarget && params.projectId && targetPath) {
@@ -131,7 +95,6 @@ export function useAiDraftLauncher() {
     },
     [
       controller,
-      layout,
       navigate,
       openTab,
       params.projectId,
@@ -140,7 +103,6 @@ export function useAiDraftLauncher() {
       search.scheme,
       setDockCollapsed,
       setDockView,
-      setSurfaceCollapsed,
     ],
   );
 
