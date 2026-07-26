@@ -8,7 +8,7 @@ import {
   resolveMainDatabaseNames,
 } from "./lib/dev-env";
 import { formatMigrationFailure, runMigrations } from "./lib/migration-runner";
-import { isProcessAlive, managedTestDatabaseOwnerPid } from "./lib/test-db-lifecycle";
+import { isProcessAncestor, managedTestDatabaseOwnerPid } from "./lib/test-db-lifecycle";
 
 const ALLOW_MAIN_DATABASE = "--allow-main-database";
 const MANAGED_TEST_DATABASE = "--managed-test-database";
@@ -40,7 +40,11 @@ async function main(): Promise<void> {
 
   if (args.includes(MANAGED_TEST_DATABASE)) {
     const ownerPid = managedTestDatabaseOwnerPid(databaseName, mainDatabaseNames);
-    if (!isLocalDevPostgres(databaseUrl) || ownerPid === undefined || !isProcessAlive(ownerPid)) {
+    if (
+      !isLocalDevPostgres(databaseUrl) ||
+      ownerPid === undefined ||
+      !isProcessAncestor(ownerPid)
+    ) {
       throw new Error(
         `${MANAGED_TEST_DATABASE} requires an active, locally managed disposable database`,
       );

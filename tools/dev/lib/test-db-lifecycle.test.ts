@@ -3,6 +3,7 @@ import { resolveWorktreeDatabaseName } from "./dev-env";
 import {
   classifyTestDatabaseCleanup,
   isManualTestDatabase,
+  isProcessAncestor,
   managedTestDatabaseOwnerPid,
   managedTestDatabaseUrl,
   managedTestDatabaseWorkerUrl,
@@ -30,6 +31,8 @@ describe("managed DB test lifecycle", () => {
   it("recognizes only reserved managed and manual test namespaces", () => {
     expect(managedTestDatabaseOwnerPid("meridian_test-run-manual", ["meridian"])).toBeUndefined();
     expect(managedTestDatabaseOwnerPid("other_test-run-1234-5678", ["meridian"])).toBeUndefined();
+    expect(managedTestDatabaseOwnerPid("meridian_test-run-0-5678", ["meridian"])).toBeUndefined();
+    expect(managedTestDatabaseOwnerPid("meridian_test-run-1-5678", ["meridian"])).toBeUndefined();
     expect(managedTestDatabaseOwnerPid("meridian_migrations_1234_5678", ["meridian"])).toBe(1234);
     expect(isManualTestDatabase("meridian_test-manual-probe", ["meridian"])).toBe(true);
     expect(isManualTestDatabase("meridian_feature-test", ["meridian"])).toBe(false);
@@ -37,6 +40,21 @@ describe("managed DB test lifecycle", () => {
       "reserved test namespace",
     );
     expect(resolveWorktreeDatabaseName("meridian", "feature-test")).toBe("meridian_feature-test");
+  });
+
+  it("authorizes only a real ancestor as the active managed-run owner", () => {
+    const parents = new Map([
+      [500, 400],
+      [400, 300],
+      [300, 1],
+    ]);
+    const parentOf = (pid: number) => parents.get(pid);
+
+    expect(isProcessAncestor(300, 500, parentOf)).toBe(true);
+    expect(isProcessAncestor(400, 500, parentOf)).toBe(true);
+    expect(isProcessAncestor(200, 500, parentOf)).toBe(false);
+    expect(isProcessAncestor(0, 500, parentOf)).toBe(false);
+    expect(isProcessAncestor(1, 500, parentOf)).toBe(false);
   });
 
   it("protects live owners and manual tests while reclaiming stopped runs", () => {

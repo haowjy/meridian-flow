@@ -85,6 +85,14 @@ if (!enabled || !databaseUrl) {
                 'Historical settled outbox migration fixture',
                 'primary',
                 'idle'
+              ),
+              (
+                '00000000-0000-4000-8000-000000000012',
+                '00000000-0000-4000-8000-000000000002',
+                '00000000-0000-4000-8000-000000000001',
+                'Incomplete settled outbox migration fixture',
+                'primary',
+                'idle'
               );
             INSERT INTO change_trail_shells (
               id, thread_id, owner_kind, state, version, change_count,
@@ -112,6 +120,17 @@ if (!enabled || !databaseUrl) {
                 4,
                 2,
                 NULL
+              ),
+              (
+                '00000000-0000-4000-8000-000000000013',
+                '00000000-0000-4000-8000-000000000012',
+                'shared',
+                'building',
+                3,
+                8,
+                3,
+                2,
+                NULL
               );
             INSERT INTO change_trail_delivery_outbox (
               event_id, thread_id, trail_id, version, event_kind,
@@ -124,8 +143,8 @@ if (!enabled || !databaseUrl) {
                 '00000000-0000-4000-8000-000000000004',
                 2,
                 'updated',
-                3,
                 1,
+                0,
                 1
               ),
               (
@@ -167,6 +186,16 @@ if (!enabled || !databaseUrl) {
                 9,
                 4,
                 2
+              ),
+              (
+                '00000000-0000-4000-8000-000000000014',
+                '00000000-0000-4000-8000-000000000012',
+                '00000000-0000-4000-8000-000000000013',
+                2,
+                'settled',
+                NULL,
+                NULL,
+                NULL
               );
           `);
         },
@@ -196,6 +225,12 @@ if (!enabled || !databaseUrl) {
               change_count: 3,
               swept_change_count: 1,
               document_count: 1,
+            },
+            {
+              event_id: "00000000-0000-4000-8000-000000000014",
+              change_count: 0,
+              swept_change_count: 0,
+              document_count: 0,
             },
           ]);
         },

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { validateDbName } from "./dev-db";
 
 const MANAGED_TEST_SLUG_PREFIX = "test-run-";
@@ -39,13 +40,15 @@ export function managedTestDatabaseOwnerPid(
     const managedPrefix = `${baseDatabaseName}_${MANAGED_TEST_SLUG_PREFIX}`;
     if (databaseName.startsWith(managedPrefix)) {
       const match = databaseName.slice(managedPrefix.length).match(/^(\d+)-(\d+)(?:-worker-\d+)?$/);
-      return match ? Number(match[1]) : undefined;
+      const ownerPid = match ? Number(match[1]) : undefined;
+      return ownerPid !== undefined && ownerPid > 1 ? ownerPid : undefined;
     }
 
     const migrationPrefix = `${baseDatabaseName}_migrations_`;
     if (databaseName.startsWith(migrationPrefix)) {
       const match = databaseName.slice(migrationPrefix.length).match(/^(\d+)_(\d+)$/);
-      return match ? Number(match[1]) : undefined;
+      const ownerPid = match ? Number(match[1]) : undefined;
+      return ownerPid !== undefined && ownerPid > 1 ? ownerPid : undefined;
     }
   }
   return undefined;
@@ -67,6 +70,43 @@ export function isProcessAlive(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+function parentProcessId(pid: number): number | undefined {
+  try {
+    const value = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const parentPid = Number(value);
+    return Number.isSafeInteger(parentPid) && parentPid >= 0 ? parentPid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isProcessAncestor(
+  ancestorPid: number,
+  descendantPid = process.pid,
+  resolveParent = parentProcessId,
+): boolean {
+  if (
+    !Number.isSafeInteger(ancestorPid) ||
+    ancestorPid <= 1 ||
+    !Number.isSafeInteger(descendantPid) ||
+    descendantPid <= 1
+  ) {
+    return false;
+  }
+
+  const seen = new Set<number>();
+  let currentPid: number | undefined = descendantPid;
+  while (currentPid !== undefined && currentPid > 1 && !seen.has(currentPid)) {
+    if (currentPid === ancestorPid) return true;
+    seen.add(currentPid);
+    currentPid = resolveParent(currentPid);
+  }
+  return false;
 }
 
 export interface TestDatabaseCleanupClassification {
