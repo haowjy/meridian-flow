@@ -118,18 +118,16 @@ function undoManager(editor: Editor): UndoManager {
 
 let applyProps: (next: Partial<EditorViewProps>) => void = () => {};
 
-function Harness() {
-  const [props, setProps] = useState<EditorViewProps>({
-    documentId: "document-1",
-    projectId: "project-1",
-  });
+function Harness({ initial }: { initial: EditorViewProps }) {
+  const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
   return <EditorView {...props} />;
 }
 
 describe("editor lifetime", () => {
   it("survives query churn and live surface changes, and rebuilds only for a new room", async () => {
-    await withReactRoot(<Harness />, async () => {
+    const initial = { documentId: "document-1", projectId: "project-1" };
+    await withReactRoot(<Harness initial={initial} />, async () => {
       const original = tagOf(mountedEditor(), "editor");
       const history = undoManager(mountedEditor());
       await act(async () => {
@@ -165,6 +163,14 @@ describe("editor lifetime", () => {
         applyProps({ documentId: "document-2" });
       });
       expect(tagOf(mountedEditor(), "editor")).not.toBe(original);
+    });
+  });
+
+  it("opens read-only when the surface asks for it — the phone must not mount editable", async () => {
+    const initial = { documentId: "document-3", projectId: "project-1", editable: false };
+    await withReactRoot(<Harness initial={initial} />, async () => {
+      expect(mountedEditor().isEditable).toBe(false);
+      expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
     });
   });
 });
