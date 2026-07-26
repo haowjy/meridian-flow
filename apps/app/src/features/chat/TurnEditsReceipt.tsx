@@ -5,7 +5,7 @@
  * Review / Apply / Discard belong to the composer-attached DraftDock. Undo/Redo
  * is the only turn control. At rest, the receipt is one quiet borderless line.
  * The header names a single document when possible and carries durable word
- * deltas; expanding lists each document.
+ * deltas; expanding lists each document in the same bordered card.
  *
  * Turn lineage owns Undo authority. Authorized trail detail owns durable row
  * evidence, navigation, and Restore state.
@@ -131,14 +131,17 @@ export function TurnEditsReceipt({
     }
   }
   return (
-    <div className="mt-3 min-h-7 rounded-md text-caption text-ink-muted" data-turn-receipt>
+    <div
+      className="mt-3 overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
+      data-turn-receipt
+    >
       {/* The WHOLE header row is the expand/collapse target — hover washes the
             full width, wrapping around the Undo chip, which fences its own click. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted"
+        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
       >
         <button
           type="button"
@@ -198,7 +201,7 @@ export function TurnEditsReceipt({
         )}
       </div>
       {expanded ? (
-        <div id={panelId} className="mt-1 border-border-subtle border-t py-1">
+        <div id={panelId} className="border-border-subtle border-t py-1">
           {guardCopy ? (
             <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason>
               {guardCopy}
