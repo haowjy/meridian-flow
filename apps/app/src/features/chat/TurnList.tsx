@@ -110,10 +110,31 @@ export function TurnList({
     if (conversationReveal?.turnId == null) return;
     const index = visibleTurns.findIndex((turn) => turn.id === conversationReveal.turnId);
     if (index < 0) return;
-    virtualizer.scrollToIndex(index, { align: "center" });
-    // The turn IS the target when no change row was named — nothing deeper will
-    // complete the handshake, so landing on it finishes the reveal.
-    if (conversationReveal.changeId === null) completeConversationReveal(conversationReveal);
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const land = () => {
+      virtualizer.scrollToIndex(index, { align: "center" });
+      // The turn IS the target when no change row was named — nothing deeper
+      // will complete the handshake, so landing on it finishes the reveal.
+      if (conversationReveal.changeId === null) completeConversationReveal(conversationReveal);
+    };
+
+    // A reveal reaches a transcript that is still parked: revealing a docked
+    // chat un-collapses it in the same commit that delivers the request, and
+    // this viewport is 0×0 until that lands. Centering inside a zero-height
+    // scroller computes garbage, so wait for the surface to get its size.
+    if (viewport.clientHeight > 0) {
+      land();
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (viewport.clientHeight === 0) return;
+      observer.disconnect();
+      land();
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
   }, [conversationReveal, virtualizer, visibleTurns]);
 
   // Follow policy. `getTotalSize()` is the content revision: it changes on turn
