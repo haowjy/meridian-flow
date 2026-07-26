@@ -626,6 +626,9 @@ importers:
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@meridian/prosemirror-schema':
+        specifier: workspace:*
+        version: link:../prosemirror-schema
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(postgres@3.4.9)

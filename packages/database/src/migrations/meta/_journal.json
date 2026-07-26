@@ -463,6 +463,13 @@
       "when": 1785081594270,
       "tag": "0065_secret_red_ghost",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1785087911214,
+      "tag": "0066_tired_proudstar",
+      "breakpoints": true
     }
   ]
 }
