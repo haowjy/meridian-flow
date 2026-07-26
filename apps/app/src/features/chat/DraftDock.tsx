@@ -74,7 +74,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     rows,
     aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
     mounted: rows.length > 0,
-    inFlightDraftId: null,
     isBusy: controller.isDisposing,
     dispositionError: controller.dockDispositionError,
     reviewRow,
@@ -120,10 +119,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const single = dock.rows.length === 1;
   const firstPending = dock.rows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
-
-  function verbBusy(row: DockRow): boolean {
-    return dock.isBusy || dock.inFlightDraftId === row.draft.draftId;
-  }
 
   return (
     <div className="mx-2 rounded-t-lg bg-dock-surface" data-draft-dock="settled">
@@ -239,7 +234,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <DockRowLine
               key={row.documentId}
               row={row}
-              busy={verbBusy(row)}
+              busy={dock.isBusy}
               onOpen={() => dock.openRow(row)}
               onReview={() => dock.reviewRow(row)}
             />
