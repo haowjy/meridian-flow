@@ -138,15 +138,8 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     return (
       [...this.pushes]
         .reverse()
-        .find(
-          (push) =>
-            push.branchId === branchId && push.receiptPayload?.branchGeneration === generation,
-        ) ?? null
+        .find((push) => push.branchId === branchId && push.branchGeneration === generation) ?? null
     );
-  }
-
-  async listPushesForDocument(documentId: DocumentId) {
-    return this.pushes.filter((push) => push.documentId === documentId);
   }
 
   async listJournalRowsForTurn(input: {
@@ -219,11 +212,10 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     const push: PushLineageRow = {
       id: this.pushes.length + 1,
       branchId: input.branch.branchId,
+      branchGeneration: input.branch.generation,
       documentId: input.branch.documentId,
-      pushKind: input.receiptPayload.pushKind,
       journalIds: input.journalRows.map((row) => row.id),
       upstreamUpdateSeq,
-      receiptPayload: input.receiptPayload,
       idempotencyKey: input.idempotencyKey,
       receiptId: input.receiptId,
       threadId: input.journalRows[0]?.threadId ?? null,
@@ -300,47 +292,6 @@ function serviceFixture(input: {
   };
 }
 
-async function noActiveCompanionFixture(existing: boolean) {
-  const contentLive = docFromMarkdown("Content base.");
-  const contentBranchDoc = cloneDoc(contentLive);
-  const before = Y.encodeStateVector(contentBranchDoc);
-  model.insertBlocks(toDocHandle(contentBranchDoc), null, codec.parse("Draft addition."));
-  const contentBranch = branchFromDoc("branch_content", CONTENT_ID, contentBranchDoc);
-  const manifestLive = docFromMarkdown("Manifest base.");
-  const manifestBranch = branchFromDoc("branch_manifest", MANIFEST_ID, manifestLive);
-  const row = rowFor(contentBranch, 1, Y.encodeStateAsUpdate(contentBranchDoc, before));
-  const journal = createInMemoryJournal();
-  const prior: PushLineageRow = {
-    id: 41,
-    branchId: contentBranch.branchId,
-    documentId: CONTENT_ID,
-    pushKind: "selective",
-    journalIds: [41],
-    upstreamUpdateSeq: 1,
-    receiptPayload: {
-      version: 1,
-      documentId: CONTENT_ID,
-      branchId: contentBranch.branchId,
-      branchGeneration: contentBranch.generation,
-      pushKind: "selective",
-      changedBlocks: [],
-      totalWordDelta: 0,
-    },
-    idempotencyKey: "prior-push",
-  };
-  const fixture = serviceFixture({
-    branches: [contentBranch, manifestBranch],
-    rows: [row],
-    pushes: existing ? [prior] : [],
-    journal,
-    liveDocs: new Map([
-      [CONTENT_ID, contentLive],
-      [MANIFEST_ID, manifestLive],
-    ]),
-  });
-  return { ...fixture, contentBranch, manifestBranch, prior };
-}
-
 async function blindConflictFixture() {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
   const contentBranchDoc = cloneDoc(contentLive);
@@ -391,40 +342,7 @@ async function blindConflictFixture() {
 }
 
 describe("branch push review regressions", () => {
-  it("preserves the selective verifier error identity for content rows", async () => {
-    const live = docFromMarkdown("Base.");
-    const split = createCollabYDoc({ gc: false });
-    const text = split.getText("split-dependency");
-    const beforeFirst = Y.encodeStateVector(split);
-    text.insert(0, "A");
-    const firstUpdate = Y.encodeStateAsUpdate(split, beforeFirst);
-    const beforeSecond = Y.encodeStateVector(split);
-    text.insert(1, "B");
-    const secondUpdate = Y.encodeStateAsUpdate(split, beforeSecond);
-    const branch = branchFromDoc("branch_content", CONTENT_ID, split);
-    const rows = [rowFor(branch, 1, firstUpdate), rowFor(branch, 2, secondUpdate)];
-    const journal = createInMemoryJournal();
-    await journal.append(CONTENT_ID, Y.encodeStateAsUpdate(live), { origin: "system", seq: 0 });
-    const { service } = serviceFixture({
-      branches: [branch],
-      rows,
-      journal,
-      liveDocs: new Map([[CONTENT_ID, live]]),
-    });
-
-    const error = await service
-      .pushSelectedToLive({ branchId: branch.branchId, journalIds: [2] })
-      .catch((cause: unknown) => cause);
-
-    expect(error).toBeInstanceOf(BranchPeerIntegrationError);
-    expect(error).toMatchObject({
-      operation: "selective_push_peer",
-      journalIds: [2],
-      message: "selective_push_peer left pending Yjs dependencies for journal rows 2",
-    });
-  });
-
-  it("preserves the selective verifier error identity for manifest rows", async () => {
+  it("rejects manifest membership rows with missing Yjs dependencies", async () => {
     const contentLive = docFromMarkdown("Content base.");
     const contentDoc = cloneDoc(contentLive);
     const beforeContent = Y.encodeStateVector(contentDoc);
@@ -474,43 +392,10 @@ describe("branch push review regressions", () => {
 
     expect(error).toBeInstanceOf(BranchPeerIntegrationError);
     expect(error).toMatchObject({
-      operation: "selective_push_peer",
+      operation: "manifest_membership_push",
       journalIds: [2],
-      message: "selective_push_peer left pending Yjs dependencies for journal rows 2",
+      message: "manifest_membership_push left pending Yjs dependencies for journal rows 2",
     });
-  });
-
-  it.each([
-    { selection: [] as number[], existing: false, expected: "noop" },
-    { selection: [999], existing: false, expected: "noop" },
-    { selection: [] as number[], existing: true, expected: "already_pushed" },
-    { selection: [999], existing: true, expected: "already_pushed" },
-  ])("maps companion selection $selection with existing=$existing to $expected", async ({
-    selection,
-    existing,
-    expected,
-  }) => {
-    const { service, contentBranch, manifestBranch, prior } =
-      await noActiveCompanionFixture(existing);
-
-    const result = await service.pushToLiveWithManifestEntry({
-      branchId: contentBranch.branchId,
-      manifestBranchId: manifestBranch.branchId,
-      manifestEntryDocumentId: CONTENT_ID,
-      contentJournalIds: selection,
-    });
-
-    expect(result.status).toBe(expected);
-    if (existing) expect(result).toMatchObject({ status: "already_pushed", push: prior });
-    else {
-      expect(result).toMatchObject({
-        status: "noop",
-        branchId: contentBranch.branchId,
-        documentId: CONTENT_ID,
-        branchGeneration: contentBranch.generation,
-        reason: "no_active_rows",
-      });
-    }
   });
 
   it("always applies writer-overlapping whole and companion pushes", async () => {

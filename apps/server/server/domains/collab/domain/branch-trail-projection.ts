@@ -1,13 +1,13 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
 import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { NoticePort } from "../../notices/index.js";
 import type {
   BranchJournalRow,
   PreparedPush,
-  PushReceiptPayload,
+  PublicationBlockChange,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
@@ -142,7 +142,8 @@ function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
 }
 
 export function preparedTrailChanges(input: {
-  receipt: PushReceiptPayload;
+  documentId: DocumentId;
+  changedBlocks: readonly PublicationBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
@@ -172,7 +173,7 @@ export function preparedTrailChanges(input: {
   }
   const replacementIds = new Set(provenReplacements.values());
   const candidateContentRelocations = new Map<string, string>();
-  for (const target of input.receipt.changedBlocks) {
+  for (const target of input.changedBlocks) {
     if (
       target.beforeText === null ||
       target.afterText === null ||
@@ -180,7 +181,7 @@ export function preparedTrailChanges(input: {
     ) {
       continue;
     }
-    const sources = input.receipt.changedBlocks.filter(
+    const sources = input.changedBlocks.filter(
       (candidate) =>
         candidate.blockId !== target.blockId &&
         !provenReplacements.has(candidate.blockId) &&
@@ -199,9 +200,7 @@ export function preparedTrailChanges(input: {
       ([, sourceId]) => sourceClaimCounts.get(sourceId) === 1,
     ),
   );
-  const changedBlockById = new Map(
-    input.receipt.changedBlocks.map((block) => [block.blockId, block]),
-  );
+  const changedBlockById = new Map(input.changedBlocks.map((block) => [block.blockId, block]));
   const contentRelocations = new Map<string, string>();
   for (const [targetId, sourceId] of directContentRelocations) {
     const visited = new Set([targetId]);
@@ -227,7 +226,7 @@ export function preparedTrailChanges(input: {
       survivingAfterBlockByIdentity.set(canonicalBlockKey(identity), { blockId, block, identity });
     }
   }
-  return input.receipt.changedBlocks.flatMap((block, sequence) => {
+  return input.changedBlocks.flatMap((block, sequence) => {
     if (relocatedSourceIds.has(block.blockId)) return [];
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
@@ -251,7 +250,7 @@ export function preparedTrailChanges(input: {
         ? null
         : beforeSnapshot?.clientID !== undefined && beforeSnapshot.clock !== undefined
           ? {
-              documentId: input.receipt.documentId,
+              documentId: input.documentId,
               clientID: beforeSnapshot.clientID,
               clock: beforeSnapshot.clock,
             }
@@ -263,7 +262,7 @@ export function preparedTrailChanges(input: {
     const contentRelocated = contentRelocations.has(block.blockId);
     const replacementId = sameIdentityAfter?.blockId ?? provenReplacements.get(block.blockId);
     const replacement = replacementId
-      ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
+      ? input.changedBlocks.find((candidate) => candidate.blockId === replacementId)
       : undefined;
     const replacementBlock =
       sameIdentityAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
@@ -320,7 +319,7 @@ export function preparedTrailChanges(input: {
     if (!stableIdentity) return [];
     return owners.map((owner, ownerIndex) => ({
       changeId: `${input.receiptId}:${canonicalBlockKey(stableIdentity)}`,
-      documentId: input.receipt.documentId,
+      documentId: input.documentId,
       pushId: null,
       receiptId: input.receiptId,
       kind: location.kind,

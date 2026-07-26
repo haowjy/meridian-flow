@@ -456,6 +456,13 @@
       "when": 1784957644774,
       "tag": "0064_writer_impact",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1785081594270,
+      "tag": "0065_secret_red_ghost",
+      "breakpoints": true
     }
   ]
 }

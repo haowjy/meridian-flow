@@ -1536,43 +1536,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return stageCertifiedReplace({ responseId, find: restored, content: "" });
   }
 
-  async function seedSelectivePush() {
-    await collab.writeDocument({
-      documentId: ALPHA_ID,
-      markdown: "Selective base.",
-      origin: { type: "user", actorUserId: USER_ID as never },
-      threadId: THREAD_ID,
-    });
-    await collab
-      .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId: undefined },
-      );
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    const last = model.getBlocks(toDocHandle(branch.doc)).at(-1) ?? null;
-    model.insertBlocks(toDocHandle(branch.doc), last, markupCodec.parse("Selected addition."));
-    const committed = await branchCoordinator.commitSyncFromDoc({
-      branchId: branch.branchId,
-      sourceDoc: branch.doc,
-      expectedGeneration: branch.generation,
-      source: "agent",
-      actorUserId: null,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      wId: null,
-      updateMeta: null,
-    });
-    branch.doc.destroy();
-    if (!committed) throw new Error("selective draft edit did not commit");
-    const [row] = await db
-      .select({ id: schema.branchWriteJournal.id })
-      .from(schema.branchWriteJournal)
-      .where(eq(schema.branchWriteJournal.status, "active"));
-    if (!row) throw new Error("selective journal row missing");
-    return { branchId: branch.branchId, journalId: row.id };
-  }
-
   async function seedDiscardedDependencyPush() {
     await collab.writeDocument({
       documentId: ALPHA_ID,
@@ -1705,7 +1668,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
     seedCheckpointRestoredExplicitDelete,
-    seedSelectivePush,
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
       db,
@@ -1925,11 +1887,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;
     },
-    selectivePush: (input: { branchId: string; journalId: number }) =>
-      realBranchPush.pushSelectedToLive({
-        branchId: input.branchId,
-        journalIds: [input.journalId],
-      }),
     reverseTurn: (direction: "undo" | "redo") =>
       collab.reverseTurn({
         threadId: THREAD_ID,

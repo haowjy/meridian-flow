@@ -61,24 +61,14 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
   expect(attribution.operations).toEqual([]);
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: beforeId,
-          beforeText: "Writer text.",
-          afterText: "Agent replacement.",
-          beforeWordCount: 2,
-          afterWordCount: 2,
-          wordDelta: 0,
-        },
-      ],
-      totalWordDelta: 0,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: beforeId,
+        beforeText: "Writer text.",
+        afterText: "Agent replacement.",
+      },
+    ],
     receiptId: "receipt-same-identity",
     ownersByBlock: attribution.ownersByBlock,
     operations: [],
@@ -115,24 +105,14 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
   expect(getBlockItemId(emptiedBlock)).toEqual(getBlockItemId(afterBlock));
 
   const emptiedChanges = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: afterId,
-          beforeText: "Agent replacement.",
-          afterText: "",
-          beforeWordCount: 2,
-          afterWordCount: 0,
-          wordDelta: -2,
-        },
-      ],
-      totalWordDelta: -2,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: afterId,
+        beforeText: "Agent replacement.",
+        afterText: "",
+      },
+    ],
     receiptId: "receipt-emptied-identity",
     ownersByBlock: new Map([[afterId, [null]]]),
     operations: [],
@@ -189,32 +169,19 @@ it("projects identity-shifted surviving prose as deletion of the displaced passa
   const survivingId = model.getBlockId(survivingAfter);
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: fountainId,
-          beforeText: "The fountain froze.",
-          afterText: "The captain waited.",
-          beforeWordCount: 3,
-          afterWordCount: 3,
-          wordDelta: 0,
-        },
-        {
-          blockId: captainId,
-          beforeText: "The captain waited.",
-          afterText: null,
-          beforeWordCount: 3,
-          afterWordCount: 0,
-          wordDelta: -3,
-        },
-      ],
-      totalWordDelta: -3,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: fountainId,
+        beforeText: "The fountain froze.",
+        afterText: "The captain waited.",
+      },
+      {
+        blockId: captainId,
+        beforeText: "The captain waited.",
+        afterText: null,
+      },
+    ],
     receiptId: "receipt-shift",
     ownersByBlock: new Map([
       [fountainId, [null]],
@@ -291,40 +258,24 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
   const secondSurvivorId = model.getBlockId(secondSurvivor);
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: alphaId,
-          beforeText: "Alpha.",
-          afterText: "Bravo.",
-          beforeWordCount: 1,
-          afterWordCount: 1,
-          wordDelta: 0,
-        },
-        {
-          blockId: bravoId,
-          beforeText: "Bravo.",
-          afterText: "Charlie.",
-          beforeWordCount: 1,
-          afterWordCount: 1,
-          wordDelta: 0,
-        },
-        {
-          blockId: charlieId,
-          beforeText: "Charlie.",
-          afterText: null,
-          beforeWordCount: 1,
-          afterWordCount: 0,
-          wordDelta: -1,
-        },
-      ],
-      totalWordDelta: -1,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: alphaId,
+        beforeText: "Alpha.",
+        afterText: "Bravo.",
+      },
+      {
+        blockId: bravoId,
+        beforeText: "Bravo.",
+        afterText: "Charlie.",
+      },
+      {
+        blockId: charlieId,
+        beforeText: "Charlie.",
+        afterText: null,
+      },
+    ],
     receiptId: "receipt-multi-shift",
     ownersByBlock: new Map([
       [alphaId, [null]],
@@ -405,40 +356,24 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
   const secondSurvivorId = model.getBlockId(secondSurvivor);
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: alphaId,
-          beforeText: "Alpha.",
-          afterText: "Bravo.",
-          beforeWordCount: 1,
-          afterWordCount: 1,
-          wordDelta: 0,
-        },
-        {
-          blockId: bravoId,
-          beforeText: "Bravo.",
-          afterText: null,
-          beforeWordCount: 1,
-          afterWordCount: 0,
-          wordDelta: -1,
-        },
-        {
-          blockId: charlieId,
-          beforeText: "Charlie.",
-          afterText: "Bravo.",
-          beforeWordCount: 1,
-          afterWordCount: 1,
-          wordDelta: 0,
-        },
-      ],
-      totalWordDelta: -1,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: alphaId,
+        beforeText: "Alpha.",
+        afterText: "Bravo.",
+      },
+      {
+        blockId: bravoId,
+        beforeText: "Bravo.",
+        afterText: null,
+      },
+      {
+        blockId: charlieId,
+        beforeText: "Charlie.",
+        afterText: "Bravo.",
+      },
+    ],
     receiptId: "receipt-relocation-fan-in",
     ownersByBlock: new Map([
       [alphaId, [null]],
@@ -527,40 +462,24 @@ it("does not relocate content from a structurally replaced source block", () => 
   const xrayId = model.getBlockId(xray);
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: alphaId,
-          beforeText: "Alpha.",
-          afterText: "Bravo.",
-          beforeWordCount: 1,
-          afterWordCount: 1,
-          wordDelta: 0,
-        },
-        {
-          blockId: bravoId,
-          beforeText: "Bravo.",
-          afterText: null,
-          beforeWordCount: 1,
-          afterWordCount: 0,
-          wordDelta: -1,
-        },
-        {
-          blockId: xrayId,
-          beforeText: null,
-          afterText: "Xray.",
-          beforeWordCount: 0,
-          afterWordCount: 1,
-          wordDelta: 1,
-        },
-      ],
-      totalWordDelta: 0,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: alphaId,
+        beforeText: "Alpha.",
+        afterText: "Bravo.",
+      },
+      {
+        blockId: bravoId,
+        beforeText: "Bravo.",
+        afterText: null,
+      },
+      {
+        blockId: xrayId,
+        beforeText: null,
+        afterText: "Xray.",
+      },
+    ],
     receiptId: "receipt-replacement-relocation",
     ownersByBlock: new Map([
       [alphaId, [null]],
@@ -628,24 +547,14 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
   const collidingHash = "same-snapshot-hash";
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: collidingHash,
-          beforeText: "Alpha.",
-          afterText: "Xray.",
-          beforeWordCount: 1,
-          afterWordCount: 1,
-          wordDelta: 0,
-        },
-      ],
-      totalWordDelta: 0,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: collidingHash,
+        beforeText: "Alpha.",
+        afterText: "Xray.",
+      },
+    ],
     receiptId: "receipt-hash-collision",
     ownersByBlock: new Map([[collidingHash, [null]]]),
     operations: [],
@@ -725,32 +634,19 @@ it("projects a structurally adjacent whole-block replacement as one modification
   ]);
 
   const [change] = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: beforeId,
-          beforeText: "Writer text.",
-          afterText: null,
-          beforeWordCount: 2,
-          afterWordCount: 0,
-          wordDelta: -2,
-        },
-        {
-          blockId: afterId,
-          beforeText: null,
-          afterText: "Agent replacement.",
-          beforeWordCount: 0,
-          afterWordCount: 2,
-          wordDelta: 2,
-        },
-      ],
-      totalWordDelta: 0,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: beforeId,
+        beforeText: "Writer text.",
+        afterText: null,
+      },
+      {
+        blockId: afterId,
+        beforeText: null,
+        afterText: "Agent replacement.",
+      },
+    ],
     receiptId: "receipt-1",
     ownersByBlock: new Map([[beforeId, [null]]]),
     operations: attribution.operations.map((operation) => ({
@@ -829,32 +725,19 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
   });
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: deletedId,
-          beforeText: "Deleted.",
-          afterText: null,
-          beforeWordCount: 1,
-          afterWordCount: 0,
-          wordDelta: -1,
-        },
-        {
-          blockId: insertedId,
-          beforeText: null,
-          afterText: "Unrelated.",
-          beforeWordCount: 0,
-          afterWordCount: 1,
-          wordDelta: 1,
-        },
-      ],
-      totalWordDelta: 0,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: deletedId,
+        beforeText: "Deleted.",
+        afterText: null,
+      },
+      {
+        blockId: insertedId,
+        beforeText: null,
+        afterText: "Unrelated.",
+      },
+    ],
     receiptId: "receipt-unrelated",
     ownersByBlock: new Map([
       [deletedId, [null]],
@@ -907,32 +790,19 @@ it("preserves proven replacement promotion", () => {
   const afterId = model.getBlockId(afterBlock);
 
   const changes = preparedTrailChanges({
-    receipt: {
-      version: 1,
-      documentId: "document-1" as never,
-      branchId: "branch-1",
-      branchGeneration: 1,
-      pushKind: "whole",
-      changedBlocks: [
-        {
-          blockId: beforeId,
-          beforeText: "Before.",
-          afterText: null,
-          beforeWordCount: 1,
-          afterWordCount: 0,
-          wordDelta: -1,
-        },
-        {
-          blockId: afterId,
-          beforeText: null,
-          afterText: "After.",
-          beforeWordCount: 0,
-          afterWordCount: 1,
-          wordDelta: 1,
-        },
-      ],
-      totalWordDelta: 0,
-    },
+    documentId: "document-1" as never,
+    changedBlocks: [
+      {
+        blockId: beforeId,
+        beforeText: "Before.",
+        afterText: null,
+      },
+      {
+        blockId: afterId,
+        beforeText: null,
+        afterText: "After.",
+      },
+    ],
     receiptId: "receipt-proven",
     ownersByBlock: new Map([[beforeId, [null]]]),
     operations: [

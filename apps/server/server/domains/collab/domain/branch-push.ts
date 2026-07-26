@@ -5,15 +5,10 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
-import {
-  buildCompanionCandidates,
-  buildSelectedRowCandidates,
-  buildWholeBranchCandidates,
-} from "./branch-push-candidates.js";
+import { buildCompanionCandidates, buildWholeBranchCandidates } from "./branch-push-candidates.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
-  type BranchPushConflictEcho,
   BranchPushRetryExhaustedError,
   type BranchPushService,
   type BranchPushServiceInput,
@@ -21,14 +16,11 @@ import {
   type PendingLiveSettlement,
   type PushCandidate,
   type PushLineageRow,
-  type PushReceiptPayload,
   type PushToLiveResult,
 } from "./branch-push-contracts.js";
 import {
   assertNoPendingIntegration,
   assertRowsIntegrated,
-  buildReceipt,
-  conflictEchoFrom,
   stablePushIdempotencyKey,
   wholeBranchPushUpdate,
 } from "./branch-push-plan.js";
@@ -43,9 +35,7 @@ type ComputedCandidate = {
   candidate: PushCandidate;
   branch: BranchSnapshot;
   pushUpdate: Uint8Array;
-  receipt: PushReceiptPayload;
   idempotencyKey: string;
-  conflictEcho?: BranchPushConflictEcho;
 };
 
 type BatchPipelineResult =
@@ -93,14 +83,14 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     branch: BranchSnapshot,
   ): Promise<ComputedCandidate> {
     const rows = candidate.rows;
-    const pushKind = candidate.materialization === "whole" ? "whole" : "selective";
     const liveDoc = await loadLiveDoc(branch.documentId);
-    const afterDoc = createCollabYDoc({ gc: false });
+    let afterDoc: Y.Doc | null = null;
     let branchDoc: Y.Doc | null = null;
     try {
       let pushUpdate: Uint8Array;
-      if (candidate.materialization === "selected_rows") {
-        const operation = "selective_push_peer";
+      if (candidate.kind === "manifest") {
+        const operation = "manifest_membership_push";
+        afterDoc = createCollabYDoc({ gc: false });
         Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
         for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
         assertNoPendingIntegration(
@@ -113,42 +103,21 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       } else {
         branchDoc = materializeBranch(branch);
         pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
-        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
-        Y.applyUpdate(afterDoc, pushUpdate);
       }
-      const receipt = buildReceipt({
-        model: input.model,
-        documentId: branch.documentId,
-        branch,
-        pushKind,
-        beforeDoc: liveDoc,
-        afterDoc,
-      });
       return {
         candidate,
         branch,
         pushUpdate,
-        receipt,
         idempotencyKey: stablePushIdempotencyKey({
           branchId: branch.branchId,
           generation: branch.generation,
           journalIds: rows.map((row) => row.id),
-          pushKind,
+          publicationKind: candidate.kind,
         }),
-        ...(pushKind === "whole"
-          ? {
-              conflictEcho: conflictEchoFrom({
-                currentBranch: branch,
-                currentRows: rows,
-                currentReceipt: receipt,
-                priorPushes: await input.journalReadStore.listPushesForDocument(branch.documentId),
-              }),
-            }
-          : {}),
       };
     } finally {
       branchDoc?.destroy();
-      afterDoc.destroy();
+      afterDoc?.destroy();
       liveDoc.destroy();
     }
   }
@@ -164,7 +133,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         branch: phase.branch,
         rows: phase.candidate.rows,
         pushUpdate: phase.pushUpdate,
-        receipt: phase.receipt,
         idempotencyKey: phase.idempotencyKey,
         receiptId,
       },
@@ -354,7 +322,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       status: "pushed" as const,
       push: result.pushes[0] as PushLineageRow,
       update: phase.pushUpdate,
-      ...(phase.conflictEcho ? { conflictEcho: phase.conflictEcho } : {}),
       ...(result.branchReset ? { branchReset: result.branchReset } : {}),
     };
   }
@@ -377,32 +344,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         pushInput.signal,
       );
       if (result.kind === "conflict") {
-        return {
-          status: "already_pushed",
-          push: result.push,
-          ...(result.phases[0]?.conflictEcho
-            ? { conflictEcho: result.phases[0].conflictEcho }
-            : {}),
-        };
+        return { status: "already_pushed", push: result.push };
       }
-      return mapCommitted(result);
-    });
-
-  const pushSelectedToLive: BranchPushService["pushSelectedToLive"] = (pushInput) =>
-    withActiveWorkDraftBranchLock([pushInput.branchId], async ([branch], lease) => {
-      const source = await sourceFor(branch as BranchSnapshot);
-      const batch = buildSelectedRowCandidates({
-        source,
-        journalIds: pushInput.journalIds,
-        ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-      });
-      const result = await executeCandidateBatch(
-        batch,
-        branchMap([source.branch]),
-        lease,
-        pushInput.signal,
-      );
-      if (result.kind === "conflict") return { status: "already_pushed", push: result.push };
       return mapCommitted(result);
     });
 
@@ -419,17 +362,11 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           content,
           manifest,
           manifestEntryDocumentId: pushInput.manifestEntryDocumentId,
-          ...(pushInput.contentJournalIds
-            ? { contentJournalIds: pushInput.contentJournalIds }
-            : {}),
           ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
           ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
         });
-        if (built.kind === "no_active_rows") {
-          return mapNoActiveRows(await noActiveRows(built.branch));
-        }
         const result = await executeCandidateBatch(
-          built.batch,
+          built,
           branchMap([content.branch, manifest.branch]),
           lease,
           pushInput.signal,
@@ -464,7 +401,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
 
   return {
     pushToLive,
-    pushSelectedToLive,
     pushToLiveWithManifestEntry,
     recoverPendingLiveSettlements: transition.recover,
     ...workPushPolicy,

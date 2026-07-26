@@ -26,7 +26,6 @@ export type CrossWorkProbeResult = {
   };
   bApply: {
     status: string;
-    conflictEcho: unknown;
   };
   manuscript: {
     beforeAApply: string;
@@ -282,7 +281,6 @@ export async function runCrossWorkProbe(
     },
     bApply: {
       status: bResult.status,
-      conflictEcho: serializable("conflictEcho" in bResult ? bResult.conflictEcho : null),
     },
     manuscript: { beforeAApply, afterAApply, beforeBApply, afterBApply },
     approvedTextSurvived: afterBApply.includes("Writer-approved Work A text."),

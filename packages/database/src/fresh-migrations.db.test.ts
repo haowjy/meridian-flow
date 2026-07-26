@@ -30,6 +30,7 @@ if (!enabled || !databaseUrl) {
         "0062_mature_prism",
         "0063_milky_celestials",
         "0064_writer_impact",
+        "0065_secret_red_ghost",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
