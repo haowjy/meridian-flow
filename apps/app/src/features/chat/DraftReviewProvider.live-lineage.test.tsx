@@ -251,6 +251,36 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
+  it("keeps a draft-only tab when remote membership cannot be verified", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    getQueryDataMock.mockReturnValue([]);
+    fetchQueryMock.mockRejectedValue(new Error("offline"));
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps a draft-only tab when a replacement active draft appears during reconciliation", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    getQueryDataMock.mockReturnValue(activeGroup().drafts);
+    fetchQueryMock.mockResolvedValue(contextTreeResponse(false));
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("attaches the draft-room observer when its room name arrives after selection", async () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
