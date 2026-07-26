@@ -225,7 +225,8 @@ row + Yjs state) but absent from the live tree until accept. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
-never stored. The marker's lifecycle is event-based via
+never stored. Local disposition events and remote membership reconciliation
+both route through
 `resolveDraftOnlyTab(projectId, documentId, "committed" | "discarded")`:
 
 - Every accept path (whole-draft AND per-card, which materializes a new
@@ -233,14 +234,14 @@ never stored. The marker's lifecycle is event-based via
   tab, drop the marker — and must do so BEFORE the workDrafts refetch lands,
   because draft-group absence alone cannot distinguish accept from discard.
 - Whole-draft reject resolves `"discarded"` — close the tab.
-- A remotely closed selected row resolves the tab only when the refreshed list
-  carries truthful terminal evidence: `appliedAt` means `"committed"` and
-  `discardedAt` means `"discarded"`. Disappearance without terminal evidence
-  must exit safely without closing or graduating a draft-only tab.
-- `openTab`'s metadata merge deliberately never clears the marker (absent
-  keys don't override); `saveLastContextRoute` skips draftOnly tabs so a
-  discarded path can't replay on the next visit; `ContextPaneController`
-  repairs the route when a lifecycle resolve removes the route-active tab.
+- When a selected row disappears remotely from the active-only list, the
+  provider forces a fresh live-manuscript manifest read. Membership means
+  `"committed"`; absence means `"discarded"`. A failed read leaves the tab
+  intact, and a replacement active draft for that document cancels resolution.
+- A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
+  skips draftOnly tabs so a discarded path can't replay on the next visit;
+  `ContextPaneController` repairs the route when a lifecycle resolve removes
+  the route-active tab.
 
 Server-side twin: rejecting a new-document draft also removes its entry from
 the work manifest branch — otherwise the next accept in that work pushes the
