@@ -109,11 +109,15 @@ editor-host chrome, not a ProseMirror plugin.
 during inline draft review (`inReview`), since markers are a live-document
 surface and branch rooms have a different anchor space.
 
-Detail is lazy on open: it reads the trail detail endpoint. The resting surface
-contains only actor, time, Restore, and conversation navigation. A single
-Before/After control reveals the same trail-backed excerpt renderer used by the
-turn receipt; swept status adds no popover narration. Recovery runs through
-`useTrailRestore` (shared in
+Detail comes from the shared trail-detail cache in
+[`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
+it for every agent mark on screen, so the popover normally opens with its verbs
+already decided; while a first read is genuinely in flight the actions row is
+withheld rather than rendered half-empty, and only actor and time show. The
+resting surface contains only actor, time, Restore, and conversation
+navigation. A single Before/After control reveals the same trail-backed excerpt
+renderer used by the turn receipt; swept status adds no popover narration.
+Recovery runs through `useTrailRestore` (shared in
 [`features/change-trail`](../../change-trail/AGENTS.md)): eligibility, the
 idempotent command, and mark dismissal on a successful `applied` /
 `already_applied` outcome all live there; a failed action stays failed with a

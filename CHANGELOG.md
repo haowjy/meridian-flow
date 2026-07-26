@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: AI mark popovers now open with their Before/After and Restore
+  verbs already resolved — trail evidence is cached per trail and prefetched
+  while marks are on screen, instead of refetched on every open.
 - `apps/app`, `apps/server`: Auto-apply switches and draft review now share one
   efficient content-branch authority, ignoring manifest-only bookkeeping left
   after review while still publishing required new-document membership.

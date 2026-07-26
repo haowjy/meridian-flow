@@ -20,8 +20,10 @@ import {
   type UIEventHandler,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
@@ -36,6 +38,7 @@ import {
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
@@ -172,6 +175,28 @@ function SessionEditorView({
   const { threads: projectThreads } = useProjectThreads(projectId ?? "", {
     enabled: Boolean(projectId) && !inReview,
   });
+  // Marks render before anyone clicks one. Warming their trail detail here is
+  // what lets the popover open with its Before/After and Restore verbs already
+  // decided instead of filling them in after the first fetch lands.
+  const markers = useSyncExternalStore(
+    session.markerStore.subscribe,
+    session.markerStore.getSnapshot,
+    session.markerStore.getSnapshot,
+  );
+  usePrefetchTrailDetails(
+    useMemo(
+      () =>
+        inReview
+          ? []
+          : markers.flatMap((marker) =>
+              marker.author.kind === "agent" && !marker.dismissed
+                ? [{ threadId: marker.author.threadId, trailId: marker.group.trailId }]
+                : [],
+            ),
+      [inReview, markers],
+    ),
+  );
+
   const markerAgentName = useCallback(
     (threadId: string) => {
       const thread = projectThreads?.find((candidate) => candidate.id === threadId);

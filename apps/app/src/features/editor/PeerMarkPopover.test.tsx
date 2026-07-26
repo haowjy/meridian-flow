@@ -31,13 +31,18 @@ vi.mock("@lingui/core/macro", () => ({
   msg: (strings: TemplateStringsArray) => strings[0],
   t: (strings: TemplateStringsArray) => strings[0],
 }));
+let detailPending = false;
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn(), removeQueries: vi.fn() }),
-  useQuery: () => ({
-    data: [{ documentId: "document-1", changes: [currentChange] }],
-    isPending: false,
-    isError: false,
-  }),
+  queryOptions: <T,>(options: T) => options,
+  useQuery: () =>
+    detailPending
+      ? { data: undefined, isPending: true, isError: false }
+      : {
+          data: [{ documentId: "document-1", changes: [currentChange] }],
+          isPending: false,
+          isError: false,
+        },
 }));
 vi.mock("@/client/change-trails", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/client/change-trails")>();
@@ -73,6 +78,7 @@ const { PeerMarkPopover } = await import("./PeerMarkPopover");
 describe("PeerMarkPopover", () => {
   beforeEach(() => {
     currentChange = settledChange;
+    detailPending = false;
   });
 
   it("keeps the resting popover to actor, time, recovery, diff, and conversation", async () => {
@@ -84,6 +90,15 @@ describe("PeerMarkPopover", () => {
       expect(document.body.textContent).not.toContain("You asked");
       expect(document.body.textContent).not.toContain("This passage included edits");
       expect(document.body.textContent).not.toContain("Writer text.");
+    });
+  });
+
+  it("withholds the actions row until trail evidence resolves", async () => {
+    detailPending = true;
+
+    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
+      expect(document.body.textContent).toContain("AI assistant");
+      expect(buttonLabels()).toEqual([]);
     });
   });
 

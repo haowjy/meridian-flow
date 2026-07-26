@@ -4,17 +4,14 @@ import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  bodyFromTrailHashline,
-  changeTrailDetailKey,
-  readChangeTrail,
-} from "@/client/change-trails";
+import { bodyFromTrailHashline, changeTrailDetailKey } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
 import { useTrailRestore } from "@/features/change-trail/trail-change-recovery";
+import { changeTrailDetailQuery } from "@/features/change-trail/trail-detail-query";
 import { ChangeExcerpts } from "@/features/chat/ChangeViewRows";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
@@ -37,11 +34,8 @@ export function PeerMarkPopover({
   const agentAuthor = marker?.author.kind === "agent" ? marker.author : null;
   const queryClient = useQueryClient();
   const detail = useQuery({
-    queryKey: changeTrailDetailKey(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
-    queryFn: () => readChangeTrail(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
+    ...changeTrailDetailQuery(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
     enabled: Boolean(marker && agentAuthor),
-    staleTime: 0,
-    gcTime: 0,
   });
   const change = useMemo(() => {
     const document = detail.data?.find(
@@ -63,22 +57,14 @@ export function PeerMarkPopover({
   virtualAnchor.current.getBoundingClientRect = () =>
     target?.element.getBoundingClientRect() ?? new DOMRect();
 
+  // Losing access to the document is the only reason to drop cached evidence
+  // while the popover is open; closing it is not, or every open refetches.
   useEffect(() => {
     if (!marker || !agentAuthor) return;
     const queryKey = changeTrailDetailKey(agentAuthor.threadId, marker.group.trailId);
-    const evict = () => {
-      void queryClient.removeQueries({ queryKey });
-    };
-    const unsubscribe = getDocumentSessionRegistry().observe(
-      marker.group.documentId,
-      (document) => {
-        if (document.status === "access-lost") evict();
-      },
-    );
-    return () => {
-      unsubscribe();
-      evict();
-    };
+    return getDocumentSessionRegistry().observe(marker.group.documentId, (document) => {
+      if (document.status === "access-lost") void queryClient.removeQueries({ queryKey });
+    });
   }, [agentAuthor, marker, queryClient]);
 
   if (!marker || !target) return null;
@@ -136,7 +122,7 @@ export function PeerMarkPopover({
           </time>
         </div>
 
-        {agentAuthor ? (
+        {agentAuthor && !detail.isPending ? (
           <>
             {detailsOpen && change ? (
               <div className="border-border-subtle border-t pt-3">

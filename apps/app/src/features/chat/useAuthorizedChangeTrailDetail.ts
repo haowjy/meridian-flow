@@ -1,12 +1,9 @@
 /** Authorization-sensitive change-view data lifecycle. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
-import {
-  type ChangeTrailShell,
-  changeTrailDetailKey,
-  readChangeTrail,
-} from "@/client/change-trails";
+import { useCallback, useEffect, useRef } from "react";
+import { type ChangeTrailShell, changeTrailDetailKey } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { changeTrailDetailQuery } from "@/features/change-trail/trail-detail-query";
 
 export function useAuthorizedChangeTrailDetail(
   threadId: string,
@@ -19,21 +16,24 @@ export function useAuthorizedChangeTrailDetail(
     void queryClient.removeQueries({ queryKey: changeTrailDetailKey(threadId, shell.trailId) });
   }, [queryClient, shell.trailId, threadId]);
   const detail = useQuery({
-    queryKey: [...changeTrailDetailKey(threadId, shell.trailId), shell.version],
-    queryFn: () => readChangeTrail(threadId, shell.trailId),
+    ...changeTrailDetailQuery(threadId, shell.trailId),
     enabled: enabled && settled,
-    staleTime: 0,
-    gcTime: 0,
-    retry: 2,
   });
 
+  // A bumped shell version is the only way a settled trail's evidence changes
+  // on its own. Refresh the shared entry rather than keying a second copy by
+  // version — the peer-mark popover reads the same trail without one.
+  const readVersion = useRef(shell.version);
   useEffect(() => {
-    if (!enabled) {
-      void queryClient.removeQueries({
-        queryKey: changeTrailDetailKey(threadId, shell.trailId),
-      });
-      return;
-    }
+    if (readVersion.current === shell.version) return;
+    readVersion.current = shell.version;
+    void queryClient.invalidateQueries({
+      queryKey: changeTrailDetailKey(threadId, shell.trailId),
+    });
+  }, [queryClient, shell.trailId, shell.version, threadId]);
+
+  useEffect(() => {
+    if (!enabled) return;
     const registry = getDocumentSessionRegistry();
     const unsubscribers = (detail.data ?? []).map((document) =>
       registry.observe(document.documentId, (snapshot) => {
@@ -43,8 +43,7 @@ export function useAuthorizedChangeTrailDetail(
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [detail.data, enabled, evict, queryClient, shell.trailId, threadId]);
-  useEffect(() => evict, [evict]);
+  }, [detail.data, enabled, evict]);
 
   return {
     detail,
