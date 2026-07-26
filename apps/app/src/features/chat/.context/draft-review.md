@@ -152,10 +152,10 @@ both route through
 `resolveDraftOnlyTab(projectId, documentId, "committed" | "discarded")`:
 
 - Every Apply path materializes the whole branch and resolves `"committed"` —
-  keep the
-  tab, drop the marker — after the awaited draft-list refresh but while the
-  disposition lock remains held. Controls must not re-enable before that local
-  resolution; draft-group absence alone cannot distinguish Apply from Discard.
+  keep the tab, drop the marker — after the awaited draft-list refresh but while
+  the disposition lock remains held. Controls must not re-enable before that
+  local resolution; draft-group absence alone cannot distinguish Apply from
+  Discard.
 - Whole-draft Discard resolves `"discarded"` — close the tab.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
@@ -167,7 +167,5 @@ both route through
   the route-active tab.
 
 Server-side twin: discarding a new-document draft also removes its entry from
-the work manifest branch — otherwise the next Apply in that work pushes the
-dead entry to live and the discarded document resurrects as an empty file
-(caught by a runtime probe; regression test in
-`collab-domain.reverse-turn.db.test.ts`).
+the work manifest branch. Later Apply operations publish the manifest as well as
+document content, so a discarded entry must not remain in that branch.

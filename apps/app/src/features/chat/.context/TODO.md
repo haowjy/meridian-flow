@@ -14,8 +14,6 @@ Track with GitHub issue: #130.
 
 ## Composer `@ for reference` rotation hint
 
-When mentions land, restore the legacy compose-placeholder hint: append
-", @ for reference" when the writer has not used `@` in seven days. Integrate
-it with rotating placeholder selection and the real mention last-use timestamp
-rather than carrying a disabled production path. The ported mechanism can be
-recovered from the parent of commit `adacbe63`.
+When mentions land, append ", @ for reference" to the rotating composer
+placeholder when the writer has not used `@` in seven days. Drive it from the
+real mention last-use timestamp rather than a disabled placeholder path.

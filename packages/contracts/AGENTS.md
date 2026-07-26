@@ -7,11 +7,10 @@ runtime shapes, and observability records.
 - `drafts/` is UI vocabulary for branch review cards and Work draft lists. The
   durable backend primitive is a branch (`document_branches` +
   `branch_write_journal`), not legacy draft tables.
-- Yjs protocol contracts expose live rooms and generation-fenced branch rooms;
-  draft rooms are deleted.
-- Durable trail contracts record every AI edit without writer-impact or swept
-  classification. `ChangeEventProjection.swept` is computed for one receiving
-  connection as a best-effort live-session hint; never add it to `TrailChangeV1`
-  or persisted projections.
+- Yjs protocol contracts expose only live rooms and generation-fenced branch
+  rooms.
+- Durable trail contracts remain lifecycle-neutral. Receiving-writer attention
+  is computed per connection as `ChangeEventProjection.swept`, a best-effort
+  live-session hint that never enters `TrailChangeV1` or persisted projections.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

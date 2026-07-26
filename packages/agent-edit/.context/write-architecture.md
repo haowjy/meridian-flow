@@ -123,7 +123,7 @@ evaluation ignores it; the authored rows remain the reversal targets.
 The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
 journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
 handles, candidate handles, and reversal-op seqs, then receive the undo closure or
-refusal verdict. The helper steps behind that API (compatible groups, boundary
+unavailable verdict. The helper steps behind that API (compatible groups, boundary
 expansion, seq ownership, dependency evaluation) are private implementation
 details.
 

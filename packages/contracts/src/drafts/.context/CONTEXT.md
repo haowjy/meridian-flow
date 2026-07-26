@@ -10,9 +10,8 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
   the whole current Work draft; preview operation ids and revision tokens are
   not part of the Apply request. Selective Discard adds operation ids, and the
   server maps them through its required `closureClassId`.
-- Draft-level Undo/reactivation routes, DTOs, and retained receipt states do not
-  exist. Trail evidence and peer marks are read-only; reversal lives in
-  turn-receipt Undo/Redo.
+- Trail evidence and peer marks are read-only; reversal lives in turn-receipt
+  Undo/Redo.
 
 The contracts do not expose durable storage identities or names. The Work-draft
 domain maps `draftId` to `document_branches` and owns
