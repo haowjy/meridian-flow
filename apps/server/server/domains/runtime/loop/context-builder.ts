@@ -87,13 +87,10 @@ export function buildContext(input: BuildContextInput): {
     );
   }
 
-  // Working state injected as a separate system message so the model sees
-  // persistent scratch state at every turn.
   if (input.thread.workingState) {
     messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
   }
 
-  // Group blocks by turn, then sort each group by sequence number.
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
     if (block.pruned) continue;
@@ -126,9 +123,6 @@ export function buildContext(input: BuildContextInput): {
     if (turn.role === "assistant") {
       const assistantParts: ContentPart[] = [];
       for (const block of turnBlocks) {
-        // tool_result blocks split the assistant message: flush accumulated
-        // content parts as an assistant message, then emit the tool result
-        // as a separate tool-role message.
         if (block.blockType === "tool_result") {
           if (assistantParts.length > 0) {
             const message = assistant(assistantParts.slice());

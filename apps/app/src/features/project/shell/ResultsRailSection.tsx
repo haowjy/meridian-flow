@@ -3,10 +3,10 @@
  * promoted artifacts ("Results") for the active project, with type icon,
  * agent attribution, and a click-through to the producing thread.
  *
- * Replaces the previous `ComingSoonSection` placeholder. Visual language
- * intentionally matches the sibling sections (Uploads / Recent) so the rail
- * reads as one IA. The row composition is its own primitive because results
- * carry attribution + a click affordance that the document sections don't.
+ * Visual language intentionally matches the sibling sections (Uploads /
+ * Recent) so the rail reads as one IA. The row composition is its own primitive
+ * because results carry attribution + a click affordance that the document
+ * sections don't.
  *
  * The click-through is a REVEAL, not a navigation: it hands the producing
  * thread + turn to `requestConversationReveal`, and the shell brings that
@@ -113,9 +113,7 @@ export function ResultsRailSection({ projectId, onOpenResult }: ResultsRailSecti
   );
 }
 
-/* ── Row primitives ──────────────────────────────────────────────────── *
- *
- * Image rows render a `FileImage` mime icon rather than a true thumbnail
+/* Image rows render a `FileImage` mime icon rather than a true thumbnail
  * preview. Preloading thumbnails would fire one signed-URL request per
  * image row on rail open (and expire on every list refetch) — that's
  * expensive for a rail that may show dozens of plots. Real image
@@ -157,7 +155,7 @@ function ResultRow({
             </span>
           </span>
         </button>
-        {/* Provenance: producing agent + click-through to producing thread. */}
+        {/* The producing-agent badge reveals its thread; it does not open result content. */}
         <button
           type="button"
           onClick={onOpenProducingThread}
@@ -183,11 +181,8 @@ function KindIcon({ mimeType }: { mimeType: string }) {
   );
 }
 
-/* ── Pure helpers ─────────────────────────────────────────────────────
- *
- * Exported for the unit test — display name parsing has to survive both
- * `/project workspace/path.ext` and bare URI shapes (`work://<workId>/results/foo.ext`),
- * so it gets its own test alongside the rail render.
+/* Result names must handle both `/project workspace/path.ext` and bare URI
+ * shapes (`work://<workId>/results/foo.ext`).
  */
 
 export function displayName(result: ProjectResultItem): string {

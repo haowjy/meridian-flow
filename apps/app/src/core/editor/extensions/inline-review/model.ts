@@ -192,7 +192,6 @@ export function hunkKind(
   return "agent";
 }
 
-/** Index operations by id for O(1) lookup by the plugin. */
 export function indexOperations(
   operations: readonly ReviewOperation[],
 ): Map<string, ReviewOperation> {

@@ -66,9 +66,6 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        // One trailing slot, screen-dependent identity — see trailingAction()
-        // for the chat ⇄ results toggle and the Files browser's `+` create
-        // menu.
         actions={trailingAction(props, setCreating)}
       />
       <main className="main-pane min-h-0 flex-1 overflow-hidden">

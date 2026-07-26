@@ -313,14 +313,12 @@ describe("DocumentSession status derivation", () => {
       transportFactory: factory,
     });
     const { snapshots } = track(session);
-    // Initial snapshot
     expect(snapshots.at(-1)?.status).toBe("syncing");
 
     // Transport reports connected before first sync resolves → still syncing.
     current().emit({ kind: "connected" });
     expect(snapshots.at(-1)?.status).toBe("syncing");
 
-    // First sync resolves → synced.
     current().resolveFirstSync();
     await flushMicrotasks();
     expect(snapshots.at(-1)?.status).toBe("synced");
@@ -342,7 +340,6 @@ describe("DocumentSession status derivation", () => {
     await flushMicrotasks();
     expect(snapshots.at(-1)?.status).toBe("synced");
 
-    // Socket drops (e.g. browser goes offline).
     current().emit({ kind: "disconnected" });
     expect(snapshots.at(-1)?.status).toBe("offline");
 
@@ -350,7 +347,6 @@ describe("DocumentSession status derivation", () => {
     current().emit({ kind: "reconnecting", attempt: 1, nextRetryAt: Date.now() });
     expect(snapshots.at(-1)?.status).toBe("syncing");
 
-    // Reconnected and (re-)synced.
     current().emit({ kind: "connected" });
     expect(snapshots.at(-1)?.status).toBe("synced");
 
@@ -465,7 +461,6 @@ describe("DocumentSession status derivation", () => {
     const session = new DocumentSession({
       roomKey: "doc-local",
       enableIndexedDb: false,
-      // no transportFactory → local-only session
     });
     // With no persistence and no transport, watchSync resolves immediately.
     // Run a microtask flush so the recompute lands.

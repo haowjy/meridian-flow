@@ -1058,7 +1058,7 @@ describe("response staging", () => {
     );
     await ctx.core.write({ command: "insert", file: "beta.md", content: "Tail." }, responseContext);
 
-    // Writer-discards doc A's card while the response is still open with doc B staged.
+    // Thread invalidation drops doc A's claim while doc B remains staged.
     await ctx.core.invalidateThread("alpha.md", THREAD_ID);
 
     const result = await ctx.core.commitResponse(responseId);

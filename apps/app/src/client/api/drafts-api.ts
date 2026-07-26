@@ -2,7 +2,7 @@
  * drafts-api — HTTP client for AI document draft review endpoints.
  *
  * Typed wrappers for listing active thread drafts, reading live-vs-draft
- * markdown previews, and accepting/rejecting a draft without exposing route
+ * markdown previews, and applying/discarding a draft without exposing route
  * strings to query hooks.
  */
 import type {

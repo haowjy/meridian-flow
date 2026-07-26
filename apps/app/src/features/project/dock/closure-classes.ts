@@ -28,19 +28,14 @@ import {
 export interface ReviewProposal {
   /** Stable identity for the card key + focus echo. */
   classId: string;
-  /** Every operation folded into this card, in preview order. */
   operations: ReviewOperation[];
   /** The op the card's Discard runs against — it identifies the class. */
   primaryOperation: ReviewOperation;
   /** Summary verb slot: addition / removal / rewrite across the class. */
   classification: ReviewOperation["classification"];
-  /** Distinct contributing turn ids (agent authorship), for card attribution. */
   contributingTurnIds: string[];
-  /** True when a writer's own edits joined this class (badge, never a prompt). */
   includesWriterEdits: boolean;
-  /** True when any contributing hunk is a CRDT merge artifact (spec §6.2). */
   merged: boolean;
-  /** Pooled removed/added text for the card body. */
   change: OperationChangeText;
 }
 

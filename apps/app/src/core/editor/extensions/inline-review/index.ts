@@ -1,4 +1,3 @@
-/** Public entry for the DraftInlineReviewExtension module. */
 export {
   DraftInlineReviewExtension,
   type DraftInlineReviewOptions,

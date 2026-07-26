@@ -75,10 +75,10 @@ export interface ResponseLifecycleErrorDetail {
 
 /**
  * A mutation-bearing write claimed for a document was dropped from an open
- * response (writer-discarded card / thread invalidation) while other docs in
- * the same response stayed staged and eventually committed. The model already
- * saw `tool_result status: "success"` for the dropped write; this event makes
- * the non-durability loud alongside the durable commit of the survivors.
+ * response by thread invalidation while other documents in the same response
+ * stayed staged and eventually committed. The model already saw `tool_result
+ * status: "success"` for the dropped write; this event makes the non-durability
+ * loud alongside the durable commit of the survivors.
  */
 export interface ResponseClaimDiscardedEntry {
   documentId: string;

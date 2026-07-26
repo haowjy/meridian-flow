@@ -814,7 +814,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         }
         const batchOrdinals = new Map<string, number>();
 
-        // Multi-row INSERT for all updates — one round-trip instead of N.
         const updateRows = await txDb
           .insert(documentYjsUpdates)
           .values(
@@ -853,7 +852,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           });
         }
 
-        // Reserve wIds for mutations that don't have one pre-allocated.
         const mutationValues: Array<{
           index: number;
           seq: number;
@@ -894,7 +892,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           });
         }
 
-        // Multi-row INSERT for all mutations — one round-trip instead of N.
         if (mutationValues.length > 0) {
           await txDb.insert(agentEditMutations).values(
             mutationValues.map((mv) => ({
@@ -912,7 +909,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           );
         }
 
-        // Build results aligned with entries order.
         const results: Array<{ seq: number; journalCommitKind: "durable"; wId?: number }> = [];
         let mutIdx = 0;
         for (let i = 0; i < entries.length; i++) {

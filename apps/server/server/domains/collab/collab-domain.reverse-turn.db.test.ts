@@ -628,8 +628,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(sql`${documentYjsUpdates.id} desc`)
         .limit(1);
       if (!writerRow) throw new Error("missing writer update");
-      // Writer ingress stores `user`; older direct journal writers store
-      // `human`. Reconstruction must normalize both to the same writer class.
+      // Collab ingress stores `user`; context-service writes store `human`.
+      // Reconstruction must normalize both to the same writer class.
       await db
         .update(documentYjsUpdates)
         .set({ originType: "user" })

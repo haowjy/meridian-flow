@@ -41,9 +41,9 @@ type IndexedOperation = {
   sourceUpdateIds: number[];
   /**
    * Physical journal rows whose structs currently carry or reverse this logical
-   * operation. Display attribution stays on sourceUpdateIds; reject
-   * reconstruction must target this physical closure so undoing reject rows over
-   * the draft journal returns affected regions to live-base state.
+   * operation. Display attribution stays on sourceUpdateIds; Discard
+   * reconstruction must target this physical closure so undoing Discard rows
+   * over the draft journal returns affected regions to live-base state.
    */
   physicalSourceUpdateIds: number[];
   actorTurnId?: string;

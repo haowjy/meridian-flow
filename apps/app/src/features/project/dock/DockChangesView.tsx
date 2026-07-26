@@ -217,9 +217,7 @@ function ReviewOperationCards({
           active={activeClassId === proposal.classId}
           onFocus={() => {
             setActiveClassId(proposal.classId);
-            // Focus the class's representative op; the editor emphasizes its
-            // hunks. (Whole-class emphasis for multi-op classes needs multi-op
-            // focus — tracked as an S4-merge follow-up.)
+            // The representative operation is the class's editor-navigation anchor.
             controller.focusReviewOperation(proposal.primaryOperation.operationId);
           }}
         />
@@ -260,7 +258,6 @@ function currentReviewMessage(
   return null;
 }
 
-/** Localized copy for each controller message code. */
 function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
   switch (code) {
     case "apply-failed":

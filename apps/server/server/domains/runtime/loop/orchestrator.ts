@@ -129,9 +129,6 @@ import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 
-// ── Safety valve ──
-// Prevents infinite tool-calling loops (e.g. a model that always returns
-// tool_use). After 32 iterations the turn is finalized with an error.
 const MAX_TURN_ITERATIONS = 32;
 
 export interface OrchestratorRepositories {
@@ -245,7 +242,6 @@ export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
   };
 }
 
-// ── Cost/token arithmetic helpers ──
 // USD rollups are display-side estimates only; the authoritative ledger truth
 // is integer millicredits. Keep these strings stable for UI snapshots, but do
 // not use them for billing decisions.
@@ -253,9 +249,6 @@ function addCostUsd(a: string, b: string): string {
   return (Number(a) + Number(b)).toFixed(6);
 }
 
-// Accumulates an optional integer token count; treats null as "not-yet-known"
-// (preserving null) while coalescing undefined to 0 so missing deltas don't
-// corrupt the running sum.
 function addOptionalInteger(current: number | null | undefined, delta: number | null | undefined) {
   return delta != null ? (current ?? 0) + delta : current;
 }
@@ -268,11 +261,6 @@ function addMillicredits(
   return (BigInt(current ?? "0") + BigInt(delta)).toString();
 }
 
-// ── Turn snapshot update ──
-// Returns a new Turn object with token/cost fields incremented from one
-// model response. This is an immutable-update pattern: the caller replaces
-// `currentAssistantTurn` with the returned snapshot after each model call
-// so the next context build sees the updated rollup.
 function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceivedRow): Turn {
   const inputTokens = turn.inputTokens + (response.inputTokens ?? 0);
   const outputTokens = turn.outputTokens + (response.outputTokens ?? 0);
@@ -315,10 +303,6 @@ async function resolveInterruptAutoResumePolicy(
   return preferences.autoResume ?? defaultInterruptAutoResumePolicy();
 }
 
-// ── Initial usage accumulator ──
-// Every turn starts with zero-cost / zero-token usage. The usage object is
-// non-nullable in local state so the snapshot builder always has a valid
-// `TurnUsage` to display, even before the first model response arrives.
 function emptyTurnUsage(): NonNullable<Turn["usage"]> {
   return {
     inputTokens: 0,
@@ -332,12 +316,6 @@ function emptyTurnUsage(): NonNullable<Turn["usage"]> {
   };
 }
 
-// ── In-memory turn factory ──
-// Mints a Turn object with a UUID before persistence. Used for both the
-// user turn (status: "complete", immediately final) and the assistant turn
-// (status: "streaming", updated in-place as the loop progresses).
-// The `parentTurnId` is set to `prevTurnId` for now — this is the simple
-// linear chain model; spawn/fork parentage will diverge when sub-agents land.
 function createLocalTurn(input: {
   threadId: ThreadId;
   prevTurnId: TurnId | null;
@@ -378,11 +356,8 @@ function createLocalTurn(input: {
   };
 }
 
-// ── Emit helper ──
-// Appends one event to the durable journal and yields it. Used for
-// non-transactional events (stream.delta, tool.executing) that don't need
-// read-model projection — they are ephemeral transport facts, not durable
-// authority.
+// This direct append path is limited to ephemeral transport facts that do not
+// require read-model projection.
 async function* emit(
   writer: EventJournalWriter,
   threadId: ThreadId,
@@ -418,8 +393,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     );
   }
 
-  // The setup transaction mints both turns + the user text block.
-  // The read-model projector creates turn/block rows from the emitted events.
   const setup = await persistAndAppendTurnStartEvents(
     deps,
     input.threadId,
@@ -886,8 +859,6 @@ async function* generateEvents(
 
   yield* initialEvents;
 
-  // Local state: accumulate turns + blocks to avoid re-reading the entire
-  // thread from the DB on every tool-loop iteration.
   let currentAssistantTurn: Turn = assistantTurn;
   let activeResponseId: string | undefined;
 
@@ -908,9 +879,6 @@ async function* generateEvents(
     let iteration = 0;
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
-    // ── Agentic turn loop ──
-    // Each iteration: build context → stream model → persist response +
-    // blocks → optionally execute tools → repeat or finalize.
     // Every cancellation/error path must yield terminal events, not just
     // return/throw, so subscribers see the turn lifecycle closure.
     while (true) {
@@ -925,7 +893,6 @@ async function* generateEvents(
         return;
       }
 
-      // Check cancellation before every expensive operation.
       if (input.signal?.aborted) {
         yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
         return;
@@ -1010,7 +977,6 @@ async function* generateEvents(
         });
       }
 
-      // ── Gateway stream consumption ──
       // The gateway yields a self-terminating stream: a sequence of
       // text/reasoning/tool_call deltas followed by exactly one 'end'
       // (with the assembled GenerateResult) or one 'error'.
@@ -1077,7 +1043,6 @@ async function* generateEvents(
         return;
       }
 
-      // ── Persist model response + content blocks ──
       // blockSeq is the turn-scoped display order. It starts at the blocks
       // already stored for this assistant turn and is handed to interrupt/tool
       // collaborators so later blocks remain contiguous.
@@ -1111,10 +1076,6 @@ async function* generateEvents(
         return;
       }
 
-      // ── Tool execution loop ──
-      // Each tool call is checked against the PermissionGate, executed,
-      // and its result persisted as a tool_result block. Denied calls get a
-      // synthetic error tool_result so the model sees a clean rejection.
       // blockSeq continues across tool_result blocks so all blocks for this
       // turn are numbered contiguously regardless of which iteration
       // created them.
@@ -1140,7 +1101,6 @@ async function* generateEvents(
             return;
           }
 
-          // Permission check: tool allow/deny list + cost cap.
           // If denied, we still persist a tool_result block (with isError: true)
           // so the model sees the rejection in the next turn's context build.
           const decision = deps.permissionGate.check(
@@ -1346,13 +1306,9 @@ async function* generateEvents(
           yield* persistedBackfill.events;
         }
 
-        // After all tool results are persisted, loop back to build context
-        // with the updated blocks and make the next model call.
         continue;
       }
 
-      // ── Turn completion ──
-      // Non-tool finish reasons (end_turn, stop_sequence, max_tokens).
       const completed = await completeTurn({
         deps,
         threadId: input.threadId,
@@ -1371,8 +1327,6 @@ async function* generateEvents(
       // staged runtimes before surfacing cleanup failures, so a second failure
       // here should not hide the error that broke the response.
     }
-    // Unexpected exception (e.g. DB failure, tool crash). If the signal is
-    // already aborted, treat as cancellation; otherwise finalize as error.
     yield* await finalizeTurnOnGeneratorFailure(deps, {
       threadId: input.threadId,
       assistantTurnId: currentAssistantTurn.id,

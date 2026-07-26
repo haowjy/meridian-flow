@@ -87,8 +87,8 @@ export function buildDecorations(
 
     // Insertion range — one decoration per span so nested authorship (a
     // writer edit inside an AI insertion) paints in each owner's color.
-    // Fall back to whole-hunk coloring when spans are missing (legacy
-    // payloads, or when every span anchor failed to decode).
+    // Fall back to whole-hunk coloring when spans are missing or every span
+    // anchor failed to decode.
     if (hunk.mergeArtifact) {
       // A merge artifact is neutral, not authored: paint the whole combined
       // range with the merged seam and skip the hued per-span split.

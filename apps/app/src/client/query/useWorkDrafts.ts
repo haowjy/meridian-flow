@@ -1,8 +1,8 @@
 /**
  * useWorkDrafts — reviewable AI draft list for one Work.
  *
- * Keeps the UI stack-ready by exposing drafts grouped by document even though
- * the backend currently returns at most one active draft per document.
+ * Groups the active list by document because review launchers and navigation
+ * operate at document scope.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
