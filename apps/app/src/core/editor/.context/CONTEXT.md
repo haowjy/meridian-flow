@@ -16,6 +16,31 @@ Yjs document session. It must stay structurally aligned with
   `draft:<draftId>` from `@meridian/contracts/protocol`. Switching live ↔ draft
   is a session identity change and must remount the TipTap editor because
   Collaboration binds to a concrete Y.Doc/fragment at construction.
+- `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
+  the contract:
+  - `EditorMountIdentity` is a discriminated union over the two surfaces (live
+    room, optionally detached, versus a generation-fenced review room) plus the
+    construction facts both share: document, project, schema type, and whether
+    CollaborationCaret is installed. Every field changes which extensions exist
+    or which shared document backs them, so `editorMountKey()` renders it into
+    the React key that owns the mount, and `editorRoomKey()` names the room the
+    session registry must supply. Callers derive both from the same identity, so
+    a session swap cannot arrive without a new mount.
+  - `useMountedEditor()` freezes construction on first render and calls
+    `useEditor` with no dependency array. TipTap 3 then reconciles changed
+    options onto the live instance with `setOptions()`; the extension array's
+    identity is stable, so its option comparison finds nothing to do on an
+    ordinary re-render.
+  - `EditorSurfaceOptions` (editability and ProseMirror `editorProps`) is
+    everything that may change mid-mount. Editability needs its own
+    `setEditable()` call because TipTap's option sync deliberately re-asserts
+    the running editable flag. A caller that rebuilds `editorProps` every render
+    pays an extra `view.setProps` — never a rebuild — so editor handlers do not
+    have to be identity-stable; they read live editability off `view.editable`
+    rather than closing over props.
+  - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
+    refetch and a live surface change keep the same editor and UndoManager while
+    a room change replaces them.
 - Live sessions may use versioned IndexedDB persistence. Draft review sessions
   do not: the draft Hocuspocus room is server-persisted and short-lived, and a
   local draft cache risks stale recovery across review sessions.
@@ -86,8 +111,9 @@ server review model. Keep this directory view-only: plugin state, decorations,
 commands, and the lightweight hunk model used by the plugin.
 
 - Only installed when the editor is bound to a draft room. The
-  `enableDraftInlineReview` flag on `createEditorExtensions` picks it up when
-  `EditorView` receives `reviewDraftId`; live editors never pay for it.
+  `enableDraftInlineReview` flag on `createEditorExtensions` follows the
+  `review` variant of `EditorMountIdentity`, which needs both a draft id and its
+  generation-fenced room name; live editors never pay for it.
 - The plugin is the sole owner of decoration state. React talks to it via TipTap
   commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
   `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.

@@ -7,12 +7,16 @@
  * Used by the Context screen to open any document. Filename chrome is the
  * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
  * renders no title header of its own.
+ *
+ * Props split in two: those that form the `EditorMountIdentity` decide which
+ * editor exists (they key the mount), and the rest are surface config applied
+ * to whatever editor is already running.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
-import type { Editor, JSONContent } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/react";
+import type { Editor, EditorOptions, JSONContent } from "@tiptap/core";
+import { EditorContent } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import {
   type ReactNode,
@@ -27,7 +31,6 @@ import {
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
-import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
@@ -37,9 +40,14 @@ import {
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import {
+  type EditorMountIdentity,
+  editorMountKey,
+  editorRoomKey,
+  useMountedEditor,
+} from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { useEventCallback } from "@/hooks/use-event-callback";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
@@ -57,8 +65,6 @@ export type EditorViewProps = {
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
   className?: string;
-  /** Cursor identity published to awareness. Identity must be stable: it re-keys the editor. */
-  user?: EditorUser;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -85,6 +91,24 @@ type FigureUploadState =
 
 let editorSessionOwnerSequence = 0;
 
+/**
+ * Which editor this props set asks for. Inline review needs both a draft id and
+ * the generation-fenced room it lives in; a draft id alone is a host that has
+ * not resolved the room yet, and review decorations must never be projected
+ * onto the live manuscript room.
+ */
+function mountIdentity(props: EditorViewProps): EditorMountIdentity {
+  const shared = {
+    documentId: props.documentId,
+    projectId: props.projectId,
+    schemaType: props.schemaType ?? "document",
+    collaborationDecorations: props.showCollaborationDecorations ?? true,
+  } as const;
+  return props.reviewDraftId && props.reviewRoomName
+    ? { ...shared, surface: "review", roomName: props.reviewRoomName, draftId: props.reviewDraftId }
+    : { ...shared, surface: "live", detached: props.detached ?? false };
+}
+
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
   return files.find(isImageFile) ?? null;
@@ -100,8 +124,10 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId, detached = false, reviewDraftId, reviewRoomName } = props;
-  const roomKey = reviewRoomName ?? documentId;
+  const identity = mountIdentity(props);
+  const roomKey = editorRoomKey(identity);
+  const detached = identity.surface === "live" && identity.detached;
+  const inReview = identity.surface === "review";
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
@@ -119,10 +145,10 @@ export function EditorView(props: EditorViewProps) {
     const session = detached ? registry.getDetached(roomKey) : registry.getRoom(roomKey);
     setBoundSession(session);
     return () => registry.release(ownerId);
-  }, [detached, documentId, roomKey]);
+  }, [detached, roomKey]);
 
   useEffect(() => {
-    if (!reviewDraftId || boundSession?.roomKey !== roomKey) return;
+    if (!inReview || boundSession?.roomKey !== roomKey) return;
     return boundSession.subscribe((snapshot) => {
       if (
         snapshot.status === "destroyed" ||
@@ -133,39 +159,47 @@ export function EditorView(props: EditorViewProps) {
         props.onReviewSessionUnavailable?.();
       }
     });
-  }, [boundSession, props.onReviewSessionUnavailable, reviewDraftId, roomKey]);
+  }, [boundSession, props.onReviewSessionUnavailable, inReview, roomKey]);
 
   const session = boundSession?.roomKey === roomKey ? boundSession : null;
 
   if (!session) return <PendingEditorShell {...props} />;
 
-  return <SessionEditorView key={roomKey} {...props} session={session} />;
+  // The one place an editor's lifetime is decided. Every input the session
+  // lookup above reads is part of this key, so a session swap always arrives
+  // with a fresh mount and nothing else can force one.
+  return (
+    <SessionEditorView
+      key={editorMountKey(identity)}
+      {...props}
+      identity={identity}
+      session={session}
+    />
+  );
 }
 
 type SessionEditorViewProps = EditorViewProps & {
+  identity: EditorMountIdentity;
   session: DocumentSession;
 };
 
 function SessionEditorView({
-  documentId,
-  projectId,
-  schemaType = "document",
+  identity,
   className,
-  user,
   editable = true,
   showToolbar = true,
   ariaLabel,
-  showCollaborationDecorations = true,
-  reviewDraftId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
 }: SessionEditorViewProps) {
+  const { documentId, projectId } = identity;
   const { controller } = useDraftReview();
-  const inReview = Boolean(reviewDraftId);
+  const inReview = identity.surface === "review";
+  const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
   const registry = getDocumentSessionRegistry();
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
-  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const figureInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -196,7 +230,7 @@ function SessionEditorView({
     ),
   );
 
-  const openPeerMark = useEventCallback(
+  const openPeerMark = useCallback(
     (eventTarget: EventTarget | null, activation: "pointer" | "keyboard"): boolean => {
       if (inReview || !(eventTarget instanceof Element)) return false;
       const element = eventTarget.closest<HTMLElement>("[data-peer-mark]");
@@ -225,6 +259,7 @@ function SessionEditorView({
       }
       return true;
     },
+    [inReview, session],
   );
 
   const clearUploadLater = useCallback(() => {
@@ -235,7 +270,7 @@ function SessionEditorView({
     }, 3000);
   }, []);
 
-  const handleFigureFile = useEventCallback(
+  const handleFigureFile = useCallback(
     async (file: File, insertPos?: number): Promise<void> => {
       if (!projectId) {
         setFigureUploadState({
@@ -285,126 +320,101 @@ function SessionEditorView({
         });
       }
     },
+    [clearUploadLater, documentId, projectId],
   );
 
-  const editor = useEditor(
-    {
-      ...createEditorConfig({
-        document: session.document,
-        awareness: session.awareness,
-        schemaType,
-        cursorProvider: session.cursorProvider,
-        user,
-        editable,
-        placeholder: t`Start writing…`,
-        autofocus: false,
-        figureRenderContext: { projectId, documentId },
-        showCollaborationDecorations,
-        enableDraftInlineReview: inReview,
-        markerStore: inReview ? undefined : session.markerStore,
-        agentNames,
-        editorProps: {
-          attributes: {
-            class: editorProseClass(showToolbar ? "docked" : "none"),
-            "aria-label": ariaLabel ?? t`Collaborative document editor`,
-          },
-          handleTextInput(view, from, _to, text) {
-            if (!editable || text !== " ") return false;
-            const commandText = "/figure";
-            const textBefore = view.state.selection.$from.parent.textBetween(
-              0,
-              view.state.selection.$from.parentOffset,
-              "\n",
-              "\n",
-            );
-            if (!textBefore.endsWith(commandText)) return false;
-            view.dispatch(view.state.tr.delete(from - commandText.length, from));
-            figureInputRef.current?.click();
-            return true;
-          },
-          handleDrop(view, event) {
-            if (!editable) return false;
-            const file = droppedImageFile(event);
-            if (!file) return false;
+  // Surface config: applied to the running editor, never a reason to rebuild it.
+  // Handlers read editability off the view instead of closing over the prop, so
+  // the only thing that moves this object is the chrome it describes.
+  const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
+    () => ({
+      attributes: {
+        class: editorProseClass(showToolbar ? "docked" : "none"),
+        "aria-label": ariaLabel ?? t`Collaborative document editor`,
+      },
+      handleTextInput(view, from, _to, text) {
+        if (!view.editable || text !== " ") return false;
+        const commandText = "/figure";
+        const textBefore = view.state.selection.$from.parent.textBetween(
+          0,
+          view.state.selection.$from.parentOffset,
+          "\n",
+          "\n",
+        );
+        if (!textBefore.endsWith(commandText)) return false;
+        view.dispatch(view.state.tr.delete(from - commandText.length, from));
+        figureInputRef.current?.click();
+        return true;
+      },
+      handleDrop(view, event) {
+        if (!view.editable) return false;
+        const file = droppedImageFile(event);
+        if (!file) return false;
+        event.preventDefault();
+        setDragActive(false);
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        void handleFigureFile(file, pos);
+        return true;
+      },
+      handleDOMEvents: {
+        pointerdown(view, event) {
+          if (
+            event.target instanceof Element &&
+            event.target.closest<HTMLElement>("[data-peer-mark]")
+          ) {
+            pointerSelectionRef.current = {
+              from: view.state.selection.from,
+              to: view.state.selection.to,
+            };
+            // A peer mark is an explanatory decoration, not a new caret
+            // destination. Keep the editor focused until the click opens
+            // the pointer-mode popover.
             event.preventDefault();
-            setDragActive(false);
-            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            void handleFigureFile(file, pos);
             return true;
-          },
-          handleDOMEvents: {
-            pointerdown(view, event) {
-              if (
-                event.target instanceof Element &&
-                event.target.closest<HTMLElement>("[data-peer-mark]")
-              ) {
-                pointerSelectionRef.current = {
-                  from: view.state.selection.from,
-                  to: view.state.selection.to,
-                };
-                // A peer mark is an explanatory decoration, not a new caret
-                // destination. Keep the editor focused until the click opens
-                // the pointer-mode popover.
-                event.preventDefault();
-                return true;
-              }
-              return false;
-            },
-            click(_view, event) {
-              return openPeerMark(event.target, "pointer");
-            },
-            keydown(_view, event) {
-              if (
-                (event.key !== "Enter" && event.key !== " ") ||
-                !openPeerMark(event.target, "keyboard")
-              ) {
-                return false;
-              }
-              event.preventDefault();
-              return true;
-            },
-            dragenter(_view, event) {
-              if (editable && droppedImageFile(event as DragEvent)) setDragActive(true);
-              return false;
-            },
-            dragover(_view, event) {
-              if (!editable || !droppedImageFile(event as DragEvent)) return false;
-              event.preventDefault();
-              setDragActive(true);
-              return true;
-            },
-            dragleave(_view, event) {
-              if (
-                !(event.currentTarget as HTMLElement | null)?.contains(event.relatedTarget as Node)
-              ) {
-                setDragActive(false);
-              }
-              return false;
-            },
-          },
+          }
+          return false;
         },
-      }),
-      immediatelyRender: false,
-      shouldRerenderOnTransaction: false,
-    },
-    // Rebuilding the editor destroys its Yjs UndoManager and drops keystrokes
-    // in flight, so this list holds document/room identity and the immutable
-    // surface configuration only — never a value that moves at turn rate.
-    // Handlers reach current state through `useEventCallback`, and agent names
-    // through a store the projection subscribes to.
-    [
-      documentId,
-      projectId,
-      schemaType,
-      session,
-      user,
-      editable,
-      ariaLabel,
-      showCollaborationDecorations,
-      inReview,
-      agentNames,
-    ],
+        click(_view, event) {
+          return openPeerMark(event.target, "pointer");
+        },
+        keydown(_view, event) {
+          if (
+            (event.key !== "Enter" && event.key !== " ") ||
+            !openPeerMark(event.target, "keyboard")
+          ) {
+            return false;
+          }
+          event.preventDefault();
+          return true;
+        },
+        dragenter(view, event) {
+          if (view.editable && droppedImageFile(event as DragEvent)) setDragActive(true);
+          return false;
+        },
+        dragover(view, event) {
+          if (!view.editable || !droppedImageFile(event as DragEvent)) return false;
+          event.preventDefault();
+          setDragActive(true);
+          return true;
+        },
+        dragleave(_view, event) {
+          if (!(event.currentTarget as HTMLElement | null)?.contains(event.relatedTarget as Node)) {
+            setDragActive(false);
+          }
+          return false;
+        },
+      },
+    }),
+    [ariaLabel, handleFigureFile, openPeerMark, showToolbar],
   );
+
+  const editor = useMountedEditor({
+    identity,
+    session,
+    agentNames,
+    placeholder: t`Start writing…`,
+    surface: { editable, editorProps },
+  });
 
   // Claim the shared review-runtime slot ONLY while this editor is the one in
   // review. Editors that are not in review must not touch the slot at all: the
@@ -418,21 +428,14 @@ function SessionEditorView({
   // a transient "no runtime" window where card focus/scroll/discard no-ops.
   const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
-    if (!inReview || !reviewDraftId || !editor) return;
+    if (!reviewDraftId || !editor) return;
     registerInlineReviewRuntime({
       editor,
       documentId,
       draftId: reviewDraftId,
     });
     return () => releaseInlineReviewRuntime(editor);
-  }, [
-    registerInlineReviewRuntime,
-    releaseInlineReviewRuntime,
-    documentId,
-    editor,
-    inReview,
-    reviewDraftId,
-  ]);
+  }, [registerInlineReviewRuntime, releaseInlineReviewRuntime, documentId, editor, reviewDraftId]);
 
   useInlineReviewSync({
     editor,
