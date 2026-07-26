@@ -120,6 +120,7 @@ export async function resetDatabase(): Promise<void> {
     schema.pendingNotices,
     schema.documentYjsReversalOps,
     schema.documentYjsReversals,
+    schema.agentEditWidCounters,
     schema.agentEditMutations,
     schema.branchWriteJournal,
     schema.pushLineage,

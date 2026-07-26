@@ -16,6 +16,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       agentEditMutations,
+      agentEditWidCounters,
       branchPushOutboxUpdates,
       branchPushSettlementOutbox,
       branchWriteJournal,
@@ -103,6 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pendingNotices,
         documentYjsReversalOps,
         documentYjsReversals,
+        agentEditWidCounters,
         agentEditMutations,
         branchWriteJournal,
         pushLineage,

@@ -53,7 +53,13 @@ export async function truncateDrizzleTables(db: Database, tables: unknown[]): Pr
  */
 export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promise<void> {
   await assertThrowawayDatabase(db);
-  for (const table of tables) {
-    await db.execute(sql.raw(`DELETE FROM ${quoteDrizzleTable(table)}`));
-  }
+  const tableNames = tables.map(quoteDrizzleTable);
+  await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql.raw(`LOCK TABLE ${tableNames.join(", ")} IN ACCESS EXCLUSIVE MODE`),
+    );
+    for (const tableName of tableNames) {
+      await transaction.execute(sql.raw(`DELETE FROM ${tableName}`));
+    }
+  });
 }
