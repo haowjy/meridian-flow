@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/database`, `packages/markup`: remove
+  unreachable deferred-chat, run-input ingest, duplicate journal, and test-propped
+  helper surfaces.
 - `packages/database`: pending-notice migrations now preserve thread-addressed
   queue entries and deliberately discard recipient-less pre-release entries.
 - `packages/database`: publication-lineage migrations now preserve branch

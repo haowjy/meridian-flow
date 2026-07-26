@@ -135,7 +135,6 @@ function createTestProjectBootstrap(): {
 
 describe("WorkOS request auth", () => {
   let resolveUser: typeof import("./auth.js").resolveUser;
-  let requireUser: typeof import("./auth.js").requireUser;
   let authkitService: typeof import("./auth.js").authkitService;
 
   beforeAll(async () => {
@@ -148,7 +147,6 @@ describe("WorkOS request auth", () => {
     vi.resetModules();
     const auth = await import("./auth.js");
     resolveUser = auth.resolveUser;
-    requireUser = auth.requireUser;
     authkitService = auth.authkitService;
   });
 
@@ -222,57 +220,6 @@ describe("WorkOS request auth", () => {
       avatarUrl: null,
     });
     expect(authkitService.withAuth).toHaveBeenCalledOnce();
-  });
-
-  it("rejects unauthenticated requests at the route boundary", async () => {
-    const bootstrap = createTestProjectBootstrap();
-    await expect(
-      requireUser(requestWithCookie(null), {
-        users: createInMemoryUserRepository(),
-        projects: bootstrap.projects,
-      }),
-    ).rejects.toMatchObject({
-      status: 401,
-    });
-  });
-
-  it("rejects forged session cookies at the route boundary", async () => {
-    const bootstrap = createTestProjectBootstrap();
-    await expect(
-      requireUser(requestWithCookie("wos-session=tampered"), {
-        users: createInMemoryUserRepository(),
-        projects: bootstrap.projects,
-      }),
-    ).rejects.toMatchObject({
-      status: 401,
-    });
-  });
-
-  it("provisions an internal user id from a sealed session cookie", async () => {
-    mockWithAuthFromSealedCookie();
-
-    const users = createInMemoryUserRepository();
-    const bootstrap = createTestProjectBootstrap();
-    const cookie = await mintTestSessionCookie({ email: "provisioned@example.com" });
-
-    const resolved = await requireUser(requestWithCookie(cookie), {
-      users,
-      projects: bootstrap.projects,
-    });
-
-    expect(resolved.externalId).toBe(TEST_EXTERNAL_USER_ID);
-    expect(resolved.email).toBe("provisioned@example.com");
-    expect(resolved.userId).toBeTruthy();
-    expect(bootstrap.bootstrapCalls).toBe(1);
-    expect(bootstrap.personalProjectId).toBeTruthy();
-
-    const second = await requireUser(requestWithCookie(cookie), {
-      users,
-      projects: bootstrap.projects,
-    });
-    expect(second.userId).toBe(resolved.userId);
-    expect(bootstrap.readinessChecks).toBe(2);
-    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 });
 

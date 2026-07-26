@@ -1,6 +1,6 @@
 /**
  * WorkOS authentication seam: wraps @workos/authkit-session (cookie session
- * storage, requireUser) and resolves an authenticated identity. Owns the auth
+ * storage and user resolution) and resolves an authenticated identity. Owns the auth
  * provider integration; depends inward on the user repository port.
  */
 import type { UserId } from "@meridian/contracts/runtime";
@@ -131,24 +131,4 @@ export async function provisionAuthenticatedUser(
   await deps.projects.ensureDefaultBootstrapReady(userId);
 
   return userId;
-}
-
-/**
- * Canonical resolve→401→provision contract for an authenticated request.
- *
- * `requireAppUserFromRequest` (auth-gate) inlines this sequence so it can defer
- * app composition until after the cheap cookie check; this helper keeps the
- * contract unit-testable without a full app and is the seam callers should reuse
- * when they already hold a `UserRepository`.
- */
-export async function requireUser(
-  request: Request,
-  deps: UserProvisioningDeps,
-): Promise<ResolvedUser> {
-  const user = await resolveUser(request);
-  if (!user) {
-    throw new HTTPError({ status: 401, message: "Unauthorized" });
-  }
-  const userId = await provisionAuthenticatedUser(user, deps);
-  return { ...user, userId };
 }
