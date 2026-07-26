@@ -16,10 +16,11 @@
   retain writer identity and mixed-author branches preserve receipt Undo safety.
 - `apps/app`, `apps/server`, `packages/contracts`: swept AI marks now mean the
   receiving writer's post-observation edit was overwritten; baseline, unknown,
-  AI-authored, and other-writer prose remains ordinary for that recipient.
+  AI-authored, and other-writer prose remains ordinary for that recipient, and
+  per-connection delivery no longer carries bounded recipient lists.
 - `apps/app`, `apps/server`, `packages/contracts`: AI mark popovers and trail
   evidence are read-only; receipt Undo/Redo is the sole reversal authority for
-  AI changes.
+  AI changes, and fresh databases purge obsolete Restore payloads from trails.
 - `apps/app`: AI mark popovers now open with their Before/After disclosure
   resolved — trail evidence is cached per trail and prefetched while marks are
   on screen, instead of refetched on every open.

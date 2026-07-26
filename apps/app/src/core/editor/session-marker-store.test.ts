@@ -39,7 +39,7 @@ function message(
         relEnd: position,
         targetBlockId: { clientID: 1, clock: 0 },
       },
-      sweptForUserIds: swept ? ["me"] : [],
+      swept: swept ?? false,
       excerpt: id,
       pureDeletionOffset: null,
     })),
@@ -73,16 +73,14 @@ describe("SessionMarkerStore", () => {
     expect(store.getSnapshot()).toHaveLength(0);
   });
 
-  it("derives swept severity for the receiving writer", () => {
-    const event = message(1);
-    const [change] = event.changes;
-    if (!change) throw new Error("invalid fixture");
-    change.sweptForUserIds = ["me"];
+  it("uses the receiving connection's swept severity", () => {
+    const sweptEvent = message(1, [{ id: "change-1", swept: true }]);
+    const ordinaryEvent = message(1);
     const mine = new SessionMarkerStore("me");
     const theirs = new SessionMarkerStore("other");
 
-    mine.replaceGroup(event);
-    theirs.replaceGroup(event);
+    mine.replaceGroup(sweptEvent);
+    theirs.replaceGroup(ordinaryEvent);
 
     expect(mine.getSnapshot()[0]?.swept).toBe(true);
     expect(theirs.getSnapshot()[0]?.swept).toBe(false);

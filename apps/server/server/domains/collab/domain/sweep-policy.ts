@@ -2,8 +2,11 @@
 
 import {
   type AgentEditCodec,
-  classifyDestructiveSnapshotEffect,
+  type BlockSnapshot,
+  intersectLineageRanges,
+  normalizeLineageRanges,
   snapshotBlocks,
+  subtractLineageRanges,
   toDocHandle,
   type WriterLineageRange,
   type YProsemirrorDocumentModel,
@@ -13,53 +16,61 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { PendingLiveSettlement } from "./branch-push-contracts.js";
 import {
-  type AttributedJournalRow,
-  type AttributionRunV1,
   journalInsertionRanges,
-  materializeCandidateProvenance,
-  materializeProvenanceForDoc,
-  type ProvenanceRun,
+  materializeRootLineageForDoc,
+  type RootLineageRun,
 } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";
-
-export const SWEEP_RECIPIENT_CAP = 100;
 
 export type SweepEvidence = {
   candidates: ReadonlyArray<{
     precedingUpdates: readonly Uint8Array[];
     update: Uint8Array;
-    byUser: ReadonlyArray<{ userId: UserId; provenance: readonly ProvenanceRun[] }>;
+    byUser: ReadonlyArray<{
+      userId: UserId;
+      rootsAfterObservationWatermark: readonly WriterLineageRange[];
+    }>;
   }>;
 };
 
-export type SweptChangeRecipients = ReadonlyMap<string, ReadonlySet<UserId>>;
+export type SweptChangesByRecipient = ReadonlyMap<UserId, ReadonlySet<string>>;
 
 export function materializeSweepEvidence(input: {
-  doc: Y.Doc;
-  rows: readonly AttributedJournalRow[];
+  rows: readonly {
+    journalRowId: bigint;
+    originType: string | null;
+    actorUserId: string | null;
+    update: Uint8Array;
+  }[];
   candidates: readonly {
     precedingUpdates: readonly Uint8Array[];
     update: Uint8Array;
     observedBaseUpdateSeq: number;
+    rootFloor: {
+      /** Stable within one materialization so candidates can share first-birth replay. */
+      key: string;
+      /** Neutral checkpoint roots: later sync payloads cannot claim these old roots. */
+      roots: readonly WriterLineageRange[];
+    };
   }[];
-  retainedAttributions?: readonly AttributionRunV1[];
 }): SweepEvidence {
-  const visible = materializeProvenanceForDoc({
-    doc: input.doc,
-    rows: input.rows,
-    retainedAttributions: input.retainedAttributions,
-    fallbackBirthClass: "agent",
-  });
+  const firstBirthRowsByFloor = new Map<string, readonly FirstBirthRow[]>();
   return {
     candidates: input.candidates.map((candidate) => {
-      const rootsByUser = recentWriterRootsByUser(input.rows, candidate.observedBaseUpdateSeq);
+      let firstBirthRows = firstBirthRowsByFloor.get(candidate.rootFloor.key);
+      if (!firstBirthRows) {
+        firstBirthRows = materializeFirstBirthRows(input.rows, candidate.rootFloor.roots);
+        firstBirthRowsByFloor.set(candidate.rootFloor.key, firstBirthRows);
+      }
       return {
         precedingUpdates: candidate.precedingUpdates,
         update: candidate.update,
-        byUser: [...rootsByUser.entries()].slice(-SWEEP_RECIPIENT_CAP).map(([userId, roots]) => ({
-          userId,
-          provenance: projectWriterProvenance(visible, roots),
-        })),
+        byUser: [...recentWriterRootsByUser(firstBirthRows, candidate.observedBaseUpdateSeq)].map(
+          ([userId, rootsAfterObservationWatermark]) => ({
+            userId,
+            rootsAfterObservationWatermark,
+          }),
+        ),
       };
     }),
   };
@@ -70,9 +81,9 @@ export function detectSweptChanges(input: {
   prePushDoc: Y.Doc;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-}): SweptChangeRecipients {
+}): SweptChangesByRecipient {
   if (!input.pending.sweepEvidence) return new Map();
-  const recipients = new Map<string, Set<UserId>>();
+  const changesByRecipient = new Map<UserId, Set<string>>();
   for (const candidate of input.pending.sweepEvidence.candidates) {
     const candidateBeforeDoc = createCollabYDoc({ gc: false });
     const candidateAfterDoc = createCollabYDoc({ gc: false });
@@ -81,48 +92,22 @@ export function detectSweptChanges(input: {
       for (const update of candidate.precedingUpdates) Y.applyUpdate(candidateBeforeDoc, update);
       Y.applyUpdate(candidateAfterDoc, Y.encodeStateAsUpdate(candidateBeforeDoc));
       Y.applyUpdate(candidateAfterDoc, candidate.update);
-      const candidateBefore = snapshotBlocks(
+
+      const beforeBlocks = snapshotBlocks(
         toDocHandle(candidateBeforeDoc),
         input.model,
         input.codec,
       );
-      const candidateAfter = snapshotBlocks(
-        toDocHandle(candidateAfterDoc),
-        input.model,
-        input.codec,
-      );
+      const beforeLineage = materializeRootLineageForDoc(candidateBeforeDoc);
+      const survivingRoots = materializeRootLineageForDoc(candidateAfterDoc).map((run) => run.root);
       for (const evidence of candidate.byUser) {
-        const beforeProvenance = materializeCandidateProvenance(
-          candidateBeforeDoc,
-          evidence.provenance,
-        );
-        const afterProvenance = materializeCandidateProvenance(
-          candidateAfterDoc,
-          evidence.provenance,
-        );
-        const { affectedBefore } = classifyDestructiveSnapshotEffect({
-          before: candidateBefore,
-          afterCandidate: candidateAfter,
-          beforeProvenance: beforeProvenance.map((run) => ({
-            target: run.target,
-            root: run.root,
-            provenance: run.birthClass,
-          })),
-          afterCandidateProvenance: afterProvenance.map((run) => ({
-            target: run.target,
-            root: run.root,
-            provenance: run.birthClass,
-          })),
+        const affectedIdentities = affectedBlockIdentities({
+          documentId: input.pending.push.documentId,
+          beforeBlocks,
+          beforeLineage,
+          survivingRoots,
+          recipientRoots: evidence.rootsAfterObservationWatermark,
         });
-        const affectedIdentities = new Set(
-          affectedBefore.map(({ block }) =>
-            canonicalBlockKey({
-              documentId: input.pending.push.documentId,
-              clientID: block.clientID,
-              clock: block.clock,
-            }),
-          ),
-        );
         for (const change of input.pending.trail.changes) {
           if (
             !change.beforeBlockIdentity ||
@@ -130,9 +115,9 @@ export function detectSweptChanges(input: {
           ) {
             continue;
           }
-          const users = recipients.get(change.changeId) ?? new Set<UserId>();
-          users.add(evidence.userId);
-          recipients.set(change.changeId, users);
+          const changeIds = changesByRecipient.get(evidence.userId) ?? new Set<string>();
+          changeIds.add(change.changeId);
+          changesByRecipient.set(evidence.userId, changeIds);
         }
       }
     } finally {
@@ -140,11 +125,77 @@ export function detectSweptChanges(input: {
       candidateAfterDoc.destroy();
     }
   }
-  return recipients;
+  return changesByRecipient;
+}
+
+function affectedBlockIdentities(input: {
+  documentId: string;
+  beforeBlocks: readonly BlockSnapshot[];
+  beforeLineage: readonly RootLineageRun[];
+  survivingRoots: readonly WriterLineageRange[];
+  recipientRoots: readonly WriterLineageRange[];
+}): Set<string> {
+  const visibleBeforeRoots = input.beforeLineage.map((run) => run.root);
+  const deletedRecipientRoots = subtractLineageRanges(
+    intersectLineageRanges(visibleBeforeRoots, input.recipientRoots),
+    input.survivingRoots,
+  );
+  if (deletedRecipientRoots.length === 0) return new Set();
+
+  const deletedTargets = input.beforeLineage.flatMap((run) =>
+    intersectLineageRanges([run.root], deletedRecipientRoots).map((root) => ({
+      clientID: run.target.clientID,
+      clock: run.target.clock + root.clock - run.root.clock,
+      length: root.length,
+    })),
+  );
+  return new Set(
+    input.beforeBlocks.flatMap((block) =>
+      intersectLineageRanges(block.lineage, deletedTargets).length === 0
+        ? []
+        : [
+            canonicalBlockKey({
+              documentId: input.documentId,
+              clientID: block.clientID,
+              clock: block.clock,
+            }),
+          ],
+    ),
+  );
+}
+
+type FirstBirthRow = {
+  journalRowId: bigint;
+  originType: string | null;
+  actorUserId: string | null;
+  roots: readonly WriterLineageRange[];
+};
+
+function materializeFirstBirthRows(
+  rows: readonly {
+    journalRowId: bigint;
+    originType: string | null;
+    actorUserId: string | null;
+    update: Uint8Array;
+  }[],
+  retainedRoots: readonly WriterLineageRange[],
+): FirstBirthRow[] {
+  let coveredRoots = normalizeLineageRanges(retainedRoots);
+  return rows.map((row) => {
+    const insertedRoots = normalizeLineageRanges(journalInsertionRanges(row.update));
+    const firstBornRoots = subtractLineageRanges(insertedRoots, coveredRoots);
+    coveredRoots = normalizeLineageRanges([...coveredRoots, ...insertedRoots]);
+    return {
+      journalRowId: row.journalRowId,
+      originType: row.originType,
+      actorUserId: row.actorUserId,
+      roots: firstBornRoots,
+    };
+  });
 }
 
 function recentWriterRootsByUser(
-  rows: readonly AttributedJournalRow[],
+  rows: readonly FirstBirthRow[],
   observedBaseUpdateSeq: number,
 ): Map<UserId, WriterLineageRange[]> {
   const rootsByUser = new Map<UserId, WriterLineageRange[]>();
@@ -152,55 +203,16 @@ function recentWriterRootsByUser(
     if (
       row.originType !== "human" ||
       !row.actorUserId ||
-      row.journalRowId <= BigInt(observedBaseUpdateSeq)
+      row.journalRowId <= BigInt(observedBaseUpdateSeq) ||
+      row.roots.length === 0
     ) {
       continue;
     }
     const userId = row.actorUserId as UserId;
-    rootsByUser.set(userId, [
-      ...(rootsByUser.get(userId) ?? []),
-      ...journalInsertionRanges(row.update),
-    ]);
+    rootsByUser.set(userId, [...(rootsByUser.get(userId) ?? []), ...row.roots]);
+  }
+  for (const [userId, roots] of rootsByUser) {
+    rootsByUser.set(userId, normalizeLineageRanges(roots));
   }
   return rootsByUser;
-}
-
-function projectWriterProvenance(
-  visible: readonly ProvenanceRun[],
-  writerRoots: readonly WriterLineageRange[],
-): ProvenanceRun[] {
-  const projected: ProvenanceRun[] = [];
-  for (const run of visible) {
-    for (let offset = 0; offset < run.root.length; offset += 1) {
-      const root = { clientID: run.root.clientID, clock: run.root.clock + offset, length: 1 };
-      const target = {
-        clientID: run.target.clientID,
-        clock: run.target.clock + offset,
-        length: 1,
-      };
-      const birthClass = writerRoots.some(
-        (candidate) =>
-          candidate.clientID === root.clientID &&
-          candidate.clock <= root.clock &&
-          candidate.clock + candidate.length > root.clock,
-      )
-        ? "writer_protected"
-        : "agent";
-      const previous = projected.at(-1);
-      if (
-        previous &&
-        previous.birthClass === birthClass &&
-        previous.target.clientID === target.clientID &&
-        previous.target.clock + previous.target.length === target.clock &&
-        previous.root.clientID === root.clientID &&
-        previous.root.clock + previous.root.length === root.clock
-      ) {
-        previous.target.length += 1;
-        previous.root.length += 1;
-      } else {
-        projected.push({ target, root, birthClass });
-      }
-    }
-  }
-  return projected;
 }

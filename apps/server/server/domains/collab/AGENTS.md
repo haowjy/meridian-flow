@@ -53,7 +53,7 @@ propagation between them.
   through their one shared pipeline;
   `branch-push-transition.ts` is the sole ordering owner for settlement
   drain/reload/materialization/fenced completion and delivery across every push
-  mode. Its provenance-backed sweep detection is a best-effort live-session
+  mode. Its causal-root sweep detection is a best-effort live-session
   overlay and can never block durable completion. `branch-review*.ts` is a separately composed
   service for discard/undo/redo.
 - `domain/ports/pending-settlement-store.ts` is the required settlement
@@ -131,8 +131,11 @@ propagation between them.
   agent row's `draftBaseUpdateSeq` as that candidate's own observation
   watermark and elevates a live-session mark only for a receiving writer whose
   later edit that candidate overwrote. Unknown, historical, AI, and
-  other-writer roots are ordinary for that recipient. This never changes the
-  durable receipt or vetoes a push.
+  other-writer roots are ordinary for that recipient. Compact per-writer root
+  evidence preserves first admission when sync updates repeat old structs, is
+  evaluated by neutral interval operations, and is delivered only to
+  authenticated connections; it never changes the durable receipt or vetoes a
+  push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; swept changes elevate ephemeral marks. Trail evidence
   and peer-mark popovers remain read-only; receipt Undo/Redo is the sole

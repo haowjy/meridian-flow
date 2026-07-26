@@ -668,7 +668,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("item 24: a missing attribution manifest degrades sweep elevation without blocking", async () => {
+  it("item 24: sweep elevation does not depend on the safety attribution manifest", async () => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;
     const removeManifest = async () => {
       await db.update(schema.documentYjsCheckpoints).set({ attributionManifest: {} });
@@ -679,7 +679,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         const warm = createHarness({ afterDurableCommit: removeManifest });
         const branchId = await warm.seedDestructivePush("oracle-missing-manifest-warm");
         await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-        expectUnsweptChangeEvent(warm);
+        await expectLiveSweepOnly(warm);
         const observed = await observeSettlement(warm);
         warm.destroyWarmState();
         return observed;
@@ -703,7 +703,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         await expirePendingClaims();
         const cold = createHarness();
         await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
-        expectUnsweptChangeEvent(cold);
+        await expectLiveSweepOnly(cold);
         const observed = await observeSettlement(cold);
         cold.destroyWarmState();
         return observed;
@@ -715,10 +715,10 @@ describe("durable branch-push settlement oracle (postgres)", () => {
   });
 
   it.each([
-    ["historical text only", null, []],
-    ["this writer's recent edit", USER_ID, [USER_ID]],
-    ["another writer's recent edit", OTHER_USER_ID, [OTHER_USER_ID]],
-  ] as const)("classifies swept recipients for %s", async (_name, recentWriterUserId, expected) => {
+    ["historical text only", null, false],
+    ["this writer's recent edit", USER_ID, true],
+    ["another writer's recent edit", OTHER_USER_ID, false],
+  ] as const)("classifies the receiving writer for %s", async (_name, recentWriterUserId, swept) => {
     await resetDatabase();
     const harness = createHarness();
     const branchId = await harness.seedSweepClassificationPush({
@@ -727,7 +727,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     });
 
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expectSweepRecipients(harness, expected);
+    expectSweepClassification(harness, swept);
     harness.destroyWarmState();
   });
 });
@@ -756,7 +756,7 @@ async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): P
   expect(harness.changeEvents()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ sweptForUserIds: [USER_ID] })]),
+        changes: expect.arrayContaining([expect.objectContaining({ swept: true })]),
       }),
     ]),
   );
@@ -770,20 +770,14 @@ async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): P
   }
 }
 
-function expectUnsweptChangeEvent(harness: ReturnType<typeof createHarness>): void {
-  expectSweepRecipients(harness, []);
-}
-
-function expectSweepRecipients(
+function expectSweepClassification(
   harness: ReturnType<typeof createHarness>,
-  sweptForUserIds: readonly string[],
+  swept: boolean,
 ): void {
   expect(harness.changeEvents()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        changes: expect.arrayContaining([
-          expect.objectContaining({ sweptForUserIds: [...sweptForUserIds] }),
-        ]),
+        changes: expect.arrayContaining([expect.objectContaining({ swept })]),
       }),
     ]),
   );

@@ -7,18 +7,7 @@ UPDATE "change_trail_document_details"
 SET "changes" = (
 	SELECT COALESCE(
 		jsonb_agg(
-			(
-				CASE
-					WHEN jsonb_typeof("change"->'forwardActions') = 'object'
-						AND ("change"->'forwardActions') ? 'restore'
-						THEN jsonb_set(
-							"change" - 'forwardActions',
-							'{restore}',
-							"change"->'forwardActions'->'restore'
-						)
-					ELSE "change" - 'forwardActions'
-				END
-			) - 'swept' - 'writerProtection' - 'writerImpact'
+			"change" - 'forwardActions' - 'restore' - 'swept' - 'writerProtection' - 'writerImpact'
 			ORDER BY "ordinality"
 		),
 		'[]'::jsonb

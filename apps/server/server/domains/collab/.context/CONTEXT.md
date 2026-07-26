@@ -371,6 +371,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   dependency predicate.
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
+  Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`
+  evidence and evaluates it against neutral target-to-root intervals; it does
+  not reuse destructive-safety birth classes. The checkpoint state supplies a
+  neutral covered-root floor, and authority-order replay assigns only
+  previously unseen insertion ranges, so a later sync update cannot claim
+  historical or AI roots it repeats. Materialization scans checkpoint metadata,
+  loads only the distinct full states selected for candidate watermarks, and
+  caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
 - **Writer Apply is branch-scoped, not preview-scoped**:
@@ -399,14 +407,17 @@ history is preserved for attribution, echo, and undo dependency checking.
   admission both call the single `joinAdmissionWithinTx` writer inside their
   document-mutation transaction; source identity and completing-push exclusion
   are parameters, while join-version advancement follows one SQL path. Cold
-  reads best-effort reconstruct causal, actor-specific sweep evidence for the
-  final pre-push document so each connected editor can elevate only its own
-  overwritten post-observation edits. Push admission identity does not transfer
-  AI content authorship to the admitting writer.
+  reads best-effort reconstruct compact causal, actor-specific root evidence for
+  the final pre-push document so each authenticated connected editor can elevate
+  only its own overwritten post-observation edits. Delivery projects a
+  recipient-specific boolean per connection rather than broadcasting recipient
+  arrays; connections without an authenticated user identity receive no change
+  event. Push admission identity does not transfer AI content authorship to the
+  admitting writer.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.
-  Provenance reconstruction failure emits diagnostics and yields no swept
+  Root-effect materialization failure emits diagnostics and yields no swept
   elevation; it is never settlement authority. Settlement writes the complete
   push trail in its existing aggregate version; only journal or staged-push
   authority joined after the durable commit publishes another trail version. If
@@ -452,15 +463,17 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Post-durability notice failures** are structured-logged and may emit a best-effort
   `awareness_degraded` notice. They do not create process-local reporting authority.
 - **Report-only agent commits**: direct writes and reversals always merge through
-  Yjs. `materializeDestructiveProvenance` reconstructs exact durable writer/agent
-  lineage for best-effort live sweep detection. Checkpoint manifests
-  carry prior attribution across repeated compaction and floor-null authority
-  replacement. Under the same document-mutation lock as generation replacement,
+  Yjs. Neutral target-to-root lineage plus compact first-origin writer evidence
+  drives best-effort live sweep detection; destructive-safety provenance remains
+  a separate conservative lifecycle classifier. Checkpoint manifests carry
+  safety attribution across repeated compaction and floor-null authority
+  replacement, while checkpoint state supplies sweep policy's neutral covered
+  root floor. Under the same document-mutation lock as generation replacement,
   compaction reads, folds, and deletes only the current authority generation;
-  retired-generation suffixes never enter restored authority. Thread-peer roots
-  absent from the live document are agent-owned branch content. Durable trails
+  retired-generation suffixes never enter restored authority. Durable trails
   retain the ordinary before/after record regardless of classification; writer
-  lineage only decides whether a connected session elevates the mark.
+  lineage only decides whether an authenticated connected session elevates the
+  mark.
 ## LOCK-WS boundary
 
 `withDocument()` serializes coordinator callers, not writer WebSocket updates:

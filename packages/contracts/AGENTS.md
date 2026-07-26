@@ -10,8 +10,8 @@ runtime shapes, and observability records.
 - Yjs protocol contracts expose live rooms and generation-fenced branch rooms;
   draft rooms are deleted.
 - Durable trail contracts record every AI edit without writer-impact or swept
-  classification. `ChangeEventProjection.sweptForUserIds` carries a bounded,
-  best-effort recipient set for the live-session overlay only; never add it to
-  `TrailChangeV1` or persisted projections.
+  classification. `ChangeEventProjection.swept` is computed for one receiving
+  connection as a best-effort live-session hint; never add it to `TrailChangeV1`
+  or persisted projections.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
