@@ -96,7 +96,7 @@ free of Meridian URI schemes and database concerns.
 
 | File | Role |
 |---|---|
-| `auth.ts` | WorkOS AuthKit seam. `resolveUser(request)` validates the session cookie; `provisionAuthenticatedUser(db, authUser)` provisions or loads the Meridian Flow user row. |
+| `auth.ts` | WorkOS AuthKit seam. `resolveUser(request)` validates the session cookie; `provisionAuthenticatedUser(authUser, deps)` provisions or loads the Meridian Flow user row. |
 | `auth-gate.ts` | Single seam composing authentication, provisioning, and app services. `requireAppUser(event)` returns `{ app, user }`; `resolveAppUserFromRequest` is nullable for WS upgrade paths. |
 | `ws-upgrade-auth.ts` | Shared WS upgrade auth returning authenticated or deferred-close contexts. |
 

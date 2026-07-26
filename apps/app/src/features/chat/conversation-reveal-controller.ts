@@ -54,7 +54,7 @@ type Listener = () => void;
 
 const IDLE: ConversationRevealView = { thread: null, turn: null, change: null };
 
-export type ConversationRevealController = {
+type ConversationRevealController = {
   request: (target: ConversationRevealTarget) => void;
   cancel: () => void;
   target: () => ConversationRevealTarget | null;
@@ -62,7 +62,7 @@ export type ConversationRevealController = {
   snapshot: () => ConversationRevealView;
 };
 
-export function createConversationRevealController(): ConversationRevealController {
+function createConversationRevealController(): ConversationRevealController {
   let pending: Pending | null = null;
   let view: ConversationRevealView = IDLE;
   let nextRequestId = 1;
