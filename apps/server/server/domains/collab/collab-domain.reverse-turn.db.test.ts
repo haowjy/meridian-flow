@@ -16,7 +16,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       agentEditMutations,
+      branchPushOutboxUpdates,
+      branchPushSettlementOutbox,
       branchWriteJournal,
+      changeTrailDeliveryOutbox,
+      changeTrailDocumentDetails,
+      changeTrailDocumentOccurrences,
+      changeTrailShells,
       contextSources,
       documentBranches,
       documentYjsCheckpoints,
@@ -28,9 +34,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       folders,
       projects,
       pushLineage,
+      pendingNotices,
       threadWorks,
       threads,
       turns,
+      turnTrailWork,
       users,
       works,
     } = await import("@meridian/database/schema");
@@ -47,7 +55,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { decodeUpdateForDependencies, deleteRanges, rangesOverlap, suppliedRanges } =
       await import("./domain/journal-dependencies.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
@@ -84,7 +92,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       hocuspocus.documents.clear();
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
+        branchPushOutboxUpdates,
+        branchPushSettlementOutbox,
+        turnTrailWork,
+        changeTrailDeliveryOutbox,
+        changeTrailDocumentDetails,
+        changeTrailDocumentOccurrences,
+        changeTrailShells,
+        pendingNotices,
         documentYjsReversalOps,
         documentYjsReversals,
         agentEditMutations,

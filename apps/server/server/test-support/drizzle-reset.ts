@@ -43,3 +43,15 @@ export async function truncateDrizzleTables(db: Database, tables: unknown[]): Pr
   // Drizzle has no TRUNCATE builder, so the raw fragment is limited to schema-derived identifiers.
   await db.execute(sql.raw(`TRUNCATE ${tableList} CASCADE`));
 }
+
+/**
+ * Fast reset for focused suites that enumerate every table they can populate.
+ * Callers must order tables child-first because this deliberately avoids a
+ * graph-wide TRUNCATE CASCADE.
+ */
+export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promise<void> {
+  await assertThrowawayDatabase(db);
+  for (const table of tables) {
+    await db.execute(sql.raw(`DELETE FROM ${quoteDrizzleTable(table)}`));
+  }
+}
