@@ -107,7 +107,7 @@ flowchart LR
     DockShell -->|dock: view=changes| Changes[DockChangesView]
     Occupant -->|dock placement| DockHeader
     Changes --> DocGroup[ChangesDocumentGroup per doc]
-    DocGroup --> Card[ReviewOperationCard per op]
+    DocGroup --> Card[ReviewOperationCard per Discard class]
     Card --> Verbs[Selective Discard]
 ```
 
@@ -160,13 +160,13 @@ Adding click-to-edit or inline editing in the card body would require resolving
 the same Yjs anchors the inline-review extension uses, which is not practical
 for a non-editor component. Keep card interactions as focus + verbs.
 
-### Per-card Discard needs a real journal
+### Selective Discard needs a real branch journal
 
-The per-card Discard path reconstructs an inverse Yjs update from the draft
-journal. Synthetic or seeded drafts (QA fixtures created via direct DB inserts
-without real draft rows) have no journal or incomplete journals — the
-reconstruction fails silently or produces a no-op update. QA/probe drafts must
-come from real chat flows where the agent wrote to a draft.
+Selective Discard reconstructs a peer from the individually addressable,
+reviewable Work-draft journal rows and reverses the server-vended class.
+Synthetic QA branches created from snapshots or direct database inserts do not
+provide that evidence. QA/probe branches must come from real chat flows where
+the agent wrote to a Work draft.
 
 This has repeatedly surfaced in draft-review probes. See
 [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).

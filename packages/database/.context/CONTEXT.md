@@ -93,15 +93,6 @@ The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over
 re-squashing.
 
-### Rewritten branch-local migrations
-
-An unshipped branch-local migration may be rewritten instead of stacked, but a
-developer database that already journaled the old file will not replay it.
-Slice B rewrites `0064_writer_impact.sql` this way: fresh databases get the
-classification-free trail schema, while a local database that applied the
-earlier branch version must be reset with `pnpm db:reset`. `pnpm bootstrap`
-cannot repair an already-recorded migration whose SQL changed in place.
-
 ### Merge renumbering
 
 Never renumber a migration already present on `main`. When merging a branch
@@ -127,20 +118,4 @@ independent, non-nested scope.
 
 The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
-vs string `mode` split is a known inconsistency, not a pattern to extend — see
-the [schema map](schema-map.md) for the full column inventory and hazard list.
-
-## Schema map (regenerate-on-demand)
-
-A durable orientation map of the whole DB layer lives next to this file:
-
-- [`schema-map.md`](schema-map.md) — package layout, per-table column inventory,
-  relationships, and the timestamp-mode / `Date`-binding hazard list.
-- [`schema-map/index.html`](schema-map/index.html) — interactive ER view (open in
-  a browser; click any table for its purpose, columns, and source links).
-
-It is **regenerated on demand, not auto-maintained**. Each map records when it was
-last regenerated vs. when the DB layer source last changed
-(`git log -1 --date=short --format=%cd -- packages/database/src`). If the source
-is newer than the regen date, treat the map as stale and rebuild it from the
-current `src/schema/*.ts` definitions.
+vs string `mode` split is a known inconsistency, not a pattern to extend.

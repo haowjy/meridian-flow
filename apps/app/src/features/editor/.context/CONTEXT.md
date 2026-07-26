@@ -5,10 +5,9 @@ Reference depth for the app-facing editor surface. Read
 
 ## Toolbar — placement contract
 
-The formatting toolbar is a **docked prose-aligned row** above the scroll
-area (tab-direction E, settled 2026-07-13 — promoted from the former
-"reserve option C"). No card chrome, no rule beneath it: the row is bare
-controls sitting on canvas, separated from the prose by whitespace only.
+The formatting toolbar is a **docked prose-aligned row** above the scroll area.
+No card chrome, no rule beneath it: the row is bare controls sitting on canvas,
+separated from the prose by whitespace only.
 
 `EditorToolbar` owns the control cluster and command dispatch.
 `EditorSurfaceFrame` owns the placement invariant around it: an in-flow
@@ -48,9 +47,7 @@ Two self-contained surfaces, both resolving their own state from
   jade primary pill far right — the same order as the dock.
 
 The chip and header are mutually exclusive by the chip's own inline-review
-check, not by a shared slot. (The former `EditorBannerSlot`/`belowToolbar`
-tenancy mechanism was deleted 2026-07-21 when the review strip moved above
-the identity bar.)
+check, not by a shared slot.
 
 The review manuscript is the server draft projection, not a track-changes
 composition. Inline decorations may style ranges that exist in that projection,
@@ -66,10 +63,10 @@ owned by the writer-UX pass.
 
 | Placement | Reason rejected |
 |---|---|
-| Floating card pinned top-left (2026-07-13 → tab-direction E) | Card chrome broke the no-lines stack; overlay covered the first line and needed a `pt-16` reserve |
+| Floating card pinned top-left | Card chrome broke the no-lines stack; overlay covered the first line and needed a `pt-16` reserve |
 | Centered over the page | Balanced but least connected to chrome or text; still covers first line |
 | Corner-right palette | Out of the writing path but further from reach |
-| Full-width strip above editor (pre-`e4cd4e66`) | Mismatched the centered text column; read as stray chrome |
+| Full-width strip above editor | Mismatched the centered text column; read as stray chrome |
 
 ## Component API
 

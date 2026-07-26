@@ -1,31 +1,20 @@
 # TODO — agent-edit deferred work
 
-North-star: the agent-editing protocol (find/replace, block-hash addressing,
-resolve→apply) usable on any CRDT, any tool vocabulary, extractable as a library.
-We do **not** build the public surface from one implementation — a second
-implementation forces the contract shapes.
+Keep the agent-editing protocol reusable across CRDT and tool implementations,
+but do not freeze a public abstraction until a second implementation exposes
+the seam it needs.
 
-Source of truth: design doc `agent-edit-write-loop/design/crdt-text-port.md`
-(meridian-flow-docs work area).
+## Selective Discard reconstruction reuse
 
-**Landed:** the resolver→apply kernel is CRDT-neutral (`BlockRef`/`DocHandle`,
-neutral `AgentEditModel` seam; Yjs lives only in `model/` + runtime/undo plumbing),
-Tier 2 construction is behind an adapter verb, and the write-command schema is one
-Zod source (`tool/command-schema.ts`; `view`→`read`; query/write/history split).
-Below is what remains deferred.
+Work-draft selective Discard and live undo both reconstruct a peer from ordered
+Yjs updates, but Discard reverses every branch journal row in a server-vended
+class, including rows from different actors. A reusable agent-edit primitive
+would need to accept multiple update identities without importing branch-review
+concepts.
 
-## Draft review reject path — reconstruction reuse
-
-The editable-draft review architecture uses the same cold-reconstruction
-pattern as live undo (`packages/agent-edit/src/undo/reconstruction.ts`) to
-reverse hunk updates on the draft Y.Doc. Key difference: reject reverses
-ALL updates contributing to a hunk (AI + writer), not just one write's
-mutations. The `reconstructInverse` function needs to handle multiple
-`sourceUpdateIds` spanning different actors.
-
-**Invariant:** active draft update rows are never compacted. Reject depends
-on immutable, individually addressable ordered update rows. This is a collab
-domain invariant enforced at the storage layer, not in agent-edit.
+Active Work-draft journal rows must remain immutable and individually
+addressable. Collab storage owns that invariant; agent-edit should not infer it
+from a snapshot.
 
 Design: [inline-diff-decoration-architecture.md] in
 `meridian-flow-docs/work/human-undo-affordance/design/`.

@@ -1,13 +1,6 @@
 # Editor — TODO
 
-## Draft review remaining gaps
-
-Inline draft review is now live: the editor remounts into the `draft:<draftId>`
-room, `DraftInlineReviewExtension` owns decorations, the sidebar can activate
-and dispose operation-scoped hunks through server commands, and the review
-editor is an editable peer in the draft branch.
-
-Open gaps:
+## Draft review
 
 - **Cursor preservation across live ↔ draft remount.** Scroll uses best-effort
   layout restoration, but selection/cursor restoration is still not deliberate.
@@ -17,7 +10,7 @@ Open gaps:
   controller when the interaction model settles.
 - **Narrow viewport review parity.** The right rail intentionally hides below
   `lg`; make sure the docked diff panel keeps feature parity for any new
-  operation-level actions.
+  Discard-class actions.
 
 Design reference: [inline-diff-decoration-architecture.md].
 

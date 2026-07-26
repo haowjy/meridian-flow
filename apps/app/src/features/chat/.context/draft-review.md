@@ -29,18 +29,19 @@ Bulk Apply/Discard is one controller command over a captured target list; the
 dock does not infer command completion from busy/idle render edges. Apply
 addresses the current branch rather than preview operation ids or a revision
 token. The server settles the complete branch state at command time, including
-writer rows created after the last preview. Apply/Discard failures are session
-outcomes rendered by the review header rather than ignored promises.
-A batch stops at its first failure; transport failures surface through the
-dock's typed error state. Apply always merges through Yjs, including when the
-writer changed the same passage after the draft was cut. The durable receipt
-preserves each branch row's actor attribution. Active AI handles retain their
-normal live Undo dependency semantics; writer rows may therefore make an AI
-turn Undo unavailable. Best-effort sweep evidence only elevates a receiving
-writer's swept mark when that writer's post-observation edit was overwritten.
+writer rows created after the last preview. The client therefore treats preview
+operations and revisions as evidence, not command scope. Apply/Discard failures
+are session outcomes rendered by the review header rather than ignored
+promises. A batch stops at its first failure; transport failures surface through
+the dock's typed error state.
+
+Cross-cutting server policy:
+[whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-apply-whole-current-branch.md)
+and
+[live-only sweep projection](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/ai-change-event-projections.md).
 
 On Apply or whole-draft Discard, the controller clears the review surface so
-the editor rebinds from the draft room to the live manuscript room. The server
+the editor rebinds from the review branch room to the live manuscript room. The server
 owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states do not exist.
@@ -55,7 +56,7 @@ writer already is. The editor's review chrome is
 delegating to the controller. The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
 branch, so review has one active row per document. The dock's `DockChangesView`
-expands the reviewed document to operation cards read from the live preview.
+expands the reviewed document to Discard-class cards read from the live preview.
 Each card carries one hover-revealed Discard verb, the only mutating target on
 the card, driving `controller.discardOperation`. Whole-branch Apply remains in
 the review header so the UI cannot imply operation-scoped Apply. Discard
@@ -101,8 +102,8 @@ it does not scope Apply. Apply always settles the server's current branch.
 ## Draft review freshness
 
 `DraftReviewProvider` owns the client cache freshness contract for mounted inline
-reviews. When an inline review has a mounted draft `DocumentSession`, any Yjs
-update in that draft room invalidates both:
+reviews. When an inline review has a mounted review `DocumentSession`, any Yjs
+update in that branch room invalidates both:
 
 - the active draft preview query, so the editor rail/hunks re-derive from the
   latest server review model; and
@@ -152,10 +153,10 @@ both route through
 `resolveDraftOnlyTab(projectId, documentId, "committed" | "discarded")`:
 
 - Every Apply path materializes the whole branch and resolves `"committed"` —
-  keep the
-  tab, drop the marker — after the awaited draft-list refresh but while the
-  disposition lock remains held. Controls must not re-enable before that local
-  resolution; draft-group absence alone cannot distinguish Apply from Discard.
+  keep the tab, drop the marker — after the awaited draft-list refresh but while
+  the disposition lock remains held. Controls must not re-enable before that
+  local resolution; draft-group absence alone cannot distinguish Apply from
+  Discard.
 - Whole-draft Discard resolves `"discarded"` — close the tab.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
@@ -167,7 +168,5 @@ both route through
   the route-active tab.
 
 Server-side twin: discarding a new-document draft also removes its entry from
-the work manifest branch — otherwise the next Apply in that work pushes the
-dead entry to live and the discarded document resurrects as an empty file
-(caught by a runtime probe; regression test in
-`collab-domain.reverse-turn.db.test.ts`).
+the work manifest branch. Later Apply operations publish the manifest as well as
+document content, so a discarded entry must not remain in that branch.

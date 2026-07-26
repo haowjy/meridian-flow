@@ -27,11 +27,9 @@ immediate writes use the journal kind returned by submission to restore or recov
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
 - Destructive policy is report-only: Yjs merge never blocks an agent write.
-  Echo informs the agent; best-effort provenance detection can elevate the
-  writer's live-session swept mark but cannot become apply authority.
+  Echo reports best-effort direct-write destructive evidence. That evidence never
+  feeds branch-settlement sweep or apply authority.
 - Keep the kernel CRDT-neutral but be honest that v1 content currency is
   ProseMirror via `@meridian/markup`.
-- Do not add draft-scope persistence, `scope_id`, or compatibility shims for the
-  deleted draft subsystem.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)

@@ -17,36 +17,6 @@ Do not use it for the mutation policy or an in-memory `Y.Doc`. The policy uses
 the neutral `MutationTarget` for branch, scratch, and live inputs; only room-owned
 state is a live document.
 
-| Concern | Location |
-|---|---|
-| Document mutation policy | `domain/document-mutation-policy.ts` |
-| Durable authority heads and generation fencing | `domain/ports/document-authority-heads.ts`, `adapters/drizzle-document-authority-head.ts` |
-| Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
-| Document projection and activity read-model writes | `domain/ports/document-projection-effects.ts`, `adapters/drizzle-document-activity.ts` |
-| Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
-| Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
-| Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
-| Draft undo/redo history and Apply folding | `domain/branch-reversal-history.ts` |
-| Live→branch pull propagation | `domain/branch-pulls.ts` |
-| Critical sections | `domain/branch-critical-sections.ts` |
-| Push materialization | `domain/branch-push-plan.ts` |
-| Locked push and trail preparation | `domain/branch-push-preparation.ts` |
-| Trail projection | `domain/branch-trail-projection.ts` |
-| Durable push execution | `domain/branch-push-candidates.ts`, `domain/branch-push.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
-| Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
-| Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
-| Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
-| Session-local change-event projection + delivery | `domain/change-event-projection.ts`, `domain/branch-push-transition.ts`, `adapters/hocuspocus-change-event-delivery.ts` |
-| Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
-| Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
-| Hocuspocus persistence | `hocuspocus-persistence.ts` |
-| Yjs WebSocket orchestration | `lib/yjs-ws-handler.ts` |
-| Offline late reconciliation | `domain/offline-reconciliation.ts` |
-| Review/effective-read/response/reversal application services | `domain/work-draft-review-service.ts`, `domain/effective-document-reader.ts`, `domain/response-write-finalizer.ts`, `domain/turn-reversal-service.ts` |
-| Thread-peer runtime ownership, LRU, and turn diff | `domain/thread-peer-core-pool.ts` |
-| Thread notice production | `domain/reversal-notices.ts`, `domains/notices/` |
-| Production/in-memory assembly | `composition.ts`, `collab-facade.ts`, `adapters/in-memory/composition.ts` |
-
 ## Write codec and schema coherence
 
 `domain/markdown-document.ts` is the single content write/read and Y.Doc
@@ -58,16 +28,10 @@ branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
 
 **Durable whole-document projections route through this engine.** Push
-completion (`completeStagedPush` → `deriveDurableProjection`) injects
-`DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
-a `Pick<MarkdownDocumentEngine, "serializeDocument">` narrow port), never a
-schema-blind `{model, codec}` bag. The old bag serialized code documents through
-the markdown codec, emitting fenced output into `documents.markdown_projection`;
-code pushes now project raw verbatim text (the single `code_block` `textContent`).
-`PreparedPushCommit` no longer carries `markdownProjection`/`liveState`/
-`liveStateVector` — projection is derived at settlement, not prepared. Re-adding
-prepared projection fields or a `{model, codec}` bag re-opens the fence-corruption
-class for the projection column.
+completion derives the projection at settlement through
+`DurableProjectionSerializer`; `PreparedPushCommit` must not carry a prepared
+markdown projection or live snapshot. This keeps serialization inside the
+fenced settlement cut and preserves verbatim code-document output.
 
 **Projection effects preserve caller-specific ordering.** Ordinary durable
 writes start document activity and markdown projection together and settle both
@@ -83,11 +47,9 @@ binary/custom value on a tracked journal returns `corrupt_state` from
 Result-returning surfaces instead of escaping as a rejected promise.
 
 Invariant: a document's journal state must always be valid under the schema the
-client mounts for its filetype. Issue #196 exposed the historical failure mode:
-markdown-only seeding produced schema-invalid content that ProseMirror silently
-deleted on first open, then persisted that deletion. The current engine is
-schema-aware; all new seed and write paths must go through it rather than
-hand-building fragment content. A new document's first seed is installed as its
+client mounts for its filetype. All seed and write paths go through the
+schema-aware engine rather than hand-building fragment content. A new
+document's first seed is installed as its
 generation-1 checkpoint with no admitted journal mutations. Seeding is strictly initialize-only: any
 existing admission or checkpoint makes later attempts successful no-ops. A seed
 is reconciled into an already-open live room before success returns, and a stale
@@ -111,10 +73,9 @@ identity. `WorkDraftReviewService` resolves it to the physical Work branch and
 keeps that branch identity inside the domain; `reviewRoomName` remains an opaque
 transport address.
 
-Propagation is sync-only: no basis reconstruction, draft projection, accept token,
-reactivation fence, or scope routing. Cold attribution uses persisted branch
-journal rows and live journal metadata; memory-only runtime maps are never an
-attribution authority.
+Propagation is sync-only. Cold attribution uses persisted branch journal rows
+and live journal metadata; memory-only runtime maps are never an attribution
+authority.
 Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
 maximum), on branch review room open/reconnect, and at agent tool boundaries. The
 room trigger is fire-and-forget; Hocuspocus admission never waits for the pull. Once
@@ -138,9 +99,7 @@ processing — do not move registration after an `await`.
 `storeHocuspocusBranch` only drains pending branch admissions; calling
 `checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
 `AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`
-rejects overlap on sight). Pinned by the `storeHocuspocusBranch` re-entry regression
-test; the prior redundant checkpoint surfaced only in a live loaded-room probe, not
-`pnpm check`.
+rejects overlap on sight).
 
 The Yjs route owns only upgrade authentication, CrossWS peer adaptation, and
 gateway delegation. `lib/yjs-ws-handler.ts` owns connection state, admission,
@@ -213,9 +172,6 @@ recovers storage, and journal row counts are not equivalent to semantic edits.
 Reconnect frames already contained by the live document are acknowledged but
 do not enter the journal or trigger post-persistence hooks.
 
-The deleted legacy draft tables (`document_yjs_drafts`,
-`document_yjs_draft_updates`) are not part of the model.
-
 Novel live sync-step-2 integration is the offline-reconciliation hook. It
 captures the converged state before asynchronous persistence work, replays the
 durable journal for origin and structural-delete attribution, and reports each
@@ -247,7 +203,7 @@ fail only when a command reaches them.
   status, dependency analysis, and successful peer reconstruction. Undo treats
   both `active` and `rollback_pending` rows as current effects; redo rebuilds
   from active survivors plus only the selected discarded target.
-- **Receipt command refusals are semantic outcomes**: the reverse endpoint may
+- **Receipt command unavailable states are semantic outcomes**: the reverse endpoint may
   return `nothing_to_undo`, `nothing_to_redo`, `cant_undo_dependent`, `expired`,
   or `partial` with HTTP 200 when state races the projection. The app invalidates
   the turn query after the command and retains the raced reason while the receipt
@@ -255,7 +211,7 @@ fail only when a command reaches them.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
-- **Draft write-command reversal is branch-scoped**: while the current Work-draft
+- **Work-draft write-command reversal is branch-scoped**: while the current Work-draft
   generation has agent rows for the thread, `write(command="undo"|"redo")`
   reconstructs and stages reversals exclusively from those rows. The staged
   system row carries the Work-draft generation and becomes durable in the same
@@ -269,7 +225,7 @@ fail only when a command reaches them.
   live store so pushed writes retain their normal undo path.
 - **Turn reversal is durable-atomic and runtime-staged**: production persists
   branch and live changes in one ambient Drizzle transaction. Across distinct
-  documents, a no-op or refusal mixed with success makes the aggregate partial
+  documents, a no-op or unavailable result mixed with success makes the aggregate partial
   and aborts the whole transaction. Duplicate branch/live results for the same
   document are folded first, so one successful scope plus its no-op peer remains
   successful. Branch broadcasts, live Y.Doc application, runtime synchronization,
@@ -277,7 +233,7 @@ fail only when a command reaches them.
   recovery; rollback publishes none of them. Cross-room publication is
   serialized, not a simultaneous transport primitive. Branch candidates are
   restricted to the command's authorized document set.
-- **Draft handles name durable response groups**: response buffering and branch
+- **Work-draft handles name durable response groups**: response buffering and branch
   projection fold all same-document mutations in one response into one
   `branch_write_journal` row. Every write in that group therefore receives the
   same `w<N>` handle. Selectors operate on durable rows, not transient tool-call
@@ -285,16 +241,17 @@ fail only when a command reaches them.
   update. This matches the folded, turn-scoped diff contract rather than
   advertising per-write identity the journal does not retain.
   Apply materializes only handles whose final branch state is active; handles
-  eliminated by Draft undo are squashed rather than recreated as active live
+  eliminated by Work-draft write reversal are squashed rather than recreated as active live
   mutations for content that is absent. Each surviving branch journal row keeps
   its own live update identity and attribution. Writer rows therefore remain
   visible to the dependency predicate instead of being folded into an AI
   mutation or representative push author.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
-the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
-inside the same transaction, under `lockDocumentMutation` advisory lock. There is
-no separate live `ReversalCommitGuard`. Draft reversal uses the generation and
-journal-watermark fence above.
+  the dependency check (`hasDependentLaterRows` in
+  `domain/journal-dependencies.ts`) inside the same transaction, under
+  `lockDocumentMutation` advisory lock. There is
+  no separate live `ReversalCommitGuard`. Work-draft reversal uses the generation and
+  journal-watermark fence above.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
 - **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
@@ -333,10 +290,7 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
-  deleted anchors retain evidence under an explicit `anchorState`. Forward
-  actions require an available anchor before loading evidence and hold the
-  document, source, work, and project authorization rows locked across guarded
-  live apply and journal finalization.
+  deleted anchors retain evidence under an explicit `anchorState`.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only. The
@@ -366,7 +320,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   as a `reconcile` row so cold replay includes causal dependencies omitted from
   active rows. Active agent handles materialize against their corresponding
   authored rows; reconciliation coverage is not a later semantic dependency.
-  Handles eliminated by Draft Undo remain absent. A later writer row can
+  Handles eliminated by Work-draft write reversal remain absent. A later writer row can
   therefore make producing-turn Undo unavailable through the canonical
   dependency predicate.
   Push-time and immediate-path sweep detection derive their live-session hint
@@ -382,7 +336,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
 - **Writer Apply is branch-scoped, not preview-scoped**:
-  `DraftAcceptRequest` names the draft or branch only. The server pushes the
+  `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.
   Preview operations and revision tokens are presentation evidence, not command
   selection or freshness authority.
@@ -430,9 +384,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
-  updates, and release probes must verify writer-visible trail flows. Fixture
-  deltas once passed the oracle while repeated full-state
-  structs broke first-birth attribution.
+  updates, and release probes must verify writer-visible trail flows.
 - **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
   use an injected schedule. Production obtains its time from PostgreSQL; tests
   advance a controlled schedule. Do not reintroduce process-clock comparisons or

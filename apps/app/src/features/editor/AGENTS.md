@@ -10,7 +10,8 @@ belong under `core/editor`; project context owns pane and tab composition.
 - Keep prose geometry in `editor-column.ts`; hosts consume it rather than
   copying column or spacing classes.
 - Inline draft review mounts the server projection in an editable editor: the
-  writer is a peer in the draft room, and edits there land in the draft branch.
+  writer is a peer in the review branch room, and edits there land in that
+  branch.
 - Peer-mark evidence reads delegate to `features/change-trail`; this directory
   owns only the anchored popover and editor interaction.
 
