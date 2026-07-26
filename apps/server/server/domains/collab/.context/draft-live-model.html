@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Draft / Live Model</title>
+<style>
+  :root {
+    --paper: #fdfdfb;
+    --ink: #22262a;
+    --muted: #5c646b;
+    --rule: #e4e2dc;
+    --live: #3b5bdb;
+    --draft: #0f766e;
+    --gate: #b42318;
+    --chip: #f2f1ec;
+    --code-bg: #f2f1ec;
+  }
+  html.dark {
+    --paper: #16181b;
+    --ink: #e6e4de;
+    --muted: #9aa1a8;
+    --rule: #32363b;
+    --live: #7b96f4;
+    --draft: #3fb8a8;
+    --gate: #f08c7d;
+    --chip: #24272b;
+    --code-bg: #24272b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 1.2rem 0 0.4rem; text-wrap: balance; }
+  h2 { font-size: 1.15rem; margin: 2.4rem 0 0.6rem; text-wrap: balance; }
+  p, li { max-width: 65ch; }
+  code {
+    font: 0.85em ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px;
+  }
+  a { color: var(--live); }
+  .lede { font-size: 1.05rem; }
+  .muted { color: var(--muted); }
+  .toggle {
+    position: fixed; top: 0.75rem; right: 0.75rem;
+    background: var(--chip); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: 999px; padding: 0.35rem 0.7rem; cursor: pointer; font-size: 0.9rem;
+  }
+  figure { margin: 1.5rem 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.4rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  details { border: 1px solid var(--rule); border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.8rem 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  details[open] summary { margin-bottom: 0.5rem; }
+  .gate-word { color: var(--gate); font-weight: 650; }
+  .live-word { color: var(--live); font-weight: 650; }
+  .draft-word { color: var(--draft); font-weight: 650; }
+  .rule-list li { margin-bottom: 0.45rem; }
+  @media (prefers-color-scheme: dark) {
+    html:not(.light) {
+      --paper: #16181b; --ink: #e6e4de; --muted: #9aa1a8; --rule: #32363b;
+      --live: #7b96f4; --draft: #3fb8a8; --gate: #f08c7d; --chip: #24272b; --code-bg: #24272b;
+    }
+  }
+</style>
+</head>
+<body>
+<button class="toggle" id="themeToggle" aria-label="Toggle theme">☀ / 🌙</button>
+<main>
+
+<h1>The Draft / Live Model</h1>
+<p class="lede">
+One document, two surfaces, <strong>one consent point</strong>. Everything in
+the system merges automatically — AI edits into the draft, live edits into the
+draft — except a single edge: promoting the <span class="draft-word">draft</span>
+into <span class="live-word">live</span>. That edge is
+<span class="gate-word">Apply</span>, and it belongs to the writer.
+</p>
+
+<figure aria-label="Flow diagram of the draft/live model">
+<svg viewBox="0 0 680 400" role="img">
+  <defs>
+    <marker id="arrA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <!-- Live -->
+  <g style="color: var(--live)">
+    <rect x="40" y="30" width="280" height="86" rx="10" fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="180" y="62" text-anchor="middle" fill="currentColor" font-size="19" font-weight="700" font-family="sans-serif">Live document</text>
+    <text x="180" y="88" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">canonical Yjs journal · the manuscript</text>
+  </g>
+  <!-- Writer / other sessions -->
+  <text x="470" y="55" fill="var(--muted)" font-size="13" font-family="sans-serif">writer &amp; other sessions</text>
+  <text x="470" y="73" fill="var(--muted)" font-size="13" font-family="sans-serif">edit live directly</text>
+  <line x1="455" y1="66" x2="330" y2="70" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#arrA)" style="color: var(--muted)"/>
+  <!-- Pull: live -> draft -->
+  <g style="color: var(--draft)">
+    <line x1="140" y1="116" x2="140" y2="242" stroke="currentColor" stroke-width="2" marker-end="url(#arrA)"/>
+    <text x="152" y="168" fill="currentColor" font-size="13.5" font-weight="600" font-family="sans-serif">continuous pull — automatic</text>
+    <text x="152" y="188" fill="var(--muted)" font-size="12.5" font-family="sans-serif">chunked, attributed with marks,</text>
+    <text x="152" y="206" fill="var(--muted)" font-size="12.5" font-family="sans-serif">never gated, never refused</text>
+  </g>
+  <!-- Apply: draft -> live -->
+  <g style="color: var(--gate)">
+    <line x1="565" y1="242" x2="565" y2="120" stroke="currentColor" stroke-width="2.4" marker-end="url(#arrA)"/>
+    <rect x="500" y="150" width="130" height="56" rx="8" fill="var(--paper)" stroke="currentColor" stroke-width="2"/>
+    <text x="565" y="173" text-anchor="middle" fill="currentColor" font-size="15" font-weight="700" font-family="sans-serif">Apply</text>
+    <text x="565" y="193" text-anchor="middle" fill="currentColor" font-size="12" font-family="sans-serif">writer consent · gated</text>
+    <text x="352" y="132" fill="var(--live)" font-size="12.5" font-family="sans-serif" transform="rotate(0)"> </text>
+  </g>
+  <!-- Draft -->
+  <g style="color: var(--draft)">
+    <rect x="40" y="242" width="590" height="86" rx="10" fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="335" y="274" text-anchor="middle" fill="currentColor" font-size="19" font-weight="700" font-family="sans-serif">Work draft (branch)</text>
+    <text x="335" y="300" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">one review branch per (document, Work) · real Y.Doc</text>
+  </g>
+  <!-- AI -->
+  <text x="200" y="372" fill="var(--muted)" font-size="13" font-family="sans-serif">AI (thread peers) always writes here — never to live</text>
+  <line x1="190" y1="366" x2="190" y2="332" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#arrA)" style="color: var(--muted)"/>
+</svg>
+<figcaption>
+Downward flow is automatic and unconditional. Upward flow happens only through
+the writer's Apply.
+</figcaption>
+</figure>
+
+<h2>The two surfaces</h2>
+<p>
+Both surfaces are real Y.Docs mounted by the same editor with an explicit
+<code>EditorMountIdentity</code> — the surface is a construction fact, not a
+prop that drifts.
+</p>
+<div class="scroll">
+<table>
+  <tr><th></th><th>Live</th><th>Review (draft)</th></tr>
+  <tr>
+    <td><strong>What it is</strong></td>
+    <td>The manuscript. Canonical journal (<code>document_yjs_updates</code>).</td>
+    <td>The proposal. One Work-draft branch per <code>(documentId, workId)</code>.</td>
+  </tr>
+  <tr>
+    <td><strong>Who writes</strong></td>
+    <td>The writer and other live sessions. Never the AI directly.</td>
+    <td>AI thread peers push every write here; live content pulls in continuously.</td>
+  </tr>
+  <tr>
+    <td><strong>Annotations</strong></td>
+    <td>Peer marks — ephemeral session overlay (<code>markerStore</code>).</td>
+    <td>Inline review decorations from the durable review model.</td>
+  </tr>
+  <tr>
+    <td><strong>Leaving it</strong></td>
+    <td>—</td>
+    <td>Apply (publish whole branch) or Discard (by discard class).</td>
+  </tr>
+</table>
+</div>
+
+<h2>Everything below the gate is automatic</h2>
+<ul class="rule-list">
+  <li><strong>AI always writes to the branch.</strong>
+      <code>createBranchAgentEditCoordinator</code> gives the AI no path to
+      live. There is no per-edit accept, no veto, no sweep negotiation.</li>
+  <li><strong>The draft continuously pulls from live.</strong>
+      <code>branch-pulls.ts</code> (<code>scheduleLivePull</code> /
+      <code>flushLivePull</code>) merges live updates into the draft. Room
+      admission triggers a pull; open rooms receive pull deltas without
+      reconnecting. If another session edits live, the edit shows up in the
+      draft — peer marks riding along.</li>
+  <li><strong>Pulls arrive as chunks, attributed with marks — not cursors.</strong>
+      Yjs presence is room-scoped by design; a cursor for someone editing a
+      different surface would be a ghost. A chunked pull is a unit you can
+      mark with provenance. Keystroke streaming has no boundary to hang a
+      mark on: it reads as haunted text, not collaboration.
+      <em>Live enough to trust, chunked enough to read.</em></li>
+  <li><strong>Merging always succeeds.</strong> CRDTs never refuse a merge —
+      that is the point of them. Rejection is not a Yjs concept; it exists
+      only at the one application-layer edge below.</li>
+</ul>
+
+<h2>The one consent point: Apply</h2>
+<p>
+<span class="gate-word">Apply is consent.</span> Clicking it means the writer
+accepted that the current draft — the <em>whole</em> branch, including writer
+edits made after preview — replaces live. There is no partial apply, no
+machine arbitration of meaning. Proposal cards offer selective
+<em>Discard</em> only, grouped by server-vended discard class.
+</p>
+<p>
+The writer's protection is not a veto layer. It is two things:
+</p>
+<ol>
+  <li><strong>Seeing what Apply will do</strong> — the review surface, and a
+      planned live-vs-draft diff mode
+      (<a href="https://github.com/haowjy/meridian-flow/issues/421">#421</a>).</li>
+  <li><strong>The stale-Apply invariant</strong> — below.</li>
+</ol>
+
+<details>
+<summary>Core invariant: refuse a stale Apply (#420)</summary>
+<p>
+Apply consents only to replacing <em>the live the writer was looking at</em>.
+If live advanced past the draft's rendered pull state at the moment of Apply,
+the server refuses — <code>git push</code> non-fast-forward semantics. Held
+by mechanism, not prose:
+</p>
+<ol>
+  <li><strong>Type:</strong> Apply requires a branded
+      <code>expectedLiveHead</code> token. Calling apply without declaring a
+      base is a compile error.</li>
+  <li><strong>Source:</strong> the token is server-minted from the pull
+      bookkeeping the draft already maintains; the client echoes the
+      watermark it <em>rendered</em>. One source of truth for "what has the
+      draft seen."</li>
+  <li><strong>Check:</strong> a fast-forward guard
+      (<code>expectedLiveHead</code> vs current head) inside the apply
+      transaction, under the same serialization that orders live writes.
+      Refusal is total — nothing partially applied.</li>
+  <li><strong>Recovery is automatic:</strong> refusal → pull refreshes the
+      draft → AI re-proposes → writer applies again. The refusal is a retry
+      loop that resolves itself; the writer's only job is to look and click
+      again.</li>
+</ol>
+<p class="muted">
+Detection is a state-vector comparison (live's SV ≤ draft's pulled SV ⇔
+"draft is up to date"); refusal is application-layer because CRDTs cannot
+refuse. Pulls (live→draft) are <strong>never</strong> gated — do not
+generalize the guard onto the pull path.
+</p>
+</details>
+
+<h2>The durable record</h2>
+<ul class="rule-list">
+  <li><strong>Change trails are the sole durable publication record.</strong>
+      Settlement keeps exact authored rows plus a canonical reconciliation
+      row, so cold replay matches the live merge.</li>
+  <li><strong>A completed turn rests as one compact receipt.</strong>
+      Expansion shows every trail change in ordinal order with Before/After.
+      Receipt-level Undo/Redo is the sole AI reversal authority; mark
+      popovers are read-only evidence.</li>
+  <li><strong>Runtime state is memory-only.</strong> Restarts cold-reconstruct
+      from the live journal plus branch state/journal rows.</li>
+</ul>
+
+<h2>What this model replaced</h2>
+<details>
+<summary>Deleted machinery, and why</summary>
+<ul class="rule-list">
+  <li><strong>The conflict veto</strong> — could refuse a valid Yjs merge.
+      Refusing merges is anti-CRDT; consent moved to the Apply edge instead.</li>
+  <li><strong>Durable <code>writerImpact</code> classification</strong> —
+      duplicated live-mark meaning; a second source of truth for the same
+      fact.</li>
+  <li><strong>Popover Restore</strong> — a second reversal authority
+      competing with receipt Undo.</li>
+  <li><strong>Publish-time rebase</strong> — rejected on product grounds: it
+      would have the machine arbitrate meaning. Preserved as a rejected
+      alternative in the work archive
+      (<code>work/draft-simplify/design/publish-time-rebase.md</code>).</li>
+  <li><strong>Per-edit accept surfaces and sweep fan-out</strong> — made
+      routine edits feel exceptional; consent belongs at one edge, not
+      smeared across every change.</li>
+</ul>
+<p class="muted">
+The recurring disease was two sources of truth for one fact; the recurring
+cure was one mechanism, enforced by types and keys rather than prose.
+</p>
+</details>
+
+<h2>Boundaries that must hold</h2>
+<div class="scroll">
+<table>
+  <tr><th>Edge</th><th>Rule</th></tr>
+  <tr><td>live → draft</td><td><strong>Never gated.</strong> Continuous, automatic, always merges.</td></tr>
+  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion; guarded by the stale-Apply invariant.</td></tr>
+  <tr><td>AI → live</td><td><strong>Does not exist.</strong> AI writes to the branch, always.</td></tr>
+  <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>
+</table>
+</div>
+
+<h2>Further reading</h2>
+<ul>
+  <li><a href="CONTEXT.md">CONTEXT.md</a> — contracts, authority head, write codec, branch model in depth</li>
+  <li><a href="../AGENTS.md">collab AGENTS.md</a> — the working mental model for this domain</li>
+  <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse-stale-Apply invariant</a> ·
+      <a href="https://github.com/haowjy/meridian-flow/issues/421">#421 diff mode</a> ·
+      <a href="https://github.com/haowjy/meridian-flow/issues/422">#422 one mark vocabulary</a></li>
+</ul>
+
+</main>
+<script>
+  const t = document.getElementById('themeToggle');
+  t.addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.classList.toggle('dark');
+    root.classList.toggle('light', !dark);
+  });
+</script>
+</body>
+</html>

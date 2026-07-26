@@ -127,6 +127,7 @@ propagation between them.
   queries. Success-path wire events are tracked in
   [#239](https://github.com/haowjy/meridian-flow/issues/239).
 
+→ [`.context/draft-live-model.html`](.context/draft-live-model.html) — visual explainer of the draft/live consent model (open in a browser)
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`domains/notices/AGENTS.md`](../notices/AGENTS.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)
