@@ -19,10 +19,11 @@ export function createHocuspocusChangeEventDelivery(input: {
         // the branch: prefix and intentionally receive attributed decorations elsewhere.
         const room = input.hocuspocus().documents.get(message.documentId);
         if (!room) return;
-        const connectionsByUser = new Map<UserId | null, Set<Connection>>();
+        const connectionsByUser = new Map<UserId, Set<Connection>>();
         for (const connection of room.getConnections()) {
           const rawUserId = (connection.context as { userId?: unknown }).userId;
-          const userId = typeof rawUserId === "string" ? (rawUserId as UserId) : null;
+          if (typeof rawUserId !== "string") continue;
+          const userId = rawUserId as UserId;
           const connections = connectionsByUser.get(userId) ?? new Set<Connection>();
           connections.add(connection);
           connectionsByUser.set(userId, connections);

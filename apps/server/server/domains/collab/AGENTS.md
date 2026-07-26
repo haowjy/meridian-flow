@@ -132,8 +132,10 @@ propagation between them.
   watermark and elevates a live-session mark only for a receiving writer whose
   later edit that candidate overwrote. Unknown, historical, AI, and
   other-writer roots are ordinary for that recipient. Compact per-writer root
-  evidence is evaluated by neutral interval operations and delivered per
-  connection; it never changes the durable receipt or vetoes a push.
+  evidence preserves first admission when sync updates repeat old structs, is
+  evaluated by neutral interval operations, and is delivered only to
+  authenticated connections; it never changes the durable receipt or vetoes a
+  push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; swept changes elevate ephemeral marks. Trail evidence
   and peer-mark popovers remain read-only; receipt Undo/Redo is the sole

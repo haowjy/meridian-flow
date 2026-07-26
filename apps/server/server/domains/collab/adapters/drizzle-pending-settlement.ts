@@ -36,7 +36,7 @@ import type {
   PendingSettlementStore,
   SettlementAdmission,
 } from "../domain/ports/pending-settlement-store.js";
-import { ProvenanceMaterializationError } from "../domain/provenance.js";
+import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import {
   allocateDocumentAdmission,
@@ -670,6 +670,20 @@ async function readPendingSettlement(
         `Pending branch push settlement ${pushId} has no authority admission`,
       );
     }
+    const checkpoints = await db
+      .select({
+        state: documentYjsCheckpoints.state,
+        upToSeq: documentYjsCheckpoints.upToSeq,
+      })
+      .from(documentYjsCheckpoints)
+      .where(
+        and(
+          eq(documentYjsCheckpoints.documentId, row.outbox.documentId),
+          eq(documentYjsCheckpoints.authorityId, authority.authorityId),
+          eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+        ),
+      )
+      .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id));
     const attributedRows = await db
       .select({
         journalRowId: documentYjsUpdates.id,
@@ -691,7 +705,20 @@ async function readPendingSettlement(
         documentYjsUpdates.id,
       );
     sweepEvidence = materializeSweepEvidence({
-      candidates: sweepCandidates,
+      candidates: sweepCandidates.map((candidate) => {
+        const checkpoint = checkpoints.find(
+          ({ upToSeq }) => upToSeq <= candidate.observedBaseUpdateSeq,
+        );
+        if (!checkpoint) {
+          throw new ProvenanceMaterializationError(
+            `Pending branch push settlement ${pushId} has no neutral root floor`,
+          );
+        }
+        return {
+          ...candidate,
+          retainedRoots: journalInsertionRanges(new Uint8Array(checkpoint.state)),
+        };
+      }),
       rows: attributedRows.map((attribution) => ({
         ...attribution,
         journalRowId: BigInt(attribution.journalRowId),

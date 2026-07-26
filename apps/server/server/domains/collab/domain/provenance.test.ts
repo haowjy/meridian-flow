@@ -1,5 +1,6 @@
 /** Contract tests for deterministic provenance replay and the reserved namespace. */
 
+import { normalizeLineageRanges } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -9,6 +10,7 @@ import {
   assertClientUpdateOutsideReservedNamespace,
   createSemanticProvenanceWriter,
   type DocumentAuthorityId,
+  journalInsertionRanges,
   materializeCandidateProvenance,
   materializeProvenanceView,
   PROVENANCE_TARGETS_TYPE,
@@ -321,8 +323,18 @@ describe("sweep observation evidence", () => {
     const evidence = materializeSweepEvidence({
       rows,
       candidates: [
-        { precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 10 },
-        { precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 11 },
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 10,
+          retainedRoots: [],
+        },
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 11,
+          retainedRoots: [],
+        },
       ],
     });
 
@@ -334,37 +346,49 @@ describe("sweep observation evidence", () => {
   });
 
   it("keeps every recipient while excluding historical, AI, and unknown roots", () => {
-    const doc = proseDoc("writer words");
-    const update = Y.encodeStateAsUpdate(doc);
     const recentWriters = Array.from({ length: 101 }, () => crypto.randomUUID());
+    const historicalDoc = proseDoc("historical");
+    const historicalUpdate = Y.encodeStateAsUpdate(historicalDoc);
     const evidence = materializeSweepEvidence({
       rows: [
         {
           journalRowId: 10n,
           originType: "human",
           actorUserId: crypto.randomUUID(),
-          update,
+          update: historicalUpdate,
         },
         {
           journalRowId: 11n,
           originType: "agent",
           actorUserId: null,
-          update,
+          update: updateForProse("agent"),
         },
         {
           journalRowId: 12n,
           originType: null,
           actorUserId: null,
-          update,
+          update: updateForProse("unknown"),
         },
-        ...recentWriters.map((actorUserId, index) => ({
-          journalRowId: BigInt(13 + index),
-          originType: "human",
-          actorUserId,
-          update,
-        })),
+        ...recentWriters.map((actorUserId, index) => {
+          const writerDoc = proseDoc(`writer-${index}`);
+          const update = Y.encodeStateAsUpdate(writerDoc);
+          writerDoc.destroy();
+          return {
+            journalRowId: BigInt(13 + index),
+            originType: "human",
+            actorUserId,
+            update,
+          };
+        }),
       ],
-      candidates: [{ precedingUpdates: [], update: new Uint8Array(), observedBaseUpdateSeq: 10 }],
+      candidates: [
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 10,
+          retainedRoots: [],
+        },
+      ],
     });
 
     expect(evidence.candidates[0]?.byUser.map(({ userId }) => userId)).toEqual(recentWriters);
@@ -373,6 +397,52 @@ describe("sweep observation evidence", () => {
         ({ rootsAfterObservationWatermark }) => rootsAfterObservationWatermark.length > 0,
       ),
     ).toBe(true);
+    historicalDoc.destroy();
+  });
+
+  it("attributes only a human row's first-born roots when its update repeats older structs", () => {
+    const doc = proseDoc("checkpoint text");
+    const checkpointUpdate = Y.encodeStateAsUpdate(doc);
+    const afterCheckpoint = Y.encodeStateVector(doc);
+    appendVisibleText(doc, "old agent text");
+    const agentUpdate = Y.encodeStateAsUpdate(doc, afterCheckpoint);
+    const beforeNovel = Y.encodeStateVector(doc);
+    appendVisibleText(doc, "new writer text");
+    const novelUpdate = Y.encodeStateAsUpdate(doc, beforeNovel);
+    const repeatedWithNovel = Y.encodeStateAsUpdate(doc);
+    const actorUserId = crypto.randomUUID();
+
+    const evidence = materializeSweepEvidence({
+      rows: [
+        {
+          journalRowId: 11n,
+          originType: "agent",
+          actorUserId: null,
+          update: agentUpdate,
+        },
+        {
+          journalRowId: 12n,
+          originType: "human",
+          actorUserId,
+          update: repeatedWithNovel,
+        },
+      ],
+      candidates: [
+        {
+          precedingUpdates: [],
+          update: new Uint8Array(),
+          observedBaseUpdateSeq: 10,
+          retainedRoots: journalInsertionRanges(checkpointUpdate),
+        },
+      ],
+    });
+
+    expect(evidence.candidates[0]?.byUser).toEqual([
+      {
+        userId: actorUserId,
+        rootsAfterObservationWatermark: normalizeLineageRanges(journalInsertionRanges(novelUpdate)),
+      },
+    ]);
     doc.destroy();
   });
 });
@@ -441,6 +511,13 @@ function proseDoc(value: string): Y.Doc {
   paragraph.push([new Y.XmlText(value)]);
   doc.getXmlFragment("prosemirror").push([paragraph]);
   return doc;
+}
+
+function updateForProse(value: string): Uint8Array {
+  const doc = proseDoc(value);
+  const update = Y.encodeStateAsUpdate(doc);
+  doc.destroy();
+  return update;
 }
 
 function appendCertifiedCarry(

@@ -32,12 +32,13 @@ describe("Hocuspocus change-event delivery", () => {
   it("targets each connected writer with only that writer's sweep classification", () => {
     const writerA = connection("writer-a");
     const writerB = connection("writer-b");
-    const liveConnections = [writerA, writerB];
-    const deliveries = new Map<string, unknown>();
+    const unidentified = { context: {} } as Connection;
+    const liveConnections = [writerA, writerB, unidentified];
+    const deliveries = new Map<Connection, unknown>();
     const liveBroadcast = vi.fn((payload: string, filter: (connection: Connection) => boolean) => {
       for (const candidate of liveConnections) {
         if (filter(candidate)) {
-          deliveries.set((candidate.context as { userId: string }).userId, JSON.parse(payload));
+          deliveries.set(candidate, JSON.parse(payload));
         }
       }
     });
@@ -65,14 +66,15 @@ describe("Hocuspocus change-event delivery", () => {
     delivery.deliver({ ...message, documentId: "00000000-0000-4000-8000-000000000002" }, new Map());
 
     expect(liveBroadcast).toHaveBeenCalledTimes(2);
-    expect(deliveries.get("writer-a")).toMatchObject({
+    expect(deliveries.get(writerA)).toMatchObject({
       type: "change_event",
       documentId: message.documentId,
       changes: [{ changeId: "change-1", swept: true }],
     });
-    expect(deliveries.get("writer-b")).toMatchObject({
+    expect(deliveries.get(writerB)).toMatchObject({
       changes: [{ changeId: "change-1", swept: false }],
     });
+    expect(deliveries.has(unidentified)).toBe(false);
     expect(branchBroadcast).not.toHaveBeenCalled();
     expect(disconnectedBroadcast).not.toHaveBeenCalled();
   });

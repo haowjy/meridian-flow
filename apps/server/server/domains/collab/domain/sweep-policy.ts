@@ -46,18 +46,24 @@ export function materializeSweepEvidence(input: {
     precedingUpdates: readonly Uint8Array[];
     update: Uint8Array;
     observedBaseUpdateSeq: number;
+    /** Neutral checkpoint floor: later sync payloads cannot claim these old roots. */
+    retainedRoots: readonly WriterLineageRange[];
   }[];
 }): SweepEvidence {
   return {
     candidates: input.candidates.map((candidate) => ({
       precedingUpdates: candidate.precedingUpdates,
       update: candidate.update,
-      byUser: [...recentWriterRootsByUser(input.rows, candidate.observedBaseUpdateSeq)].map(
-        ([userId, rootsAfterObservationWatermark]) => ({
-          userId,
-          rootsAfterObservationWatermark,
-        }),
-      ),
+      byUser: [
+        ...recentWriterRootsByUser(
+          input.rows,
+          candidate.observedBaseUpdateSeq,
+          candidate.retainedRoots,
+        ),
+      ].map(([userId, rootsAfterObservationWatermark]) => ({
+        userId,
+        rootsAfterObservationWatermark,
+      })),
     })),
   };
 }
@@ -158,21 +164,24 @@ function recentWriterRootsByUser(
     update: Uint8Array;
   }[],
   observedBaseUpdateSeq: number,
+  retainedRoots: readonly WriterLineageRange[],
 ): Map<UserId, WriterLineageRange[]> {
   const rootsByUser = new Map<UserId, WriterLineageRange[]>();
+  let coveredRoots = normalizeLineageRanges(retainedRoots);
   for (const row of rows) {
+    const insertedRoots = normalizeLineageRanges(journalInsertionRanges(row.update));
+    const firstBornRoots = subtractLineageRanges(insertedRoots, coveredRoots);
+    coveredRoots = normalizeLineageRanges([...coveredRoots, ...insertedRoots]);
     if (
       row.originType !== "human" ||
       !row.actorUserId ||
-      row.journalRowId <= BigInt(observedBaseUpdateSeq)
+      row.journalRowId <= BigInt(observedBaseUpdateSeq) ||
+      firstBornRoots.length === 0
     ) {
       continue;
     }
     const userId = row.actorUserId as UserId;
-    rootsByUser.set(userId, [
-      ...(rootsByUser.get(userId) ?? []),
-      ...journalInsertionRanges(row.update),
-    ]);
+    rootsByUser.set(userId, [...(rootsByUser.get(userId) ?? []), ...firstBornRoots]);
   }
   for (const [userId, roots] of rootsByUser) {
     rootsByUser.set(userId, normalizeLineageRanges(roots));

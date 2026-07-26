@@ -30,9 +30,9 @@ export function projectCommittedChangeEvent(
 export function projectChangeEventForRecipient(
   message: Omit<ChangeEventWsMessage, "type">,
   sweptChanges: SweptChangesByRecipient,
-  userId: UserId | null,
+  userId: UserId,
 ): Omit<ChangeEventWsMessage, "type"> {
-  const recipientChanges = userId ? sweptChanges.get(userId) : undefined;
+  const recipientChanges = sweptChanges.get(userId);
   return {
     ...message,
     changes: message.changes.map((change) => ({
