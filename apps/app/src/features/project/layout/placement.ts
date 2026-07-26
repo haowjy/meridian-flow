@@ -9,6 +9,11 @@
  * surface's own pref, so the dock reads as one persistent sidebar across
  * screens regardless of which surface is currently inside it.
  *
+ * A transient mode can additionally HOLD slots collapsed for as long as it
+ * lasts (`collapsedSlots`). The hold is render-time only and never reaches the
+ * prefs store, so the writer's saved collapse state is neither captured nor
+ * restored — it reappears on its own the moment the hold lifts.
+ *
  * The file explorer belongs to the persistent left sidebar (`threads`), so it
  * needs no independent surface placement or preferences.
  */
@@ -30,6 +35,9 @@ import {
   type SurfacePlacementMap,
   type SurfacePrefsMap,
 } from "./types";
+
+/** Stable "nothing held" argument, so the layout memo does not thrash. */
+export const NO_COLLAPSED_SLOTS: readonly DesktopProjectSlotId[] = [];
 
 function placement(slot: SurfacePlacement["slot"]): SurfacePlacement {
   return { slot };
@@ -87,6 +95,7 @@ export function mergeSurfaceLayout(
   placements: SurfacePlacementMap,
   prefs: SurfacePrefsMap,
   slotPrefs: SlotPrefsMap = { dock: DEFAULT_DOCK_PREFS },
+  collapsedSlots: readonly DesktopProjectSlotId[] = NO_COLLAPSED_SLOTS,
 ): SurfaceLayoutMap {
   const dockPref = slotPrefs.dock ?? DEFAULT_DOCK_PREFS;
   const layout = {} as SurfaceLayoutMap;
@@ -103,10 +112,11 @@ export function mergeSurfaceLayout(
     const isDocked = surfacePlacement.slot === "dock";
     const widthPref = isDocked ? dockPref.width : surfacePrefs.width;
     const collapsedPref = isDocked ? dockPref.collapsed : surfacePrefs.collapsed;
+    const held = surfacePlacement.slot !== null && collapsedSlots.includes(surfacePlacement.slot);
     layout[surfaceId] = {
       ...surfacePlacement,
       width: widthPref,
-      collapsed: surfacePlacement.slot === "center" ? false : collapsedPref,
+      collapsed: surfacePlacement.slot === "center" ? false : held || collapsedPref,
     };
   }
   if (import.meta.env.DEV) {
@@ -115,12 +125,15 @@ export function mergeSurfaceLayout(
   return layout;
 }
 
-export function useProjectLayout(screen: ScreenKey): SurfaceLayoutMap {
+export function useProjectLayout(
+  screen: ScreenKey,
+  collapsedSlots: readonly DesktopProjectSlotId[] = NO_COLLAPSED_SLOTS,
+): SurfaceLayoutMap {
   const prefs = useProjectSurfacePrefsStore((state) => state.prefs);
   const slotPrefs = useProjectSurfacePrefsStore((state) => state.slotPrefs);
   return useMemo(
-    () => mergeSurfaceLayout(placeSurfaces(screen), prefs, slotPrefs),
-    [prefs, screen, slotPrefs],
+    () => mergeSurfaceLayout(placeSurfaces(screen), prefs, slotPrefs, collapsedSlots),
+    [collapsedSlots, prefs, screen, slotPrefs],
   );
 }
 
