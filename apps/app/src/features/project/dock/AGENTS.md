@@ -8,7 +8,7 @@ Context-main: Chat | Changes) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped with per-operation review cards carrying Apply /
-Discard / Undo.
+Discard.
 
 This is NOT the chat surface or the context rail — those are the dock's
 *occupants* (`ChatSurface`, `ContextSidebar`), wrapped by `DockShell`. The dock
@@ -28,7 +28,7 @@ body.
 
 `useDockView(screen)` resolves the active view from a session-only store. The
 native view is always present; Changes joins it only while `hasDockChanges`
-finds an active draft or a reviewed receipt with reachable undo.
+finds an active draft.
 
 ## Key rules
 
@@ -60,8 +60,8 @@ finds an active draft or a reviewed receipt with reachable undo.
    boundary; it never connects to the page like a tab chip.
 
 7. **Empty Changes is absent.** `hasDockChanges` is the one visibility
-   predicate used by both `DockShell` and `DockChangesView`. It includes recent
-   reviewed receipts; do not replace it with the active-only draft rule.
+   predicate used by both `DockShell` and `DockChangesView`. It derives only
+   from active draft rows.
 
 ## Anti-patterns
 
@@ -84,7 +84,7 @@ finds an active draft or a reviewed receipt with reachable undo.
 | `DockHeader.tsx` | Single `h-10` header: left slot (chat title), contained segmented switch, close |
 | `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
 | `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
-| `ReviewOperationCard.tsx` | Per-operation card with Apply / Discard / undo receipt |
+| `ReviewOperationCard.tsx` | Per-operation card with Apply / Discard |
 | `operation-change-text.ts` | Pure card-body text extraction from operations/hunks |
 
 ## Downlinks

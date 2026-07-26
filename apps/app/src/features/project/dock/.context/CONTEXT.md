@@ -51,11 +51,9 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 
 ### Changes availability
 
-`hasDockChanges(groups, nowMs)` in `features/chat/docked-drafts.ts` is the
+`hasDockChanges(groups)` in `features/chat/docked-drafts.ts` is the
 single predicate for both the Changes segment and the Changes view's empty
-branch. It derives from `dockRows`, so active drafts and recent reviewed
-receipts remain reachable, while expired receipts do not keep a dead
-destination alive. If Changes is selected when its final row disappears,
+branch. It derives from active `dockRows`; when the final row disappears,
 `DockShell` immediately renders the native view and updates the session choice.
 
 ### Slot material contract
@@ -80,7 +78,6 @@ drives these actions:
 - `controller.focusReviewOperation(operationId)` — click-to-scroll on cards
 - `controller.acceptOperation(operationId, model)` — per-card Apply
 - `controller.discardOperation(operationId)` — per-card Discard
-- `controller.undoAcceptOperation()` — per-card Undo (write-id from message)
 - `controller.isDisposing` — global disposition lock
 
 The review session owner is `useDraftReviewController` in the chat feature; the
@@ -111,7 +108,7 @@ flowchart LR
     Occupant -->|dock placement| DockHeader
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per op]
-    Card --> Verbs[Apply / Discard / Undo]
+    Card --> Verbs[Apply / Discard]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,
@@ -171,8 +168,8 @@ without real draft rows) have no journal or incomplete journals — the
 reconstruction fails silently or produces a no-op update. QA/probe drafts must
 come from real chat flows where the agent wrote to a draft.
 
-This is the same trap that has surfaced 4× across the draft-undo and
-dock-tabs arcs. See [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
+This has repeatedly surfaced in draft-review probes. See
+[KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
 
 ## Rationale
 
@@ -194,6 +191,4 @@ so switching screens and coming back restores it.
 The dock renders whatever operation units the server hands it. Combining
 dependent regions into one unit happens upstream (server/model). The card never
 merges or splits operations — one server operation = one card = one accept/discard
-granularity. This is the same combined-unit model the draft-simplify lane depends
-on: see the cross-lane note at
-`work/draft-simplify/notes/heads-up-dock-tabs.md`.
+granularity.

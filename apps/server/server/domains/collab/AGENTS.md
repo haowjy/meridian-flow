@@ -44,8 +44,9 @@ propagation between them.
   rather than leaving optional runtime dependencies.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts` owns materialization, `branch-push-preparation.ts`
-  prepares the immutable-base push, and `branch-trail-projection.ts` owns trail
-  projection. `branch-push-candidates.ts` builds whole, selective,
+  snapshots the live lock cut and prepares the push receipt/trail bundle, and
+  `branch-trail-projection.ts` owns trail projection.
+  `branch-push-candidates.ts` builds whole, selective,
   and companion candidate outcomes; `branch-push.ts` runs ready batches through
   their one shared pipeline;
   `branch-push-transition.ts` is the sole ordering owner for settlement

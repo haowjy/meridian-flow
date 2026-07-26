@@ -85,22 +85,20 @@ and review state live in
 | `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, and bring the exact row into view. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
+| `DraftDock.tsx` | Composer-attached strip for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
 | `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
-| `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
+| `docked-drafts.ts` | Pure active-draft assembly: `dockRows` (one pending row per document), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
-| `draft-apply-disposition.ts` | Shared revision acquisition and response policy for whole-draft and per-card Apply |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
+| `draft-review-session.ts` | Shared disposition lock, revision acquisition, response policy, command sequencing, and review-session reducer |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
-| `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 
 ## Draft-review boundary
 
 Inline review is the only draft-review surface. It uses server-backed
-Apply/Discard/Undo disposition commands; the read-only review editor never
+Apply/Discard disposition commands; the read-only review editor never
 uses browser mutation history. See [`.context/draft-editing.md`](.context/draft-editing.md)
 for the lifecycle, session, preview, and projection contracts.
 

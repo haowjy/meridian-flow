@@ -8,8 +8,8 @@ and its list aliases that branch to one review card. Distinct `draftId` and
 `branchId` fields do not imply multiple independently disposable
 same-document drafts.
 
-Do not add lifecycle statuses such as `accepting`, `reactivating`, `applied`, or
-`discarded`. Reviewable work is active branch work or closed history derived from
-server state.
+The list is active-only. Do not add lifecycle statuses such as `accepting`,
+`reactivating`, `applied`, `discarded`, or `closed`; completed review is not
+retained as a draft-list receipt.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)

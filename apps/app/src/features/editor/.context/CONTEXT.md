@@ -1,8 +1,7 @@
 # features/editor — contracts and architecture
 
-Reference depth. There is no `AGENTS.md` for this directory yet — the
-`EditorToolbar` component is surfaced through the context viewer
-(`features/project/context/`), which owns the editor mount host.
+Reference depth for the app-facing editor surface. Read
+[`AGENTS.md`](../AGENTS.md) first.
 
 ## Toolbar — placement contract
 
@@ -127,12 +126,3 @@ navigation remains the fallback after that mark has cleared or expired.
 Popover focus follows activation. Pointer open prevents Radix autofocus and
 pointer close restores the captured editor selection and caret. Keyboard
 activation moves focus into the popover; Escape/close returns focus to the mark.
-
-## Deferred
-
-- **Block-level `+` gutter handle** ("Turn into" / "Insert" menu on the
-  current paragraph). Additive to the formatting toolbar, never a
-  replacement. A real build, parked for a future slice.
-- **Fade-on-scroll** for the toolbar row. New interaction behavior
-  (fade in on focus, slide away in flow) → its own slice; placement
-  settles first.

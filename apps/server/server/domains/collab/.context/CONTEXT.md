@@ -30,7 +30,7 @@ state is a live document.
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
 | Critical sections | `domain/branch-critical-sections.ts` |
 | Push materialization | `domain/branch-push-plan.ts` |
-| Immutable-base push preparation | `domain/branch-push-preparation.ts` |
+| Locked push and trail preparation | `domain/branch-push-preparation.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
 | Durable push execution | `domain/branch-push-candidates.ts`, `domain/branch-push.ts`, `domain/branch-push-transition.ts`, `adapters/drizzle-branch-push.ts` |
 | Pending settlement persistence, recovery, and completion fence | `domain/ports/pending-settlement-store.ts`, `adapters/drizzle-pending-settlement.ts` |
@@ -109,10 +109,7 @@ contributing journal rows into that item. `lastActorTurnId` is representative
 metadata, not review identity. The wire's `draftId` names a review card while
 `branchId` addresses the physical branch, but the current list aliases the card
 to its one Work branch and preview resolves by document + Work. Do not infer
-independently disposable same-document drafts from the two identifiers. The
-client can render and step through a synthetic multi-row list, but production
-cannot create that state without a new review-identity design spanning list,
-preview, disposition, closure, revision fencing, and manifest ownership.
+independently disposable same-document drafts from the two identifiers.
 
 Propagation is sync-only: no basis reconstruction, draft projection, accept token,
 reactivation fence, or scope routing. Cold attribution uses persisted branch
@@ -282,11 +279,11 @@ history is preserved for attribution, echo, and undo dependency checking.
   branch-id order, then live coordinator locks in document-id order.
 - **One push commit seam**: whole, selective, and companion builders produce a
   `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
-  Candidate data carries whole-vs-selected materialization, conflict/sweep policy,
-  and the shared receipt. A companion selection with no matching
+  Candidate data carries whole-vs-selected materialization, the shared receipt,
+  and optional reset/user metadata. A companion selection with no matching
   active content rows is a builder outcome mapped to `noop` or `already_pushed`
   before cardinality validation; non-empty partial matches remain conflicts.
-  Immutable-base conflict preparation lives in
+  Locked push and trail preparation lives in
   `branch-push-preparation.ts`, trail projection lives in
   `branch-trail-projection.ts`, and `branch-push-transition.ts` alone orders capture
   through fenced completion. The transition projects the aggregate writer's exact
@@ -348,9 +345,7 @@ history is preserved for attribution, echo, and undo dependency checking.
   the committed update to, before mutating the shared live document — never from the
   live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes
-  all integrate through Yjs. The immutable `draftBaseUpdateSeq` retained on each
-  journal row helps reconstruct the pre-push timeline; it does not gate Apply.
-  Authorship derives from
+  all integrate through Yjs. Authorship derives from
   durable journal attribution: `completeStagedPush` persists the live journal
   row as `originType: "human"` with `actorUserId` when the push carries
   `pushedByUserId` (writer-confirmed Apply). Otherwise it folds branch-local
