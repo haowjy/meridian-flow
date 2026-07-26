@@ -179,7 +179,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Omit<PendingLiveSettlement, "push"> {
     return transition.prepare({
       documentTitle,
-      provenanceView: [],
+      sweepEvidence: null,
       lockCutUpdate: prepared.lockCutUpdate,
       pushUpdate: prepared.prepared.pushUpdate,
       trail,

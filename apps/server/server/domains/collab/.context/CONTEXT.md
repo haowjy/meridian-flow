@@ -394,8 +394,10 @@ history is preserved for attribution, echo, and undo dependency checking.
   admission both call the single `joinAdmissionWithinTx` writer inside their
   document-mutation transaction; source identity and completing-push exclusion
   are parameters, while join-version advancement follows one SQL path. Cold
-  reads best-effort reconstruct provenance for the final pre-push document so a
-  connected editor can elevate swept marks.
+  reads best-effort reconstruct causal, actor-specific sweep evidence for the
+  final pre-push document so each connected editor can elevate only its own
+  overwritten post-observation edits. Push admission identity does not transfer
+  AI content authorship to the admitting writer.
   Provenance admission is root-unit injective: one protected root unit may have
   only one visible target, so divergent restoration or replication blocks rather
   than granting deletion credit to either copy.

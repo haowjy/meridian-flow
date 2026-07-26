@@ -122,9 +122,10 @@ propagation between them.
   (per `branchId`) then sorted live document coordinator locks. Never bypass it
   or reverse this order.
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes
-  all integrate through Yjs. Settlement provenance detects swept writer-root
-  effects only for live-session marks; it never changes the durable receipt or
-  vetoes a push.
+  all integrate through Yjs. Settlement sweep policy elevates a live-session
+  mark only for a receiving writer whose post-observation edit was overwritten;
+  unknown, historical, AI, and other-writer roots are ordinary for that
+  recipient. This never changes the durable receipt or vetoes a push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
   Echo informs the agent; swept changes elevate ephemeral marks. Trail evidence
   and peer-mark popovers remain read-only; receipt Undo/Redo is the sole

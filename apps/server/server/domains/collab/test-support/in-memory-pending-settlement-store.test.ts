@@ -123,7 +123,7 @@ function pendingSettlement(pushId: number): PendingLiveSettlement {
       journalOwners: [],
       changes: [],
     },
-    provenanceView: [],
+    sweepEvidence: null,
     joinVersion: 0,
     settledJoinVersion: null,
     claim: {

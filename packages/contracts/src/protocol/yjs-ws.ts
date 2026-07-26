@@ -17,7 +17,7 @@ export type YjsRoomName =
 
 export type ChangeEventProjection = Pick<TrailChangeV1, "changeId" | "kind" | "navigation"> & {
   admittedByUserId: string | null;
-  swept: boolean;
+  sweptForUserIds: string[];
   excerpt: string | null;
   pureDeletionOffset: number | null;
 };
@@ -53,7 +53,7 @@ export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMe
 const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChangeV1Schema
   .pick({ changeId: true, kind: true, navigation: true })
   .extend({
-    swept: z.boolean(),
+    sweptForUserIds: z.array(z.string()).max(100),
     admittedByUserId: z.string().nullable(),
     excerpt: z.string().max(500).nullable(),
     pureDeletionOffset: z.number().int().nonnegative().nullable(),

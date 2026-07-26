@@ -85,7 +85,7 @@ export function insertionAttributions(
     index.add(attribution.range, attribution, sameAttribution);
   }
   for (const row of rows) {
-    for (const range of insertionRanges(row.update)) {
+    for (const range of journalInsertionRanges(row.update)) {
       const attribution = {
         range,
         birthClass: birthClassFromAttribution(row),
@@ -113,7 +113,7 @@ export function materializeProvenanceForDoc(input: {
     attributions.add(attribution.range, attribution, sameAttribution);
   }
   for (const row of input.rows) {
-    for (const range of insertionRanges(row.update)) {
+    for (const range of journalInsertionRanges(row.update)) {
       attributions.addUncovered(range, {
         range,
         birthClass: birthClassFromAttribution(row),
@@ -171,7 +171,7 @@ export function materializeProvenanceView(input: {
   const rows = [...input.rows].sort(compareReplayKey);
   validateReplayRows(rows, input.manifest.floor, input.watermark, input);
   for (const row of rows) {
-    for (const range of insertionRanges(row.update)) {
+    for (const range of journalInsertionRanges(row.update)) {
       attributions.addUncovered(range, {
         range,
         birthClass: birthClassFromAttribution(row),
@@ -606,7 +606,7 @@ function validateReplayRows(
   }
 }
 
-function insertionRanges(update: Uint8Array): WriterLineageRange[] {
+export function journalInsertionRanges(update: Uint8Array): WriterLineageRange[] {
   return (Y.decodeUpdate(update) as DecodedUpdate).structs.map((value) => {
     const struct = asStruct(value);
     return { clientID: struct.id.client, clock: struct.id.clock, length: struct.length };

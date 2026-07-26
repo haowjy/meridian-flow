@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/contracts`: swept AI marks now mean the
+  receiving writer's post-observation edit was overwritten; baseline, unknown,
+  AI-authored, and other-writer prose remains ordinary for that recipient.
 - `apps/app`, `apps/server`, `packages/contracts`: AI mark popovers and trail
   evidence are read-only; receipt Undo/Redo is the sole reversal authority for
   AI changes.

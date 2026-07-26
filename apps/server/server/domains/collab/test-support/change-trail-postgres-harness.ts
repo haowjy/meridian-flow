@@ -4,7 +4,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -96,6 +96,7 @@ const agentEditCodec = createAgentEditCodec(markupCodec);
 const model = yProsemirrorModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";
+export const OTHER_USER_ID = "00000000-0000-4000-8000-000000000809";
 export const PROJECT_ID = "00000000-0000-4000-8000-000000000802";
 export const SOURCE_ID = "00000000-0000-4000-8000-000000000803";
 export const WORK_ID = "00000000-0000-4000-8000-000000000804" as WorkId;
@@ -128,7 +129,12 @@ export async function resetDatabase(): Promise<void> {
     schema.projects,
     schema.users,
   ]);
-  await db.insert(schema.users).values(conformanceUserValues(USER_ID, "response-atomicity"));
+  await db
+    .insert(schema.users)
+    .values([
+      conformanceUserValues(USER_ID, "response-atomicity"),
+      conformanceUserValues(OTHER_USER_ID, "response-atomicity-other"),
+    ]);
   await db.insert(schema.projects).values({
     id: PROJECT_ID,
     userId: USER_ID,
@@ -818,6 +824,64 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         seq: 0,
       });
     });
+    return branch.branchId;
+  }
+
+  async function seedSweepClassificationPush(input: {
+    responseId: string;
+    recentWriterUserId: UserId | null;
+  }): Promise<string> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      model.insertBlocks(
+        toDocHandle(doc),
+        null,
+        markupCodec.parse("Historical writer body.\n\nSurvivor."),
+      );
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId: input.responseId,
+    };
+    await collab
+      .agentEdit()
+      .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, context);
+    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
+    if (!doomed) throw new Error("draft block missing before sweep classification push");
+    model.deleteBlock(toDocHandle(branch.doc), doomed);
+    const committed = await branchCoordinator.commitSyncFromDoc({
+      branchId: branch.branchId,
+      sourceDoc: branch.doc,
+      expectedGeneration: branch.generation,
+      source: "agent",
+      actorUserId: null,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      wId: null,
+      updateMeta: null,
+    });
+    branch.doc.destroy();
+    if (!committed) throw new Error("sweep classification draft edit did not commit");
+    if (input.recentWriterUserId) {
+      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+        const block = model.getBlocks(toDocHandle(doc))[0];
+        if (!block) throw new Error("live writer block missing");
+        const before = Y.encodeStateVector(doc);
+        model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Recent writer: ");
+        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+          origin: `human:${input.recentWriterUserId}`,
+          seq: 0,
+        });
+      });
+    }
     return branch.branchId;
   }
 
@@ -1558,6 +1622,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .agentEdit()
         .write({ command: "diff" }, { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID }),
     seedDestructivePush,
+    seedSweepClassificationPush,
     seedMatrixPush,
     seedPendingDependencyPush,
     seedWriterDocument,

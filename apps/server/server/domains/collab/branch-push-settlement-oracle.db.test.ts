@@ -10,9 +10,11 @@ import {
   createHarness,
   db,
   markdownFromUpdate,
+  OTHER_USER_ID,
   resetDatabase,
   runInRootDrizzleTransaction,
   schema,
+  USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import {
   type SettlementOracleOutput,
@@ -692,6 +694,23 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.completionState).toMatchObject({ state: "completed" });
     expect(result.cold.applyResult).toMatchObject({ status: "applied" });
   });
+
+  it.each([
+    ["historical text only", null, []],
+    ["this writer's recent edit", USER_ID, [USER_ID]],
+    ["another writer's recent edit", OTHER_USER_ID, [OTHER_USER_ID]],
+  ] as const)("classifies swept recipients for %s", async (_name, recentWriterUserId, expected) => {
+    await resetDatabase();
+    const harness = createHarness();
+    const branchId = await harness.seedSweepClassificationPush({
+      responseId: `sweep-${_name}`,
+      recentWriterUserId,
+    });
+
+    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    expectSweepRecipients(harness, expected);
+    harness.destroyWarmState();
+  });
 });
 
 async function expirePendingClaims(): Promise<void> {
@@ -718,7 +737,7 @@ async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): P
   expect(harness.changeEvents()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ swept: true })]),
+        changes: expect.arrayContaining([expect.objectContaining({ sweptForUserIds: [USER_ID] })]),
       }),
     ]),
   );
@@ -733,10 +752,19 @@ async function expectLiveSweepOnly(harness: ReturnType<typeof createHarness>): P
 }
 
 function expectUnsweptChangeEvent(harness: ReturnType<typeof createHarness>): void {
+  expectSweepRecipients(harness, []);
+}
+
+function expectSweepRecipients(
+  harness: ReturnType<typeof createHarness>,
+  sweptForUserIds: readonly string[],
+): void {
   expect(harness.changeEvents()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ swept: false })]),
+        changes: expect.arrayContaining([
+          expect.objectContaining({ sweptForUserIds: [...sweptForUserIds] }),
+        ]),
       }),
     ]),
   );

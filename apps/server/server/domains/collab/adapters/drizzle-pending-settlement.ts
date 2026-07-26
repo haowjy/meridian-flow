@@ -36,10 +36,8 @@ import type {
   PendingSettlementStore,
   SettlementAdmission,
 } from "../domain/ports/pending-settlement-store.js";
-import {
-  materializeProvenanceForDoc,
-  ProvenanceMaterializationError,
-} from "../domain/provenance.js";
+import { ProvenanceMaterializationError } from "../domain/provenance.js";
+import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
@@ -422,11 +420,11 @@ async function completeStagedPush(
       admissionSequence: authority.admissionSequence,
       batchOrdinal: 0,
       updateData: staged.outbox.pushUpdate,
-      // A writer-confirmed Apply is writer authorship at the live-journal seam;
-      // an auto-push retains the turn shared by its active agent mutations.
-      originType: staged.push.pushedByUserId ? "human" : agentTurnId ? "agent" : "system",
-      actorUserId: staged.push.pushedByUserId,
-      actorTurnId: staged.push.pushedByUserId ? null : agentTurnId,
+      // Admission and authorship are independent: clicking Apply does not make
+      // the writer the author of an AI mutation.
+      originType: agentTurnId ? "agent" : "system",
+      actorUserId: null,
+      actorTurnId: agentTurnId,
     })
     .returning({ id: documentYjsUpdates.id });
   if (!updateRow) throw new Error(`Failed to complete staged push ${pushId}`);
@@ -604,8 +602,32 @@ async function readPendingSettlement(
   const provenanceDoc = createCollabYDoc({ gc: false });
   Y.applyUpdate(provenanceDoc, row.outbox.lockCutUpdate);
   for (const { update } of updates) Y.applyUpdate(provenanceDoc, update);
-  let provenanceView: PendingLiveSettlement["provenanceView"] = null;
+  let sweepEvidence: PendingLiveSettlement["sweepEvidence"] = null;
   try {
+    const candidateRows =
+      row.push.journalIds.length > 0
+        ? await db
+            .select({
+              source: branchWriteJournal.source,
+              draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq,
+            })
+            .from(branchWriteJournal)
+            .where(inArray(branchWriteJournal.id, row.push.journalIds))
+        : [];
+    const observedBaseUpdateSeq = candidateRows
+      .filter(({ source }) => source === "agent")
+      .reduce<number | null>(
+        (base, candidate) =>
+          base === null
+            ? candidate.draftBaseUpdateSeq
+            : Math.min(base, candidate.draftBaseUpdateSeq),
+        null,
+      );
+    if (observedBaseUpdateSeq === null) {
+      throw new ProvenanceMaterializationError(
+        `Pending branch push settlement ${pushId} has no agent observation watermark`,
+      );
+    }
     const authority = row.push.upstreamUpdateSeq
       ? (
           await db
@@ -661,10 +683,10 @@ async function readPendingSettlement(
         })
       : null;
     try {
-      provenanceView = materializeProvenanceForDoc({
+      sweepEvidence = materializeSweepEvidence({
         doc: provenanceDoc,
         retainedAttributions: retained?.attributionManifest.attributions,
-        fallbackBirthClass: "writer_protected",
+        observedBaseUpdateSeq,
         rows: attributedRows.map((attribution) => ({
           ...attribution,
           journalRowId: BigInt(attribution.journalRowId),
@@ -698,7 +720,7 @@ async function readPendingSettlement(
     pushUpdate: row.outbox.pushUpdate,
     postCutUpdates: updates.map(({ update }) => update),
     trail,
-    provenanceView,
+    sweepEvidence,
     joinVersion: row.outbox.joinVersion,
     settledJoinVersion: row.outbox.settledJoinVersion,
     claim: {

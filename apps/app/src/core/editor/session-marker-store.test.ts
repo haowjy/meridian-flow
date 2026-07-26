@@ -39,7 +39,7 @@ function message(
         relEnd: position,
         targetBlockId: { clientID: 1, clock: 0 },
       },
-      swept: swept ?? false,
+      sweptForUserIds: swept ? ["me"] : [],
       excerpt: id,
       pureDeletionOffset: null,
     })),
@@ -71,6 +71,21 @@ describe("SessionMarkerStore", () => {
     change.admittedByUserId = "me";
     store.replaceGroup(selfAdmitted);
     expect(store.getSnapshot()).toHaveLength(0);
+  });
+
+  it("derives swept severity for the receiving writer", () => {
+    const event = message(1);
+    const [change] = event.changes;
+    if (!change) throw new Error("invalid fixture");
+    change.sweptForUserIds = ["me"];
+    const mine = new SessionMarkerStore("me");
+    const theirs = new SessionMarkerStore("other");
+
+    mine.replaceGroup(event);
+    theirs.replaceGroup(event);
+
+    expect(mine.getSnapshot()[0]?.swept).toBe(true);
+    expect(theirs.getSnapshot()[0]?.swept).toBe(false);
   });
 
   it("advances the cursor before per-change suppression and rejects a delayed stale set", () => {

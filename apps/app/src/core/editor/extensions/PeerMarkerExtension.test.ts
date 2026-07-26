@@ -58,7 +58,7 @@ function addMarker(
         changeId: `${kind}-mark${suffix}`,
         kind: kind === "range" ? "modify" : "delete",
         navigation,
-        swept,
+        sweptForUserIds: swept ? ["me"] : [],
         excerpt: null,
         pureDeletionOffset,
       },

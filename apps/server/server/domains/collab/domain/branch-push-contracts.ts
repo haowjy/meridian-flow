@@ -14,7 +14,7 @@ import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import type { ProvenanceRun } from "./provenance.js";
+import type { SweepEvidence } from "./sweep-policy.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
@@ -158,7 +158,7 @@ export type PendingLiveSettlement = {
   postCutUpdates: readonly Uint8Array[];
   trail: DurableTrailRecord;
   /** Optional evidence for live-session sweep elevation; never settlement authority. */
-  provenanceView: readonly ProvenanceRun[] | null;
+  sweepEvidence: SweepEvidence | null;
   joinVersion: number;
   settledJoinVersion: number | null;
   claim: SettlementClaim;

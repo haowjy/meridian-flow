@@ -117,7 +117,7 @@ function preparedPush(
       lockCutUpdate: Y.encodeStateAsUpdate(liveDoc),
       pushUpdate,
       trail,
-      provenanceView: [],
+      sweepEvidence: null,
     }),
   };
 }

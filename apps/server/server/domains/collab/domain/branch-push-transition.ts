@@ -1,12 +1,9 @@
 /** Sole ordering owner for durable branch-push settlement and recovery. */
 import { createHash, randomUUID } from "node:crypto";
-import {
-  type AgentEditCodec,
-  classifyDestructiveSnapshotEffect,
-  type DocumentCoordinator,
-  snapshotBlocks,
-  toDocHandle,
-  type YProsemirrorDocumentModel,
+import type {
+  AgentEditCodec,
+  DocumentCoordinator,
+  YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -24,8 +21,7 @@ import type { CommittedChangeTrailProjection } from "./ports/change-trail-persis
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import { materializeCandidateProvenance } from "./provenance.js";
-import { canonicalBlockKey } from "./trail-read-kernel.js";
+import { detectSweptChanges, type SweptChangeRecipients } from "./sweep-policy.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
 
@@ -162,73 +158,24 @@ export function createBranchPushTransition(input: {
   const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) =>
     input.commitStore.commitPushBatch(prepared);
 
-  /** Detects live-session sweep elevation without adding it to the durable trail. */
-  function detectSweptChanges(
-    pending: PendingLiveSettlement,
-    prePushDoc: Y.Doc,
-  ): ReadonlySet<string> {
-    if (!pending.provenanceView) return new Set();
-    const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
-    const afterDoc = createCollabYDoc({ gc: false });
-    try {
-      Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(prePushDoc));
-      Y.applyUpdate(afterDoc, pending.pushUpdate);
-      const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.codec);
-      const preProvenance = pending.provenanceView;
-      const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
-      const { affectedBefore: affected } = classifyDestructiveSnapshotEffect({
-        before,
-        afterCandidate: after,
-        beforeProvenance: preProvenance.map((run) => ({
-          target: run.target,
-          root: run.root,
-          provenance: run.birthClass,
-        })),
-        afterCandidateProvenance: afterProvenance.map((run) => ({
-          target: run.target,
-          root: run.root,
-          provenance: run.birthClass,
-        })),
-      });
-      if (affected.length === 0) return new Set();
-      const affectedByIdentity = new Map(
-        affected.map(
-          (item) =>
-            [
-              canonicalBlockKey({
-                documentId: pending.push.documentId,
-                clientID: item.block.clientID,
-                clock: item.block.clock,
-              }),
-              item,
-            ] as const,
-        ),
-      );
-      const changeIds = pending.trail.changes.flatMap((change) => {
-        if (!change.beforeBlockIdentity) return [];
-        return affectedByIdentity.has(canonicalBlockKey(change.beforeBlockIdentity))
-          ? [change.changeId]
-          : [];
-      });
-      return new Set(changeIds);
-    } finally {
-      afterDoc.destroy();
-    }
-  }
-
   function detectSweptChangesBestEffort(
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
-  ): ReadonlySet<string> {
+  ): SweptChangeRecipients {
     try {
-      return detectSweptChanges(pending, prePushDoc);
+      return detectSweptChanges({
+        pending,
+        prePushDoc,
+        model: input.model,
+        codec: input.codec,
+      });
     } catch (cause) {
       input.sweepProjectionDiagnostics?.unavailable({
         pushId: pending.push.id,
         documentId: pending.push.documentId,
         cause,
       });
-      return new Set();
+      return new Map();
     }
   }
 

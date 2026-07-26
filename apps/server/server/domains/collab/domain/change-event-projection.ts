@@ -3,11 +3,12 @@
 import type { AgentEditCodec } from "@meridian/agent-edit/integration";
 import type { ChangeEventProjection, ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
+import type { SweptChangeRecipients } from "./sweep-policy.js";
 import { bodyFromHashline } from "./trail-read-kernel.js";
 
 export function projectCommittedChangeEvent(
   projection: CommittedChangeTrailProjection,
-  sweptChangeIds: ReadonlySet<string>,
+  sweptRecipients: SweptChangeRecipients,
   codec: AgentEditCodec,
 ): Omit<ChangeEventWsMessage, "type"> {
   const capped = projection.changes.slice(0, 100);
@@ -22,7 +23,7 @@ export function projectCommittedChangeEvent(
       turnId: projection.owner.kind === "turn" ? projection.owner.turnId : null,
     },
     changes: capped.map((change) =>
-      projectChange(change, sweptChangeIds.has(change.changeId), codec),
+      projectChange(change, [...(sweptRecipients.get(change.changeId) ?? [])], codec),
     ),
     truncated: projection.changes.length > capped.length,
   };
@@ -30,7 +31,7 @@ export function projectCommittedChangeEvent(
 
 function projectChange(
   change: CommittedChangeTrailProjection["changes"][number],
-  swept: boolean,
+  sweptForUserIds: string[],
   codec: AgentEditCodec,
 ): ChangeEventProjection {
   const hashline = change.kind === "delete" ? change.beforeText : change.afterTextAtReceipt;
@@ -41,7 +42,7 @@ function projectChange(
     admittedByUserId: change.admittedByUserId,
     kind: change.kind,
     navigation: change.navigation,
-    swept,
+    sweptForUserIds,
     excerpt: text === null ? null : text.slice(0, 500),
     pureDeletionOffset:
       change.kind === "modify"

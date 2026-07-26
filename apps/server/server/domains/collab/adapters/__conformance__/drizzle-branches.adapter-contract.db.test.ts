@@ -961,7 +961,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
             postCutUpdates: [],
-            provenanceView: [],
+            sweepEvidence: null,
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
@@ -1026,7 +1026,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
             postCutUpdates: [],
-            provenanceView: [],
+            sweepEvidence: null,
             joinVersion: 0,
             settledJoinVersion: null,
             claim: {
