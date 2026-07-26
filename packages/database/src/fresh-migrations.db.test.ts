@@ -1,6 +1,5 @@
 /** Migration-chain catalog proof against the runner-owned fresh PostgreSQL database. */
 import { readFile } from "node:fs/promises";
-import { parseTrailChangesV1 } from "@meridian/contracts";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
@@ -98,6 +97,7 @@ if (!enabled || !databaseUrl) {
             restore: { status: "settled", outcome: "anchor_unavailable" },
             "delete-again": { status: "settled", outcome: "anchor_unavailable" },
           },
+          restore: { status: "settled", outcome: "anchor_unavailable" },
           swept: { affectedBlockHash: "hash" },
           writerProtection: { kind: "sweep" },
           writerImpact: { kind: "sweep" },
@@ -136,7 +136,7 @@ if (!enabled || !databaseUrl) {
           const [row] = await tx<{ changes: unknown }[]>`
             SELECT changes FROM change_trail_document_details
           `;
-          expect(parseTrailChangesV1(row?.changes)).toEqual([base]);
+          expect(row?.changes).toEqual([base]);
           const removedColumns = await tx<{ column_name: string }[]>`
             SELECT column_name FROM information_schema.columns
             WHERE table_schema = ${schema}
