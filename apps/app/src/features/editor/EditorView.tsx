@@ -176,8 +176,8 @@ function SessionEditorView({
     enabled: Boolean(projectId) && !inReview,
   });
   // Marks render before anyone clicks one. Warming their trail detail here is
-  // what lets the popover open with its Before/After and Restore verbs already
-  // decided instead of filling them in after the first fetch lands.
+  // what lets the popover open with its Before/After disclosure already
+  // available instead of filling it in after the first fetch lands.
   const markers = useSyncExternalStore(
     session.markerStore.subscribe,
     session.markerStore.getSnapshot,

@@ -479,8 +479,8 @@ msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr ""
 
 #: src/features/editor/PeerMarkPopover.tsx
-msgid "Couldn't apply that recovery action. Try again."
-msgstr ""
+#~ msgid "Couldn't apply that recovery action. Try again."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -1494,12 +1494,12 @@ msgid "Response complete"
 msgstr "回复完成"
 
 #: src/features/editor/PeerMarkPopover.tsx
-msgid "Restore"
-msgstr ""
+#~ msgid "Restore"
+#~ msgstr ""
 
 #: src/features/editor/PeerMarkPopover.tsx
-msgid "Restored"
-msgstr ""
+#~ msgid "Restored"
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx

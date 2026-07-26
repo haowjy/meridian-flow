@@ -97,7 +97,7 @@ native behavior; both hosts opt in.
 
 ## Peer mark popover
 
-`PeerMarkPopover.tsx` is the anchored detail-and-recovery surface for one live
+`PeerMarkPopover.tsx` is the anchored evidence surface for one live
 session peer mark. The marker projection itself (`SessionMarkerStore` +
 `PeerMarkerExtension`) lives in
 [`core/editor`](../../../core/editor/.context/CONTEXT.md); this component is
@@ -111,17 +111,14 @@ surface and branch rooms have a different anchor space.
 
 Detail comes from the shared trail-detail cache in
 [`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
-it for every agent mark on screen, so the popover normally opens with its verbs
-already decided; while a first read is genuinely in flight the actions row is
-withheld rather than rendered half-empty, and only actor and time show. The
-resting surface contains only actor, time, Restore, and conversation
+it for every agent mark on screen, so the popover normally opens with its
+evidence already available; while a first read is genuinely in flight the
+actions row is withheld rather than rendered half-empty, and only actor and
+time show. The resting surface contains actor, time, and conversation
 navigation. A single Before/After control reveals the same trail-backed excerpt
 renderer used by the turn receipt; swept status adds no popover narration.
-Recovery runs through `useTrailRestore` (shared in
-[`features/change-trail`](../../change-trail/AGENTS.md)): eligibility, the
-idempotent command, and mark dismissal on a successful `applied` /
-`already_applied` outcome all live there; a failed action stays failed with a
-retry affordance. *Open conversation* routes through
+Trail evidence is read-only: receipt Undo/Redo is the sole reversal authority
+for AI changes. *Open conversation* routes through
 `requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
 popover closes and the chat side expands the owning turn receipt and brings the
 exact row into view.

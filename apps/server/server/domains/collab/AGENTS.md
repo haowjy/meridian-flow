@@ -126,9 +126,9 @@ propagation between them.
   effects only for live-session marks; it never changes the durable receipt or
   vetoes a push.
 - **Agent destruction is report-only**: ordinary Yjs merge always commits.
-  Echo informs the agent; swept changes elevate ephemeral marks, whose popover
-  vends Restore from the receipt's retained before-text. Agent-only destruction
-  is silent.
+  Echo informs the agent; swept changes elevate ephemeral marks. Trail evidence
+  and peer-mark popovers remain read-only; receipt Undo/Redo is the sole
+  reversal authority for AI changes. Agent-only destruction is silent.
 - **Reversal availability is dependency-based**: canonical dependency checks may
   refuse a lossy undo. Destructive effects from an allowed agent reversal are
   reported without changing the reversal outcome.

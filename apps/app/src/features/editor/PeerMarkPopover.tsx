@@ -1,4 +1,4 @@
-/** Anchored detail and recovery surface for one session peer mark. */
+/** Anchored evidence and navigation surface for one session peer mark. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +10,6 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
-import { useTrailRestore } from "@/features/change-trail/trail-change-recovery";
 import { changeTrailDetailQuery } from "@/features/change-trail/trail-detail-query";
 import { ChangeExcerpts } from "@/features/chat/ChangeViewRows";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
@@ -44,12 +43,6 @@ export function PeerMarkPopover({
     if (!document || "unavailable" in document) return null;
     return document.changes.find((candidate) => candidate.changeId === marker?.changeId) ?? null;
   }, [detail.data, marker]);
-  const recovery = useTrailRestore({
-    threadId: agentAuthor?.threadId ?? "",
-    trailId: marker?.group.trailId ?? "",
-    documentId: marker?.group.documentId ?? "",
-    change,
-  });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const virtualAnchor = useRef({
     getBoundingClientRect: () => target?.element.getBoundingClientRect() ?? new DOMRect(),
@@ -145,29 +138,10 @@ export function PeerMarkPopover({
                   />
                 </Button>
               ) : null}
-              {recovery.canExecute ? (
-                <Button
-                  size="sm"
-                  disabled={recovery.isPending}
-                  onClick={() => void recovery.execute()}
-                >
-                  <Trans>Restore</Trans>
-                </Button>
-              ) : null}
-              {recovery.applied ? (
-                <span className="text-jade-text">
-                  <Trans>Restored</Trans>
-                </span>
-              ) : null}
               <Button size="sm" variant="quiet" className="ml-auto" onClick={openConversation}>
                 <Trans>Open conversation</Trans>
               </Button>
             </div>
-            {recovery.failed ? (
-              <p className="text-destructive">
-                <Trans>Couldn't apply that recovery action. Try again.</Trans>
-              </p>
-            ) : null}
           </>
         ) : null}
       </PopoverContent>

@@ -45,10 +45,6 @@ import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
-import {
-  createDrizzleTrailRestore,
-  type TrailDocumentAccess,
-} from "./adapters/drizzle-trail-restore.js";
 import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
@@ -100,7 +96,7 @@ import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js"
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-type CollabDocumentAccess = TrailDocumentAccess & {
+type CollabDocumentAccess = {
   canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
   canAccessProjectDocument(
     userId: UserId,
@@ -388,15 +384,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
-  const trailRestore = createDrizzleTrailRestore({
-    db: deps.db,
-    documentAccess: deps.documentAccess,
-    coordinator: liveCoordinator,
-    model: runtime.model,
-    codec: runtime.codec,
-    durableProjectionSerializer: runtime.markdownDocuments,
-  });
-
   return createCollabFacade({
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
@@ -436,9 +423,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     attribution: createDocumentAttribution({
       latestUpdate: persistence.store.latestUpdate,
     }),
-    trailRestore: {
-      restoreTrailChange: trailRestore.restore,
-    },
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
       pushToLive: branchPush.pushToLive,

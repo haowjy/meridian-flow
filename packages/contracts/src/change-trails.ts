@@ -1,25 +1,8 @@
-/** Shared wire contracts for durable change trails and trail-backed Restore. */
+/** Shared wire contracts for durable change-trail evidence. */
 
 import { z } from "zod";
 
 const yjsIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-
-export type TrailRestoreStateV1 =
-  | {
-      status: "committed";
-      update: string;
-      expectedLiveStateHash: string;
-    }
-  | { status: "applied"; updateId: number }
-  | {
-      status: "settled";
-      outcome: "anchor_unavailable" | "retry_exhausted";
-    };
-
-export type TrailRestoreResult =
-  | { status: "applied" | "already_applied" }
-  | { status: "anchor_unavailable" }
-  | { status: "retry_exhausted" };
 
 /** Stable Yjs block identity. Display hashlines are deliberately excluded. */
 export type CanonicalBlockIdentityV1 = {
@@ -54,7 +37,6 @@ export type TrailChangeV1 = {
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation: NavigationTargetV1;
-  restore?: TrailRestoreStateV1;
 };
 
 export type ChangeTrailShellV1 = {
@@ -119,19 +101,6 @@ export const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discrim
   ],
 );
 
-const trailRestoreStateV1Schema: z.ZodType<TrailRestoreStateV1> = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("committed"),
-    update: z.string(),
-    expectedLiveStateHash: z.string(),
-  }),
-  z.object({ status: z.literal("applied"), updateId: z.number().int() }),
-  z.object({
-    status: z.literal("settled"),
-    outcome: z.enum(["anchor_unavailable", "retry_exhausted"]),
-  }),
-]);
-
 export const trailChangeV1Schema = z.object({
   changeId: z.string(),
   ordinal: z.number().int(),
@@ -144,7 +113,6 @@ export const trailChangeV1Schema = z.object({
   beforeText: z.string().nullable(),
   afterTextAtReceipt: z.string().nullable(),
   navigation: navigationTargetV1Schema,
-  restore: trailRestoreStateV1Schema.optional(),
 }) satisfies z.ZodType<TrailChangeV1>;
 
 export const changeTrailShellV1Schema: z.ZodType<ChangeTrailShellV1> = z.object({

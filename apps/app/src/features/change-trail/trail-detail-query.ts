@@ -9,8 +9,7 @@ import { changeTrailDetailKey, readChangeTrail } from "@/client/change-trails";
  *
  * Settled trail evidence does not change on its own, so a re-open is not a
  * freshness event and must not refetch: that is what made the popover open
- * empty. Invalidation has three explicit owners instead — a Restore command,
- * a bumped shell version, and losing access to a document in the trail.
+ * empty. A bumped shell version or lost document access invalidates the cache.
  * Retention past the last observer is React Query's default garbage window,
  * so evidence for a document whose access is later revoked cannot linger.
  */
@@ -27,8 +26,7 @@ export type TrailDetailTarget = { threadId: string; trailId: string };
 
 /**
  * Warm the detail cache for trails whose marks are already on screen, so the
- * popover opens with its evidence-dependent actions rather than filling in
- * after the click.
+ * popover opens with its evidence rather than filling in after the click.
  */
 export function usePrefetchTrailDetails(targets: readonly TrailDetailTarget[]): void {
   const queryClient = useQueryClient();

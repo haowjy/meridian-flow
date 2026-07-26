@@ -182,11 +182,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    trailRestore: {
-      async restoreTrailChange() {
-        return { status: "anchor_unavailable" };
-      },
-    },
     branchPush: IN_MEMORY_BRANCH_PUSH_STUB,
     branchPeers: createInMemoryBranchPeerStub(
       runtime.markdownDocuments,

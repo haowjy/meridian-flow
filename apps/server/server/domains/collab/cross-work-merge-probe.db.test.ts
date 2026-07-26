@@ -56,7 +56,6 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     expect(result.approvedTextSurvived).toBe(false);
     expect(result.protection.classification).toBe("ordinary");
     expect(result.protection.capturedBodies.join("\n")).toContain("Writer-approved Work A text.");
-    expect(result.protection.restoreActionable).toBe(true);
     expect(result.protection.trailChanges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -71,8 +70,6 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     expect(result.protection.deliveredEvents).toEqual(
       expect.arrayContaining([expect.objectContaining({ counts: expect.any(Object) })]),
     );
-    expect(result.protection.restoreOutcome).toBe("applied");
-    expect(result.protection.manuscriptAfterRestore).toContain("Writer-approved Work A text.");
     const receipt = JSON.stringify(result.echo);
     expect(receipt).toContain("Work B stale replacement.");
     expect(receipt).not.toContain("Writer-approved Work A text.");

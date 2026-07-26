@@ -9,7 +9,6 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { mergeTrailChanges } from "../adapters/drizzle-change-trail-aggregate.js";
-import { planTrailRestore } from "../adapters/drizzle-trail-restore.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createOfflineReconciliation } from "./offline-reconciliation.js";
 import type { NormalizedTrail, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -39,31 +38,6 @@ describe("offline reconciliation", () => {
       navigation: { kind: "deletion_boundary" },
       beforeText: expect.stringContaining("Writer offline revision"),
     });
-    expect(
-      planTrailRestore({
-        liveDoc: scenario.liveDoc,
-        change: scenario.changes[0] as TrailChangeV1,
-        model,
-        codec: agentCodec,
-      }),
-    ).not.toBeNull();
-  });
-
-  it("reports writer content using the ordinary recoverable trail", async () => {
-    const scenario = await setup({
-      origin: "human:writer",
-      editDeletedBlock: true,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toHaveLength(1);
-    expect(
-      planTrailRestore({
-        liveDoc: scenario.liveDoc,
-        change: scenario.changes[0] as TrailChangeV1,
-        model,
-        codec: agentCodec,
-      }),
-    ).not.toBeNull();
   });
 
   it("reports an offline writer revision even when the block was agent-origin", async () => {

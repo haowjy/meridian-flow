@@ -58,8 +58,8 @@ branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
 
 **Durable whole-document projections route through this engine.** Push
-completion (`completeStagedPush` → `deriveDurableProjection`) and trail Restore
-inject `DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
+completion (`completeStagedPush` → `deriveDurableProjection`) injects
+`DurableProjectionSerializer` (`domain/ports/durable-projection.ts`,
 a `Pick<MarkdownDocumentEngine, "serializeDocument">` narrow port), never a
 schema-blind `{model, codec}` bag. The old bag serialized code documents through
 the markdown codec, emitting fenced output into `documents.markdown_projection`;
@@ -230,7 +230,7 @@ to `{}` before validation and returns `400 direction must be undo or redo`.
 or the declared unsupported stubs; do not restore optional dependencies that
 fail only when a command reaches them.
 
-- **Live receipt recovery state uses the command planner**:
+- **Live receipt reversal state uses the command planner**:
   `drizzle-turn-receipt.ts` asks agent-edit `planUndo` and `planRedo` for each
   live document instead of projecting availability from mutation status.
   Command execution uses the same planners. The planner rejects redo after a
@@ -348,19 +348,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   relocation. Fan-in, duplicate-source, cycle, or otherwise ambiguous evidence
   falls back to ordinary per-block changes; projection never guesses a
   relocation.
-- **Trail Restore**: `drizzle-trail-restore.ts` validates retained
-  relative-position evidence against the current live root and first stores a
-  committed intent with its live-state fingerprint on the durable trail change.
-  Only a guarded apply is promoted to a human-origin journal row and `applied`;
-  rejected intents replan from current live state. Proven anchor loss settles
-  `anchor_unavailable`; three live-state collisions settle the distinct
-  `retry_exhausted` outcome. This same state machine recovers a crash between intent
-  commit, live apply, and journal finalization without bypassing the guard. After
-  durable ownership authorization, captured bodies remain readable when the live
-  document is unavailable; both terminal outcomes degrade to the client Copy fallback.
-  The markdown projection is serialized from a scratch `Y.Doc` that Restore applies
-  the committed update to, before mutating the shared live document — never from the
-  live doc a WebSocket mutation may change mid-serialize (LOCK-WS discipline).
+- **Trail evidence is read-only**: durable Before/After excerpts support
+  disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
+  is the sole reversal authority for AI changes.
 - **Draft Apply always merges**: manual, selective, companion, and auto pushes
   all integrate through Yjs. `draftBaseUpdateSeq` is still a required persisted
   and mapped journal field, but no current semantic reader compares it or uses
@@ -422,8 +412,8 @@ history is preserved for attribution, echo, and undo dependency checking.
   necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
-  updates, and S2/S10 release probes must verify the writer-visible Restore/Copy
-  and trail flows. Fixture deltas once passed the oracle while repeated full-state
+  updates, and release probes must verify writer-visible trail flows. Fixture
+  deltas once passed the oracle while repeated full-state
   structs broke first-birth attribution.
 - **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
   use an injected schedule. Production obtains its time from PostgreSQL; tests

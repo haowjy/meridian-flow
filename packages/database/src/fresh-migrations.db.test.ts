@@ -136,12 +136,7 @@ if (!enabled || !databaseUrl) {
           const [row] = await tx<{ changes: unknown }[]>`
             SELECT changes FROM change_trail_document_details
           `;
-          expect(parseTrailChangesV1(row?.changes)).toEqual([
-            {
-              ...base,
-              restore: { status: "settled", outcome: "anchor_unavailable" },
-            },
-          ]);
+          expect(parseTrailChangesV1(row?.changes)).toEqual([base]);
           const removedColumns = await tx<{ column_name: string }[]>`
             SELECT column_name FROM information_schema.columns
             WHERE table_schema = ${schema}

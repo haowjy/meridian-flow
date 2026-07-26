@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
-- `apps/app`: AI mark popovers now open with their Before/After and Restore
-  verbs already resolved — trail evidence is cached per trail and prefetched
-  while marks are on screen, instead of refetched on every open.
+- `apps/app`, `apps/server`, `packages/contracts`: AI mark popovers and trail
+  evidence are read-only; receipt Undo/Redo is the sole reversal authority for
+  AI changes.
+- `apps/app`: AI mark popovers now open with their Before/After disclosure
+  resolved — trail evidence is cached per trail and prefetched while marks are
+  on screen, instead of refetched on every open.
 - `apps/app`, `apps/server`: Auto-apply switches and draft review now share one
   efficient content-branch authority, ignoring manifest-only bookkeeping left
   after review while still publishing required new-document membership.
@@ -19,8 +22,8 @@
   and edits, without document names, generic step counts, or error signals.
 - `apps/app`: receipt document names now share canonical writer-facing naming
   and only become links when the context URI is routable.
-- `apps/app`: AI mark popovers now keep only attribution, Restore,
-  conversation navigation, and a trail-backed Before/After disclosure; receipt
+- `apps/app`: AI mark popovers now keep only attribution, conversation
+  navigation, and a trail-backed Before/After disclosure; receipt
   rows use clamped excerpts without nested scrolling, cards, or Copy controls.
 - `apps/app`: chat keeps draft mode in the composer, hides a one-option dock
   switch, and removes the duplicate conversation-wide Changes record.
@@ -33,12 +36,8 @@
   blocked Auto-apply switch to Review changes or Apply all and switch.
 - `apps/app`: full-paragraph AI deletions now render as crimson inline ticks
   inside adjacent prose instead of full-width seams.
-- `apps/app`: live AI mark popovers now keep attribution and Restore compact,
-  with swept context, removed prose, Copy, and the request behind Show details.
 - `apps/app`: writer-facing status, mark, and file metadata copy no longer uses
   middle-dot separators.
-- `apps/app`, `apps/server`: trail recovery now exposes one fixed Restore
-  contract instead of a generic one-action dispatch surface.
 - `apps/app`, `apps/server`: resting AI marks now use quiet authorship
   underlines, reserve warning tint for swept edits, and expire with the live
   session or a writer edit.
@@ -57,13 +56,13 @@
   deterministically when a scenario produces multiple completed pushes.
 - `apps/app`, `apps/server`: completed AI edits now appear as session-local
   insertion, modification, and deletion marks in every open document peer;
-  their shared popover restores the change or opens its originating turn.
+  their shared popover shows trail evidence or opens its originating turn.
 - `apps/app`, `apps/server`, `packages/agent-edit`: agents can inspect their
   settled turn effect with `write(command: "diff")`; auto-applied live updates
   retain that same authoring turn attribution, and receipts show the complete
   settled change set.
-- `apps/app`: live editor marks vend trail-backed Restore while receipts remain
-  read-only records with Undo/Redo and Copy.
+- `apps/app`: live editor marks and receipts share trail-backed Before/After
+  evidence, while receipts own Undo/Redo.
 - `apps/app`: draft chips, dock rows, and write-mode confirmation now project
   from one canonical pending-review collection.
 - `apps/app`: draft Apply, Discard, Undo, and bulk commands now share one
@@ -388,23 +387,17 @@
   draft up with the live manuscript first, instead of leaving an inactive draft stale.
 - `apps/server`, `packages/agent-edit`: writer-approved Apply text is now
   provenance-classified; a stale cross-Work Apply merges, and any sweep of
-  approved text is captured in the durable Trail with its body and Restore.
+  approved text is captured in the durable Trail with its body.
 - `apps/app`, `apps/server`: Apply (including Apply-all) submits exactly the
   operations the writer previewed; AI changes landing after the preview stay
   pending instead of riding along unreviewed. Malformed/empty operation-id
   payloads now 400.
 - `packages/agent-edit`, `apps/server`: agent writes, undo, redo, and buffered
   flushes always commit through ordinary Yjs merge. Concurrent-edit echo informs
-  the agent; writer-lineage destruction is captured for the trail and Restore;
+  the agent; writer-lineage destruction is captured for the trail;
   agent-only destruction stays silent (#327).
 - `apps/server`: add a real-Postgres cross-Work merge probe covering stale
-  manual and auto Apply settlement, protected sweeps, agent echo, and cold
-  Restore.
-- `apps/server`: protected sweeps that replace a document's only block via
-  split delete+insert operations now keep a restore anchor beside the
-  replacing block — the trail offers Restore instead of the Copy-only
-  fallback. The merge probe asserts actionable restore navigation, not just
-  that the swept body was captured.
+  manual and auto Apply settlement, protected sweeps, and agent echo.
 - `apps/app`: whole editor pane is click-to-focus — presses on the margins
   place the caret at the nearest text position (never a block boundary, so
   collab cursors can't render phantom rows between paragraphs); the pane

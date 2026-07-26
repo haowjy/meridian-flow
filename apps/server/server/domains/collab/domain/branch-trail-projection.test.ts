@@ -9,7 +9,6 @@ import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import { planTrailRestore } from "../adapters/drizzle-trail-restore.js";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
 import {
   journalAttributionByChangedBlock,
@@ -778,18 +777,6 @@ it("projects a structurally adjacent whole-block replacement as one modification
     afterBlockIdentity: { documentId: "document-1" },
     navigation: { kind: "live_block_range" },
   });
-  if (!change) throw new Error("missing projected change");
-  const planned = planTrailRestore({
-    liveDoc: afterDoc,
-    change: { ...change, ordinal: 0 },
-    model,
-    codec,
-  });
-  expect(planned).not.toBeNull();
-  if (planned) Y.applyUpdate(afterDoc, planned.update);
-  expect(codec.serialize(model.projectBlocks(toDocHandle(afterDoc))).trim()).toBe(
-    "Writer text.\n\nAgent replacement.",
-  );
 });
 
 it("keeps an unrelated deletion and insertion in one push as separate events", () => {

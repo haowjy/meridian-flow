@@ -1,24 +1,7 @@
-import {
-  createAgentEditCodec,
-  toDocHandle,
-  yProsemirrorModel,
-} from "@meridian/agent-edit/integration";
-import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
-import {
-  createDrizzleTrailRestore,
-  liveStateFingerprint,
-} from "./adapters/drizzle-trail-restore.js";
-import {
-  createInMemoryCoordinator,
-  createInMemoryJournal,
-} from "./adapters/in-memory/agent-edit.js";
-import { deletionBoundaryTarget } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -35,17 +18,6 @@ import {
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
-}
-
-function durableProjectionSerializer(
-  model: ReturnType<typeof yProsemirrorModel>,
-  codec: ReturnType<typeof createAgentEditCodec>,
-) {
-  return {
-    async serializeDocument(_documentId: string, doc: Y.Doc) {
-      return codec.serialize(model.projectBlocks(toDocHandle(doc)));
-    },
-  };
 }
 
 describe("change trail (postgres)", () => {
@@ -170,323 +142,6 @@ describe("change trail (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("restores captured prose journal-first against a live document and deduplicates retries", async () => {
-    const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    const model = yProsemirrorModel(documentSchema);
-    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
-    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
-    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
-    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
-    if (!(nextBlock instanceof Y.XmlElement)) {
-      throw new Error("missing live anchor block");
-    }
-    const trailId = "00000000-0000-4000-8000-000000000809";
-    const changeId = "restore-change";
-    await db.insert(schema.changeTrailShells).values({
-      id: trailId,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      ownerKind: "turn",
-      changeCount: 1,
-      documentCount: 1,
-    });
-    await db.insert(schema.changeTrailDocumentDetails).values({
-      trailId,
-      documentId: ALPHA_ID,
-      documentTitle: "Alpha",
-      changes: [
-        {
-          changeId,
-          ordinal: 0,
-          documentId: ALPHA_ID,
-          pushId: null,
-          receiptId: "receipt-1",
-          kind: "delete",
-          beforeText: "deleted-block|Restored prose.",
-          afterTextAtReceipt: null,
-          beforeBlockIdentity: null,
-          afterBlockIdentity: null,
-          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-        },
-      ],
-    });
-    const actions = createDrizzleTrailRestore({
-      db,
-      documentAccess: createDrizzleDocumentAccess(db),
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: durableProjectionSerializer(model, codec),
-    });
-    const request = {
-      threadId: THREAD_ID,
-      trailId,
-      changeId,
-      userId: USER_ID,
-    };
-    const liveBeforeProjectionFailure = Y.encodeStateAsUpdate(liveDoc);
-    const projectionFailure = createDrizzleTrailRestore({
-      db,
-      documentAccess: createDrizzleDocumentAccess(db),
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: {
-        async serializeDocument() {
-          throw new Error("injected projection failure");
-        },
-      },
-    });
-
-    await expect(projectionFailure.restore(request)).rejects.toThrow("injected projection failure");
-    expect(Y.encodeStateAsUpdate(liveDoc)).toEqual(liveBeforeProjectionFailure);
-    await expect(
-      db
-        .select()
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID)),
-    ).resolves.toHaveLength(0);
-    await expect(actions.restore(request)).resolves.toEqual({ status: "applied" });
-    await expect(actions.restore(request)).resolves.toEqual({ status: "already_applied" });
-    expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc)))).toContain("Restored prose.");
-    const journalRows = await db
-      .select()
-      .from(schema.documentYjsUpdates)
-      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID));
-    expect(journalRows).toHaveLength(1);
-    expect(journalRows[0]?.originType).toBe("human");
-  });
-
-  it("does not apply a committed Restore after document access is revoked", async () => {
-    const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    const model = yProsemirrorModel(documentSchema);
-    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
-    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
-    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
-    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
-    if (!(nextBlock instanceof Y.XmlElement)) throw new Error("missing live anchor block");
-    const trailId = "00000000-0000-4000-8000-000000000812";
-    const changeId = "revoked-restore";
-    await db.insert(schema.changeTrailShells).values({
-      id: trailId,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      ownerKind: "turn",
-      changeCount: 1,
-      documentCount: 1,
-    });
-    await db.insert(schema.changeTrailDocumentDetails).values({
-      trailId,
-      documentId: ALPHA_ID,
-      documentTitle: "Alpha",
-      changes: [
-        {
-          changeId,
-          ordinal: 0,
-          documentId: ALPHA_ID,
-          pushId: null,
-          receiptId: "receipt-revoked",
-          kind: "delete",
-          beforeText: "deleted-block|Restored prose.",
-          afterTextAtReceipt: null,
-          beforeBlockIdentity: null,
-          afterBlockIdentity: null,
-          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-        },
-      ],
-    });
-    let accessLocks = 0;
-    const actions = createDrizzleTrailRestore({
-      db,
-      documentAccess: {
-        lockDocumentAccessState: async () => {
-          accessLocks += 1;
-          return accessLocks < 3 ? "available" : null;
-        },
-      },
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: durableProjectionSerializer(model, codec),
-    });
-
-    await expect(
-      actions.restore({
-        threadId: THREAD_ID,
-        trailId,
-        changeId,
-        userId: USER_ID,
-      }),
-    ).resolves.toEqual({ status: "anchor_unavailable" });
-    expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc))).trim()).toBe(
-      "Surviving prose.",
-    );
-    expect(
-      await db
-        .select()
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID)),
-    ).toEqual([]);
-  });
-
-  it("recovers a committed Restore after a crash before live apply", async () => {
-    const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    const model = yProsemirrorModel(documentSchema);
-    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
-    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
-    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
-    const scratch = new Y.Doc({ gc: false });
-    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(liveDoc));
-    const before = Y.encodeStateVector(scratch);
-    model.insertBlocks(toDocHandle(scratch), null, codec.parse("Recovered once."));
-    const committedUpdate = Y.encodeStateAsUpdate(scratch, before);
-    scratch.destroy();
-
-    const expectedLiveStateHash = liveStateFingerprint(liveDoc);
-    const trailId = "00000000-0000-4000-8000-000000000811";
-    const changeId = "crashed-restore";
-    await db.insert(schema.changeTrailShells).values({
-      id: trailId,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      ownerKind: "turn",
-      changeCount: 1,
-      documentCount: 1,
-    });
-    await db.insert(schema.changeTrailDocumentDetails).values({
-      trailId,
-      documentId: ALPHA_ID,
-      documentTitle: "Alpha",
-      changes: [
-        {
-          changeId,
-          ordinal: 0,
-          documentId: ALPHA_ID,
-          pushId: null,
-          receiptId: null,
-          kind: "delete",
-          beforeText: "deleted-block|Recovered once.",
-          afterTextAtReceipt: null,
-          beforeBlockIdentity: null,
-          afterBlockIdentity: null,
-          navigation: { kind: "unavailable", reason: "crash_fixture" },
-          restore: {
-            status: "committed",
-            update: Buffer.from(committedUpdate).toString("base64"),
-            expectedLiveStateHash,
-          },
-        },
-      ],
-    });
-    const actions = createDrizzleTrailRestore({
-      db,
-      documentAccess: createDrizzleDocumentAccess(db),
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: durableProjectionSerializer(model, codec),
-    });
-    const request = {
-      threadId: THREAD_ID,
-      trailId,
-      changeId,
-      userId: USER_ID,
-    };
-
-    await expect(actions.restore(request)).resolves.toEqual({ status: "applied" });
-    await expect(actions.restore(request)).resolves.toEqual({ status: "already_applied" });
-    const markdown = codec.serialize(model.projectBlocks(toDocHandle(liveDoc)));
-    expect(markdown.match(/Recovered once\./g)).toHaveLength(1);
-  });
-
-  it("durably settles retry exhaustion after three live-state collisions", async () => {
-    const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    const model = yProsemirrorModel(documentSchema);
-    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
-    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
-    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
-    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
-    if (!(nextBlock instanceof Y.XmlElement)) throw new Error("missing live anchor block");
-
-    const trailId = "00000000-0000-4000-8000-000000000813";
-    const changeId = "retry-exhausted-restore";
-    await db.insert(schema.changeTrailShells).values({
-      id: trailId,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      ownerKind: "turn",
-      changeCount: 1,
-      documentCount: 1,
-    });
-    await db.insert(schema.changeTrailDocumentDetails).values({
-      trailId,
-      documentId: ALPHA_ID,
-      documentTitle: "Alpha",
-      changes: [
-        {
-          changeId,
-          ordinal: 0,
-          documentId: ALPHA_ID,
-          pushId: null,
-          receiptId: null,
-          kind: "delete",
-          beforeText: "deleted-block|Never restored.",
-          afterTextAtReceipt: null,
-          beforeBlockIdentity: null,
-          afterBlockIdentity: null,
-          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
-        },
-      ],
-    });
-
-    const documentAccess = createDrizzleDocumentAccess(db);
-    let accessLockCount = 0;
-    const actions = createDrizzleTrailRestore({
-      db,
-      documentAccess: {
-        async lockDocumentAccessState(tx, userId, documentId) {
-          accessLockCount += 1;
-          if (accessLockCount > 1 && accessLockCount % 2 === 1) {
-            model.insertBlocks(
-              toDocHandle(liveDoc),
-              null,
-              codec.parse(`Writer collision ${(accessLockCount - 1) / 2}.`),
-            );
-          }
-          return documentAccess.lockDocumentAccessState(tx, userId, documentId);
-        },
-      },
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: durableProjectionSerializer(model, codec),
-    });
-
-    await expect(
-      actions.restore({
-        threadId: THREAD_ID,
-        trailId,
-        changeId,
-        userId: USER_ID,
-      }),
-    ).resolves.toEqual({ status: "retry_exhausted" });
-    const [detail] = await db
-      .select({ changes: schema.changeTrailDocumentDetails.changes })
-      .from(schema.changeTrailDocumentDetails)
-      .where(eq(schema.changeTrailDocumentDetails.trailId, trailId));
-    expect(detail?.changes).toEqual([
-      expect.objectContaining({
-        changeId,
-        restore: { status: "settled", outcome: "retry_exhausted" },
-      }),
-    ]);
-    expect(await db.select().from(schema.documentYjsUpdates)).toHaveLength(0);
-  });
-
   it("retains captured trail prose after the file is permanently deleted", async () => {
     const trailId = "00000000-0000-4000-8000-000000000810";
     await db.insert(schema.changeTrailShells).values({
@@ -543,14 +198,6 @@ describe("change trail (postgres)", () => {
 
   it("returns no protected trail detail when document authorization fails", async () => {
     const trailId = "00000000-0000-4000-8000-000000000811";
-    const documentSchema = buildDocumentSchema();
-    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    const model = yProsemirrorModel(documentSchema);
-    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
-    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
-    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
-    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
-    if (!(nextBlock instanceof Y.XmlElement)) throw new Error("missing live anchor block");
     await db.insert(schema.changeTrailShells).values({
       id: trailId,
       threadId: THREAD_ID,
@@ -578,7 +225,7 @@ describe("change trail (postgres)", () => {
           afterTextAtReceipt: null,
           beforeBlockIdentity: null,
           afterBlockIdentity: null,
-          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
+          navigation: { kind: "unavailable", reason: "test" },
         },
       ],
     });
@@ -603,26 +250,6 @@ describe("change trail (postgres)", () => {
         userId: USER_ID,
       }),
     ).resolves.toEqual([]);
-
-    const actions = createDrizzleTrailRestore({
-      db,
-      documentAccess: createDrizzleDocumentAccess(db),
-      coordinator,
-      model,
-      codec,
-      durableProjectionSerializer: durableProjectionSerializer(model, codec),
-    });
-    await expect(
-      actions.restore({
-        threadId: THREAD_ID,
-        trailId,
-        changeId: "protected-change",
-        userId: "00000000-0000-4000-8000-000000000812",
-      }),
-    ).resolves.toEqual({ status: "anchor_unavailable" });
-    expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc))).trim()).toBe(
-      "Surviving prose.",
-    );
   });
 
   it("settles manual-policy turn work through a durable no-op", async () => {

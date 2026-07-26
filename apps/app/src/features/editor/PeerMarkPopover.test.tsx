@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Minimal live-mark attribution, durable diff disclosure, and recovery. */
+/** Minimal live-mark attribution, durable diff disclosure, and navigation. */
 
 import type { TrailChangeV1 as TrailChange } from "@meridian/contracts";
 import { act } from "react";
@@ -19,9 +19,7 @@ const settledChange: TrailChange = {
   beforeText: "block-1|Writer text.",
   afterTextAtReceipt: null,
   navigation: { kind: "unavailable", reason: "test" },
-  restore: { status: "settled", outcome: "retry_exhausted" },
 };
-const activeChange: TrailChange = { ...settledChange, restore: undefined };
 let currentChange = settledChange;
 
 vi.mock("@lingui/react/macro", () => ({
@@ -44,13 +42,6 @@ vi.mock("@tanstack/react-query", () => ({
           isError: false,
         },
 }));
-vi.mock("@/client/change-trails", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/client/change-trails")>();
-  return {
-    ...actual,
-    restoreTrailChange: vi.fn(async () => ({ status: "retry_exhausted" as const })),
-  };
-});
 vi.mock("@/components/ui/button", () => ({
   Button: ({
     size: _size,
@@ -112,20 +103,18 @@ describe("PeerMarkPopover", () => {
     });
   });
 
-  it("offers trail-backed Restore for an ordinary non-swept mark", async () => {
-    currentChange = activeChange;
+  it("keeps ordinary marks read-only", async () => {
     const ordinaryTarget = target();
     ordinaryTarget.marker = { ...ordinaryTarget.marker, swept: false };
 
     await withReactRoot(<PeerMarkPopover target={ordinaryTarget} onOpenChange={vi.fn()} />, () => {
-      expect(buttonLabels()).toContain("Restore");
+      expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
     });
   });
 
-  it("keeps diff access when Restore is no longer eligible", async () => {
+  it("keeps swept marks read-only", async () => {
     await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
-      expect(buttonLabels()).toContain("Before / After");
-      expect(buttonLabels()).not.toContain("Restore");
+      expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
     });
   });
 });

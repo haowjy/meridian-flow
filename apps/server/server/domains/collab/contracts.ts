@@ -4,7 +4,6 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { TrailRestoreResult } from "@meridian/contracts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -374,15 +373,6 @@ export type DocumentAttribution = {
   }>;
 };
 
-export type TrailRestoreAccess = {
-  restoreTrailChange(input: {
-    threadId: ThreadId;
-    trailId: string;
-    changeId: string;
-    userId: UserId;
-  }): Promise<TrailRestoreResult>;
-};
-
 export type CollabDomain = CollabTransport &
   DocumentAuthorityHeads &
   AgentEditAccess &
@@ -393,7 +383,6 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
-  TrailRestoreAccess &
   BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts &

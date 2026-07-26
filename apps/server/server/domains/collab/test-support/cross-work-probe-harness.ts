@@ -3,9 +3,6 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { createDrizzleDocumentAccess } from "../../../lib/document-access.js";
-import { createDrizzleTrailRestore, planTrailRestore } from "../adapters/drizzle-trail-restore.js";
-import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -44,9 +41,6 @@ export type CrossWorkProbeResult = {
     trailChanges: unknown[];
     notices: unknown[];
     deliveredEvents: unknown[];
-    restoreActionable: boolean;
-    restoreOutcome: string | null;
-    manuscriptAfterRestore: string | null;
   };
   echo: unknown;
 };
@@ -81,10 +75,8 @@ export async function runCrossWorkProbe(
     branchCoordinator,
     realBranchPush,
     trailDelivery,
-    hocuspocus,
     model,
     markupCodec,
-    agentEditCodec,
     deliveredEvents,
   } = fixture;
   await db.insert(schema.works).values({
@@ -283,57 +275,6 @@ export async function runCrossWorkProbe(
     const separator = beforeText.indexOf("|");
     return [separator < 0 ? beforeText : beforeText.slice(separator + 1)];
   });
-  let restoreActionable = false;
-  let restoreOutcome: string | null = null;
-  let manuscriptAfterRestore: string | null = null;
-  if (probeCase === "auto") {
-    const restorable = detailRows
-      .flatMap((row) =>
-        parseTrailChangesV1(Array.isArray(row.changes) ? row.changes : []).map((change) => ({
-          row,
-          change,
-        })),
-      )
-      .find(({ change }) => {
-        return change.beforeText !== null && change.beforeBlockIdentity !== null;
-      });
-    if (restorable) {
-      restoreActionable = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-        Boolean(
-          planTrailRestore({
-            liveDoc: doc,
-            change: restorable.change,
-            model,
-            codec: agentEditCodec,
-          }),
-        ),
-      );
-      if (!restoreActionable) throw new Error("receipt row has no Restore action");
-      for (const doc of hocuspocus.documents.values()) doc.destroy();
-      hocuspocus.documents.clear();
-      const restored = await createDrizzleTrailRestore({
-        db,
-        documentAccess: createDrizzleDocumentAccess(db),
-        coordinator: liveCoordinator,
-        model,
-        codec: agentEditCodec,
-        durableProjectionSerializer: {
-          async serializeDocument(_documentId, doc) {
-            return agentEditCodec.serialize(model.projectBlocks(toDocHandle(doc)));
-          },
-        },
-      }).restore({
-        threadId: THREAD_B_ID,
-        trailId: restorable.row.trailId,
-        changeId: restorable.change.changeId,
-        userId: USER_ID as never,
-      });
-      restoreOutcome = restored.status;
-      manuscriptAfterRestore = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-        serializeMarkdown(fixture, doc),
-      );
-    }
-  }
   return {
     case: probeCase,
     aApply: {
@@ -356,9 +297,6 @@ export async function runCrossWorkProbe(
           (event) => asRecord(event).threadId === (THREAD_B_ID as unknown as string),
         ),
       ) as unknown[],
-      restoreActionable,
-      restoreOutcome,
-      manuscriptAfterRestore,
     },
     echo,
   };

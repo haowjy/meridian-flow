@@ -396,15 +396,3 @@ export function materializeFinalPrePush(row: PendingLiveSettlement): Y.Doc {
 export function fullStateFingerprint(doc: Y.Doc): string {
   return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("base64");
 }
-
-/** Shared synchronous recheck/apply primitive for an already-durable Restore. */
-export function applyCommittedUpdateAtFingerprint(input: {
-  liveDoc: Y.Doc;
-  update: Uint8Array;
-  expectedFingerprint: string;
-  origin?: unknown;
-}): "applied" | "live_changed" {
-  if (fullStateFingerprint(input.liveDoc) !== input.expectedFingerprint) return "live_changed";
-  Y.applyUpdate(input.liveDoc, input.update, input.origin);
-  return "applied";
-}

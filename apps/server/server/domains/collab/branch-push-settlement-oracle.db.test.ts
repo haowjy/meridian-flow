@@ -750,7 +750,6 @@ async function observeSettlement(
     kind: unknown;
     beforeText: string | null;
     beforeBlockIdentity: { documentId: string; clientID: number; clock: number } | null;
-    restore?: unknown;
   };
   const changes = trail.details.flatMap((detail) => detail.changes as unknown as ReceiptChange[]);
   const recoverable = changes.filter(
@@ -792,8 +791,5 @@ async function observeSettlement(
       joinVersion: outbox.joinVersion,
       settledJoinVersion: outbox.settledJoinVersion,
     },
-    restoreStates: recoverable.flatMap((change) =>
-      change.restore === undefined ? [] : [change.restore],
-    ),
   };
 }
