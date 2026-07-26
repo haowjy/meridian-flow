@@ -141,7 +141,7 @@ function DraftReviewScope({
         );
       })
       // A failed membership check must leave the tab intact rather than guess
-      // that a remotely accepted document was discarded.
+      // that a remotely applied document was discarded.
       .catch(() => undefined);
   }, [
     controller.exitReview,

@@ -202,7 +202,7 @@ function ReviewOperationCards({
     () => partitionClosureClasses(preview.operations, preview.hunks),
     [preview],
   );
-  // One review session runs one accept/discard message at a time, so a single
+  // One review session runs one Apply/Discard message at a time, so a single
   // quiet line under the cards is enough — no per-card message plumbing.
   const message = currentReviewMessage(controller);
   return (
@@ -241,7 +241,7 @@ function ReviewOperationCards({
 
 /**
  * The one active review message, resolved from the controller's coded state:
- * an accept message when present, otherwise a discard error. The controller
+ * an Apply message when present, otherwise a Discard error. The controller
  * emits only codes (it is a state machine with no writer-facing strings); the
  * copy is localized here.
  */

@@ -22,15 +22,15 @@ import {
 
 /**
  * One proposal card = one closure class. The card reads the whole class through
- * this view-model; its Discard acts on `primaryOperation`, whose reject closure
- * spans every operation here.
+ * this view-model; its Discard acts on `primaryOperation`, which identifies the
+ * server-vended Discard class spanning every operation here.
  */
 export interface ReviewProposal {
   /** Stable identity for the card key + focus echo. */
   classId: string;
   /** Every operation folded into this card, in preview order. */
   operations: ReviewOperation[];
-  /** The op the card's Discard runs against — its closure spans the class. */
+  /** The op the card's Discard runs against — it identifies the class. */
   primaryOperation: ReviewOperation;
   /** Summary verb slot: addition / removal / rewrite across the class. */
   classification: ReviewOperation["classification"];

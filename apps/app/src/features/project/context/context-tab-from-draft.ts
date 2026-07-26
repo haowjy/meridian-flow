@@ -1,13 +1,13 @@
 /**
  * context-tab-from-draft — ContextTab synthesized from a work-draft group.
  *
- * Draft-only NEW documents have no context-tree entry until accept, so the
+ * Draft-only NEW documents have no context-tree entry until Apply, so the
  * route→tab auto-open (ContextPaneController → findContextFile) has nothing
  * to match and review lands on an empty pane (#153). The document itself is
  * real — its `documents` row and Yjs state exist from write time — only the
  * tree manifest entry is missing, so review entry builds the tab from draft
  * metadata instead. `openTab` is idempotent by documentId and merges
- * metadata, so when the real tree entry appears at accept the same tab is
+ * metadata, so when the real tree entry appears after Apply the same tab is
  * refreshed in place, never duplicated.
  *
  * Filetype/schema derive purely from the path (same contracts registry the
@@ -25,8 +25,8 @@ export function contextTabFromDraftGroup(group: {
   documentName?: string | null;
   /**
    * Server flag for a draft-CREATED document. Marks the tab `draftOnly` so
-   * the tab lifecycle can follow the draft's: cleared on accept, closed on
-   * whole-draft discard (the document never joins the tree).
+   * the tab lifecycle can follow the draft's: cleared on Apply, closed on
+   * whole-draft Discard (the document never joins the tree).
    */
   isNewDocument?: boolean;
 }): ServerContextTab | null {
