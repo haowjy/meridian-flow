@@ -31,7 +31,7 @@ type ActiveDraftPreviewBase = {
   status: "active";
   draftId: string;
   /** Hocuspocus room name for inline branch review; already generation-fenced. */
-  reviewRoomName?: string;
+  reviewRoomName: string;
   live: string;
   preview: string;
   liveRevisionToken: number;

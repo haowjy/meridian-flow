@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/contracts`: active draft previews now
+  require their generation-fenced review room and reject incomplete responses
+  instead of mounting the live manuscript.
 - `apps/app`: entering draft review no longer overwrites the writer's saved
   rail preference — review holds the left rail collapsed as a derived layout
   state, so a second draft opened mid-review or a project change cannot leave

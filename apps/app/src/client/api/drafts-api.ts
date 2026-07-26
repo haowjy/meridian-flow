@@ -36,9 +36,13 @@ export async function getDraftPreview(
   draftId: string,
 ): Promise<DraftPreviewResponse> {
   const params = new URLSearchParams({ draftId });
-  return getJson<DraftPreviewResponse>(
+  const preview = await getJson<DraftPreviewResponse>(
     `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
   );
+  if (preview.status === "active" && !preview.reviewRoomName) {
+    throw new Error("Draft preview response is missing reviewRoomName");
+  }
+  return preview;
 }
 
 export async function applyDraft(

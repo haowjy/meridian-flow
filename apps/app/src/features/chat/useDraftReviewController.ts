@@ -185,7 +185,7 @@ export function useDraftReviewController(
             current.attemptId !== attemptId
           )
             return;
-          if (preview.status === "active") setReviewRoomName(preview.reviewRoomName ?? null);
+          if (preview.status === "active") setReviewRoomName(preview.reviewRoomName);
         })
         .catch(() => {
           const current = activeReviewRequestRef.current;

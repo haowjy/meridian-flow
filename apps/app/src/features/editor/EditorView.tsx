@@ -104,8 +104,13 @@ function mountIdentity(props: EditorViewProps): EditorMountIdentity {
     schemaType: props.schemaType ?? "document",
     collaborationDecorations: props.showCollaborationDecorations ?? true,
   } as const;
-  return props.reviewDraftId && props.reviewRoomName
-    ? { ...shared, surface: "review", roomName: props.reviewRoomName, draftId: props.reviewDraftId }
+  const reviewDraftId = props.reviewDraftId;
+  const reviewRoomName = props.reviewRoomName;
+  if ((reviewDraftId && !reviewRoomName) || (!reviewDraftId && reviewRoomName)) {
+    throw new Error("Review editor requires both reviewDraftId and reviewRoomName");
+  }
+  return reviewDraftId && reviewRoomName
+    ? { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
     : { ...shared, surface: "live", detached: props.detached ?? false };
 }
 
