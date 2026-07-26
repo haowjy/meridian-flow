@@ -28,7 +28,7 @@ import {
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
-import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
@@ -163,7 +163,7 @@ describe("branch-push durable projection", () => {
       threadId: threadId as never,
       turnId: turnId as never,
     });
-    const changeTrails = createDrizzleChangeTrailPersistence(db);
+    const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
@@ -331,7 +331,7 @@ describe("branch-push durable projection", () => {
         return engine.serializeDocument(resolvedDocumentId as never, doc);
       },
     };
-    const changeTrails = createDrizzleChangeTrailPersistence(db);
+    const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
@@ -519,7 +519,7 @@ describe("branch-push durable projection", () => {
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
       resolveFiletype: async () => "markdown",
     });
-    const changeTrails = createDrizzleChangeTrailPersistence(db);
+    const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,

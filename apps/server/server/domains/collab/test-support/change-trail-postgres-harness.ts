@@ -39,8 +39,8 @@ const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = 
   "../adapters/drizzle-pending-settlement.js"
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
-const { createDrizzleChangeTrailPersistence } = await import(
-  "../adapters/drizzle-change-trails.js"
+const { createDrizzleChangeTrailAggregateWriter } = await import(
+  "../adapters/drizzle-change-trail-aggregate.js"
 );
 const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
@@ -310,7 +310,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     concurrentJournalWatermarks: watermarks,
   });
   const notices = createDrizzleNoticePort(db);
-  const changeTrails = createDrizzleChangeTrailPersistence(db);
+  const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
     schema: documentSchema,
     model,

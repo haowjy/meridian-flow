@@ -31,7 +31,7 @@ import {
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
-import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import {
@@ -152,7 +152,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const documentPresentation = createDocumentPresentationResolver(documentUriResolver);
   const lookups = createDrizzleCollabLookups(deps.db);
-  const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
+  const changeTrails = createDrizzleChangeTrailAggregateWriter(deps.db);
   const turnDiffQuery = createDrizzleTurnDiffQuery(
     deps.db,
     persistence.journal.documentsForTurn.bind(persistence.journal),

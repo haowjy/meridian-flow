@@ -2,7 +2,7 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { desc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import type { TrailChangeV1 } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
@@ -604,7 +604,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
   it("restores a folded-away provisional contribution after a post-cut writer admission", async () => {
     await resetDatabase();
-    const trailPersistence = createDrizzleChangeTrailPersistence(db);
+    const trailPersistence = createDrizzleChangeTrailAggregateWriter(db);
     let pushId: string | null = null;
     const harness = createHarness({
       afterDurableCommit: async ({ appendWriterPrefix }) => {

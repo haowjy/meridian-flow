@@ -1,7 +1,7 @@
 /** Regression coverage for the persisted trail reducer across successive pushes. */
 import { describe, expect, it } from "vitest";
 import type { TrailChangeV1 } from "../domain/trail-read-kernel.js";
-import { mergeTrailChanges, refinePushChanges } from "./drizzle-change-trails.js";
+import { mergeTrailChanges, refinePushChanges } from "./drizzle-change-trail-aggregate.js";
 
 function change(
   input: Partial<TrailChangeV1> &
