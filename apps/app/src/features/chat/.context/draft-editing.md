@@ -215,6 +215,12 @@ switch count all derive from this filter. Never grow a second is-pending
 derivation; surfaces that disagree about pending state was a shipped bug class
 (dock said none, mode-switch dialog said one).
 
+Pending membership and presentation order are separate contracts.
+`activeDockedDraftGroups` stays newest-updated-first for the DraftDock. The
+composer's single **Review changes** action sorts a copy by
+`documentName ?? documentId` and opens the alphabetically first pending
+document; it must not reorder the shared projection.
+
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until accept. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked

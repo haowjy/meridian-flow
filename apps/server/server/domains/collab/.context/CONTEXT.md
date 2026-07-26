@@ -320,7 +320,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   live apply and journal finalization.
 - **Trail block identity**: durable changes carry document-scoped Yjs
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
-  evidence use that canonical identity; hash prefixes are display-only.
+  evidence use that canonical identity; hash prefixes are display-only. The
+  wire contract always includes both `beforeBlockIdentity` and
+  `afterBlockIdentity` keys; each value is nullable for the absent side of an
+  insertion or deletion, while canonical folding requires at least one identity.
+  Display block IDs and a constant `reversible` flag are not part of the durable
+  trail contract.
   `branch-trail-projection.ts` may repair exact content relocation across a
   chain of shifted block identities only when the evidence forms a one-to-one
   path ending in one terminal deletion. It projects the chain head as the
