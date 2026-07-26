@@ -2,8 +2,8 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { PROVENANCE_RESERVED_TYPES } from "./domain/provenance.js";
+import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import type { TrailChangeV1 } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -11,10 +11,10 @@ import {
   db,
   markdownFromUpdate,
   resetDatabase,
+  runInRootDrizzleTransaction,
   schema,
 } from "./test-support/change-trail-postgres-harness.js";
 import {
-  DurableSettlementOracleMismatch,
   type SettlementOracleOutput,
   settlementOracle,
 } from "./test-support/durable-settlement-oracle.js";
@@ -442,380 +442,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.exactBodies[0]).not.toContain("Writer recent:");
   });
 
-  it("item 1 F2a: excludes an already-missing gap and reports surviving removed units", async () => {
-    const result = await runMatrixOracle("f2a-gap", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-f2a-gap",
-        initialMarkdown: "abcdefghijklmnopqrstuvwxyz!",
-        steps: [
-          { source: "writer", markdown: "abcdefghijklmnoqrstuvwxyz!" },
-          { source: "agent", markdown: "" },
-        ],
-      }),
-    );
-
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe(26);
-    expect(result.cold.exactBodies).toEqual(["abcdefghijklmnoqrstuvwxyz!"]);
-  });
-
-  it.each([
-    {
-      name: "split",
-      initialMarkdown: "alpha bravo charlie delta",
-      writerMarkdown: "alpha bravo\n\ncharlie delta",
-      expectedBodies: ["alpha bravo", "charlie delta"],
-    },
-    {
-      name: "merge",
-      initialMarkdown: "alpha bravo\n\ncharlie delta",
-      writerMarkdown: "alpha bravo charlie delta",
-      expectedBodies: ["alpha bravo charlie delta"],
-    },
-  ])("item 2 Gate B $name: real PM re-minted writer ranges report without provenance writes", async ({
-    name,
-    initialMarkdown,
-    writerMarkdown,
-    expectedBodies,
-  }) => {
-    const result = await runMatrixOracle(`gate-b-${name}`, (harness) =>
-      harness.seedMatrixPush({
-        responseId: `oracle-gate-b-${name}`,
-        initialMarkdown,
-        steps: [
-          { source: "writer", markdown: writerMarkdown },
-          { source: "agent", markdown: "" },
-        ],
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(expectedBodies);
-    expect(await explicitProvenanceRowCount()).toBe(0);
-  });
-
-  it("item 3: split, merge, then partial delete reports exact final visible units", async () => {
-    const result = await runMatrixOracle("split-merge-partial", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-split-merge-partial",
-        initialMarkdown: "one two three four",
-        steps: [
-          { source: "writer", markdown: "one two\n\nthree four" },
-          { source: "writer", markdown: "one two three four" },
-          { source: "agent", markdown: "one three four" },
-        ],
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(["one two three four"]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe(4);
-    expect(result.cold.applyResult).toMatchObject({ markdown: "one three four\n" });
-  });
-
-  it("item 4: certified structural carry keeps writer roots for a later deleting push", async () => {
-    const result = await runMatrixOracle("certified-structural-carry", async (harness) => {
-      const branchId = await harness.seedLiveCertifiedCarry({
-        responseId: "oracle-carry-1",
-        initialMarkdown: "Opening line.",
-        carriedMarkdown: "# Opening line.",
-      });
-      await harness.stageAnotherDestructiveEdit(branchId);
-      return branchId;
-    });
-
-    expect(result.cold.exactBodies).toEqual(["# Opening line."]);
-    expect(result.cold.applyResult).toMatchObject({ markdown: "#\n" });
-  });
-
-  it("item 4: a same-root candidate re-mint is silent", async () => {
-    const result = await runMatrixOracle("candidate-certified-carry", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-candidate-carry",
-        initialMarkdown: "Carried writer root.",
-        steps: [
-          {
-            source: "agent",
-            markdown: "Carried writer root.",
-            remint: true,
-            certifiedCarry: true,
-          },
-        ],
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual([]);
-  });
-
-  it("item 5 F2b: carried writer units report while adjacent fresh agent units stay silent", async () => {
-    const removedWriter = await runMatrixOracle("f2b-writer", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-f2b-writer",
-        initialMarkdown: "Writer protected.",
-        steps: [
-          { source: "agent", markdown: "Writer protected. Agent fresh." },
-          { source: "agent", markdown: "Agent fresh." },
-        ],
-      }),
-    );
-    expect(removedWriter.cold.exactBodies).toEqual(["Writer protected."]);
-
-    const removedAgent = await runMatrixOracle("f2b-agent", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-f2b-agent",
-        initialMarkdown: "Writer protected.",
-        steps: [
-          { source: "agent", markdown: "Writer protected. Agent fresh." },
-          { source: "agent", markdown: "Writer protected." },
-        ],
-      }),
-    );
-    expect(removedAgent.cold.trailChanges).toEqual([]);
-  }, 15_000);
-
-  it("item 6: blind verbatim-equal candidate replacement still reports", async () => {
-    const result = await runMatrixOracle("blind-equal-replacement", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-blind-equal-replacement",
-        initialMarkdown: "Verbatim writer target.",
-        steps: [
-          {
-            source: "agent",
-            markdown: "Verbatim writer target.",
-            remint: true,
-          },
-        ],
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(["Verbatim writer target."]);
-    expect(result.cold.applyResult).toMatchObject({ markdown: "Verbatim writer target.\n" });
-  });
-
-  it("item 8: a v3 token follows the original writer root across repeated agent carries", async () => {
-    const result = await runMatrixOracle("root-authoritative-token-chain", async (harness) => {
-      const branchId = await harness.seedLiveCertifiedCarry({
-        responseId: "oracle-root-chain",
-        initialMarkdown: "Writer root.",
-        carriedMarkdown: ["Writer root.", "Writer root."],
-      });
-      await harness.stageAnotherDestructiveEdit(branchId);
-      return branchId;
-    });
-
-    expect(result.cold.exactBodies).toEqual(["Writer root."]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Writer root.".length);
-  });
-
-  it.each([
-    {
-      name: "writer admission",
-      responseId: "00000000-0000-4000-8000-000000000901",
-      mutation: "writer_remint" as const,
-    },
-    {
-      name: "agent carry",
-      responseId: "00000000-0000-4000-8000-000000000902",
-      mutation: "agent_carry" as const,
-    },
-    {
-      name: "agent restoration",
-      responseId: "00000000-0000-4000-8000-000000000903",
-      mutation: "agent_restoration" as const,
-    },
-  ])("item 9 $name after the causal cut receives no observation credit", async ({
-    name,
-    responseId,
-    mutation,
-  }) => {
-    const result = await runMatrixOracle(`post-observation-${name}`, (harness) =>
-      harness.seedObservedCertifiedDelete({
-        responseId,
-        initialMarkdown: "Equal rendering.",
-        observation: { cut: "head", coverage: "current" },
-        postObservationMarkdown: "Equal rendering.",
-        postObservationMutation: mutation,
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(["Equal rendering."]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Equal rendering.".length);
-  });
-
-  it("item 9 stale branch: its authority prefix cannot borrow the newer global sequence", async () => {
-    const result = await runMatrixOracle("stale-branch-prefix", (harness) =>
-      harness.seedObservedCertifiedDelete({
-        responseId: "00000000-0000-4000-8000-000000000909",
-        initialMarkdown: "Writer durable before request.",
-        observation: { cut: "stale_prefix", coverage: "current" },
-      }),
-    );
-    const [cut] = await db.select().from(schema.modelResponseCausalCuts);
-    const [head] = await db
-      .select({ admissionSequence: schema.documentYjsUpdates.admissionSequence })
-      .from(schema.documentYjsUpdates)
-      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      .orderBy(schema.documentYjsUpdates.admissionSequence);
-
-    expect(cut?.admittedThrough).toBe(0n);
-    expect(head?.admissionSequence).toBe(1n);
-    expect(result.cold.exactBodies).toEqual(["Writer durable before request."]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe(
-      "Writer durable before request.".length,
-    );
-  });
-
-  it.each([
-    {
-      name: "both conjuncts",
-      responseId: "00000000-0000-4000-8000-000000002701",
-      observation: { cut: "head" as const, coverage: "current" as const },
-      reports: false,
-    },
-    {
-      name: "coverage without inclusion",
-      responseId: "00000000-0000-4000-8000-000000002702",
-      observation: { cut: "empty" as const, coverage: "current" as const },
-      reports: true,
-    },
-    {
-      name: "inclusion without coverage",
-      responseId: "00000000-0000-4000-8000-000000002703",
-      observation: { cut: "head" as const, coverage: "none" as const },
-      reports: true,
-    },
-  ])("item 27 $name: equal rendering requires causal inclusion and coverage", async ({
-    name,
-    responseId,
-    observation,
-    reports,
-  }) => {
-    const result = await runMatrixOracle(`equal-rendering-${name}`, (harness) =>
-      harness.seedObservedCertifiedDelete({
-        responseId,
-        initialMarkdown: "Observed writer prose.",
-        observation,
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(reports ? ["Observed writer prose."] : []);
-  });
-
-  it.each([
-    {
-      name: "coverage without inclusion",
-      cut: "empty" as const,
-      coverage: "current" as const,
-      includedLengths: [0, 1],
-      responseId: "00000000-0000-4000-8000-000000001202",
-    },
-    {
-      name: "inclusion without coverage",
-      cut: "head" as const,
-      coverage: "none" as const,
-      includedLengths: [1, 1],
-      responseId: "00000000-0000-4000-8000-000000001203",
-    },
-  ])("item 12 $name: evidence items keep response-local credit and durable IDs", async ({
-    name,
-    cut,
-    coverage,
-    includedLengths,
-    responseId,
-  }) => {
-    const result = await runMatrixOracle(`per-response-conjunctive-${name}`, async (harness) => {
-      const branchId = await harness.seedObservedCertifiedDelete({
-        responseId: "00000000-0000-4000-8000-000000001201",
-        initialMarkdown: "Shared writer root.",
-        observation: { cut: "head", coverage: "current" },
-      });
-      await harness.duplicateActiveEvidence({
-        responseId,
-        cut,
-        coverage,
-      });
-      return branchId;
-    });
-
-    expect(result.cold.exactBodies).toEqual(["Shared writer root."]);
-    expect(result.cold.causalMembership).toHaveLength(2);
-    expect(result.cold.causalMembership.map(({ evidenceId }) => evidenceId)).toEqual([
-      expect.stringMatching(/^branch-journal:/),
-      expect.stringMatching(/^branch-journal:/),
-    ]);
-    expect(result.cold.causalMembership.map(({ included }) => included.length).sort()).toEqual(
-      includedLengths,
-    );
-  });
-
-  it("item 7 true S9: a prior settled fresh replacement makes the later candidate silent", async () => {
-    const result = await runMatrixOracle(
-      "true-s9",
-      async (harness) => {
-        const branchId = await harness.seedMatrixPush({
-          responseId: "oracle-true-s9",
-          initialMarkdown: "Writer ancestry.",
-          steps: [{ source: "agent", markdown: "Agent ancestry.", remint: true }],
-        });
-        await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-        await harness.stageAnotherDestructiveEdit(branchId);
-        return branchId;
-      },
-      2,
-    );
-
-    expect(result.cold.exactBodies).toEqual(["Writer ancestry."]);
-    expect(result.cold.applyResult).toMatchObject({ markdown: "" });
-    expect(await db.select().from(schema.pushLineage)).toHaveLength(2);
-  });
-
-  it("item 28 root-unit injectivity: half deletion reports only the deleted half", async () => {
-    const result = await runMatrixOracle("root-unit-half-delete", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-root-unit-half-delete",
-        initialMarkdown: "abcdef",
-        steps: [{ source: "agent", markdown: "abc" }],
-      }),
-    );
-
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe(3);
-    expect(result.cold.exactBodies).toEqual(["abcdef"]);
-  });
-
-  it("item 28 divergent replication: authority rejects atomically before settlement", async () => {
-    const result = await runMatrixOracle("divergent-restoration", async (harness) => {
-      await expect(harness.attemptDivergentReplicationAdmission()).resolves.toEqual({
-        rejected: true,
-        journaled: false,
-        applied: false,
-      });
-      return harness.seedMatrixPush({
-        responseId: "oracle-divergent-restoration",
-        initialMarkdown: "Writer remains singular.",
-        steps: [{ source: "agent", markdown: "" }],
-      });
-    });
-
-    expect(result.cold.exactBodies).toEqual(["Writer remains singular."]);
-  });
-
-  it("item 18: transient insert-delete state creates no ghost assignment or trail", async () => {
-    const result = await runMatrixOracle("transient-insert-delete", (harness) =>
-      harness.seedMatrixPush({
-        responseId: "oracle-transient-insert-delete",
-        initialMarkdown: "Writer visible.",
-        steps: [
-          {
-            source: "agent",
-            markdown: "Writer visible.",
-            transientInsertDelete: "never visible",
-          },
-          { source: "agent", markdown: "" },
-        ],
-      }),
-    );
-
-    expect(result.cold.exactBodies).toEqual(["Writer visible."]);
-    expect(await explicitProvenanceRowCount()).toBe(0);
-  });
-
   it("item 13: unresolved settlement joins survive a commit fault and block snapshot replacement", async () => {
     let warm: ReturnType<typeof createHarness>;
     let coldHarness: ReturnType<typeof createHarness> | undefined;
@@ -826,7 +452,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(warm.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
-              code: "authority_busy",
+              code: "authority_head_busy",
             });
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
           },
@@ -843,7 +469,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(coldHarness?.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
-              code: "authority_busy",
+              code: "authority_head_busy",
             });
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
             throw new Error("fault after journal commit and settlement staging");
@@ -951,13 +577,72 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(after?.version).toBe(before?.version);
   });
 
-  it("item 23: pending insertion keeps the originating agent birth after its writer parent arrives", async () => {
-    const result = await runMatrixOracle("pending-dependency-birth", (harness) =>
-      harness.seedPendingDependencyPush(),
-    );
+  it("restores a folded-away provisional contribution after a post-cut writer admission", async () => {
+    await resetDatabase();
+    const trailPersistence = createDrizzleChangeTrailPersistence(db);
+    let pushId: string | null = null;
+    const harness = createHarness({
+      afterDurableCommit: async ({ appendWriterPrefix }) => {
+        const [detail] = await db.select().from(schema.changeTrailDocumentDetails);
+        const [shell] = await db.select().from(schema.changeTrailShells);
+        if (!detail || !shell) throw new Error("missing provisional trail contribution");
+        const provisional = detail.changes as TrailChangeV1[];
+        pushId = provisional[0]?.pushId ?? null;
+        const inverse = provisional.map(
+          (change, ordinal): TrailChangeV1 => ({
+            ...change,
+            changeId: `${change.changeId}:inverse`,
+            ordinal,
+            pushId: "fold-away",
+            receiptId: null,
+            kind:
+              change.afterTextAtReceipt === null
+                ? "insert"
+                : change.beforeText === null
+                  ? "delete"
+                  : "modify",
+            beforeText: change.afterTextAtReceipt,
+            afterTextAtReceipt: change.beforeText,
+            swept: null,
+          }),
+        );
+        await runInRootDrizzleTransaction(db, () =>
+          trailPersistence.record({
+            trails: [
+              {
+                owner:
+                  shell.ownerKind === "turn" && shell.turnId
+                    ? { kind: "turn", threadId: shell.threadId, turnId: shell.turnId }
+                    : { kind: "shared", threadId: shell.threadId, turnId: null },
+                changes: inverse,
+                counts: {
+                  changes: inverse.length,
+                  swept: 0,
+                  documents: new Set(inverse.map((change) => change.documentId)).size,
+                },
+              },
+            ],
+            documentTitles: new Map([[detail.documentId, detail.documentTitle]]),
+          }),
+        );
+        expect(await db.select().from(schema.changeTrailDocumentDetails)).toEqual([]);
+        await appendWriterPrefix(ALPHA_ID, "Joined writer: ");
+      },
+    });
+    const branchId = await harness.seedDestructivePush("oracle-folded-away-restoration");
 
-    expect(result.cold.exactBodies).toEqual([]);
-    expect(result.cold.applyResult).toMatchObject({ markdown: "" });
+    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+
+    expect(pushId).not.toBeNull();
+    const restored = await db.select().from(schema.changeTrailDocumentDetails);
+    expect(restored).toEqual([
+      expect.objectContaining({
+        documentId: ALPHA_ID,
+        documentTitle: "alpha",
+        changes: expect.arrayContaining([expect.objectContaining({ pushId })]),
+      }),
+    ]);
+    harness.destroyWarmState();
   });
 
   it("item 24: a checkpoint without its attribution manifest blocks instead of guessing", async () => {
@@ -1003,94 +688,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.completionState).toMatchObject({ state: "blocked" });
     expect(result.cold.applyResult).toMatchObject({ status: "not_applied" });
   });
-
-  it("addendum 15/item 24: carry, generation replacement, and Restore retain roots warm and cold", async () => {
-    const restored = "Explicit restored writer root.";
-    const result = await runMatrixOracle("checkpoint-explicit-restoration", (harness) =>
-      harness.seedCheckpointRestoredExplicitDelete("00000000-0000-4000-8000-000000002409"),
-    );
-
-    expect(result.cold.exactBodies).toEqual([restored]);
-    expect(totalRangeLength(result.cold.eligibleRanges)).toBe(restored.length);
-    expect(result.cold.canonicalIdentities).not.toEqual([]);
-  });
-
-  it("reports a normalized durable mismatch rather than accepting warm authority", async () => {
-    await expect(
-      settlementOracle({
-        runWarm: async () => emptyOutput("completed"),
-        commitColdSubject: async () => {},
-        destroyWarmState: async () => {},
-        recoverFromPostgres: async () => emptyOutput("pending"),
-      }),
-    ).rejects.toBeInstanceOf(DurableSettlementOracleMismatch);
-  });
 });
-
-async function runMatrixOracle(
-  id: string,
-  seed: (harness: ReturnType<typeof createHarness>) => Promise<string>,
-  killAtCommit = 1,
-) {
-  let coldHarness: ReturnType<typeof createHarness> | undefined;
-  let commitCount = 0;
-  return settlementOracle({
-    async runWarm() {
-      await resetDatabase();
-      const warm = createHarness();
-      const branchId = await seed(warm);
-      await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-      const observed = await observeSettlement(warm);
-      warm.destroyWarmState();
-      return observed;
-    },
-    async commitColdSubject() {
-      await resetDatabase();
-      coldHarness = createHarness({
-        afterDurableCommit: async () => {
-          commitCount += 1;
-          if (commitCount === killAtCommit) {
-            throw new Error(`injected ${id} process death after durable push commit`);
-          }
-        },
-      });
-      const branchId = await seed(coldHarness);
-      await expect(coldHarness.autoPush(branchId)).rejects.toThrow(`injected ${id} process death`);
-    },
-    async destroyWarmState() {
-      coldHarness?.destroyWarmState();
-      coldHarness = undefined;
-    },
-    async recoverFromPostgres() {
-      await db
-        .update(schema.branchPushSettlementOutbox)
-        .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) })
-        .where(eq(schema.branchPushSettlementOutbox.state, "pending"));
-      const cold = createHarness();
-      await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
-      const observed = await observeSettlement(cold);
-      cold.destroyWarmState();
-      return observed;
-    },
-  });
-}
-
-function totalRangeLength(ranges: readonly { length: number }[]): number {
-  return ranges.reduce((sum, range) => sum + range.length, 0);
-}
-
-async function explicitProvenanceRowCount(): Promise<number> {
-  const rows = await db.select().from(schema.documentYjsUpdates);
-  return rows.filter((row) => {
-    const doc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(doc, row.updateData);
-      return PROVENANCE_RESERVED_TYPES.some((name) => doc.getArray(name).length > 0);
-    } finally {
-      doc.destroy();
-    }
-  }).length;
-}
 
 async function expirePendingClaims(): Promise<void> {
   await db
@@ -1119,17 +717,6 @@ async function observeSettlement(
   const [outbox] = await db.select().from(schema.branchPushSettlementOutbox);
   const [push] = await db.select().from(schema.pushLineage);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
-  const evidence = outbox.lineageEvidence as {
-    items?: Array<{
-      evidenceId: string;
-      token: {
-        responseCausalCutId: string;
-        protectedRoots: Array<{ clientID: number; clock: number; length: number }>;
-      };
-    }>;
-  };
-  const cuts = await db.select().from(schema.modelResponseCausalCuts);
-  const cutsById = new Map(cuts.map((cut) => [cut.id, cut]));
   return {
     trailChanges: swept.map((change) => ({
       kind: change.kind,
@@ -1139,13 +726,6 @@ async function observeSettlement(
     })),
     exactBodies: swept.map((change) => change.writerProtection.body.markdown as string),
     canonicalIdentities: swept.map((change) => change.beforeBlockIdentity),
-    causalMembership: (evidence.items ?? []).map((item) => ({
-      evidenceId: item.evidenceId,
-      included:
-        (cutsById.get(item.token.responseCausalCutId)?.admittedThrough ?? 0n) > 0n
-          ? item.token.protectedRoots
-          : [],
-    })),
     eligibleRanges: swept.flatMap((change) => change.writerProtection.ranges),
     applyResult: {
       status: push.upstreamUpdateSeq === null ? "not_applied" : "applied",
@@ -1159,18 +739,5 @@ async function observeSettlement(
     forwardActions: swept.flatMap((change) =>
       change.forwardAction === undefined ? [] : [change.forwardAction],
     ),
-  };
-}
-
-function emptyOutput(state: string): SettlementOracleOutput {
-  return {
-    trailChanges: [],
-    exactBodies: [],
-    canonicalIdentities: [],
-    causalMembership: [],
-    eligibleRanges: [],
-    applyResult: "applied",
-    completionState: state,
-    forwardActions: [],
   };
 }

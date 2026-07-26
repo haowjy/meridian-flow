@@ -10,8 +10,8 @@ import {
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import { parseRequestId } from "../shared/uuid.js";
 import type { AppServices } from "./app.js";
-import { parseRequestId } from "./uuid.js";
 
 const SERVER_VERSION = "0.0.0";
 

@@ -3,7 +3,7 @@ import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
 import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
-import { isUuid } from "../../../../lib/uuid.js";
+import { isUuid } from "../../../../shared/uuid.js";
 import type {
   CreateProjectInput,
   ListProjectsOptions,

@@ -8,7 +8,7 @@ import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
-import { parseRequestId } from "../../lib/uuid.js";
+import { parseRequestId } from "../../shared/uuid.js";
 import type { ThreadRepository } from "./index.js";
 
 interface ProjectOwnerRepository {

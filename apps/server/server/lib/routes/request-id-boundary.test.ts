@@ -360,12 +360,7 @@ describe("malformed HTTP request IDs", () => {
   });
 
   it("normalizes context reversal IDs below the route", async () => {
-    const reverse = vi.fn(async () => ({ status: "nothing_to_undo" }));
-    readThreadContextDocument.mockResolvedValueOnce({
-      documentId: VALID_ID,
-      uri: "project://documents/chapter.md",
-      markdown: "",
-    });
+    const reverseThreadContext = vi.fn(async () => ({ status: "nothing_to_undo" }));
 
     await reverseContext(
       event(
@@ -377,18 +372,13 @@ describe("malformed HTTP request IDs", () => {
         },
         {
           documentSync: {
-            agentEdit: () => ({ reverse }),
-            refreshDocumentProjection: vi.fn(),
+            reverseThreadContext,
           },
         },
       ),
     );
 
-    expect(readThreadContextDocument).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ threadId: CANONICAL_THREAD_ID }),
-    );
-    expect(reverse).toHaveBeenCalledWith(
+    expect(reverseThreadContext).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: CANONICAL_THREAD_ID }),
     );
   });

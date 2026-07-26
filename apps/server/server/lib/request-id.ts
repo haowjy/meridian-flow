@@ -1,7 +1,7 @@
 /** HTTP request-ID parsing helpers over the server's canonical UUID wire grammar. */
 
 import { createError } from "nitro/h3";
-import { type ParsedRequestId, parseRequestId } from "./uuid.js";
+import { type ParsedRequestId, parseRequestId } from "../shared/uuid.js";
 
 export function requireRequestId(value: unknown, field: string): ParsedRequestId {
   const parsed = parseRequestId(value);

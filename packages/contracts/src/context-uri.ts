@@ -2,16 +2,16 @@
 
 import { parseRequestId } from "./request-id.js";
 
-export type ContextUriScheme = "manuscript" | "kb" | "scratch" | "uploads" | "user";
+export const CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "scratch", "uploads"] as const;
+export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
-const UNIFIED_SCHEMES: readonly ContextUriScheme[] = [
-  "manuscript",
-  "kb",
-  "user",
-  "scratch",
-  "uploads",
-];
-const AUTHORITY_SCHEMES: ReadonlySet<ContextUriScheme> = new Set(["scratch", "uploads"]);
+export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user"] as const;
+export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
+
+export const WORK_SCOPED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
+export type WorkScopedContextUriScheme = (typeof WORK_SCOPED_CONTEXT_URI_SCHEMES)[number];
+
+const AUTHORITY_SCHEMES: ReadonlySet<ContextUriScheme> = new Set(WORK_SCOPED_CONTEXT_URI_SCHEMES);
 // Full UUID *shape* (8-4-4-4-12 alphanumeric groups) regardless of hex/version
 // validity — used to tell a typo'd Work id from a legitimate short folder name.
 const UUID_SHAPE_PATTERN = /^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$/i;
@@ -52,7 +52,7 @@ export function parseContextUri(
   raw: string,
   options: ParseContextUriOptions = {},
 ): ContextUriParseResult {
-  const schemes = options.schemes ?? UNIFIED_SCHEMES;
+  const schemes = options.schemes ?? CONTEXT_URI_SCHEMES;
   const bareDefault = options.barePathDefault ?? "manuscript";
   const trimmed = raw.trim();
   if (!trimmed) return invalidContextUri(raw, "Empty URI");
@@ -99,10 +99,17 @@ export function parseContextUri(
 }
 
 export function parseUnifiedContextUri(raw: string): ContextUriParseResult {
-  return parseContextUri(raw, { barePathDefault: "manuscript", schemes: UNIFIED_SCHEMES });
+  return parseContextUri(raw, {
+    barePathDefault: "manuscript",
+    schemes: CONTEXT_URI_SCHEMES,
+  });
 }
 
-export const UNIFIED_CONTEXT_SCHEMES = UNIFIED_SCHEMES;
+export const UNIFIED_CONTEXT_SCHEMES = CONTEXT_URI_SCHEMES;
+
+export function isContextUriScheme(value: unknown): value is ContextUriScheme {
+  return typeof value === "string" && (CONTEXT_URI_SCHEMES as readonly string[]).includes(value);
+}
 
 function isContextScheme(
   scheme: string,

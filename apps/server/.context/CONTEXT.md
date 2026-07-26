@@ -151,11 +151,12 @@ In dev, the repository `logs/` tree is generated observability output, not sourc
 ### Request IDs
 
 Values backed by Postgres `uuid` columns use the request-ID grammar in
-`server/lib/uuid.ts`: canonical 36-character hyphenated hexadecimal, any UUID
-version/variant bits, case-insensitive on input and lowercase below the
-transport boundary. HTTP route cores use `server/lib/request-id.ts` so malformed
-IDs become 400 responses before any repository call; thread WebSocket messages
-use the same parser and deliberately report not-found.
+`server/shared/uuid.ts`: canonical 36-character hyphenated hexadecimal, any UUID
+version/variant bits, case-insensitive on input and lowercase below the parsing
+boundary. The primitive stays dependency-neutral because domain ports and
+adapters use the same grammar; `server/lib/request-id.ts` wraps it with HTTP
+error mapping. Malformed HTTP IDs become 400 responses before any repository
+call; thread WebSocket messages deliberately report not-found.
 
 ### Route-core handlers
 
@@ -184,7 +185,10 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 - **`pnpm test` is deterministic** — pure unit + in-memory adapter conformance;
   DB tests remain opt-in.
 - **Database checks** use `@meridian/database` and local Postgres when
-  `RUN_DB_TESTS=1` and `DATABASE_URL` are set.
+  `RUN_DB_TESTS=1` and `DATABASE_URL` are set. The manifest in
+  `vitest.db.config.ts` must exactly match every discovered `*.db.test.ts`
+  suite; a real-Postgres suite with another suffix remains outside the gate
+  until it is renamed and registered.
 - **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
   so tests exercise the real proxy/TLS path.
 

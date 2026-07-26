@@ -8,8 +8,11 @@ import { useMemo } from "react";
 
 import { useProjectThreads } from "./useProjectThreads";
 
-export function useContextWorkId(projectId: string, activeThreadId: string | null): string | null {
-  const { threads } = useProjectThreads(projectId);
+export function useContextWorkId(
+  projectId: string | null,
+  activeThreadId: string | null,
+): string | null {
+  const { threads } = useProjectThreads(projectId ?? "", { enabled: Boolean(projectId) });
 
   return useMemo(() => {
     if (!activeThreadId || !threads) return null;

@@ -103,10 +103,7 @@ export function createWriteReversalEndpoints(deps: {
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
       // This pre-reversal flush has no wrapping database transaction: the journal write is
       // immediately durable, so it does not need the server response unit-of-work facade.
-      const committed = await responseCommitter.commitResponse(context.responseId);
-      if (committed.status === "rejected") {
-        return stagedCommitRejection(committed.rejections);
-      }
+      await responseCommitter.commitResponse(context.responseId);
     }
     const selection = commandSelection(command);
     if (!selection.ok) return status("invalid_write", selection.message);
@@ -133,9 +130,6 @@ export function createWriteReversalEndpoints(deps: {
             },
       interactionContext: context.interactionContext,
     });
-    if (result.status === "destructive_write_rejected") {
-      await runtimeStore.evictRuntime(session, address.documentId);
-    }
     return result;
   }
 
@@ -201,18 +195,6 @@ export function createWriteReversalEndpoints(deps: {
     localSessions.set(id, session);
     return session;
   }
-}
-
-function stagedCommitRejection(
-  rejections: readonly import("./types.js").ResponseCommitDocumentRejection[],
-) {
-  const affectedWriteIds = [
-    ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
-  ];
-  return status(
-    "destructive_write_rejected",
-    `The buffered response was rejected before undo/redo. Superseded tool calls: ${affectedWriteIds.join(", ") || "none reported"}. Read the affected documents and retry.`,
-  );
 }
 
 export function commandSelection(

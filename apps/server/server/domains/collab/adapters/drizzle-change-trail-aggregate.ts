@@ -110,7 +110,7 @@ function withoutProvisionalSweep(change: TrailChangeV1): TrailChangeV1 {
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
-  return {
+  const writer: ChangeTrailAggregateWriter = {
     async record(input) {
       const tx = currentDrizzleDb(db);
       const trails = [...input.trails].sort((left, right) =>
@@ -298,6 +298,26 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         }
       }
     },
+    async replacePushContribution(pushId, replacement, context) {
+      const trails = replacement.targets.map(({ owner, classifications }) => {
+        const changes = replacement.kind === "refine" ? [...classifications] : [];
+        return {
+          owner,
+          changes,
+          counts: {
+            changes: changes.length,
+            swept: changes.filter((change) => change.swept !== null).length,
+            documents: new Set(changes.map((change) => change.documentId)).size,
+          },
+        };
+      });
+      await writer.record({
+        trails,
+        documentTitles: replacement.documentTitles,
+        refineCurrentVersion: context.refineCurrentVersion,
+        replacePushId: pushId,
+      });
+    },
     async reopenOwners(owners) {
       const tx = currentDrizzleDb(db);
       const sortedOwners = [
@@ -342,6 +362,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       await reconcileTerminalOwners(db);
     },
   };
+  return writer;
 }
 
 /** Advances turn trails only after the terminal turn policy has covered every owned row. */
@@ -435,8 +456,9 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
     // This preserves a durable, observable settling version between RUN_FINISHED
     // and the terminal event instead of collapsing both states in one poll.
     const ready = await tx.execute(sql`
-      SELECT shell.id, shell.version, shell.change_count, shell.swept_change_count,
-        shell.document_count
+      SELECT shell.id, shell.thread_id, shell.version, shell.change_count,
+        shell.swept_change_count, shell.document_count, shell.documents,
+        shell.words_added, shell.words_removed
       FROM change_trail_shells AS shell
       WHERE shell.state = 'settling'
         AND (
@@ -463,10 +485,14 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
     `);
     for (const item of ready as unknown as Array<{
       id: string;
+      thread_id: string;
       version: number;
       change_count: number;
       swept_change_count: number;
       document_count: number;
+      documents: Array<{ documentId: string; title: string }>;
+      words_added: number | null;
+      words_removed: number | null;
     }>) {
       const version = item.version + 1;
       await tx
@@ -477,10 +503,16 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
         .insert(changeTrailDeliveryOutbox)
         .values({
           eventId: deterministicUuid(`change-trail-event:${item.id}:${version}:settled`),
-          threadId: sql`(SELECT thread_id FROM change_trail_shells WHERE id = ${item.id})`,
+          threadId: item.thread_id as ThreadId,
           trailId: item.id,
           version,
           eventKind: "settled",
+          changeCount: item.change_count,
+          sweptChangeCount: item.swept_change_count,
+          documentCount: item.document_count,
+          documents: item.documents,
+          wordsAdded: item.words_added,
+          wordsRemoved: item.words_removed,
         })
         .onConflictDoNothing();
     }

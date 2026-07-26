@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import type { UpdateJournal } from "@meridian/agent-edit";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import {
   buildDocumentSchema,
@@ -122,14 +122,14 @@ console.log(
 if (!passed) process.exitCode = 1;
 
 async function runCurrentDay(): Promise<DayResult> {
-  const authority = new Y.Doc({ gc: false });
-  primeReservedNamespaceIndex(authority);
+  const liveDocument = new Y.Doc({ gc: false });
+  primeReservedNamespaceIndex(liveDocument);
   resetProvenanceInstrumentation();
   const counters = emptyCounters();
   const journal = countingJournal(counters);
   const port = createHocuspocusPersistenceService({
     journal,
-    hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
+    hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
     metaForOrigin: () => ({ origin: "human:benchmark-user", seq: 0 }),
     latestUpdateSeq: async () => 0,
     emitAgentEditInvariantViolation: () => undefined,
@@ -137,12 +137,12 @@ async function runCurrentDay(): Promise<DayResult> {
   return runDay(async (update) => {
     await port.admitLiveWriterUpdate({
       documentId: DOCUMENT_ID,
-      document: authority,
+      document: liveDocument,
       update,
       origin: { type: "user", userId: "benchmark-user" },
       expectedGeneration: 1n,
     });
-    Y.applyUpdate(authority, update);
+    Y.applyUpdate(liveDocument, update);
   }, counters);
 }
 

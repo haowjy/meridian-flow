@@ -58,7 +58,7 @@ describe("useAuthorizedChangeTrailDetail", () => {
         documentTitle: "Chapter",
         wordsAdded: 2,
         wordsRemoved: 1,
-        unavailable: false,
+        anchorState: "available",
         changes: [],
       },
     ]);

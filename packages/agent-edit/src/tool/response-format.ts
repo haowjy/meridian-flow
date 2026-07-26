@@ -17,10 +17,12 @@ import type {
 export interface ApplySuccessResponseInput {
   phase: WriteSuccessPhase;
   writeId?: string;
+  settlementId?: string;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
+  awarenessDegraded?: boolean;
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -48,6 +50,9 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
       metaLines.push(`swept: ${hash}|${body}`);
     }
   }
+  if (input.awarenessDegraded) {
+    metaLines.push("destructive awareness degraded after durable recovery; re-read required");
+  }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
   if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
@@ -58,6 +63,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     text: content.map((block) => block.text).join("\n\n"),
     content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
+    ...(input.settlementId ? { settlementId: input.settlementId } : {}),
   };
 }
 
@@ -111,10 +117,10 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     command,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
+    ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
-    ...(result.observations ? { observations: result.observations } : {}),
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
@@ -126,16 +132,18 @@ export function formatConcurrent(
   info: ConcurrentEditInfo,
   options: { excludeHashes?: ReadonlySet<string> } = {},
 ): string[] {
-  const lines = ["concurrent edits:"];
+  const runs: string[] = [];
   for (const run of info.runs) {
-    lines.push(`  ${run.origin}:`);
+    const entries: string[] = [];
     for (const block of run.blocks) {
-      if (!options.excludeHashes?.has(blockHash(block))) lines.push(`    ${block}`);
+      if (!options.excludeHashes?.has(blockHash(block))) entries.push(`    ${block}`);
     }
     for (const tombstone of run.tombstones) {
-      lines.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
+      entries.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
     }
+    if (entries.length > 0) runs.push(`  ${run.origin}:`, ...entries);
   }
+  const lines = runs.length > 0 ? ["concurrent edits:", ...runs] : [];
   if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
   return lines;
 }
@@ -153,8 +161,6 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
-    status === "destructive_write_rejected" ||
-    status === "rejected_response_requires_reread" ||
     status === "internal_error"
   );
 }

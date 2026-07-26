@@ -1,7 +1,7 @@
 /** Branch-backed review wire types for work-draft cards. */
 
 import type { DraftApplyConflict } from "@meridian/contracts";
-import type { DocumentId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
@@ -27,17 +27,6 @@ export type ReviewableDraft = {
 };
 
 export type ActiveDraft = ReviewableDraft & { status: "active" };
-
-export type DraftJournalSnapshot = {
-  draftRevisionToken: number;
-  updates: Array<{
-    id: number;
-    updateData: Uint8Array;
-    actorTurnId: TurnId | null;
-    actorUserId: UserId | null;
-    updateKind?: string | null;
-  }>;
-};
 
 export type DraftReviewPreview = {
   live: string;

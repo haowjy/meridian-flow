@@ -24,6 +24,8 @@ immediate writes use the journal kind returned by submission to restore or recov
 - Public mutations go through `write()` / `reverse()` / response lifecycle APIs.
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
+- Destructive policy is report-only: Yjs merge never blocks an agent write.
+  Echo informs the agent; provenance-classified sweep trails inform the writer.
 - Keep the kernel CRDT-neutral but be honest that v1 content currency is
   ProseMirror via `@meridian/markup`.
 - Do not add draft-scope persistence, `scope_id`, or compatibility shims for the

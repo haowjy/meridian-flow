@@ -1,9 +1,7 @@
 # features/chat — Turn render surface + transcript viewport
 
-The chat frontend: how assistant turns render from `Block[]` onto the screen,
-including the `Thinking`/`ActivityBlock` composition model, tool rendering,
-interrupt interaction, and the live→settled transition — AND how the
-conversation transcript scrolls (the explicit `follow | free` policy).
+The chat frontend: assistant-turn rendering, transcript scrolling, and the
+conversation-attached composer chrome, including Work-scoped draft controls.
 
 ## Purpose
 
@@ -34,8 +32,10 @@ When a new activity run begins, the previous frontier **rolls up** into the
 process fold in chronological position. Interrupts end a segment; their cards
 remain visible after resolution even though tool protocol rows fold on settle.
 
-The full model — including the 6-state lifecycle table and interrupt segmentation
-diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+The full model lives in
+[`.context/turn-composition.md`](.context/turn-composition.md); draft receipts
+and review state live in
+[`.context/draft-editing.md`](.context/draft-editing.md).
 
 ## Key rules
 
@@ -78,17 +78,20 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `placeholders.ts` | Lingui `msg` descriptor pools + per-page-load localStorage rotation + `useSyncExternalStore` SSR guard. Rotation is internal to Composer; hero variant overrides by prop |
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior. Unknown tools show name only; all registered renderers use `toolVerb()` for status-aware present/past tense |
 | `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent tool runs as sibling `ToolRow`s |
+| `ActivityRow.tsx` | Timeline-row primitive; each row owns its rail segment and exports the shared text inset |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/CONTEXT.md`](.context/CONTEXT.md) §Turn edits card |
+| `TurnEditsCard.tsx` | Per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo, and writer-safety evidence. No draft Review/Apply/Discard. |
 | `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams. Returns null for plain-insert-only trails (no writerProtection) |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
+| `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: navigates to the manuscript, collapses rails, enters inline review; restores rail state on exit (capture mechanics explained in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
+| `draft-apply-disposition.ts` | Shared revision acquisition and response policy for whole-draft and per-card Apply |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
@@ -173,9 +176,7 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 → TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
 → useChatFollowScroll.ts header comment (state machine invariants +
   re-armable 180ms guard + near-bottom-wins ordering)
-→ [KB: chat scroll follow-state decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/chat-scroll-follow-state.md)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
-→ [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
+→ [Draft Review Lifecycle KB decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher

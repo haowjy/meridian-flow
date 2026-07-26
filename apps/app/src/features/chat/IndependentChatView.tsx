@@ -7,8 +7,8 @@ import { Trans } from "@lingui/react/macro";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FolderPlus } from "lucide-react";
 import { useCallback } from "react";
-
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
+import { useWorks } from "@/client/query/useWorks";
 import { promoteIndependentProject } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -33,6 +33,8 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     nextSeq: snapshotNextSeq,
   } = useThreadSnapshotSync(threadId);
   const projectId = thread?.projectId ?? null;
+  const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  const activeWork = works?.find((work) => work.id === thread?.workId) ?? null;
 
   const handlePromote = useCallback(() => {
     if (!projectId) return;
@@ -75,6 +77,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
             threadId={threadId}
             projectId={projectId}
             activeThread={thread}
+            activeWork={activeWork}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
             key={threadId}

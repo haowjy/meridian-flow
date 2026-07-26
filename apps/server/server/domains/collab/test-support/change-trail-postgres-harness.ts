@@ -1,17 +1,13 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
 import {
   createAgentEditCodec,
-  digestRenderedContent,
-  type ObservationSnapshotStore,
-  snapshotBlocks,
   toDocHandle,
   yProsemirrorModel,
-} from "@meridian/agent-edit";
-import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contracts";
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -24,30 +20,67 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
 const { createActiveDocumentResolver } = await import("../../threads/index.js");
 const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
-export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await import(
-  "../../../shared/drizzle-transaction.js"
-);
+export const {
+  deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
+  runAfterDrizzleCommit,
+  runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
+} = await import("../../../shared/drizzle-transaction.js");
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-const { createDrizzleBranchPushStore } = await import("../adapters/drizzle-branch-push.js");
+const {
+  createDrizzleBranchJournalReadStore,
+  createDrizzlePushCommitStore,
+  createDrizzleWorkPushPolicyStore,
+} = await import("../adapters/drizzle-branch-push.js");
+const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
+  "../adapters/drizzle-pending-settlement.js"
+);
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
 const { createDrizzleChangeTrailPersistence } = await import(
   "../adapters/drizzle-change-trails.js"
 );
+const { createDrizzleDocumentProjectionEffects } = await import(
+  "../adapters/drizzle-document-activity.js"
+);
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
-const {
-  createDrizzleDocumentAuthorityHeads,
-  ensureAndReadDocumentAuthority,
-  replaceDocumentAuthorityGeneration,
-} = await import("../adapters/drizzle-document-authority.js");
+const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
+  "../adapters/drizzle-document-authority-head.js"
+);
+const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
-const { createFacade } = await import("../composition.js");
+const {
+  createAgentEditObservabilityOptions,
+  createBranchAgentEditDiagnostics,
+  createDocumentProjectionDiagnostics,
+  createReversalNoticeDiagnostics,
+} = await import("../adapters/agent-edit-observability.js");
+const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
-const { createDocumentAuthority } = await import("../domain/document-authority.js");
+const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
+const { createDocumentProjectionRefresher, createDocumentWriteHookRunner } = await import(
+  "../domain/document-projection-refresher.js"
+);
+const { enlistResponseParticipant, runResponseTransaction } = await import(
+  "../domain/response-transaction.js"
+);
+const { createResponseBranchFinalization, createResponseWriteFinalizer } = await import(
+  "../domain/response-write-finalizer.js"
+);
+const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
+const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
+const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
+const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
+  "../adapters/declared-stubs.js"
+);
+const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
+const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
+const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
   await import("../domain/provenance.js");
 
@@ -156,6 +189,7 @@ export async function resetDatabase(): Promise<void> {
 export async function closeDatabase(): Promise<void> {
   await db.$client.end();
 }
+
 export function markdownFromUpdate(update: Uint8Array): string {
   const doc = new Y.Doc({ gc: false });
   try {
@@ -187,14 +221,12 @@ export type MatrixDraftStep = {
   remint?: boolean;
   /** Certifies a length-preserving structural re-mint as one preserved root run. */
   certifiedCarry?: boolean;
-  afterObservation?: boolean;
   transientInsertDelete?: string;
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const persistence = createDrizzleCollabPersistence(db);
   const hocuspocus = fakeHocuspocus();
-  const observationSnapshots = observationStoreFor(hocuspocus.documents);
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
@@ -276,9 +308,35 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const changeTrails = createDrizzleChangeTrailPersistence(db);
-  const durableBranchPushStore = createDrizzleBranchPushStore(
+  const durableProjectionSerializer = createMarkdownDocumentEngine({
+    schema: documentSchema,
+    model,
+    codec: markupCodec,
+    journal: persistence.journal,
+    coordinator: liveCoordinator,
+    lifecycle: persistence.lifecycle,
+    initialDocumentSeeds: persistence.lifecycle,
+    metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    resolveFiletype: async (documentId) => {
+      const [row] = await db
+        .select({ filetype: schema.documents.fileType })
+        .from(schema.documents)
+        .where(eq(schema.documents.id, documentId));
+      return row?.filetype ?? null;
+    },
+  });
+  const durableBranchJournalReadStore = createDrizzleBranchJournalReadStore(db);
+  const durablePushCommitStore = createDrizzlePushCommitStore(
     db,
-    { model, codec: markupCodec },
+    stagePendingSettlementWithinTx,
+    changeTrails,
+    notices,
+  );
+  const durableWorkPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
+  const durableSettlementStore = createDrizzlePendingSettlementStore(
+    db,
+    durableProjectionSerializer,
+    createDrizzleDocumentProjectionEffects(db),
     changeTrails,
     notices,
   );
@@ -306,12 +364,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       seq: 0,
     });
   };
-  const branchPushStore = {
-    ...durableBranchPushStore,
-    async settlePushTrail(
-      input: Parameters<NonNullable<typeof durableBranchPushStore.settlePushTrail>>[0],
-    ) {
-      const settled = await durableBranchPushStore.settlePushTrail?.(input);
+  const settlementStore = {
+    ...durableSettlementStore,
+    async settlePushTrail(input: Parameters<typeof durableSettlementStore.settlePushTrail>[0]) {
+      const settled = await durableSettlementStore.settlePushTrail(input);
       if (settled !== false) {
         await options.afterSettlement?.({
           documentId: input.push.documentId,
@@ -326,13 +382,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return settled;
     },
     async withCompletionFence(
-      input: Parameters<NonNullable<typeof durableBranchPushStore.withCompletionFence>>[0],
-      complete: Parameters<NonNullable<typeof durableBranchPushStore.withCompletionFence>>[1],
+      input: Parameters<typeof durableSettlementStore.withCompletionFence>[0],
+      complete: Parameters<typeof durableSettlementStore.withCompletionFence>[1],
     ) {
-      if (!durableBranchPushStore.withCompletionFence) {
-        throw new Error("PostgreSQL branch push store has no completion fence");
-      }
-      return durableBranchPushStore.withCompletionFence(input, () => {
+      return durableSettlementStore.withCompletionFence(input, () => {
         const result = complete();
         options.afterLiveApply?.();
         return result;
@@ -343,7 +396,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const realBranchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
-    pushStore: branchPushStore,
+    journalReadStore: durableBranchJournalReadStore,
+    commitStore: durablePushCommitStore,
+    workPushPolicyStore: durableWorkPushPolicyStore,
+    settlementStore,
     branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
@@ -365,10 +421,19 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         }
       : undefined,
   });
+  const branchReview = createBranchReviewOperations({
+    branchStore,
+    journalReadStore: durableBranchJournalReadStore,
+    commitStore: durablePushCommitStore,
+    branchCoordinator,
+    journal: persistence.journal,
+    criticalSections: branchCriticalSections,
+  });
   const deliveredEvents: unknown[] = [];
   const fences: Array<{ threadId: string; documentId: string }> = [];
   let failNextTrailRetry = false;
   let failAllTrailRetries = false;
+  let trailWorkTime = new Date(Date.now() + 60_000);
   const trailDelivery = createChangeTrailWorker({
     db,
     journalWriter: {
@@ -386,6 +451,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       return realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" });
     },
     onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
+    turnTrailWorkSchedule: {
+      now: () => trailWorkTime,
+      retryDelayMs: (attempts) => Math.min(2 ** attempts, 30) * 1_000,
+      runningLeaseMs: 30_000,
+      successRetryMs: 1_000,
+    },
   });
   const autoPushSchedules: string[] = [];
   const autoPushPromises: Promise<unknown>[] = [];
@@ -400,41 +471,124 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
-  const collab = createFacade({
-    ...persistence,
-    initialDocumentSeeds: persistence.lifecycle,
-    documentAuthorityHeads: createDrizzleDocumentAuthorityHeads(db),
-    observationSnapshots,
-    coordinator: liveCoordinator,
-    hocuspocus: () => hocuspocus as never,
-    bindHocuspocus() {},
-    liveLineage: {
-      listLiveDocumentsForTurn: async () => [],
-      listEditedDocumentsForTurn: async () => [],
-      getTurnReceiptChip: async () => null,
-    } as never,
-    threads: { findById: async () => ({ id: THREAD_ID }) },
-    notices,
-    eventSink: {
-      emit(event) {
-        events.push({ name: event.name, payload: event.payload });
-      },
-      emitBatch(batch) {
-        for (const event of batch) events.push({ name: event.name, payload: event.payload });
-      },
-      flush: async () => {},
+  const eventSink: import("../../observability/index.js").EventSink = {
+    emit(event) {
+      events.push({ name: event.name, payload: event.payload });
     },
-    branchStore,
+    emitBatch(batch) {
+      for (const event of batch) events.push({ name: event.name, payload: event.payload });
+    },
+    flush: async () => {},
+  };
+  const resolveDocumentUri = async (documentId: string) =>
+    documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md";
+  const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
+  const runDocumentWriteHook = createDocumentWriteHookRunner({
+    hook: async () => {},
+    diagnostics: projectionDiagnostics,
+  });
+  const observability = createAgentEditObservabilityOptions({ eventSink });
+  const runtime = createAgentEditRuntime({
+    journal: persistence.journal,
+    coordinator: liveCoordinator,
+    lifecycle: persistence.lifecycle,
+    initialDocumentSeeds: persistence.lifecycle,
+    runDocumentWriteHook,
+    resolveDocumentFiletype: async () => null,
+    observability,
+  });
+  const projections = createDocumentProjectionRefresher({
+    documents: runtime.markdownDocuments,
+    runDocumentWriteHook,
+    diagnostics: projectionDiagnostics,
+  });
+  const agentEdit = createBranchThreadPeerAgentEditCore({
+    liveUtilityCore: runtime.liveUtilityCore,
+    journal: persistence.journal,
+    liveCoordinator,
+    lifecycle: persistence.lifecycle,
+    branches: branchStore,
     branchCoordinator,
     branchPulls,
     branchPush,
-    branchPushStore,
+    branchJournal: durableBranchJournalReadStore,
     concurrentJournalWatermarks: watermarks,
-    documentUriResolver: async (documentId) =>
-      documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md",
-    resolveWorkWriteMode: async () => "draft",
+    diagnostics: createBranchAgentEditDiagnostics(eventSink),
+    afterCommit: runAfterDrizzleCommit,
+    enlistResponseParticipant,
+    model: runtime.model,
+    codec: runtime.codec,
+    semanticProvenance: runtime.semanticProvenance,
+    observability,
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
+    responseTransactionSettlement: {
+      deferUntilCommit: deferUntilDrizzleCommit,
+      deferUntilRollback: deferUntilDrizzleRollback,
+    },
+    responseTransactions: {
+      enlist: enlistResponseParticipant,
+      run: runResponseTransaction,
+    },
   });
+  const noLiveDependents = async () => ({
+    hasDependents: false,
+    blockingActorTypes: [] as Array<"agent" | "human" | "unknown">,
+    checkedUntilSeq: 0,
+  });
+  const responseFinalizer = createResponseWriteFinalizer({
+    agentEdit,
+    liveAgentEdit: runtime.liveUtilityCore,
+    reversalStore: persistence.journal,
+    liveReversal: { checkDependentLaterLiveRows: noLiveDependents },
+    resolveDocumentUri,
+    branches: createResponseBranchFinalization({
+      branches: branchStore,
+      branchCoordinator,
+      branchJournal: durableBranchJournalReadStore,
+      branchReview,
+    }),
+    projections,
+    notices: createPostDurabilityNoticeService({
+      notices,
+      documentUriResolver: resolveDocumentUri,
+      diagnostics: createReversalNoticeDiagnostics(eventSink),
+    }),
+  });
+  const turnReversal = createTurnReversalService({
+    ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
+    live: {
+      reversalStore: persistence.journal,
+      agentEdit: runtime.liveUtilityCore,
+      resolveDocumentUri,
+      checkDependentLaterLiveRows: noLiveDependents,
+      refreshDocumentProjection: projections.refresh,
+    },
+    branchReview,
+    branchJournal: durableBranchJournalReadStore,
+    branches: branchStore,
+    resolveDocumentUri,
+  });
+  const drafts = createWorkDraftReviewService({
+    branches: branchStore,
+    branchCoordinator,
+    branchJournal: durableBranchJournalReadStore,
+    branchPush,
+    branchReview,
+    workPushPolicy: durableWorkPushPolicyStore,
+    liveCoordinator,
+    documents: runtime.markdownDocuments,
+    model: runtime.model,
+    agentEdit,
+    resolveDocumentUri,
+    latestUpdateSeq: persistence.store.latestUpdateSeq,
+  });
+  const collab = {
+    agentEdit: () => agentEdit,
+    reverseTurn: turnReversal.reverseTurn,
+    writeDocument: runtime.markdownDocuments.writeDocument,
+    ...responseFinalizer,
+    ...drafts,
+  };
 
   async function seedAndStage(responseId: string) {
     await collab.writeDocument({
@@ -486,10 +640,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
       draft.doc.destroy();
     }
-    branchBroadcasts.length = 0;
-    watermarkCommits.length = 0;
-    autoPushSchedules.length = 0;
-    hocuspocus.broadcasts.length = 0;
     await expect(
       collab.agentEdit().write(
         {
@@ -510,6 +660,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     preCommitBranchHashes = await databaseBranchHashes();
+    // Staging pulls legitimately publish into loaded branch rooms. Start the
+    // measurement window after staging so it covers only the commit attempt.
+    branchBroadcasts.length = 0;
+    watermarkCommits.length = 0;
+    autoPushSchedules.length = 0;
+    hocuspocus.broadcasts.length = 0;
   }
 
   async function seedAndStageDestructive(
@@ -519,7 +675,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     markdown = "Alpha base.\n\nWriter block.",
     writerBlockIndex = 1,
     writerEditBeforeWrite = false,
-    observeWriterEdit = false,
   ) {
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
     await collab.writeDocument({
@@ -547,55 +702,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         model: "fixture",
       });
     }
-    const captureDurableObservation = async () => {
-      const [head] = await db
-        .select({
-          admissionSequence: schema.documentYjsUpdates.admissionSequence,
-          authorityId: schema.documentYjsUpdates.authorityId,
-          generation: schema.documentYjsUpdates.authorityGeneration,
-        })
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, documentId))
-        .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
-        .limit(1);
-      observationSnapshots.configure(responseId, {
-        admittedThrough: head?.admissionSequence ?? 0n,
-        includeEntries: true,
-      });
-      observationSnapshots.capture(responseId);
-      const snapshot = await observationSnapshots.load(responseId);
-      if (!snapshot) throw new Error("fixture observation is unavailable");
-      await db.insert(schema.modelResponseObservationSnapshots).values({
-        responseId: responseId as never,
-      });
-      await db.insert(schema.modelResponseCausalCuts).values(
-        (snapshot.causalCuts ?? []).map((cut) => ({
-          id: cut.id,
-          responseId: responseId as never,
-          documentId: cut.documentId,
-          authorityId:
-            cut.documentId === documentId
-              ? (head?.authorityId ?? cut.authorityId)
-              : cut.authorityId,
-          generation:
-            cut.documentId === documentId ? (head?.generation ?? cut.generation) : cut.generation,
-          admittedThrough: cut.admittedThrough,
-        })),
-      );
-      await db.insert(schema.modelResponseObservationEntries).values(
-        snapshot.entries.map((entry) => ({
-          responseId: responseId as never,
-          documentId: entry.documentId as DocumentId,
-          clientId: entry.clientID,
-          clock: entry.clock,
-          kind: entry.value.kind,
-          contentDigest: entry.value.kind === "rendered" ? entry.value.digest : null,
-          capturedDeletedBody:
-            entry.value.kind === "explicit_deletion" ? entry.value.capturedBody : null,
-        })),
-      );
-    };
-    if (writerEditBeforeWrite && !observeWriterEdit) await captureDurableObservation();
     const applyWriterEdit = () =>
       liveCoordinator.withDocument(documentId, async (doc) => {
         const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];
@@ -614,11 +720,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           });
         }
       });
-    // The probe edit landed after the response's read observation but before the
-    // destructive tool call. Journaled fixtures retain their older phase-C timing.
+    // The probe edit lands after the response's read but before the destructive
+    // tool call. Journaled fixtures retain their older phase-C timing.
     if (writerEditBeforeWrite) {
       await applyWriterEdit();
-      if (observeWriterEdit) await captureDurableObservation();
     }
     await expect(
       collab.agentEdit().write(
@@ -696,7 +801,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     responseId: string;
     initialMarkdown: string;
     steps: readonly MatrixDraftStep[];
-    observation?: { cut: "head" | "empty"; coverage: "current" | "none" };
   }): Promise<string> {
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -706,9 +810,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
-      for (const step of input.steps.filter(
-        (candidate) => candidate.source === "writer" && !candidate.afterObservation,
-      )) {
+      for (const step of input.steps.filter((candidate) => candidate.source === "writer")) {
         before = Y.encodeStateVector(doc);
         if (step.remint) remintMarkdown(doc, step.markdown);
         else replaceMarkdown(doc, step.markdown);
@@ -718,32 +820,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         });
       }
     });
-    if (input.observation || input.steps.some((step) => step.afterObservation)) {
-      const [head] = await db
-        .select({ admissionSequence: schema.documentYjsUpdates.admissionSequence })
-        .from(schema.documentYjsUpdates)
-        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
-        .limit(1);
-      observationSnapshots.configure(input.responseId, {
-        admittedThrough: input.observation?.cut === "empty" ? 0n : (head?.admissionSequence ?? 0n),
-        includeEntries: input.observation?.coverage !== "none",
-      });
-      observationSnapshots.capture(input.responseId);
-      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        for (const step of input.steps.filter(
-          (candidate) => candidate.source === "writer" && candidate.afterObservation,
-        )) {
-          const before = Y.encodeStateVector(doc);
-          if (step.remint) remintMarkdown(doc, step.markdown);
-          else replaceMarkdown(doc, step.markdown);
-          await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-            origin: `human:${USER_ID}`,
-            seq: 0,
-          });
-        }
-      });
-    }
     const context = {
       sessionId: THREAD_ID,
       threadId: THREAD_ID,
@@ -918,6 +994,219 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       );
   }
 
+  async function compactMixedProvenanceTwice(): Promise<{
+    retainedUpdateCount: number;
+    warmProvenance: string[];
+    coldProvenance: string[];
+    rebasedBranchProvenance: string[];
+  }> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, "Agent-only passage.");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
+      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+
+      const firstBlock = model.getBlocks(toDocHandle(doc))[0];
+      if (!firstBlock) throw new Error("compaction probe block is unavailable");
+      const beforeWriter = Y.encodeStateVector(doc);
+      model.applyTextEdit(toDocHandle(doc), firstBlock, { from: 0, to: 0 }, "Writer prefix. ");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, beforeWriter), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+
+      const warm = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(doc),
+        afterCandidate: toDocHandle(doc),
+      });
+      const snapshot = await persistence.journal.read(ALPHA_ID);
+      const coldDoc = new Y.Doc({ gc: false });
+      if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
+      for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
+      const cold = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(coldDoc),
+        afterCandidate: toDocHandle(coldDoc),
+      });
+      coldDoc.destroy();
+
+      const [checkpoint] = await db
+        .select({ id: schema.documentYjsCheckpoints.id })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsCheckpoints.id))
+        .limit(1);
+      if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
+      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+        documentId: ALPHA_ID,
+        checkpointId: checkpoint.id,
+        expectedGeneration: authorityHead.generation,
+      });
+      if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
+      const rebased = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(doc),
+        afterCandidate: toDocHandle(doc),
+        fallbackProvenance: "agent",
+      });
+      const retainedUpdateCount = (
+        await db
+          .select()
+          .from(schema.documentYjsUpdates)
+          .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+      ).length;
+      return {
+        retainedUpdateCount,
+        warmProvenance: [...new Set(warm?.before.map((run) => run.provenance) ?? [])].sort(),
+        coldProvenance: [...new Set(cold?.before.map((run) => run.provenance) ?? [])].sort(),
+        rebasedBranchProvenance: [
+          ...new Set(rebased?.before.map((run) => run.provenance) ?? []),
+        ].sort(),
+      };
+    });
+  }
+
+  async function seedAuthorityReplacementProbe(): Promise<number> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      let before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, "Restored base.");
+      const baseSeq = await persistence.journal.append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `agent:${TURN_ID}`,
+          actorTurnId: TURN_ID,
+          seq: 0,
+        },
+      );
+      await persistence.journal.checkpoint(ALPHA_ID, Y.encodeStateAsUpdate(doc), baseSeq);
+      const [checkpoint] = await db
+        .select({ id: schema.documentYjsCheckpoints.id })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsCheckpoints.id))
+        .limit(1);
+      if (!checkpoint) throw new Error("replacement probe checkpoint is unavailable");
+
+      const block = model.getBlocks(toDocHandle(doc))[0];
+      if (!block) throw new Error("replacement probe block is unavailable");
+      before = Y.encodeStateVector(doc);
+      model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      return checkpoint.id;
+    });
+  }
+
+  async function authorityReplacementProbeResult(generation: bigint): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const snapshot = await persistence.journal.read(ALPHA_ID);
+    const coldDoc = new Y.Doc({ gc: false });
+    if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
+    for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
+    const coldMarkdown = serializeMarkdown(coldDoc);
+    coldDoc.destroy();
+    const currentGenerationUpdateCount = (
+      await db
+        .select()
+        .from(schema.documentYjsUpdates)
+        .where(
+          and(
+            eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
+            eq(schema.documentYjsUpdates.authorityGeneration, generation),
+          ),
+        )
+    ).length;
+    return { coldMarkdown, currentGenerationUpdateCount };
+  }
+
+  async function compactAfterAuthorityReplacement(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const checkpointId = await seedAuthorityReplacementProbe();
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+      documentId: ALPHA_ID,
+      checkpointId,
+      expectedGeneration: authorityHead.generation,
+    });
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+    return authorityReplacementProbeResult(replaced.generation);
+  }
+
+  async function compactWhileAuthorityReplacementWaits(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const checkpointId = await seedAuthorityReplacementProbe();
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    let releaseBlocker!: () => void;
+    let blockerReady!: () => void;
+    const blockerRelease = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+    const blockerAcquired = new Promise<void>((resolve) => {
+      blockerReady = resolve;
+    });
+    const blocker = db.transaction(async (tx) => {
+      await lockDocumentMutation(tx, ALPHA_ID);
+      blockerReady();
+      await blockerRelease;
+    });
+    await blockerAcquired;
+
+    async function waitForAdvisoryLockWaiters(expected: number): Promise<void> {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [row] = await db.execute<{ waiting: number }>(sql`
+          SELECT count(*)::int AS waiting
+          FROM pg_locks
+          WHERE locktype = 'advisory'
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND NOT granted
+        `);
+        if ((row?.waiting ?? 0) >= expected) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`expected ${expected} waiting document mutation locks`);
+    }
+
+    const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
+    try {
+      await waitForAdvisoryLockWaiters(1);
+      replacement = replaceDocumentAuthorityHeadGeneration(db, {
+        documentId: ALPHA_ID,
+        checkpointId,
+        expectedGeneration: authorityHead.generation,
+      });
+      await waitForAdvisoryLockWaiters(2);
+    } finally {
+      releaseBlocker();
+      await blocker;
+    }
+    if (!replacement) {
+      throw new Error("durable authority head generation replacement did not enter the lock queue");
+    }
+    const [, replaced] = await Promise.all([compact, replacement]);
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    return authorityReplacementProbeResult(replaced.generation);
+  }
+
   async function seedLiveCertifiedCarry(input: {
     initialMarkdown: string;
     carriedMarkdown: string | readonly string[];
@@ -1032,186 +1321,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return branch.branchId;
   }
 
-  async function seedObservedCertifiedDelete(input: {
-    responseId: string;
-    initialMarkdown: string;
-    observation: { cut: "head" | "empty" | "stale_prefix"; coverage: "current" | "none" };
-    postObservationMarkdown?: string;
-    postObservationMutation?: "writer_remint" | "agent_carry" | "agent_restoration";
-    stageDelete?: boolean;
-  }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-    await db.insert(schema.modelResponses).values({
-      id: input.responseId as never,
-      turnId: TURN_ID,
-      sequence: 1,
-      provider: "oracle",
-      model: "oracle",
-    });
-    const [head] = await db
-      .select({
-        admissionSequence: schema.documentYjsUpdates.admissionSequence,
-        authorityId: schema.documentYjsUpdates.authorityId,
-        generation: schema.documentYjsUpdates.authorityGeneration,
-      })
-      .from(schema.documentYjsUpdates)
-      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
-      .limit(1);
-    observationSnapshots.configure(input.responseId, {
-      admittedThrough:
-        input.observation.cut === "empty"
-          ? 0n
-          : input.observation.cut === "stale_prefix"
-            ? (head?.admissionSequence ?? 1n) - 1n
-            : (head?.admissionSequence ?? 0n),
-      // Tool-time safety sees the real request rendering. The persisted omission
-      // below isolates settlement's independent rendering-coverage conjunct.
-      includeEntries: true,
-    });
-    observationSnapshots.capture(input.responseId);
-    const snapshot = await observationSnapshots.load(input.responseId);
-    if (!snapshot) throw new Error("configured oracle observation is unavailable");
-    await db.insert(schema.modelResponseObservationSnapshots).values({
-      responseId: input.responseId as never,
-    });
-    const causalCuts = snapshot.causalCuts ?? [];
-    if (causalCuts.length > 0) {
-      await db.insert(schema.modelResponseCausalCuts).values(
-        causalCuts.map((cut) => ({
-          id: cut.id,
-          responseId: input.responseId as never,
-          documentId: cut.documentId,
-          authorityId:
-            cut.documentId === ALPHA_ID ? (head?.authorityId ?? cut.authorityId) : cut.authorityId,
-          generation:
-            cut.documentId === ALPHA_ID ? (head?.generation ?? cut.generation) : cut.generation,
-          admittedThrough: cut.admittedThrough,
-        })),
-      );
-    }
-    if (input.observation.coverage === "current" && snapshot.entries.length > 0) {
-      await db.insert(schema.modelResponseObservationEntries).values(
-        snapshot.entries.map((entry) => ({
-          responseId: input.responseId as never,
-          documentId: entry.documentId as DocumentId,
-          clientId: entry.clientID,
-          clock: entry.clock,
-          kind: entry.value.kind,
-          contentDigest: entry.value.kind === "rendered" ? entry.value.digest : null,
-          capturedDeletedBody:
-            entry.value.kind === "explicit_deletion" ? entry.value.capturedBody : null,
-        })),
-      );
-    }
-    if (input.postObservationMarkdown !== undefined) {
-      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        const priorBlock = model.getBlocks(toDocHandle(doc))[0];
-        const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
-        const before = Y.encodeStateVector(doc);
-        remintMarkdown(doc, input.postObservationMarkdown ?? "");
-        if (
-          input.postObservationMutation === "agent_carry" ||
-          input.postObservationMutation === "agent_restoration"
-        ) {
-          const replacement = markupCodec.parse(input.postObservationMarkdown ?? "").blocks[0];
-          if (
-            !priorBlock ||
-            !source ||
-            !replacement ||
-            source.length !== replacement.textContent.length
-          ) {
-            throw new Error("post-observation carry must preserve one complete block");
-          }
-          createSemanticProvenanceWriter().writeCertifiedFacts(
-            toDocHandle(doc),
-            {
-              version: 1,
-              documentId: ALPHA_ID,
-              inputRevision: "fixture-revision" as never,
-              scope: [source],
-              deleted: [source],
-              intent: {
-                kind: "mappedEdits",
-                edits: [
-                  {
-                    edit: {
-                      documentId: ALPHA_ID,
-                      file: "alpha.md",
-                      kind: "block",
-                      block: priorBlock,
-                      replacement,
-                    },
-                    outputRuns: [
-                      input.postObservationMutation === "agent_restoration"
-                        ? {
-                            kind: "restoration",
-                            root: source,
-                            payload: replacement.textContent,
-                            output: { from: 0, to: source.length },
-                          }
-                        : {
-                            kind: "preserved",
-                            source,
-                            output: { from: 0, to: source.length },
-                          },
-                    ],
-                  },
-                ],
-              },
-            },
-            before,
-          );
-        }
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin:
-            input.postObservationMutation === "agent_carry" ||
-            input.postObservationMutation === "agent_restoration"
-              ? `agent:${TURN_ID}`
-              : `human:${USER_ID}`,
-          ...(input.postObservationMutation === "agent_carry" ||
-          input.postObservationMutation === "agent_restoration"
-            ? { actorTurnId: TURN_ID }
-            : {}),
-          seq: 0,
-        });
-      });
-    }
-    await collab.agentEdit().write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-      {
-        sessionId: THREAD_ID,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseId: undefined,
-      },
-    );
-    if (input.stageDelete === false) {
-      const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-      branch.doc.destroy();
-      return branch.branchId;
-    }
-    const find = input.postObservationMarkdown ?? input.initialMarkdown;
-    return stageCertifiedReplace({ responseId: input.responseId, find, content: "" });
-  }
-
   async function seedCheckpointRestoredExplicitDelete(responseId: string): Promise<string> {
     const restored = "Explicit restored writer root.";
-    const branchId = await seedObservedCertifiedDelete({
+    const branchId = await seedLiveCertifiedCarry({
       responseId,
       initialMarkdown: restored,
-      observation: { cut: "empty", coverage: "none" },
-      postObservationMarkdown: restored,
-      postObservationMutation: "agent_carry",
-      stageDelete: false,
+      carriedMarkdown: restored,
     });
     const state = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
       Y.encodeStateAsUpdate(doc),
@@ -1225,11 +1340,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         upToSeq,
       ),
     );
-    const authority = await ensureAndReadDocumentAuthority(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityGeneration(db, {
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
-      expectedGeneration: authority.generation,
+      expectedGeneration: authorityHead.generation,
     });
     if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
 
@@ -1401,14 +1516,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         2,
         true,
       ),
-    seedProbeTimelineObserved: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
+    seedProbeTimelineAfterRead: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
       seedAndStageDestructive(
         responseId,
         documentId,
         true,
         "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
         2,
-        true,
         true,
       ),
     noticeRecordAttempts: () => noticeRecordAttempts,
@@ -1419,12 +1533,42 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedMatrixPush,
     seedPendingDependencyPush,
     seedWriterDocument,
+    compactMixedProvenanceTwice,
+    compactAfterAuthorityReplacement,
+    compactWhileAuthorityReplacementWaits,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
-    seedObservedCertifiedDelete,
     seedCheckpointRestoredExplicitDelete,
     seedSelectivePush,
+    crossWorkProbeFixture: () => ({
+      db,
+      schema,
+      persistence,
+      liveCoordinator,
+      collab,
+      branchStore,
+      branchCoordinator,
+      realBranchPush,
+      trailDelivery,
+      hocuspocus,
+      model,
+      markupCodec,
+      agentEditCodec,
+      deliveredEvents,
+    }),
     pollTrails: () => trailDelivery.drain(),
+    advanceTrailWorkTime(milliseconds: number) {
+      trailWorkTime = new Date(trailWorkTime.getTime() + milliseconds);
+    },
+    deferTrailWork(milliseconds: number) {
+      return db.update(schema.turnTrailWork).set({
+        state: "pending",
+        nextAttemptAt: new Date(trailWorkTime.getTime() + milliseconds),
+      });
+    },
+    markTrailWorkRunning() {
+      return db.update(schema.turnTrailWork).set({ state: "running", updatedAt: trailWorkTime });
+    },
     failNextTrailRetry() {
       failNextTrailRetry = true;
     },
@@ -1496,16 +1640,16 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       const [row] = await db.select().from(schema.branchPushSettlementOutbox);
       if (!row) throw new Error("settlement row is unavailable");
       let completionCallbackRan = false;
-      const renewed = await durableBranchPushStore.renewSettlementClaim?.({
+      const renewed = await durableSettlementStore.renewClaim({
         pushId: row.pushId,
         claim,
       });
-      const failureRecorded = await durableBranchPushStore.recordLiveSettlementFailure?.({
+      const failureRecorded = await durableSettlementStore.recordFailure({
         pushId: row.pushId,
         claim,
         error: "stale actor A failure",
       });
-      const completion = await durableBranchPushStore.withCompletionFence?.(
+      const completion = await durableSettlementStore.withCompletionFence(
         {
           pushId: row.pushId,
           documentId: row.documentId,
@@ -1524,7 +1668,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       if (!row?.claimToken || !row.claimKind || !row.claimedAt || !row.leaseExpiresAt) {
         throw new Error("owned settlement claim is unavailable for handoff");
       }
-      return branchPushStore.handoffSettlementClaim?.({
+      return settlementStore.handoffClaim({
         pushId: row.pushId,
         claim: {
           token: row.claimToken,
@@ -1540,12 +1684,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         .from(schema.documentYjsCheckpoints)
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
-      if (!checkpoint) throw new Error("authority checkpoint is unavailable");
-      const authority = await ensureAndReadDocumentAuthority(db, ALPHA_ID);
-      return replaceDocumentAuthorityGeneration(db, {
+      if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
+      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+      return replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
-        expectedGeneration: authority.generation,
+        expectedGeneration: authorityHead.generation,
       });
     },
     async attemptDivergentReplicationAdmission() {
@@ -1586,32 +1730,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       const before = Y.encodeStateAsUpdate(target);
       let journaled = false;
       try {
-        await createDocumentAuthority({
-          readMutableAuthority: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
-          readFrozenCut: async () => ({
-            cutId: "injectivity-cut",
-            documentId: ALPHA_ID,
-            authorityId: "00000000-0000-4000-8000-000000000899" as DocumentAuthorityId,
-            generation: 1n,
-            doc: source,
-          }),
-          admitImmediate: async ({ update }) => {
+        await replicateFrozenIdentity({
+          source: { documentId: ALPHA_ID, doc: source },
+          target: { documentId: ALPHA_ID, generation: 1n, doc: target },
+          plan: { kind: "wholeDocument" },
+          admit: async ({ update }) => {
             journaled = true;
             Y.applyUpdate(target, update);
             return { sequence: 1n, joined: 0 };
           },
-          readCurrentRevision: async () => "unused" as never,
-          lowerCertifiedMutation: async () => new Uint8Array(),
-          loadCheckpoint: async () => null,
-          unresolvedSettlements: async () => 0,
-          replaceGeneration: async () => 2n,
-          disconnectGeneration: async () => undefined,
-          stagePush: async () => "unused",
-          completePush: async () => undefined,
-        }).mutate({
-          kind: "identityReplication",
-          sourceAuthorityCutId: "injectivity-cut",
-          plan: { kind: "wholeDocument" },
         });
         return { rejected: false, journaled, applied: true };
       } catch (cause) {
@@ -1675,91 +1802,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         updateMeta: owned.updateMeta,
       });
     },
-    async duplicateActiveEvidence(input: {
-      responseId: string;
-      cut: "head" | "empty";
-      coverage: "current" | "none";
-    }) {
-      const [owned] = await db
-        .select()
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.status, "active"));
-      if (!owned) throw new Error("active evidence row is unavailable");
-      const meta = owned.updateMeta as {
-        authoringResponseId?: string;
-        sealedWriterLineage?: {
-          version: 3;
-          documentId: DocumentId;
-          protectedRoots: Array<{ clientID: number; clock: number; length: number }>;
-          responseCausalCutId: string;
-        };
-      } | null;
-      if (!meta?.authoringResponseId || !meta.sealedWriterLineage) {
-        throw new Error("active row has no sealed response evidence");
-      }
-      const [sourceCut] = await db
-        .select()
-        .from(schema.modelResponseCausalCuts)
-        .where(eq(schema.modelResponseCausalCuts.id, meta.sealedWriterLineage.responseCausalCutId));
-      if (!sourceCut) throw new Error("source response cut is unavailable");
-      await db.insert(schema.modelResponses).values({
-        id: input.responseId as never,
-        turnId: TURN_ID,
-        sequence: 2,
-        provider: "oracle",
-        model: "oracle",
-      });
-      await db.insert(schema.modelResponseObservationSnapshots).values({
-        responseId: input.responseId as never,
-      });
-      const cutId = crypto.randomUUID();
-      await db.insert(schema.modelResponseCausalCuts).values({
-        id: cutId as never,
-        responseId: input.responseId as never,
-        documentId: sourceCut.documentId,
-        authorityId: sourceCut.authorityId,
-        generation: sourceCut.generation,
-        admittedThrough: input.cut === "head" ? sourceCut.admittedThrough : 0n,
-      });
-      if (input.coverage === "current") {
-        const observations = await db
-          .select()
-          .from(schema.modelResponseObservationEntries)
-          .where(
-            eq(
-              schema.modelResponseObservationEntries.responseId,
-              meta.authoringResponseId as never,
-            ),
-          );
-        if (observations.length > 0) {
-          await db.insert(schema.modelResponseObservationEntries).values(
-            observations.map(({ responseId: _responseId, ...entry }) => ({
-              ...entry,
-              responseId: input.responseId as never,
-            })),
-          );
-        }
-      }
-      await db.insert(schema.branchWriteJournal).values({
-        branchId: owned.branchId,
-        generation: owned.generation,
-        wId: owned.wId,
-        source: owned.source,
-        threadId: owned.threadId,
-        turnId: owned.turnId,
-        actorUserId: owned.actorUserId,
-        updateData: owned.updateData,
-        draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
-        updateMeta: {
-          ...meta,
-          authoringResponseId: input.responseId,
-          sealedWriterLineage: {
-            ...meta.sealedWriterLineage,
-            responseCausalCutId: cutId,
-          },
-        },
-      });
-    },
     async makeJournalOwnershipNull() {
       await db
         .update(schema.branchWriteJournal)
@@ -1789,8 +1831,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
     stagedUpdates: (responseId: string) => [
-      [...collab.agentEdit().bufferedUpdatesForDoc(responseId, ALPHA_ID)],
-      [...collab.agentEdit().bufferedUpdatesForDoc(responseId, BETA_ID)],
+      collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID) ? [ALPHA_ID] : [],
+      collab.agentEdit().hasResponseDocument(responseId, BETA_ID) ? [BETA_ID] : [],
     ],
     pendingWatermarkDocuments: () => [...pendingWatermarks].sort(),
     responseEvents: (responseId: string) =>
@@ -1863,60 +1905,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       }))
       .sort((left, right) => left.id.localeCompare(right.id));
   }
-}
-
-function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore & {
-  capture(responseId: string): void;
-  configure(responseId: string, value: { admittedThrough: bigint; includeEntries: boolean }): void;
-} {
-  const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
-  const configurations = new Map<string, { admittedThrough: bigint; includeEntries: boolean }>();
-  const capture = (responseId: string) => {
-    const configuration = configurations.get(responseId) ?? {
-      admittedThrough: 0n,
-      includeEntries: true,
-    };
-    const documentEntries = [...documents.entries()].filter(([documentId]) =>
-      /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId),
-    );
-    const entries = configuration.includeEntries
-      ? documentEntries.flatMap(([documentId, document]) =>
-          snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
-            documentId,
-            clientID: block.clientID as number,
-            clock: block.clock as number,
-            value: {
-              kind: "rendered" as const,
-              digest: digestRenderedContent(block.renderedContent as string),
-            },
-          })),
-        )
-      : [];
-    const causalCuts = documentEntries.map(([documentId]) => ({
-      id: crypto.randomUUID() as ResponseCausalCutId,
-      version: 1 as const,
-      documentId,
-      authorityId: documentId as DocumentAuthorityId,
-      generation: 1n,
-      admittedThrough: configuration.admittedThrough,
-    }));
-    snapshots.set(responseId, { responseId, entries, causalCuts });
-  };
-  return {
-    capture,
-    configure(responseId, value) {
-      configurations.set(responseId, value);
-    },
-    async seal(snapshot) {
-      snapshots.set(snapshot.responseId, snapshot);
-    },
-    async load(responseId) {
-      const existing = snapshots.get(responseId);
-      if (existing !== undefined) return existing;
-      capture(responseId);
-      return snapshots.get(responseId) ?? null;
-    },
-  };
 }
 
 function serializeMarkdown(doc: Y.Doc): string {

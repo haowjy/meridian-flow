@@ -1,8 +1,8 @@
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import {
+  isWorkScopedBrowseScheme,
   projectBrowseContextUri,
-  WORK_SCOPED_BROWSE_SCHEMES,
   workScopedBrowseUri,
 } from "../domains/context/browse-layer-scheme.js";
 import {
@@ -63,21 +63,21 @@ export function resolveContextReadPath(
   if (explicitScheme) {
     if (explicitScheme[1] !== scheme)
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
-    if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
+    if (isWorkScopedBrowseScheme(scheme)) {
       if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-      uri = workScopedBrowseUri(scheme as "scratch" | "uploads", workId, explicitScheme[2]);
+      uri = workScopedBrowseUri(scheme, workId, explicitScheme[2]);
     } else {
       uri = normalizeSchemePath(scheme, explicitScheme[2]);
     }
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
-  } else if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
+  } else if (isWorkScopedBrowseScheme(scheme)) {
     if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-    uri = workScopedBrowseUri(scheme as "scratch" | "uploads", workId, trimmed);
+    uri = workScopedBrowseUri(scheme, workId, trimmed);
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
-  const prefix = WORK_SCOPED_BROWSE_SCHEMES.has(scheme) ? `${scheme}://${workId}/` : `${scheme}://`;
+  const prefix = isWorkScopedBrowseScheme(scheme) ? `${scheme}://${workId}/` : `${scheme}://`;
   const normalizedPath = uri.slice(prefix.length);
   const segments = normalizedPath.split("/").filter(Boolean);
   if (!segments.at(-1))
@@ -90,7 +90,7 @@ export async function handleContextReadRequest(
   input: ContextReadRouteInput,
 ): Promise<ContextReadResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  if (WORK_SCOPED_BROWSE_SCHEMES.has(input.scheme) && !input.workId) {
+  if (isWorkScopedBrowseScheme(input.scheme) && !input.workId) {
     throw createError({ statusCode: 400, message: "`workId` is required" });
   }
   const path = resolveContextReadPath(input.scheme, input.rawPath, input.workId);

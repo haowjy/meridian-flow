@@ -62,6 +62,12 @@ describe("createToolRegistry core tools", () => {
       expect(variant.properties).not.toHaveProperty("documentId");
       expect(variant.properties).not.toHaveProperty("tool_use_id");
     }
+    expect(registry.getRegistration("write")?.definition.description).toContain(
+      "create with overwrite=true",
+    );
+    expect(writeSchema.oneOf?.[0]?.properties).toMatchObject({
+      overwrite: { description: expect.stringContaining("entire existing document") },
+    });
     expect(writeSchema.oneOf?.[1]?.properties).toMatchObject({
       in: {
         anyOf: expect.arrayContaining([
@@ -77,7 +83,16 @@ describe("createToolRegistry core tools", () => {
       format: { enum: ["auto", "full", "outline"] },
     });
     expect(writeSchema.oneOf?.[2]?.required).toContain("content");
+    expect(writeSchema.oneOf?.[2]?.properties).toMatchObject({
+      before: { description: expect.stringContaining("Block hash") },
+      after: { description: expect.stringContaining("Block hash") },
+      in: { description: expect.stringContaining("inclusive [start, end] range") },
+    });
     expect(writeSchema.oneOf?.[3]?.required).toContain("content");
+    expect(writeSchema.oneOf?.[3]?.properties).toMatchObject({
+      find: { description: expect.stringContaining("following text and blocks are not included") },
+      in: { description: expect.stringContaining("inclusive [start, end] range") },
+    });
     expect(writeSchema.oneOf?.[4]?.properties).toMatchObject({
       to: { type: "string" },
       from: { type: "string" },

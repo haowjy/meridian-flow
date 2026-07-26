@@ -33,5 +33,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr diff "$PR_NUMBER" --name-only --repo "$GITHUB_REPOSITORY" > /tmp/changed-files.txt
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+            --jq '.[].filename' > /tmp/changed-files.txt
           node tools/ci/check-pr-body.mjs /tmp/changed-files.txt

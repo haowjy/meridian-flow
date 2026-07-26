@@ -190,7 +190,6 @@ export const branchPushSettlementOutbox = pgTable(
     documentTitle: text("document_title").notNull(),
     lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
-    lineageEvidence: jsonb("lineage_evidence").$type<unknown>().notNull(),
     trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
     beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
@@ -365,9 +364,15 @@ export const changeTrailDeliveryOutbox = pgTable(
       .references(() => changeTrailShells.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     eventKind: text("event_kind").$type<ChangeTrailEventKind>().notNull(),
-    changeCount: integer("change_count"),
-    sweptChangeCount: integer("swept_change_count"),
-    documentCount: integer("document_count"),
+    changeCount: integer("change_count").notNull(),
+    sweptChangeCount: integer("swept_change_count").notNull(),
+    documentCount: integer("document_count").notNull(),
+    documents: jsonb("documents")
+      .$type<Array<{ documentId: string; title: string }>>()
+      .notNull()
+      .default([]),
+    wordsAdded: integer("words_added"),
+    wordsRemoved: integer("words_removed"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -386,7 +391,7 @@ export const changeTrailDeliveryOutbox = pgTable(
     ),
     check(
       "change_trail_delivery_outbox_counts_valid",
-      sql`(${table.eventKind} = 'settled' AND ${table.changeCount} IS NULL AND ${table.sweptChangeCount} IS NULL AND ${table.documentCount} IS NULL) OR (${table.eventKind} = 'updated' AND ${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0)`,
+      sql`${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0`,
     ),
   ],
 );

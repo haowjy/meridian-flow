@@ -2,15 +2,18 @@
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
  * work-scoped (scratch/uploads) ContextFS adapters into one router per scope.
  *
- * Key decision: scheme taxonomy and adapter assembly live here as one deep module
- * (Voluma's context-schemes + context-adapter-factories collapsed in). Source
- * provisioning is delegated to context-source-provisioning.ts; thread resolution
- * to context-port-resolution.ts.
+ * Contracts owns the scheme taxonomy; adapter assembly lives here as one deep
+ * module. Source provisioning is delegated to context-source-provisioning.ts;
+ * thread resolution to context-port-resolution.ts.
  */
 
+import {
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+  WORK_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { Err, Ok } from "../../shared/result.js";
-import type { MarkdownDocumentStore } from "../collab/index.js";
+import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
 import {
@@ -39,15 +42,10 @@ import {
   type InMemoryUnifiedContextStoreRegistry,
 } from "./support/in-memory-unified-context-stores.js";
 
-const PROJECT_CONTEXTFS_SCHEMES = [
-  "manuscript",
-  "kb",
-  "user",
-] as const satisfies readonly ProjectContextFsScheme[];
-const WORK_SCOPED_CONTEXTFS_SCHEMES = [
-  "scratch",
-  "uploads",
-] as const satisfies readonly WorkScopedContextFsScheme[];
+const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
+const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
+  WORK_SCOPED_CONTEXT_URI_SCHEMES;
 
 export interface UnifiedContextPortFactory {
   forProject(projectId: string, userId: string): ContextPort;
@@ -142,6 +140,7 @@ function contextFsAdapter(deps: {
   store: ContextDocumentStore;
   mutationStore: import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore;
+  documentCreation?: DocumentCreationAggregate;
   scheme: ContextScheme;
   manifestView?: ManifestView;
 }): ContextSchemeAdapter {
@@ -154,6 +153,7 @@ function buildProjectContextFsAdapters(
   storeResolvers: ContextStoreResolvers,
   documentSync: MarkdownDocumentStore,
   manifestView?: ManifestView,
+  documentCreation?: DocumentCreationAggregate,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
@@ -163,6 +163,7 @@ function buildProjectContextFsAdapters(
         store: storeResolvers.resolveProjectStore(projectId, userId, scheme, manifestView),
         mutationStore: storeResolvers.resolveMutationStore(manifestView),
         documentSync,
+        documentCreation,
         scheme,
         ...(scheme === "manuscript" && manifestView ? { manifestView } : {}),
       }),
@@ -176,6 +177,7 @@ function buildWorkScopedContextFsAdapters(
   projectId: string,
   storeResolvers: ContextStoreResolvers,
   documentSync: MarkdownDocumentStore,
+  documentCreation?: DocumentCreationAggregate,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   // Scratch/uploads are canonical live documents even though their storage is
   // Work-scoped. The live-room gate reads the project manifest, so membership
@@ -190,6 +192,7 @@ function buildWorkScopedContextFsAdapters(
         store: storeResolvers.resolveWorkStore(workId, scheme, projectId),
         mutationStore,
         documentSync,
+        documentCreation,
         scheme,
       }),
     );
@@ -219,6 +222,7 @@ function buildUnifiedContextPort(input: {
   scope: ContextPortBuildScope;
   storeResolvers: ContextStoreResolvers;
   documentSync: MarkdownDocumentStore;
+  documentCreation?: DocumentCreationAggregate;
 }): ContextPort {
   const { scope, storeResolvers, documentSync } = input;
   const adapters = buildProjectContextFsAdapters(
@@ -234,6 +238,7 @@ function buildUnifiedContextPort(input: {
           responseId: scope.responseId,
         }
       : { projectId: scope.projectId },
+    input.documentCreation,
   );
 
   if (scope.kind === "work") {
@@ -242,6 +247,7 @@ function buildUnifiedContextPort(input: {
       scope.projectId,
       storeResolvers,
       documentSync,
+      input.documentCreation,
     )) {
       adapters.set(scheme, adapter);
     }
@@ -265,6 +271,7 @@ function buildUnifiedContextPort(input: {
               scope.projectId,
               storeResolvers,
               documentSync,
+              input.documentCreation,
             )
         : undefined,
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
@@ -385,7 +392,7 @@ export function createInMemoryUnifiedContextPortFactory(
 
 export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
-  documentSync: MarkdownDocumentStore;
+  documentSync: MarkdownDocumentStore & DocumentCreationAggregate;
   manifestMembership: ManifestMembershipPort;
 }): UnifiedContextPortFactory {
   const entries = new Map<string, ContextPort>();
@@ -399,6 +406,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         scope: { kind: "project", projectId, userId },
         storeResolvers,
         documentSync: options.documentSync,
+        documentCreation: options.documentSync,
       });
       entries.set(key, port);
     }
@@ -422,6 +430,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         },
         storeResolvers,
         documentSync: options.documentSync,
+        documentCreation: options.documentSync,
       });
     },
   };

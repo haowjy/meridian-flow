@@ -65,9 +65,8 @@
 import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
-  type ObservationAuthority,
-  type WriteObservationEvidence,
-} from "@meridian/agent-edit";
+  type ResponseCommitWriteReceipt,
+} from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -100,7 +99,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { observationDocumentIds, safetyNoticeSystemMessage } from "./context-builder.js";
+import { safetyNoticeSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -172,15 +171,8 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
-  observationRendering?: {
-    authority: ObservationAuthority;
-    /** Aggregate exact-body allowance derived from the selected registry model. */
-    budgetBytes(request: GenerateRequest): number;
-    /** Freeze each branch-local authority prefix before request serialization begins. */
-    freezeCausalCuts?(
-      documentIds: readonly string[],
-    ): Promise<readonly import("@meridian/contracts").ResponseCausalCutV1[]>;
-  };
+  /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
+  concurrentRenderBudgetBytes?(request: GenerateRequest): number;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -197,18 +189,24 @@ export interface OrchestratorDeps {
 type ResponseWriteCommitOutcome =
   | {
       status: "committed";
+      receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
-  | {
-      status: "rejected";
-      responseId: string;
-      rejections: Array<
-        import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
-          documentName?: string;
-        }
-      >;
-    }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
+
+function settledReceipt(
+  receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
+  documentId: string,
+  settlementId: string,
+): ResponseCommitWriteReceipt {
+  const settled = receipts.find(
+    (entry) => entry.documentId === documentId && entry.receipt.settlementId === settlementId,
+  );
+  if (!settled) {
+    throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
+  }
+  return settled.receipt;
+}
 
 function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
   return (
@@ -380,27 +378,6 @@ function createLocalTurn(input: {
   };
 }
 
-function formatRejectionNotice(
-  rejections: readonly (import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
-    documentName?: string;
-  })[],
-): string {
-  const affectedDocuments = rejections.map((rejection) => {
-    const hashes = rejection.conflictedBlockHashes.join(", ") || "none reported";
-    return `- ${rejection.documentName ?? rejection.documentId} (conflicted block hashes: ${hashes})`;
-  });
-  const affectedWriteIds = [
-    ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
-  ];
-
-  return [
-    "Your edits to the following documents were rejected because they would delete blocks the writer changed:",
-    ...affectedDocuments,
-    `The following staged write results are superseded and void: ${affectedWriteIds.join(", ") || "none reported"}.`,
-    "Re-read the affected files and replan.",
-  ].join("\n");
-}
-
 // ── Emit helper ──
 // Appends one event to the durable journal and yields it. Used for
 // non-transactional events (stream.delta, tool.executing) that don't need
@@ -549,7 +526,6 @@ async function persistModelResponse(input: {
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
-  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
 }): Promise<{
   responseId: string;
   updatedTurn: Turn;
@@ -563,112 +539,96 @@ async function persistModelResponse(input: {
   let blockSeq = input.blockSeq;
   const responseSeq = currentAssistantTurn.responseCount;
   const toolCalls = collectToolCalls(result);
-  const persistedResponse = await persistAndAppendEvents(
-    deps,
-    runInput.threadId,
-    async () => {
-      const responseId = crypto.randomUUID();
-      const computedCost = await turnAccounting.computeAndDebit(
-        result,
-        thread,
-        runInput.threadId,
-        currentAssistantTurn.id,
-        treeBudget,
-        responseId,
+  const persistedResponse = await persistAndAppendEvents(deps, runInput.threadId, async () => {
+    const responseId = crypto.randomUUID();
+    const computedCost = await turnAccounting.computeAndDebit(
+      result,
+      thread,
+      runInput.threadId,
+      currentAssistantTurn.id,
+      treeBudget,
+      responseId,
+    );
+    const costUsd = computedCost.costUsd;
+    const response: ModelResponseReceivedRow = {
+      id: responseId,
+      turnId: currentAssistantTurn.id,
+      sequence: responseSeq,
+      provider: result.provider,
+      model: result.model,
+      providerRequestId: result.providerRequestId ?? null,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      reasoningTokens: result.usage.reasoningTokens ?? null,
+      cacheReadTokens: result.usage.cacheReadTokens ?? null,
+      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+      costUsd,
+      millicredits: computedCost.millicredits,
+      priceSource: computedCost.priceSource,
+      pricingSnapshot: computedCost.pricingSnapshot,
+      finishReason: result.finishReason,
+      rawUsage: toJsonValue(result.usage),
+    };
+    const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+
+    const createdBlocks: Block[] = [];
+    const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
+    for (const part of result.content) {
+      const blockInput = contentPartToBlockInput(
+        part,
+        updatedTurn.id,
+        blockSeq++,
+        response.id,
+        result.provider,
       );
-      const costUsd = computedCost.costUsd;
-      const response: ModelResponseReceivedRow = {
-        id: responseId,
-        turnId: currentAssistantTurn.id,
-        sequence: responseSeq,
-        provider: result.provider,
-        model: result.model,
-        providerRequestId: result.providerRequestId ?? null,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        reasoningTokens: result.usage.reasoningTokens ?? null,
-        cacheReadTokens: result.usage.cacheReadTokens ?? null,
-        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-        costUsd,
-        millicredits: computedCost.millicredits,
-        priceSource: computedCost.priceSource,
-        pricingSnapshot: computedCost.pricingSnapshot,
-        finishReason: result.finishReason,
-        rawUsage: toJsonValue(result.usage),
-      };
-      const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
-
-      const createdBlocks: Block[] = [];
-      const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
-      for (const part of result.content) {
-        const blockInput = contentPartToBlockInput(
-          part,
-          updatedTurn.id,
-          blockSeq++,
-          response.id,
-          result.provider,
-        );
-        if (blockInput) {
-          const block = contentForBlockInput(blockInput);
-          createdBlocks.push(localBlockFromEvent(block));
-          events.push({ type: "block.upserted", block });
-        }
-      }
-
-      for (const call of toolCalls) {
-        if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
-          continue;
-        }
-        const block = contentForBlockInput({
-          turnId: updatedTurn.id,
-          blockType: "tool_use",
-          sequence: blockSeq++,
-          responseId: response.id,
-          content: {
-            toolCallId: call.id,
-            toolName: call.name,
-            input: toJsonValue(call.arguments),
-          },
-          provider: result.provider,
-          status: "complete",
-        });
+      if (blockInput) {
+        const block = contentForBlockInput(blockInput);
         createdBlocks.push(localBlockFromEvent(block));
         events.push({ type: "block.upserted", block });
       }
+    }
 
-      events.push({
-        type: "usage",
+    for (const call of toolCalls) {
+      if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
+        continue;
+      }
+      const block = contentForBlockInput({
+        turnId: updatedTurn.id,
+        blockType: "tool_use",
+        sequence: blockSeq++,
         responseId: response.id,
-        turnId: updatedTurn.id as string,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        reasoningTokens: result.usage.reasoningTokens ?? null,
-        cacheReadTokens: result.usage.cacheReadTokens ?? null,
-        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-        costUsd,
-        turnCostUsd: updatedTurn.totalCostUsd,
-        model: result.model,
+        content: {
+          toolCallId: call.id,
+          toolName: call.name,
+          input: toJsonValue(call.arguments),
+        },
         provider: result.provider,
+        status: "complete",
       });
+      createdBlocks.push(localBlockFromEvent(block));
+      events.push({ type: "block.upserted", block });
+    }
 
-      return {
-        result: { responseId, updatedTurn, createdBlocks },
-        events,
-      };
-    },
-    {
-      ...(input.observationCandidate && deps.observationRendering
-        ? {
-            afterEvents: async (persisted) => {
-              await deps.observationRendering?.authority.sealSuccessfulResponse(
-                persisted.responseId,
-                input.observationCandidate as import("@meridian/agent-edit").ObservationCandidate,
-              );
-            },
-          }
-        : {}),
-    },
-  );
+    events.push({
+      type: "usage",
+      responseId: response.id,
+      turnId: updatedTurn.id as string,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      reasoningTokens: result.usage.reasoningTokens ?? null,
+      cacheReadTokens: result.usage.cacheReadTokens ?? null,
+      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+      costUsd,
+      turnCostUsd: updatedTurn.totalCostUsd,
+      model: result.model,
+      provider: result.provider,
+    });
+
+    return {
+      result: { responseId, updatedTurn, createdBlocks },
+      events,
+    };
+  });
 
   return {
     responseId: persistedResponse.result.responseId,
@@ -778,20 +738,6 @@ async function persistPermissionDenial(input: {
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
 }
 
-async function persistRejectedWriteResult(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  block: Block;
-  rejection: import("@meridian/agent-edit").ResponseCommitDocumentRejection;
-}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
-  return persistUncommittedWriteResult({
-    deps: input.deps,
-    threadId: input.threadId,
-    block: input.block,
-    text: `No sealed observation covered the destructive change in ${input.rejection.documentId}. Re-read and retry.`,
-  });
-}
-
 async function persistUncommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -803,9 +749,7 @@ async function persistUncommittedWriteResult(input: {
   const output = [
     {
       type: "text" as const,
-      text: ["status: rejected_response_requires_reread", "Write did not land.", input.text].join(
-        "\n\n",
-      ),
+      text: ["status: internal_error", "Write did not land.", input.text].join("\n\n"),
     },
   ];
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -834,13 +778,12 @@ async function persistCommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   block: Block;
-  committedOutput: unknown;
+  output: unknown;
 }): Promise<{ block: Block; events: OrchestratorEvent[] }> {
   const content = input.block.content as {
     toolCallId?: string;
     metadata?: Record<string, unknown>;
   } | null;
-  const committedOutput = input.committedOutput;
   const metadata = content?.metadata ?? {};
   const toolCallId = content?.toolCallId ?? "";
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -850,7 +793,7 @@ async function persistCommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output: committedOutput, metadata }),
+      content: toJsonValue({ toolCallId, output: input.output, metadata }),
       provider: input.block.provider,
       status: "complete",
     });
@@ -858,7 +801,7 @@ async function persistCommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output: toJsonValue(committedOutput) },
+        { type: "tool.result", toolCallId, output: toJsonValue(input.output) },
       ],
     };
   });
@@ -899,19 +842,9 @@ async function buildGenerateRequest(input: {
   gatewaySignal?: AbortSignal;
 }): Promise<{
   request: GenerateRequest;
-  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
   thread: Thread;
   resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
-  const activeDocumentIds = await input.deps.activeDocuments.listDocumentIds(
-    input.runInput.threadId,
-  );
-  const cutDocumentIds = [
-    ...new Set([...activeDocumentIds, ...observationDocumentIds(input.blocks)]),
-  ].sort();
-  const responseCausalCuts = input.deps.observationRendering?.freezeCausalCuts
-    ? await input.deps.observationRendering.freezeCausalCuts(cutDocumentIds)
-    : cutDocumentIds.map(initialInMemoryCausalCut);
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
     turns: input.turns,
@@ -923,9 +856,6 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
-    observationAuthority: input.deps.observationRendering?.authority,
-    requestId: `${input.turns.at(-1)?.id ?? input.thread.id}:${input.blocks.length}`,
-    responseCausalCuts,
   });
 
   return {
@@ -935,22 +865,6 @@ async function buildGenerateRequest(input: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
     },
-    ...(assembled.observationCandidate
-      ? { observationCandidate: assembled.observationCandidate }
-      : {}),
-  };
-}
-
-function initialInMemoryCausalCut(
-  documentId: string,
-): import("@meridian/contracts").ResponseCausalCutV1 {
-  return {
-    id: crypto.randomUUID(),
-    version: 1,
-    documentId,
-    authorityId: documentId,
-    generation: 1n,
-    admittedThrough: 0n,
   };
 }
 
@@ -1048,7 +962,6 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
-      const observationCandidate = built.observationCandidate;
       request.correlation = {
         threadId: input.threadId,
         turnId: currentAssistantTurn.id,
@@ -1181,7 +1094,6 @@ async function* generateEvents(
         treeBudget,
         turnAccounting,
         blockSeq,
-        ...(observationCandidate ? { observationCandidate } : {}),
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
@@ -1217,7 +1129,7 @@ async function* generateEvents(
 
         const writeBlocksByDocument = new Map<
           string,
-          Array<{ block: Block; committedOutput: unknown }>
+          Array<{ block: Block; writeId: string; settlementId: string }>
         >();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
@@ -1296,10 +1208,21 @@ async function* generateEvents(
             dispatched.metadata?.stagedWrite === true &&
             typeof dispatched.metadata.documentId === "string"
           ) {
+            if (typeof dispatched.metadata.writeId !== "string") {
+              throw new Error(
+                `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
+              );
+            }
+            if (typeof dispatched.metadata.settlementId !== "string") {
+              throw new Error(
+                `Staged write result missing settlement id for ${dispatched.metadata.documentId}.`,
+              );
+            }
             const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
             blocks.push({
               block: dispatched.block,
-              committedOutput: dispatched.metadata.committedOutput,
+              writeId: dispatched.metadata.writeId,
+              settlementId: dispatched.metadata.settlementId,
             });
             writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
@@ -1328,10 +1251,6 @@ async function* generateEvents(
           },
           async (result) => {
             for (const [documentId, blocks] of writeBlocksByDocument) {
-              const rejection =
-                result.status === "rejected"
-                  ? result.rejections.find((candidate) => candidate.documentId === documentId)
-                  : undefined;
               for (const [index, write] of blocks.entries()) {
                 const finalized =
                   result.status === "committed"
@@ -1339,21 +1258,15 @@ async function* generateEvents(
                         deps,
                         threadId: input.threadId,
                         block: write.block,
-                        committedOutput: write.committedOutput,
+                        output: settledReceipt(result.receipts, documentId, write.settlementId)
+                          .content,
                       })
-                    : rejection
-                      ? await persistRejectedWriteResult({
-                          deps,
-                          threadId: input.threadId,
-                          block: write.block,
-                          rejection,
-                        })
-                      : await persistUncommittedWriteResult({
-                          deps,
-                          threadId: input.threadId,
-                          block: write.block,
-                          text: "The response closed before its staged write could commit. Re-read and retry.",
-                        });
+                    : await persistUncommittedWriteResult({
+                        deps,
+                        threadId: input.threadId,
+                        block: write.block,
+                        text: "The response closed before its staged write could commit. Re-read and retry.",
+                      });
                 finalizedWrites.push({ documentId, index, ...finalized });
               }
             }
@@ -1372,67 +1285,9 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        if (concurrentEdits.status === "rejected") {
-          eventSink.emit({
-            timestamp: new Date().toISOString(),
-            level: "warn",
-            source: "runtime.orchestrator",
-            name: "response.commit_rejected",
-            sensitivity: "safe",
-            correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-            payload: {
-              responseId: concurrentEdits.responseId,
-              documentCount: concurrentEdits.rejections.length,
-              affectedWriteCount: new Set(
-                concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
-              ).size,
-            },
-          });
-          try {
-            await deps.notices.record({
-              kind: "rejection",
-              scope: { kind: "thread", threadId: input.threadId },
-              message: formatRejectionNotice(concurrentEdits.rejections),
-              data: {
-                responseId: concurrentEdits.responseId,
-                rejections: concurrentEdits.rejections,
-                affectedWriteIds: [
-                  ...new Set(
-                    concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
-                  ),
-                ],
-                conflictedBlockHashes: [
-                  ...new Set(
-                    concurrentEdits.rejections.flatMap(
-                      (rejection) => rejection.conflictedBlockHashes,
-                    ),
-                  ),
-                ],
-              },
-              writerVisible: false,
-            });
-          } catch (cause) {
-            eventSink.emit({
-              timestamp: new Date().toISOString(),
-              level: "error",
-              source: "runtime.orchestrator",
-              name: "safety_notice.record_failed_after_response_closed",
-              sensitivity: "safe",
-              correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-              payload: {
-                kind: "rejection",
-                responseId: concurrentEdits.responseId,
-                documentIds: concurrentEdits.rejections.map((rejection) => rejection.documentId),
-                error: cause instanceof Error ? cause.message : String(cause),
-              },
-            });
-          }
-          continue;
-        }
 
         const renderBudget = {
-          remainingBytes:
-            deps.observationRendering?.budgetBytes(request) ?? Number.MAX_SAFE_INTEGER,
+          remainingBytes: deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
         };
         // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
@@ -1457,47 +1312,9 @@ async function* generateEvents(
             },
             ...remainingBlocks,
           ];
-          const observationEvidence: WriteObservationEvidence[] = [];
-          for (const run of boundedEdits.runs) {
-            for (const observation of run.observations) {
-              if (observation.kind === "rendered") {
-                observationEvidence.push({
-                  kind: "rendered" as const,
-                  clientID: observation.clientID,
-                  clock: observation.clock,
-                  renderedContent: observation.renderedContent,
-                  sourceText:
-                    run.blocks.find((line) =>
-                      line.includes(
-                        observation.renderedContent.slice(
-                          observation.renderedContent.indexOf("|") + 1,
-                        ),
-                      ),
-                    ) ??
-                    observation.renderedContent.slice(observation.renderedContent.indexOf("|") + 1),
-                });
-              } else {
-                observationEvidence.push({
-                  kind: "explicit_deletion" as const,
-                  clientID: observation.clientID,
-                  clock: observation.clock,
-                  capturedBody: observation.capturedBody,
-                  sourceText:
-                    run.tombstones.find(
-                      (tombstone) => tombstone.capturedBody === observation.capturedBody,
-                    )?.capturedBody ?? observation.capturedBody,
-                });
-              }
-            }
-          }
           const updatedContent = {
             ...content,
             output: updatedOutput,
-            metadata: {
-              ...((content as { metadata?: Record<string, unknown> }).metadata ?? {}),
-              documentId,
-              observationEvidence,
-            },
           };
           const updatedBlockRow = contentForBlockInput({
             id: block.id,

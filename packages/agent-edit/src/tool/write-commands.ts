@@ -14,10 +14,14 @@ import type { DocumentRenderer } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
-import type { MutationCommit } from "./mutation-commit.js";
+import {
+  AcceptedMutationSubmissionError,
+  type MutationCommit,
+  type PreparedMutation,
+} from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
-import type { RuntimeStore } from "./runtime-store.js";
+import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
@@ -89,34 +93,12 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    const selected = new Set(selection.blocks);
-    const observations = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec)
-      .filter((_, index) => selected.has(options.model.getBlocks(toDocHandle(runtime.doc))[index]))
-      .flatMap((block) =>
-        block.clientID !== undefined && block.clock !== undefined && block.renderedContent
-          ? [
-              {
-                kind: "rendered" as const,
-                clientID: block.clientID,
-                clock: block.clock,
-                renderedContent: block.renderedContent,
-                sourceText: block.serialized,
-              },
-            ]
-          : [],
-      );
     if (command.format === "outline") {
-      return {
-        ...readSuccess(
-          renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
-        ),
-        observations,
-      };
+      return readSuccess(
+        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
+      );
     }
-    return {
-      ...readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks)),
-      observations,
-    };
+    return readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
   }
 
   async function create(
@@ -145,7 +127,6 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const overwriting = command.overwrite === true;
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -157,6 +138,13 @@ export function createWriteCommands(deps: {
       );
     }
     const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
+    const bufferedResponseUpdates =
+      context.responseId && actor.kind === "agent"
+        ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
+        : [];
+    const overwriting =
+      command.overwrite === true ||
+      (deferNewDocumentCreation && bufferedResponseUpdates.length === 0);
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const liveCheck = await withLiveDocument(
       options.coordinator,
@@ -191,10 +179,7 @@ export function createWriteCommands(deps: {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
     if (context.responseId && actor.kind === "agent") {
-      for (const update of responseCommitter.bufferedUpdatesForDoc(
-        context.responseId,
-        address.documentId,
-      )) {
+      for (const update of bufferedResponseUpdates) {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
     }
@@ -212,10 +197,12 @@ export function createWriteCommands(deps: {
       command.tool_use_id,
     );
     const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
+    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     let touchedHashes = new Set<string>();
     let deletedHashes = new Set<string>();
+    let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -230,6 +217,7 @@ export function createWriteCommands(deps: {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
       validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+      semanticEditIr = resolved.ir;
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
@@ -269,12 +257,12 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
-          toolCallId: command.tool_use_id ?? context.tool_use_id,
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
           touchedHashes,
           deletedHashes,
           preOwnSnapshot: preWriteSnapshot,
+          ...(semanticEditIr ? { semanticEditIr } : {}),
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
         if (rejected) {
@@ -288,24 +276,35 @@ export function createWriteCommands(deps: {
         throw cause;
       }
       markSynced(session, address.documentId, runtime);
+      const summary = mutationCommit.summarizeMutationEcho({
+        runtime,
+        before,
+        touchedHashes,
+        deletedHashes,
+      });
       return formatApplySuccess({
         phase: "staged",
         writeId: writeIdentity.handle,
-        echo: [
-          {
-            mode: "truncated",
-            blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
-          },
-        ],
+        settlementId: writeIdentity.durableId,
+        echo:
+          summary.echo.length > 0
+            ? summary.echo
+            : [
+                {
+                  mode: "truncated",
+                  blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
+                },
+              ],
+        concurrentEdits: summary.concurrentEdits,
       });
     }
 
-    let committed: Awaited<ReturnType<MutationCommit["commitImmediate"]>>;
-    try {
-      committed = await mutationCommit.commitImmediate({
+    const committed = await submitPreparedMutation(
+      {
         docId: address.documentId,
         commandName: command.command,
         runtime,
+        before,
         updates: [
           {
             update,
@@ -319,11 +318,11 @@ export function createWriteCommands(deps: {
               ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
+              ...(semanticEditIr ? { semanticEditIr } : {}),
               ...mutationMode(context.interactionContext),
             },
           },
         ],
-        afterOwnVector: Y.encodeStateVector(runtime.doc),
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         touchedHashes,
@@ -334,33 +333,33 @@ export function createWriteCommands(deps: {
           context.interactionContext,
           writeIdentity.durableId,
         ),
-      });
-    } catch (cause) {
-      restorePreWriteSnapshot(runtime, preWriteSnapshot);
-      markSynced(session, address.documentId, runtime);
-      throw cause;
-    }
+      },
+      session,
+    );
     if (!committed.ok) {
       if (committed.journalCommitKind !== "durable") {
-        await runtimeStore.evictRuntime(session, address.documentId);
         return committed.response;
       }
-      await runtimeStore.recoverCommittedResponseProjection([
-        { docId: address.documentId, session, runtime, commandName: command.command },
-      ]);
     }
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       phase: "committed",
       writeId: writeIdentity.handle,
-      echo: [
-        {
-          mode: "truncated",
-          blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
-        },
-      ],
+      echo:
+        committed.ok && committed.summary.echo.length > 0
+          ? committed.summary.echo
+          : [
+              {
+                mode: "truncated",
+                blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
+              },
+            ],
+      ...(committed.ok && committed.summary.concurrentEdits
+        ? { concurrentEdits: committed.summary.concurrentEdits }
+        : {}),
       ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
+      ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
     });
   }
 
@@ -443,7 +442,6 @@ export function createWriteCommands(deps: {
     }
     writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
 
-    const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
 
@@ -471,6 +469,7 @@ export function createWriteCommands(deps: {
         const result = formatApplySuccess({
           phase: "staged",
           writeId: writeIdentity.handle,
+          settlementId: writeIdentity.durableId,
           echo: summary.echo,
           concurrentEdits: summary.concurrentEdits,
           deletedBlocks: applied.deletedBlocks,
@@ -489,7 +488,6 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
-          toolCallId: command.tool_use_id ?? context.tool_use_id,
           createdDocumentBeforeCommit: false,
           touchedHashes: new Set(applied.changedBlocks ?? []),
           deletedHashes: new Set(applied.deletedBlocks ?? []),
@@ -511,52 +509,49 @@ export function createWriteCommands(deps: {
       }
     }
 
-    let syncedMutation: Awaited<ReturnType<MutationCommit["syncAfterLocalMutation"]>>;
-    try {
-      syncedMutation = await mutationCommit.syncAfterLocalMutation({
+    let syncedMutation = await submitPreparedMutation(
+      {
         docId: address.documentId,
         commandName: command.command,
         runtime,
-        update: ownUpdate,
-        meta,
-        mutation: {
-          threadId: session.threadId,
-          turnId,
-          ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-          actorKind: actor.kind,
-          ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-          ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-          ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
-          writeId: writeIdentity.durableId,
-          wId: writeIdentity.ordinal,
-          ...mutationMode(interactionContext),
-        },
-        afterOwnVector,
+        updates: [
+          {
+            update: ownUpdate,
+            meta,
+            mutation: {
+              threadId: session.threadId,
+              turnId,
+              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+              actorKind: actor.kind,
+              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+              ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
+              writeId: writeIdentity.durableId,
+              wId: writeIdentity.ordinal,
+              ...mutationMode(interactionContext),
+            },
+          },
+        ],
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
-        ...(turnId ? { ownTurnId: turnId } : {}),
+        ...(turnId ? { turnId } : {}),
         preOwnSnapshot,
         ...(interactionContext ? { interactionContext } : {}),
-      });
-    } catch (cause) {
-      restorePreWriteSnapshot(runtime, preOwnSnapshot);
-      markSynced(session, address.documentId, runtime);
-      throw cause;
-    }
+      },
+      session,
+    );
     if (!syncedMutation.ok) {
       if (syncedMutation.journalCommitKind !== "durable") {
-        await runtimeStore.evictRuntime(session, address.documentId);
         return syncedMutation.response;
       }
-      await runtimeStore.recoverCommittedResponseProjection([
-        { docId: address.documentId, session, runtime, commandName: command.command },
-      ]);
+      const awarenessDegraded = syncedMutation.awarenessDegraded;
       syncedMutation = {
         ok: true,
         journalCommitKind: "durable",
+        ...(awarenessDegraded ? { awarenessDegraded: true } : {}),
         summary: mutationCommit.summarizeMutationEcho({
           runtime,
           before,
@@ -574,7 +569,44 @@ export function createWriteCommands(deps: {
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
       ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
+      ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
     });
+  }
+
+  async function submitPreparedMutation(
+    input: PreparedMutation & { runtime: RuntimeDocumentState },
+    session: ActorSession,
+  ) {
+    let result: Awaited<ReturnType<MutationCommit["submitMutation"]>>;
+    try {
+      result = await mutationCommit.submitMutation(input);
+    } catch (cause) {
+      if (cause instanceof AcceptedMutationSubmissionError) {
+        result = {
+          ok: false,
+          response: status("internal_error", "Retry — transient edit system failure."),
+          journalCommitKind: cause.journalCommitKind,
+        };
+      } else {
+        restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
+        markSynced(session, input.docId, input.runtime);
+        throw cause;
+      }
+    }
+    if (result.ok) return result;
+    if (result.journalCommitKind !== "durable") {
+      await runtimeStore.evictRuntime(session, input.docId);
+      return result;
+    }
+    await runtimeStore.recoverCommittedResponseProjection([
+      {
+        docId: input.docId,
+        session,
+        runtime: input.runtime,
+        commandName: input.commandName,
+      },
+    ]);
+    return { ...result, awarenessDegraded: true };
   }
 
   function validateResolvedIr(
@@ -600,7 +632,11 @@ export function createWriteCommands(deps: {
     context: WriteContext,
     commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string }> {
-    const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
+    const ordinal = await reversalStore.reserveWriteOrdinal(
+      docId,
+      session.threadId,
+      context.responseId ?? context.turnId,
+    );
     const durableId =
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??

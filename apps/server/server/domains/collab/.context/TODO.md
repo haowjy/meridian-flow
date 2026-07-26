@@ -1,5 +1,13 @@
 # collab TODO
 
+## Draft preview fails on empty paragraphs
+
+The real-stack adversarial-editing probe `p3511` saw the draft-preview endpoint return
+HTTP 500 four times when the draft contained empty paragraphs:
+`Cannot anchor text offset in block <id> (paragraph) without text`. Reproduce at the
+draft-preview anchoring seam and make empty text blocks a supported preview input; this
+is pre-existing and was not part of the loaded-room live-pull fix.
+
 ## Code files become a display lens; cross-schema rename becomes a metadata flip
 
 **Tracked:** [#212](https://github.com/haowjy/meridian-flow/issues/212) — direction

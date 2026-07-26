@@ -1,15 +1,5 @@
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
-import {
-  createAgentEditCodec,
-  digestRenderedContent,
-  type ObservationSnapshotStore,
-  snapshotBlocks,
-  toDocHandle,
-  yProsemirrorModel,
-} from "@meridian/agent-edit";
-import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -48,6 +38,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
+    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
+    const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
+    const { DrizzleContextDocumentStore, DrizzleContextTreeMutationStore } = await import(
+      "../context/adapters/context-fs/drizzle-store.js"
+    );
     const { checkDependentLaterLiveRows } = await import("./adapters/drizzle-live-dependencies.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { decodeUpdateForDependencies, deleteRanges, rangesOverlap, suppliedRanges } =
@@ -68,12 +63,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
-    const observationSnapshots = observationStoreFor(hocuspocus.documents);
     const createTestCollab = () =>
       createCollabDomain({
         db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-        observationSnapshots,
+        documentAccess: createDrizzleDocumentAccess(db),
       });
 
     beforeEach(async () => {
@@ -390,16 +383,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
       });
 
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file: DOC_ID,
-            content: "File-only thread peer.",
-          },
-          { sessionId: "session-file-only", threadId: THREAD_ID, turnId: TURN_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
+      const stagedCreate = await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: DOC_ID,
+          content: "File-only thread peer.",
+        },
+        { sessionId: "session-file-only", threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      if (stagedCreate.status !== "success") {
+        throw new Error(`staged create failed: ${stagedCreate.text}`);
+      }
 
       const rows = await db
         .select({
@@ -424,22 +418,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const responseId = "response-same-document-db";
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file: "chapter.md",
-            documentId: DOC_ID,
-            content: "First same response.",
-          },
-          {
-            sessionId: "session-same-response-db",
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            responseId,
-          },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
+      const stagedCreate = await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "First same response.",
+        },
+        {
+          sessionId: "session-same-response-db",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+        },
+      );
+      if (stagedCreate.status !== "success") {
+        throw new Error(`staged create failed: ${stagedCreate.text}`);
+      }
       await expect(
         collab.agentEdit().write(
           {
@@ -526,39 +521,76 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("materializes a new document and its live manifest entry on partial create accept", async () => {
-      await db.insert(documents).values({
-        id: CREATED_DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "created-chapter",
-        extension: "md",
-        fileType: "markdown",
-      });
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-
-      await collab.recordManifestDocumentCreated(CREATED_DOC_ID as never, {
+      const responseId = "response-created-document-partial-accept";
+      const manifestView = {
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         threadId: THREAD_ID as never,
+        responseId,
+      };
+      const tree = new ContextFS({
+        store: new DrizzleContextDocumentStore({
+          db,
+          contextSourceId: SOURCE_ID,
+          membershipObserver: {
+            documentCreated: (documentId) =>
+              collab.recordManifestDocumentCreated(documentId as never, manifestView),
+            documentDeleted: (documentId) =>
+              collab.recordManifestDocumentDeleted(documentId as never, manifestView),
+          },
+        }),
+        mutationStore: new DrizzleContextTreeMutationStore(db),
+        documentSync: collab,
+        documentCreation: collab,
+        scheme: "manuscript",
+        manifestView,
       });
-      const responseId = "response-created-document-partial-accept";
+      const ensured = await tree.ensureTrackedDocument("created-chapter.md", {
+        deferDocumentSync: true,
+      });
+      if (!ensured.ok) throw new Error(`failed to reserve create: ${ensured.error.code}`);
+      const createdDocumentId = ensured.value.documentId;
+      expect(ensured.value.created).toBe(true);
       await expect(
-        collab.agentEdit().write(
-          {
-            command: "create",
-            file: "created-chapter.md",
-            documentId: CREATED_DOC_ID,
-            content: "# Created chapter\n\nOpening line.",
-          },
-          {
-            sessionId: "session-created-document",
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            responseId,
-            createdDocument: true,
-          },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
+        Promise.all([
+          db
+            .select()
+            .from(documents)
+            .where(eq(documents.id, createdDocumentId as never)),
+          db
+            .select()
+            .from(documentYjsHeads)
+            .where(eq(documentYjsHeads.documentId, createdDocumentId as never)),
+          db
+            .select()
+            .from(documentYjsCheckpoints)
+            .where(eq(documentYjsCheckpoints.documentId, createdDocumentId as never)),
+        ]).then((rows) => rows.map((row) => row.length)),
+      ).resolves.toEqual([1, 1, 1]);
+      await expect(collab.resolveManifestMembership(manifestView)).resolves.toMatchObject({
+        members: expect.arrayContaining([createdDocumentId]),
+      });
+
+      const stagedCreate = await collab.agentEdit().write(
+        {
+          command: "create",
+          file: "created-chapter.md",
+          documentId: createdDocumentId,
+          content: "# Created chapter\n\nOpening line.",
+        },
+        {
+          sessionId: "session-created-document",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+          createdDocument: true,
+        },
+      );
+      if (stagedCreate.status !== "success") {
+        throw new Error(`staged create failed: ${stagedCreate.text}`);
+      }
       await collab.finalizeResponseCommit(responseId, {
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
@@ -567,7 +599,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const preview = await collab.draftReview.preview({
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
-        documentId: CREATED_DOC_ID as never,
+        documentId: createdDocumentId as never,
       });
       expect(preview).toMatchObject({ status: "active", isNewDocument: true });
       if (preview.status !== "active" || !preview.branchId) throw new Error("missing preview");
@@ -579,7 +611,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            documentId: CREATED_DOC_ID,
+            documentId: createdDocumentId,
             createdDocument: true,
           }),
         ]),
@@ -591,21 +623,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab.draftReview.accept({
           projectId: PROJECT_ID as never,
           workId: WORK_ID as never,
-          documentId: CREATED_DOC_ID as never,
+          documentId: createdDocumentId as never,
           branchId: preview.branchId,
           userId: USER_ID as never,
           draftRevisionToken: preview.draftRevisionToken,
           operationIds: [createOperation.operationId],
         }),
-      ).resolves.toMatchObject({ status: "partial_applied" });
+      ).resolves.toMatchObject({ status: "applied" });
 
       const liveMembership = await collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
       });
       // The context tree is projected from this live membership; work-draft
       // membership alone must not satisfy the assertion.
-      expect(liveMembership.members).toContain(CREATED_DOC_ID);
-      await expect(readMarkdown(collab, CREATED_DOC_ID)).resolves.toContain("Opening line.");
+      expect(liveMembership.members).toContain(createdDocumentId);
+      await expect(readMarkdown(collab, createdDocumentId)).resolves.toContain("Opening line.");
     });
 
     it("does not resurrect a rejected new document when a sibling draft is accepted", async () => {
@@ -708,6 +740,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: CREATED_DOC_B_ID as never,
         branchId: previewB.branchId,
         userId: USER_ID as never,
+        draftRevisionToken: previewB.draftRevisionToken,
+        operationIds: previewB.operations.map((operation) => operation.operationId),
       });
 
       const liveMembership = await collab.resolveManifestMembership({
@@ -1015,40 +1049,6 @@ function fakeHocuspocus() {
         documents.set(documentName, document);
       }
       return { document, disconnect: async () => undefined };
-    },
-  };
-}
-
-function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore {
-  const schema = buildDocumentSchema();
-  const model = yProsemirrorModel(schema);
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
-  const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
-
-  return {
-    async seal(snapshot) {
-      snapshots.set(snapshot.responseId, snapshot);
-    },
-    async load(responseId) {
-      const existing = snapshots.get(responseId);
-      if (existing !== undefined) return existing;
-
-      const entries = [...documents.entries()]
-        .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
-        .flatMap(([documentId, document]) =>
-          snapshotBlocks(toDocHandle(document), model, codec).map((block) => ({
-            documentId,
-            clientID: block.clientID as number,
-            clock: block.clock as number,
-            value: {
-              kind: "rendered" as const,
-              digest: digestRenderedContent(block.renderedContent as string),
-            },
-          })),
-        );
-      const snapshot = { responseId, entries };
-      snapshots.set(responseId, snapshot);
-      return snapshot;
     },
   };
 }

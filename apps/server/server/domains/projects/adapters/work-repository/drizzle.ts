@@ -3,7 +3,7 @@ import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { isUuid } from "../../../../lib/uuid.js";
+import { isUuid } from "../../../../shared/uuid.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,

@@ -5,16 +5,16 @@
 
 import type {
   ConcurrentEditInfo,
-  ResponseCommitDocumentRejection,
+  ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
   WriteCommand,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import {
   type DocumentAddress,
   formatDocumentFile,
   splitDocumentFile,
   WriteCommandSchema,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import { interruptResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
   askRequestFromAskUser,
@@ -97,12 +97,8 @@ export interface AgentEditResponseWriteLifecycle {
 export type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
+      receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
-    }
-  | {
-      status: "rejected";
-      responseId: string;
-      rejections: ResponseCommitDocumentRejection[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -328,15 +324,11 @@ export function createAgentEditResponseWriteLifecycle(
         if (result.status === "draft_closed") {
           return { status: result.status, responseId: result.responseId, mode: result.mode };
         }
-        if (result.status === "rejected") {
-          return {
-            status: "rejected",
-            responseId: result.responseId,
-            rejections: result.rejections,
-          };
-        }
         return {
           status: "committed",
+          receipts: result.documents.flatMap((document) =>
+            document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
+          ),
           concurrentEdits: result.documents.flatMap((document) =>
             document.concurrentEdits
               ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
@@ -448,14 +440,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       }
       return {
         output: outcome.content ?? outcome.text,
-        ...(stagedWrite || outcome.observations?.length
+        ...(stagedWrite
           ? {
               metadata: {
                 documentId: address.documentId,
-                ...(outcome.observations?.length
-                  ? { observationEvidence: outcome.observations }
-                  : {}),
-                ...(stagedWrite ? { stagedWrite: true } : {}),
+                stagedWrite: true,
+                ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
+                ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
               },
             }
           : {}),

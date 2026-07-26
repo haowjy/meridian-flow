@@ -82,6 +82,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         changeCount: 2,
         sweptChangeCount: 0,
         documentCount: 1,
+        documents: [{ documentId: "current-document", title: "Current chapter" }],
+        wordsAdded: 20,
+        wordsRemoved: 4,
         settledAt: new Date(),
       });
     });
@@ -218,13 +221,56 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(schema.eventJournal.seq);
       expect(rows.map((row) => row.payload)).toMatchObject([
         { eventId: UPDATED_EVENT_ID, type: "turn.change_trail_updated", version: 1 },
-        { eventId: SETTLED_EVENT_ID, type: "turn.change_trail_settled", version: 2 },
+        {
+          eventId: SETTLED_EVENT_ID,
+          type: "turn.change_trail_settled",
+          version: 2,
+          shell: {
+            counts: { changes: 2, swept: 0, documents: 1 },
+          },
+        },
       ]);
       expect(rows.map((row) => row.seq)).toEqual([1n, 2n]);
       expect(published).toEqual([
         { eventId: UPDATED_EVENT_ID, version: 1 },
         { eventId: SETTLED_EVENT_ID, version: 2 },
       ]);
+    });
+
+    it("delivers the settled version snapshot after the trail shell changes", async () => {
+      await seedOutbox([{ eventId: SETTLED_EVENT_ID, eventKind: "settled", version: 2 }]);
+      await db
+        .update(schema.changeTrailShells)
+        .set({
+          state: "building",
+          version: 3,
+          changeCount: 9,
+          sweptChangeCount: 4,
+          documentCount: 2,
+          documents: [{ documentId: "new-document", title: "New chapter" }],
+          wordsAdded: 99,
+          wordsRemoved: 42,
+          settledAt: null,
+        })
+        .where(eq(schema.changeTrailShells.id, TRAIL_ID));
+      const dispatcher = createDrizzleChangeTrailDispatcher({
+        db,
+        journalWriter,
+        eventHub: { publishPersistedEvent: vi.fn() },
+      });
+
+      await expect(dispatcher.drain()).resolves.toBe(1);
+
+      const [row] = await journalEvents(SETTLED_EVENT_ID);
+      expect(row?.payload).toMatchObject({
+        type: "turn.change_trail_settled",
+        shell: {
+          counts: { changes: 2, swept: 0, documents: 1 },
+          documents: [{ documentId: "settled-document", title: "Settled chapter" }],
+          wordsAdded: 12,
+          wordsRemoved: 3,
+        },
+      });
     });
 
     async function seedOutbox(
@@ -235,9 +281,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...event,
           threadId: THREAD_ID,
           trailId: TRAIL_ID,
-          changeCount: event.eventKind === "updated" ? 2 : null,
-          sweptChangeCount: event.eventKind === "updated" ? 0 : null,
-          documentCount: event.eventKind === "updated" ? 1 : null,
+          changeCount: 2,
+          sweptChangeCount: 0,
+          documentCount: 1,
+          documents:
+            event.eventKind === "settled"
+              ? [{ documentId: "settled-document", title: "Settled chapter" }]
+              : [],
+          wordsAdded: event.eventKind === "settled" ? 12 : null,
+          wordsRemoved: event.eventKind === "settled" ? 3 : null,
           createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
         })),
       );

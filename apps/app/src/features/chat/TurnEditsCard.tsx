@@ -6,9 +6,9 @@
  * draft control this card carries is Undo. Expanded trail rows may carry the
  * safety-specific forward actions Restore and Delete again.
  *
- * Shape: a collapsed card at the end of every turn that edited documents
- * (created files count — they produce mutation rows like any edit). The header
- * carries only the document count; expanding lists each document.
+ * Shape: a collapsed card at the end of every turn that edited live documents.
+ * The header names a single document when possible and carries durable word
+ * deltas; expanding lists each document.
  *
  * Turn lineage owns Undo authority. Authorized trail detail owns durable row
  * evidence, navigation, and forward-action identity.
@@ -97,6 +97,7 @@ export function TurnEditsCard({
           removed: changeTrail.wordsRemoved ?? 0,
         }
       : null;
+  const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   if (!hasEditedDocuments) return null;
 
@@ -160,7 +161,14 @@ export function TurnEditsCard({
             ) : null}
           </span>
         </button>
-        {hasEditedDocuments ? (
+        {undoUnavailable ? (
+          <span
+            className="shrink-0 rounded-full border border-border-subtle px-2 py-0.5 font-medium text-ink-muted"
+            data-undo-unavailable
+          >
+            <Trans>Can't undo</Trans>
+          </span>
+        ) : (
           <Button
             type="button"
             variant="quiet"
@@ -169,14 +177,18 @@ export function TurnEditsCard({
               event.stopPropagation();
               void reverseTurn();
             }}
-            disabled={pending || receipt == null || receipt.control === "view_change"}
-            title={guardCopy}
+            disabled={pending}
             className="shrink-0 text-jade-text"
           >
             {receipt?.control === "redo" ? t`Redo` : t`Undo`}
           </Button>
-        ) : null}
+        )}
       </div>
+      {guardCopy ? (
+        <p className="px-3 pb-2 pl-9 text-ink-muted" data-undo-unavailable-reason>
+          {guardCopy}
+        </p>
+      ) : null}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t py-1">
           <ul className="flex flex-col">
@@ -223,28 +235,30 @@ function ChangeViewDetail({
     );
   }
   return detail.data?.map((document) => {
-    if (document.unavailable && !document.changes) {
+    if ("unavailable" in document) {
       return (
         <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
-          <Trans>Document no longer available</Trans>
+          <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
         </p>
       );
     }
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
-        {document.unavailable ? (
+        {document.anchorState === "deleted" ? (
           <p className="px-3 py-1 text-caption text-ink-muted">
-            <Trans>Document no longer available</Trans>
+            <Trans>
+              This chapter is no longer available. Copy any saved text you want to keep.
+            </Trans>
           </p>
         ) : null}
-        {document.changes && document.changes.length > 0 ? (
+        {document.changes.length > 0 ? (
           <ChangeViewRows
             threadId={threadId}
             trailId={shell.trailId}
             documentId={document.documentId}
             changes={document.changes}
             navigateToChange={navigateToChange}
-            anchorUnavailable={document.unavailable}
+            anchorUnavailable={document.anchorState === "deleted"}
           />
         ) : null}
       </section>
@@ -254,10 +268,10 @@ function ChangeViewDetail({
 
 function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
   if (receipt?.state === "cant_undo_dependent") {
-    return t`Undo is unavailable because later edits depend on this change`;
+    return t`Later edits build on this change.`;
   }
   if (receipt?.control === "view_change" || receipt == null) {
-    return t`Undo is no longer available`;
+    return t`This change is too old to undo.`;
   }
   return undefined;
 }
@@ -290,7 +304,11 @@ function DocumentRow({
 }
 
 function documentCountLabel(count: number) {
-  return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
+  return count === 1 ? (
+    <Trans>AI edited 1 chapter</Trans>
+  ) : (
+    <Trans>AI edited {count} chapters</Trans>
+  );
 }
 
 function documentTitleLabel(title: string) {

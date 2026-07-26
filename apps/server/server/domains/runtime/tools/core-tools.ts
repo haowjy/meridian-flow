@@ -9,7 +9,7 @@
  * `createWiredCoreToolRegistrations`, keeping this runtime-domain catalogue free
  * of ContextPort or other app-layer adapter imports.
  */
-import { WriteCommandSchema } from "@meridian/agent-edit";
+import { WriteCommandSchema } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
 import type { ToolRegistration } from "./types.js";
@@ -89,7 +89,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use command=read to sync and read block-hashed content; create to create a new document (use overwrite=true to overwrite an existing document); insert to add content; replace to replace or delete content within a document; undo and redo to reverse or reapply this thread's document writes.",
+          "Document edit tool. Use read for block-hashed content. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits a scope; find replaces only the exact matched span, never following blocks. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. undo and redo reverse or reapply this thread's document writes.",
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },

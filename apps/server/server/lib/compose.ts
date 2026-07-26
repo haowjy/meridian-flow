@@ -3,7 +3,6 @@
  * runtime service graph. App startup supplies process-level resources; this file
  * chooses concrete server adapters and assembles domain services behind ports.
  */
-import { createObservationAuthority } from "@meridian/agent-edit";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -69,7 +68,6 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
-import { createDrizzleResponseObservations } from "../domains/runtime/adapters/drizzle-response-observations.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
@@ -113,6 +111,7 @@ import { createInMemoryRepositories } from "../domains/threads/adapters/in-memor
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
   EventJournalReader,
@@ -133,6 +132,7 @@ import {
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { readThreadContextDocument } from "./thread-context-route.js";
 import {
   createAgentEditResponseWriteLifecycle,
   createWiredCoreToolRegistrations,
@@ -228,9 +228,9 @@ export type ProductionAppPorts = {
   activeDocuments: ActiveDocumentResolver;
 };
 
-const OBSERVATION_RENDER_SAFETY_TOKENS = 16_000;
+const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
 
-function observationRenderBudgetBytes(request: {
+function concurrentRenderBudgetBytes(request: {
   model?: string;
   messages: unknown;
   tools?: unknown;
@@ -246,7 +246,7 @@ function observationRenderBudgetBytes(request: {
   // Three UTF-8 bytes per remaining token deliberately underestimates capacity.
   const capacityBytes = Math.max(
     0,
-    (model.contextWindow - model.maxOutputTokens - OBSERVATION_RENDER_SAFETY_TOKENS) * 3,
+    (model.contextWindow - model.maxOutputTokens - CONCURRENT_RENDER_SAFETY_TOKENS) * 3,
   );
   return Math.max(0, capacityBytes - fixedRequestBytes);
 }
@@ -296,13 +296,34 @@ export async function createProductionAppPorts(input: {
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db, activeDocuments);
+  const projectRepo = createDrizzleProjectRepository({ db });
+  let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const documentSync = createCollabDomain({
     db,
+    documentAccess,
     eventSink,
     notices,
-    threads: threadRepos.threads,
+    threadContext: {
+      async requireThreadOwner(input) {
+        const thread = await requireThreadOwner(
+          { threads: threadRepos.threads, projects: projectRepo },
+          input.threadId,
+          input.userId as never,
+        );
+        return { projectId: thread.projectId };
+      },
+      resolveContextDocument: (input) =>
+        readThreadContextDocument(
+          {
+            contextPorts,
+            threads: threadRepos.threads,
+            threadWorks: threadRepos.threadWorks,
+          },
+          input as never,
+        ),
+    },
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
   const threadUploadImports = createThreadUploadImportService({
@@ -320,7 +341,7 @@ export async function createProductionAppPorts(input: {
   });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
-  const contextPorts = createProductionUnifiedContextPortFactory({
+  contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
@@ -340,7 +361,6 @@ export async function createProductionAppPorts(input: {
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(environment),
   });
-  const projectRepo = createDrizzleProjectRepository({ db });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({ db, documents: documentSync });
   const workRepo = createDrizzleProjectWorkRepository({ db });
@@ -418,8 +438,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
-  const responseObservations = createDrizzleResponseObservations(ports.db, ports.documentSync);
-  const observationAuthority = createObservationAuthority({ store: responseObservations.store });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -524,11 +542,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     notices: ports.notices,
     activeDocuments: ports.activeDocuments,
-    observationRendering: {
-      authority: observationAuthority,
-      budgetBytes: observationRenderBudgetBytes,
-      freezeCausalCuts: responseObservations.freezeCausalCuts,
-    },
+    concurrentRenderBudgetBytes,
   });
   runTurnProxy.bind(orchestrator);
 
@@ -893,6 +907,12 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentAccess: {
+      async documentAccessState() {
+        return "available";
+      },
+      async lockDocumentAccessState() {
+        return "available";
+      },
       async canAccessDocument() {
         return true;
       },

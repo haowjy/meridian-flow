@@ -37,6 +37,7 @@ tools/dev/
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
+├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
 ├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
 ├── dev-session-plan.ts        Session command construction + redaction + internal API origin
 ├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)
@@ -66,7 +67,19 @@ tools/dev/
 
 - One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
 - **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves live worktrees, active managed test runs, explicit `<base>_test-manual-*` databases, and reserved names. It drops stale worktree databases and managed test databases whose owner process has stopped.
-- **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and migrates a unique `<base>_test-run-<pid>-<timestamp>` database, runs the shared Vitest project, and drops only that owned database. The nested fresh-migration proof uses the existing `<base>_migrations_<pid>_<timestamp>` managed convention. CI/external Postgres instances rely on their own pre-provisioned ephemeral database. A killed local run is reclaimed later by `dev:gc-dbs` only when its encoded owner PID is no longer alive. Managed and manual test prefixes are reserved from worktree database slugs.
+- **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and
+  migrates one `<base>_test-run-<pid>-<timestamp>` template, clones four
+  `-worker-<n>` databases, and routes each Vitest worker to its own clone.
+  Migration catalog assertions run against those fresh clones instead of
+  replaying migrations in a nested process. The runner drops every clone and
+  its template; `dev:gc-dbs` recognizes the encoded owner PID for interrupted
+  runs. CI/external Postgres instances retain serial execution against their
+  pre-provisioned ephemeral database.
+- **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
+  missing or unreachable configured Postgres server is a loud skip because the
+  static CI job has no database service; a reachable server runs the same
+  managed `pnpm test:db` gate and propagates failures. Invoke `pnpm test:db`
+  directly when the DB suite must not skip.
 - **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
 - **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
 - **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.

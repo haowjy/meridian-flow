@@ -36,10 +36,8 @@ export type TurnDocumentTouchId = string;
 export const asTurnDocumentTouchId = (s: string) => s as TurnDocumentTouchId;
 export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;
-/** Durable identity of one document authority across its fenced generations. */
+/** Identity held by one durable document authority head across its fenced generations. */
 export type DocumentAuthorityId = string;
 export const asDocumentAuthorityId = (s: string) => s as DocumentAuthorityId;
-export type ResponseCausalCutId = string;
-export const asResponseCausalCutId = (s: string) => s as ResponseCausalCutId;
 export type DocumentRevision = string;
 export const asDocumentRevision = (s: string) => s as DocumentRevision;

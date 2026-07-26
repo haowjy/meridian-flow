@@ -1,6 +1,6 @@
 /**
  * Shared JSON-natural observability vocabulary for client and server event producers.
- * This is distinct from `observation.ts`, which models durable authority causal cuts.
+ * These contracts describe diagnostic events, not document provenance authority.
  * Server emitters must populate `stream.observedAt: "server"` and reuse these key names verbatim.
  */
 

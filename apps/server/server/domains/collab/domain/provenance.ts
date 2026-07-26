@@ -5,14 +5,13 @@ import {
   type SemanticProvenanceWriter,
   unwrapDoc,
   type WriterLineageRange,
-} from "@meridian/agent-edit";
+} from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
 export const PROVENANCE_TARGETS_TYPE = "__meridian_provenance_targets_v1";
-export const PROVENANCE_ROOTS_TYPE = "__meridian_provenance_roots_v1";
-export const PROVENANCE_RESERVED_TYPES = [PROVENANCE_TARGETS_TYPE, PROVENANCE_ROOTS_TYPE] as const;
+export const PROVENANCE_RESERVED_TYPES = [PROVENANCE_TARGETS_TYPE] as const;
 const RESERVED_TYPE_NAMES = new Set<string>(PROVENANCE_RESERVED_TYPES);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
@@ -28,12 +27,6 @@ export type ProvenanceTargetFactV1 = {
   version: 1;
   target: WriterLineageRange;
   root: WriterLineageRange;
-};
-
-export type ProvenanceRootFactV1 = {
-  version: 1;
-  root: WriterLineageRange;
-  birthClass: SafetyBirthClass;
 };
 
 export type JournalReplayKey = {
@@ -85,9 +78,13 @@ export function insertionAttributions(
     AttributedJournalRow,
     "admissionSequence" | "batchOrdinal" | "journalRowId" | "originType" | "actorUserId" | "update"
   >[],
+  retained: readonly AttributionRunV1[] = [],
 ): AttributionRunV1[] {
   const index = new RangeIndex<AttributionRunV1>("insertion attribution");
-  const result: AttributionRunV1[] = [];
+  const result: AttributionRunV1[] = [...retained];
+  for (const attribution of retained) {
+    index.add(attribution.range, attribution, sameAttribution);
+  }
   for (const row of rows) {
     for (const range of insertionRanges(row.update)) {
       const attribution = {
@@ -109,7 +106,7 @@ export function materializeProvenanceForDoc(input: {
   rows: readonly AttributedJournalRow[];
   retainedAttributions?: readonly AttributionRunV1[];
   /** Settlement lock cuts may contain writer-ingress roots captured before their
-   * attributed replay row; classify that unexplained authority conservatively. */
+   * attributed replay row; classify that unexplained birth source conservatively. */
   fallbackBirthClass?: SafetyBirthClass;
 }): ProvenanceRun[] {
   const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
@@ -195,7 +192,6 @@ function provenanceRunsForDoc(
   fallbackBirthClass?: SafetyBirthClass,
 ): ProvenanceRun[] {
   const assignments = readTargetFacts(doc);
-  const policies = readRootFacts(doc);
   // Admission validates targets while they are visible. After deletion Yjs may
   // discard the parent ancestry needed to re-prove historical fragment membership,
   // but the immutable target clocks must remain valid for settlement replay.
@@ -216,14 +212,13 @@ function provenanceRunsForDoc(
         ? unit(assignment.root, targetUnit.clock - assignment.target.clock)
         : targetUnit;
       const attribution = attributions.valueAt(rootUnit);
-      const policy = policies.valueAt(rootUnit);
-      if (!attribution && !policy && !fallbackBirthClass) {
-        throw blocked("Provenance root has no retained attribution or explicit birth policy");
+      if (!attribution && !fallbackBirthClass) {
+        throw blocked("Provenance root has no retained journal attribution");
       }
       appendRun(visible, {
         target: targetUnit,
         root: rootUnit,
-        birthClass: policy?.birthClass ?? attribution?.birthClass ?? fallbackBirthClass ?? "agent",
+        birthClass: attribution?.birthClass ?? fallbackBirthClass ?? "agent",
       });
     }
   }
@@ -238,26 +233,19 @@ export function birthClassFromAttribution(
   return "agent";
 }
 
-/** Append-only authority writer. Facts are arrays, never last-writer-wins maps. */
+/** Append-only provenance-fact writer. Facts are arrays, never last-writer-wins maps. */
 export function appendProvenanceFacts(
   doc: Y.Doc,
-  input: {
-    targets?: readonly ProvenanceTargetFactV1[];
-    roots?: readonly ProvenanceRootFactV1[];
-  },
+  input: { targets?: readonly ProvenanceTargetFactV1[] },
 ): Uint8Array {
   const before = Y.encodeStateVector(doc);
   const targets = readTargetFacts(doc);
-  const roots = readRootFacts(doc);
   const newTargets = (input.targets ?? []).map(parseTargetFact);
-  const newRoots = (input.roots ?? []).map(parseRootFact);
   for (const fact of newTargets) targets.add(fact.target, fact, sameTargetFact);
-  for (const fact of newRoots) roots.add(fact.root, fact, sameRootFact);
   assertRootUnitInjectivity(doc, targets);
   doc.transact(() => {
     if (newTargets.length > 0) doc.getArray(PROVENANCE_TARGETS_TYPE).push(newTargets);
-    if (newRoots.length > 0) doc.getArray(PROVENANCE_ROOTS_TYPE).push(newRoots);
-  }, "meridian-provenance-authority");
+  }, "meridian-provenance-write");
   primeReservedNamespaceIndex(doc);
   return Y.encodeStateAsUpdate(doc, before);
 }
@@ -288,7 +276,6 @@ function assertRootUnitInjectivity(
 /** Validates every reserved provenance fact against the complete visible prose graph. */
 export function validateProvenanceGraph(doc: Y.Doc): void {
   const assignments = readTargetFacts(doc);
-  readRootFacts(doc);
   const prose = allStringRanges(doc);
   for (const range of visibleProseStringRanges(doc)) prose.add(range, true, () => true);
   for (const fact of assignments.values()) {
@@ -421,7 +408,7 @@ function sliceRanges(
   return result;
 }
 
-/** Refresh outside writer admission, immediately after load or authority writes. */
+/** Refresh outside writer admission, immediately after load or provenance writes. */
 export function primeReservedNamespaceIndex(doc: Y.Doc): void {
   provenanceEnumerationCount += 1;
   reservedNamespaceIndexes.set(doc, reservedStructRanges(doc));
@@ -437,23 +424,23 @@ export function resetProvenanceInstrumentation(): void {
 
 /**
  * Rejects client structs that enter the reserved ancestry and delete sets that
- * touch authoritative reserved structs. It inspects decoded ranges and the two
+ * touch existing reserved structs. It inspects decoded ranges and the two
  * reserved subtrees only; it never scratch-applies or scans prose.
  */
 export function assertClientUpdateOutsideReservedNamespace(
-  authoritativeDoc: Y.Doc,
+  referenceDocument: Y.Doc,
   update: Uint8Array,
 ): void {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
   assertDecodedUpdateOutsideReservedNamespace(
-    authoritativeDoc,
+    referenceDocument,
     decoded,
     decoded.structs.map(asStruct),
   );
 }
 
 export function validateClientUpdateAdmission(
-  authoritativeDoc: Y.Doc,
+  referenceDocument: Y.Doc,
   update: Uint8Array,
 ): { reservedClientId: number | null } {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
@@ -461,21 +448,21 @@ export function validateClientUpdateAdmission(
   const reservedClientId =
     incoming.find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id.client ?? null;
   if (reservedClientId === null) {
-    assertDecodedUpdateOutsideReservedNamespace(authoritativeDoc, decoded, incoming);
+    assertDecodedUpdateOutsideReservedNamespace(referenceDocument, decoded, incoming);
   }
   return { reservedClientId };
 }
 
 function assertDecodedUpdateOutsideReservedNamespace(
-  authoritativeDoc: Y.Doc,
+  referenceDocument: Y.Doc,
   decoded: DecodedUpdate,
   incoming: readonly DecodedStruct[],
 ): void {
-  let reserved = reservedNamespaceIndexes.get(authoritativeDoc);
+  let reserved = reservedNamespaceIndexes.get(referenceDocument);
   if (!reserved) {
     provenanceEnumerationCount += 1;
-    reserved = reservedStructRanges(authoritativeDoc);
-    reservedNamespaceIndexes.set(authoritativeDoc, reserved);
+    reserved = reservedStructRanges(referenceDocument);
+    reservedNamespaceIndexes.set(referenceDocument, reserved);
   }
   if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
   const incomingByClient = groupStructs(incoming);
@@ -632,15 +619,6 @@ function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
   for (const value of doc.getArray(PROVENANCE_TARGETS_TYPE).toArray()) {
     const fact = parseTargetFact(value);
     index.add(fact.target, fact, sameTargetFact);
-  }
-  return index;
-}
-
-function readRootFacts(doc: Y.Doc): RangeIndex<ProvenanceRootFactV1> {
-  const index = new RangeIndex<ProvenanceRootFactV1>("root birth policy");
-  for (const value of doc.getArray(PROVENANCE_ROOTS_TYPE).toArray()) {
-    const fact = parseRootFact(value);
-    index.add(fact.root, fact, sameRootFact);
   }
   return index;
 }
@@ -814,14 +792,6 @@ function parseTargetFact(value: unknown): ProvenanceTargetFactV1 {
   return { version: 1, target, root };
 }
 
-function parseRootFact(value: unknown): ProvenanceRootFactV1 {
-  if (!isRecord(value) || value.version !== 1) throw blocked("Invalid root policy fact");
-  if (value.birthClass !== "writer_protected" && value.birthClass !== "agent") {
-    throw blocked("Invalid binary root birth policy");
-  }
-  return { version: 1, root: parseRange(value.root), birthClass: value.birthClass };
-}
-
 function parseRange(value: unknown): WriterLineageRange {
   if (!isRecord(value)) throw blocked("Invalid lineage range");
   const { clientID, clock, length } = value;
@@ -892,9 +862,6 @@ function sameAttribution(left: AttributionRunV1, right: AttributionRunV1): boole
 }
 function sameTargetFact(left: ProvenanceTargetFactV1, right: ProvenanceTargetFactV1): boolean {
   return sameRange(left.target, right.target) && sameRange(left.root, right.root);
-}
-function sameRootFact(left: ProvenanceRootFactV1, right: ProvenanceRootFactV1): boolean {
-  return sameRange(left.root, right.root) && left.birthClass === right.birthClass;
 }
 function sameRange(left: WriterLineageRange, right: WriterLineageRange): boolean {
   return (

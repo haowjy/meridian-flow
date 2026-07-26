@@ -9,7 +9,8 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Dev env resolution (`.env` loading + per-worktree rewrite of every registered DB URL)
 - Per-worktree Postgres DB administration (ensure / drop / extensions / reserved guards)
 - Per-run local DB test provisioning, ownership, cleanup, and stale-run GC
-- Schema application via `drizzle-kit migrate` (`prepare-db.ts`)
+- Schema application via the programmatic Drizzle migrator with file-aware
+  PostgreSQL failures (`migrate-db.ts`, called by `prepare-db.ts`)
 - `pnpm dev` orchestration (tmux + portless + dev modes + readiness + tailscale)
 - Dev session planning (canonical env, redacted commands, internal API origin)
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
@@ -20,7 +21,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 ## Rules
 
 - **`DEV_DATABASES` (in `lib/dev-env.ts`) is the single source of truth.** To add or change a per-worktree database, edit the registry — never hard-code a second database, env var, or `"web"` special-case in `ensure-db`, `drop-db`, `prepare-db`, `.envrc`, or anywhere else. Every consumer iterates the registry.
-- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. In those environments `DATABASE_URL` resolves to the shared `meridian` database, so migration, test, and admin commands silently target the wrong DB. Agents must derive the worktree DB explicitly — run `pnpm bootstrap` (which calls `applyDevEnvToProcess`) or source `print-worktree-env.ts` output before any database operation.
+- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. `pnpm db:migrate` resolves the checkout through `applyDevEnvToProcess` and refuses a registered main database unless a human explicitly passes `--allow-main-database`. Its internal `--managed-test-database` bypass accepts only a local managed disposable database whose embedded owner PID is greater than 1 and a distinct ancestor of the migrator. Other direct test and admin commands must resolve the checkout the same way or source `print-worktree-env.ts` output before touching a database.
 - **Use `lib/dev-env.ts` for env loading.** Do not call `process.loadEnvFile` or write a bespoke `loadEnvFromFile`. The canonical entry point is `applyDevEnvToProcess()`.
 - **Use `lib/dev-db.ts` for DB admin.** Do not open a fresh `pg.Client` and run `CREATE`/`DROP`/`CREATE EXTENSION` from a new script — extend the helpers in `lib/dev-db.ts` and add a thin CLI wrapper.
 - **No regex URL surgery.** Transformations on a database URL use `new URL()` and rewrite `pathname` specifically. The worktree name is always `<baseDbName>_<slug>` (derived from the URL's own base name), and the rewrite must stay idempotent.
@@ -31,6 +32,7 @@ Local-dev-only utilities. Never imported by the application runtime.
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
+- **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.
 - **Restart never claims ownership by port.** It may terminate the worktree's owned tmux session, then wait for its fixed ports. A remaining or uninspectable holder aborts startup with diagnostics; port discovery must never authorize signaling a process.
 - **Command construction: canonical env first.** `applyDevEnvToProcess(repoRoot)` must run _before_ `createDevSessionCommand` — the tmux command must consume resolved worktree-scoped URLs, never ambient `.env` + ad-hoc pass-through. The call order in `dev-tmux.ts` is the canonical pattern; do not invert it.

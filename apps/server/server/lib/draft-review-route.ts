@@ -4,7 +4,6 @@ import type {
   DraftAcceptResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
-  DraftUndoResponse,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -121,7 +120,7 @@ export async function handleWorkDraftAcceptRequest(
     branchId?: string;
     userId: UserId;
     draftRevisionToken: number;
-    operationIds?: string[];
+    operationIds: string[];
     signal?: AbortSignal;
   },
 ): Promise<DraftAcceptResponse> {
@@ -153,37 +152,6 @@ export async function handleWorkDraftRejectRequest(
   if (result.status === "discarded")
     return result.branchId ? { status: "discarded", branchId: result.branchId } : result;
   throw createError({ statusCode: 404, message: "Draft not found" });
-}
-
-export async function handleWorkDraftUndoAcceptRequest(
-  deps: DraftRouteServices,
-  input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    userId: UserId;
-    writeId?: string;
-  },
-): Promise<DraftUndoResponse> {
-  await requireDraftWorkAccess(deps, input);
-  const result = await callDraftReview(deps.documentSync.draftReview.undoAccept(input));
-  return mapUndoResult(result);
-}
-
-export async function handleWorkDraftUndoRejectRequest(
-  deps: DraftRouteServices,
-  input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    userId: UserId;
-  },
-): Promise<DraftUndoResponse> {
-  await requireDraftWorkAccess(deps, input);
-  const result = await callDraftReview(deps.documentSync.draftReview.undoReject(input));
-  return mapUndoResult(result);
 }
 
 function toWireReviewOperation<
@@ -227,13 +195,6 @@ function mapAcceptResult(
   if (result.status === "discarded") {
     throw createError({ statusCode: 410, message: "Draft is no longer active" });
   }
-  throw createError({ statusCode: 404, message: "Draft not found" });
-}
-
-function mapUndoResult(
-  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["undoAccept"]>>,
-): DraftUndoResponse {
-  if (result.status === "not_found") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 

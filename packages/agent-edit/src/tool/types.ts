@@ -13,8 +13,6 @@ export type WriteErrorStatus =
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
-  | "destructive_write_rejected"
-  | "rejected_response_requires_reread"
   | "internal_error";
 
 export type UndoRedoOutcome =
@@ -48,25 +46,13 @@ export type WriteOutcome = WriteOutcomeBase &
 
 export type WriteSuccessPhase = "staged" | "committed";
 
-/** Canonical block evidence carried durably beside the tool result that rendered it. */
-interface WriteObservationEvidenceBase {
-  clientID: number;
-  clock: number;
-  /** Exact substring of the tool output that proves the rendering reached model context. */
-  sourceText: string;
-}
-
-export type WriteObservationEvidence = WriteObservationEvidenceBase &
-  (
-    | { kind: "rendered"; renderedContent: string }
-    | { kind: "explicit_deletion"; capturedBody: string }
-  );
-
 interface WriteOutcomeBase {
   command: WriteCommandName;
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
+  /** Unique host-only correlation for replacing a staged result with its settled receipt. */
+  settlementId?: string;
   /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
   error?: WriteErrorDetail;
   /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
@@ -74,11 +60,10 @@ interface WriteOutcomeBase {
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];
   /** Host metadata; never rendered independently of the tool result. */
-  observations?: readonly WriteObservationEvidence[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
-export type ResponseLifecycleClosedState = "committed" | "rolledBack" | "rejected";
+export type ResponseLifecycleClosedState = "committed" | "rolledBack";
 
 export interface ResponseLifecycleErrorDetail {
   type: "response_lifecycle";
@@ -161,6 +146,8 @@ export interface ResponseCommitterTransitionDetail {
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
+  /** Durable peer state captured before the host pulls concurrent upstream changes. */
+  attributionBaseline?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
   /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
@@ -227,8 +214,15 @@ export type TurnRedoResult = RedoResult;
 export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
+  receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+}
+
+export interface ResponseCommitWriteReceipt {
+  writeId: string;
+  settlementId: string;
+  content: WriteResultBlock[];
 }
 
 export interface ResponseStagedCreateOutcome {
@@ -253,20 +247,6 @@ export interface ResponseCommitSuccessResult {
    */
   discardedClaims?: readonly ResponseClaimDiscardedEntry[];
 }
-
-export interface ResponseCommitDocumentRejection {
-  documentId: string;
-  conflictedBlockHashes: readonly string[];
-  affectedWriteIds: readonly string[];
-}
-
-export interface ResponseCommitRejectedResult {
-  status: "rejected";
-  responseId: string;
-  rejections: ResponseCommitDocumentRejection[];
-}
-
-export type ResponseCommitResult = ResponseCommitSuccessResult | ResponseCommitRejectedResult;
 
 export interface ResponseRollbackResult {
   status: "rolledBack" | "rolledBackDegraded";

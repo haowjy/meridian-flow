@@ -72,11 +72,6 @@ export type ChangeTrailDocument =
   | {
       documentId: string;
       unavailable: true;
-      trailId?: string;
-      documentTitle?: string;
-      wordsAdded?: number | null;
-      wordsRemoved?: number | null;
-      changes?: TrailChange[];
     }
   | {
       trailId: string;
@@ -85,7 +80,7 @@ export type ChangeTrailDocument =
       wordsAdded: number | null;
       wordsRemoved: number | null;
       changes: TrailChange[];
-      unavailable?: false;
+      anchorState: "available" | "deleted";
     };
 export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPending: boolean };
 

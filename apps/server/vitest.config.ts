@@ -4,7 +4,6 @@ export default defineConfig({
   test: {
     // .output is nitro's build artifact; its compiled *.test.mjs copies must not be collected.
     exclude: [...configDefaults.exclude, "**/*.db.test.ts", "**/.output/**"],
-    fileParallelism: false,
     testTimeout: 30_000,
   },
 });

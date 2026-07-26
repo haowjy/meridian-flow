@@ -1,20 +1,13 @@
-/** Persisted collab-authority coverage for client-owned untitled creation. */
+/** Persisted live-document coverage for client-owned untitled creation. */
 
-import { createDb } from "@meridian/database";
+import { Hocuspocus } from "@hocuspocus/server";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import {
-  contextSources,
-  documents,
-  documentYjsCheckpoints,
-  documentYjsHeads,
-  documentYjsUpdates,
-  folders,
-  projects,
-  users,
-} from "@meridian/database/schema";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { contextSources, documentYjsCheckpoints, projects, users } from "@meridian/database/schema";
+import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleDocumentAccess } from "../../../../lib/document-access.js";
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
 import { createCollabDomain } from "../../../collab/index.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore, DrizzleContextTreeMutationStore } from "./drizzle-store.js";
@@ -32,19 +25,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000912";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000913";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000914";
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const database = useRollbackTestDatabase(DATABASE_URL, {
+      max: 4,
+      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+    });
+    let db = database.current;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
-        documentYjsCheckpoints,
-        documentYjsHeads,
-        documentYjsUpdates,
-        folders,
-        documents,
-        contextSources,
-        projects,
-        users,
-      ]);
+      db = database.current;
       await db.insert(users).values(conformanceUserValues(USER_ID, "untitled-collab"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -62,10 +50,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    afterAll(async () => db.$client.end());
-
-    it("persists and reloads an authority with zero CRDT structs", async () => {
-      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+    it("persists and reloads a live document with zero CRDT structs", async () => {
+      const collab = createCollabDomain({
+        db,
+        documentAccess: createDrizzleDocumentAccess(db),
+      });
+      collab.bindHocuspocus(
+        new Hocuspocus({
+          yDocOptions: { gc: false, gcFilter: () => true },
+          onStoreDocument: ({ documentName, document }) =>
+            collab.storeHocuspocusDocument(documentName, document),
+        }),
+      );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
         store,
@@ -86,7 +82,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(documentYjsCheckpoints)).resolves.toHaveLength(1);
 
       const persistedState = await collab.loadHocuspocusDocument(DOCUMENT_ID);
-      if (!persistedState) throw new Error("untitled authority was not persisted");
+      if (!persistedState) throw new Error("untitled live document was not persisted");
       const reloaded = new Y.Doc({ gc: false });
       Y.applyUpdate(reloaded, persistedState);
       const structs = (
