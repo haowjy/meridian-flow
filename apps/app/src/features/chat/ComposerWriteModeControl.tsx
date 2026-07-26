@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-import { dockRows, pendingDockedDraftCount } from "./docked-drafts";
+import { activeDockedDraftGroups } from "./docked-drafts";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 /** Binds the presentation control to the Work resolved for the active thread. */
@@ -37,26 +37,27 @@ export function ComposerWriteModeControl({ projectId, work }: { projectId: strin
   const updateWriteMode = useUpdateWorkWriteMode(projectId, work.id);
   const workDrafts = useWorkDrafts(projectId, work.id);
   const { openAiDraft } = useAiDraftLauncher();
-  const firstPendingRow =
-    dockRows(workDrafts.groups, Date.now()).find((row) => row.state === "pending") ?? null;
+  const pendingGroups = activeDockedDraftGroups(workDrafts.groups);
+  const firstPendingGroup = pendingGroups[0] ?? null;
+  const firstPendingDraft = firstPendingGroup?.drafts[0] ?? null;
 
   return (
     <AiWriteModeControl
       value={work.aiWriteMode}
       disabled={updateWriteMode.isPending || workDrafts.groups == null}
-      pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
-      reviewChangesAvailable={firstPendingRow !== null}
+      pendingChangeCount={pendingGroups.length}
+      reviewChangesAvailable={firstPendingDraft !== null}
       onSelectDraft={() => updateWriteMode.mutate("draft")}
       onReviewChanges={() => {
-        if (!firstPendingRow) return;
+        if (!firstPendingGroup || !firstPendingDraft) return;
         openAiDraft(
           {
-            documentId: firstPendingRow.documentId,
-            contextPath: firstPendingRow.contextPath ?? undefined,
-            documentName: firstPendingRow.documentName ?? undefined,
-            isNewDocument: firstPendingRow.isNewDocument,
+            documentId: firstPendingGroup.documentId,
+            contextPath: firstPendingGroup.contextPath ?? undefined,
+            documentName: firstPendingGroup.documentName ?? undefined,
+            isNewDocument: firstPendingDraft.isNewDocument === true,
           },
-          firstPendingRow.draft.draftId,
+          firstPendingDraft.draftId,
         );
       }}
       onRequestAutoApply={(confirmedPush) =>

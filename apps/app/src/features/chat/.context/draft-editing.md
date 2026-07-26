@@ -205,15 +205,15 @@ writer actually reviewed.
 
 ## The pending signal and draft-only tab lifecycle
 
-**One pending signal.** `pendingReviewDraft(group, nowMs)` in
-`docked-drafts.ts` is THE per-document "has changes to review" derivation
-(newest active draft that carries review content). The dock's pending rows,
-the identity bar's `DraftReviewChip` (self-contained; hides itself during
-that document's inline review so it never coexists with
-`DraftReviewHeader`), and the Draft→Auto-apply switch count
-(`pendingDockedDraftCount`) all derive from it. Never grow a second
-is-pending derivation; surfaces that disagree about pending state was a
-shipped bug class (dock said none, mode-switch dialog said one).
+**One pending signal.** `pendingReviewDrafts(group)` in `docked-drafts.ts` is
+THE per-document "has changes to review" derivation. `pendingReviewDraft`
+selects its newest draft, while `activeDockedDraftGroups` projects all pending
+groups once for composer surfaces. The dock's pending rows, the identity bar's
+`DraftReviewChip` (self-contained; hides itself during that document's inline
+review so it never coexists with `DraftReviewHeader`), and the Draft→Auto-apply
+switch count all derive from this filter. Never grow a second is-pending
+derivation; surfaces that disagree about pending state was a shipped bug class
+(dock said none, mode-switch dialog said one).
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until accept. Its review tab

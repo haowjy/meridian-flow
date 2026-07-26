@@ -19,7 +19,7 @@ export type DraftReviewChipProps = {
 };
 
 export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
-  const { controller, groupForDocument, nowMs } = useDraftReview();
+  const { controller, groupForDocument } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
 
   // Don't show during inline review — the review header handles that state.
@@ -27,7 +27,7 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
 
   const group = groupForDocument(documentId);
   if (!group) return null;
-  const draft = pendingReviewDraft(group, nowMs);
+  const draft = pendingReviewDraft(group);
   if (!draft) return null;
 
   return (

@@ -25,12 +25,7 @@ import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { NewBadge } from "@/components/app/NewBadge";
 import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import {
-  type DockRow,
-  dockRows,
-  documentBasename,
-  hasDockChanges,
-} from "@/features/chat/docked-drafts";
+import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import type {
@@ -46,7 +41,7 @@ export function DockChangesView({ className }: { className?: string }) {
   const { openAiDraft } = useAiDraftLauncher();
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
-  const hasChanges = hasDockChanges(groups, nowMs);
+  const hasChanges = rows.length > 0;
 
   const inlineReview = controller.inlineReview;
   const preview = useDraftPreview(

@@ -32,8 +32,7 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: n
   const rows: DockRow[] = [];
   for (const group of groups) {
     const { visible } = reviewableDraftsFromGroup(group, nowMs);
-    const draft =
-      pendingReviewDraft(group, nowMs) ?? visible.find((draft) => draft.status !== "active");
+    const draft = pendingReviewDraft(group) ?? visible.find((draft) => draft.status !== "active");
     if (!draft) continue;
     rows.push({
       documentId: group.documentId,
@@ -88,7 +87,6 @@ export function documentBasename(contextPath: string | null | undefined): string
  */
 export function pendingReviewDraft(
   group: ThreadDraftGroup | null | undefined,
-  _nowMs: number,
 ): ThreadDraftListItem | null {
   return pendingReviewDrafts(group)[0] ?? null;
 }
@@ -121,11 +119,6 @@ export function activeDockedDraftGroups(
         : [];
     })
     .sort((left, right) => newestUpdatedAt(right) - newestUpdatedAt(left));
-}
-
-/** Content-aware count shared with the Draft → Auto-apply confirmation. */
-export function pendingDockedDraftCount(groups: ThreadDraftGroup[] | null | undefined): number {
-  return activeDockedDraftGroups(groups).length;
 }
 
 function newestUpdatedAt(group: ThreadDraftGroup): number {
