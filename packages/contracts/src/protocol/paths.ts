@@ -64,20 +64,20 @@ export function apiProjectWorkDocumentDraftPath(
   return `${apiProjectWorksPath(projectId)}/${workId}/documents/${documentId}/draft`;
 }
 
-export function apiProjectWorkDocumentDraftAcceptPath(
+export function apiProjectWorkDocumentDraftApplyPath(
   projectId: string,
   workId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/accept`;
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
 }
 
-export function apiProjectWorkDocumentDraftRejectPath(
+export function apiProjectWorkDocumentDraftDiscardPath(
   projectId: string,
   workId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/reject`;
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/discard`;
 }
 
 /** (user, project)-scoped UI preferences — user resolved from auth. */

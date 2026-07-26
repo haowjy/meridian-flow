@@ -238,15 +238,16 @@ export async function runCrossWorkProbe(
           projectId: PROJECT_ID,
           workId: WORK_B_ID,
           documentId: ALPHA_ID,
+          draftId: branchB.branchId,
         })
       : null;
   const bResult =
     reviewedPreview?.status === "active"
-      ? await collab.draftReview.accept({
+      ? await collab.draftReview.applyWorkDraft({
           projectId: PROJECT_ID,
           workId: WORK_B_ID,
           documentId: ALPHA_ID,
-          branchId: branchB.branchId,
+          draftId: reviewedPreview.draftId,
           userId: USER_ID as never,
         })
       : await realBranchPush.pushToLive({

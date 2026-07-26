@@ -188,7 +188,8 @@ so switching screens and coming back restores it.
 
 ### Combined region unit = card unit
 
-The dock renders whatever operation units the server hands it. Combining
-dependent regions into one unit happens upstream (server/model). The card never
-merges or splits operations — one server operation = one card = one selective-Discard
-granularity. Apply is document-level and is not a card action.
+The dock renders the Discard classes the server hands it. Combining dependent
+regions into one unit happens upstream. The card groups directly by the
+required `closureClassId` and never repairs or reconstructs class membership.
+One server Discard class = one card = one selective-Discard granularity. Apply
+is document-level and is not a card action.

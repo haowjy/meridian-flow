@@ -1,29 +1,25 @@
-/** POST /api/projects/:projectId/works/:workId/documents/:documentId/draft/accept: apply a reviewed AI draft. */
-import type { DraftAcceptRequest } from "@meridian/contracts/drafts";
+/** Apply the whole current Work draft. */
+import type { DraftApplyRequest } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
-  handleWorkDraftAcceptRequest,
+  handleApplyWorkDraftRequest,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const body = (await readBody<Partial<DraftAcceptRequest>>(event)) ?? {};
-  const branchId = typeof body.branchId === "string" ? body.branchId : undefined;
+  const body = (await readBody<Partial<DraftApplyRequest>>(event)) ?? {};
   const draftId = typeof body.draftId === "string" ? body.draftId : undefined;
-  if (!branchId && !draftId) {
-    throw createError({ statusCode: 400, message: "branchId or draftId is required" });
+  if (!draftId) {
+    throw createError({ statusCode: 400, message: "draftId is required" });
   }
-  if (branchId && draftId) {
-    throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
-  }
-  return handleWorkDraftAcceptRequest(selectDraftRouteServices(app), {
+  return handleApplyWorkDraftRequest(selectDraftRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
-    ...(branchId ? { branchId } : { draftId: draftId as string }),
+    draftId,
     userId: user.userId,
     signal: event.req.signal,
   });

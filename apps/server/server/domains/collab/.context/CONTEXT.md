@@ -106,10 +106,10 @@ generation where needed.
 
 The review list therefore emits one active item per document and folds all
 contributing journal rows into that item. `lastActorTurnId` is representative
-metadata, not review identity. The wire's `draftId` names a review card while
-`branchId` addresses the physical branch, but the current list aliases the card
-to its one Work branch and preview resolves by document + Work. Do not infer
-independently disposable same-document drafts from the two identifiers.
+metadata, not review identity. `draftId` is the only application and wire
+identity. `WorkDraftReviewService` resolves it to the physical Work branch and
+keeps that branch identity inside the domain; `reviewRoomName` remains an opaque
+transport address.
 
 Propagation is sync-only: no basis reconstruction, draft projection, accept token,
 reactivation fence, or scope routing. Cold attribution uses persisted branch

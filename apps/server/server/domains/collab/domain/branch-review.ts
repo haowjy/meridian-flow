@@ -7,12 +7,10 @@ import type {
 } from "./draft-review-types.js";
 
 export type ReviewableDraft = {
-  id: string;
+  draftId: string;
   documentId: DocumentId;
   workId: WorkId;
   status: "active";
-  branchId?: string;
-  generation?: number;
   lastActorTurnId: TurnId | null;
   updatedAt: Date;
   documentName: string | null;
@@ -25,6 +23,8 @@ export type ReviewableDraft = {
 export type ActiveDraft = ReviewableDraft;
 
 export type DraftReviewPreview = {
+  draftId: string;
+  reviewRoomName: string;
   live: string;
   markdown: string;
   isNewDocument?: boolean;
@@ -36,11 +36,11 @@ export type DraftReviewPreview = {
   notice?: { code: "branch_corrupt_reset"; message: string };
 };
 
-export type DraftAcceptResult =
-  | { status: "applied"; draftId: string; branchId?: string; appliedUpdateSeq: number }
-  | { status: "discarded"; draftId: string; branchId?: string }
+export type DraftApplyResult =
+  | { status: "applied"; draftId: string }
+  | { status: "discarded"; draftId: string }
   | { status: "not_found"; draftId: string };
 
-export type DraftRejectResult = { status: "discarded"; draftId: string; branchId?: string };
+export type DraftDiscardResult = { status: "discarded"; draftId: string };
 
 export { createBranchReviewOperations } from "./branch-review-operations.js";

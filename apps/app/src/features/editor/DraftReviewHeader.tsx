@@ -54,7 +54,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
-          onClick={() => controller.reject(documentId, draftId)}
+          onClick={() => controller.discard(documentId, draftId)}
           disabled={busy}
           className="text-button"
         >
@@ -62,11 +62,11 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         </button>
         <button
           type="button"
-          onClick={() => controller.accept(documentId, draftId)}
-          disabled={busy || !controller.canAcceptReviewedDraft}
+          onClick={() => controller.apply(documentId, draftId)}
+          disabled={busy || !controller.canApplyReviewedDraft}
           className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
         >
-          {controller.isAccepting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
           <Trans>Apply all</Trans>
         </button>
       </div>

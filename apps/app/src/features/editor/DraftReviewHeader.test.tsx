@@ -6,16 +6,16 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 let inlineReviewMessage: { code: "apply-failed"; tone: "error" } | null = null;
 const controller = {
   isDisposing: false,
-  isAccepting: false,
-  canAcceptReviewedDraft: false,
+  isApplying: false,
+  canApplyReviewedDraft: false,
   staleDraft: null,
   staleDraftMessage: null,
   get inlineReviewMessage() {
     return inlineReviewMessage;
   },
   exitInlineReview: vi.fn(),
-  accept: vi.fn(),
-  reject: vi.fn(),
+  apply: vi.fn(),
+  discard: vi.fn(),
 };
 
 vi.mock("@lingui/react/macro", () => ({
@@ -29,7 +29,7 @@ const { DraftReviewHeader } = await import("./DraftReviewHeader");
 
 describe("DraftReviewHeader", () => {
   beforeEach(() => {
-    controller.canAcceptReviewedDraft = false;
+    controller.canApplyReviewedDraft = false;
     inlineReviewMessage = null;
   });
 
@@ -40,7 +40,7 @@ describe("DraftReviewHeader", () => {
   });
 
   it("renders a whole-draft command failure", async () => {
-    controller.canAcceptReviewedDraft = true;
+    controller.canApplyReviewedDraft = true;
     inlineReviewMessage = { code: "apply-failed", tone: "error" };
     await withReactRoot(<DraftReviewHeader documentId="document-1" draftId="draft-1" />, () => {
       expect(document.body.textContent).toContain(

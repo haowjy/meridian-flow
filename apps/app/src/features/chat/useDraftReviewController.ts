@@ -7,7 +7,7 @@
  * review surfaces cannot drift. Apply commits the whole current branch.
  */
 
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
   useCallback,
@@ -20,11 +20,9 @@ import {
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
+import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
 import {
-  type DraftApplyOutcome,
-  type DraftApplyPreview,
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
@@ -56,18 +54,18 @@ export type InlineReviewRuntime = {
 export type DraftReviewController = {
   projectId: string;
   workId: string;
-  /** Focused thread owning this review surface; threads accept/reject cache invalidation. */
+  /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
   reviewRoomName: string | null;
   reviewRoomError: boolean;
-  isAccepting: boolean;
-  isRejecting: boolean;
+  isApplying: boolean;
+  isDiscarding: boolean;
   isPending: boolean;
   isInlineDiscardPending: boolean;
-  canAcceptReviewedDraft: boolean;
+  canApplyReviewedDraft: boolean;
   /**
-   * The global disposition lock: any accept/discard in flight in the session.
+   * The global disposition lock: any Apply/Discard in flight in the session.
    * Every mutating control disables on it so dispositions can't overlap.
    */
   isDisposing: boolean;
@@ -78,13 +76,7 @@ export type DraftReviewController = {
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
-  inlineReviewModelAvailable: (
-    identity: string,
-    documentId: string,
-    draftId: string,
-    operationIds: readonly string[],
-    revision: { draftRevisionToken: number; branchId?: string },
-  ) => void;
+  inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
   /**
    * Claim/release the single review-runtime slot. Registration is claim-based:
    * only the editor that holds the claim can release it. This matters because
@@ -102,8 +94,8 @@ export type DraftReviewController = {
    */
   focusReviewOperation: (operationId: string) => void;
   discardOperation: (operationId: string) => Promise<DraftCommandOutcome>;
-  accept: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
-  reject: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
+  apply: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
+  discard: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
   disposeDrafts: (
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
@@ -116,8 +108,8 @@ export function useDraftReviewController(
   threadId: string | null = null,
 ): DraftReviewController {
   const queryClient = useQueryClient();
-  const acceptMutation = useAcceptDraft();
-  const rejectMutation = useRejectDraft();
+  const applyMutation = useApplyDraft();
+  const discardMutation = useDiscardDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
   const reviewSession = useMemo(
@@ -139,7 +131,6 @@ export function useDraftReviewController(
   const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  const displayedPreviewRef = useRef<(DraftApplyPreview & { identity: string }) | null>(null);
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
     null,
   );
@@ -151,18 +142,14 @@ export function useDraftReviewController(
   const inlineDiscardError = state.inlineDiscardError;
   const dockDispositionError = state.dockDispositionError;
 
-  const activeDisposition = disposition.phase === "idle" ? null : disposition.target;
-  const isAccepting = activeDisposition?.kind === "apply-draft";
-  const isRejecting = activeDisposition?.kind === "discard-draft";
+  const activeDisposition = disposition.busy ? disposition.target : null;
+  const isApplying = activeDisposition?.kind === "apply-draft";
+  const isDiscarding = activeDisposition?.kind === "discard-draft";
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
-  const isPending = isAccepting || isRejecting;
-  const isDisposing = disposition.phase !== "idle";
-  const displayedPreview = displayedPreviewRef.current;
-  const canAcceptReviewedDraft =
-    inlineReview !== null &&
-    displayedPreview?.documentId === inlineReview.documentId &&
-    displayedPreview.draftId === inlineReview.draftId &&
-    displayedPreview.operationIds.length > 0;
+  const isPending = isApplying || isDiscarding;
+  const isDisposing = disposition.busy;
+  const canApplyReviewedDraft =
+    state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
   const pendingInlineDiscardIds = useCallback(
     (draftId: string | null | undefined): ReadonlySet<string> =>
       activeDisposition?.kind === "discard-operation" && activeDisposition.draftId === draftId
@@ -218,54 +205,18 @@ export function useDraftReviewController(
     [projectId, queryClient, workId],
   );
 
-  const applyDisposition = useCallback(
-    (documentId: string, draftId: string, outcome: DraftApplyOutcome) => {
-      if (outcome.refreshDraftId) {
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-        });
-        loadInlineReviewRoom(documentId, outcome.refreshDraftId);
-      }
-      dispatch({
-        type: "applySucceeded",
-        documentId,
-        draftId,
-        outcome,
-      });
-      if (outcome.materializedDocument) {
-        useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
-      }
-    },
-    [loadInlineReviewRoom, projectId, queryClient, workId],
-  );
-
   commandPortsRef.current = {
-    loadPreview: async ({ documentId, draftId }) => {
-      const preview = await latestPreviewRevisionTokens(
-        queryClient,
-        projectId,
-        workId,
-        documentId,
-        draftId,
-      );
-      return {
-        documentId,
-        draftId,
-        operationIds: preview.operationIds,
-        draftRevisionToken: preview.draftRevisionToken,
-        ...(preview.branchId ? { branchId: preview.branchId } : {}),
-      };
-    },
-    apply: ({ documentId }, request) =>
-      acceptMutation.mutateAsync({
+    apply: async ({ documentId, draftId }) => {
+      await applyMutation.mutateAsync({
         projectId,
         workId,
         threadId,
         documentId,
-        ...request,
-      }),
+        draftId,
+      });
+    },
     discard: async ({ documentId, draftId }, input) => {
-      await rejectMutation.mutateAsync({
+      await discardMutation.mutateAsync({
         projectId,
         workId,
         threadId,
@@ -283,21 +234,21 @@ export function useDraftReviewController(
     batchSettled: (error) => {
       dispatch({ type: "batchSettled", error });
     },
-    applySettled: ({ documentId, draftId }, outcome) => {
-      applyDisposition(documentId, draftId, outcome);
+    draftApplied: ({ documentId, draftId }) => {
+      dispatch({ type: "applySucceeded", documentId, draftId });
+      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
     },
     draftFailed: (selection, code) => {
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      dispatch({ type: "rejectSucceeded", draftId });
+      dispatch({ type: "discardSucceeded", draftId });
       useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
     },
   };
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
-      displayedPreviewRef.current = null;
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },
@@ -330,21 +281,7 @@ export function useDraftReviewController(
   }, []);
 
   const inlineReviewModelAvailable = useCallback(
-    (
-      identity: string,
-      documentId: string,
-      draftId: string,
-      operationIds: readonly string[],
-      revision: { draftRevisionToken: number; branchId?: string },
-    ) => {
-      displayedPreviewRef.current = {
-        identity,
-        documentId,
-        draftId,
-        operationIds: [...operationIds],
-        draftRevisionToken: revision.draftRevisionToken,
-        ...(revision.branchId ? { branchId: revision.branchId } : {}),
-      };
+    (identity: string, documentId: string, draftId: string) => {
       dispatch({ type: "inlineModelAvailable", identity, documentId, draftId });
     },
     [],
@@ -390,23 +327,13 @@ export function useDraftReviewController(
     [reviewSession],
   );
 
-  const accept = useCallback(
-    async (documentId: string, draftId: string): Promise<DraftCommandOutcome> => {
-      const displayedPreview = displayedPreviewRef.current;
-      if (
-        !displayedPreview ||
-        displayedPreview.documentId !== documentId ||
-        displayedPreview.draftId !== draftId ||
-        displayedPreview.operationIds.length === 0
-      ) {
-        return { kind: "failed", code: "apply-failed" };
-      }
-      return reviewSession.applyReviewedDraft({ documentId, draftId }, displayedPreview);
-    },
+  const apply = useCallback(
+    (documentId: string, draftId: string): Promise<DraftCommandOutcome> =>
+      reviewSession.applyReviewedDraft({ documentId, draftId }),
     [reviewSession],
   );
 
-  const reject = useCallback(
+  const discard = useCallback(
     (documentId: string, draftId: string): Promise<DraftCommandOutcome> =>
       reviewSession.discardDraft({ documentId, draftId }),
     [reviewSession],
@@ -428,11 +355,11 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      isAccepting,
-      isRejecting,
+      isApplying,
+      isDiscarding,
       isPending,
       isInlineDiscardPending,
-      canAcceptReviewedDraft,
+      canApplyReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
       inlineReviewMessage,
@@ -446,8 +373,8 @@ export function useDraftReviewController(
       releaseInlineReviewRuntime,
       focusReviewOperation,
       discardOperation,
-      accept,
-      reject,
+      apply,
+      discard,
       disposeDrafts,
     }),
     [
@@ -457,11 +384,11 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      isAccepting,
-      isRejecting,
+      isApplying,
+      isDiscarding,
       isPending,
       isInlineDiscardPending,
-      canAcceptReviewedDraft,
+      canApplyReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
       inlineReviewMessage,
@@ -475,38 +402,11 @@ export function useDraftReviewController(
       releaseInlineReviewRuntime,
       focusReviewOperation,
       discardOperation,
-      accept,
-      reject,
+      apply,
+      discard,
       disposeDrafts,
     ],
   );
-}
-
-type DraftPreviewRevisionTokens = {
-  draftRevisionToken: number;
-  liveRevisionToken: number | null;
-  operationIds: string[];
-  branchId?: string;
-};
-
-async function latestPreviewRevisionTokens(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-  documentId: string,
-  draftId: string,
-): Promise<DraftPreviewRevisionTokens> {
-  const queryKey = projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId);
-  const preview = await getDraftPreview(projectId, workId, documentId, draftId);
-  queryClient.setQueryData(queryKey, preview);
-  return preview.status === "active"
-    ? {
-        draftRevisionToken: preview.draftRevisionToken,
-        liveRevisionToken: preview.liveRevisionToken,
-        operationIds: preview.operations.map((operation) => operation.operationId),
-        ...(preview.branchId ? { branchId: preview.branchId } : {}),
-      }
-    : { draftRevisionToken: -1, liveRevisionToken: null, operationIds: [] };
 }
 
 const EMPTY_OPERATION_IDS = new Set<string>();

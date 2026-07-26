@@ -89,7 +89,7 @@ export function useAiDraftLauncher() {
 
       // Open the tab from draft metadata regardless of screen, so the document
       // is waiting whenever the writer reaches the Editor. For draft-only NEW
-      // documents there is no tree entry until accept, so the controller's
+      // documents there is no tree entry until Apply, so the controller's
       // route→tab auto-open has nothing to match (#153); for existing docs
       // this is the same tab the auto-open would create, and the store merges
       // by documentId so nothing duplicates.

@@ -86,7 +86,7 @@ finds an active draft.
 | `DockHeader.tsx` | Single `h-10` header: left slot (chat title), contained segmented switch, close |
 | `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
 | `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
-| `ReviewOperationCard.tsx` | Per-operation card with selective Discard; body focuses the reviewed span |
+| `ReviewOperationCard.tsx` | Per-discard-class card; body focuses the reviewed span |
 | `operation-change-text.ts` | Pure card-body text extraction from operations/hunks |
 
 ## Downlinks

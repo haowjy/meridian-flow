@@ -18,8 +18,8 @@ import type { Result } from "../../shared/result.js";
 import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
-  DraftAcceptResult,
-  DraftRejectResult,
+  DraftApplyResult,
+  DraftDiscardResult,
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
@@ -257,41 +257,32 @@ export type DocumentCheckpoints = {
 };
 
 export type DraftReviewApi = {
-  list(input: {
-    projectId?: ProjectId;
-    workId?: WorkId;
-    threadId?: ThreadId;
-  }): Promise<ReviewableDraft[]>;
+  list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
   preview(input: {
     projectId?: ProjectId;
-    workId?: WorkId;
-    threadId?: ThreadId;
+    workId: WorkId;
     documentId: DocumentId;
-    draftId?: string;
+    draftId: string;
   }): Promise<
-    | ({ status: "active"; draftId?: string; branchId?: string } & DraftReviewPreview)
-    | { status: "gone"; live: string }
+    ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
   >;
-  accept(input: {
+  applyWorkDraft(input: {
     projectId?: ProjectId;
-    workId?: WorkId;
-    threadId?: ThreadId;
+    workId: WorkId;
     documentId: DocumentId;
-    draftId?: string;
-    branchId?: string;
+    draftId: string;
     userId: UserId;
     signal?: AbortSignal;
-  }): Promise<DraftAcceptResult>;
-  reject(input: {
+  }): Promise<DraftApplyResult>;
+  discardWorkDraft(input: {
     projectId?: ProjectId;
-    workId?: WorkId;
+    workId: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
-    draftId?: string;
-    branchId?: string;
+    draftId: string;
     userId?: UserId;
     operationIds?: string[];
-  }): Promise<DraftRejectResult>;
+  }): Promise<DraftDiscardResult>;
 };
 
 export type DraftSessionStats = {

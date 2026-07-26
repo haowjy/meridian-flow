@@ -29,8 +29,7 @@ export interface ThreadDraftListResponse {
 
 type ActiveDraftPreviewBase = {
   status: "active";
-  branchId?: string;
-  draftId?: string;
+  draftId: string;
   /** Hocuspocus room name for inline branch review; already generation-fenced. */
   reviewRoomName?: string;
   live: string;
@@ -115,13 +114,8 @@ export type ReviewBlockHunk = ReviewHunkBase & {
 
 export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
-export type DraftAcceptResponse = { status: "applied"; draftId?: string; branchId?: string };
+export type DraftApplyResponse = { status: "applied"; draftId: string };
+export type DraftApplyRequest = { draftId: string };
 
-export type DraftAcceptRequest =
-  | { draftId: string; branchId?: never }
-  | { branchId: string; draftId?: never };
-
-export type DraftRejectResponse = { status: "discarded"; draftId?: string; branchId?: string };
-export type DraftRejectRequest =
-  | { draftId: string; branchId?: never; operationIds?: string[] }
-  | { branchId: string; draftId?: never; operationIds?: string[] };
+export type DraftDiscardResponse = { status: "discarded"; draftId: string };
+export type DraftDiscardRequest = { draftId: string; operationIds?: string[] };
