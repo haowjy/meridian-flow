@@ -2,10 +2,9 @@
  * useDraftReviewController — shared state machine for reviewing AI document drafts.
  *
  * The dock Changes cards and editor header both address the same inline review
- * session; this controller keeps whole-draft apply/discard, per-card
- * Apply/Discard, review closure, and editor focus state on one
- * path so review surfaces cannot drift. Every Apply commits the whole current
- * branch; per-card Discard remains operation-scoped.
+ * session; this controller keeps whole-draft apply/discard, selective
+ * per-card Discard, review closure, and editor focus state on one path so
+ * review surfaces cannot drift. Apply commits the whole current branch.
  */
 
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -23,7 +22,6 @@ import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
 import { useContextTabsStore } from "@/client/stores";
-import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   type DraftApplyOutcome,
   type DraftApplyPreview,
@@ -67,8 +65,6 @@ export type DraftReviewController = {
   isRejecting: boolean;
   isPending: boolean;
   isInlineDiscardPending: boolean;
-  /** True while a per-card Apply is in flight (its own mutation, not Apply all). */
-  isOperationAccepting: boolean;
   canAcceptReviewedDraft: boolean;
   /**
    * The global disposition lock: any accept/discard in flight in the session.
@@ -76,8 +72,6 @@ export type DraftReviewController = {
    */
   isDisposing: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
-  /** The operation whose per-card Apply is in flight, or null. */
-  acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   dockDispositionError: DraftBatchErrorCode | null;
@@ -107,7 +101,6 @@ export type DraftReviewController = {
    * can drive the manuscript without holding the editor handle itself.
    */
   focusReviewOperation: (operationId: string) => void;
-  acceptOperation: (operationId: string, model: InlineReviewModel) => Promise<DraftCommandOutcome>;
   discardOperation: (operationId: string) => Promise<DraftCommandOutcome>;
   accept: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
   reject: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
@@ -154,10 +147,6 @@ export function useDraftReviewController(
   stateRef.current = state;
 
   const inlineReview = inlineReviewFromState(state);
-  const acceptingOperationId =
-    disposition.phase !== "idle" && disposition.target.kind === "apply-operation"
-      ? disposition.target.operationId
-      : null;
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
   const dockDispositionError = state.dockDispositionError;
@@ -165,7 +154,6 @@ export function useDraftReviewController(
   const activeDisposition = disposition.phase === "idle" ? null : disposition.target;
   const isAccepting = activeDisposition?.kind === "apply-draft";
   const isRejecting = activeDisposition?.kind === "discard-draft";
-  const isOperationAccepting = activeDisposition?.kind === "apply-operation";
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isAccepting || isRejecting;
   const isDisposing = disposition.phase !== "idle";
@@ -244,12 +232,6 @@ export function useDraftReviewController(
         draftId,
         outcome,
       });
-      if (outcome.message) {
-        dispatch({
-          type: "operationAcceptSucceeded",
-          message: outcome.message,
-        });
-      }
       if (outcome.materializedDocument) {
         useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
       }
@@ -274,7 +256,7 @@ export function useDraftReviewController(
         ...(preview.branchId ? { branchId: preview.branchId } : {}),
       };
     },
-    apply: ({ documentId }, _scope, request) =>
+    apply: ({ documentId }, request) =>
       acceptMutation.mutateAsync({
         projectId,
         workId,
@@ -291,9 +273,6 @@ export function useDraftReviewController(
         draftId,
         ...input,
       });
-    },
-    operationApplyStarted: (operationId) => {
-      dispatch({ type: "operationAcceptStarted", operationId });
     },
     operationDiscardStarted: () => {
       dispatch({ type: "discardStarted" });
@@ -391,50 +370,11 @@ export function useDraftReviewController(
     editor.commands.scrollInlineReviewOperationIntoView(operationId);
   }, []);
 
-  const acceptOperation = useCallback(
-    async (operationId: string, model: InlineReviewModel): Promise<DraftCommandOutcome> => {
-      const current = stateRef.current;
-      const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline) {
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: "open-review-first", tone: "error" },
-        });
-        return { kind: "failed", code: "open-review-first" };
-      }
-      const operation = model.operations.find((candidate) => candidate.operationId === operationId);
-      if (!operation) {
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftPreview(
-            projectId,
-            workId,
-            inline.documentId,
-            inline.draftId,
-          ),
-        });
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: "change-moved", tone: "error" },
-        });
-        return { kind: "failed", code: "change-moved" };
-      }
-      const outcome = await reviewSession.applyOperation(inline, operationId);
-      if (outcome.kind === "failed") {
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: outcome.code, tone: "error" },
-        });
-      }
-      return outcome;
-    },
-    [projectId, queryClient, reviewSession, workId],
-  );
-
   const discardOperation = useCallback(
     async (operationId: string): Promise<DraftCommandOutcome> => {
       // The review selection comes from state, not from the editor runtime:
       // the disposition is server-backed, so a Changes card must work on
-      // screens where the manuscript is not mounted (matching `acceptOperation`).
+      // screens where the manuscript is not mounted.
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
       if (!inline) return { kind: "failed", code: "discard-failed" };
@@ -492,11 +432,9 @@ export function useDraftReviewController(
       isRejecting,
       isPending,
       isInlineDiscardPending,
-      isOperationAccepting,
       canAcceptReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
-      acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
       dockDispositionError,
@@ -507,7 +445,6 @@ export function useDraftReviewController(
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       focusReviewOperation,
-      acceptOperation,
       discardOperation,
       accept,
       reject,
@@ -524,11 +461,9 @@ export function useDraftReviewController(
       isRejecting,
       isPending,
       isInlineDiscardPending,
-      isOperationAccepting,
       canAcceptReviewedDraft,
       isDisposing,
       pendingInlineDiscardIds,
-      acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
       dockDispositionError,
@@ -539,7 +474,6 @@ export function useDraftReviewController(
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       focusReviewOperation,
-      acceptOperation,
       discardOperation,
       accept,
       reject,

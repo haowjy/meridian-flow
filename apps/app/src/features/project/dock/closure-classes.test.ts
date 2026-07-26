@@ -89,7 +89,7 @@ describe("partitionClosureClasses", () => {
     ];
     const [proposal] = partitionClosureClasses(ops, []);
     expect(proposal.includesWriterEdits).toBe(true);
-    // The verbs run against an agent representative, not the writer row.
+    // Selective Discard runs against an agent representative, not the writer row.
     expect(proposal.primaryOperation.kind).toBe("agent");
   });
 

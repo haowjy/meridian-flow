@@ -8,7 +8,7 @@
  * deltas; expanding lists each document in the same bordered card.
  *
  * Turn lineage owns Undo authority. Authorized trail detail owns durable row
- * evidence, navigation, and Restore state.
+ * evidence and navigation.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";

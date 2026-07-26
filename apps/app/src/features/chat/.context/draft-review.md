@@ -5,9 +5,9 @@ and draft-only-tab contracts.
 
 ## Architecture
 
-Inline review is the only manuscript preview surface. Every Apply entry point
-runs the same whole-current-branch `acceptDraft` path; Discard may still target
-one operation or the whole branch.
+Inline review is the only manuscript preview surface. Apply is a document-level
+command that runs the whole-current-branch `acceptDraft` path; Discard may still
+target one operation or the whole branch.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, and inline
 messages. The synchronous disposition lock is the
@@ -16,12 +16,11 @@ local `close` calls; `exitReview` is the single clear-all path.
 `DraftReviewProvider` keys that owner by Project + Work so review and dock-error
 state cannot cross a Work switch.
 
-Card Apply is only a UI entry point into whole-branch acceptance; the
-operation id is not an Apply boundary. Every disposition is serialized by the
-session's synchronous lock (`controller.isDisposing`): while any Apply or
-per-card/whole-branch Discard is in flight, all mutating controls disable and a
-second card click is ignored rather than clearing the in-flight card's pending
-state. Per-card Discard routes to the server discard mutation with
+Every disposition is serialized by the session's synchronous lock
+(`controller.isDisposing`): while document-level Apply or per-card/whole-branch
+Discard is in flight, all mutating controls disable and a second command is
+ignored rather than clearing the in-flight state. Per-card Discard routes to
+the server discard mutation with
 `operationIds`; the server performs reversal-peer sync. The mutation awaits the
 draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
@@ -57,11 +56,11 @@ delegating to the controller. The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
 branch, so review has one active row per document. The dock's `DockChangesView`
 expands the reviewed document to operation cards read from the live preview.
-Each card carries hover-revealed Apply/Discard verbs — the only mutating targets
-on the card — driving `controller.acceptOperation` / `controller.discardOperation`.
-The former accepts the whole current branch; the latter discards the selected
-operation. Both take their selection from review state, so a card disposes
-correctly with no manuscript mounted. Only the card-body click needs the editor: it calls
+Each card carries one hover-revealed Discard verb, the only mutating target on
+the card, driving `controller.discardOperation`. Whole-branch Apply remains in
+the review header so the UI cannot imply operation-scoped acceptance. Discard
+takes its selection from review state, so a card disposes correctly with no
+manuscript mounted. Only the card-body click needs the editor: it calls
 `controller.focusReviewOperation(operationId)`, which reads the review editor off
 the inline-review runtime to highlight + scroll the manuscript span, and is
 inert on screens with no editor.

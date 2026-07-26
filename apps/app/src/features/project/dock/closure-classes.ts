@@ -2,8 +2,8 @@
  * closure-classes — partition review operations into proposal cards (spec §5.3).
  *
  * Closure=card (ratified 2026-07-05): a closure class — causal drag ∪
- * hunk-sharing as one fixpoint — renders as ONE proposal card with one Accept
- * and one Discard. The writer never sees the internal write structure; there is
+ * hunk-sharing as one fixpoint — renders as ONE proposal card with one selective
+ * Discard. The writer never sees the internal write structure; there is
  * no dependency prompt anywhere. This module turns the flat operation list the
  * preview hands us into the class partition the card list renders.
  *
@@ -26,16 +26,15 @@ import {
 
 /**
  * One proposal card = one closure class. The card reads the whole class through
- * this view-model; its verbs act on `primaryOperation`, whose accept/reject
- * closure spans every operation here, so one Apply applies the class and one
- * Discard retires it.
+ * this view-model; its Discard acts on `primaryOperation`, whose reject closure
+ * spans every operation here.
  */
 export interface ReviewProposal {
   /** Stable identity for the card key + focus echo. */
   classId: string;
   /** Every operation folded into this card, in preview order. */
   operations: ReviewOperation[];
-  /** The op the card's verbs run against — its closure spans the class. */
+  /** The op the card's Discard runs against — its closure spans the class. */
   primaryOperation: ReviewOperation;
   /** Summary verb slot: addition / removal / rewrite across the class. */
   classification: ReviewOperation["classification"];

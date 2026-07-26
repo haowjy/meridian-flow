@@ -233,7 +233,6 @@ msgid "Appearance and behavior settings."
 msgstr "Appearance and behavior settings."
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Apply"
 msgstr "Apply"
 
@@ -340,10 +339,6 @@ msgstr "Caption"
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
 msgstr "Capture experiments, methods, and observations in a structured log."
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Change applied."
-msgstr "Change applied."
 
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
@@ -478,10 +473,6 @@ msgstr "Could not load files."
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr "Couldn't apply everything. Nothing changed, so you're still in Draft."
 
-#: src/features/editor/PeerMarkPopover.tsx
-#~ msgid "Couldn't apply that recovery action. Try again."
-#~ msgstr "Couldn't apply that recovery action. Try again."
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -573,10 +564,6 @@ msgstr "Couldn't save this document's home. Try again."
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't write"
 msgstr "Couldn't write"
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-msgid "Create"
-msgstr "Create"
 
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
@@ -1305,10 +1292,6 @@ msgstr "Open result {name}"
 msgid "Open results"
 msgstr "Open results"
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Open the latest review before applying a change."
-msgstr "Open the latest review before applying a change."
-
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
@@ -1492,14 +1475,6 @@ msgstr "Resize sidebar"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "Response complete"
-
-#: src/features/editor/PeerMarkPopover.tsx
-#~ msgid "Restore"
-#~ msgstr "Restore"
-
-#: src/features/editor/PeerMarkPopover.tsx
-#~ msgid "Restored"
-#~ msgstr "Restored"
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1754,10 +1729,6 @@ msgstr "That change couldn't be made in {name}."
 msgid "That change couldn't be made."
 msgstr "That change couldn't be made."
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "That change moved. Refreshed to the latest changes."
-msgstr "That change moved. Refreshed to the latest changes."
-
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
 msgstr "That document couldn't be found."
@@ -1785,14 +1756,6 @@ msgstr "The {skillName} skill isn't available in this chat."
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "The changes moved on. Refreshed the list."
-msgstr "The changes moved on. Refreshed the list."
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "The changes moved on. Review the related changes and confirm again."
-msgstr "The changes moved on. Review the related changes and confirm again."
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1830,10 +1793,6 @@ msgstr "Thinking part {0}"
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
 msgstr "This browser cannot display the PDF inline."
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
-msgstr "This change builds on earlier AI changes. Apply those first, or use Apply all."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."

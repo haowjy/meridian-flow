@@ -4,14 +4,14 @@
  * Closure=card (spec §5.3): each card renders ONE closure class — a quiet verb
  * (Rewrote / Added / Removed, or `Merged` for a CRDT merge artifact, or
  * `New document` for a draft-created doc) over the intended change, plus a
- * single Discard and a single Apply/Create. Contributing turns are attributed
+ * single Discard. Contributing turns are attributed
  * on the card and writer edits that joined the class show an informational
- * "Includes your edits" badge. There is NO dependency prompt anywhere: applying
- * or discarding acts on the whole class at once — the writer never learns the
- * internal write structure.
+ * "Includes your edits" badge. There is NO dependency prompt anywhere:
+ * discarding acts on the whole class at once — the writer never learns the
+ * internal write structure. Applying is a document-level header action.
  *
- * The card body is focus/scroll only; the verbs are the sole mutating targets
- * and fence their own propagation.
+ * The card body is focus/scroll only; Discard is its sole mutating target and
+ * fences its own propagation.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -19,14 +19,12 @@ import { GitMerge } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import { cn } from "@/lib/utils";
 import type { ReviewProposal } from "./closure-classes";
 
 export function ReviewOperationCard({
   proposal,
-  model,
   controller,
   draftId,
   isNewDocument,
@@ -34,7 +32,6 @@ export function ReviewOperationCard({
   onFocus,
 }: {
   proposal: ReviewProposal;
-  model: InlineReviewModel;
   controller: DraftReviewController;
   draftId: string;
   isNewDocument: boolean;
@@ -81,13 +78,7 @@ export function ReviewOperationCard({
             </Badge>
           ) : null}
         </span>
-        <CardVerbs
-          proposal={proposal}
-          model={model}
-          controller={controller}
-          draftId={draftId}
-          isNewDocument={isNewDocument}
-        />
+        <CardVerbs proposal={proposal} controller={controller} draftId={draftId} />
       </div>
       <ProposalChange proposal={proposal} isNewDocument={isNewDocument} />
       <ProposalAttribution proposal={proposal} />
@@ -96,36 +87,28 @@ export function ReviewOperationCard({
 }
 
 /**
- * The proposal's Discard + Apply/Create cluster, in the one order every draft
- * action row uses: Discard immediately left of the Apply verb. Reveals on card
- * hover/focus (matching the doc row's hover-Review verb), but stays visible
- * while this card is in-flight so its state can't hide. Verbs disable while ANY
- * review disposition is in flight (`controller.isDisposing`) so the writer can't
- * stack overlapping accepts/discards. One Apply (or Create for a new document)
- * and one Discard act on the whole closure class — no second-step confirm exists.
+ * The proposal's selective Discard action. It reveals on card hover/focus
+ * (matching the doc row's hover-Review verb), but stays visible while this card
+ * is in-flight so its state can't hide. It disables while ANY review
+ * disposition is in flight (`controller.isDisposing`) so the writer can't stack
+ * overlapping dispositions. Apply is intentionally document-scoped and lives
+ * only in the review header.
  */
 function CardVerbs({
   proposal,
-  model,
   controller,
   draftId,
-  isNewDocument,
 }: {
   proposal: ReviewProposal;
-  model: InlineReviewModel;
   controller: DraftReviewController;
   draftId: string;
-  isNewDocument: boolean;
 }) {
-  // The verbs run against the class's representative operation; its accept /
-  // reject closure spans every operation in the class, so one Apply applies the
-  // class and one Discard retires it.
+  // Discard runs against the class's representative operation; its reject
+  // closure spans every operation in the class.
   const operationId = proposal.primaryOperation.operationId;
   // This card is the one running a disposition — drives the visible pending
   // treatment (stays revealed); the disable itself is global (`isDisposing`).
-  const activeOnThisCard =
-    controller.acceptingOperationId === operationId ||
-    controller.pendingInlineDiscardIds(draftId).has(operationId);
+  const activeOnThisCard = controller.pendingInlineDiscardIds(draftId).has(operationId);
   const disabled = controller.isDisposing;
   return (
     <div
@@ -143,21 +126,11 @@ function CardVerbs({
       >
         <Trans>Discard</Trans>
       </VerbButton>
-      <VerbButton
-        tone="primary"
-        disabled={disabled}
-        onClick={() => controller.acceptOperation(operationId, model)}
-      >
-        {/* `Create` (not `Apply`) is the one place the verb diverges: applying
-            a document that does not yet exist is honestly a creation. */}
-        {isNewDocument ? <Trans>Create</Trans> : <Trans>Apply</Trans>}
-      </VerbButton>
     </div>
   );
 }
 
 const VERB_TONE = {
-  primary: "text-primary",
   muted: "text-muted-foreground hover:text-foreground",
 } as const;
 

@@ -5,7 +5,7 @@ export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
   | { kind: "discard-draft"; documentId: string; draftId: string }
   | {
-      kind: "apply-operation" | "discard-operation";
+      kind: "discard-operation";
       documentId: string;
       draftId: string;
       operationId: string;
@@ -77,7 +77,6 @@ export type DraftCommandOutcome =
   | { kind: "discarded" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
-export type DraftApplyScope = "draft" | "operation";
 export type DraftBatchErrorCode = "apply-failed" | "discard-offline";
 
 export type DraftApplyPreview = {
@@ -104,14 +103,12 @@ export type DraftReviewCommandPorts = {
   loadPreview: (selection: DraftReviewSelection) => Promise<DraftApplyPreview>;
   apply: (
     selection: DraftReviewSelection,
-    scope: DraftApplyScope,
     request: DraftApplyRequest,
   ) => Promise<DraftAcceptResponse>;
   discard: (
     selection: DraftReviewSelection,
     input: { branchId?: string; operationIds?: string[] },
   ) => Promise<void>;
-  operationApplyStarted: (operationId: string) => void;
   operationDiscardStarted: () => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
@@ -141,21 +138,6 @@ export class DraftReviewSession {
       this.applyDraft(selection, reservation, ports, () =>
         acquireDraftApplyRequest({ scope: "draft", preview }),
       ),
-    );
-  }
-
-  applyOperation(
-    selection: DraftReviewSelection,
-    operationId: string,
-  ): Promise<DraftCommandOutcome> {
-    return this.withReservation(
-      { kind: "apply-operation", ...selection, operationId },
-      (reservation, ports) => {
-        ports.operationApplyStarted(operationId);
-        return this.applyRequest(selection, "operation", reservation, ports, {
-          draftId: selection.draftId,
-        });
-      },
     );
   }
 
@@ -221,12 +203,11 @@ export class DraftReviewSession {
     acquireRequest: () => DraftApplyRequest | Promise<DraftApplyRequest>,
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
-    return this.applyRequest(selection, "draft", reservation, ports, acquireRequest());
+    return this.applyRequest(selection, reservation, ports, acquireRequest());
   }
 
   private async applyRequest(
     selection: DraftReviewSelection,
-    scope: DraftApplyScope,
     reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
     requestPromise: DraftApplyRequest | Promise<DraftApplyRequest>,
@@ -234,13 +215,13 @@ export class DraftReviewSession {
     try {
       const request = await requestPromise;
       this.disposition.advance(reservation, "mutating");
-      const response = await ports.apply(selection, scope, request);
+      const response = await ports.apply(selection, request);
       this.disposition.advance(reservation, "settling");
-      const outcome = draftApplyOutcome(scope, response);
+      const outcome = draftApplyOutcome(response);
       ports.applySettled(selection, outcome);
       return outcome.command;
     } catch {
-      if (scope === "draft") ports.draftFailed(selection, "apply-failed");
+      ports.draftFailed(selection, "apply-failed");
       return { kind: "failed", code: "apply-failed" };
     }
   }
@@ -324,11 +305,7 @@ export type InlineDraftReview = DraftReviewSelection;
  * single source of message identity for both accept messages and discard errors.
  */
 export type InlineReviewMessageCode =
-  | "open-review-first"
-  | "change-moved"
   | "apply-failed"
-  | "apply-dependencies-first"
-  | "changes-moved-confirm-again"
   | "discard-stale"
   | "discard-finalized"
   | "discard-offline"
@@ -340,10 +317,7 @@ export type InlineReviewMessage = {
 };
 
 /** Interpret a server Apply response exactly once for every Apply surface. */
-export function draftApplyOutcome(
-  _scope: DraftApplyScope,
-  _response: DraftAcceptResponse,
-): DraftApplyOutcome {
+export function draftApplyOutcome(_response: DraftAcceptResponse): DraftApplyOutcome {
   return {
     command: { kind: "applied" },
     message: null,
@@ -374,9 +348,6 @@ export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "applySucceeded"; documentId: string; draftId: string; outcome: DraftApplyOutcome }
-  | { type: "operationAcceptStarted"; operationId: string }
-  | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
-  | { type: "operationAcceptFailed"; message: InlineReviewMessage }
   | { type: "discardStarted" }
   | { type: "discardFailed"; code: InlineReviewMessageCode }
   | { type: "batchStarted" }
@@ -413,15 +384,6 @@ export function draftReviewReducer(
       return stateAfterInlineModelAvailable(state, action);
     case "applySucceeded":
       return stateAfterAcceptResult(state, action);
-    case "operationAcceptStarted":
-      return {
-        ...state,
-        inlineReviewMessage: null,
-      };
-    case "operationAcceptSucceeded":
-      return { ...state, inlineReviewMessage: action.message };
-    case "operationAcceptFailed":
-      return { ...state, inlineReviewMessage: action.message };
     case "discardStarted":
       return {
         ...state,

@@ -59,35 +59,6 @@ vi.mock("@/client/stores", () => ({
 const { useDraftReviewController } = await import("./useDraftReviewController");
 
 describe("useDraftReviewController", () => {
-  it("materializes a draft-only tab when per-card Apply commits the branch", async () => {
-    let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    resolveDraftOnlyTabMock.mockClear();
-    acceptMutateMock.mockClear();
-    rejectMutateMock.mockClear();
-
-    function Probe() {
-      const value = useDraftReviewController("project-1", "work-1", "thread-1");
-      useEffect(() => {
-        controller = value;
-      }, [value]);
-      return null;
-    }
-
-    await withReactRoot(<Probe />, async () => {
-      await act(async () => {
-        controller?.enterInlineReview("document-1", "draft-1");
-      });
-      await act(async () => {
-        await controller?.acceptOperation("operation-1", {
-          operations: [{ operationId: "operation-1" }],
-        } as never);
-      });
-
-      expect(acceptMutateMock).toHaveBeenCalledOnce();
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith("project-1", "document-1", "committed");
-    });
-  });
-
   it("submits branch identity without preview operation evidence", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     acceptMutateMock.mockClear();
@@ -355,16 +326,12 @@ describe("useDraftReviewController", () => {
       });
       const activeController = controller;
       if (!activeController) throw new Error("controller did not mount");
-      let operationApply!: ReturnType<typeof activeController.acceptOperation>;
+      let wholeApply!: ReturnType<typeof activeController.accept>;
       await act(async () => {
-        operationApply = activeController.acceptOperation("operation-1", {
-          operations: [{ operationId: "operation-1" }],
-        } as never);
+        wholeApply = activeController.accept("document-1", "draft-1");
         await Promise.resolve();
-        await activeController.acceptOperation("operation-2", {
-          operations: [{ operationId: "operation-2" }],
-        } as never);
         await activeController.accept("document-1", "draft-1");
+        await activeController.discardOperation("operation-2");
         await activeController.reject("document-2", "draft-2");
       });
 
@@ -373,7 +340,7 @@ describe("useDraftReviewController", () => {
 
       await act(async () => {
         resolveAccept({ status: "applied", draftId: "draft-1" });
-        await operationApply;
+        await wholeApply;
       });
       acceptPromise = null;
     });

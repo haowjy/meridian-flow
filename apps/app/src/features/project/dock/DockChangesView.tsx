@@ -10,8 +10,8 @@
  * The document CURRENTLY under inline review expands to proposal cards read
  * from the live preview (`useDraftPreview`): the flat operation list is
  * partitioned into closure classes (`partitionClosureClasses`), one card per
- * class (spec §5.3). This module orchestrates: it fetches the preview, builds
- * the inline-review model once, partitions the classes, renders the card list,
+ * class (spec §5.3). This module orchestrates: it fetches the preview,
+ * partitions the classes, renders the card list,
  * and renders the single session message line. The card + verb rendering lives
  * in `ReviewOperationCard`; the closure partition + card-body text extraction
  * live in `closure-classes` / `operation-change-text`.
@@ -23,7 +23,6 @@ import { FileCheck2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { NewBadge } from "@/components/app/NewBadge";
-import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
@@ -184,9 +183,8 @@ function ChangesDocumentGroup({
  * click echo, keyed by class: clicking a card body scrolls the manuscript and
  * rings the card; the editor is the source of truth for the span.
  *
- * The inline-review model (anchors decoded) is built once here and threaded to
- * every card's Apply, which needs the representative operation's accept-closure
- * ids and the live revision token the accept confirms against.
+ * Each card can selectively discard its represented closure. Applying remains
+ * a document-level command in the review header.
  */
 function ReviewOperationCards({
   preview,
@@ -200,16 +198,6 @@ function ReviewOperationCards({
   isNewDocument: boolean;
 }) {
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
-  const model = useMemo(
-    () =>
-      buildInlineReviewModel({
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-        operations: preview.operations,
-        hunks: preview.hunks,
-      }),
-    [preview],
-  );
   const proposals = useMemo(
     () => partitionClosureClasses(preview.operations, preview.hunks),
     [preview],
@@ -223,7 +211,6 @@ function ReviewOperationCards({
         <ReviewOperationCard
           key={proposal.classId}
           proposal={proposal}
-          model={model}
           controller={controller}
           draftId={draftId}
           isNewDocument={isNewDocument}
@@ -276,20 +263,8 @@ function currentReviewMessage(
 /** Localized copy for each controller message code. */
 function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
   switch (code) {
-    case "open-review-first":
-      return <Trans>Open the latest review before applying a change.</Trans>;
-    case "change-moved":
-      return <Trans>That change moved. Refreshed to the latest changes.</Trans>;
     case "apply-failed":
       return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
-    case "apply-dependencies-first":
-      return (
-        <Trans>
-          This change builds on earlier AI changes. Apply those first, or use Apply all.
-        </Trans>
-      );
-    case "changes-moved-confirm-again":
-      return <Trans>The changes moved on. Review the related changes and confirm again.</Trans>;
     case "discard-stale":
       return <Trans>Couldn't discard. Your latest edits are still syncing, try again soon.</Trans>;
     case "discard-finalized":

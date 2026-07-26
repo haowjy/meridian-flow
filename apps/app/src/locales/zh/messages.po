@@ -233,7 +233,6 @@ msgid "Appearance and behavior settings."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Apply"
 msgstr ""
 
@@ -339,10 +338,6 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Change applied."
 msgstr ""
 
 #: src/features/editor/PeerMarkPopover.tsx
@@ -478,10 +473,6 @@ msgstr ""
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
-#~ msgid "Couldn't apply that recovery action. Try again."
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -572,10 +563,6 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't write"
-msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-msgid "Create"
 msgstr ""
 
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -1305,10 +1292,6 @@ msgstr ""
 msgid "Open results"
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Open the latest review before applying a change."
-msgstr ""
-
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr ""
@@ -1492,14 +1475,6 @@ msgstr ""
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "回复完成"
-
-#: src/features/editor/PeerMarkPopover.tsx
-#~ msgid "Restore"
-#~ msgstr ""
-
-#: src/features/editor/PeerMarkPopover.tsx
-#~ msgid "Restored"
-#~ msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1754,10 +1729,6 @@ msgstr ""
 msgid "That change couldn't be made."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "That change moved. Refreshed to the latest changes."
-msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
 msgstr ""
@@ -1784,14 +1755,6 @@ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "The AI asked you a question"
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "The changes moved on. Refreshed the list."
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "The changes moved on. Review the related changes and confirm again."
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -1829,10 +1792,6 @@ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
-msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

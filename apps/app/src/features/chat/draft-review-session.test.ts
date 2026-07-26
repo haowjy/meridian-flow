@@ -30,7 +30,6 @@ describe("DraftReviewSession", () => {
     expect(ports.loadPreview).not.toHaveBeenCalled();
     expect(ports.apply).toHaveBeenLastCalledWith(
       { documentId: "document-1", draftId: "draft-1" },
-      "draft",
       {
         draftId: "draft-1",
         branchId: "branch-1",
@@ -52,16 +51,15 @@ describe("DraftDispositionLock", () => {
   it("reserves synchronously before acquisition and rejects every overlapping command", () => {
     const lock = new DraftDispositionLock();
     const first = lock.reserve({
-      kind: "apply-operation",
+      kind: "apply-draft",
       documentId: "document-1",
       draftId: "draft-1",
-      operationId: "operation-1",
     });
 
     expect(first).not.toBeNull();
     expect(lock.getSnapshot()).toMatchObject({
       phase: "acquiring",
-      target: { kind: "apply-operation", operationId: "operation-1" },
+      target: { kind: "apply-draft", draftId: "draft-1" },
     });
     expect(
       lock.reserve({
@@ -159,7 +157,6 @@ function commandPorts(): DraftReviewCommandPorts {
     })),
     apply: vi.fn(async ({ draftId }) => ({ status: "applied" as const, draftId })),
     discard: vi.fn(async () => {}),
-    operationApplyStarted: vi.fn(),
     operationDiscardStarted: vi.fn(),
     batchStarted: vi.fn(),
     batchSettled: vi.fn(),

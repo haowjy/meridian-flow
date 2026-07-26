@@ -4,13 +4,10 @@ import { describe, expect, it } from "vitest";
 import { acquireDraftApplyRequest, draftApplyOutcome } from "./draft-review-session";
 
 describe("draft Apply disposition", () => {
-  it.each([
-    "draft",
-    "operation",
-  ] as const)("routes terminal %s Apply responses through the shared draft transition", (scope) => {
+  it("routes the terminal Apply response through the shared draft transition", () => {
     const response: DraftAcceptResponse = { status: "applied", draftId: "draft-1" };
 
-    expect(draftApplyOutcome(scope, response)).toEqual({
+    expect(draftApplyOutcome(response)).toEqual({
       command: { kind: "applied" },
       message: null,
       refreshDraftId: null,
