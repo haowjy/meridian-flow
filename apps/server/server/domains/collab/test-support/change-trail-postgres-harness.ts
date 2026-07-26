@@ -1573,6 +1573,79 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return { branchId: branch.branchId, journalId: row.id };
   }
 
+  async function seedDiscardedDependencyPush() {
+    await collab.writeDocument({
+      documentId: ALPHA_ID,
+      markdown: "Dependency base.",
+      origin: { type: "user", actorUserId: USER_ID as never },
+      threadId: THREAD_ID,
+    });
+    await collab
+      .agentEdit()
+      .write(
+        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID },
+      );
+    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const block = model.getBlocks(toDocHandle(branch.doc))[0];
+    if (!block) throw new Error("dependency draft block missing");
+    const end = model.getText(block).length;
+    model.applyTextEdit(toDocHandle(branch.doc), block, { from: end, to: end }, " discarded");
+    await branchCoordinator.commitSyncFromDoc({
+      branchId: branch.branchId,
+      sourceDoc: branch.doc,
+      expectedGeneration: branch.generation,
+      source: "agent",
+      actorUserId: null,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      wId: null,
+      updateMeta: null,
+    });
+    branch.doc.destroy();
+    const [discarded] = await db
+      .select({ id: schema.branchWriteJournal.id })
+      .from(schema.branchWriteJournal)
+      .where(eq(schema.branchWriteJournal.status, "active"));
+    if (!discarded) throw new Error("discarded dependency row missing");
+    await branchReview.discardSelected({
+      branchId: branch.branchId,
+      journalIds: [discarded.id],
+      reviewedByUserId: USER_ID,
+    });
+
+    const current = await branchCoordinator.readBranch(branch.branchId, async (doc, snapshot) => {
+      const sourceDoc = new Y.Doc({ gc: false });
+      Y.applyUpdate(sourceDoc, Y.encodeStateAsUpdate(doc));
+      return { sourceDoc, generation: snapshot.generation };
+    });
+    try {
+      const currentBlock = model.getBlocks(toDocHandle(current.sourceDoc))[0];
+      if (!currentBlock) throw new Error("dependency draft block missing after discard");
+      const currentEnd = model.getText(currentBlock).length;
+      model.applyTextEdit(
+        toDocHandle(current.sourceDoc),
+        currentBlock,
+        { from: currentEnd, to: currentEnd },
+        " survivor",
+      );
+      await branchCoordinator.commitSyncFromDoc({
+        branchId: branch.branchId,
+        sourceDoc: current.sourceDoc,
+        expectedGeneration: current.generation,
+        source: "agent",
+        actorUserId: null,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: null,
+        updateMeta: null,
+      });
+    } finally {
+      current.sourceDoc.destroy();
+    }
+    return branch.branchId;
+  }
+
   async function branchesByKind(kind: "thread_peer" | "work_draft") {
     return db.select().from(schema.documentBranches).where(eq(schema.documentBranches.kind, kind));
   }
@@ -1633,6 +1706,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     stageCertifiedReplace,
     seedCheckpointRestoredExplicitDelete,
     seedSelectivePush,
+    seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
       db,
       schema,

@@ -32,6 +32,25 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     await closeDatabase();
   });
 
+  it("replays the canonical whole branch when an active edit depends on a discarded row", async () => {
+    await resetDatabase();
+    const warm = createHarness();
+    const branchId = await warm.seedDiscardedDependencyPush();
+    await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(warm.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
+    warm.destroyWarmState();
+
+    const cold = createHarness();
+    await expect(cold.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
+    expect(
+      await db
+        .select({ originType: schema.documentYjsUpdates.originType })
+        .from(schema.documentYjsUpdates)
+        .orderBy(schema.documentYjsUpdates.id),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ originType: "reconcile" })]));
+    cold.destroyWarmState();
+  });
+
   it("item 1: an awaited preparation fault cannot let queued mutations cross the durable boundary", async () => {
     await resetDatabase();
     let entered!: () => void;

@@ -427,6 +427,7 @@ describe("branch-push durable projection", () => {
       .orderBy(documentYjsUpdates.id);
     expect(journalAfterRecovery).toEqual([
       expect.objectContaining({ originType: "agent", actorTurnId: turnId }),
+      expect.objectContaining({ originType: "reconcile", actorTurnId: null }),
     ]);
     const [documentAfterRecovery] = await db
       .select({ markdownProjection: documents.markdownProjection })

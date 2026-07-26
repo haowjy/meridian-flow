@@ -434,28 +434,26 @@ async function completeStagedPush(
           )
           .returning({ id: documentYjsUpdates.id })
       : [];
-  const [fallbackRow] =
-    journalRows.length === 0
-      ? await db
-          .insert(documentYjsUpdates)
-          .values({
-            documentId,
-            authorityId: authority.authorityId,
-            authorityGeneration: authority.generation,
-            admissionSequence: authority.admissionSequence,
-            batchOrdinal: 0,
-            updateData: staged.outbox.pushUpdate,
-            originType: "system",
-            actorUserId: null,
-            actorTurnId: null,
-          })
-          .returning({ id: documentYjsUpdates.id })
-      : [];
-  const updateRow = authoredRows.at(-1) ?? fallbackRow;
-  if (!updateRow) throw new Error(`Failed to complete staged push ${pushId}`);
+  const [canonicalRow] = await db
+    .insert(documentYjsUpdates)
+    .values({
+      documentId,
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      admissionSequence: authority.admissionSequence,
+      batchOrdinal: journalRows.length,
+      updateData: staged.outbox.pushUpdate,
+      // Exact authored rows preserve attribution and reversal targets. This
+      // aggregate system row resolves any omitted causal dependencies on replay.
+      originType: "reconcile",
+      actorUserId: null,
+      actorTurnId: null,
+    })
+    .returning({ id: documentYjsUpdates.id });
+  if (!canonicalRow) throw new Error(`Failed to complete staged push ${pushId}`);
   const [updated] = await db
     .update(pushLineage)
-    .set({ upstreamUpdateSeq: updateRow.id })
+    .set({ upstreamUpdateSeq: canonicalRow.id })
     .where(and(eq(pushLineage.id, pushId), isNull(pushLineage.upstreamUpdateSeq)))
     .returning({ id: pushLineage.id });
   if (!updated) throw new Error(`Staged push ${pushId} was completed concurrently`);
@@ -487,7 +485,7 @@ async function completeStagedPush(
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
     const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
-    await upsertHead(db, documentId, updateRow.id, durable.stateVector);
+    await upsertHead(db, documentId, canonicalRow.id, durable.stateVector);
     await projectionEffects.applyPushCompletion({
       documentId: branch.documentId,
       markdown: durable.markdownProjection,
@@ -497,7 +495,7 @@ async function completeStagedPush(
   }
   await joinAdmissionWithinTx(db, {
     documentId,
-    source: { kind: "staged_push", id: String(updateRow.id) },
+    source: { kind: "staged_push", id: String(canonicalRow.id) },
     update: staged.outbox.pushUpdate,
     excludePushId: String(pushId),
   });

@@ -171,6 +171,12 @@ function metaFromUpdateRow(
       : row.reversalActorType === "agent"
         ? ({ type: "agent" } as const)
         : undefined;
+  if (row.originType === "reconcile") {
+    return {
+      origin: "system:reconcile",
+      seq: row.id,
+    };
+  }
   if (row.originType === "agent") {
     const originActor = row.actorTurnId ?? (mode === "journal" ? "unknown" : undefined);
     if (originActor) {

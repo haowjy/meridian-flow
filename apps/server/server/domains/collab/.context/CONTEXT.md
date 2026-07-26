@@ -196,8 +196,11 @@ push until commit.
   Writer rows persist as `origin_type = human`; reads also normalize legacy
   `user` rows to the package's `human:<actor>` origin. Reversal and bookkeeping
   rows keep `origin_type = system`, and reversal rows store independent
-  `reversal_actor_type` attribution. Agent rows persist as `agent`. Only the
-  writer class invalidates a live reversal plan.
+  `reversal_actor_type` attribution. Agent rows persist as `agent`. A branch
+  settlement appends its exact authored rows followed by one `reconcile` row
+  carrying the canonical pushed update; the latter supplies replay coverage,
+  not a later semantic edit. Only the writer class invalidates a live reversal
+  plan.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` records pushes to live and receipts.
@@ -352,15 +355,13 @@ history is preserved for attribution, echo, and undo dependency checking.
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
 - **Draft Apply settles the whole current branch**: every writer Apply and
-  auto-push integrates through Yjs. `draftBaseUpdateSeq` is still a required persisted
-  and mapped journal field, but no current semantic reader compares it or uses
-  it to gate Apply. Do not treat it as freshness or conflict authority; removing
-  it is a schema-, migration-, persistence-, fixture-, and test-wide change
-  rather than incidental cleanup in a review-contract slice. Apply writes each
-  current branch journal row separately into the live journal: writer rows keep
-  `originType: "human"` and `actorUserId`; agent rows keep `originType: "agent"`
-  and `actorTurnId`; system rows remain system-authored. Active agent handles
-  materialize against their corresponding live update rows, while handles
+  auto-push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
+  authority; sweep policy uses each AI row's value only as that candidate's
+  observation watermark. Apply writes current branch rows into the live journal
+  with their original attribution, then appends the complete push update as a
+  `reconcile` row so cold replay includes causal dependencies omitted from active
+  rows. Active agent handles materialize against their corresponding authored
+  rows; reconciliation coverage is not a later semantic dependency. Handles
   eliminated by Draft Undo remain absent. A later writer row can therefore make
   producing-turn Undo unavailable through the canonical dependency predicate.
   Push-time and immediate-path sweep detection derive their live-session hint

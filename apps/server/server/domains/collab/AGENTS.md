@@ -124,7 +124,8 @@ propagation between them.
   or reverse this order.
 - **Draft Apply settles the whole current branch**: every writer Apply and
   auto-push integrates through Yjs. Writer rows created after preview are
-  included with their actor attribution; active AI rows keep dependency-based
+  included with their actor attribution; a canonical reconciliation row keeps
+  cold replay equivalent to the pushed branch without changing dependency-based
   Undo semantics. Settlement sweep policy elevates a live-session
   mark only for a receiving writer whose post-observation edit was overwritten;
   unknown, historical, AI, and other-writer roots are ordinary for that

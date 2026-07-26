@@ -167,6 +167,44 @@ describe("provenance materialization", () => {
     expect(result.visible[0]?.birthClass).toBe("writer_protected");
   });
 
+  it("keeps authored attribution ahead of the canonical replay update", () => {
+    const source = proseDoc("writer words");
+    const fullSync = Y.encodeStateAsUpdate(source);
+    const actorUserId = crypto.randomUUID();
+
+    const result = materializeProvenanceView({
+      authorityId,
+      generation: 1n,
+      manifest: emptyManifest(),
+      rows: [
+        {
+          authorityId,
+          generation: 1n,
+          admissionSequence: 1n,
+          batchOrdinal: 0,
+          journalRowId: 10n,
+          originType: "human",
+          actorUserId,
+          update: fullSync,
+        },
+        {
+          authorityId,
+          generation: 1n,
+          admissionSequence: 1n,
+          batchOrdinal: 1,
+          journalRowId: 11n,
+          originType: "reconcile",
+          actorUserId: null,
+          update: fullSync,
+        },
+      ],
+      watermark: { admissionSequence: 1n, batchOrdinal: 1, journalRowId: 11n },
+    });
+
+    expect(result.visible).toHaveLength(1);
+    expect(result.visible[0]?.birthClass).toBe("writer_protected");
+  });
+
   it("blocks missing replay rows and missing checkpoint attribution", () => {
     const doc = proseDoc("unattributed");
     const update = Y.encodeStateAsUpdate(doc);
