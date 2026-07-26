@@ -40,7 +40,7 @@ turn Undo unavailable. Best-effort sweep evidence only elevates a receiving
 writer's swept mark when that writer's post-observation edit was overwritten.
 
 On Apply or whole-draft Discard, the controller clears the review surface so
-the editor rebinds from the draft room to the live manuscript room. The server
+the editor rebinds from the review branch room to the live manuscript room. The server
 owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states do not exist.
@@ -55,7 +55,7 @@ writer already is. The editor's review chrome is
 delegating to the controller. The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
 branch, so review has one active row per document. The dock's `DockChangesView`
-expands the reviewed document to operation cards read from the live preview.
+expands the reviewed document to Discard-class cards read from the live preview.
 Each card carries one hover-revealed Discard verb, the only mutating target on
 the card, driving `controller.discardOperation`. Whole-branch Apply remains in
 the review header so the UI cannot imply operation-scoped Apply. Discard
@@ -101,8 +101,8 @@ it does not scope Apply. Apply always settles the server's current branch.
 ## Draft review freshness
 
 `DraftReviewProvider` owns the client cache freshness contract for mounted inline
-reviews. When an inline review has a mounted draft `DocumentSession`, any Yjs
-update in that draft room invalidates both:
+reviews. When an inline review has a mounted review `DocumentSession`, any Yjs
+update in that branch room invalidates both:
 
 - the active draft preview query, so the editor rail/hunks re-derive from the
   latest server review model; and

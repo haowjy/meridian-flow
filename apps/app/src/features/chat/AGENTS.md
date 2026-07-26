@@ -68,35 +68,6 @@ composer mode, and review state live in
   activity runs and visible frontiers. No raw tool block should reach `TurnBlockStep`.
 - **Don't auto-open process disclosures during streaming.**
 
-## Entry points
-
-| File | What it does |
-|---|---|
-| `AssistantTurn.tsx` | Top-level turn render — sorts blocks, partitions, mounts zones |
-| `partition-turn-segments.ts` | Structural interrupt segmentation + run grouping for Thinking/Activity zones |
-| `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then groups adjacent logical tool runs |
-| `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle |
-| `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts route through `onRespondToInterrupt` |
-| `placeholders.ts` | Lingui `msg` descriptor pools + per-page-load localStorage rotation + `useSyncExternalStore` SSR guard. Rotation is internal to Composer; hero variant overrides by prop |
-| `tool-renderers.tsx` | Tool renderer registry plus the shared `DocumentName` presentation used by tool rows and receipts |
-| `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent tool runs as sibling `ToolRow`s |
-| `ActivityRow.tsx` | Timeline-row primitive; each row owns its rail segment and exports the shared text inset |
-| `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsReceipt.tsx` | Quiet per-turn committed-edit receipt: durable titles/word totals, lineage-backed Undo/Redo, and authorized detail loading. No draft Review/Apply/Discard. |
-| `ChangeViewRows.tsx` | Read-only receipt rows with exact navigation and clamped durable Before/After excerpts. |
-| `conversation-reveal.ts` | One-shot reveal handshake: name a thread + optional turn + optional change row; `useConversationRevealRouting` brings it up on the current screen (never a screen swap) and the deepest surface that can honor the target completes it. |
-| `block-render-key.ts` | Positional render keys |
-| `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftDock.tsx` | Composer-attached strip for the Work's pending AI changes. `useDraftDock` assembles the model and starts bulk commands; `draft-review-session.ts` owns sequential execution and stop policy. `<DraftDock>` renders the chrome, not a card |
-| `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
-| `docked-drafts.ts` | Pure active-draft assembly: `dockRows` (one pending row per document), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
-| `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
-| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: reveals Changes in the current screen's dock and enters inline review, never changing `?screen`; on the Editor screen it also opens the drafted document and collapses the left rail, restoring it on exit (capture mechanics in its header comment) |
-| `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: selection, whole-branch Apply, selective/whole Discard, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
-| `draft-review-session.ts` | Shared disposition lock, direct Apply/Discard command sequencing, and review-session reducer |
-| `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
-
 ## Draft-review boundary
 
 Inline review is the only draft-review surface. It uses server-backed
@@ -104,16 +75,6 @@ Apply/Discard disposition commands; dispositions never ride browser mutation
 history, even though the review editor itself stays editable. See
 [`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
 preview, and projection contracts.
-
-## Block type reference
-
-From `@meridian/contracts` `BlockType`: `reasoning` | `thinking` | `text` |
-`tool_use` | `tool_result` | `image` | `custom`.
-
-- **reasoning run** = `reasoning` | `thinking` (rendered in `TurnBlockStep`, italic prose)
-- **activity run** = everything else (text/image/custom rendered directly; tool_use/tool_result
-  normalized into ToolViews and rendered as sibling `ToolRow`s by
-  `DeliverySegments`)
 
 ## Transcript viewport (TurnList)
 

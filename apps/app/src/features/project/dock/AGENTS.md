@@ -7,8 +7,8 @@ grid slot. It has per-screen view sets (Chat-main: Context | Changes;
 Context-main: Chat | Changes) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: every document with
-pending AI changes, grouped with per-operation review cards carrying selective
-Discard. Document-level Apply all stays in the review header. It works on every
+pending AI changes, grouped into server-vended Discard-class cards carrying
+selective Discard. Document-level Apply all stays in the review header. It works on every
 screen, with or without a mounted manuscript, so
 entering review never has to leave the screen the writer is on.
 
@@ -77,17 +77,6 @@ finds an active draft.
   than starting fresh.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the
   tailwind-merge trap in `.context/CONTEXT.md`.
-
-## Files
-
-| File | Role |
-|---|---|
-| `DockShell.tsx` | View container shell: passthrough in center, header + Changes overlay in dock |
-| `DockHeader.tsx` | Single `h-10` header: left slot (chat title), contained segmented switch, close |
-| `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
-| `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
-| `ReviewOperationCard.tsx` | Per-discard-class card; body focuses the reviewed span |
-| `operation-change-text.ts` | Pure card-body text extraction from operations/hunks |
 
 ## Downlinks
 

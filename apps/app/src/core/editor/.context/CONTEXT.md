@@ -12,9 +12,9 @@ Yjs document session. It must stay structurally aligned with
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
 - `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
-  live rooms use the bare document id, draft-review rooms use
-  `draft:<draftId>` from `@meridian/contracts/protocol`. Switching live ↔ draft
-  is a session identity change and must remount the TipTap editor because
+  live rooms use the bare document id; review rooms use the opaque,
+  generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
+  review is a session identity change and must remount the TipTap editor because
   Collaboration binds to a concrete Y.Doc/fragment at construction.
 - `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
   the contract:
@@ -41,9 +41,9 @@ Yjs document session. It must stay structurally aligned with
   - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
     refetch and a live surface change keep the same editor and UndoManager while
     a room change replaces them.
-- Live sessions may use versioned IndexedDB persistence. Draft review sessions
-  do not: the draft Hocuspocus room is server-persisted and short-lived, and a
-  local draft cache risks stale recovery across review sessions.
+- Live sessions may use versioned IndexedDB persistence. Review sessions do not:
+  the branch room is server-persisted and generation-fenced, and a local cache
+  risks recovering state into the wrong review generation.
 - Live peer marks are the session projection of durable trail changes. Their
   anchored popover lazy-reads trail detail and the originating thread snapshot.
   The popover is evidence and navigation only; producing-turn receipt Undo/Redo
@@ -110,7 +110,7 @@ plugin that owns a single `DecorationSet` describing every hunk in the current
 server review model. Keep this directory view-only: plugin state, decorations,
 commands, and the lightweight hunk model used by the plugin.
 
-- Only installed when the editor is bound to a draft room. The
+- Only installed when the editor is bound to a review branch room. The
   `enableDraftInlineReview` flag on `createEditorExtensions` follows the
   `review` variant of `EditorMountIdentity`, which needs both a draft id and its
   generation-fenced room name; live editors never pay for it.
@@ -154,12 +154,12 @@ zero-width deletion anchors render a caret-like boundary rather than inventing
 a replacement range. Chat supplies route resolution, but must not decode,
 validate, or map anchors itself.
 
-## Per-operation discard (dock Changes cards)
+## Selective Discard (dock Changes cards)
 
-The dock Changes view's per-card **Apply** and **Discard** are server
-disposition commands. They never edit the review Y.Doc from the browser.
-The controller owns pending/settling state by draft id, and the normal preview
-refetch replaces the projection and decorations after settlement.
+Each card's **Discard** is a server disposition command for its authoritative
+Discard class. It never edits the review Y.Doc from the browser. The review
+session's synchronous disposition lock serializes commands, and the awaited
+preview refetch replaces the projection and decorations before the lock releases.
 
 ## Math extension decision
 

@@ -18,16 +18,6 @@ evidence is durable. A bumped shell version or lost document access invalidates
 the cache. Prefetch while a mark is on screen so the disclosure does not fill
 in after the writer opens it.
 
-## Entry points
-
-| File | What it does |
-|---|---|
-| `trail-detail-query.ts` | `changeTrailDetailQuery(threadId, trailId)` shared read options; `usePrefetchTrailDetails` warms on-screen marks |
-
-Backed by `@/client/change-trails.ts`: `changeTrailDetailKey` (the shared
-detail query key) and `bodyFromTrailHashline` (decode the display body carried
-by trail hashline serialization).
-
 → [features/chat](../chat/AGENTS.md) — receipts render trail excerpts through
   the shared read policy, without importing the command policy.
 → [features/editor](../editor/.context/CONTEXT.md) — `PeerMarkPopover.tsx`
