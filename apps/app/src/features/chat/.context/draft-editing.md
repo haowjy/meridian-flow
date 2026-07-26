@@ -98,9 +98,9 @@ target row; it does not change which rows are mounted.
 
 ## Draft review architecture
 
-Inline review is the only draft review surface. Whole-draft "Apply all" runs the
-`acceptDraft` path; each dock Changes card also carries per-card Apply/Discard,
-and a per-card Apply's "Change applied" receipt carries an Undo.
+Inline review is the only manuscript preview surface. Whole-draft "Apply all"
+runs the `acceptDraft` path; each dock Changes card also carries per-card
+Apply/Discard.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
 message target, and inline messages. The synchronous disposition lock is the
@@ -112,8 +112,8 @@ state cannot cross a Work switch.
 Per-card Apply routes the closure-card `acceptDraft` mutation with
 `operationIds`; the server receives the vended closure class as one card, so
 there is no dependency confirmation state. Every disposition is serialized by
-the session's synchronous lock (`controller.isDisposing`): while any whole-draft or
-per-card Apply/Discard/Undo is in flight, all mutating controls disable and a
+the session's synchronous lock (`controller.isDisposing`): while any whole-draft
+or per-card Apply/Discard is in flight, all mutating controls disable and a
 second card click is ignored rather than clearing the in-flight card's pending
 state. Per-card Discard routes to the server discard mutation with
 `operationIds`; the server performs reversal-peer sync. The mutation awaits the
@@ -156,9 +156,9 @@ card — driving `controller.acceptOperation` / `controller.discardOperation`.
 
 The review editor is read-only. Draft content changes only through agent writes
 and explicit Apply/Discard commands; ordinary TipTap input is disabled and the
-server rejects client-authored branch-room updates. Any writer-facing Undo is a
-server-backed disposition command, never browser Ctrl+Z or a client mutation
-origin.
+server rejects client-authored branch-room updates. Draft review has no
+per-card Undo command. After Apply, recovery belongs to trail-backed Restore or
+turn-receipt Undo/Redo rather than browser Ctrl+Z or a client mutation origin.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
 the TipTap inline-review extension and reports model availability identities.
@@ -169,11 +169,10 @@ empty positional anchors with a visible seam whose focused-operation state is
 emphasized, so their cards can scroll the manuscript without adding text. An active preview
 without a model is an invariant violation, logged loudly and ignored safely.
 
-`reviewableDraftsFromGroup` is the presentation seam for draft lifecycle rows. It
-keeps active drafts visible and hides older terminal undo receipts when a newer
-active draft exists in the same document group; the server reviewable list still
-contains the full lifecycle history so the `DraftDock` reviewed rows and the
-editor bar's minimal terminal Undo receipt can show undo where it remains useful.
+The server reviewable list emits only active drafts. `pendingReviewDrafts` is
+the shared presentation seam that filters rows without review content and orders
+the remaining active drafts for the dock and inline-review launcher. Closed
+lifecycle rows and draft-level Undo receipts are not part of this boundary.
 
 See the
 [requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
