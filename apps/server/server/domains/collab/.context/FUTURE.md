@@ -15,15 +15,7 @@ distinguishes a legacy raw row from a not-yet-recorded draft create at the
 command boundary rather than via incidental timing. Feeds the pending
 efficiency-architecture review alongside #284/#303 gates.
 
-**Affected paths:** `composition.ts`, `adapters/drizzle-branches.ts`
-
-The pending-review correctness boundary no longer depends on that broader
-lifecycle consolidation. `domain/work-draft-pending.ts` is the shared
-authority for review lists, Work counts, and Auto-apply confirmation. It
-classifies `manifest_membership` journal rows as bookkeeping and excludes
-branches carrying only those rows, even if their reusable Work-draft branch
-record remains `active`. Bookkeeping companions remain part of the canonical
-apply plan when their content draft is published; exclusion applies to writer
-counting and review presentation, not durable publication. Consolidating who
-closes or advances manifest branches is still future work; pending writer UI
-must not infer prose changes from their lifecycle status.
+**Affected paths:** `composition.ts`, `adapters/drizzle-branches.ts`. Preserve
+`domain/work-draft-pending.ts` as the independent pending-review authority;
+lifecycle consolidation must not make active branch status a proxy for
+reviewable content.

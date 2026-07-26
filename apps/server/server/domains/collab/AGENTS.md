@@ -66,6 +66,9 @@ propagation between them.
   Hocuspocus delivery targets connected bare-document rooms, never branch rooms.
 - `domain/draft-review-*` is the review diff/presentation pipeline over branch
   docs. The name is UI vocabulary; it is not the old persisted draft subsystem.
+- `domain/work-draft-pending.ts` is the shared review-list, Work-count, and
+  Auto-apply classifier. It counts reviewable content branches, not rows or
+  branch status; manifest-only bookkeeping never becomes pending prose.
 - `adapters/drizzle-*` are production persistence adapters for live journal,
   branches, the required journal-read/push-commit/work-policy ports, pending
   settlement, turn lineage, receipts, and Hocuspocus coordination.

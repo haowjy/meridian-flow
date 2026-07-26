@@ -1,102 +1,9 @@
-# Draft editing — receipts, write mode, and review lifecycle
+# Draft review
 
-This page defines the chat contracts for turn edit receipts, Work-scoped write
-mode, and draft-review state. Turn rendering is documented separately in
-[turn composition](turn-composition.md).
+This page defines the chat-side review session, pending projection, freshness,
+and draft-only-tab contracts.
 
-## Turn edit receipt (`TurnEditsReceipt.tsx`)
-
-The per-turn receipt is a quiet, default-collapsed record for committed
-document edits. Its line names one document or counts several and adds settled
-`+added −removed words` totals when the trail shell has them. Live
-single-document headers derive the same URI title without inventing a delta.
-The shell carries header metadata, so collapse never triggers a detail fetch.
-Expanding shows live documents and every authorized durable trail row. Each row
-renders concise retained Before and/or After excerpts without a nested
-scrollport. A conversation reveal opened from an editor peer mark expands the
-receipt and brings its exact target row into view.
-
-`AssistantTurn` combines server-owned facts: full turn lineage supplies document
-scope, the durable receipt supplies whole-turn Undo/Redo authority, and the
-settled trail supplies historical titles, word totals, and change rows. Both
-direct and draft lineage may produce the same receipt. A draft proposal
-with neither live lineage nor settled trail documents produces no card; after
-Apply, the committed receipt remains visible across reload.
-
-The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
-(`live-active`, `branch-active`, reversed, dependent, or expired) decides whether
-it is available. Unavailable actions render a compact `Can't undo` pill; the
-server-derived reason appears only after expansion. Captured Before/After
-excerpts remain visible after document loss and reload, and deleted live anchors
-degrade navigation without discarding the receipt.
-
-A reversal command can race the projected receipt and return a semantic refusal
-with HTTP 200. The mutation invalidates the turn query, expands the receipt, and
-retains the returned reason while refreshed lineage withdraws the action. Do not
-reduce the result to transport success or clear the local reason merely because
-the refreshed control becomes `view_change`; both recreate click-and-nothing.
-Unexpected transport failures remain retryable and do not replace server-derived
-recovery state.
-
-The card is a record, not a draft control panel. Draft Review/Apply/Discard
-remain exclusively in the composer-attached `DraftDock` and inline review
-surface.
-
-## Composer write mode
-
-The Draft / Auto-apply selector lives in the composer footer beside the agent
-pill because write mode is a property of the conversation's Work, not workspace
-navigation. `ProjectView` resolves the displayed thread’s Work once at the project
-composition boundary and passes that same Work identity to `DraftReviewProvider`
-and `ChatView`; the dock and composer control therefore share one binding. If
-either side of `thread → work` is absent, the control is not rendered. The
-independent chat composition root performs the same resolution for its thread.
-There is no first/default-Work fallback.
-
-`ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
-count only to open confirmation quickly. Every Auto-apply selection sends an
-unconfirmed request; the server-vended journal-row count is the number shown in
-the confirmation. Moving Draft → Auto-apply with pending changes keeps Draft
-selected and opens the **Drafts are waiting** popover. Cancel preserves the
-mode; Review changes uses the same `useAiDraftLauncher` entry as every other
-review control; Apply all and switch is the only action that sends
-`confirmedPush`. It asks the server to push every pending Work draft to the live
-manuscript and only then switch policy. A failed push leaves Draft selected.
-The Auto-apply choice is never disabled, and the sidebar has no write-mode
-control.
-
-Home bootstrap is a distinct path: its optimistic thread has no Work while the
-first message is handed off, and project plus default-Work creation occur
-mid-handoff. That first turn therefore uses the new Work's `direct` default
-before the composer can expose the mode control. In-project new threads already
-have a Work and do not have this gap.
-
-Each assistant turn durably records the Work write mode read when that turn is
-created. Tool vocabulary and receipt interpretation use the turn's recorded
-mode, not the Work's current mutable policy, so a later mode switch cannot
-rewrite history after reload.
-
-### Composer placeholder and sizing contracts
-
-`placeholders.ts` owns the per-page-load compose and interject prompt pools as
-Lingui `msg` descriptors. `selectPagePlaceholders()` advances localStorage once
-per page load and freezes that selection; component re-renders do not consume
-another entry. `useSyncExternalStore` supplies a stable first descriptor during
-SSR and the rotated descriptor on the client, while locale resolution happens
-inside the hook. Composer owns rotation; its `placeholder` prop remains the
-explicit override used by the Home hero.
-
-The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
-resize loop requires `field-sizing: fixed`. Keep that override inline:
-Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
-
-### Change-trail rows
-
-`TurnEditsReceipt` renders every authorized trail change in ordinal order. The
-one-shot *Open conversation* reveal only expands the receipt and emphasizes the
-target row; it does not change which rows are mounted.
-
-## Draft review architecture
+## Architecture
 
 Inline review is the only manuscript preview surface. Whole-draft "Apply all"
 runs the `acceptDraft` path; each dock Changes card also carries per-card
@@ -169,10 +76,13 @@ empty positional anchors with a visible seam whose focused-operation state is
 emphasized, so their cards can scroll the manuscript without adding text. An active preview
 without a model is an invariant violation, logged loudly and ignored safely.
 
-The server reviewable list emits only active drafts. `pendingReviewDrafts` is
-the shared presentation seam that filters rows without review content and orders
-the remaining active drafts for the dock and inline-review launcher. Closed
-lifecycle rows and draft-level Undo receipts are not part of this boundary.
+The server reviewable list emits only current-generation drafts with reviewable
+content. `pendingReviewDrafts` is the shared client presentation seam that
+filters rows without review content and orders the remaining drafts for the dock
+and inline-review launcher. Branch lifecycle status is not review evidence: a
+reusable manifest branch may remain active while carrying only bookkeeping.
+Closed lifecycle rows, bookkeeping-only branches, and draft-level Undo receipts
+are not part of this boundary.
 
 See the
 [requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
@@ -204,15 +114,22 @@ writer actually reviewed.
 
 ## The pending signal and draft-only tab lifecycle
 
-**One pending signal.** `pendingReviewDrafts(group)` in `docked-drafts.ts` is
-THE per-document "has changes to review" derivation. `pendingReviewDraft`
-selects its newest draft, while `activeDockedDraftGroups` projects all pending
-groups once for composer surfaces. The dock's pending rows, the identity bar's
+**One client pending projection; one server authority.**
+`pendingReviewDrafts(group)` in `docked-drafts.ts` is the per-document client
+"has changes to review" derivation. `pendingReviewDraft` selects its newest
+draft, while `activeDockedDraftGroups` projects all pending groups once for
+composer surfaces. The dock's pending rows, the identity bar's
 `DraftReviewChip` (self-contained; hides itself during that document's inline
-review so it never coexists with `DraftReviewHeader`), and the Draft→Auto-apply
-switch count all derive from this filter. Never grow a second is-pending
-derivation; surfaces that disagree about pending state was a shipped bug class
-(dock said none, mode-switch dialog said one).
+review so it never coexists with `DraftReviewHeader`), and the mode selector's
+fast-path count all derive from this filter. Never grow a second client
+is-pending derivation.
+
+The client projection never authorizes Draft → Auto-apply. The server's
+`work-draft-pending` classifier independently supplies the review list,
+authoritative content-branch count, and confirmed apply plan. Keeping those
+server operations on one classifier prevents the shipped disagreement where the
+dock showed no reviewable change but the mode-switch dialog raw-counted one
+manifest journal row.
 
 Pending membership and presentation order are separate contracts.
 `activeDockedDraftGroups` stays newest-updated-first for the DraftDock. The

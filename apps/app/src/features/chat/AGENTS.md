@@ -33,9 +33,11 @@ process fold in chronological position. Interrupts end a segment; their cards
 remain visible after resolution even though tool protocol rows fold on settle.
 
 The full model lives in
-[`.context/turn-composition.md`](.context/turn-composition.md); draft receipts
-and review state live in
-[`.context/draft-editing.md`](.context/draft-editing.md).
+[`.context/turn-composition.md`](.context/turn-composition.md); draft receipts,
+composer mode, and review state live in
+[`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
+[`.context/composer-write-mode.md`](.context/composer-write-mode.md), and
+[`.context/draft-review.md`](.context/draft-review.md).
 
 ## Key rules
 
@@ -99,8 +101,9 @@ and review state live in
 
 Inline review is the only draft-review surface. It uses server-backed
 Apply/Discard disposition commands; the read-only review editor never
-uses browser mutation history. See [`.context/draft-editing.md`](.context/draft-editing.md)
-for the lifecycle, session, preview, and projection contracts.
+uses browser mutation history. See
+[`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
+preview, and projection contracts.
 
 ## Block type reference
 

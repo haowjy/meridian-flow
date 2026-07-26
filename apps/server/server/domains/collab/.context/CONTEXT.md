@@ -167,13 +167,15 @@ for the cross-domain port decision and self-healing rationale.
 Manifest membership rows are branch bookkeeping, not writer-reviewable prose.
 `domain/work-draft-pending.ts` owns the pending Work-draft predicate used by
 review lists, counts, and Auto-apply confirmation: it requires current-generation
-reviewable rows loaded through the single-query `WorkDraftPendingStore` port and
-excludes `manifest_membership` rows. Counts are reviewable content branches (one
-per document), never raw journal-row totals. The authority still associates an
-excluded manifest entry with its content draft so confirmed Auto-apply publishes
-new-document content and live membership atomically. A reusable manifest
-Work-draft branch may remain `active` after its content companions settle; that
-status alone is not pending-review evidence.
+reviewable rows loaded through the `WorkDraftPendingStore` seam and excludes
+`manifest_membership` rows. Its Drizzle adapter loads all evidence in one joined
+query and projects only the classification fields (`turnId` and `updateMeta`);
+ordinary counts and lists must not read full Yjs payloads. Counts are reviewable
+content branches (one per document), never raw journal-row totals. The authority
+still associates an excluded manifest entry with its content draft so confirmed
+Auto-apply publishes new-document content and live membership atomically. A
+reusable manifest Work-draft branch may remain `active` after its content
+companions settle; that status alone is not pending-review evidence.
 
 `domain/document-creation.ts` owns tracked-document materialization
 transactions. Context and bootstrap supply the row, initial-content, and
