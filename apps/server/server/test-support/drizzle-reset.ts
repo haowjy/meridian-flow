@@ -21,6 +21,10 @@ type TableNode = {
   parentOids: Set<string>;
 };
 
+function compareTableNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
@@ -60,7 +64,7 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
 
   const available = [...nodes.values()]
     .filter((node) => incomingChildren.get(node.oid) === 0)
-    .sort((left, right) => left.qualifiedName.localeCompare(right.qualifiedName));
+    .sort((left, right) => compareTableNames(left.qualifiedName, right.qualifiedName));
   const ordered: TableNode[] = [];
   while (available.length > 0) {
     const node = available.shift();
@@ -73,7 +77,9 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
         const parent = nodes.get(parentOid);
         if (parent) {
           available.push(parent);
-          available.sort((left, right) => left.qualifiedName.localeCompare(right.qualifiedName));
+          available.sort((left, right) =>
+            compareTableNames(left.qualifiedName, right.qualifiedName),
+          );
         }
       }
     }
@@ -184,9 +190,7 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
       );
     }
 
-    const lockOrder = tableOrder
-      .map((table) => table.qualifiedName)
-      .sort((left, right) => left.localeCompare(right));
+    const lockOrder = tableOrder.map((table) => table.qualifiedName).sort(compareTableNames);
     await transaction.execute(
       sql.raw(`LOCK TABLE ${lockOrder.join(", ")} IN ACCESS EXCLUSIVE MODE`),
     );
