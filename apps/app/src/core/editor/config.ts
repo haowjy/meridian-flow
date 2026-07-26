@@ -16,6 +16,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import type { AgentNameStore } from "./agent-name-store";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
@@ -74,8 +75,8 @@ export type CreateEditorExtensionsOptions = {
   enableDraftInlineReview?: boolean;
   /** Live-session sidecar; omitted for branch/draft rooms. */
   markerStore?: SessionMarkerStore;
-  /** Resolve the writer-facing title for an agent-authored session mark. */
-  markerAgentName?: (threadId: string) => string | undefined;
+  /** Writer-facing thread names for agent-authored session marks. */
+  agentNames?: AgentNameStore;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -211,7 +212,7 @@ export function createEditorExtensions({
   showCollaborationDecorations,
   enableDraftInlineReview = false,
   markerStore,
-  markerAgentName,
+  agentNames,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -224,7 +225,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
     ...collaboration,
-    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, markerAgentName })] : []),
+    ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
 }
@@ -278,7 +279,7 @@ export function createEditorConfig({
   showCollaborationDecorations,
   enableDraftInlineReview,
   markerStore,
-  markerAgentName,
+  agentNames,
   editable = true,
   autofocus = false,
   placeholder,
@@ -302,7 +303,7 @@ export function createEditorConfig({
         showCollaborationDecorations,
         enableDraftInlineReview,
         markerStore,
-        markerAgentName,
+        agentNames,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

@@ -27,7 +27,6 @@ import {
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -40,13 +39,14 @@ import {
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { displayThreadTitle } from "@/lib/thread-title";
+import { useEventCallback } from "@/hooks/use-event-callback";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SyncStatus } from "./SyncStatus";
+import { useAgentNames } from "./useAgentNames";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
@@ -57,6 +57,7 @@ export type EditorViewProps = {
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
   className?: string;
+  /** Cursor identity published to awareness. Identity must be stable: it re-keys the editor. */
   user?: EditorUser;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
@@ -172,9 +173,7 @@ function SessionEditorView({
   const [dragActive, setDragActive] = useState(false);
   const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
   const pointerSelectionRef = useRef<{ from: number; to: number } | null>(null);
-  const { threads: projectThreads } = useProjectThreads(projectId ?? "", {
-    enabled: Boolean(projectId) && !inReview,
-  });
+  const agentNames = useAgentNames(projectId, { enabled: !inReview });
   // Marks render before anyone clicks one. Warming their trail detail here is
   // what lets the popover open with its Before/After disclosure already
   // available instead of filling it in after the first fetch lands.
@@ -197,15 +196,7 @@ function SessionEditorView({
     ),
   );
 
-  const markerAgentName = useCallback(
-    (threadId: string) => {
-      const thread = projectThreads?.find((candidate) => candidate.id === threadId);
-      return thread ? displayThreadTitle(thread.title) : undefined;
-    },
-    [projectThreads],
-  );
-
-  const openPeerMark = useCallback(
+  const openPeerMark = useEventCallback(
     (eventTarget: EventTarget | null, activation: "pointer" | "keyboard"): boolean => {
       if (inReview || !(eventTarget instanceof Element)) return false;
       const element = eventTarget.closest<HTMLElement>("[data-peer-mark]");
@@ -234,7 +225,6 @@ function SessionEditorView({
       }
       return true;
     },
-    [inReview, session.markerStore],
   );
 
   const clearUploadLater = useCallback(() => {
@@ -245,8 +235,8 @@ function SessionEditorView({
     }, 3000);
   }, []);
 
-  const handleFigureFile = useCallback(
-    async (file: File, insertPos?: number) => {
+  const handleFigureFile = useEventCallback(
+    async (file: File, insertPos?: number): Promise<void> => {
       if (!projectId) {
         setFigureUploadState({
           kind: "error",
@@ -295,7 +285,6 @@ function SessionEditorView({
         });
       }
     },
-    [clearUploadLater, documentId, projectId],
   );
 
   const editor = useEditor(
@@ -313,7 +302,7 @@ function SessionEditorView({
         showCollaborationDecorations,
         enableDraftInlineReview: inReview,
         markerStore: inReview ? undefined : session.markerStore,
-        markerAgentName,
+        agentNames,
         editorProps: {
           attributes: {
             class: editorProseClass(showToolbar ? "docked" : "none"),
@@ -398,9 +387,13 @@ function SessionEditorView({
       immediatelyRender: false,
       shouldRerenderOnTransaction: false,
     },
+    // Rebuilding the editor destroys its Yjs UndoManager and drops keystrokes
+    // in flight, so this list holds document/room identity and the immutable
+    // surface configuration only — never a value that moves at turn rate.
+    // Handlers reach current state through `useEventCallback`, and agent names
+    // through a store the projection subscribes to.
     [
       documentId,
-      handleFigureFile,
       projectId,
       schemaType,
       session,
@@ -409,8 +402,7 @@ function SessionEditorView({
       ariaLabel,
       showCollaborationDecorations,
       inReview,
-      openPeerMark,
-      markerAgentName,
+      agentNames,
     ],
   );
 

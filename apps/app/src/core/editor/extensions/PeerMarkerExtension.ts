@@ -6,6 +6,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { i18n } from "@/lib/i18n";
+import type { AgentNameStore } from "../agent-name-store";
 import {
   changeMarkLabel,
   collaboratorChangeLabel,
@@ -47,15 +48,12 @@ function markerColor(marker: SessionMarker): string {
   return collaborationColorFor(identity);
 }
 
-function markerLabel(
-  marker: SessionMarker,
-  markerAgentName?: (threadId: string) => string | undefined,
-): string {
+function markerLabel(marker: SessionMarker, agentNames?: AgentNameStore): string {
   return marker.author.kind === "agent"
     ? changeMarkLabel(
         marker.kind,
         marker.pureDeletionOffset,
-        markerAgentName?.(marker.author.threadId),
+        agentNames?.get(marker.author.threadId),
       )
     : collaboratorChangeLabel();
 }
@@ -63,9 +61,9 @@ function markerLabel(
 function interactiveAttributes(
   marker: SessionMarker,
   emphasizedId: string | null,
-  markerAgentName?: (threadId: string) => string | undefined,
+  agentNames?: AgentNameStore,
 ): Record<string, string> {
-  const label = markerLabel(marker, markerAgentName);
+  const label = markerLabel(marker, agentNames);
   const deletion = marker.kind === "delete" || marker.pureDeletionOffset !== null;
   return {
     "data-peer-mark": marker.changeId,
@@ -176,7 +174,7 @@ function buildMarkerDecorations(
   store: SessionMarkerStore,
   state: EditorState,
   emphasizedId: string | null,
-  markerAgentName?: (threadId: string) => string | undefined,
+  agentNames?: AgentNameStore,
 ): DecorationSet {
   const decorations: Decoration[] = [];
   for (const marker of store.getSnapshot()) {
@@ -192,7 +190,7 @@ function buildMarkerDecorations(
           position.to,
           {
             class: "meridian-peer-mark--range",
-            ...interactiveAttributes(marker, emphasizedId, markerAgentName),
+            ...interactiveAttributes(marker, emphasizedId, agentNames),
           },
           { changeId: marker.changeId },
         ),
@@ -214,14 +212,14 @@ function buildMarkerDecorations(
           const mark = document.createElement("span");
           mark.className = "meridian-peer-mark--tick";
           for (const [name, value] of Object.entries(
-            interactiveAttributes(marker, emphasizedId, markerAgentName),
+            interactiveAttributes(marker, emphasizedId, agentNames),
           )) {
             mark.setAttribute(name, value);
           }
           mark.setAttribute("contenteditable", "false");
           const label = document.createElement("span");
           label.className = "meridian-collab-cursor__label meridian-peer-mark__label";
-          label.textContent = markerLabel(marker, markerAgentName);
+          label.textContent = markerLabel(marker, agentNames);
           mark.append(label);
           return mark;
         },
@@ -229,7 +227,7 @@ function buildMarkerDecorations(
           side: -1,
           // ProseMirror reuses keyed widget DOM. Include emphasis state so an
           // addressed tick is rebuilt with its emphasis attribute.
-          key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}:${markerLabel(marker, markerAgentName)}`,
+          key: `${marker.changeId}:${marker.changeId === emphasizedId ? "emphasized" : "idle"}:${markerLabel(marker, agentNames)}`,
           changeId: marker.changeId,
         },
       ),
@@ -334,7 +332,7 @@ function anchorsResolve(store: SessionMarkerStore, state: EditorState): void {
 
 export const PeerMarkerExtension = Extension.create<{
   markerStore: SessionMarkerStore | null;
-  markerAgentName?: (threadId: string) => string | undefined;
+  agentNames?: AgentNameStore;
 }>({
   name: "peerMarkers",
   addOptions: () => ({ markerStore: null }),
@@ -379,14 +377,14 @@ export const PeerMarkerExtension = Extension.create<{
   },
   addProseMirrorPlugins() {
     const store = this.options.markerStore;
-    const markerAgentName = this.options.markerAgentName;
+    const agentNames = this.options.agentNames;
     if (!store) return [];
     return [
       new Plugin<PeerMarkerPluginState>({
         key: peerMarkerPluginKey,
         state: {
           init: (_config, state) => ({
-            decorations: buildMarkerDecorations(store, state, null, markerAgentName),
+            decorations: buildMarkerDecorations(store, state, null, agentNames),
             pendingClearIds: [],
             emphasizedId: null,
           }),
@@ -421,7 +419,7 @@ export const PeerMarkerExtension = Extension.create<{
             return {
               decorations:
                 rebuild || tr.docChanged || emphasizedMeta !== undefined
-                  ? buildMarkerDecorations(store, newState, emphasizedId, markerAgentName)
+                  ? buildMarkerDecorations(store, newState, emphasizedId, agentNames)
                   : previous.decorations.map(tr.mapping, tr.doc),
               pendingClearIds,
               emphasizedId,
@@ -445,6 +443,9 @@ export const PeerMarkerExtension = Extension.create<{
           };
           const unsubscribe = store.subscribe(requestRebuild);
           const unsubscribeLocale = i18n.on("change", requestRebuild);
+          // Thread titles land after the turn that created the mark, so a name
+          // arriving later has to repaint labels that already rendered as "AI".
+          const unsubscribeNames = agentNames?.subscribe(requestRebuild);
           anchorsResolve(store, view.state);
           return {
             update(updatedView) {
@@ -456,6 +457,7 @@ export const PeerMarkerExtension = Extension.create<{
               destroyed = true;
               unsubscribe();
               unsubscribeLocale();
+              unsubscribeNames?.();
             },
           };
         },

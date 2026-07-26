@@ -15,7 +15,10 @@ change-trail events, not manuscript content.
 - Assemble collaborative extensions only through `createEditorExtensions()` and
   keep the app schema aligned with `@meridian/prosemirror-schema`.
 - Keep a single Yjs fragment and sync path per editor. Changing a room identity
-  requires a TipTap remount.
+  requires a TipTap remount, and nothing else may cause one: a rebuild destroys
+  the Yjs UndoManager and drops keystrokes in flight. Editor construction reads
+  identity and immutable surface config only; live data reaches the editor
+  through stores it subscribes to (`SessionMarkerStore`, `AgentNameStore`).
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
 

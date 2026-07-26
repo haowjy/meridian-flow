@@ -29,6 +29,12 @@ Yjs document session. It must stay structurally aligned with
   hues belong only to identity chrome such as the hover label and popover dot.
   Localized mark and trail verbs come from `change-mark-labels.ts`; do not
   duplicate English labels in the ProseMirror extension or UI surfaces.
+  The thread name inside a mark label arrives through `AgentNameStore`, a
+  subscribable lookup the projection repaints from. It is a store rather than a
+  resolver callback because the editor is built once per room: a closure over
+  the thread-list query would re-key the editor on every refetch, and thread
+  titles land after the turn that created the mark. An untitled thread
+  contributes no name, so the label falls back to "AI".
 - Live `DocumentSession`s own an ephemeral `SessionMarkerStore` sidecar.
   Change-event replace sets survive editor remounts during the registry's
   retention window but are never persisted or projected into branch rooms.

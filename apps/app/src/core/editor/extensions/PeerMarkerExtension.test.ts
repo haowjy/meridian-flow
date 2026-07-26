@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { activateLocale } from "@/lib/i18n";
+import { createAgentNameStore } from "../agent-name-store";
 import { createEditorConfig } from "../config";
 import { SessionMarkerStore } from "../session-marker-store";
 import { relativePositionForEditorIndex } from "./LiveRangeNavigationExtension";
@@ -233,6 +234,10 @@ describe("peer marker writer self-clear", () => {
   it("rebuilds existing marker labels when the locale changes", async () => {
     addMarker("range", 2, 5);
     editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    // Drain rebuilds queued by anchor reconciliation so the assertion below
+    // isolates the name subscription.
+    await Promise.resolve();
+    await Promise.resolve();
     const selector = '[data-peer-mark="range-mark"]';
     expect(editor.view.dom.querySelector(selector)?.getAttribute("aria-label")).toBe(
       "Show change details for AI replaced a passage",
@@ -269,5 +274,43 @@ describe("peer marker writer self-clear", () => {
     expect(tick?.previousSibling?.textContent).toBe("Beyond the seawall, three ");
     expect(tick?.nextSibling?.textContent).toBe("boats waited for morning.");
     expect(editor.view.dom.querySelector(".meridian-peer-mark--range")).toBeNull();
+  });
+});
+
+describe("peer marker agent names", () => {
+  it("repaints labels when a thread title arrives after the mark", async () => {
+    const agentNames = createAgentNameStore();
+    editor.destroy();
+    const doc = new Y.Doc({ gc: false });
+    editor = new Editor({
+      element: document.createElement("div"),
+      ...createEditorConfig({
+        document: doc,
+        awareness: new Awareness(doc),
+        markerStore: store,
+        agentNames,
+      }),
+    });
+    editor.commands.setContent({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+    });
+    addMarker("range", 2, 5);
+    editor.view.dispatch(editor.state.tr.setMeta("peer-markers:rebuild", true));
+    // Drain rebuilds queued by anchor reconciliation so the assertion below
+    // isolates the name subscription.
+    await Promise.resolve();
+    await Promise.resolve();
+    const selector = '[data-peer-mark="range-mark"]';
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("data-peer-mark-label")).toBe(
+      "AI replaced a passage",
+    );
+
+    agentNames.replace(new Map([["thread-1", "Seawall rewrite"]]));
+    await Promise.resolve();
+
+    expect(editor.view.dom.querySelector(selector)?.getAttribute("data-peer-mark-label")).toBe(
+      "Seawall rewrite replaced a passage",
+    );
   });
 });
