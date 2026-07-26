@@ -61,7 +61,11 @@ async function main(): Promise<void> {
     if (local) {
       const { targetDb } = await ensureDatabaseForUrl(databaseUrl);
       console.log(`DB tests: created owned database ${targetDb}.`);
-      const migrationExit = await run(repoRoot, ["db:migrate"], databaseUrl);
+      const migrationExit = await run(
+        repoRoot,
+        ["exec", "tsx", "tools/dev/migrate-db.ts", "--use-ambient-database-url"],
+        databaseUrl,
+      );
       if (migrationExit !== 0)
         throw new Error(`DB migrations exited with status ${migrationExit}.`);
       const functionsExit = await run(repoRoot, ["db:apply-functions"], databaseUrl);
