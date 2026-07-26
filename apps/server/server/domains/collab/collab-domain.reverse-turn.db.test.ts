@@ -32,6 +32,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsReversals,
       documentYjsUpdates,
       documents,
+      eventJournal,
       folders,
       projects,
       pushLineage,
@@ -185,6 +186,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => {
       await db.$client.end();
+    });
+
+    it("resets diagnostics that depend on a listed table", async () => {
+      await db.insert(eventJournal).values({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        seq: 1n,
+        eventType: "run.started",
+        payload: { source: "reset-test" },
+      });
+
+      await deleteDrizzleRows(db, [turns]);
+
+      await expect(db.select().from(eventJournal)).resolves.toEqual([]);
+      await expect(db.select().from(turns)).resolves.toEqual([]);
     });
 
     it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {
