@@ -20,9 +20,9 @@ Yjs document session. It must stay structurally aligned with
   do not: the draft Hocuspocus room is server-persisted and short-lived, and a
   local draft cache risks stale recovery across review sessions.
 - Live peer marks are the session projection of durable trail changes. Their
-  anchored popover lazy-reads trail detail and the originating thread snapshot;
-  recovery uses the fixed trail Restore endpoint and removes the session mark
-  only after success.
+  anchored popover lazy-reads trail detail and the originating thread snapshot.
+  The popover is evidence and navigation only; producing-turn receipt Undo/Redo
+  is the sole reversal authority for AI changes.
 - Peer-mark manuscript color describes the change, not the thread identity:
   added/modified marks use jade and deletions use crimson. Ordinary ranges rest
   as an underline only; a sweep is the sole resting warning tint. Per-thread

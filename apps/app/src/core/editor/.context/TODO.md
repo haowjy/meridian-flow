@@ -5,7 +5,7 @@
 Inline draft review is now live: the editor remounts into the `draft:<draftId>`
 room, `DraftInlineReviewExtension` owns decorations, the sidebar can activate
 and dispose operation-scoped hunks through server commands, and the review
-editor remains a read-only projection.
+editor is an editable peer in the draft branch.
 
 Open gaps:
 

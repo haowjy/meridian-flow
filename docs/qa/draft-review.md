@@ -68,13 +68,13 @@ for ~200ms).
 ## Probe C — active-only disposition and recovery journey
 
 1. Apply a draft on an existing document. PASS: its active row disappears,
-   live content matches the pinned preview, and no closed draft receipt or
-   per-card Undo appears.
-2. Exercise each eligible live recovery surface independently:
-   - open a surviving peer mark and run trail-backed Restore;
-   - run Undo, then Redo, from the producing turn's receipt.
-   PASS: each command updates live content and its own recovery state after a
-   reload. These are live trail/turn actions, not draft reactivation.
+   live content matches the whole current branch (including writer edits made
+   after the last preview), and no closed draft receipt or per-card Undo
+   appears.
+2. Open a surviving peer mark and confirm it offers evidence/navigation only.
+   Then run Undo and Redo from the producing turn's receipt. PASS: receipt
+   reversal updates live content and its recovery state after a reload; the
+   peer mark exposes no competing Restore command.
 3. Create another draft and Discard it. PASS: its active row disappears,
    live content is unchanged, and no draft-level Undo receipt appears.
 4. From two browser sessions, select the same draft-created document for

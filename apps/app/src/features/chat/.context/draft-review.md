@@ -5,22 +5,21 @@ and draft-only-tab contracts.
 
 ## Architecture
 
-Inline review is the only manuscript preview surface. Whole-draft "Apply all"
-runs the `acceptDraft` path; each dock Changes card also carries per-card
-Apply/Discard.
+Inline review is the only manuscript preview surface. Every Apply entry point
+runs the same whole-current-branch `acceptDraft` path; Discard may still target
+one operation or the whole branch.
 The controller is the single client review-session owner. Its reducer owns
-`surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
-message target, and inline messages. The synchronous disposition lock is the
+`surface: none | inline`, the active `{ documentId, draftId }`, and inline
+messages. The synchronous disposition lock is the
 only pending-command source. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
 `DraftReviewProvider` keys that owner by Project + Work so review and dock-error
 state cannot cross a Work switch.
 
-Per-card Apply routes the closure-card `acceptDraft` mutation with
-`operationIds`; the server receives the vended closure class as one card, so
-there is no dependency confirmation state. Every disposition is serialized by
-the session's synchronous lock (`controller.isDisposing`): while any whole-draft
-or per-card Apply/Discard is in flight, all mutating controls disable and a
+Card Apply is only a UI entry point into whole-branch acceptance; the
+operation id is not an Apply boundary. Every disposition is serialized by the
+session's synchronous lock (`controller.isDisposing`): while any Apply or
+per-card/whole-branch Discard is in flight, all mutating controls disable and a
 second card click is ignored rather than clearing the in-flight card's pending
 state. Per-card Discard routes to the server discard mutation with
 `operationIds`; the server performs reversal-peer sync. The mutation awaits the
@@ -28,24 +27,24 @@ draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
 
 Bulk Apply/Discard is one controller command over a captured target list; the
-dock does not infer command completion from busy/idle render edges. Direct
-inline Apply uses the exact preview the writer reviewed; bulk Apply acquires
-each captured draft's current preview while retaining the batch reservation.
-A reviewed whole-draft Apply stays disabled until that exact preview is
-available; Apply/Discard failures are session outcomes rendered by the review
-header rather than ignored promises.
+dock does not infer command completion from busy/idle render edges. Apply
+addresses the current branch rather than preview operation ids or a revision
+token. The server settles the complete branch state at command time, including
+writer rows created after the last preview. Apply/Discard failures are session
+outcomes rendered by the review header rather than ignored promises.
 A batch stops at its first failure; transport failures surface through the
 dock's typed error state. Apply always merges through Yjs, including when the
 writer changed the same passage after the draft was cut. The durable receipt
-records every edit without classification; best-effort provenance only elevates
-a swept mark in the connected session.
+preserves each branch row's actor attribution. Active AI handles retain their
+normal live Undo dependency semantics; writer rows may therefore make an AI
+turn Undo unavailable. Best-effort sweep evidence only elevates a receiving
+writer's swept mark when that writer's post-observation edit was overwritten.
 
-On whole-draft Apply or Discard, the controller clears the review surface so
+On Apply or whole-draft Discard, the controller clears the review surface so
 the editor rebinds from the draft room to the live manuscript room. The server
 owns one active Work-draft branch per `(documentId, workId)`, so there is no
-same-document neighbor to select after disposition. If accept returns
-`status: "stale_draft"`, inline review reloads the refreshed draft id from the
-response instead of exiting.
+same-document neighbor to select after disposition. Apply has one terminal
+`applied` result; partial-Apply and stale-preview response states do not exist.
 
 Review mode is the dock's `Changes` view, plus a full-width editor when the
 writer is on the Editor screen — there is no in-editor review split. Entering
@@ -60,8 +59,9 @@ branch, so review has one active row per document. The dock's `DockChangesView`
 expands the reviewed document to operation cards read from the live preview.
 Each card carries hover-revealed Apply/Discard verbs — the only mutating targets
 on the card — driving `controller.acceptOperation` / `controller.discardOperation`.
-Both take their selection from review state, so a card disposes correctly with no
-manuscript mounted. Only the card-body click needs the editor: it calls
+The former accepts the whole current branch; the latter discards the selected
+operation. Both take their selection from review state, so a card disposes
+correctly with no manuscript mounted. Only the card-body click needs the editor: it calls
 `controller.focusReviewOperation(operationId)`, which reads the review editor off
 the inline-review runtime to highlight + scroll the manuscript span, and is
 inert on screens with no editor.
@@ -70,8 +70,8 @@ The review editor is editable. A draft branch is a Yjs room and the writer is
 one more peer in it, so ordinary TipTap input is admitted and lands in the draft
 branch — never in live — alongside agent writes. Dispositions are separate:
 Apply/Discard are server commands, so draft review has no per-card Undo command.
-After Apply, recovery belongs to trail-backed Restore or turn-receipt Undo/Redo
-rather than browser Ctrl+Z or a client mutation origin.
+After Apply, recovery belongs to turn-receipt Undo/Redo rather than peer-mark
+actions, browser Ctrl+Z, or a client mutation origin.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
 the TipTap inline-review extension and reports model availability identities.
@@ -93,11 +93,11 @@ are not part of this boundary.
 See the
 [requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
 for product decisions and the
-[draft review projection authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-projection-authority.md)
+[editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-editable-branch.md)
 for cross-cutting architecture.
 
-The server preview identity (`draftId` plus live and draft revision tokens)
-controls whether the displayed Apply request is current.
+The preview describes the branch-vs-live delta and supplies navigation evidence;
+it does not scope Apply. Apply always settles the server's current branch.
 
 ## Draft review freshness
 
@@ -114,9 +114,9 @@ This subscription is a freshness seam only. The TipTap/Yjs session remains the
 single document-sync path; the provider never interprets update contents or builds
 a second draft model.
 
-Accept paths gate on a fresh `draftRevisionToken` taken from the preview fetch,
-never from client Yjs sync state — the server token is the authority on what the
-writer actually reviewed.
+Preview refresh remains presentation freshness. Apply does not send a
+`draftRevisionToken` or operation set; the server branch is the command
+authority.
 
 ## The pending signal and draft-only tab lifecycle
 
@@ -152,8 +152,8 @@ never stored. Local disposition events and remote membership reconciliation
 both route through
 `resolveDraftOnlyTab(projectId, documentId, "committed" | "discarded")`:
 
-- Every accept path (whole-draft AND per-card, which materializes a new
-  document on the first partial apply) resolves `"committed"` — keep the
+- Every Apply path materializes the whole branch and resolves `"committed"` —
+  keep the
   tab, drop the marker — after the awaited draft-list refresh but while the
   disposition lock remains held. Controls must not re-enable before that local
   resolution; draft-group absence alone cannot distinguish accept from discard.

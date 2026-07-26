@@ -15,8 +15,8 @@ assembly. No notice is stored as a turn or block, rendered by `buildContext`, or
 allowed to own `activeLeafTurnId`.
 
 The domain contains only notices that affect a later model call: `undo` and
-`awareness_degraded`. Writer-facing change reporting belongs to Trail/Restore,
-not this queue.
+`awareness_degraded`. Writer-facing change reporting belongs to Trail evidence,
+session marks, and receipt Undo/Redo, not this queue.
 
 ## Failure boundary
 

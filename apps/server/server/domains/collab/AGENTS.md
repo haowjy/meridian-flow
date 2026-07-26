@@ -12,8 +12,8 @@ propagation between them.
   directly to live, and each write is pushed into the Work draft journal.
 - **Work draft** is the single writer-review branch for one document and Work.
   Every thread peer in that Work pushes into the same branch. Review compares
-  its Y.Doc with live and pushes/discards selected journal rows; turns are not
-  independent physical drafts.
+  its Y.Doc with live. Apply pushes the whole current branch; Discard may reverse
+  selected journal rows. Turns are not independent physical drafts.
 - **Journal is the durable record.** Runtime state is memory-only; restarts cold
   reconstruct from the live journal plus branch state/journal rows.
 - **The durable authority head is fenced.** Each live document has one durable
@@ -26,7 +26,8 @@ propagation between them.
   sparse continuation/restoration facts in the reserved Yjs provenance types,
   atomically with their prose update; ordinary authorship adds no reserved fact.
 - **Closure means card review.** `branch-review-closure.ts` computes
-  journal-backed closure classes so review cards apply/discard coherent sets.
+  journal-backed closure classes so cards explain coherent sets and Discard can
+  reverse one safely. Card Apply still publishes the whole current branch.
 
 ## What lives here
 
@@ -113,16 +114,18 @@ propagation between them.
   durable handle; undo/redo stages a typed-generation system row and projects it
   in the same Work-draft commit. Never delegate an active Draft generation to
   live reversal persistence. One command pins its branch authority through
-  persistence; reconstruction finishes from the authoritative branch state so
-  selectively reviewed rows cannot reappear. Persistence fences both appended
-  rows and status-only Apply/review transitions.
+  persistence; reconstruction finishes from the authoritative branch state.
+  Persistence fences both appended rows and status-only reversal/review
+  transitions.
 - **All branch Y.Docs are `gc: false`**: delete sets are preserved; tombstones
   are never cleaned. The undo dependency predicate depends on full struct history.
 - **Push lock ordering**: `BranchCriticalSections` acquires sorted branch locks
   (per `branchId`) then sorted live document coordinator locks. Never bypass it
   or reverse this order.
-- **Draft Apply always merges**: manual, selective, companion, and auto pushes
-  all integrate through Yjs. Settlement sweep policy elevates a live-session
+- **Draft Apply settles the whole current branch**: every writer Apply and
+  auto-push integrates through Yjs. Writer rows created after preview are
+  included with their actor attribution; active AI rows keep dependency-based
+  Undo semantics. Settlement sweep policy elevates a live-session
   mark only for a receiving writer whose post-observation edit was overwritten;
   unknown, historical, AI, and other-writer roots are ordinary for that
   recipient. This never changes the durable receipt or vetoes a push.

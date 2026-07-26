@@ -93,8 +93,8 @@ composer mode, and review state live in
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` review entry for the dock strip and `Changes` rows: reveals Changes in the current screen's dock and enters inline review, never changing `?screen`; on the Editor screen it also opens the drafted document and collapses the left rail, restoring it on exit (capture mechanics in its header comment) |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: selection, stale-draft state, whole-draft + per-card commands, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
-| `draft-review-session.ts` | Shared disposition lock, revision acquisition, response policy, command sequencing, and review-session reducer |
+| `useDraftReviewController.ts` | One client review-session owner: selection, whole-branch Apply, selective/whole Discard, and the `isDisposing` lock serializing every disposition. Emits message codes (no writer-facing strings); the dock localizes |
+| `draft-review-session.ts` | Shared disposition lock, request acquisition, response policy, command sequencing, and review-session reducer |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 
 ## Draft-review boundary
@@ -139,5 +139,5 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
-→ [Draft review projection authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-projection-authority.md)
+→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-editable-branch.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher

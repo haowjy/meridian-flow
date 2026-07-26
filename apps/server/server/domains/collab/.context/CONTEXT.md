@@ -256,8 +256,7 @@ fail only when a command reaches them.
   system row carries the Work-draft generation and becomes durable in the same
   branch commit that projects its Yjs update; it never writes the live journal.
   The command pins one branch scope from planning through persistence, and cold
-  replay is reconciled to the authoritative branch snapshot so selective review
-  remains represented even though reviewed rows stay in the generation history.
+  replay is reconciled to the authoritative branch snapshot.
   The commit also checks the planned branch-journal watermark and status revision
   under the branch snapshot CAS, so appended rows and status-only Apply/review
   transitions both reject the stale reversal for replanning.
@@ -282,9 +281,10 @@ fail only when a command reaches them.
   advertising per-write identity the journal does not retain.
   Apply materializes only handles whose final branch state is active; handles
   eliminated by Draft undo are squashed rather than recreated as active live
-  mutations for content that is absent. Because one Apply is one durable live
-  update, all handles materialized by that Apply form one live undo boundary:
-  selecting any of them expands to the full group and marks the group together.
+  mutations for content that is absent. Each surviving branch journal row keeps
+  its own live update identity and attribution. Writer rows therefore remain
+  visible to the dependency predicate instead of being folded into an AI
+  mutation or representative push author.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
 the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
 inside the same transaction, under `lockDocumentMutation` advisory lock. There is
@@ -351,28 +351,27 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail evidence is read-only**: durable Before/After excerpts support
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
-- **Draft Apply always merges**: manual, selective, companion, and auto pushes
-  all integrate through Yjs. `draftBaseUpdateSeq` is still a required persisted
+- **Draft Apply settles the whole current branch**: every writer Apply and
+  auto-push integrates through Yjs. `draftBaseUpdateSeq` is still a required persisted
   and mapped journal field, but no current semantic reader compares it or uses
   it to gate Apply. Do not treat it as freshness or conflict authority; removing
   it is a schema-, migration-, persistence-, fixture-, and test-wide change
-  rather than incidental cleanup in a review-contract slice. Authorship derives
-  from durable journal attribution: `completeStagedPush` persists the live
-  journal row as `originType: "human"` with `actorUserId` when the push carries
-  `pushedByUserId` (writer-confirmed Apply). Otherwise it folds branch-local
-  undo/redo and inspects the remaining active agent mutations: exactly one
-  shared turn produces `originType: "agent"` with that `actorTurnId`; no active
-  agent turn or multiple turns stays `system`. Representative push metadata is
-  not attribution evidence. Push-time and immediate-path sweep detection derive
-  their live-session hint from durable attribution, not from push-specific
-  metadata or a separate protection table. Trail rows persist every edit without
-  classification; missing provenance suppresses elevation and never blocks Apply.
-- **Writer Apply pins to the displayed preview**: `DraftAcceptRequest.operationIds`
-  is required (non-optional). The client pins Apply-all to the displayed preview
-  via a render-time ref, never a click-time refetch; post-preview rows stay
-  pending. Composition routes all writer Apply through `pushSelectedToLive`;
-  the `whole` push kind remains for Auto-apply/retry but is unreachable from
-  writer Apply.
+  rather than incidental cleanup in a review-contract slice. Apply writes each
+  current branch journal row separately into the live journal: writer rows keep
+  `originType: "human"` and `actorUserId`; agent rows keep `originType: "agent"`
+  and `actorTurnId`; system rows remain system-authored. Active agent handles
+  materialize against their corresponding live update rows, while handles
+  eliminated by Draft Undo remain absent. A later writer row can therefore make
+  producing-turn Undo unavailable through the canonical dependency predicate.
+  Push-time and immediate-path sweep detection derive their live-session hint
+  from durable attribution, not push metadata or a separate protection table.
+  Trail rows persist every edit without classification; missing evidence
+  suppresses elevation and never blocks Apply.
+- **Writer Apply is branch-scoped, not preview-scoped**:
+  `DraftAcceptRequest` names the draft or branch only. The server pushes the
+  complete current branch, including writer rows created after preview.
+  Preview operations and revision tokens are presentation evidence, not command
+  selection or freshness authority.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
