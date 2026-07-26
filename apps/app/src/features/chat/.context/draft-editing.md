@@ -231,8 +231,9 @@ both route through
 
 - Every accept path (whole-draft AND per-card, which materializes a new
   document on the first partial apply) resolves `"committed"` — keep the
-  tab, drop the marker — and must do so BEFORE the workDrafts refetch lands,
-  because draft-group absence alone cannot distinguish accept from discard.
+  tab, drop the marker — after the awaited draft-list refresh but while the
+  disposition lock remains held. Controls must not re-enable before that local
+  resolution; draft-group absence alone cannot distinguish accept from discard.
 - Whole-draft reject resolves `"discarded"` — close the tab.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
