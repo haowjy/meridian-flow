@@ -85,7 +85,7 @@ and review state live in
 | `conversation-reveal.ts` | One-shot editor→thread handshake: route to the owning thread, scroll its turn, expand Changes, and bring the exact row into view. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftDock.tsx` | Composer-attached strip for the Work's pending AI changes. `useDraftDock` owns the model + the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card |
+| `DraftDock.tsx` | Composer-attached strip for the Work's pending AI changes. `useDraftDock` assembles the model and starts bulk commands; `draft-review-session.ts` owns sequential execution and stop policy. `<DraftDock>` renders the chrome, not a card |
 | `ComposerWriteModeControl.tsx` | Draft / Auto-apply selector bound to the exact Work resolved at the project/chat composition root |
 | `docked-drafts.ts` | Pure active-draft assembly: `dockRows` (one pending row per document), `hasDockChanges` (Changes-tab visibility), and `activeDockedDraftGroups` (composer DraftDock visibility). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |

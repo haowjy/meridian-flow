@@ -51,10 +51,11 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 
 ### Changes availability
 
-`hasDockChanges(groups)` in `features/chat/docked-drafts.ts` is the
-single predicate for both the Changes segment and the Changes view's empty
-branch. It derives from active `dockRows`; when the final row disappears,
-`DockShell` immediately renders the native view and updates the session choice.
+`dockRows(groups)` in `features/chat/docked-drafts.ts` is the shared active-row
+projection. `DockShell` uses its `hasDockChanges` wrapper for segment
+visibility, while `DockChangesView` renders those rows and owns its empty
+branch. When the final row disappears, `DockShell` immediately renders the
+native view and updates the session choice.
 
 ### Slot material contract
 

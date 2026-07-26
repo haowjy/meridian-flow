@@ -59,9 +59,9 @@ finds an active draft.
    a complete boundary. The active segment may use page paper only inside that
    boundary; it never connects to the page like a tab chip.
 
-7. **Empty Changes is absent.** `hasDockChanges` is the one visibility
-   predicate used by both `DockShell` and `DockChangesView`. It derives only
-   from active draft rows.
+7. **Empty Changes is absent.** `dockRows` is the shared active-row projection.
+   `DockShell` uses its `hasDockChanges` wrapper for segment visibility, while
+   `DockChangesView` renders the projected rows directly.
 
 ## Anti-patterns
 
