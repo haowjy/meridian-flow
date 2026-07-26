@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/contracts`: draft Apply now commits the
+  whole current branch, including writer edits made after preview; review rows
+  retain writer identity and mixed-author branches preserve receipt Undo safety.
 - `apps/app`, `apps/server`, `packages/contracts`: swept AI marks now mean the
   receiving writer's post-observation edit was overwritten; baseline, unknown,
   AI-authored, and other-writer prose remains ordinary for that recipient.
