@@ -51,7 +51,7 @@ describe("DraftInlineReviewExtension", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",

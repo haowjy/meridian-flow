@@ -89,7 +89,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -167,7 +167,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-a",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-a",
           kind: "agent",
           contribution: "edited",
           classification: "rewrite",
@@ -226,7 +226,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -234,7 +234,7 @@ describe("buildDecorations", () => {
         },
         {
           operationId: "op-writer",
-          rejectSourceUpdateIds: [2],
+          closureClassId: "closure:op-writer",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -307,7 +307,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-writer",
-          rejectSourceUpdateIds: [1, 2, 3],
+          closureClassId: "closure:op-writer",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -371,7 +371,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -379,7 +379,7 @@ describe("buildDecorations", () => {
         },
         {
           operationId: "op-writer",
-          rejectSourceUpdateIds: [2],
+          closureClassId: "closure:op-writer",
           kind: "writer",
           contribution: "added",
           classification: "addition",
@@ -433,7 +433,7 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          rejectSourceUpdateIds: [1],
+          closureClassId: "closure:op-ai",
           kind: "agent",
           contribution: "added",
           classification: "addition",
@@ -496,7 +496,7 @@ function makeBlockResolver() {
 
 const agentOperation: ReviewOperation = {
   operationId: "op-ai",
-  rejectSourceUpdateIds: [1],
+  closureClassId: "closure:op-ai",
   kind: "agent",
   contribution: "added",
   classification: "addition",

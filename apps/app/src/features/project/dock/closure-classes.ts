@@ -1,18 +1,14 @@
 /**
  * closure-classes — partition review operations into proposal cards (spec §5.3).
  *
- * Closure=card (ratified 2026-07-05): a closure class — causal drag ∪
- * hunk-sharing as one fixpoint — renders as ONE proposal card with one selective
+ * Closure=card (ratified 2026-07-05): a server-vended Discard class renders as
+ * ONE proposal card with one selective
  * Discard. The writer never sees the internal write structure; there is
  * no dependency prompt anywhere. This module turns the flat operation list the
  * preview hands us into the class partition the card list renders.
  *
- * Grouping key, richest-first:
- *   1. `operation.closureClassId` when the server vends it.
- *   2. Fallback: connected components over the accept/reject closure
- *      id sets ∪ hunk-sharing, mirroring the shipped `draft-accept-closure`
- *      precedent — so the presentation is already closure-correct before the
- *      explicit id lands.
+ * The server owns the class partition. This client groups directly by the
+ * required `operation.closureClassId`.
  *
  * Pure data, no React: the card module renders whatever this returns.
  */
@@ -57,14 +53,12 @@ export function partitionClosureClasses(
   hunks: readonly ReviewHunk[],
 ): ReviewProposal[] {
   if (operations.length === 0) return [];
-  const classIdByOp = resolveClassIds(operations, hunks);
-
   // Group operations by resolved class id, preserving first-seen order both for
   // the classes and for the operations inside each class.
   const order: string[] = [];
   const groups = new Map<string, ReviewOperation[]>();
   for (const op of operations) {
-    const classId = classIdByOp.get(op.operationId) ?? op.operationId;
+    const classId = op.closureClassId;
     let bucket = groups.get(classId);
     if (!bucket) {
       bucket = [];
@@ -84,73 +78,14 @@ export function partitionClosureClasses(
   });
 }
 
-/** Resolve each operation to its closure-class id (server field or fallback). */
-function resolveClassIds(
-  operations: readonly ReviewOperation[],
-  hunks: readonly ReviewHunk[],
-): Map<string, string> {
-  const uf = new UnionFind();
-  for (const op of operations) uf.add(op.operationId);
-  const union = (ids: readonly string[]) => {
-    const present = ids.filter((id) => uf.has(id));
-    for (let i = 1; i < present.length; i += 1)
-      uf.union(present[0] as string, present[i] as string);
-  };
-
-  const opsByExplicitClass = new Map<string, string[]>();
-  for (const op of operations) {
-    if (typeof op.closureClassId === "string") {
-      const ids = opsByExplicitClass.get(op.closureClassId) ?? [];
-      ids.push(op.operationId);
-      opsByExplicitClass.set(op.closureClassId, ids);
-    }
-    if (op.acceptClosureOperationIds && op.acceptClosureOperationIds.length > 0) {
-      union([op.operationId, ...op.acceptClosureOperationIds]);
-    }
-    if (op.rejectClosureOperationIds && op.rejectClosureOperationIds.length > 0) {
-      union([op.operationId, ...op.rejectClosureOperationIds]);
-    }
-  }
-  for (const ids of opsByExplicitClass.values()) union(ids);
-  for (const hunk of hunks) {
-    if (hunk.operationIds.length > 1) union(hunk.operationIds);
-  }
-
-  const componentOps = new Map<string, ReviewOperation[]>();
-  for (const op of operations) {
-    const root = uf.find(op.operationId);
-    const bucket = componentOps.get(root) ?? [];
-    bucket.push(op);
-    componentOps.set(root, bucket);
-  }
-
-  const result = new Map<string, string>();
-  for (const ops of componentOps.values()) {
-    const explicitIds = new Set(
-      ops.map((op) => op.closureClassId).filter((id): id is string => Boolean(id)),
-    );
-    const classId =
-      explicitIds.size === 1
-        ? ([...explicitIds][0] as string)
-        : `closure:${ops
-            .map((op) => op.operationId)
-            .sort()
-            .join("+")}`;
-    for (const op of ops) result.set(op.operationId, classId);
-  }
-  return result;
-}
-
 function buildProposal(
   classId: string,
   classOps: ReviewOperation[],
   hunks: readonly ReviewHunk[],
   writerJoinedOps: ReadonlySet<string>,
 ): ReviewProposal {
-  // The representative carries the class's accept/reject closure. Prefer an
-  // agent op whose accept closure names the whole class; any op works when the
-  // server pre-groups (each carries the same closure), so first agent op, else
-  // first op, is a deterministic pick.
+  // Prefer an agent operation for the class Discard command; the server resolves
+  // the representative back to the server-owned class.
   const primaryOperation = classOps.find((op) => op.kind === "agent") ?? classOps[0];
   const contributingTurnIds = distinct(
     classOps.map((op) => op.actorTurnId).filter((id): id is string => Boolean(id)),
@@ -194,37 +129,4 @@ function summaryClassification(ops: readonly ReviewOperation[]): ReviewOperation
 
 function distinct(values: readonly string[]): string[] {
   return [...new Set(values)];
-}
-
-/** Minimal union-find over operation ids for the pre-wire fallback partition. */
-class UnionFind {
-  private parent = new Map<string, string>();
-
-  add(id: string): void {
-    if (!this.parent.has(id)) this.parent.set(id, id);
-  }
-
-  has(id: string): boolean {
-    return this.parent.has(id);
-  }
-
-  find(id: string): string {
-    this.add(id);
-    let root = id;
-    while (this.parent.get(root) !== root) root = this.parent.get(root) as string;
-    // Path-compress so repeated lookups stay flat.
-    let cursor = id;
-    while (this.parent.get(cursor) !== root) {
-      const next = this.parent.get(cursor) as string;
-      this.parent.set(cursor, root);
-      cursor = next;
-    }
-    return root;
-  }
-
-  union(a: string, b: string): void {
-    const rootA = this.find(a);
-    const rootB = this.find(b);
-    if (rootA !== rootB) this.parent.set(rootB, rootA);
-  }
 }

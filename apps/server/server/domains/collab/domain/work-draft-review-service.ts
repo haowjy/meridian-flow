@@ -145,7 +145,6 @@ export function createWorkDraftReviewService(input: {
           draftDoc: branch.doc,
           model: input.model,
           draftUpdates,
-          partitionClosureClasses: true,
         });
         return {
           status: "active" as const,
@@ -297,18 +296,15 @@ export function createWorkDraftReviewService(input: {
                 workId: command.workId,
               });
               if (preview?.status !== "active") throw new Error("draft_not_found");
-              const requested = new Set(command.operationIds);
-              const operationIds = new Set<string>();
-              for (const operation of preview.operations) {
-                if (!requested.has(operation.operationId)) continue;
-                for (const id of operation.rejectClosureOperationIds ?? [operation.operationId]) {
-                  operationIds.add(id);
-                }
-              }
+              const requestedClassIds = new Set(
+                preview.operations
+                  .filter((operation) => command.operationIds?.includes(operation.operationId))
+                  .map((operation) => operation.closureClassId),
+              );
               const updateIds = new Set<number>();
               for (const operation of preview.operations) {
-                if (!operationIds.has(operation.operationId)) continue;
-                for (const id of operation.directionalClosure.reject.updateIds) updateIds.add(id);
+                if (!requestedClassIds.has(operation.closureClassId)) continue;
+                for (const id of operation.discardUpdateIds) updateIds.add(id);
               }
               await input.branchReview.discardSelected({
                 branchId: branch.branchId,

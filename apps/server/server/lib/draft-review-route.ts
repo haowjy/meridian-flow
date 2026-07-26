@@ -152,11 +152,11 @@ export async function handleWorkDraftRejectRequest(
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
-function toWireReviewOperation<
-  T extends { directionalClosure?: unknown; sourceUpdateIds?: unknown },
->(operation: T) {
+function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
+  operation: T,
+) {
   const {
-    directionalClosure: _directionalClosure,
+    discardUpdateIds: _discardUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
     ...wire
   } = operation;

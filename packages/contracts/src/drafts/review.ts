@@ -59,16 +59,13 @@ export type ReviewOperationClassification = "rename" | "addition" | "removal" | 
 
 export interface ReviewOperation {
   operationId: string;
-  acceptClosureOperationIds?: string[];
-  rejectClosureOperationIds?: string[];
-  rejectSourceUpdateIds: number[];
   actorTurnId?: string;
   /**
    * Server-vended closure-class id. Every operation in one journal-backed
    * hunk-sharing closure class carries the same id; the review surface renders
    * one proposal card per distinct id.
    */
-  closureClassId?: string;
+  closureClassId: string;
   kind: "agent" | "writer";
   contribution: ReviewOperationContribution;
   classification: ReviewOperationClassification;

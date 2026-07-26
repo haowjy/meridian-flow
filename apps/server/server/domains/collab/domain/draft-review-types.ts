@@ -35,19 +35,11 @@ export type DraftReviewBlockHunkInternal = DraftReviewHunkBaseInternal & {
 
 export type DraftReviewHunkInternal = DraftReviewTextHunkInternal | DraftReviewBlockHunkInternal;
 
-export type DraftReviewDirectionalClosure = {
-  accept: { operationIds?: string[]; updateIds: number[] };
-  reject: { operationIds?: string[]; updateIds: number[] };
-};
-
 export interface DraftReviewOperationInternal {
   operationId: string;
-  acceptClosureOperationIds?: string[];
-  rejectClosureOperationIds?: string[];
-  closureClassId?: string;
-  rejectSourceUpdateIds: number[];
+  closureClassId: string;
+  discardUpdateIds: number[];
   sourceUpdateIds: number[];
-  directionalClosure: DraftReviewDirectionalClosure;
   actorTurnId?: string;
   actorUserId?: string;
   kind: "agent" | "writer";
