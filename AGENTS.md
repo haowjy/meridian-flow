@@ -18,16 +18,14 @@ craft. Every architectural and product decision should survive the question:
 LitRPG, progression fantasy) at 5,000–10,000+ words/day — Scrivener's power at
 that scale, without the complexity cliff.
 
-**The editing model trusts the LLM**, in this order: make it easy for an LLM
-to make changes; for a writer to make changes through an LLM; for a writer to
+**The editing model trusts the LLM.** Make it easy for an LLM to make
+changes, so a writer can make changes through an LLM, so the writer can
 write. AI writes merge like any Yjs peer's — marks and receipts inform, undo
 recovers, nothing gates. Do not add approval gates, refusal vetoes, or
 "safety" friction on AI writes: the writer usually told the LLM exactly what
-to do, so gating the LLM gates the writer. This instinct has been struck down
-repeatedly; see the
-[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/trust-the-llm-mission.md)
-and
-[agent writes merge](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agent-writes-merge-report-and-recover.md).
+to do, so gating the LLM gates the writer. Agents have reintroduced this
+friction repeatedly and the human has struck it down every time — see the
+[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/trust-the-llm-mission.md).
 
 ## Engineering principles
 
