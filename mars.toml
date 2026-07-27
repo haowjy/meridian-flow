@@ -19,5 +19,6 @@ include_fanout = false
 agents = [
 "reviewer",
 #    "browser-prober",
-"prober"
+"prober",
+"coder"
 ]
