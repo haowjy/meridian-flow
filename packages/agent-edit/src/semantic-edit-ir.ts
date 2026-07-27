@@ -87,6 +87,9 @@ export function validateSemanticEditIRV1(
         }
       }
       if (run.kind === "restoration") {
+        if (spanLength(run.output) !== run.root.length) {
+          throw new Error("Restoration output must map length-for-length to its certified root");
+        }
         if (!options.restorationCertificates?.hasRetainedRoot(ir.documentId, run.root)) {
           throw new Error("Restoration requires a retained root certificate");
         }

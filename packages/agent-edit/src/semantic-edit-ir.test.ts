@@ -121,4 +121,21 @@ describe("SemanticEditIRV1", () => {
       }),
     ).toThrow(/certificate/);
   });
+
+  it("rejects restoration output that exceeds its certified root", () => {
+    const restoration = base("wide");
+    if (restoration.intent.kind === "mappedEdits") {
+      restoration.intent.edits[0].outputRuns = [
+        { kind: "restoration", root, payload: "wide", output: { from: 0, to: 4 } },
+      ];
+    }
+
+    expect(() =>
+      validateSemanticEditIRV1(restoration, {
+        expectedDocumentId: "doc-1",
+        expectedInputRevision: "revision-1",
+        restorationCertificates: { hasRetainedRoot: () => true },
+      }),
+    ).toThrow(/length-for-length/);
+  });
 });
