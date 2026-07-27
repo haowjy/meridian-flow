@@ -64,7 +64,7 @@ describe("change trail (postgres)", () => {
     const cold = createHarness();
     await cold.pollTrails();
     await cold.pollTrails();
-    const trails = await cold.trailRows();
+    const trails = await cold.trailRowMembership();
     expect(trails.shells).toEqual([
       expect.objectContaining({
         ownerKind: "turn",
@@ -132,7 +132,7 @@ describe("change trail (postgres)", () => {
     await harness.pollTrails();
     await harness.pollTrails();
 
-    const trails = await harness.trailRows();
+    const trails = await harness.trailRowMembership();
     expect(trails.shells).toEqual([
       expect.objectContaining({ state: "settled", wordsAdded: 1, wordsRemoved: 2 }),
     ]);
@@ -260,14 +260,16 @@ describe("change trail (postgres)", () => {
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ state: "no_op", attempts: 0 }),
     ]);
-    expect(await harness.trailRows()).toMatchObject({
+    expect(await harness.trailRowMembership()).toMatchObject({
       shells: [expect.objectContaining({ state: "settling", version: 2 })],
       details: [],
-      outbox: [expect.objectContaining({ eventKind: "updated", version: 2 })],
     });
+    expect(await harness.trailEventSequence()).toEqual([
+      expect.objectContaining({ eventKind: "updated", version: 2 }),
+    ]);
 
     await harness.pollTrails();
-    expect(await harness.trailRows()).toMatchObject({
+    expect(await harness.trailRowMembership()).toMatchObject({
       shells: [
         expect.objectContaining({
           state: "settled",
@@ -278,11 +280,11 @@ describe("change trail (postgres)", () => {
         }),
       ],
       details: [],
-      outbox: [
-        expect.objectContaining({ eventKind: "updated", version: 2 }),
-        expect.objectContaining({ eventKind: "settled", version: 3 }),
-      ],
     });
+    expect(await harness.trailEventSequence()).toEqual([
+      expect.objectContaining({ eventKind: "updated", version: 2 }),
+      expect.objectContaining({ eventKind: "settled", version: 3 }),
+    ]);
   });
 
   it("retries an auto-push without re-entering the shared branch mutex", async () => {
@@ -361,7 +363,7 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ state: "exhausted", attempts: 5 }),
     ]);
     expect(harness.exhaustionFences()).toEqual([{ threadId: THREAD_ID, documentId: ALPHA_ID }]);
-    expect(await harness.trailRows()).toMatchObject({
+    expect(await harness.trailRowMembership()).toMatchObject({
       shells: [expect.objectContaining({ state: "settling", settledAt: null })],
       details: [],
       outbox: [expect.objectContaining({ eventKind: "updated" })],
@@ -377,7 +379,7 @@ describe("change trail (postgres)", () => {
     await harness.pollTrails();
     await harness.pollTrails();
 
-    const rows = await harness.trailRows();
+    const rows = await harness.trailRowMembership();
     expect(rows.shells).toEqual([
       expect.objectContaining({
         ownerKind: "turn",
@@ -407,7 +409,7 @@ describe("change trail (postgres)", () => {
     await harness.pollTrails();
     await harness.pollTrails();
 
-    expect(await harness.trailRows()).toMatchObject({
+    expect(await harness.trailRowMembership()).toMatchObject({
       shells: [
         expect.objectContaining({
           ownerKind: "shared",
@@ -429,7 +431,7 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ status: "pushed" }),
       expect.objectContaining({ status: "pushed" }),
     ]);
-    const rows = await harness.trailRows();
+    const rows = await harness.trailRowMembership();
     expect(rows.shells).toEqual([expect.objectContaining({ version: 2, documentCount: 2 })]);
     expect(rows.details.map((row) => row.documentId).sort()).toEqual([ALPHA_ID, BETA_ID]);
     expect(rows.outbox.map((row) => row.version).sort((a, b) => a - b)).toEqual([1, 2]);
@@ -457,7 +459,7 @@ describe("change trail (postgres)", () => {
       expect.any(Number),
     ]);
 
-    const rows = await harness.trailRows();
+    const rows = await harness.trailRowMembership();
     const shared = rows.shells.find((shell) => shell.ownerKind === "shared");
     expect(shared).toMatchObject({ documentCount: 2 });
     const sharedEvents = rows.outbox.filter((row) => row.trailId === shared?.id);
@@ -490,7 +492,7 @@ describe("change trail (postgres)", () => {
 
     await harness.pollTrails();
     await harness.pollTrails();
-    const [settled] = (await harness.trailRows()).shells;
+    const [settled] = (await harness.trailRowMembership()).shells;
     expect(settled).toMatchObject({
       state: "settled",
       version: 3,
@@ -506,26 +508,28 @@ describe("change trail (postgres)", () => {
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ state: "pending", attempts: 0 }),
     ]);
-    const reopened = await harness.trailRows();
+    const reopened = await harness.trailRowMembership();
     expect(reopened.shells).toEqual([
       expect.objectContaining({ state: "building", version: 4, settledAt: null }),
     ]);
-    expect(reopened.outbox.map((row) => [row.version, row.eventKind])).toEqual([
-      [2, "updated"],
-      [3, "settled"],
-      [4, "updated"],
-    ]);
+    expect((await harness.trailEventSequence()).map((row) => [row.version, row.eventKind])).toEqual(
+      [
+        [2, "updated"],
+        [3, "settled"],
+        [4, "updated"],
+      ],
+    );
 
     await harness.pollTrails();
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ state: "complete", attempts: 1 }),
     ]);
-    expect((await harness.trailRows()).shells).toEqual([
+    expect((await harness.trailRowMembership()).shells).toEqual([
       expect.objectContaining({ state: "settling", version: 6, settledAt: null }),
     ]);
 
     await harness.pollTrails();
-    const resettled = await harness.trailRows();
+    const resettled = await harness.trailRowMembership();
     expect(resettled.shells).toEqual([
       expect.objectContaining({
         state: "settled",
@@ -535,14 +539,16 @@ describe("change trail (postgres)", () => {
         documentCount: 1,
       }),
     ]);
-    expect(resettled.outbox.map((row) => [row.version, row.eventKind])).toEqual([
-      [2, "updated"],
-      [3, "settled"],
-      [4, "updated"],
-      [5, "updated"],
-      [6, "updated"],
-      [7, "settled"],
-    ]);
+    expect((await harness.trailEventSequence()).map((row) => [row.version, row.eventKind])).toEqual(
+      [
+        [2, "updated"],
+        [3, "settled"],
+        [4, "updated"],
+        [5, "updated"],
+        [6, "updated"],
+        [7, "settled"],
+      ],
+    );
     expect(
       resettled.outbox.find((row) => row.version === 7 && row.eventKind === "settled"),
     ).toMatchObject({
@@ -558,7 +564,7 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("error-rebuild");
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expect((await harness.trailRows()).details).toHaveLength(1);
+    expect((await harness.trailRowMembership()).details).toHaveLength(1);
 
     await harness.addLiveDependency();
     await harness.rollbackResponse("later-failed-response");
@@ -567,7 +573,7 @@ describe("change trail (postgres)", () => {
     await harness.pollTrails();
 
     expect(await harness.workRows()).toEqual([expect.objectContaining({ state: "complete" })]);
-    expect(await harness.trailRows()).toMatchObject({
+    expect(await harness.trailRowMembership()).toMatchObject({
       shells: [
         expect.objectContaining({
           state: "settled",

@@ -25,7 +25,9 @@ export const {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } = await import("../../../shared/drizzle-transaction.js");
-export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+export const { deleteDrizzleRows, truncateDrizzleTables } = await import(
+  "../../../test-support/drizzle-reset.js"
+);
 const {
   createDrizzleBranchJournalReadStore,
   createDrizzleWorkDraftPendingStore,
@@ -37,8 +39,8 @@ const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = 
   "../adapters/drizzle-pending-settlement.js"
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
-const { createDrizzleChangeTrailPersistence } = await import(
-  "../adapters/drizzle-change-trails.js"
+const { createDrizzleChangeTrailAggregateWriter } = await import(
+  "../adapters/drizzle-change-trail-aggregate.js"
 );
 const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
@@ -107,12 +109,18 @@ export const THREAD_ID = "00000000-0000-4000-8000-000000000807" as ThreadId;
 export const TURN_ID = "00000000-0000-4000-8000-000000000808" as TurnId;
 
 export async function resetDatabase(): Promise<void> {
-  await truncateDrizzleTables(db, [
+  await deleteDrizzleRows(db, [
+    schema.branchPushOutboxUpdates,
+    schema.branchPushSettlementOutbox,
     schema.turnTrailWork,
     schema.changeTrailDeliveryOutbox,
     schema.changeTrailDocumentDetails,
+    schema.changeTrailDocumentOccurrences,
     schema.changeTrailShells,
     schema.pendingNotices,
+    schema.documentYjsReversalOps,
+    schema.documentYjsReversals,
+    schema.agentEditWidCounters,
     schema.agentEditMutations,
     schema.branchWriteJournal,
     schema.pushLineage,
@@ -302,7 +310,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     concurrentJournalWatermarks: watermarks,
   });
   const notices = createDrizzleNoticePort(db);
-  const changeTrails = createDrizzleChangeTrailPersistence(db);
+  const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
     schema: documentSchema,
     model,
@@ -2004,13 +2012,34 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
     },
     noticeRows: () => db.select().from(schema.pendingNotices),
-    async trailRows() {
+    async trailRowMembership() {
       return {
-        shells: await db.select().from(schema.changeTrailShells),
-        details: await db.select().from(schema.changeTrailDocumentDetails),
-        outbox: await db.select().from(schema.changeTrailDeliveryOutbox),
+        shells: await db
+          .select()
+          .from(schema.changeTrailShells)
+          .orderBy(schema.changeTrailShells.id),
+        details: await db
+          .select()
+          .from(schema.changeTrailDocumentDetails)
+          .orderBy(
+            schema.changeTrailDocumentDetails.trailId,
+            schema.changeTrailDocumentDetails.documentId,
+          ),
+        outbox: await db
+          .select()
+          .from(schema.changeTrailDeliveryOutbox)
+          .orderBy(schema.changeTrailDeliveryOutbox.eventId),
       };
     },
+    trailEventSequence: () =>
+      db
+        .select()
+        .from(schema.changeTrailDeliveryOutbox)
+        .orderBy(
+          schema.changeTrailDeliveryOutbox.trailId,
+          schema.changeTrailDeliveryOutbox.version,
+          schema.changeTrailDeliveryOutbox.eventKind,
+        ),
     threadPeerMarkdown: () => markdownByKind("thread_peer"),
     workDraftMarkdown: () => markdownByKind("work_draft"),
     async databaseBranchHashes() {

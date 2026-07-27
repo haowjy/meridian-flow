@@ -173,7 +173,7 @@ describe("change trail (postgres)", () => {
     expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
     await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
 
-    const trail = await harness.trailRows();
+    const trail = await harness.trailRowMembership();
     expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
     expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
@@ -205,7 +205,7 @@ describe("change trail (postgres)", () => {
     await harness.pollTrails();
     await harness.pollTrails();
 
-    const trail = await harness.trailRows();
+    const trail = await harness.trailRowMembership();
     expect(trail.shells).toEqual([
       expect.objectContaining({
         state: "settled",

@@ -27,7 +27,7 @@ describe("change trail (postgres)", () => {
     await expect(success.autoPush(successBranchId)).resolves.toMatchObject({ status: "pushed" });
     expect(await success.liveMarkdown(ALPHA_ID)).not.toEqual(beforeSuccess);
     expect(await success.noticeRows()).toEqual([]);
-    expect(await success.trailRows()).toMatchObject({
+    expect(await success.trailRowMembership()).toMatchObject({
       shells: [{}],
       details: [{}],
       outbox: [{}],
@@ -62,7 +62,7 @@ describe("change trail (postgres)", () => {
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeMarkdown);
       expect(await harness.liveUpdateCount()).toBe(beforeUpdates);
       expect(await harness.pushRows()).toEqual([]);
-      expect(await harness.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
+      expect(await harness.trailRowMembership()).toEqual({ shells: [], details: [], outbox: [] });
       expect(await harness.noticeRows()).toEqual([]);
       expect(await harness.activePushJournalCount()).toBe(1);
     }
@@ -73,7 +73,7 @@ describe("change trail (postgres)", () => {
     const proven = createHarness();
     const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
     await proven.autoPush(provenBranchId);
-    const provenChange = (await proven.trailRows()).details[0]?.changes[0];
+    const provenChange = (await proven.trailRowMembership()).details[0]?.changes[0];
     expect(provenChange).toMatchObject({
       kind: "modify",
       navigation: { kind: "live_block_range", targetBlockId: expect.any(Object) },
@@ -95,7 +95,7 @@ describe("change trail (postgres)", () => {
     const conservative = createHarness();
     const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
     await conservative.autoPush(conservativeBranchId);
-    const conservativeChange = (await conservative.trailRows()).details[0]?.changes[0];
+    const conservativeChange = (await conservative.trailRowMembership()).details[0]?.changes[0];
     expect(conservativeChange).toMatchObject({
       kind: "delete",
       navigation: { kind: "deletion_boundary" },
@@ -106,7 +106,7 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("trail-commit-retry");
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-    const committed = await harness.trailRows();
+    const committed = await harness.trailRowMembership();
     expect(committed.shells).toHaveLength(1);
     expect(committed.details).toHaveLength(1);
     expect(committed.outbox).toHaveLength(1);
@@ -117,7 +117,7 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "already_pushed" });
-    expect(await harness.trailRows()).toEqual(committed);
+    expect(await harness.trailRowMembership()).toEqual(committed);
   });
 
   it("keeps a mixed-owner push turn-owned and preserves its shell across document deletion", async () => {
@@ -125,19 +125,19 @@ describe("change trail (postgres)", () => {
     const branchId = await harness.seedDestructivePush("trail-shared-delete");
     await harness.makeJournalOwnershipMixed();
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-    const beforeDelete = await harness.trailRows();
+    const beforeDelete = await harness.trailRowMembership();
     expect(beforeDelete.shells).toEqual([
       expect.objectContaining({ ownerKind: "turn", turnId: expect.any(String), changeCount: 1 }),
     ]);
     expect(await harness.pushRows()).toEqual([expect.objectContaining({ turnId: null })]);
 
     await harness.hardDeleteDocument(ALPHA_ID);
-    const afterDocumentDelete = await harness.trailRows();
+    const afterDocumentDelete = await harness.trailRowMembership();
     expect(afterDocumentDelete.shells).toEqual(beforeDelete.shells);
     expect(afterDocumentDelete.details).toEqual([]);
     expect(afterDocumentDelete.outbox).toEqual(beforeDelete.outbox);
 
     await harness.hardDeleteThread();
-    expect(await harness.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
+    expect(await harness.trailRowMembership()).toEqual({ shells: [], details: [], outbox: [] });
   });
 });

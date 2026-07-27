@@ -5,6 +5,14 @@
 - `apps/app`, `apps/server`, `packages/database`, `packages/markup`: remove
   unreachable deferred-chat, run-input ingest, duplicate journal, and test-propped
   helper surfaces.
+- `apps/server`: collaboration DB suites now reset only their populated rows
+  instead of truncating the full foreign-key graph between cases.
+- `apps/server`: collaboration DB suites now reset only their populated
+  foreign-key closure instead of truncating the full graph between cases;
+  Postgres derives dependent tables and child-first order from its live catalog.
+- `apps/server`: change-trail lifecycle DB coverage now reads durable delivery
+  events in logical version order instead of PostgreSQL heap order; callers now
+  use the aggregate writer directly instead of a compatibility wrapper.
 - `packages/database`: pending-notice migrations now preserve thread-addressed
   queue entries and deliberately discard recipient-less pre-release entries.
 - `packages/database`: publication-lineage migrations now preserve branch

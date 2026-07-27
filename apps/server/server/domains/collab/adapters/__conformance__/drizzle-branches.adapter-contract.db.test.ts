@@ -49,7 +49,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
       "../drizzle-pending-settlement.js"
     );
-    const { createDrizzleChangeTrailPersistence } = await import("../drizzle-change-trails.js");
+    const { createDrizzleChangeTrailAggregateWriter } = await import(
+      "../drizzle-change-trail-aggregate.js"
+    );
     const { createDrizzleDocumentProjectionEffects } = await import(
       "../drizzle-document-activity.js"
     );
@@ -127,7 +129,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const createPushStores = (
       serializer: Parameters<typeof createDrizzlePendingSettlementStore>[1],
-      changeTrails = createDrizzleChangeTrailPersistence(db),
+      changeTrails: Parameters<
+        typeof createDrizzlePushCommitStore
+      >[2] = createDrizzleChangeTrailAggregateWriter(db),
     ) => {
       const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const commitStore = createDrizzlePushCommitStore(
@@ -732,7 +736,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         liveDoc: manifest.doc,
       });
-      const realChangeTrails = createDrizzleChangeTrailPersistence(db);
+      const realChangeTrails = createDrizzleChangeTrailAggregateWriter(db);
       let trailRecordCalls = 0;
       let failSecondTrailRecord = true;
       const failingChangeTrails = {
@@ -900,7 +904,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const pushStore = createDrizzlePushCommitStore(
         db,
         stagePendingSettlementWithinTx,
-        createDrizzleChangeTrailPersistence(db),
+        createDrizzleChangeTrailAggregateWriter(db),
       );
       const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureWorkDraftBranch({
