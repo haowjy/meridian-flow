@@ -25,7 +25,7 @@
  *   identity so the external Meridian contract does not change.
  */
 
-import type { Usage } from "@meridian/contracts/runtime";
+import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
 import type OpenAI from "openai";
 import type {
   ContentPart,
@@ -209,6 +209,7 @@ export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
     result.reasoningTokens = usage.output_tokens_details.reasoning_tokens;
   }
 
+  assertValidUsage(result);
   return result;
 }
 

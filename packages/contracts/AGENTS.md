@@ -12,5 +12,9 @@ runtime shapes, and observability records.
 - Durable trail contracts remain lifecycle-neutral. Receiving-writer attention
   is computed per connection as `ChangeEventProjection.swept`, a best-effort
   live-session hint that never enters `TrailChangeV1` or persisted projections.
+- `Usage.inputTokens` is the inclusive input total; the cache counters are
+  disjoint subsets of it. Providers disagree here, so the contract is only true
+  if every gateway adapter normalizes before returning — `assertValidUsage`
+  makes a violation loud rather than a silent billing error.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

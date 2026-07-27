@@ -19,6 +19,7 @@ streaming `Gateway` port.
 | Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptTimeoutMs` policy; `createGatewayFromEnv` for env-driven setup |
 | Registry | `MODEL_REGISTRY` in `config/registry.ts` — single-source for config + pinned pricing. `buildFromRegistry` composes providers. Flat `MODEL_TOKEN_RATES` table is **deleted**. |
 | Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
+| Usage normalization | Adapters own the conversion into canonical `Usage` and call `assertValidUsage` before returning. Providers disagree on what `inputTokens` counts: OpenAI reports an inclusive total, Anthropic reports uncached input and each cache counter as separate additive categories. An adapter that passes additive counters through unchanged underbills every cached turn — see issue [#356](https://github.com/haowjy/meridian-flow/issues/356). |
 | OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
 | Cancel settlement | `Gateway.settleCancelledResult()` owns interrupted-call reconciliation and persist decisions. Generic token/missing-usage handling lives in `gateway/domain/cancel-settlement.ts`; OpenRouter-specific `/generation` settlement lives under `gateway/adapters/openrouter/`. The loop only asks the gateway to settle and then finalizes cancellation. |
 | Tool-arg JSON repair | `gateway/helpers/parse-tool-arguments.ts` repairs malformed provider JSON (e.g. unquoted hex hash `"in": 6c4a`) via `jsonrepair` before falling back to a typed `ToolArgsParseError` sentinel. Unrepairable input surfaces a clear model-actionable parse error instead of degrading into misleading downstream schema errors. See issue [#113](https://github.com/haowjy/meridian-flow/issues/113). |
@@ -100,8 +101,11 @@ facet.
   `COST_MULTIPLIER` when converting raw provider USD-micro cost into metered
   millicredits before ledger debits. Billing owns only ledger behavior and route
   display conversion.
-- `Usage` token counts are shared DTOs from `@meridian/contracts/runtime`; billing
-  owns ledger behavior in `domains/billing`.
+- `Usage` token counts are shared DTOs from `@meridian/contracts/runtime`.
+  Because `inputTokens` is the inclusive total, pricing derives the uncached
+  remainder by subtracting the cache counters, and rejects a negative result
+  instead of clamping it — a clamp silently prices cached turns as free.
+  Billing owns ledger behavior in `domains/billing`.
 
 ## Invariants
 

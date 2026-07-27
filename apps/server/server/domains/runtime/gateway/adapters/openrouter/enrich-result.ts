@@ -1,8 +1,9 @@
 /**
- * OpenRouter result enrichment: best-effort merge of provider-reported cost and
- * native token counts from stream providerData or the /generation fallback.
- * Failures never reject a completed stream — the original result is returned.
+ * OpenRouter result enrichment: preserves provider-reported billing from stream
+ * providerData or the /generation fallback. Provider-native token counters stay
+ * in providerData because OpenRouter does not define their cache-subset shape.
  */
+import { assertValidUsage } from "@meridian/contracts/runtime";
 import type { GenerateResult } from "../../domain/index.js";
 import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import { fetchOpenRouterGeneration } from "./generation.js";
@@ -29,6 +30,7 @@ export async function enrichOpenRouterResult(
   baseUrl: string,
   signal?: AbortSignal,
 ): Promise<GenerateResult> {
+  assertValidUsage(result.usage);
   const providerData = readOpenRouterProviderData(result.providerData);
 
   if (providerData.reportedCostUsd !== undefined) {
@@ -49,51 +51,31 @@ export async function enrichOpenRouterResult(
     return result;
   }
 
+  let generation: Awaited<ReturnType<typeof fetchOpenRouterGeneration>>;
   try {
-    const generation = await fetchOpenRouterGeneration(generationId, apiKey, baseUrl, signal);
-    if (!generation) {
-      if (!hasBillableTokenUsage(result.usage)) {
-        return withMissingUsageMeteringForOpenRouter(result, providerData);
-      }
-      return result;
-    }
-
-    const enrichedUsage = {
-      ...result.usage,
-      inputTokens: generation.native_tokens_prompt ?? result.usage.inputTokens,
-      outputTokens: generation.native_tokens_completion ?? result.usage.outputTokens,
-      ...(generation.native_tokens_reasoning
-        ? { reasoningTokens: generation.native_tokens_reasoning }
-        : {}),
-      ...(generation.native_tokens_cached
-        ? { cacheReadTokens: generation.native_tokens_cached }
-        : {}),
-    };
-
-    if (!hasBillableTokenUsage(enrichedUsage) && generation.total_cost <= 0) {
-      return withMissingUsageMeteringForOpenRouter(result, {
-        ...providerData,
-        generationId,
-        generation,
-        enrichmentSource: "generation_api",
-      });
-    }
-
-    return {
-      ...result,
-      usage: enrichedUsage,
-      providerData: {
-        ...providerData,
-        generationId,
-        reportedCostUsd: generation.total_cost,
-        enrichmentSource: "generation_api",
-        generation,
-      },
-    };
+    generation = await fetchOpenRouterGeneration(generationId, apiKey, baseUrl, signal);
   } catch {
     if (!hasBillableTokenUsage(result.usage)) {
       return withMissingUsageMeteringForOpenRouter(result, providerData);
     }
     return result;
   }
+
+  if (!generation) {
+    if (!hasBillableTokenUsage(result.usage)) {
+      return withMissingUsageMeteringForOpenRouter(result, providerData);
+    }
+    return result;
+  }
+
+  return {
+    ...result,
+    providerData: {
+      ...providerData,
+      generationId,
+      reportedCostUsd: generation.total_cost,
+      enrichmentSource: "generation_api",
+      generation,
+    },
+  };
 }

@@ -2,6 +2,8 @@
  * Purpose: Tests deterministic pricing conversion and registry-sourced pinned rates.
  */
 import { describe, expect, it } from "vitest";
+import { mapUsage as mapAnthropicUsage } from "../gateway/adapters/anthropic/stream-collect.js";
+import { mapUsage as mapOpenAIUsage } from "../gateway/adapters/openai/stream-collect.js";
 import { extractPinnedRates, MODEL_REGISTRY } from "../gateway/config/registry.js";
 import {
   computeModelCost,
@@ -101,6 +103,140 @@ describe("model pricing", () => {
     expect(cost.millicredits).toBe("48300");
     expect(cost.pricingSnapshot.source).toContain("pinned:");
     expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
+  });
+
+  it("prices OpenAI's inclusive cache counters without double-counting input", () => {
+    const usage = mapOpenAIUsage({
+      input_tokens: 1_903,
+      input_tokens_details: { cached_tokens: 1_792 },
+      output_tokens: 74,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 1_977,
+    });
+
+    expect(usage).toEqual({
+      inputTokens: 1_903,
+      outputTokens: 74,
+      cacheReadTokens: 1_792,
+    });
+    expect(
+      computeModelCost({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        usage,
+        rateSource,
+      }),
+    ).toMatchObject({
+      costUsd: "0.000040",
+      millicredits: "5",
+    });
+  });
+
+  it("normalizes Anthropic's disjoint cache counters before pricing the MR3 case", () => {
+    const usage = mapAnthropicUsage({
+      input_tokens: 111,
+      output_tokens: 74,
+      cache_read_input_tokens: 1_792,
+      cache_creation_input_tokens: 0,
+      output_tokens_details: null,
+    } as Parameters<typeof mapAnthropicUsage>[0]);
+
+    expect(usage).toEqual({
+      inputTokens: 1_903,
+      outputTokens: 74,
+      cacheReadTokens: 1_792,
+    });
+    expect(
+      computeModelCost({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        usage,
+        rateSource,
+      }),
+    ).toMatchObject({
+      costUsd: "0.000040",
+      millicredits: "5",
+    });
+  });
+
+  it("prices the complete MR3 Anthropic usage sample without dropping uncached input", () => {
+    const nativeUsages = [
+      [111, 1_792, 74],
+      [142, 1_920, 89],
+      [125, 2_048, 1_648],
+      [164, 3_712, 107],
+      [86, 3_968, 76],
+      [47, 4_096, 1_523],
+      [5_804, 0, 83],
+      [256, 5_632, 1_539],
+      [864, 7_424, 295],
+    ] as const;
+
+    const costs = nativeUsages.map(([inputTokens, cacheReadTokens, outputTokens]) =>
+      computeModelCost({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        usage: mapAnthropicUsage({
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          cache_read_input_tokens: cacheReadTokens,
+          cache_creation_input_tokens: 0,
+          output_tokens_details: null,
+        } as Parameters<typeof mapAnthropicUsage>[0]),
+        rateSource,
+      }),
+    );
+
+    const totalUsdMicros = costs.reduce(
+      (total, cost) => total + BigInt(cost.costUsd.replace(".", "")),
+      0n,
+    );
+    const totalMillicredits = costs.reduce((total, cost) => total + BigInt(cost.millicredits), 0n);
+    expect(totalUsdMicros).toBe(2_656n);
+    expect(totalMillicredits).toBe(311n);
+  });
+
+  it("retains Anthropic input categories when the terminal delta only updates output", () => {
+    const initial = mapAnthropicUsage({
+      input_tokens: 111,
+      output_tokens: 1,
+      cache_read_input_tokens: 1_792,
+      cache_creation_input_tokens: 0,
+      output_tokens_details: null,
+    } as Parameters<typeof mapAnthropicUsage>[0]);
+    const terminal = mapAnthropicUsage(
+      {
+        input_tokens: null,
+        output_tokens: 74,
+        cache_read_input_tokens: null,
+        cache_creation_input_tokens: null,
+        output_tokens_details: null,
+      } as Parameters<typeof mapAnthropicUsage>[0],
+      initial,
+    );
+
+    expect(terminal).toEqual({
+      inputTokens: 1_903,
+      outputTokens: 74,
+      cacheReadTokens: 1_792,
+    });
+  });
+
+  it("rejects cache counters that exceed the canonical inclusive input total", () => {
+    expect(() =>
+      computeModelCost({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        usage: {
+          inputTokens: 111,
+          outputTokens: 74,
+          cacheReadTokens: 1_792,
+        },
+        rateSource,
+      }),
+    ).toThrow(
+      "Usage invariant violated: cacheReadTokens + cacheWriteTokens must not exceed inputTokens",
+    );
   });
 
   it("uses OpenRouter providerData.reportedCostUsd when provider is openrouter", () => {

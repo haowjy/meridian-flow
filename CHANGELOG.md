@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: Anthropic-format cache usage now normalizes to inclusive input
+  totals, so uncached prompt tokens are priced instead of silently clamped away;
+  OpenAI-compatible trailing usage-only chunks are also retained.
 - `apps/app`, `apps/server`, `packages/database`, `packages/markup`: remove
   unreachable deferred-chat, run-input ingest, duplicate journal, and test-propped
   helper surfaces.
@@ -330,7 +333,6 @@
 - `apps/app`: the editor keeps the active writing line away from the viewport
   bottom with 50vh of trailing space; clicking the empty space still places
   the cursor at the end.
-
 - `apps/app`: the dev DebugOverlay now opens an LLM Calls dashboard that groups metadata-only gateway lifecycle events without verbose records consuming its query budget, summarizes latency, tokens, outcomes, retries, and stream-event aggregates, and loads model-request content only on explicit per-call expansion.
 - `apps/server`: gateway calls now emit correlated open, first-output, retry,
   and close lifecycle events with queryable terminal error codes;

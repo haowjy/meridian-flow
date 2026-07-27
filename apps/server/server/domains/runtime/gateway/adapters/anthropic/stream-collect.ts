@@ -30,7 +30,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 
-import type { Usage } from "@meridian/contracts/runtime";
+import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
 import type {
   ContentPart,
   FinishReason,
@@ -133,30 +133,22 @@ export function mapStopReason(
 // ── Usage mapping ─────────────────────────────────────────────────
 
 export function mapUsage(
-  usage: Anthropic.Messages.Usage,
-  deltaUsage?: Anthropic.Messages.MessageDeltaUsage,
+  usage: Anthropic.Messages.Usage | Anthropic.Messages.MessageDeltaUsage,
+  fallback?: Usage,
 ): Usage {
-  // Anthropic reports usage at message_start and then sends final/updated counts
-  // in message_delta. Prefer delta values when present, because they are the
-  // stream's terminal counts. The delta carries cumulative totals (not
-  // incremental), matching the final Message.usage shape.
-  const inputTokens = deltaUsage?.input_tokens ?? usage.input_tokens ?? 0;
-  const outputTokens = deltaUsage?.output_tokens ?? usage.output_tokens ?? 0;
-
+  // Anthropic's input_tokens excludes cache reads and cache creation. Meridian's
+  // canonical inputTokens is inclusive, so the adapter owns the additive
+  // conversion before usage reaches persistence, displays, or pricing.
+  const fallbackCacheRead = fallback?.cacheReadTokens ?? 0;
+  const fallbackCacheWrite = fallback?.cacheWriteTokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? fallbackCacheRead;
+  const cacheWrite = usage.cache_creation_input_tokens ?? fallbackCacheWrite;
+  const uncachedInput =
+    usage.input_tokens ?? (fallback?.inputTokens ?? 0) - fallbackCacheRead - fallbackCacheWrite;
   const result: Usage = {
-    inputTokens,
-    outputTokens,
+    inputTokens: uncachedInput + cacheRead + cacheWrite,
+    outputTokens: usage.output_tokens ?? fallback?.outputTokens ?? 0,
   };
-
-  // Cache read/write counters use Anthropic-specific field names
-  // (`cache_read_input_tokens`, `cache_creation_input_tokens`). Both the
-  // initial Usage and MessageDeltaUsage shapes carry these fields (confirmed
-  // in SDK types and Anthropic pricing docs). Collapse into Meridian's
-  // canonical Usage fields.
-  const cacheRead =
-    (deltaUsage?.cache_read_input_tokens ?? 0) || (usage.cache_read_input_tokens ?? 0);
-  const cacheWrite =
-    (deltaUsage?.cache_creation_input_tokens ?? 0) || (usage.cache_creation_input_tokens ?? 0);
 
   if (cacheRead > 0) result.cacheReadTokens = cacheRead;
   if (cacheWrite > 0) result.cacheWriteTokens = cacheWrite;
@@ -166,13 +158,12 @@ export function mapUsage(
   // `output_tokens_details.thinking_tokens` is present in the installed SDK
   // but not explicitly documented in the Anthropic docs pages reviewed —
   // treat as SDK-confirmed, docs-unverified.
-  const thinkingTokens =
-    deltaUsage?.output_tokens_details?.thinking_tokens ||
-    usage.output_tokens_details?.thinking_tokens;
+  const thinkingTokens = usage.output_tokens_details?.thinking_tokens ?? fallback?.reasoningTokens;
   if (thinkingTokens && thinkingTokens > 0) {
     result.reasoningTokens = thinkingTokens;
   }
 
+  assertValidUsage(result);
   return result;
 }
 
@@ -305,21 +296,7 @@ export function* eventsFromAnthropicStreamEvent(
 
       // Update usage with delta (has final token counts).
       if (event.usage) {
-        acc.usage = mapUsage(acc.usage as any, event.usage);
-        // Re-derive from raw values after mapUsage: acc.usage may have merged
-        // partial start counts with delta counts, while the output token total
-        // from event.usage is authoritative for the completed stream.
-        const merged: Usage = {
-          inputTokens: acc.usage.inputTokens,
-          outputTokens: event.usage.output_tokens,
-        };
-        if (acc.usage.cacheReadTokens) merged.cacheReadTokens = acc.usage.cacheReadTokens;
-        if (acc.usage.cacheWriteTokens) merged.cacheWriteTokens = acc.usage.cacheWriteTokens;
-        if (acc.usage.reasoningTokens) merged.reasoningTokens = acc.usage.reasoningTokens;
-        if (event.usage.output_tokens_details?.thinking_tokens) {
-          merged.reasoningTokens = event.usage.output_tokens_details.thinking_tokens;
-        }
-        acc.usage = merged;
+        acc.usage = mapUsage(event.usage, acc.usage);
 
         yield { type: "usage", usage: acc.usage };
       }

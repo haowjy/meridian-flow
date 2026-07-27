@@ -1,7 +1,8 @@
 /**
- * OpenRouter generation metadata client: fetches authoritative cost and token
- * stats from GET /generation after a chat completion finishes. Used when
- * the streaming usage chunk omits cost (interrupted streams, older models).
+ * OpenRouter generation metadata client: fetches authoritative cost and
+ * provider-native token stats from GET /generation after a chat completion
+ * finishes. Native counters remain provider metadata because OpenRouter does
+ * not define whether cached tokens are included in the prompt total.
  */
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
