@@ -138,7 +138,9 @@ its PR without asking. **Merging to a stable branch (`main`) is a human
 gate**: agents never merge into it — agent review is not a substitute for the
 human's review. Open the PR, report it, and stop; the human merges (or
 explicitly says "merge it"). Merges between working branches (feature →
-integration lanes) need no gate.
+integration lanes) need no gate. Docs-only updates (AGENTS.md, `.context/`,
+KB pages) are exempt: commit them straight to `main` (human ruling,
+2026-07-27).
 
 ## Worktree discipline
 
