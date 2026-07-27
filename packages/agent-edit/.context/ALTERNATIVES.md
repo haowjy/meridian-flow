@@ -40,8 +40,8 @@ instead of a full reconstruction.
 ### Why we declined
 
 1. **It walks back the load-bearing decision.** The whole sync engine is built on
-   *"canonical is authoritative; hot state is disposable"* (see `CONTEXT.md` →
-   "Sync engine"). Cold reconstruction is *why* a `read` "can never carry runtime
+   *"canonical is authoritative; hot state is disposable"* (see
+   [write-invariants.md](write-invariants.md) → "Sync engine — the write loop"). Cold reconstruction is *why* a `read` "can never carry runtime
    drift forward or corrupt the doc." A durable overlay reintroduces exactly the
    hot, persisted, must-stay-consistent state that decision exists to eliminate.
 2. **It adds a new consistency surface.** The overlay must be persisted, versioned,
@@ -50,7 +50,7 @@ instead of a full reconstruction.
    well-tested rebuild path.
 3. **High blast radius for unproven benefit.** It would touch staging, commit,
    echo computation, and the concurrent-edit attribution that currently leans on
-   rebuild-from-canonical (`CONTEXT.md`: "Commit re-sync is a delta+origin apply"
+   rebuild-from-canonical ([write-invariants.md](write-invariants.md): "Commit re-sync is a delta+origin apply"
    — `read`'s rebuild can't attribute, so the two paths exist for a reason). It is
    plausible this breaks invariants we currently get for free, for a cost
    (cold-rebuild per turn) that has **not** shown up as a real problem.
