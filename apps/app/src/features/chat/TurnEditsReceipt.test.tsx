@@ -140,7 +140,10 @@ describe("TurnEditsReceipt", () => {
       />,
     );
 
-    expect(html).toContain("Edited chapter-1");
+    // Chrome counts and never names: the document name lives in the expanded
+    // rows, which own navigation.
+    expect(html).toContain("Edited 1 document");
+    expect(html).not.toContain("chapter-1");
     expect(html).toContain("Undo");
   });
 

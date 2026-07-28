@@ -2,17 +2,21 @@
  * tool-renderers — the per-tool presentation registry that drives the activity
  * timeline's tier-2 rows.
  *
- * Each registered tool contributes: an icon, a single-line title that reads
- * the tool's input (e.g. `Read Chapter 1`, `Searched "dragon"`, `Ran the Outline skill`),
- * an optional inline expansion (curated — search result rows, stream tail, or
- * skill output).
+ * Each registered tool contributes a single-line title that reads the tool's
+ * input (e.g. `Read Chapter 1`, `Searched "dragon"`, `Invoked the Outline
+ * skill`) and an optional inline expansion (curated — search result rows,
+ * stream tail, or skill output). Glyphs are not here: they belong to the
+ * command, which `ToolRow` resolves.
  *
- * Three-tier contract documented in `.context/CONTEXT.md`:
+ * Three-tier contract documented in `.context/tool-expands.md`:
  *   - **Tier 1 (default fallback)** — unknown tool. Static one-line row
  *     showing the humanized tool name only. No expand or interaction.
  *   - **Tier 2 (registered)** — the entries in this file. Per-tool one-liner
  *     plus optional curated expansion.
  *   - **Tier 3 (generative)** — model-authored React. Not implemented here.
+ *
+ * Titles never derive their own tense: both forms come from `tool-command`, so
+ * the visible row and the screen-reader announcement cannot disagree.
  *
  * Hard rule: **never expose raw JSON in default UX**. Renderers produce
  * curated content (titles, result rows, terminal tail) only. If we need raw
@@ -23,28 +27,57 @@ import {
   type JsonValue,
   meridianErrorFromStructuredToolOutput,
 } from "@meridian/contracts/protocol";
-import { FilePen, FolderTree, type LucideIcon, Search, Sparkles, Wrench } from "lucide-react";
+import { FileText, Folder } from "lucide-react";
 import type { ReactNode } from "react";
-import { documentDisplayName, folderDisplayName, isContextUri } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
+
+import { cn } from "@/lib/utils";
+import { Markdown } from "@/rich-content/Markdown";
+import { BoundLine, ClippedProse } from "./ClippedExpand";
 import {
-  humanizeSkillSlug,
-  stringInput,
-  toolActivityVocabulary,
-  toolInputObject,
-} from "./tool-activity-vocabulary";
-import { normalizeToolResultRows, truncate } from "./tool-result-preview";
+  type CommandExpand,
+  descriptorFor,
+  humanizeToolName,
+  type ToolActivityPhrase,
+  toolActivityPhrase,
+} from "./command-descriptor";
+import { DocumentName } from "./DocumentName";
+import { documentDisplayName, folderDisplayName } from "./document-display-name";
+import type { ToolView } from "./group-delivery-segments";
+import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import { humanizeSkillSlug, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import {
+  boundLabel,
+  type CappedList,
+  capList,
+  type ExcerptSpan,
+  LISTING_CAP,
+  normalizeListing,
+  normalizeSearchHits,
+  type ToolResultRow,
+  type ToolResultRows,
+  truncate,
+} from "./tool-result-preview";
 
 export type ToolRenderContext = {
-  writeMode?: "direct" | "draft";
+  writeMode?: WriteMode;
 };
 
+/**
+ * Builds an expand's contents on demand. Returning one is a promise that there
+ * is something behind the chevron; returning `null` from `expand` means the
+ * row shows no chevron at all, because an affordance that opens onto nothing
+ * is worse than one that was never offered.
+ *
+ * The split matters as expands grow: deciding *whether* there is content is
+ * cheap, rendering it is not, and a settled turn holds a dozen closed rows.
+ */
+export type ToolExpand = () => ReactNode;
+
 export type ToolRenderer = {
-  Icon: LucideIcon;
   /** Single-line summary of the tool action. Already i18n'd. */
   title: (tool: ToolView, context?: ToolRenderContext) => ReactNode;
-  /** Inline expansion content. `null` = no expand affordance on this row. */
-  expand?: (tool: ToolView) => ReactNode | null;
+  /** Deferred inline expansion. `null` = no expand affordance on this row. */
+  expand?: (tool: ToolView) => ToolExpand | null;
 };
 
 /* ── input helpers ─────────────────────────────────────────────────────── */
@@ -57,50 +90,128 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function toolVerb(tool: ToolView, complete: ReactNode, active: ReactNode): ReactNode {
-  return tool.status === "complete" ? complete : active;
-}
-
-export function DocumentName({ path }: { path: string }) {
-  const displayName = documentDisplayName(path);
+/**
+ * A command and what it acted on, laid out as one line.
+ *
+ * The command must outrank the parameter: making document names into doors
+ * adds weight to the parameter, and without this the most important
+ * distinction in the timeline — did the agent *look at* my book or *change*
+ * it — is carried by the least emphasised word. The verb inherits the row's
+ * ink/medium voice; the parameter steps back a shade and a weight.
+ *
+ * `DocumentName` sets its own tone, because for a document name tone and
+ * linkability are coupled.
+ */
+function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-baseline gap-1.5">
-      <span className="min-w-0 truncate">{displayName.title}</span>
-      {displayName.qualifier ? (
-        <span className="shrink-0 text-ink-subtle">({displayName.qualifier})</span>
+    <span className="flex w-full min-w-0 items-baseline gap-1.5">
+      <span className="shrink-0">{verb}</span>
+      {parameter ? (
+        <span className="flex min-w-0 items-baseline font-normal text-muted-foreground">
+          {parameter}
+        </span>
       ) : null}
     </span>
   );
 }
 
-function DisplayNameTitle({ verb, path }: { verb: ReactNode; path: string }) {
+/** A parameter the timeline shows as text rather than as a destination. */
+function TextParameter({ children }: { children: ReactNode }) {
+  return <span className="min-w-0 truncate">{children}</span>;
+}
+
+function PhraseTitle({ phrase }: { phrase: ToolActivityPhrase }) {
   return (
-    <span className="flex w-full min-w-0 items-baseline gap-1.5">
-      <span className="shrink-0">{verb}</span>
-      <DocumentName path={path} />
-    </span>
+    <CommandTitle
+      verb={phrase.verb}
+      parameter={phrase.parameter ? <TextParameter>{phrase.parameter}</TextParameter> : undefined}
+    />
   );
 }
 
 /* ── inline-expand renderers (curated, never JSON) ─────────────────────── */
 
-function ResultRows({ rows }: { rows: ReturnType<typeof normalizeToolResultRows> }) {
+function rowKey(row: ToolResultRow, index: number): string {
+  return `${index}:${row.uri}`;
+}
+
+/** Search hits: the document, and the passage that matched inside it. */
+function ResultRows({ results }: { results: ToolResultRows }) {
+  const bound = boundLabel(results);
   return (
-    <ul className="space-y-2">
-      {rows.map((row) => (
-        <li key={`${row.title}|${row.subtitle ?? ""}|${row.snippet ?? ""}`} className="space-y-0.5">
-          <div className="text-compact font-medium text-prose-foreground">
-            {isContextUri(row.title) ? <DocumentName path={row.title} /> : row.title}
-          </div>
-          {row.subtitle ? (
-            <div className="truncate font-mono text-meta text-muted-foreground">{row.subtitle}</div>
-          ) : null}
-          {row.snippet ? (
-            <div className="text-xs leading-relaxed text-ink-muted">{row.snippet}</div>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-2">
+        {results.rows.map((row, index) => (
+          <li key={rowKey(row, index)} className="space-y-0.5">
+            {/* A match row is about a document, and the uniform rule covers it:
+                the same door, the same underline as a row title. */}
+            <div className="flex min-w-0 text-compact font-medium text-prose-foreground">
+              <DocumentName path={row.uri} />
+            </div>
+            {row.kind === "document" && row.excerpt ? <Excerpt span={row.excerpt} /> : null}
+          </li>
+        ))}
+      </ul>
+      {bound ? <BoundLine>{bound}</BoundLine> : null}
+    </>
+  );
+}
+
+/**
+ * The matched passage, with the searched words carrying the weight. No coloured
+ * ground: this is the writer's prose, and a highlighter across it would read as
+ * markup rather than as their sentence.
+ */
+function Excerpt({ span }: { span: ExcerptSpan }) {
+  return (
+    <div className="text-xs leading-relaxed text-ink-muted">
+      {span.clipped ? "…" : null}
+      {span.lead}
+      {span.match ? (
+        <span className="font-semibold text-prose-foreground">{span.match}</span>
+      ) : null}
+      {span.trail}
+    </div>
+  );
+}
+
+/**
+ * One line per entry, the density every list-shaped expand shares. Exported as
+ * a constant rather than a component so the outline can wear the same rhythm
+ * while carrying different content.
+ */
+const LISTING_ROW = "flex min-w-0 items-baseline gap-[7px] py-0.5 text-compact";
+
+/**
+ * What the model received from `ls`. A record, not a file browser: the tree
+ * panel already browses, and nothing consumes a folder route, so folders are
+ * inert here and there is nothing else to click.
+ */
+function ListingRows({ results }: { results: ToolResultRows }) {
+  const bound = boundLabel(results);
+  return (
+    <>
+      <ul>
+        {results.rows.map((row, index) => (
+          <li key={rowKey(row, index)} className={LISTING_ROW}>
+            {row.kind === "folder" ? (
+              <>
+                <Folder className="size-3 shrink-0 self-center text-ink-subtle" aria-hidden />
+                <span className="min-w-0 truncate text-prose-foreground">
+                  {folderDisplayName(row.uri)}
+                </span>
+              </>
+            ) : (
+              <>
+                <FileText className="size-3 shrink-0 self-center text-ink-subtle" aria-hidden />
+                <DocumentName path={row.uri} />
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {bound ? <BoundLine>{bound}</BoundLine> : null}
+    </>
   );
 }
 
@@ -136,7 +247,7 @@ function PlainOutput({ value }: { value: string }) {
 }
 
 function invokeSkillSlug(tool: ToolView): string | undefined {
-  return stringInput(inputObject(tool), "skillname");
+  return asString(inputObject(tool).skillname);
 }
 
 /**
@@ -178,19 +289,6 @@ export function invokeSkillFailureCopy(
   return null;
 }
 
-function InvokeSkillTitle({ tool }: { tool: ToolView }) {
-  const slug = invokeSkillSlug(tool);
-  if (!slug) {
-    return toolVerb(tool, t`Ran skill`, toolActivityVocabulary(tool)?.active ?? t`Running skill…`);
-  }
-  const skillName = humanizeSkillSlug(slug);
-  return toolVerb(
-    tool,
-    t`Ran the ${skillName} skill`,
-    toolActivityVocabulary(tool)?.active ?? t`Running skill…`,
-  );
-}
-
 function writeFailureStatus(output: JsonValue | null): string | null {
   if (output == null) return null;
   if (typeof output === "object" && !Array.isArray(output)) {
@@ -205,8 +303,7 @@ function writeFailureStatus(output: JsonValue | null): string | null {
 function writeFailureDocumentName(tool: ToolView): string | null {
   const path = asString(inputObject(tool).path);
   if (!path) return null;
-  const { title, qualifier } = documentDisplayName(path);
-  return qualifier ? `${title} (${qualifier})` : title;
+  return documentDisplayName(path);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -236,78 +333,195 @@ export function writeToolFailureCopy(tool: ToolView): string {
 }
 
 function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
-  const input = inputObject(tool);
-  const path = asString(input.path);
-  const command = asString(input.command);
-  if (command === "read") {
-    const complete = path ? <DisplayNameTitle verb={t`Read`} path={path} /> : t`Read file`;
-    return toolVerb(tool, complete, t`Reading…`);
-  }
-  const isEdit = ["insert", "replace", "undo", "redo"].includes(command ?? "");
+  const writeMode = context?.writeMode ?? "direct";
+  const path = asString(inputObject(tool).path);
+  const descriptor = descriptorFor(tool);
+
   if (tool.isError) {
-    const verb =
-      context?.writeMode === "draft"
-        ? t`Couldn't draft`
-        : isEdit
-          ? t`Couldn't edit`
-          : t`Couldn't write`;
-    return path ? <DisplayNameTitle verb={verb} path={path} /> : verb;
+    const verb = descriptor.failureVerb(writeMode);
+    return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
-  const verb = context?.writeMode === "draft" ? t`Drafted` : isEdit ? t`Edited` : t`Wrote`;
-  const complete = path ? (
-    <DisplayNameTitle verb={verb} path={path} />
-  ) : context?.writeMode === "draft" ? (
-    t`Drafted file`
-  ) : isEdit ? (
-    t`Edited file`
-  ) : (
-    t`Wrote file`
+
+  const phrase = toolActivityPhrase(tool, writeMode);
+  // A partial call has no settled path yet, so the row names no document —
+  // and therefore offers no door onto one.
+  if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
+  if (!path) return descriptor.pathlessTitle?.(writeMode) ?? <PhraseTitle phrase={phrase} />;
+  return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
+}
+
+/**
+ * What a `write` row opens onto, by command. A failure always wins: the most
+ * useful thing a failed write can say is why it failed.
+ */
+const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
+  none: () => null,
+  renderer: () => null,
+  "output-preview": outputPreview,
+  "output-outline": outputOutline,
+  "submitted-content": submittedContent,
+};
+
+function writeExpand(tool: ToolView): ToolExpand | null {
+  if (tool.isError) {
+    return () => <div className="text-compact text-destructive">{writeToolFailureCopy(tool)}</div>;
+  }
+  return COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
+}
+
+function readPath(tool: ToolView): string | undefined {
+  return asString(inputObject(tool).path);
+}
+
+function outputPreview(tool: ToolView): ToolExpand | null {
+  if (typeof tool.output !== "string") return null;
+  const markup = readPayloadMarkup(tool.output);
+  if (!markup) return null;
+  const path = readPath(tool);
+  return () => <QuotedPreview markup={markup} path={path} />;
+}
+
+function outputOutline(tool: ToolView): ToolExpand | null {
+  if (typeof tool.output !== "string") return null;
+  const headings = readPayloadOutline(tool.output);
+  // A document with no headings falls back to whole blocks server-side, so the
+  // payload really is prose and the row should show it as prose.
+  if (!headings) return outputPreview(tool);
+  const outline = capList(headings, LISTING_CAP);
+  return () => <OutlineRows outline={outline} />;
+}
+
+/**
+ * What the model submitted, read from the tool *input*: the output carries
+ * formatted status and diagnostics, and only the input holds the exact content.
+ * Never diff-coloured. Those tokens mean a real, persisted change, and this is
+ * what was sent, which is a different claim; the receipt card owns the other.
+ */
+function submittedContent(tool: ToolView): ToolExpand | null {
+  const content = asString(inputObject(tool).content);
+  if (!content) return null;
+  const path = readPath(tool);
+  return () => (
+    <div className="rounded-md border border-border-subtle bg-muted px-3 py-2">
+      <QuotedPreview markup={content} path={path} />
+    </div>
   );
-  const active = toolActivityVocabulary(tool, context?.writeMode)?.active ?? t`Writing…`;
-  return toolVerb(tool, complete, active);
 }
 
-function writeExpand(tool: ToolView): ReactNode | null {
-  if (!tool.isError) return null;
-  return <div className="text-compact text-destructive">{writeToolFailureCopy(tool)}</div>;
-}
-
-function invokeExpand(tool: ToolView): ReactNode | null {
+function invokeExpand(tool: ToolView): ToolExpand | null {
   if (tool.isError) {
     const copy = invokeSkillFailureCopy(tool.output, invokeSkillSlug(tool));
     if (!copy) return null;
-    return <div className="text-compact text-destructive">{copy}</div>;
+    return () => <div className="text-compact text-destructive">{copy}</div>;
   }
   return streamOrOutput(tool);
 }
 
-function streamOrOutput(tool: ToolView): ReactNode | null {
+function streamOrOutput(tool: ToolView): ToolExpand | null {
   // While running: live tail keeps the freshest output visible. Once complete,
   // prefer the curated final `output` field (e.g. "exit 0", a summary line) —
   // the raw stream transcript is noise next to a tight terminal summary.
   if (tool.status === "complete" && typeof tool.output === "string" && tool.output.length > 0) {
-    return <PlainOutput value={tool.output} />;
+    const value = tool.output;
+    return () => <PlainOutput value={value} />;
   }
   if (tool.streamedOutput && tool.streamedOutput.length > 0) {
-    return <StreamTail stream={tool.streamedOutput} />;
+    const stream = tool.streamedOutput;
+    return () => <StreamTail stream={stream} />;
   }
   if (typeof tool.output === "string" && tool.output.length > 0) {
-    return <StreamTail stream={tool.output} />;
+    const stream = tool.output;
+    return () => <StreamTail stream={stream} />;
   }
   return null;
 }
 
-function resultRowsOrNothing(tool: ToolView): ReactNode | null {
-  const rows = normalizeToolResultRows(tool.output ?? undefined);
-  if (rows.length === 0) return null;
-  return <ResultRows rows={rows} />;
+function listingOrNothing(tool: ToolView): ToolExpand | null {
+  const results = normalizeListing(tool.output ?? undefined);
+  if (results.rows.length === 0) return null;
+  return () => <ListingRows results={results} />;
+}
+
+function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
+  // A chevron is a promise, so the answer to "is there anything here?" comes
+  // from the same parse that will fill the expand. The parse stops at the row
+  // cap; only the React tree waits for the writer to open the row.
+  const results = normalizeSearchHits(
+    tool.output ?? undefined,
+    stringInput(inputObject(tool), "pattern"),
+  );
+  if (results.rows.length === 0) return null;
+  return () => <ResultRows results={results} />;
+}
+
+/**
+ * The passage the model read, or the content it submitted, as quoted matter.
+ *
+ * Top-anchored: the opening of the passage is what the writer wants. When it
+ * doesn't fit, the door at the fade offers the whole document, which is a
+ * different and larger thing than "more" of a finite payload.
+ */
+function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
+  return (
+    <ClippedProse
+      className="text-tier-quoted"
+      footer={path ? <OpenDocumentDoor path={path} /> : null}
+    >
+      <Markdown>{markup}</Markdown>
+    </ClippedProse>
+  );
+}
+
+/**
+ * The second door, at the point of need. The row title carries the first one,
+ * at the top; this one sits where the writer has read to the bound.
+ */
+function OpenDocumentDoor({ path }: { path: string }) {
+  return (
+    <span className="flex min-w-0 text-meta">
+      <DocumentName path={path} label="open" />
+    </span>
+  );
+}
+
+/**
+ * What a skim saw. A list, not prose, so it takes the discrete-list treatment
+ * whole: the listing rhythm, the listing cap, and a count when it is cut. An
+ * outline read returned structure, and rendering it as paragraphs would claim
+ * the model read the words under those headings.
+ *
+ * No fade and no door at the bottom. Those belong to continuous prose, where
+ * the need to see the rest arrives only after reading; a clipped outline is
+ * already answered by the row title's own door.
+ */
+function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
+  const bound = boundLabel(outline);
+  return (
+    <>
+      <ul>
+        {outline.rows.map((heading, index) => (
+          <li
+            key={`${index}:${heading.text}`}
+            className={cn(LISTING_ROW, "text-prose-foreground")}
+            style={{ paddingLeft: `${heading.level * 16}px` }}
+          >
+            <span className="min-w-0 truncate">{heading.text}</span>
+          </li>
+        ))}
+      </ul>
+      {bound ? <BoundLine>{bound}</BoundLine> : null}
+    </>
+  );
 }
 
 /* ── registry ──────────────────────────────────────────────────────────── */
 
-function humanizeToolName(toolName: string): string {
-  const words = toolName.replaceAll("_", " ");
-  return words.length > 0 ? words[0].toUpperCase() + words.slice(1) : words;
+/** A registered tool whose whole title is its phrase, with no document to name. */
+function phraseTitle(tool: ToolView): ReactNode {
+  // A failure is its own claim: `Searched "Elara"` over an error row says the
+  // search happened.
+  if (tool.isError) return descriptorFor(tool).failureVerb("direct");
+  return <PhraseTitle phrase={toolActivityPhrase(tool)} />;
 }
 
 /**
@@ -315,58 +529,24 @@ function humanizeToolName(toolName: string): string {
  * no destination. Arguments are developer detail and never enter the title.
  */
 const DEFAULT_RENDERER: ToolRenderer = {
-  Icon: Wrench,
   title: (tool) => humanizeToolName(tool.toolName),
 };
 
 const RENDERERS: Record<string, ToolRenderer> = {
   write: {
-    Icon: FilePen,
     title: (tool, context) => <WriteToolTitle tool={tool} context={context} />,
     expand: writeExpand,
   },
   ls: {
-    Icon: FolderTree,
-    title: (tool) => {
-      const path = asString(inputObject(tool).path);
-      // `ls` walks folder structure — "exploring", not reading content.
-      const folder = path ? folderDisplayName(path) : undefined;
-      const complete = path ? (
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          <span>{t`Explored`}</span>
-          <span className="truncate">{folder}</span>
-        </span>
-      ) : (
-        t`Explored folders`
-      );
-      const active = folder
-        ? t`Exploring ${folder}…`
-        : (toolActivityVocabulary(tool)?.active ?? t`Exploring folders…`);
-      return toolVerb(tool, complete, active);
-    },
+    title: phraseTitle,
+    expand: listingOrNothing,
   },
   grep: {
-    Icon: Search,
-    title: (tool) => {
-      const pattern = asString(inputObject(tool).pattern);
-      const verb = toolVerb(
-        tool,
-        t`Searched`,
-        toolActivityVocabulary(tool)?.active ?? t`Searching…`,
-      );
-      return pattern ? (
-        <span>
-          {verb} &quot;{truncate(pattern, 60)}&quot;
-        </span>
-      ) : (
-        toolVerb(tool, t`Searched context`, verb)
-      );
-    },
+    title: phraseTitle,
     expand: resultRowsOrNothing,
   },
   invoke: {
-    Icon: Sparkles,
-    title: (tool) => <InvokeSkillTitle tool={tool} />,
+    title: phraseTitle,
     expand: invokeExpand,
   },
 };

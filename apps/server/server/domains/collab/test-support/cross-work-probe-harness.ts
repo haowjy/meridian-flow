@@ -1,4 +1,6 @@
 /** Real-adapter fixture orchestration for the split cross-Work merge probe. */
+
+import { splitHashline } from "@meridian/agent-edit";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
@@ -270,8 +272,7 @@ export async function runCrossWorkProbe(
   const capturedBodies = trailChanges.flatMap((change) => {
     const beforeText = asRecord(change).beforeText;
     if (typeof beforeText !== "string") return [];
-    const separator = beforeText.indexOf("|");
-    return [separator < 0 ? beforeText : beforeText.slice(separator + 1)];
+    return [splitHashline(beforeText)?.body ?? beforeText];
   });
   return {
     case: probeCase,

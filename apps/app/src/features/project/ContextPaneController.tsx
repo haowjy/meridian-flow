@@ -193,6 +193,7 @@ export function ContextViewerSurfaceController({
       activeContextScheme !== null && activeContextPath && openTabKey
         ? {
             path: activeContextPath,
+            scheme: activeContextScheme,
             optimisticTab: {
               id: `optimistic:${openTabKey}`,
               // Full basename, not the extension-stripped resume label — the chip

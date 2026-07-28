@@ -71,6 +71,34 @@
   --prose-color: var(--color-foreground);
 }
 
+/* Quoted tier — payload a tool row shows the writer: the passage the model
+   read, or the content it submitted. Recedes below the transcript's own voice,
+   because rendered document prose at reading scale competes with the assistant
+   for "this is the content".
+
+   Sits on a WRAPPER around `prose-tokens`, not on it: the heading overrides
+   need to beat `prose-tokens`' own `& h1` rules, and descendant specificity
+   wins that regardless of which utility Tailwind emits first. Stacking a
+   sibling utility would leave the two fighting over source order, which is
+   exactly what `text-tier-compact` exists to avoid. The scale/leading/colour
+   vars are inherited by `prose-tokens` because a variant-less `Markdown`
+   leaves them unset on the element itself. */
+@utility text-tier-quoted {
+  --text-scale: 0.8125;
+  --prose-leading: 1.55;
+  --prose-color: var(--color-muted-foreground);
+
+  /* A chapter title inside a preview must not outrank the prose quoting it,
+     and the editor's block rhythm has no business in a two-line excerpt. */
+  & .prose-tokens :is(h1, h2, h3, h4, h5, h6) {
+    font-size: 1em;
+    margin-top: 0;
+    margin-bottom: 0.35em;
+    color: var(--prose-color);
+    letter-spacing: normal;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

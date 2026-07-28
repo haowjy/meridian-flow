@@ -1,5 +1,6 @@
 // Adapts the pure markup codec to agent-edit's hash-prefixed block display contract.
 import type { MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
+import { toHashline } from "./model/hashline.js";
 
 export interface AgentEditCodec {
   /** The underlying pure markup codec. */
@@ -24,16 +25,13 @@ export function createAgentEditCodec(markup: MarkupCodec): AgentEditCodec {
     serializeBlockBodies: (blocks) => markup.serializeBlocks(blocks),
 
     serializeBlock(block, hash) {
-      const body = markup.serializeBlock(block);
-      return body.includes("\n") ? `${hash}|\n${body}` : `${hash}|${body}`;
+      return toHashline(hash, markup.serializeBlock(block));
     },
 
     serializeBlocks(blocks, hashes) {
-      const bodies = markup.serializeBlocks(blocks);
-      return bodies.map((body, index) => {
-        const hash = hashes[index] ?? "";
-        return body.includes("\n") ? `${hash}|\n${body}` : `${hash}|${body}`;
-      });
+      return markup
+        .serializeBlocks(blocks)
+        .map((body, index) => toHashline(hashes[index] ?? "", body));
     },
   };
 }

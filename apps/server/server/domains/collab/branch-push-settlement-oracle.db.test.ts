@@ -1,4 +1,6 @@
 /** PostgreSQL-only warm/cold equivalence proof for branch-push settlement. */
+
+import { splitHashline } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { desc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
@@ -815,8 +817,7 @@ async function observeSettlement(
     })),
     exactBodies: recoverable.map((change) => {
       const beforeText = change.beforeText as string;
-      const separator = beforeText.indexOf("|");
-      return separator < 0 ? beforeText : beforeText.slice(separator + 1);
+      return splitHashline(beforeText)?.body ?? beforeText;
     }),
     canonicalIdentities: recoverable.map(
       (change) =>

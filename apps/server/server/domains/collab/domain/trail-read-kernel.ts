@@ -1,4 +1,6 @@
 /** Pure change-trail normalization and durable Yjs navigation targets. */
+
+import { splitHashline } from "@meridian/agent-edit";
 import {
   encodeNavigationPosition,
   getBlockItemId,
@@ -112,11 +114,7 @@ export type ReplacementOperation = {
 
 export function bodyFromHashline(serialized: string | null): HistoricalBody {
   if (serialized === null) return { status: "unavailable", reason: "not_captured" };
-  const separator = serialized.indexOf("|");
-  return {
-    status: "available",
-    markdown: separator < 0 ? serialized : serialized.slice(separator + 1),
-  };
+  return { status: "available", markdown: splitHashline(serialized)?.body ?? serialized };
 }
 
 export type TrailOwner = { threadId: string; turnId: string };

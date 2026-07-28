@@ -48,7 +48,9 @@ export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclos
           className={cn("size-3 shrink-0 transition-transform duration-200", open && "rotate-90")}
           aria-hidden
         />
-        <span className="min-w-0 text-left font-medium">{label}</span>
+        {/* The digest is short in English and not necessarily in translation;
+            truncate is the backstop that keeps the fold header one line. */}
+        <span className="min-w-0 truncate text-left font-medium">{label}</span>
       </button>
 
       <div

@@ -10,9 +10,10 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { announce, announceError } from "@/client/stores";
 import type { ComposerHandle } from "./Composer";
+import { toolActivityAnnouncement, toolActivityPhrase } from "./command-descriptor";
 import { reportChatError } from "./error-telemetry";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
-import { toolActivityVocabulary } from "./tool-activity-vocabulary";
+import { isToolViewVisible } from "./tool-view-visibility";
 
 function runningTool(turn: Turn | null): ToolView | null {
   const block = [...(turn?.blocks ?? [])]
@@ -20,7 +21,10 @@ function runningTool(turn: Turn | null): ToolView | null {
     .find((candidate) => candidate.blockType === "tool_use" && candidate.status === "partial");
   if (!block) return null;
   const segment = groupDeliverySegments([block])[0];
-  return segment?.kind === "tool" ? segment.tool : null;
+  if (segment?.kind !== "tool") return null;
+  // Protocol primitives render their UX elsewhere; announcing them would
+  // narrate a row the writer cannot see.
+  return isToolViewVisible(segment.tool) ? segment.tool : null;
 }
 
 export function useLiveTurnAnnouncements(
@@ -34,7 +38,7 @@ export function useLiveTurnAnnouncements(
   const prevStatusRef = useRef(status);
   const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
   const toolAnnouncement = tool
-    ? toolActivityVocabulary(tool, liveTurn?.writeMode ?? "direct")?.active
+    ? toolActivityAnnouncement(toolActivityPhrase(tool, liveTurn?.writeMode ?? "direct"))
     : null;
   const hasPartialText = Boolean(
     liveTurn?.blocks.some((block) => block.blockType === "text" && block.status === "partial"),

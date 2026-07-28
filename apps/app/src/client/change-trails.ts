@@ -1,4 +1,6 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
+
+import { splitHashline } from "@meridian/agent-edit";
 import type {
   ChangeTrailDetailResponseV1,
   ChangeTrailDocumentDetailV1,
@@ -105,6 +107,5 @@ export async function readChangeTrail(
 /** Decode the display body carried by the trail's hashline serialization. */
 export function bodyFromTrailHashline(serialized: string | null): string | null {
   if (serialized === null) return null;
-  const separator = serialized.indexOf("|");
-  return separator < 0 ? serialized : serialized.slice(separator + 1);
+  return splitHashline(serialized)?.body ?? serialized;
 }

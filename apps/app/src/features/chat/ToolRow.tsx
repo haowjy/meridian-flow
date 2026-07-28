@@ -2,10 +2,16 @@
  * ToolRow — adapter from a normalized `ToolView` to one row in the activity
  * timeline.
  *
- * Thin binding: it picks the registered renderer for the tool name, evaluates
- * the title and optional expansion for the current view, and hands the result to the
- * shared `ActivityRow` primitive. Replaces the boxed `ToolCard`; one logical
- * tool invocation is now a single text-altitude row.
+ * Thin binding: it resolves the command (glyph + chip tone), picks the
+ * registered renderer for the tool name, evaluates the title and optional
+ * expansion for the current view, and hands the result to the shared
+ * `ActivityRow` primitive. Replaces the boxed `ToolCard`; one logical tool
+ * invocation is now a single text-altitude row.
+ *
+ * The glyph is bound to the **command**, not the tool. The icon column is
+ * already a perfectly aligned vertical channel; spending it on tool identity
+ * wastes it on something the writer does not care about, and it rendered
+ * `Read Chapter 3` and `Edited Chapter 3` with the same pen.
  *
  * Hidden tools: a few "tools" are protocol primitives whose UX lives elsewhere
  * (the custom interrupt card for `ask_user`). Their tool_use / tool_result
@@ -15,13 +21,15 @@
 
 import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
+import { descriptorFor } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
+import type { WriteMode } from "./tool-command";
 import { rendererFor } from "./tool-renderers";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ToolRowProps = {
   tool: ToolView;
-  writeMode?: "direct" | "draft";
+  writeMode?: WriteMode;
 };
 
 function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
@@ -31,7 +39,7 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
   const presentation = useMemo(
     () => ({
       title: renderer.title(tool, { writeMode }),
-      expand: renderer.expand ? (renderer.expand(tool) ?? undefined) : undefined,
+      expand: renderer.expand?.(tool) ?? undefined,
     }),
     [renderer, tool, writeMode],
   );
@@ -39,7 +47,7 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
 
   return (
     <ActivityRow
-      Icon={renderer.Icon}
+      Icon={descriptorFor(tool).Icon}
       title={presentation.title}
       status={status}
       expand={presentation.expand}

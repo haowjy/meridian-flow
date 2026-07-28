@@ -1,6 +1,7 @@
 /** Production-composition regression for response credit and staged-push completion. */
 
 import { Hocuspocus } from "@hocuspocus/server";
+import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -203,10 +204,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (details?.changes ?? []) as Array<{ beforeText?: string | null }>
       ).flatMap((change) => {
         if (!change.beforeText) return [];
-        const separator = change.beforeText.indexOf("|");
-        return [
-          (separator < 0 ? change.beforeText : change.beforeText.slice(separator + 1)).trim(),
-        ];
+        return [(splitHashline(change.beforeText)?.body ?? change.beforeText).trim()];
       });
       expect(beforeBodies).toContain(writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.");
       expect(details?.changes).not.toEqual(

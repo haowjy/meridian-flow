@@ -3,6 +3,7 @@ import type * as Y from "yjs";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
+import { splitHashline } from "../model/hashline.js";
 import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
@@ -201,8 +202,7 @@ export function formatConcurrent(
 }
 
 function blockHash(serialized: string): string {
-  const separator = serialized.indexOf("|");
-  return separator < 0 ? serialized : serialized.slice(0, separator);
+  return splitHashline(serialized)?.hash ?? serialized;
 }
 
 export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
@@ -218,10 +218,5 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
 }
 
 function blockHashes(lines: readonly string[]): Set<string> {
-  return new Set(
-    lines.map((line) => {
-      const separator = line.indexOf("|");
-      return separator < 0 ? line : line.slice(0, separator);
-    }),
-  );
+  return new Set(lines.map(blockHash));
 }

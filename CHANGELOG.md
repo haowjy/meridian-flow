@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+- `apps/app`: document names in the activity timeline are now doors — clicking
+  a name opens that document in the context pane; clicking the rest of the row
+  still toggles its detail. Names stay plain text where navigation can't work
+  (standalone chat), and they name the document only: no "(Knowledge Base)"
+  location tag, since the door already goes there.
+- `apps/app`: activity rows now lead with the command — one glyph per command,
+  mutation chips only for real mutations, and completed rows say what happened
+  in past tense (a failed read no longer claims "Read"; `diff` no longer claims
+  "Wrote").
+- `apps/app`: tool expands now state what they clipped ("4 of 7") instead of
+  silently truncating, and closed rows no longer parse result payloads. Search
+  results drop the "Line 42" subtitle and centre each passage on the match,
+  with the searched words in bold.
+- `apps/app`, `packages/agent-edit`: search excerpts no longer show internal
+  block hashes (`79b9|…`), and activity-row glyphs now center on their text
+  line.
+- `apps/app`: the turn edits card header now counts documents ("Edited 1
+  document") instead of naming one. Names live in the card's rows, where they
+  open the document.
+- `apps/app`: opening a document the assistant referred to that is no longer in
+  the project now explains what happened and names the document, instead of
+  showing the generic empty desk with a "New document" button.
+- `apps/app`: Explored rows now open onto the folder listing the assistant
+  received; document names in it open the document, folders stay plain.
+- `apps/app`: Read rows now open onto the passage the assistant read, as quoted
+  material. A clipped passage fades at its bound and offers to open the whole
+  document. Skimmed rows show the headings the assistant saw.
+- `apps/app`: rows for writes and edits now open onto the content the assistant
+  submitted, as quoted material on a recessed surface. A failed write still
+  shows why it failed.
 - `tools/dev`: worktree pruning now ignores Meridian diagnostics and skips
   work items that disappear during discovery.
 - `apps/app`: schema-fenced chapters now remain quarantined and read-only, with

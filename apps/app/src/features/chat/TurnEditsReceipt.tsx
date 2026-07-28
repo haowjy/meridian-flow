@@ -4,8 +4,9 @@
  * INVARIANT: record, not control panel — no draft affordance may be added here.
  * Review / Apply / Discard belong to the composer-attached DraftDock. Undo/Redo
  * is the only turn control. At rest, the receipt is one quiet borderless line.
- * The header names a single document when possible and carries durable word
- * deltas; expanding lists each document in the same bordered card.
+ * The header counts documents and carries durable word deltas — it never
+ * names one (names are doors, and chrome carries no doors); expanding lists
+ * each document as a navigable row in the same bordered card.
  *
  * Turn lineage owns Undo authority. Authorized trail detail owns durable row
  * evidence and navigation.
@@ -23,9 +24,8 @@ import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
-import { documentDisplayName } from "./document-display-name";
+import { DocumentName } from "./DocumentName";
 import { DraftStatsLabel } from "./draft-stats";
-import { DocumentName } from "./tool-renderers";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -81,14 +81,11 @@ export function TurnEditsReceipt({
   // receipt?" decision in name only — filtering first made its scope check dead
   // here while `AssistantTurn` still depends on it.
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
-  const headerDocuments = trailDocuments.length > 0 ? trailDocuments : liveDocuments;
-  const headerDocumentCount = headerDocuments.length;
-  const singleDocumentTitle =
-    trailDocuments.length === 1
-      ? trailDocuments[0]?.title
-      : trailDocuments.length === 0 && liveDocuments.length === 1
-        ? documentDisplayName(liveDocuments[0]?.uri ?? "").title
-        : null;
+  // Chrome counts, never names. A document name here would sit inside the
+  // disclosure toggle, competing for the click at the moment the writer is
+  // reaching to open it — and the names it would compete with are the ones in
+  // the expanded rows below, which already navigate.
+  const headerDocumentCount = (trailDocuments.length > 0 ? trailDocuments : liveDocuments).length;
   const wordStats =
     changeTrail &&
     (typeof changeTrail.wordsAdded === "number" || typeof changeTrail.wordsRemoved === "number")
@@ -174,9 +171,7 @@ export function TurnEditsReceipt({
           </span>
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-prose-foreground">
-              {singleDocumentTitle
-                ? documentTitleLabel(singleDocumentTitle)
-                : documentCountLabel(headerDocumentCount)}
+              {documentCountLabel(headerDocumentCount)}
             </span>
             {wordStats ? (
               <span className="ml-2 shrink-0">
@@ -441,7 +436,7 @@ function DocumentRow({
   if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
     return (
       <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
-        <DocumentName path={document.uri} />
+        <DocumentName path={document.uri} insideDoor />
       </span>
     );
   }
@@ -451,15 +446,12 @@ function DocumentRow({
       onClick={() => onOpenContextUri(document.uri)}
       className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-muted"
     >
-      <DocumentName path={document.uri} />
+      {/* The whole row is the door here, so the name inside it stays inert. */}
+      <DocumentName path={document.uri} insideDoor />
     </button>
   );
 }
 
 function documentCountLabel(count: number) {
-  return count === 1 ? <Trans>Edited 1 chapter</Trans> : <Trans>Edited {count} chapters</Trans>;
-}
-
-function documentTitleLabel(title: string) {
-  return <Trans>Edited {title}</Trans>;
+  return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
 }

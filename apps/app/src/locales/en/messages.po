@@ -100,6 +100,11 @@ msgstr "{0} additional balance"
 msgid "{0} documents"
 msgstr "{0} documents"
 
+#. placeholder {0}: destination.name
+#: src/features/project/context/ContextViewer.tsx
+msgid "{0} isn't in {section}."
+msgstr "{0} isn't in {section}."
+
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
@@ -119,6 +124,10 @@ msgstr "{pendingChangeCount} changes waiting for review"
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "{shown} of {total}"
+msgstr "{shown} of {total}"
 
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
@@ -365,9 +374,17 @@ msgstr "Chat away"
 msgid "Chat context"
 msgstr "Chat context"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Checked recent changes"
+msgstr "Checked recent changes"
+
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr "Checking pending changes…"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Checking recent changes…"
+msgstr "Checking recent changes…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -479,6 +496,10 @@ msgstr "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgid "Couldn't apply. Check your connection and try again."
 msgstr "Couldn't apply. Check your connection and try again."
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't check recent changes"
+msgstr "Couldn't check recent changes"
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -489,17 +510,25 @@ msgstr "Couldn't discard. Check your connection and try again."
 msgid "Couldn't discard. Try again."
 msgstr "Couldn't discard. Try again."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Couldn't draft"
 msgstr "Couldn't draft"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
 msgstr "Couldn't edit"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't explore"
+msgstr "Couldn't explore"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't find {name}."
 msgstr "Couldn't find {name}."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't finish that step"
+msgstr "Couldn't finish that step"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
@@ -545,15 +574,35 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't read"
+msgstr "Couldn't read"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't redo"
+msgstr "Couldn't redo"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't run that skill"
+msgstr "Couldn't run that skill"
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't search"
+msgstr "Couldn't search"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't undo"
+msgstr "Couldn't undo"
+
+#: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
 msgstr "Couldn't write"
 
@@ -652,7 +701,7 @@ msgstr "Draft"
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
 msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Drafted"
 msgstr "Drafted"
 
@@ -661,11 +710,11 @@ msgstr "Drafted"
 msgid "drafted {0}"
 msgstr "drafted {0}"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Drafted file"
 msgstr "Drafted file"
 
-#: src/features/chat/tool-activity-vocabulary.ts
+#: src/features/chat/command-descriptor.ts
 msgid "Drafting…"
 msgstr "Drafting…"
 
@@ -681,7 +730,7 @@ msgstr "Drop an image file to insert a figure."
 msgid "Drop image to upload a figure"
 msgstr "Drop image to upload a figure"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Edited"
 msgstr "Edited"
 
@@ -691,22 +740,30 @@ msgid "edited {0}"
 msgstr "edited {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Edited {count} chapters"
-msgstr "Edited {count} chapters"
+#~ msgid "Edited {count} chapters"
+#~ msgstr "Edited {count} chapters"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Edited {title}"
-msgstr "Edited {title}"
+msgid "Edited {count} documents"
+msgstr "Edited {count} documents"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Edited 1 chapter"
-msgstr "Edited 1 chapter"
+#~ msgid "Edited {title}"
+#~ msgstr "Edited {title}"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Edited 1 chapter"
+#~ msgstr "Edited 1 chapter"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Edited 1 document"
+msgstr "Edited 1 document"
+
+#: src/features/chat/command-descriptor.ts
 msgid "Edited file"
 msgstr "Edited file"
 
-#: src/features/chat/tool-activity-vocabulary.ts
+#: src/features/chat/command-descriptor.ts
 msgid "Editing…"
 msgstr "Editing…"
 
@@ -765,20 +822,23 @@ msgstr "Expand sidebar"
 msgid "expires {0}"
 msgstr "expires {0}"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Explored"
 msgstr "Explored"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Explored folders"
 msgstr "Explored folders"
 
-#: src/features/chat/tool-renderers.tsx
-msgid "Exploring {folder}…"
-msgstr "Exploring {folder}…"
+#: src/features/chat/command-descriptor.ts
+msgid "Exploring"
+msgstr "Exploring"
 
-#: src/features/chat/tool-activity-vocabulary.ts
 #: src/features/chat/tool-renderers.tsx
+#~ msgid "Exploring {folder}…"
+#~ msgstr "Exploring {folder}…"
+
+#: src/features/chat/command-descriptor.ts
 msgid "Exploring folders…"
 msgstr "Exploring folders…"
 
@@ -891,6 +951,22 @@ msgstr "Interface language"
 #: src/features/chat/placeholders.ts
 msgid "Interject"
 msgstr "Interject"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Invoked a skill"
+msgstr "Invoked a skill"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Invoked the {skill} skill"
+msgstr "Invoked the {skill} skill"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Invoking a skill…"
+msgstr "Invoking a skill…"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Invoking the {skill} skill…"
+msgstr "Invoking the {skill} skill…"
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
@@ -1235,6 +1311,10 @@ msgstr "Only on this device"
 msgid "Only part of this change could be reversed."
 msgstr "Only part of this change could be reversed."
 
+#: src/features/chat/DocumentName.tsx
+msgid "Open {fullName}"
+msgstr "Open {fullName}"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see its uploads."
 msgstr "Open a chat to see its uploads."
@@ -1342,18 +1422,18 @@ msgid "Quick thought"
 msgstr "Quick thought"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Ran skill"
-msgstr "Ran skill"
+#~ msgid "Ran skill"
+#~ msgstr "Ran skill"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Ran the {skillName} skill"
-msgstr "Ran the {skillName} skill"
+#~ msgid "Ran the {skillName} skill"
+#~ msgstr "Ran the {skillName} skill"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Read"
 msgstr "Read"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Read file"
 msgstr "Read file"
 
@@ -1369,8 +1449,7 @@ msgstr "Read-only preview"
 msgid "Reading text size"
 msgstr "Reading text size"
 
-#: src/features/chat/tool-activity-vocabulary.ts
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Reading…"
 msgstr "Reading…"
 
@@ -1407,6 +1486,10 @@ msgstr "Reconnected"
 msgid "Reconnecting… attempt {0}"
 msgstr "Reconnecting… attempt {0}"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Redid"
+msgstr "Redid"
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redo"
 msgstr "Redo"
@@ -1418,6 +1501,10 @@ msgstr "Redo didn't go through. Try again."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redo is no longer available because the manuscript changed."
 msgstr "Redo is no longer available because the manuscript changed."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Redoing…"
+msgstr "Redoing…"
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
@@ -1520,13 +1607,13 @@ msgstr "Running"
 
 #: src/features/chat/tool-activity-vocabulary.ts
 #: src/features/chat/tool-renderers.tsx
-msgid "Running skill…"
-msgstr "Running skill…"
+#~ msgid "Running skill…"
+#~ msgstr "Running skill…"
 
 #. placeholder {0}: humanizeSkillSlug(slug)
 #: src/features/chat/tool-activity-vocabulary.ts
-msgid "Running the {0} skill…"
-msgstr "Running the {0} skill…"
+#~ msgid "Running the {0} skill…"
+#~ msgstr "Running the {0} skill…"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
@@ -1548,16 +1635,19 @@ msgstr "Search chats"
 msgid "Search papers, extract findings, and synthesize a summary across sources."
 msgstr "Search papers, extract findings, and synthesize a summary across sources."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Searched"
 msgstr "Searched"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Searched context"
 msgstr "Searched context"
 
-#: src/features/chat/tool-activity-vocabulary.ts
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
+msgid "Searching"
+msgstr "Searching"
+
+#: src/features/chat/command-descriptor.ts
 msgid "Searching…"
 msgstr "Searching…"
 
@@ -1604,6 +1694,14 @@ msgstr "Signed in"
 #: src/routes/dev-login.tsx
 msgid "Signing in…"
 msgstr "Signing in…"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Skimmed"
+msgstr "Skimmed"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Skimming…"
+msgstr "Skimming…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
@@ -1757,6 +1855,10 @@ msgstr "The {skillName} skill isn't available in this chat."
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
+#: src/features/project/context/ContextViewer.tsx
+msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
+msgstr "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
+
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1905,6 +2007,10 @@ msgstr "Try again, or return to the live document."
 msgid "Type your answer…"
 msgstr "Type your answer…"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Undid"
+msgstr "Undid"
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo"
 msgstr "Undo"
@@ -1916,6 +2022,10 @@ msgstr "Undo didn't go through. Try again."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
 msgstr "Undo is no longer available."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Undoing…"
+msgstr "Undoing…"
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
@@ -2010,16 +2120,15 @@ msgstr "Workspace navigation"
 msgid "Write away"
 msgstr "Write away"
 
-#: src/features/chat/tool-activity-vocabulary.ts
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Writing…"
 msgstr "Writing…"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Wrote"
 msgstr "Wrote"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Wrote file"
 msgstr "Wrote file"
 

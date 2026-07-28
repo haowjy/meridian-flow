@@ -1,3 +1,4 @@
+import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
@@ -89,8 +90,7 @@ describe("change trail (postgres)", () => {
       trails.details.flatMap((detail) =>
         (detail.changes as Array<{ beforeText?: string | null }>).flatMap((change) => {
           if (!change.beforeText) return [];
-          const separator = change.beforeText.indexOf("|");
-          return [separator < 0 ? change.beforeText : change.beforeText.slice(separator + 1)];
+          return [splitHashline(change.beforeText)?.body ?? change.beforeText];
         }),
       ),
     ).toEqual([

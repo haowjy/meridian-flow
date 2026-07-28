@@ -25,15 +25,16 @@ export function isContextUri(value: string): boolean {
   return parsed.ok && value.trim().startsWith(`${parsed.value.scheme}://`);
 }
 
-export type DocumentDisplayName = {
-  title: string;
-  qualifier?: string;
-};
-
-export function documentDisplayName(uriOrPath: string): DocumentDisplayName {
-  const { scheme, path } = parseContextLocation(uriOrPath);
-  const title = documentTitleFromUri(path) ?? t`Untitled document`;
-  return scheme === "manuscript" ? { title } : { title, qualifier: schemeLabel(scheme) };
+/**
+ * The document's name, and nothing else. Where it lives is not part of what a
+ * timeline row claims: the row says what the agent did to a document, and the
+ * name's door already goes wherever that document is. The one place location
+ * still earns its keep is the dead-route pane, which exists to say a document
+ * is missing from a particular section.
+ */
+export function documentDisplayName(uriOrPath: string): string {
+  const { path } = parseContextLocation(uriOrPath);
+  return documentTitleFromUri(path) ?? t`Untitled document`;
 }
 
 export function folderDisplayName(uriOrPath: string): string {

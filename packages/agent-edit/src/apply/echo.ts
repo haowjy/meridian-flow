@@ -1,6 +1,7 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
+import { splitHashline, toHashline } from "../model/hashline.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
 import type {
   ApplyEchoHunk,
@@ -597,16 +598,13 @@ function mergeEchoHunks(hunks: ApplyEchoHunk[]): ApplyEchoHunk[] {
 }
 
 function blockHash(serialized: string): string {
-  const separator = serialized.indexOf("|");
-  return separator < 0 ? serialized : serialized.slice(0, separator);
+  return splitHashline(serialized)?.hash ?? serialized;
 }
 
 export function truncateSerializedBlock(serialized: string): string {
-  const separator = serialized.indexOf("|");
-  if (separator < 0) return truncateWords(serialized);
-  const hash = serialized.slice(0, separator);
-  const body = serialized.slice(separator + 1).replace(/^\n/, "");
-  return `${hash}|${truncateWords(body)}`;
+  const line = splitHashline(serialized);
+  if (!line) return truncateWords(serialized);
+  return toHashline(line.hash, truncateWords(line.body.replace(/^\n/, "")));
 }
 
 function truncateWords(text: string, maxWords = 8): string {

@@ -16,7 +16,8 @@ import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
-import type { ContextPaneState } from "./context-pane-state";
+import type { ContextPaneState, MissingDestination } from "./context-pane-state";
+import { schemeLabel } from "./context-schemes";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
@@ -167,15 +168,51 @@ export function ContextViewer({
           </div>
         ) : null}
         {optimisticTab ? <OptimisticDocumentLoading name={optimisticTab.name} /> : null}
-        {paneState.kind === "empty-desk" ||
-        paneState.kind === "dead-route" ||
-        paneState.kind === "route-error" ? (
+        {paneState.kind === "dead-route" ? (
+          <MissingDocumentState destination={paneState.destination} />
+        ) : null}
+        {paneState.kind === "empty-desk" || paneState.kind === "route-error" ? (
           <EditorEmptyState
             resumeDocumentName={resumeDocumentName}
             onResumeDocument={onResumeDocument}
             onNewDocument={onNewDocument}
           />
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Where a timeline door lands when its document is gone.
+ *
+ * The timeline deliberately doesn't pre-check existence: that would make the
+ * same row clickable or not depending on cache warmth. This pane is the other
+ * half of that decision, so it has to be worth landing on. The generic empty
+ * desk read as "nothing here" and offered to start a new document, which is
+ * both untrue and the wrong thing to hand someone who was following a
+ * reference.
+ *
+ * One copy covers renames, deletions and documents that never finished being
+ * created, because the writer's next move is the same for all three and the
+ * pane genuinely cannot tell them apart. No retry: there is nothing to retry.
+ */
+function MissingDocumentState({ destination }: { destination: MissingDestination }) {
+  const section = schemeLabel(destination.scheme);
+  return (
+    <div className="grid h-full place-items-center px-6 text-center">
+      <div className="flex max-w-sm flex-col gap-2">
+        <p className="font-medium text-prose-foreground">
+          <Trans>
+            {destination.name} isn't in {section}.
+          </Trans>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          <Trans>
+            The assistant referred to this document, but it isn't there now. It may have been
+            renamed, deleted, or never finished being created.
+          </Trans>
+        </p>
       </div>
     </div>
   );

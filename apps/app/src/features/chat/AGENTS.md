@@ -33,7 +33,9 @@ process fold in chronological position. Interrupts end a segment; their cards
 remain visible after resolution even though tool protocol rows fold on settle.
 
 The full model lives in
-[`.context/turn-composition.md`](.context/turn-composition.md); draft receipts,
+[`.context/turn-composition.md`](.context/turn-composition.md); one row's
+anatomy and its navigation rules in
+[`.context/activity-row-anatomy.md`](.context/activity-row-anatomy.md); draft receipts,
 composer mode, and review state live in
 [`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
 [`.context/composer-write-mode.md`](.context/composer-write-mode.md), and
@@ -50,7 +52,13 @@ composer mode, and review state live in
 3. **Interrupt cards stay visible.** Resolution starts a new segment. On settle,
    tool protocol rows in every segment fold, while resolved interrupt cards and
    other frontier non-tool blocks remain expanded.
-4. **Block render keys are positional.** Use `blockRenderKey(block)` —
+4. **Document names are doors.** `DocumentName.tsx` renders every
+   writer-facing document name in the timeline and is the only place that
+   decides whether one is a link. Don't add navigation to a renderer, and
+   don't make a folder, pattern or skill a door. A row expands, a name
+   navigates; never invert that, and never author the name button as a JSX
+   child of the row button.
+5. **Block render keys are positional.** Use `blockRenderKey(block)` —
    `turnId::sequence`. Never key by `block.id`. Blocks keep identity while they
    remain in one zone; frontier prose, images, and custom cards therefore do not
    remount at settlement. Tool views structurally move from the frontier into the
