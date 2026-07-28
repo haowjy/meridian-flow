@@ -82,6 +82,9 @@
   "N more" to grow a document's passages in place. The searched word is the
   handle you click, and each passage opens at its own place in the document.
 
+- `apps/app`: the TipTap editor schema and the server document schema are
+  structurally compared again by a parity unit test, so drift fails `pnpm check`
+  instead of surfacing as decode/sync errors.
 - `apps/server`: Anthropic-format cache usage now normalizes to inclusive input
   totals, so uncached prompt tokens are priced instead of silently clamped away;
   OpenAI-compatible trailing usage-only chunks are also retained.
