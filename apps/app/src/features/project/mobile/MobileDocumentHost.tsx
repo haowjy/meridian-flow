@@ -19,6 +19,7 @@ import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { findContextFile } from "../context/context-tree";
@@ -110,7 +111,8 @@ export function MobileDocumentHost({
   }
 
   return (
-    <div className="h-full min-h-0">
+    <div className="relative h-full min-h-0">
+      <PassageNotice documentId={activeTab.documentId} />
       <Suspense
         fallback={
           <DocumentStatus tone="muted">

@@ -82,7 +82,7 @@ export const FileSuggestionList = forwardRef<
   };
 
   const rowClass =
-    "focus-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-sidebar-accent focus:bg-sidebar-accent";
+    "focus-ring flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-sidebar-accent focus:bg-sidebar-accent";
 
   return (
     // The keydown boundary wraps header + rows so one arrow walk covers both;

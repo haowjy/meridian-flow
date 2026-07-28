@@ -13,7 +13,7 @@ function coreRegistrations() {
   return createCoreToolRegistrations({
     write: handler,
     ls: handler,
-    grep: handler,
+    search: handler,
     ask_user: handler,
   });
 }
@@ -108,7 +108,7 @@ describe("createToolRegistry core tools", () => {
     expect(registry.getRegistration("ls")?.definition.inputSchema).toMatchObject({
       required: [],
     });
-    expect(registry.getRegistration("grep")?.definition.inputSchema).toMatchObject({
+    expect(registry.getRegistration("search")?.definition.inputSchema).toMatchObject({
       required: ["pattern"],
       properties: {
         scope: { type: "string" },

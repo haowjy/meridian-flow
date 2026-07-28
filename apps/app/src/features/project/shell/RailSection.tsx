@@ -48,7 +48,7 @@ export function CollapsibleRailSection({
       type="button"
       aria-expanded={resolvedOpen}
       onClick={toggleOpen}
-      className="focus-ring flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-sidebar-accent"
+      className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-sidebar-accent"
     >
       <ChevronDown
         className={cn(

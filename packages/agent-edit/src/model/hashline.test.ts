@@ -62,7 +62,7 @@ describe("stripBlockHash", () => {
   });
 
   it("leaves a markdown table row alone", () => {
-    // `grep` returns raw markdown for schemes with no hashline shadow, so a
+    // `search` returns raw markdown for schemes with no hashline shadow, so a
     // line that was never a hashline reaches this function routinely. Splitting
     // at the first pipe would eat the leading cell.
     expect(stripBlockHash("| Name | Role |")).toBe("| Name | Role |");

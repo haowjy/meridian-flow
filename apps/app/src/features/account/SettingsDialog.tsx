@@ -248,7 +248,7 @@ function SectionLink({
       onClick={() => onSelect(section)}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "focus-ring flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+        "focus-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
         isActive
           ? "bg-sidebar-accent font-medium text-foreground"
           : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",

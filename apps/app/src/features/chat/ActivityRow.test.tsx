@@ -115,7 +115,7 @@ describe("two actions, one row", () => {
       await act(async () => {
         door?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       });
-      expect(navigation.open).toHaveBeenCalledWith("manuscript://chapter-3.md");
+      expect(navigation.open).toHaveBeenCalledWith("manuscript://chapter-3.md", undefined);
       expect(row(root).toggle?.getAttribute("aria-expanded")).toBe("false");
 
       await act(async () => {

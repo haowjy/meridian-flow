@@ -16,7 +16,7 @@
  *   all. It only removes a prefix shaped like a real hash, because a blind
  *   split would eat the leading cell of a markdown table row.
  *
- * Reach for the second only when the input is genuinely mixed. `grep` excerpts
+ * Reach for the second only when the input is genuinely mixed. `search` excerpts
  * are the case that exists: they come back as hashlines for manuscript
  * documents and as raw markdown for every other scheme.
  */

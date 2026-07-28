@@ -162,7 +162,7 @@ function DirRow({
           aria-label={t`Toggle folder ${dir.name}`}
           onClick={toggle}
           onKeyDown={activateOnKey(toggle)}
-          className="group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
+          className="group focus-ring flex h-7 items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
           <Twistie expanded={isOpen} />
@@ -224,7 +224,7 @@ function FileRow({
         onClick={select}
         onKeyDown={activateOnKey(select)}
         className={cn(
-          "group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm hover:bg-sidebar-accent",
+          "group focus-ring flex h-7 items-center pr-1 text-sm hover:bg-sidebar-accent",
           active ? "bg-sidebar-accent font-medium text-foreground" : "text-foreground",
         )}
         style={{ paddingLeft: rowPaddingLeft(depth) }}

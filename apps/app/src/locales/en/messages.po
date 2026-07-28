@@ -63,12 +63,17 @@ msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
 #: src/features/chat/tool-result-preview.ts
-msgid "(fetched)"
-msgstr "(fetched)"
+#~ msgid "(fetched)"
+#~ msgstr "(fetched)"
 
 #: src/features/chat/tool-result-preview.ts
-msgid "(untitled)"
-msgstr "(untitled)"
+#~ msgid "(untitled)"
+#~ msgstr "(untitled)"
+
+#. placeholder {0}: results.total
+#: src/features/chat/tool-result-preview.ts
+#~ msgid "{0, plural, one {# document} other {# documents}}"
+#~ msgstr "{0, plural, one {# document} other {# documents}}"
 
 #. placeholder {0}: serverPendingCount ?? 0
 #: src/features/chat/ComposerWriteModeControl.tsx
@@ -105,13 +110,33 @@ msgstr "{0} documents"
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{count, plural, one {# match} other {# matches}}"
+msgstr "{count, plural, one {# match} other {# matches}}"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "{count, plural, one {# more} other {# more}}"
+msgstr "{count, plural, one {# more} other {# more}}"
+
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{documents, plural, one {# document} other {# documents}}"
+msgstr "{documents, plural, one {# document} other {# documents}}"
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}h"
+
+#: src/features/chat/tool-result-preview.ts
+#~ msgid "{matches} results in {documents}"
+#~ msgstr "{matches} results in {documents}"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "{matches} results in {inDocuments}"
+msgstr "{matches} results in {inDocuments}"
 
 #: src/lib/date-groups.ts
 msgid "{minutes}m"
@@ -1018,8 +1043,8 @@ msgstr "Light"
 
 #. placeholder {0}: row.line
 #: src/features/chat/tool-result-preview.ts
-msgid "Line {0}"
-msgstr "Line {0}"
+#~ msgid "Line {0}"
+#~ msgstr "Line {0}"
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Link"
@@ -1311,9 +1336,19 @@ msgstr "Only on this device"
 msgid "Only part of this change could be reversed."
 msgstr "Only part of this change could be reversed."
 
+#. placeholder {0}: documentDisplayName(path)
+#. placeholder {1}: excerptText(excerpt)
+#: src/features/chat/PassageDoor.tsx
+msgid "Open {0} at this passage. {1}"
+msgstr "Open {0} at this passage. {1}"
+
 #: src/features/chat/DocumentName.tsx
-msgid "Open {fullName}"
-msgstr "Open {fullName}"
+#~ msgid "Open {fullName}"
+#~ msgstr "Open {fullName}"
+
+#: src/features/chat/DocumentName.tsx
+msgid "Open {title}"
+msgstr "Open {title}"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see its uploads."
@@ -1838,6 +1873,10 @@ msgstr "That location does not exist"
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
 msgstr "That part of the chapter is no longer available."
+
+#: src/features/editor/PassageNotice.tsx
+msgid "That passage changed after this search."
+msgstr "That passage changed after this search."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That skill isn't available in this chat."

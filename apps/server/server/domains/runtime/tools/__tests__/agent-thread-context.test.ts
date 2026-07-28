@@ -24,7 +24,7 @@ const coreHandler = async () => ({ ok: true });
 const coreRegistrations = createCoreToolRegistrations({
   write: coreHandler,
   ls: coreHandler,
-  grep: coreHandler,
+  search: coreHandler,
   ask_user: coreHandler,
 });
 

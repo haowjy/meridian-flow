@@ -119,7 +119,7 @@ export function ThreadSwitcherPopover({
           type="button"
           aria-expanded={open}
           className={cn(
-            "focus-ring flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left",
+            "focus-ring flex min-w-0 max-w-full items-center gap-1.5 text-left",
             variant === "tab"
               ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
                 // chip's base (and its flares) sit on the band's bottom edge
@@ -262,7 +262,7 @@ function ThreadSwitchItem({
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
         className={cn(
-          "focus-ring flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm",
+          "focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm",
           active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
         )}
       >

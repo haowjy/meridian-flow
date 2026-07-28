@@ -1,4 +1,4 @@
-/** ContextFS agent effective-view contracts for manuscript membership and grep/read bytes. */
+/** ContextFS agent effective-view contracts for manuscript membership and search/read bytes. */
 import { describe, expect, it } from "vitest";
 import type { Result } from "../../../../shared/result.js";
 import { Ok } from "../../../../shared/result.js";
@@ -23,7 +23,7 @@ function okMarkdown(value: string): Result<string, SyncError> {
 }
 
 describe("ContextFS manuscript effective view", () => {
-  it("lists and greps the resolved manifest branch, not the SQL document set", async () => {
+  it("lists and searches the resolved manifest branch, not the SQL document set", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
     await store.upsertDocument({
@@ -75,14 +75,15 @@ describe("ContextFS manuscript effective view", () => {
     ]);
     const hits = await fs.search("branch");
     expect(hits.ok ? hits.value : []).toEqual([
-      expect.objectContaining({
+      {
         path: "draft-created.md",
-        excerpt: "createdhash|new branch bytes",
-      }),
+        matches: [{ excerpt: "new branch bytes", blockHash: "createdhash" }],
+        matchCount: 1,
+      },
     ]);
   });
 
-  it("keeps grep excerpts byte-equal to readEffectiveMarkdown for branch-touched and draft-created docs", async () => {
+  it("searches the effective branch bytes for branch-touched and draft-created docs", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
     await store.upsertDocument({
@@ -136,11 +137,13 @@ describe("ContextFS manuscript effective view", () => {
       expect.arrayContaining([
         expect.objectContaining({
           path: "branch-touched.md",
-          excerpt: effective.get(BRANCH_DOC_ID),
+          matches: [{ excerpt: "branch touched needle bytes", blockHash: "branchhash" }],
+          matchCount: 1,
         }),
         expect.objectContaining({
           path: "draft-created.md",
-          excerpt: effective.get(CREATED_DOC_ID),
+          matches: [{ excerpt: "draft created needle bytes", blockHash: "createdhash" }],
+          matchCount: 1,
         }),
       ]),
     );

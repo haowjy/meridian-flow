@@ -596,6 +596,26 @@
   box-shadow: 0 0 0 2px var(--color-review-added-ring);
 }
 
+/* A search landing marks the words that matched and then gets out of the way.
+   The fade animates the ground, never opacity: fading the span would fade the
+   writer's own sentence with it. */
+.meridian-editor .ProseMirror .passage-match-highlight {
+  border-radius: 2px;
+  animation: meridian-passage-match-fade 3.4s ease-out forwards;
+}
+
+@keyframes meridian-passage-match-fade {
+  0%,
+  45% {
+    background: var(--color-passage-mark);
+    box-shadow: 0 0 0 2px var(--color-passage-mark-ring);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
 .meridian-editor .ProseMirror .live-range-navigation-boundary {
   display: inline-block;
   width: 2px;

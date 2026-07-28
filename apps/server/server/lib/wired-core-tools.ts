@@ -487,7 +487,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       if (!result.ok) return toolError(result.error);
       return result.value;
     },
-    grep: async (input: unknown, ctx: ToolHandlerContext) => {
+    search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope } = input as { pattern?: string; scope?: string };
       if (!pattern) return toolError({ message: "pattern is required" });
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);

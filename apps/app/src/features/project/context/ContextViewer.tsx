@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
+import { PassageNotice } from "@/features/editor/PassageNotice";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
@@ -120,7 +121,10 @@ export function ContextViewer({
       />
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
-      <div className="page-sheet">
+      <div className="page-sheet relative">
+        {/* A jump that could not find its passage says so here, over the page
+            rather than in the layout. */}
+        <PassageNotice documentId={activeTabId} />
         {/* Review banner — above the identity bar so it's the first chrome
             the writer sees when entering review mode. */}
         {activeTab && activeReviewDraftId ? (

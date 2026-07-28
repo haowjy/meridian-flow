@@ -39,7 +39,7 @@ export function toolCommand(tool: ToolView): ToolCommand {
   switch (tool.toolName) {
     case "write":
       return writeCommand(toolInputObject(tool));
-    case "grep":
+    case "search":
       return "search";
     case "ls":
       return "list";

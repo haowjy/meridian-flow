@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
+import { withPopulatedMigrationDatabase } from "./__test-support__/migration-fixtures";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -30,6 +31,7 @@ if (!enabled || !databaseUrl) {
         "0065_secret_red_ghost",
         "0066_tired_proudstar",
         "0067_blue_eddie_brock",
+        "0068_search_tool_rename",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
@@ -69,6 +71,77 @@ if (!enabled || !databaseUrl) {
       } finally {
         await target.end();
       }
+    });
+    it("renames the frozen search directive without touching prompts that only mention grep", async () => {
+      const ids = {
+        user: "00000000-0000-4000-8000-000000000201",
+        project: "00000000-0000-4000-8000-000000000202",
+        directive: "00000000-0000-4000-8000-000000000203",
+        partial: "00000000-0000-4000-8000-000000000204",
+        prose: "00000000-0000-4000-8000-000000000205",
+        empty: "00000000-0000-4000-8000-000000000206",
+      };
+      const directiveBefore =
+        "Use `write` with command=create/read for document content; use `ls` and `grep` for discovery.";
+      const directiveAfter =
+        "Use `write` with command=create/read for document content; use `ls` and `search` for discovery.";
+      // Close enough to be selected by a loose predicate, never close enough to
+      // be rewritten by the replacement: the row that stayed eligible forever.
+      const partial = "When you need a file, call `grep` for discovery.";
+      const prose = "The writer asked about grep yesterday; do not mention it.";
+
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0068_search_tool_rename",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES ('${ids.user}', 'search-rename-fixture', 'search-rename@test.invalid');
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES ('${ids.project}', '${ids.user}', 'Search rename fixture', 'search-rename-fixture');
+          `);
+          for (const [id, prompt] of [
+            [ids.directive, `'${directiveBefore}'`],
+            [ids.partial, `'${partial}'`],
+            [ids.prose, `'${prose}'`],
+            [ids.empty, "NULL"],
+          ] as const) {
+            await target.unsafe(`
+              INSERT INTO threads (
+                id, project_id, created_by_user_id, title, kind, status, composed_system_prompt
+              )
+              VALUES ('${id}', '${ids.project}', '${ids.user}', 'Search rename fixture', 'primary', 'idle', ${prompt});
+            `);
+          }
+        },
+        verify: async (target) => {
+          const prompts = new Map(
+            (
+              await target<{ id: string; composed_system_prompt: string | null }[]>`
+                SELECT id, composed_system_prompt FROM threads
+                WHERE project_id = ${ids.project}
+              `
+            ).map((row) => [row.id, row.composed_system_prompt]),
+          );
+
+          expect(prompts.get(ids.directive)).toBe(directiveAfter);
+          expect(prompts.get(ids.partial)).toBe(partial);
+          expect(prompts.get(ids.prose)).toBe(prose);
+          expect(prompts.get(ids.empty)).toBeNull();
+
+          // Selection-idempotent, not merely value-idempotent: re-running the
+          // migration must find nothing left to do. A predicate wider than its
+          // own replacement keeps re-selecting rows it can never change.
+          const migration = await readFile(
+            new URL("./migrations/0068_search_tool_rename.sql", import.meta.url),
+            "utf8",
+          );
+          const replayed = await target.unsafe(
+            migration.replaceAll("--> statement-breakpoint", ""),
+          );
+          expect(replayed.count).toBe(0);
+        },
+      });
     });
   });
 }

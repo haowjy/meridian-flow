@@ -40,6 +40,7 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
+import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -266,6 +267,7 @@ export function createStandaloneEditorExtensions({
       documentId: figureRenderContext?.documentId,
     }),
     LiveRangeNavigationExtension,
+    PassageHighlightExtension,
   ];
 }
 

@@ -48,7 +48,7 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import { firstLineMatch } from "./match.js";
+import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
   store: ContextDocumentStore;
@@ -735,9 +735,11 @@ export class ContextFS implements ContextSchemeAdapter {
       if (row.document.fileType !== null) continue;
       const read = await this.searchableLines(row.document.id);
       if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-      const match = firstLineMatch(read.value.join("\n"), query);
+      const match = matchDocument(read.value.entries, query, {
+        hashlines: read.value.hashlines,
+      });
       if (!match) continue;
-      hits.push({ path: row.path, excerpt: match.excerpt, line: match.line });
+      hits.push({ path: row.path, ...match });
     }
     return Ok(hits);
   }
@@ -776,7 +778,16 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.documentSync.readAsMarkdown(documentId);
   }
 
-  private async searchableLines(documentId: string): Promise<Result<string[], SyncError>> {
+  /**
+   * What a search scans, and whether its entries carry block hashes. Only the
+   * manuscript effective view serializes hashlines, so the flag travels with
+   * the text rather than being re-derived from the scheme name — a manuscript
+   * read outside a thread view falls back to plain markdown and would
+   * otherwise be parsed as hashlines it does not have.
+   */
+  private async searchableLines(
+    documentId: string,
+  ): Promise<Result<{ entries: string[]; hashlines: boolean }, SyncError>> {
     const effective = this.documentSync as MarkdownDocumentStore &
       Pick<BranchPeerShadowAccess, "readEffectiveHashlines">;
     if (
@@ -784,14 +795,15 @@ export class ContextFS implements ContextSchemeAdapter {
       this.manifestView?.threadId &&
       effective.readEffectiveHashlines
     ) {
-      return effective.readEffectiveHashlines({
+      const hashlines = await effective.readEffectiveHashlines({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
       });
+      return hashlines.ok ? Ok({ entries: hashlines.value, hashlines: true }) : hashlines;
     }
     const read = await this.readVisibleMarkdown(documentId);
-    return read.ok ? Ok(read.value.split("\n")) : read;
+    return read.ok ? Ok({ entries: read.value.split("\n"), hashlines: false }) : read;
   }
 
   private async isVisibleDocument(documentId: string): Promise<boolean> {

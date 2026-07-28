@@ -390,9 +390,7 @@ export function InlineInspector() {
                     </pre>
                   </div>
                   <details className="rounded border border-border-subtle bg-muted p-2">
-                    <summary
-                      className={cn(sectionLabelVariants({ variant: "group" }), "cursor-pointer")}
-                    >
+                    <summary className={cn(sectionLabelVariants({ variant: "group" }), "")}>
                       tools ({turnContextPreview.preview.tools.length})
                     </summary>
                     <JsonTree
@@ -401,9 +399,7 @@ export function InlineInspector() {
                     />
                   </details>
                   <details className="rounded border border-border-subtle bg-muted p-2">
-                    <summary
-                      className={cn(sectionLabelVariants({ variant: "group" }), "cursor-pointer")}
-                    >
+                    <summary className={cn(sectionLabelVariants({ variant: "group" }), "")}>
                       gateway params
                     </summary>
                     <JsonTree

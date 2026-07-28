@@ -31,7 +31,7 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
         <button
           type="button"
           onClick={() => onOpenParent(parent.id)}
-          className="focus-ring inline-flex cursor-pointer items-center gap-1 rounded text-primary hover:text-primary/80"
+          className="focus-ring inline-flex items-center gap-1 rounded text-primary hover:text-primary/80"
           aria-label="Go to parent chat"
         >
           <ChevronLeft className="size-3.5" aria-hidden />

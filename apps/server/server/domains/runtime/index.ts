@@ -34,6 +34,3 @@ export {
   type HelperResultDelivery,
 } from "./spawn/helper-result-delivery.js";
 export * from "./tools/index.js";
-export type RuntimeToolAction =
-  | { tool: "edit"; uri: string; mode: "append"; text: string }
-  | { tool: "write"; uri: string; markdown: string };

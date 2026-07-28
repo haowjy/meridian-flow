@@ -15,7 +15,7 @@ import { z } from "zod";
 import type { ToolRegistration } from "./types.js";
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["write", "ls", "grep", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["write", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -123,9 +123,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "grep",
+        name: "search",
         description:
-          'Deterministically grep visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before viewing them with write(command="read").',
+          'Literal-text search across visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before viewing them with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {
@@ -136,14 +136,14 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
             scope: {
               type: "string",
               description:
-                "Optional URI prefix scope. Use kb:// to grep the knowledge base, or a subtree like kb://protocols to grep one folder. When omitted, greps all visible context schemes.",
+                "Optional URI prefix scope. Use kb:// to search the knowledge base, or a subtree like kb://protocols to search one folder. When omitted, searches all visible context schemes.",
             },
           },
           required: ["pattern"],
           additionalProperties: false,
         },
       },
-      execution: { type: "server", handler: handlers.grep },
+      execution: { type: "server", handler: handlers.search },
       timeoutMs: 30_000,
     },
     {

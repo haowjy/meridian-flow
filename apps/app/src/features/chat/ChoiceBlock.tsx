@@ -66,7 +66,7 @@ export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentB
                 respond({ value: option.value });
               }}
               className={cn(
-                "focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60",
+                "focus-ring inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60",
                 isRecommended
                   ? "border-primary bg-primary text-primary-foreground shadow-button"
                   : "border-border-subtle bg-muted text-foreground hover:border-border-focus hover:bg-sidebar-accent",

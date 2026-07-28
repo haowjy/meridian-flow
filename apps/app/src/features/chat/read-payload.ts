@@ -12,7 +12,7 @@
  * came through empty serializes as `|body`, and an anchored prefix match
  * correctly refuses to touch that, which would leak a leading pipe into the
  * writer's prose and lose an empty-hash heading entirely. The anchored
- * stripper belongs at genuinely mixed seams, like `grep` excerpts, which come
+ * stripper belongs at genuinely mixed seams, like `search` excerpts, which come
  * back as raw markdown for every scheme with no hashline shadow.
  *
  * Targeting is resolved server-side, so the payload already *is* the region the

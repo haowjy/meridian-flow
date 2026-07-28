@@ -77,7 +77,7 @@ represented as a fully-typed slot:
 
 ## Tool wiring
 
-`createProductionAppPorts()` constructs the runtime tool registry with `{ db, contextPorts, documentSync, threads, threadWorks }`; `composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete registry currently lives in `domains/runtime/tool-registry.ts`; `lib/` wires it but does not own tool algorithms.
+`composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete tool catalogue lives in `domains/runtime/tools/`; `lib/` wires it through `wired-core-tools.ts` but does not own tool algorithms.
 
 Context-backed handlers resolve the active thread to the unified
 `ContextPort` with `resolveThreadContext(...)` + `contextPortForThread(...)`.

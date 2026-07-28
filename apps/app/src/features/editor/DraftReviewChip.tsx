@@ -47,7 +47,7 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
       }
       disabled={controller.isDisposing}
       className={cn(
-        "focus-ring inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-primary/30 bg-primary/10 px-1.5 font-sans text-xs font-medium text-jade-text motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
+        "focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-primary/30 bg-primary/10 px-1.5 font-sans text-xs font-medium text-jade-text motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
         IDENTITY_BAR_BOX_CLASS,
       )}
     >

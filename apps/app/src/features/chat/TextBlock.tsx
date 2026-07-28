@@ -69,7 +69,7 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
         <button
           type="submit"
           disabled={!isAwaitingResponse || submitted}
-          className="focus-ring inline-flex cursor-pointer items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="focus-ring inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Trans>Submit</Trans>
         </button>

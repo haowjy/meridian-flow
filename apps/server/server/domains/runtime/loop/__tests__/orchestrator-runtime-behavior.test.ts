@@ -86,7 +86,7 @@ function runnableCoreRegistrations() {
   return createCoreToolRegistrations({
     write: handler,
     ls: handler,
-    grep: handler,
+    search: handler,
     ask_user: handler,
   });
 }

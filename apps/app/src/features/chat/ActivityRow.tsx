@@ -235,7 +235,7 @@ export function ActivityRow({
           aria-controls={panelId}
           // The toggle has no text of its own; the row's title names it.
           aria-labelledby={titleId}
-          className="focus-ring absolute inset-0 cursor-pointer rounded-md"
+          className="focus-ring absolute inset-0 rounded-md"
         />
       ) : null}
     </div>

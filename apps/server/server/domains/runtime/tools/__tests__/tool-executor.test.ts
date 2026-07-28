@@ -102,7 +102,7 @@ describe("createToolExecutor", () => {
         return { output: outcome.text };
       },
       ls: async () => ({}),
-      grep: async () => ({}),
+      search: async () => ({}),
       ask_user: async () => ({}),
     });
     const registry = createToolRegistry();

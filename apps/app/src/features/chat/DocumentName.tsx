@@ -14,6 +14,12 @@
  * hooks return `null` and every name degrades to plain text with no per-caller
  * knowledge of that fact.
  *
+ * **One door, two precisions.** A name that stands for a whole document opens
+ * the document; a name that stands for a matched passage carries that passage
+ * with it and opens there. The affordance is identical either way — the
+ * promise is a destination, and the destination is as precise as the row that
+ * offered it.
+ *
  * **Tone and decoration move together.** A muted name reads as *quiet* only
  * while the underline holds it up; muted with no decoration reads as a disabled
  * control. So a door is muted + underlined, and a plain name is prose-toned +
@@ -28,7 +34,11 @@
 import { t } from "@lingui/core/macro";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
-import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
+import {
+  type ContextPassageAnchor,
+  useChatContextNavigation,
+  useChatContextRoutability,
+} from "./ChatContextNavigation";
 import { documentDisplayName } from "./document-display-name";
 
 export type DocumentNameProps = {
@@ -48,9 +58,20 @@ export type DocumentNameProps = {
    * document is a larger and different thing.
    */
   label?: "name" | "open";
+  /**
+   * Set by a name that stands for a particular passage rather than the whole
+   * document — a search match. The door then means "show me this passage",
+   * and the destination degrades to the document when the passage has moved on.
+   */
+  passage?: ContextPassageAnchor;
 };
 
-export function DocumentName({ path, insideDoor = false, label = "name" }: DocumentNameProps) {
+export function DocumentName({
+  path,
+  insideDoor = false,
+  label = "name",
+  passage,
+}: DocumentNameProps) {
   const openContextUri = useChatContextNavigation();
   const canOpenContextUri = useChatContextRoutability();
   const title = documentDisplayName(path);
@@ -77,7 +98,7 @@ export function DocumentName({ path, insideDoor = false, label = "name" }: Docum
       // fold the row open.
       onClick={(event) => {
         event.stopPropagation();
-        openContextUri(uri);
+        openContextUri(uri, passage);
       }}
       // `-my-2 py-2` grows the touch target to ~37px without changing row
       // rhythm. The overflow lands inside the row's own 8px bottom padding, so

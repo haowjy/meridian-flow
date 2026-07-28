@@ -4,7 +4,15 @@
  */
 import { createContext, type ReactNode, useContext } from "react";
 
-export type OpenContextUri = (uri: string) => void;
+/**
+ * Where inside a document a door means to land. Both halves are required
+ * because both are load-bearing: the hash finds the block, and the term is how
+ * the destination verifies it is still the passage that matched. A door with
+ * neither is an ordinary document door, which is most of them.
+ */
+export type ContextPassageAnchor = { blockHash: string; term: string };
+
+export type OpenContextUri = (uri: string, passage?: ContextPassageAnchor) => void;
 export type CanOpenContextUri = (uri: string) => boolean;
 
 const ChatContextNavigationContext = createContext<OpenContextUri | null>(null);

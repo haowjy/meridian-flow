@@ -205,7 +205,7 @@ function InterruptForm({
           <button
             type="submit"
             disabled={formDisabled}
-            className="focus-ring inline-flex cursor-pointer items-center rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex items-center rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Confirm</Trans>
           </button>
@@ -213,7 +213,7 @@ function InterruptForm({
             type="button"
             disabled={formDisabled}
             onClick={handleStop}
-            className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-border-subtle bg-muted px-3 py-1.5 font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex items-center rounded-md border border-border-subtle bg-muted px-3 py-1.5 font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Stop run</Trans>
           </button>

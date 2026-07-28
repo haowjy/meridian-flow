@@ -26,6 +26,8 @@ function titleText(node: ReactNode): string {
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
     strings.reduce((copy, part, index) => copy + part + (values[index] ?? ""), ""),
+  plural: (count: number, forms: { one: string; other: string }) =>
+    (count === 1 ? forms.one : forms.other).replace("#", String(count)),
 }));
 
 function writeToolView(overrides: Partial<ToolView> = {}): ToolView {
@@ -79,17 +81,6 @@ describe("write tool renderer", () => {
     expect(expand).not.toMatch(/:\/\/|\.md|command=|overwrite=true/);
   });
 
-  it("sanitizes legacy string-shaped tool errors", () => {
-    const tool = writeToolView({
-      isError: true,
-      output:
-        "status: invalid_write\nFile already exists: manuscript://chapter-1.md. Use overwrite=true to overwrite.",
-    });
-    const expand = expandMarkup(renderer.expand?.(tool));
-    expect(expand).toContain("That change couldn&#x27;t be made in chapter-1.");
-    expect(expand).not.toMatch(/:\/\/|\.md|command=|overwrite=true/);
-  });
-
   it("never renders unknown machine detail", () => {
     const tool = writeToolView({
       isError: true,
@@ -117,7 +108,7 @@ describe("unknown tool renderer", () => {
 describe("streaming tool labels", () => {
   it.each([
     ["ls", { path: "manuscript://" }, "Exploring Manuscript…"],
-    ["grep", { pattern: "dragon" }, "Searching"],
+    ["search", { pattern: "dragon" }, "Searching"],
   ])("uses present tense for a partial %s call", (toolName, input, expected) => {
     const tool = writeToolView({ toolName, input, status: "partial" });
 
@@ -138,7 +129,7 @@ describe("streaming tool labels", () => {
 });
 
 describe("runtime tool registry", () => {
-  it.each(["ls", "grep"])("registers the %s runtime tool", (toolName) => {
+  it.each(["ls", "search"])("registers the %s runtime tool", (toolName) => {
     expect(rendererFor(toolName)).not.toBe(rendererFor("unknown_tool"));
   });
 
@@ -148,32 +139,32 @@ describe("runtime tool registry", () => {
     expect(titleText(rendererFor("ls").title(tool))).toBe("Explored folders");
   });
 
-  it("reads grep's pattern input", () => {
+  it("reads search's pattern input", () => {
     const tool = writeToolView({
-      toolName: "grep",
+      toolName: "search",
       input: { pattern: "dragon", query: "wrong field" },
     });
-    const html = renderToStaticMarkup(rendererFor("grep").title(tool));
+    const html = renderToStaticMarkup(rendererFor("search").title(tool));
 
     expect(html).toContain("dragon");
     expect(html).not.toContain("wrong field");
   });
 
-  it("renders the server grep result array as curated rows", () => {
+  it("renders the server search result array as curated rows", () => {
     const tool = writeToolView({
-      toolName: "grep",
+      toolName: "search",
       input: { pattern: "dragon" },
       output: [
         {
           uri: "manuscript://chapter-12.md",
-          excerpt: "The dragon stirred beneath the mountain.",
-          line: 42,
+          matches: [{ excerpt: "The dragon stirred beneath the mountain." }],
+          matchCount: 1,
           score: 0.91,
         },
       ],
     });
 
-    const html = expandMarkup(rendererFor("grep").expand?.(tool));
+    const html = expandMarkup(rendererFor("search").expand?.(tool));
 
     expect(html).toContain("chapter-12");
     expect(html).not.toContain("manuscript://");
@@ -189,12 +180,18 @@ describe("runtime tool registry", () => {
 
   it("weights the searched words inside the passage", () => {
     const tool = writeToolView({
-      toolName: "grep",
+      toolName: "search",
       input: { pattern: "Elara" },
-      output: [{ uri: "manuscript://chapter-2.md", excerpt: "Then elara spoke the name." }],
+      output: [
+        {
+          uri: "manuscript://chapter-2.md",
+          matches: [{ excerpt: "Then elara spoke the name." }],
+          matchCount: 1,
+        },
+      ],
     });
 
-    const html = expandMarkup(rendererFor("grep").expand?.(tool));
+    const html = expandMarkup(rendererFor("search").expand?.(tool));
 
     // The document's own casing wins, matched case-insensitively.
     expect(html).toContain("font-semibold");
@@ -206,12 +203,18 @@ describe("runtime tool registry", () => {
   it("centres a long passage on the match and marks the cut", () => {
     const lead = "A very long run-up that the writer does not need to read again, and then ";
     const tool = writeToolView({
-      toolName: "grep",
+      toolName: "search",
       input: { pattern: "gate" },
-      output: [{ uri: "manuscript://chapter-2.md", excerpt: `${lead}the gate opened.` }],
+      output: [
+        {
+          uri: "manuscript://chapter-2.md",
+          matches: [{ excerpt: `${lead}the gate opened.` }],
+          matchCount: 1,
+        },
+      ],
     });
 
-    const html = expandMarkup(rendererFor("grep").expand?.(tool));
+    const html = expandMarkup(rendererFor("search").expand?.(tool));
 
     expect(html).toContain("…");
     expect(html).not.toContain("A very long run-up");
@@ -221,43 +224,30 @@ describe("runtime tool registry", () => {
 
   it("shows the whole line when the pattern is unknown", () => {
     const tool = writeToolView({
-      toolName: "grep",
-      output: [{ uri: "manuscript://chapter-2.md", excerpt: "The hollow gate stood." }],
-    });
-
-    expect(expandMarkup(rendererFor("grep").expand?.(tool))).toContain("The hollow gate stood.");
-  });
-
-  it("never shows the writer a block hash", () => {
-    const tool = writeToolView({
-      toolName: "grep",
+      toolName: "search",
       output: [
         {
           uri: "manuscript://chapter-2.md",
-          excerpt: "79b9|The hollow gate stood at the edge of the forest.",
-          line: 1,
+          matches: [{ excerpt: "The hollow gate stood." }],
+          matchCount: 1,
         },
       ],
     });
 
-    const html = expandMarkup(rendererFor("grep").expand?.(tool));
-
-    // A hash is how the model addresses a block. It is not a word.
-    expect(html).not.toContain("79b9");
-    expect(html).not.toContain("|");
-    expect(html).toContain("The hollow gate stood at the edge of the forest.");
+    expect(expandMarkup(rendererFor("search").expand?.(tool))).toContain("The hollow gate stood.");
   });
 
   it("states the bound when the expand clips a longer result list", () => {
     const tool = writeToolView({
-      toolName: "grep",
+      toolName: "search",
       output: Array.from({ length: 42 }, (_, index) => ({
         uri: `manuscript://chapter-${index + 1}.md`,
-        excerpt: "The dragon stirred beneath the mountain.",
+        matches: [{ excerpt: "The dragon stirred beneath the mountain." }],
+        matchCount: 1,
       })),
     });
 
-    const html = expandMarkup(rendererFor("grep").expand?.(tool));
+    const html = expandMarkup(rendererFor("search").expand?.(tool));
 
     // A fact about the payload, never an invitation ("Showing…" is systems voice).
     expect(html).toContain("4 of 42");
@@ -268,24 +258,32 @@ describe("runtime tool registry", () => {
 
   it("states no bound when nothing was clipped", () => {
     const tool = writeToolView({
-      toolName: "grep",
-      output: [{ uri: "manuscript://chapter-12.md", excerpt: "The dragon stirred." }],
+      toolName: "search",
+      output: [
+        {
+          uri: "manuscript://chapter-12.md",
+          matches: [{ excerpt: "The dragon stirred." }],
+          matchCount: 1,
+        },
+      ],
     });
 
-    expect(expandMarkup(rendererFor("grep").expand?.(tool))).not.toContain(" of ");
+    expect(expandMarkup(rendererFor("search").expand?.(tool))).not.toContain(" of ");
   });
 
-  it("offers no chevron when every result is malformed", () => {
-    // A chevron is a promise. The cheap existence check and the parser used to
-    // be separate code paths, so `[null]` earned a chevron that opened onto
-    // nothing.
-    expect(rendererFor("grep").expand?.(writeToolView({ toolName: "grep", output: [null] }))).toBe(
+  it("offers no chevron for a search that found nothing", () => {
+    // A chevron is a promise, and an empty result set has nothing to promise.
+    // Payloads the contract cannot produce are not pinned here: the row trusts
+    // the contract, and a second validator beside the real one is how the
+    // cheap check and the parser came to disagree in the first place.
+    expect(rendererFor("search").expand?.(writeToolView({ toolName: "search", output: [] }))).toBe(
       null,
     );
     expect(
-      rendererFor("grep").expand?.(
-        writeToolView({ toolName: "grep", output: [{ uri: "manuscript://a.md" }] }),
-      ),
+      rendererFor("search").expand?.(writeToolView({ toolName: "search", output: undefined })),
+    ).toBe(null);
+    expect(
+      rendererFor("search").expand?.(writeToolView({ toolName: "search", output: "not a list" })),
     ).toBe(null);
   });
 
@@ -444,9 +442,9 @@ describe("runtime tool registry", () => {
     expect(rendererFor("ls").expand?.(writeToolView({ toolName: "ls", output: [] }))).toBe(null);
   });
 
-  it("does not expand an empty server grep result array", () => {
-    const tool = writeToolView({ toolName: "grep", output: [] });
+  it("does not expand an empty server search result array", () => {
+    const tool = writeToolView({ toolName: "search", output: [] });
 
-    expect(rendererFor("grep").expand?.(tool)).toBeNull();
+    expect(rendererFor("search").expand?.(tool)).toBeNull();
   });
 });

@@ -32,7 +32,7 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         ...createCoreToolRegistrations({
           write: coreHandler,
           ls: coreHandler,
-          grep: coreHandler,
+          search: coreHandler,
           ask_user: coreHandler,
         }),
         ...createSpawnToolRegistrations(),

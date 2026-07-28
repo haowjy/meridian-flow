@@ -146,6 +146,28 @@
   button, a, [role="button"] {
     touch-action: manipulation;
   }
+  /* Anything you can act on says so under the pointer. This is a deliberate
+     divergence from the shadcn / Tailwind v4 default, which leaves buttons on
+     the arrow: this app is dense with quiet controls — row toggles, document
+     names that are doors, matched passages — and a writer should not have to
+     click something to find out whether it was clickable.
+
+     One rule, so no component has to remember. Disabled controls are excluded
+     and keep whatever they already declare (`disabled:cursor-not-allowed` on
+     the form primitives); `aria-disabled` counts too, because a `[role]`
+     element can never match `:disabled` and some controls stay focusable on
+     purpose so their tooltip still answers. */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  summary {
+    cursor: pointer;
+  }
+  /* Except in the manuscript, where a link is text the writer is editing and
+     a click puts the caret in it. Prose is never a destination here. */
+  .ProseMirror a[href] {
+    cursor: text;
+  }
   /* Headings inherit the single app font (Inter, set on `body`) and are
      distinguished by size + weight only — matching stock ProseMirror/TipTap,
      which ship no heading font. */
@@ -681,12 +703,12 @@
 
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
-  @apply focus-ring cursor-pointer text-sm font-medium text-primary underline-offset-2 hover:underline;
+  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline;
 }
 
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
 @utility disclosure-trigger {
-  @apply focus-ring flex w-full min-w-0 cursor-pointer items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
+  @apply focus-ring flex w-full min-w-0 items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to

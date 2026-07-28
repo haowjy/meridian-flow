@@ -40,7 +40,7 @@ describe("command classification", () => {
   });
 
   it.each([
-    ["grep", "search"],
+    ["search", "search"],
     ["ls", "list"],
     ["invoke", "invoke"],
     ["return_result", "unknown"],

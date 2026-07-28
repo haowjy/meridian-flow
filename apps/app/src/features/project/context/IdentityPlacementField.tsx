@@ -187,7 +187,7 @@ export function IdentityPlacementField({
             data-file-suggestion
             type="button"
             tabIndex={-1}
-            className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
+            className="focus-ring ml-1.5 font-medium underline underline-offset-2"
             onClick={() => onOpenExisting(identityNote.locator.scheme, identityNote.locator.path)}
           >
             <Trans>Open existing</Trans>
@@ -210,7 +210,7 @@ export function IdentityPlacementField({
               data-file-suggestion
               type="button"
               tabIndex={-1}
-              className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
+              className="focus-ring ml-1.5 font-medium underline underline-offset-2"
               onClick={() =>
                 onOpenExisting(identityNote.collision.scheme, identityNote.collision.path)
               }

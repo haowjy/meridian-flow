@@ -130,14 +130,30 @@ export interface BinaryFileRef extends BaseFileRef {
 /** A single-file lookup result returned by {@link ContextPort.stat}. */
 export type FileRef = TrackedFileRef | BinaryFileRef;
 
-/** A single full-text search match returned by {@link ContextPort.search}. */
+/** One matched passage inside a {@link SearchResult}. */
+export interface SearchMatch {
+  /** Matched line or snippet. */
+  excerpt: string;
+  /**
+   * Hash of the block the excerpt came from, so a caller can navigate back to
+   * the passage rather than to the top of the file. Present only for schemes
+   * whose documents are serialized as hashlines (manuscript); its absence
+   * elsewhere is the contract, not an error.
+   */
+  blockHash?: string;
+}
+
+/** Every passage one file contributed to a {@link ContextPort.search}. */
 export interface SearchResult {
   /** Canonical `scheme://path` URI of the matched file. */
   uri: string;
-  /** Matched line or snippet. */
-  excerpt: string;
-  /** 1-based line number within the file, if applicable. */
-  line?: number;
+  /** Matching passages in file order, capped by the adapter. Never empty. */
+  matches: SearchMatch[];
+  /**
+   * How many times the query occurs in this file, including occurrences past
+   * the passage cap. This is what stays honest about what was left out.
+   */
+  matchCount: number;
   /** Relevance score, 0-1. Adapter-dependent. */
   score?: number;
 }

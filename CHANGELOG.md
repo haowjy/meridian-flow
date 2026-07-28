@@ -58,6 +58,27 @@
 - `apps/server`, `packages/contracts`: collaboration sockets now refuse clients
   older than a live or draft head with `4406`; stale stored heads close with
   `4407` instead of reconnecting indefinitely.
+- `apps/server`: grep hits now report how many times the pattern occurs in each
+  document, and manuscript hits carry the hash of the block that matched, so a
+  search result can lead back to the passage instead of the top of the file.
+- `apps/app`: search results now say how many times the pattern occurs in each
+  document, and the expand states totals ("12 results in 3 documents") once a
+  document holds more than one match.
+- `apps/app`: clicking a search result now opens the document at the passage
+  that matched, with a brief mark on the words themselves and no cursor
+  movement. If the passage changed since the search, the document still opens
+  and says so rather than landing somewhere that looks right.
+- `apps/server`, `apps/app`: the tool that searches your project is now called
+  `search` rather than `grep`, so the assistant's own narration says "search"
+  instead of naming a command-line program. Rows already read "Searched" and
+  are unchanged. Tool calls recorded under the old name show as a plain
+  one-line row with no expand.
+- `apps/server`, `apps/app`: a search now reports up to three passages per
+  document instead of one, and the results open as a card: totals at the top, a
+  section per document separated by a rule, a match count beside each name, and
+  "N more" to grow a document's passages in place. The searched word is the
+  handle you click, and each passage opens at its own place in the document.
+
 - `apps/server`: Anthropic-format cache usage now normalizes to inclusive input
   totals, so uncached prompt tokens are priced instead of silently clamped away;
   OpenAI-compatible trailing usage-only chunks are also retained.

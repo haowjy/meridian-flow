@@ -230,7 +230,7 @@ function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () 
           type="button"
           onClick={onClick}
           className={cn(
-            "focus-ring cursor-pointer",
+            "focus-ring",
             chipClass,
             provisional
               ? "border-primary/30 bg-primary/10 text-jade-text"

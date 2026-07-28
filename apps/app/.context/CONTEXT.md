@@ -371,6 +371,15 @@ A11y primitives should be centralized the same way visual tokens are:
   ARIA augments, doesn't replace.
 - **Keyboard contracts:** centralize shortcuts in one registry; don't sprinkle
   `onKeyDown` handlers across components.
+- **Pointer cursor on anything actionable**, which shadcn and Tailwind v4 do
+  not do — their reset leaves buttons on the arrow. Human ruling: this app is
+  dense with quiet controls, and a writer should not have to click to learn
+  what was clickable. One base-layer rule in `src/styles/globals.css` covers
+  buttons, `[role="button"]`, `a[href]` and `summary`, minus anything disabled
+  by attribute or by `aria-disabled`; components add no cursor utility of their
+  own. Manuscript links are the deliberate exception — inside `.ProseMirror` a
+  link is text under the caret. **A shadcn refresh will try to take this back;
+  it is a divergence we keep.**
 
 ## Motion (forward-looking)
 

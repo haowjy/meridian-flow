@@ -83,7 +83,7 @@ describe("announcements match the visible row", () => {
   });
 
   it("announces the pattern a search used", () => {
-    expect(phrases(toolView({ toolName: "grep", input: { pattern: "Elara" } }))).toEqual({
+    expect(phrases(toolView({ toolName: "search", input: { pattern: "Elara" } }))).toEqual({
       active: "Searching “Elara”…",
       complete: "Searched “Elara”",
     });
@@ -119,7 +119,7 @@ describe("every command carries a full descriptor", () => {
     undo: toolView({ input: { command: "undo" } }),
     redo: toolView({ input: { command: "redo" } }),
     review: toolView({ input: { command: "diff" } }),
-    search: toolView({ toolName: "grep", input: { pattern: "Elara" } }),
+    search: toolView({ toolName: "search", input: { pattern: "Elara" } }),
     list: toolView({ toolName: "ls", input: {} }),
     invoke: toolView({ toolName: "invoke", input: { skillname: "outline" } }),
     unknown: toolView({ toolName: "return_result" }),

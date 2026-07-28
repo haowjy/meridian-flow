@@ -61,7 +61,7 @@ describe("thinkingDigest", () => {
         [
           tool("write", { command: "read", path: "manuscript://chapter-1" }),
           tool("write", { command: "replace", path: "manuscript://chapter-2" }),
-          tool("grep", { pattern: "dragon" }),
+          tool("search", { pattern: "dragon" }),
           tool("search", { query: "dragon" }),
           error,
         ],

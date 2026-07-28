@@ -59,7 +59,7 @@ the UI says neither "intent" nor "outcome".
 | `read format:outline` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
 | `create` / `insert` / `replace` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
 | `undo` / `redo` / `diff` | Nothing | — | — |
-| `grep` | Match rows: document, and the passage that matched | The search cap, with a count | Each document |
+| `search` | A result card: totals, then a section per document | The document cap, with a count | Each matched passage |
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
 | `invoke` | Output tail, or one of two availability failures | The tail's own bound | — |
 | unknown | Nothing | — | — |
@@ -67,7 +67,7 @@ the UI says neither "intent" nor "outcome".
 A **failed `write`** always shows why it failed, in place of whatever the
 command would otherwise have opened onto. No other tool has a general failure
 expand: `invoke` recognises two availability failures and shows nothing for the
-rest, and a failed `grep` or `ls` opens onto nothing at all. Whether every
+rest, and a failed `search` or `ls` opens onto nothing at all. Whether every
 failure deserves an expand is an open design question; do not invent an answer
 in a renderer.
 
@@ -85,19 +85,69 @@ hash would otherwise leak its separator into the writer's prose. Targeting is re
 server-side, so a scoped read's payload already *is* the region asked for: the
 preview rule is "show the top of what came back" for every read.
 
-A search row shows the **document and its passage, and no line number**:
-chapters are not line-addressed, and a line number is developer vocabulary in a
-novelist's transcript. The passage is centred on the match rather than started
-at the line's beginning, cut on a word boundary with a leading ellipsis when
-run-up was dropped, and the matched words carry weight through type alone. No
-coloured ground: this is the writer's own prose, and a highlighter across it
-reads as markup rather than as their sentence.
+A search expand is **a card, not a run of rows.** The transcript is a column of
+the agent's actions; eight passages loose in it read as eight more actions. The
+result set gets one recessed contained surface, its border a step firmer than
+the rules inside it so the container always outranks its own divisions.
+Separation between documents is the point of the shape, and it is carried by a
+rule, never by spacing alone.
 
-Two things the design asks of this expand are **blocked on the payload**
-(meridian-flow #433), not forgotten: a per-document match count, and the
-`12 results in 3 documents` bound. The adapter returns only the first match per
-document, so results and documents are always equal and both would state a
-tautology. Until the payload carries counts, the bound stays `N of M`.
+### What the card says
+
+- **The header carries the totals and nothing else.** `12 results in 3
+  documents`, VS Code's grammar. It never repeats the query: the `Searched
+  ‹query›` row title sits directly above it, and saying it twice makes the card
+  read as a different question. When results and documents are equal every
+  document matched once, so the header drops to `3 documents` rather than
+  saying the same thing twice.
+- **The bound line keeps one job**: how many documents were *shown* of how many
+  matched (`4 of 42`). That is a different fact from the totals and it only
+  appears when the list was actually cut.
+- **The count badge is per document, right-aligned, and always present** —
+  including at one. The contract guarantees it: a hit without a positive count,
+  or without a passage to show, is refused at normalization rather than
+  rendered around. Downstream code takes the shape as given. It sits in a column, and a blank cell in a column is worse
+  than a `1`. It counts the whole document, not the passages fetched, so it
+  stays honest when the server's cap clipped the list. The words live in
+  screen-reader-only text; the badge itself is the bare number, because a
+  column reads by shape.
+
+### What the card does
+
+- **Each document shows its best passage, and grows in place.** `N more`
+  discloses the passages the server sent but the section kept folded. It grows
+  inline: no nested scrollport, because the transcript is the single scroll
+  owner. If the server's cap clipped more than it sent, the disclosure shows
+  what it has and the badge still names the total.
+- **The disclosure sits after the passage it extends**, not beside the document
+  name. In the header it would take focus before the passage the writer is
+  reading, and a focus order that disagrees with reading order is what keyboard
+  users cannot recover from. Reading, DOM, and focus order are the same order:
+  document name, its passage, `N more`, the rest.
+- **The matched term is the door's handle.** Underlining a whole excerpt turns
+  the writer's prose into a link and buries the word they searched for, so the
+  term carries the underline and the jade hover while the whole row stays the
+  click target. One button per passage, never a control inside a control: the
+  visible affordance is smaller than the target, which is the point.
+- **A passage with no anchor is not a door.** Non-manuscript schemes carry no
+  block hash, so those excerpts render as prose and the document's own name
+  stays the way in. The passage door also does not pre-check that its passage
+  survived; it degrades at the destination, through the resolution ladder in
+  `core/editor/passage-navigation.ts`, which lands on the block, or on a single
+  re-found occurrence, or says the passage changed. It never guesses among
+  duplicates.
+- **Every door retires the last one.** Ordinary doors included: a resolution
+  the writer has clicked past must not land a highlight or a notice behind
+  them, so ownership advances at the door boundary
+  (`features/project/chat/usePassageDoors.ts`), not per passage row.
+
+Passages come from the payload's `matches` array, capped server-side; the
+client never invents one, and a closed row never parses one (see
+[activity-row-anatomy.md](activity-row-anatomy.md) for how the chevron stays
+honest without that parse). The hash travels in its own field and the excerpt
+arrives as prose, so no renderer parses the hashline format to show a sentence
+to a writer — that parsing lives once, on the server, where the format is
+already known.
 
 An `ls` expand is **a record of what the model received, not a file browser.**
 The tree panel already browses, and nothing consumes a folder route, so folders

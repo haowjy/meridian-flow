@@ -141,7 +141,7 @@ function SectionChip({
       className={cn(
         // scroll-mx matches the row's 0.75rem padding so scrollIntoView
         // doesn't pin the chip flush against the viewport edge.
-        "focus-ring flex h-11 shrink-0 scroll-mx-3 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors active:scale-[0.98]",
+        "focus-ring flex h-11 shrink-0 scroll-mx-3 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors active:scale-[0.98]",
         isActive
           ? "border-transparent bg-sidebar-accent font-medium text-foreground"
           : "border-border-subtle text-muted-foreground",

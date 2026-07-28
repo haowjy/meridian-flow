@@ -174,6 +174,51 @@ zero-width deletion anchors render a caret-like boundary rather than inventing
 a replacement range. Chat supplies route resolution, but must not decode,
 validate, or map anchors itself.
 
+## Search-passage navigation
+
+`passage-navigation.ts` is the retain/sync/resolve boundary for search-match
+doors. Its anchor is a block hash plus the term that matched, not an encoded
+position: the hash derives from the block's immutable Yjs item id, so it
+survives every edit inside the block and dangles only when the block goes.
+
+Opening is **not** part of it. A search row is a document door first; the route
+change happens either way, and this only decides where inside the document to
+land. Ownership of that decision advances at the project route's door boundary
+(`features/project/chat/usePassageDoors.ts`), which every door reports to,
+passage or not — a resolution the writer has clicked past must not arrive
+behind them. Three outcomes, produced by `passage-resolution.ts` against live
+ProseMirror text:
+
+1. the hash names a live block and the term is still in it — mark its
+   occurrences there;
+2. the block is gone, or no longer holds the term, and the term occurs exactly
+   once in the document — mark that;
+3. otherwise `stale`, which surfaces as a notice
+   (`passage-notice-store.ts`). Never a landing chosen among duplicates: taking
+   a novelist to a nearby-but-wrong paragraph is worse than saying nothing was
+   found.
+
+The notice's lifetime is store-owned and token-scoped, never the rendering
+component's. A notice is about a navigation, and navigations continue while its
+document is off screen; leaving expiry to the component stranded it, so
+returning to that document later replayed a forgotten complaint.
+
+The searchable projection is where honesty is won or lost. Text runs break at
+every non-text inline leaf, so `gate` and `keeper` either side of a hard break
+can never read as the unique `gatekeeper` step 2 is allowed to jump to. Each
+run then folds as one string, the way the server folds: case is contextual, and
+`"ΟΣ"` lowercases to `"ος"` whole but `"οσ"` letter by letter, which both misses
+the searched word and matches a different one. Every folded unit still carries
+the source range behind it, because `"İ".toLowerCase()` is longer than its
+source.
+
+`PassageHighlightExtension` owns the mark and the reveal. It is **never a
+selection** — the writer's cursor may be elsewhere mid-sentence — it scrolls
+center-biased only when the passage is not already on screen, and it clears on
+the writer's next edit or caret move. Remote Yjs transactions (`ySyncPluginKey`
+meta) do not clear it: they arrive constantly and would wipe the mark before it
+was read.
+
 ## Selective Discard (dock Changes cards)
 
 Each card's **Discard** is a server disposition command for its authoritative
