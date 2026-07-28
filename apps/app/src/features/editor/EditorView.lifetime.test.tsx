@@ -10,7 +10,7 @@
  * makes the reporter walk the ProseMirror view into jsdom internals.
  */
 import type { Editor } from "@tiptap/core";
-import { act, useState } from "react";
+import { act, StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -21,6 +21,7 @@ import type {
   DocumentSessionSnapshot,
   SchemaFence,
 } from "@/core/editor/document-session";
+import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
@@ -34,6 +35,10 @@ const threadList: { current: ThreadListItem[] } = {
 const sessions = new Map<string, DocumentSession>();
 const sessionSnapshots = new Map<string, DocumentSessionSnapshot>();
 const sessionListeners = new Map<string, Set<(snapshot: DocumentSessionSnapshot) => void>>();
+const sessionHorizons = new Map<
+  string,
+  { localPersistence: Promise<void>; firstServerSync: Promise<void> }
+>();
 
 function sessionFor(roomKey: string): DocumentSession {
   const existing = sessions.get(roomKey);
@@ -48,6 +53,7 @@ function sessionFor(roomKey: string): DocumentSession {
     connectionState: null,
     localPersistenceSynced: true,
     schemaFence: null,
+    schemaRepairs: [],
   };
   const listeners = new Set<(next: DocumentSessionSnapshot) => void>();
   sessionSnapshots.set(roomKey, snapshot);
@@ -58,6 +64,15 @@ function sessionFor(roomKey: string): DocumentSession {
     awareness,
     cursorProvider: { awareness },
     markerStore: new SessionMarkerStore("writer"),
+    whenLocalPersistenceSynced: () =>
+      sessionHorizons.get(roomKey)?.localPersistence ?? Promise.resolve(),
+    whenSynced: () => sessionHorizons.get(roomKey)?.firstServerSync ?? Promise.resolve(),
+    reportSchemaRepair: (event: SchemaRepairEvent) => {
+      const current = sessionSnapshots.get(roomKey) ?? snapshot;
+      const next = { ...current, schemaRepairs: [...current.schemaRepairs, event] };
+      sessionSnapshots.set(roomKey, next);
+      for (const listener of listeners) listener(next);
+    },
     getSnapshot: () => sessionSnapshots.get(roomKey) ?? snapshot,
     subscribe: (listener: (next: DocumentSessionSnapshot) => void) => {
       listeners.add(listener);
@@ -167,6 +182,70 @@ function Harness({ initial }: { initial: EditorViewProps }) {
 }
 
 describe("editor lifetime", () => {
+  it("keeps the pending shell until persistence and first server sync both finish", async () => {
+    const documentId = "horizon-controlled";
+    let resolvePersistence!: () => void;
+    let resolveServer!: () => void;
+    sessionHorizons.set(documentId, {
+      localPersistence: new Promise((resolve) => {
+        resolvePersistence = resolve;
+      }),
+      firstServerSync: new Promise((resolve) => {
+        resolveServer = resolve;
+      }),
+    });
+
+    await withReactRoot(<EditorView documentId={documentId} />, async () => {
+      expect(document.querySelector(".ProseMirror")).toBeNull();
+      await act(async () => {
+        resolvePersistence();
+        await Promise.resolve();
+      });
+      expect(document.querySelector(".ProseMirror")).toBeNull();
+
+      await act(async () => {
+        resolveServer();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mountedEditor()).toBeDefined();
+    });
+  });
+
+  it.each([
+    ["live", { documentId: "clean-live", projectId: "project-1" }],
+    ["live detached", { documentId: "clean-detached", projectId: "project-1", detached: true }],
+    [
+      "review room",
+      {
+        documentId: "clean-review-live",
+        projectId: "project-1",
+        reviewDraftId: "draft-clean-review",
+        reviewRoomName: "branch:clean-review:gen:1",
+      },
+    ],
+  ] as const)("opens valid content with zero repair verdicts in the %s config", async (_name, props) => {
+    await withReactRoot(<EditorView {...props} />, async () => {
+      expect(mountedEditor()).toBeDefined();
+      const roomKey = "reviewRoomName" in props ? props.reviewRoomName : props.documentId;
+      expect(sessionSnapshots.get(roomKey)?.schemaRepairs).toEqual([]);
+      expect(document.querySelector("[data-schema-repair-notice]")).toBeNull();
+    });
+  });
+
+  it("double-mounts valid content under StrictMode with zero repair verdicts", async () => {
+    const documentId = "clean-strict-mode";
+    await withReactRoot(
+      <StrictMode>
+        <EditorView documentId={documentId} projectId="project-1" />
+      </StrictMode>,
+      async () => {
+        expect(mountedEditor()).toBeDefined();
+        expect(sessionSnapshots.get(documentId)?.schemaRepairs).toEqual([]);
+      },
+    );
+  });
+
   it("survives query churn and live surface changes, and rebuilds only for a new room", async () => {
     const initial = { documentId: "document-1", projectId: "project-1" };
     await withReactRoot(<Harness initial={initial} />, async () => {

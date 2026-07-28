@@ -1,10 +1,16 @@
 /** Schema-aware read and restore contracts for the collab document engine. */
-import { yProsemirrorModel } from "@meridian/agent-edit/integration";
+import { fragmentOf, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { describe, expect, it } from "vitest";
+import {
+  buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
+  createCollabYDoc,
+} from "@meridian/prosemirror-schema";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { createInMemoryEventSink } from "../../observability/index.js";
+import { createMarkdownSerializationAnomalyObserver } from "../adapters/agent-edit-observability.js";
 import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
@@ -20,6 +26,7 @@ function setup(filetype = "typescript") {
   const schema = buildDocumentSchema();
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
+  const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
     schema,
     codec: mdxCodec({ schema }),
@@ -37,8 +44,9 @@ function setup(filetype = "typescript") {
     },
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     resolveFiletype: async () => filetype,
+    observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(eventSink),
   });
-  return { coordinator, engine, journal };
+  return { coordinator, engine, eventSink, journal };
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
@@ -128,5 +136,108 @@ describe("code document serialization", () => {
       ok: true,
       value: "const original = true;",
     });
+  });
+});
+
+describe("schema-aware serialization purity", () => {
+  it("returns the repaired projection without mutating its source when the anomaly sink throws", async () => {
+    const subject = setup("md");
+    vi.spyOn(subject.eventSink, "emit").mockImplementation(() => {
+      throw new Error("sink-failed");
+    });
+    const fallbackDiagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    const input = createCollabYDoc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("kept prose")]);
+    const unknown = new Y.XmlElement("sidebar");
+    unknown.insert(0, [new Y.XmlText("future prose")]);
+    fragmentOf(input).insert(0, [paragraph, unknown]);
+    const beforeState = Y.encodeStateAsUpdate(input);
+    const beforeXml = fragmentOf(input).toString();
+
+    try {
+      await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
+        "kept prose\n",
+      );
+
+      expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
+      expect(fragmentOf(input).toString()).toBe(beforeXml);
+      expect(fallbackDiagnostic).toHaveBeenCalledOnce();
+    } finally {
+      fallbackDiagnostic.mockRestore();
+      input.destroy();
+    }
+  });
+
+  it("repairs only a clone and reports the removed structure without prose", async () => {
+    const subject = setup("md");
+    const input = createCollabYDoc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("kept prose")]);
+    const unknown = new Y.XmlElement("sidebar");
+    unknown.insert(0, [new Y.XmlText("future prose")]);
+    fragmentOf(input).insert(0, [paragraph, unknown]);
+    const beforeState = Y.encodeStateAsUpdate(input);
+    const beforeXml = fragmentOf(input).toString();
+
+    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
+      "kept prose\n",
+    );
+
+    expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
+    expect(fragmentOf(input).toString()).toBe(beforeXml);
+    expect(subject.eventSink.events).toHaveLength(1);
+    expect(subject.eventSink.events[0]).toMatchObject({
+      level: "warn",
+      source: "collab.schema",
+      name: "serialize.anomaly_observed",
+      correlation: { documentId: DOCUMENT_ID },
+      payload: {
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+        deletedNodeTypes: ["sidebar"],
+        deletedClockCount: 14,
+      },
+    });
+    expect(subject.eventSink.events[0]?.payload).toEqual({
+      schemaVersion: COLLAB_SCHEMA_VERSION,
+      deletedNodeTypes: ["sidebar"],
+      deletedClockCount: 14,
+    });
+    input.destroy();
+  });
+
+  it("emits no anomaly when serialization does not repair the clone", async () => {
+    const subject = setup("md");
+    const input = createCollabYDoc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("kept prose")]);
+    fragmentOf(input).insert(0, [paragraph]);
+
+    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
+      "kept prose\n",
+    );
+
+    expect(subject.eventSink.events).toEqual([]);
+    input.destroy();
+  });
+
+  it("preserves source client identity for identity-sensitive projection repairs", async () => {
+    const subject = setup("md");
+    const input = createCollabYDoc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("a"), new Y.XmlText("b")]);
+    fragmentOf(input).insert(0, [paragraph]);
+    const beforeState = Y.encodeStateAsUpdate(input);
+
+    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe("ab\n");
+
+    expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
+    expect(subject.eventSink.events).toHaveLength(1);
+    expect(subject.eventSink.events[0]?.payload).toEqual({
+      schemaVersion: COLLAB_SCHEMA_VERSION,
+      deletedNodeTypes: [],
+      deletedClockCount: 2,
+    });
+    input.destroy();
   });
 });

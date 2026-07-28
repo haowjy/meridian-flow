@@ -21,7 +21,7 @@ import {
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -54,6 +54,15 @@ type MarkdownWriteHook = (event: {
   markdown: string;
 }) => Promise<void>;
 
+export type MarkdownSerializationAnomaly = {
+  documentId: DocumentId;
+  schemaVersion: typeof COLLAB_SCHEMA_VERSION;
+  deletedNodeTypes: string[];
+  deletedClockCount: number;
+};
+
+export type MarkdownSerializationAnomalyObserver = (anomaly: MarkdownSerializationAnomaly) => void;
+
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
   schema: Schema;
@@ -71,6 +80,7 @@ type MarkdownDocumentEngineDeps = {
     actor: MutationActor;
   }): Promise<WriteOutcome>;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
+  observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
 
 export type MarkdownDocumentEngine = {
@@ -130,11 +140,43 @@ export function createMarkdownDocumentEngine(
     });
   }
 
-  function serializeForSchema(doc: Y.Doc, schemaType: YjsTrackedSchemaType): string {
-    const blocks = deps.model.projectBlocks(toDocHandle(doc));
-    if (blocks.length === 0) return "";
-    if (schemaType === "code") return blocks[0]?.textContent ?? "";
-    return deps.codec.serialize(blocks);
+  /**
+   * The serializer cannot mutate its input, by construction: schema projection
+   * always runs against a private clone.
+   */
+  function serializeForSchema(
+    documentId: DocumentId,
+    doc: Y.Doc,
+    schemaType: YjsTrackedSchemaType,
+  ): string {
+    const state = Y.encodeStateAsUpdate(doc);
+    const nodeSpans = xmlNodeSpans(state);
+    const clone = createCollabYDoc({ gc: false });
+    Y.applyUpdate(clone, state);
+    // y-prosemirror has identity-sensitive repairs. Restore the source client
+    // after applying state so the clone projects exactly as the source would.
+    clone.clientID = doc.clientID;
+    const repairUpdates: Uint8Array[] = [];
+    const observeRepair = (update: Uint8Array) => repairUpdates.push(update);
+    clone.on("update", observeRepair);
+
+    try {
+      const blocks = deps.model.projectBlocks(toDocHandle(clone));
+      if (blocks.length === 0) return "";
+      if (schemaType === "code") return blocks[0]?.textContent ?? "";
+      return deps.codec.serialize(blocks);
+    } finally {
+      clone.off("update", observeRepair);
+      const anomaly = serializationAnomaly(repairUpdates, nodeSpans);
+      clone.destroy();
+      if (anomaly) {
+        deps.observeSerializationAnomaly?.({
+          documentId,
+          schemaVersion: COLLAB_SCHEMA_VERSION,
+          ...anomaly,
+        });
+      }
+    }
   }
 
   function parseMarkdown(
@@ -166,6 +208,8 @@ export function createMarkdownDocumentEngine(
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
+    // This copy stages the replacement update so journal admission completes
+    // before the live document is mutated; it is not a serialization guard.
     const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
@@ -191,7 +235,7 @@ export function createMarkdownDocumentEngine(
     );
     return Ok({
       documentId,
-      markdown: serializeForSchema(draft, schemaType),
+      markdown: serializeForSchema(documentId, draft, schemaType),
       updateSeq: seq,
       updateData: update,
       meta: { ...meta, seq },
@@ -251,7 +295,7 @@ export function createMarkdownDocumentEngine(
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => {
-        const beforeMarkdown = serializeForSchema(liveDoc, format.schemaType);
+        const beforeMarkdown = serializeForSchema(input.documentId, liveDoc, format.schemaType);
         const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown), format);
         if (!parsed.ok) return parsed;
 
@@ -284,7 +328,7 @@ export function createMarkdownDocumentEngine(
     async serializeDocument(documentId, doc) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      return serializeForSchema(doc, format.value.schemaType);
+      return serializeForSchema(documentId, doc, format.value.schemaType);
     },
 
     async restoreFromYDoc(documentId, snapshot, origin) {
@@ -292,7 +336,7 @@ export function createMarkdownDocumentEngine(
       if (!format.ok) return format;
       return setMarkdown({
         documentId,
-        markdown: serializeForSchema(snapshot, format.value.schemaType),
+        markdown: serializeForSchema(documentId, snapshot, format.value.schemaType),
         origin,
       });
     },
@@ -302,7 +346,7 @@ export function createMarkdownDocumentEngine(
         const format = await documentFormat(documentId as DocumentId);
         if (!format.ok) return format;
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-          serializeForSchema(doc, format.value.schemaType),
+          serializeForSchema(documentId as DocumentId, doc, format.value.schemaType),
         );
         return Ok(markdown);
       } catch (cause) {
@@ -325,7 +369,11 @@ export function createMarkdownDocumentEngine(
       seededDoc.transact(() => {
         deps.model.insertBlocks(toDocHandle(seededDoc), null, parsed.value);
       }, yjsTransactionOrigin(origin));
-      const canonicalMarkdown = serializeForSchema(seededDoc, format.value.schemaType);
+      const canonicalMarkdown = serializeForSchema(
+        typedDocumentId,
+        seededDoc,
+        format.value.schemaType,
+      );
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
         typedDocumentId,
         Y.encodeStateAsUpdate(seededDoc),
@@ -350,7 +398,7 @@ export function createMarkdownDocumentEngine(
       const format = await documentFormat(input.documentId);
       if (!format.ok) throwSyncError(format.error);
       const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-        serializeForSchema(doc, format.value.schemaType),
+        serializeForSchema(input.documentId, doc, format.value.schemaType),
       );
       const result = await identityPreservingSet({
         ...input,
@@ -384,7 +432,7 @@ export function createMarkdownDocumentEngine(
     });
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-      serializeForSchema(doc, format.value.schemaType),
+      serializeForSchema(input.documentId, doc, format.value.schemaType),
     );
     const snapshot = await deps.journal.read(input.documentId);
     const latest = snapshot.updates.at(-1);
@@ -397,6 +445,89 @@ export function createMarkdownDocumentEngine(
       meta: latest?.meta ?? deps.metaForOrigin(input.origin),
     });
   }
+}
+
+type ClockRange = {
+  client: number;
+  clockFrom: number;
+  clockTo: number;
+};
+
+type XmlNodeSpan = ClockRange & {
+  nodeType: string;
+};
+
+function xmlNodeSpans(update: Uint8Array): XmlNodeSpan[] {
+  return Y.decodeUpdate(update).structs.flatMap((struct) => {
+    const item = struct as typeof struct & {
+      content?: { getContent?(): unknown[] };
+    };
+    const node = item.content?.getContent?.().find((value) => value instanceof Y.XmlElement);
+    if (!(node instanceof Y.XmlElement)) return [];
+    return [
+      {
+        client: item.id.client,
+        clockFrom: item.id.clock,
+        clockTo: item.id.clock + item.length,
+        nodeType: node.nodeName,
+      },
+    ];
+  });
+}
+
+function serializationAnomaly(
+  updates: Uint8Array[],
+  nodeSpans: XmlNodeSpan[],
+): { deletedNodeTypes: string[]; deletedClockCount: number } | null {
+  if (updates.length === 0) return null;
+  const ranges = mergeClockRanges(
+    updates.flatMap((update) =>
+      Array.from(Y.decodeUpdate(update).ds.clients, ([client, clientRanges]) =>
+        clientRanges.map(({ clock, len }) => ({
+          client,
+          clockFrom: clock,
+          clockTo: clock + len,
+        })),
+      ).flat(),
+    ),
+  );
+  const deletedNodeTypes = new Set<string>();
+  for (const node of nodeSpans) {
+    if (
+      ranges.some(
+        (range) =>
+          range.client === node.client &&
+          range.clockFrom < node.clockTo &&
+          node.clockFrom < range.clockTo,
+      )
+    ) {
+      deletedNodeTypes.add(node.nodeType);
+    }
+  }
+  return {
+    deletedNodeTypes: [...deletedNodeTypes].sort(),
+    deletedClockCount: ranges.reduce((count, range) => count + range.clockTo - range.clockFrom, 0),
+  };
+}
+
+function mergeClockRanges(ranges: ClockRange[]): ClockRange[] {
+  const sorted = [...ranges].sort(
+    (left, right) => left.client - right.client || left.clockFrom - right.clockFrom,
+  );
+  const merged: ClockRange[] = [];
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+    if (
+      previous !== undefined &&
+      previous.client === range.client &&
+      range.clockFrom <= previous.clockTo
+    ) {
+      previous.clockTo = Math.max(previous.clockTo, range.clockTo);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
 }
 
 function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {

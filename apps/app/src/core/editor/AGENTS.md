@@ -19,11 +19,23 @@ change-trail events, not manuscript content.
   rebuild destroys the Yjs UndoManager and drops keystrokes in flight.
   `EditorMountIdentity` carries every construction fact, `editorMountKey()`
   turns it into the React key that owns the mount, and `useMountedEditor()`
-  hands TipTap no dependency array to maintain. Anything a caller can change
-  while the writer keeps typing is `EditorSurfaceOptions` and reaches the
-  running instance; projection data arrives through stores the extensions
-  subscribe to (`SessionMarkerStore`, `AgentNameStore`). A new construction
-  knob belongs in the identity type — never in a hook dependency list.
+  constructs and destroys TipTap itself so the schema-repair witness can
+  synchronously bracket every extension lifecycle mutation. Anything a caller
+  can change while the writer keeps typing is `EditorSurfaceOptions` and
+  reaches the running instance; projection data arrives through stores the
+  extensions subscribe to (`SessionMarkerStore`, `AgentNameStore`). A new
+  construction knob belongs in the identity type — never in an effect
+  dependency list.
+- Schema repair is observed and reported, never fenced. Keep the pre-bind
+  snapshot, single update listener, and atomic open-to-live phase transition
+  together in `schema-repair-witness.ts`; do not add a second listener or move
+  construction back behind TipTap's deferred `useEditor` lifecycle. Its live
+  correlation resolves each delete-only candidate independently within a Yjs
+  transaction batch; the batch bounds candidate lifetime, not a batch-wide
+  verdict. Ordinary writer transactions must remain zero-verdict. A repair
+  coalesced into a mixed delete-and-insert transaction is intentionally not
+  classified, so do not weaken the delete-only gate without a sound attribution
+  design.
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
 

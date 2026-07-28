@@ -66,7 +66,14 @@ type YjsAdmissionTarget =
 
 type YjsConnectionAdmission =
   | { kind: "allowed"; target: YjsAdmissionTarget }
-  | { kind: "refused"; close: SchemaAdmissionRefusal };
+  | {
+      kind: "refused";
+      close: SchemaAdmissionRefusal;
+      documentId: DocumentId;
+      clientSchemaVersion: CollabSchemaVersion;
+      headSchemaVersion: CollabSchemaVersion;
+      serverSchemaVersion: CollabSchemaVersion;
+    };
 
 type YjsConnectionContext = {
   userId: UserId;
@@ -109,6 +116,46 @@ function permissionDenied(
 function refuseConnection(context: YjsConnectionContext, close: SchemaAdmissionRefusal): never {
   context.closeTransport(close);
   throw permissionDenied(close.reason, close.code);
+}
+
+function refuseSchemaAdmission(input: {
+  services: Pick<YjsGatewayServices, "eventSink">;
+  context: YjsConnectionContext;
+  roomKey: string;
+  documentId: DocumentId;
+  close: SchemaAdmissionRefusal;
+  clientSchemaVersion: CollabSchemaVersion;
+  headSchemaVersion: CollabSchemaVersion;
+  serverSchemaVersion: CollabSchemaVersion;
+}): never {
+  const {
+    services,
+    context,
+    roomKey,
+    documentId,
+    close,
+    clientSchemaVersion,
+    headSchemaVersion,
+    serverSchemaVersion,
+  } = input;
+  try {
+    emitEvent(services.eventSink, {
+      level: close.code === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code ? "info" : "error",
+      source: "collab.schema",
+      name: "admission.refused",
+      correlation: { documentId },
+      payload: {
+        code: close.code,
+        reason: close.reason,
+        roomKey,
+        clientSchemaVersion,
+        headSchemaVersion,
+        serverSchemaVersion,
+      },
+    });
+  } finally {
+    refuseConnection(context, close);
+  }
 }
 
 function deriveOrigin(
@@ -164,7 +211,14 @@ async function classifyYjsConnectionAdmission(input: {
       }
     } catch (cause) {
       if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
-      return { kind: "refused", close: WS_CLOSE.DOCUMENT_SCHEMA_STALE };
+      return {
+        kind: "refused",
+        close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
+        documentId,
+        clientSchemaVersion,
+        headSchemaVersion: cause.storedVersion,
+        serverSchemaVersion: cause.expectedVersion,
+      };
     }
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
@@ -180,10 +234,24 @@ async function classifyYjsConnectionAdmission(input: {
     }
   }
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
-    return { kind: "refused", close: WS_CLOSE.DOCUMENT_SCHEMA_STALE };
+    return {
+      kind: "refused",
+      close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
+      documentId,
+      clientSchemaVersion,
+      headSchemaVersion,
+      serverSchemaVersion: COLLAB_SCHEMA_VERSION,
+    };
   }
   if (headSchemaVersion !== null && !headAdmitsClient(clientSchemaVersion, headSchemaVersion)) {
-    return { kind: "refused", close: WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED };
+    return {
+      kind: "refused",
+      close: WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED,
+      documentId,
+      clientSchemaVersion,
+      headSchemaVersion,
+      serverSchemaVersion: COLLAB_SCHEMA_VERSION,
+    };
   }
 
   if (room.kind === "live") {
@@ -362,7 +430,12 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
         clientSchemaVersion: context.clientSchemaVersion,
       });
       if (admission.kind === "refused") {
-        refuseConnection(context, admission.close);
+        refuseSchemaAdmission({
+          services,
+          context,
+          roomKey: documentName,
+          ...admission,
+        });
       }
       context.admissionTarget = admission.target;
 
@@ -421,7 +494,16 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
               )?.state;
       } catch (cause) {
         if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
-        refuseConnection(context, WS_CLOSE.DOCUMENT_SCHEMA_STALE);
+        refuseSchemaAdmission({
+          services,
+          context,
+          roomKey: documentName,
+          documentId: cause.docId as DocumentId,
+          close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
+          clientSchemaVersion: context.clientSchemaVersion,
+          headSchemaVersion: cause.storedVersion,
+          serverSchemaVersion: cause.expectedVersion,
+        });
       }
       if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
       if (state) Y.applyUpdate(document, state);

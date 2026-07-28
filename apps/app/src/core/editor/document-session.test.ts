@@ -24,6 +24,7 @@ import {
   documentSessionPersistenceKey,
 } from "./document-session";
 import { clientSchemaReloadGuardKey } from "./schema-fence";
+import type { SchemaRepairEvent } from "./schema-repair-witness";
 
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: DocumentSessionConnectionState) => void;
@@ -155,6 +156,36 @@ function changeEvent(
 }
 
 describe("DocumentSession status derivation", () => {
+  it("appends schema repair verdicts to the session snapshot and emits each change", async () => {
+    const session = new DocumentSession({
+      roomKey: "doc-schema-repairs",
+      enableIndexedDb: false,
+    });
+    const { snapshots, unsubscribe } = track(session);
+    const first = {
+      phase: "open",
+      detectedAt: "2026-07-28T12:00:00.000Z",
+      deletedNodeTypes: ["sidebar"],
+      deletedClockCount: 12,
+      removedText: "lost words",
+    } satisfies SchemaRepairEvent;
+    const second = {
+      phase: "live",
+      detectedAt: "2026-07-28T12:01:00.000Z",
+      deletedNodeTypes: [],
+      deletedClockCount: 3,
+    } satisfies SchemaRepairEvent;
+
+    session.reportSchemaRepair(first);
+    session.reportSchemaRepair(second);
+
+    expect(session.getSnapshot().schemaRepairs).toEqual([first, second]);
+    expect(snapshots.at(-2)?.schemaRepairs).toEqual([first]);
+    expect(snapshots.at(-1)?.schemaRepairs).toEqual([first, second]);
+    unsubscribe();
+    await session.destroy();
+  });
+
   it("writes the loop guard before silently reloading, then fences a repeated refusal", () => {
     const guardKey = clientSchemaReloadGuardKey("doc-superseded");
     let storage!: Storage;

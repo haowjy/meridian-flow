@@ -42,7 +42,7 @@ describe("schema-fence quarantine", () => {
 
     storage.setItem(
       `meridian:schema-fence:${collabSchemaKeyTag()}:unknown`,
-      JSON.stringify({ reason: "repair-detected" }),
+      JSON.stringify({ reason: "unknown" }),
     );
 
     expect(readSchemaFenceQuarantine("unknown")).toBeNull();

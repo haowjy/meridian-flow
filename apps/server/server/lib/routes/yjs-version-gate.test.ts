@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { DocumentSchemaMajorMismatchError } from "../../domains/collab/index.js";
+import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
 
 const branchRoomName = "branch:branch_1:gen:3";
@@ -55,7 +56,7 @@ function versionGateServices(
       projectIdForDocument: vi.fn(async () => "00000000-0000-4000-8000-000000000103"),
     },
     documentSync,
-    eventSink: { emit() {} },
+    eventSink: createInMemoryEventSink(),
   };
 }
 
@@ -123,8 +124,59 @@ describe("Yjs connect-time schema version gate", () => {
     expect(services.documentSync.headSchemaVersion).toHaveBeenCalledWith(liveDocumentName);
   });
 
+  it("records one info event when a superseded client is refused", async () => {
+    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
+    const hocuspocus = createHocuspocus(services as never);
+
+    await expect(
+      hocuspocus.configuration.onConnect?.({
+        documentName: liveDocumentName,
+        context: connectContext(SENTINEL_SCHEMA_VERSION),
+      } as never),
+    ).rejects.toMatchObject({ code: 4406 });
+
+    expect(services.eventSink.events).toHaveLength(1);
+    expect(services.eventSink.events[0]).toMatchObject({
+      level: "info",
+      source: "collab.schema",
+      name: "admission.refused",
+      correlation: { documentId: liveDocumentName },
+      payload: {
+        code: 4406,
+        reason: "client-schema-superseded",
+        roomKey: liveDocumentName,
+        clientSchemaVersion: SENTINEL_SCHEMA_VERSION,
+        headSchemaVersion: COLLAB_SCHEMA_VERSION,
+        serverSchemaVersion: COLLAB_SCHEMA_VERSION,
+      },
+    });
+  });
+
+  it("preserves the typed refusal when event delivery fails", async () => {
+    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
+    vi.spyOn(services.eventSink, "emit").mockImplementation(() => {
+      throw new Error("sink-failed");
+    });
+    const hocuspocus = createHocuspocus(services as never);
+    const context = connectContext(SENTINEL_SCHEMA_VERSION);
+
+    await expect(
+      hocuspocus.configuration.onConnect?.({
+        documentName: liveDocumentName,
+        context,
+      } as never),
+    ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
+    expect(context.closeTransport).toHaveBeenCalledOnce();
+    expect(context.closeTransport).toHaveBeenCalledWith({
+      code: 4406,
+      reason: "client-schema-superseded",
+    });
+    expect(services.eventSink.emit).toHaveBeenCalledOnce();
+  });
+
   it("passes a live room with no stamped head, including an absent-version client", async () => {
-    const hocuspocus = createHocuspocus(versionGateServices({ liveHead: null }) as never);
+    const services = versionGateServices({ liveHead: null });
+    const hocuspocus = createHocuspocus(services as never);
 
     await expect(
       hocuspocus.configuration.onConnect?.({
@@ -132,6 +184,7 @@ describe("Yjs connect-time schema version gate", () => {
         context: connectContext(SENTINEL_SCHEMA_VERSION),
       } as never),
     ).resolves.toBeUndefined();
+    expect(services.eventSink.events).toEqual([]);
   });
 
   it("carries the admitted live generation through the sync hook", async () => {
@@ -229,6 +282,35 @@ describe("Yjs connect-time schema version gate", () => {
     }
   });
 
+  it("records one error event when the server cannot serve the document head", async () => {
+    const headSchemaVersion = version(1, 0);
+    const services = versionGateServices({ branchHead: headSchemaVersion });
+    const hocuspocus = createHocuspocus(services as never);
+
+    await expect(
+      hocuspocus.configuration.onConnect?.({
+        documentName: branchRoomName,
+        context: connectContext(COLLAB_SCHEMA_VERSION),
+      } as never),
+    ).rejects.toMatchObject({ code: 4407 });
+
+    expect(services.eventSink.events).toHaveLength(1);
+    expect(services.eventSink.events[0]).toMatchObject({
+      level: "error",
+      source: "collab.schema",
+      name: "admission.refused",
+      correlation: { documentId: liveDocumentName },
+      payload: {
+        code: 4407,
+        reason: "document-schema-stale",
+        roomKey: branchRoomName,
+        clientSchemaVersion: COLLAB_SCHEMA_VERSION,
+        headSchemaVersion,
+        serverSchemaVersion: COLLAB_SCHEMA_VERSION,
+      },
+    });
+  });
+
   it("prioritizes a server-stale head over an even older client", async () => {
     const hocuspocus = createHocuspocus(versionGateServices({ liveHead: version(1, 0) }) as never);
     const context = connectContext(SENTINEL_SCHEMA_VERSION);
@@ -289,6 +371,41 @@ describe("Yjs connect-time schema version gate", () => {
     expect(context.closeTransport).toHaveBeenCalledWith({
       code: 4407,
       reason: "document-schema-stale",
+    });
+  });
+
+  it("records one error event when document loading discovers a major mismatch", async () => {
+    const services = versionGateServices({ liveHead: null });
+    const clientSchemaVersion = version(0, 1, 77);
+    Object.assign(services.documentSync, {
+      loadHocuspocusDocument: vi.fn(async () => {
+        throw staleSchemaError();
+      }),
+    });
+    const hocuspocus = createHocuspocus(services as never);
+
+    await expect(
+      hocuspocus.configuration.onLoadDocument?.({
+        documentName: liveDocumentName,
+        document: new Y.Doc({ gc: false }),
+        context: connectContext(clientSchemaVersion),
+      } as never),
+    ).rejects.toMatchObject({ code: 4407 });
+
+    expect(services.eventSink.events).toHaveLength(1);
+    expect(services.eventSink.events[0]).toMatchObject({
+      level: "error",
+      source: "collab.schema",
+      name: "admission.refused",
+      correlation: { documentId: liveDocumentName },
+      payload: {
+        code: 4407,
+        reason: "document-schema-stale",
+        roomKey: liveDocumentName,
+        clientSchemaVersion,
+        headSchemaVersion: version(1, 0),
+        serverSchemaVersion: COLLAB_SCHEMA_VERSION,
+      },
     });
   });
 });

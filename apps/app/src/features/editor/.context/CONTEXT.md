@@ -104,6 +104,18 @@ A fence disables the mounted editor and renders `SchemaFenceNotice`. A
 `document-schema-stale` reset unmounts the editor and renders the unavailable
 state.
 
+## Schema repair report
+
+`EditorView` delays binding behind the bounded evidence horizon and renders the
+existing pending shell while it waits. A timeout degrades evidence but always
+continues into an editable mount.
+
+`SchemaRepairNotice` is separate from fence chrome because a witnessed repair
+never gates editing. It coalesces the session's
+`DocumentSessionSnapshot.schemaRepairs`, shows every recovered excerpt in full
+with a copy button, and dismisses locally until another verdict arrives. The
+surface is deliberately unstyled and has no reinsertion or approval action.
+
 ## Peer mark popover
 
 `PeerMarkPopover.tsx` is the anchored evidence surface for one live

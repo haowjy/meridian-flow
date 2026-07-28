@@ -50,6 +50,7 @@ import {
   clearClientSchemaReloadGuard,
   type SchemaFence,
 } from "./schema-fence";
+import type { SchemaRepairEvent } from "./schema-repair-witness";
 
 export type { SchemaFence } from "./schema-fence";
 
@@ -107,6 +108,7 @@ export type DocumentSessionSnapshot = {
   connectionState: DocumentSessionConnectionState | null;
   localPersistenceSynced: boolean;
   schemaFence: SchemaFence | null;
+  schemaRepairs: SchemaRepairEvent[];
 };
 
 export type DocumentSessionResetReason =
@@ -211,6 +213,7 @@ export class DocumentSession {
    */
   private transportState: DocumentSessionConnectionState | null = null;
   private schemaFence: SchemaFence | null = null;
+  private schemaRepairs: SchemaRepairEvent[] = [];
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private presenceSuspendDepth = 0;
   private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
@@ -352,7 +355,15 @@ export class DocumentSession {
       connectionState: this.transportState,
       localPersistenceSynced: this.localPersistenceSynced,
       schemaFence: this.schemaFence,
+      schemaRepairs: this.schemaRepairs,
     };
+  }
+
+  /** Append one session-scoped repair verdict and notify every report surface. */
+  reportSchemaRepair(event: SchemaRepairEvent): void {
+    if (this.destroyed) return;
+    this.schemaRepairs = [...this.schemaRepairs, event];
+    this.emit();
   }
 
   /** Permanently stop editing for this session while preserving its connection status. */

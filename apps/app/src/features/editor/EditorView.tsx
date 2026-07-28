@@ -51,9 +51,11 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
+import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
+import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
 import { useAgentNames } from "./useAgentNames";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -191,8 +193,23 @@ type SessionEditorViewProps = EditorViewProps & {
 
 function SessionEditorView(props: SessionEditorViewProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
+  const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
+  const requiresFirstServerSync = !(props.identity.surface === "live" && props.identity.detached);
 
   useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
+  useEffect(() => {
+    let active = true;
+    const firstServerSync = requiresFirstServerSync ? props.session.whenSynced() : undefined;
+    void waitForEditorBindHorizon({
+      localPersistence: props.session.whenLocalPersistenceSynced(),
+      firstServerSync,
+    }).then((result) => {
+      if (active) setBindHorizon(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [props.session, requiresFirstServerSync]);
 
   if (
     snapshot.connectionState?.kind === "reset" &&
@@ -205,11 +222,20 @@ function SessionEditorView(props: SessionEditorViewProps) {
     );
   }
 
-  return <ActiveSessionEditorView {...props} snapshot={snapshot} />;
+  if (!bindHorizon) return <PendingEditorShell {...props} />;
+
+  return (
+    <ActiveSessionEditorView
+      {...props}
+      snapshot={snapshot}
+      evidenceDegraded={bindHorizon.evidenceDegraded}
+    />
+  );
 }
 
 type ActiveSessionEditorViewProps = SessionEditorViewProps & {
   snapshot: DocumentSessionSnapshot;
+  evidenceDegraded: boolean;
 };
 
 function ActiveSessionEditorView({
@@ -222,6 +248,7 @@ function ActiveSessionEditorView({
   onReviewSessionUnavailable,
   session,
   snapshot,
+  evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
   const { documentId, projectId } = identity;
   const { controller } = useDraftReview();
@@ -451,6 +478,7 @@ function ActiveSessionEditorView({
     agentNames,
     placeholder: t`Start writing…`,
     surface: { editable: effectiveEditable, editorProps },
+    evidenceDegraded,
   });
 
   // Claim the shared review-runtime slot ONLY while this editor is the one in
@@ -495,13 +523,12 @@ function ActiveSessionEditorView({
     return registerLiveRangeEditor(documentId, editor);
   }, [documentId, editor, inReview]);
 
-  useEffect(() => {
-    return () => {
-      const currentEditor = editorRef.current;
+  useEffect(
+    () => () => {
       editorRef.current = null;
-      if (currentEditor && !currentEditor.isDestroyed) currentEditor.destroy();
-    };
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     return () => {
@@ -534,6 +561,9 @@ function ActiveSessionEditorView({
         </div>
       ) : null}
       {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
+      {snapshot.schemaRepairs.length > 0 ? (
+        <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
+      ) : null}
       <input
         ref={figureInputRef}
         type="file"
