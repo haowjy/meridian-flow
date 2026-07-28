@@ -11,7 +11,7 @@ import {
   isBranchCorruptError,
   isBranchNotFoundError,
 } from "./branch-resolver.js";
-import { StaleDocumentSchemaError } from "./stale-schema.js";
+import { DocumentSchemaMajorMismatchError } from "./stale-schema.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000302" as ThreadId;
@@ -221,10 +221,10 @@ describe("BranchResolver", () => {
       threadId: THREAD_ID,
       upstreamBranchId: upstream.id,
     });
-    store.rows.set(peer.id, { ...peer, schemaVersion: COLLAB_SCHEMA_VERSION - 1 });
+    store.rows.set(peer.id, { ...peer, schemaVersion: { major: 1, minor: 0, patch: 0 } });
 
     await expect(store.resolveThreadBranch(DOCUMENT_ID, THREAD_ID)).rejects.toThrow(
-      StaleDocumentSchemaError,
+      DocumentSchemaMajorMismatchError,
     );
   });
 });

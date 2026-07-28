@@ -5,6 +5,7 @@ import {
   parseSeq,
   parseWsClientMessage,
   type SequencedEvent,
+  WS_CLOSE,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
@@ -184,7 +185,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
       const auth = peer.context;
       if (!auth) {
         sendError(peer, meridianError("auth_failed", "Authentication failed"));
-        peer.close(4401, "auth_failed");
+        peer.close(WS_CLOSE.AUTH_FAILED.code, WS_CLOSE.AUTH_FAILED.reason);
         return false;
       }
 

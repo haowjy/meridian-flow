@@ -33,7 +33,13 @@ import {
   documentYjsReversals,
   documentYjsUpdates,
 } from "@meridian/database";
-import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  COLLAB_SCHEMA_VERSION,
+  type CollabSchemaVersion,
+  createCollabYDoc,
+  packCollabSchemaVersion,
+  unpackCollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -42,7 +48,7 @@ import {
   materializeCandidateProvenance,
   materializeProvenanceForDoc,
 } from "../domain/provenance.js";
-import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
+import { DocumentSchemaMajorMismatchError, isStaleSchema } from "../domain/stale-schema.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
@@ -83,8 +89,13 @@ export type CollabFacadeStore = {
   latestUpdateSeq(docId: string): Promise<number>;
 };
 
+export type CollabJournal = UpdateJournal &
+  ReversalStore & {
+    headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
+  };
+
 export type DrizzleCollabPersistence = {
-  journal: UpdateJournal & ReversalStore;
+  journal: CollabJournal;
   lifecycle: DocumentLifecycle & {
     seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
   };
@@ -301,18 +312,21 @@ async function reconstructionCheckpoint(db: JournalDb, documentId: string, until
   return row ?? null;
 }
 
-async function readHeadSchemaVersion(db: JournalDb, documentId: string): Promise<number | null> {
+async function readHeadSchemaVersion(
+  db: JournalDb,
+  documentId: string,
+): Promise<CollabSchemaVersion | null> {
   const [row] = await db
     .select({ schemaVersion: documentYjsHeads.schemaVersion })
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, asDocumentId(documentId)))
     .limit(1);
-  return row?.schemaVersion ?? null;
+  return row ? unpackCollabSchemaVersion(row.schemaVersion) : null;
 }
 
-function assertHeadSchemaCurrent(docId: string, storedVersion: number | null): void {
+function assertHeadSchemaCurrent(docId: string, storedVersion: CollabSchemaVersion | null): void {
   if (storedVersion !== null && isStaleSchema(storedVersion, COLLAB_SCHEMA_VERSION)) {
-    throw new StaleDocumentSchemaError(docId, storedVersion, COLLAB_SCHEMA_VERSION);
+    throw new DocumentSchemaMajorMismatchError(docId, storedVersion, COLLAB_SCHEMA_VERSION);
   }
 }
 
@@ -329,11 +343,12 @@ async function upsertHead(
     latestCheckpointId?: number | null;
   } = {},
 ): Promise<void> {
+  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
   await db
     .insert(documentYjsHeads)
     .values({
       documentId: asDocumentId(documentId),
-      schemaVersion: COLLAB_SCHEMA_VERSION,
+      schemaVersion: packedSchemaVersion,
       latestUpdateSeq: input.latestUpdateSeq ?? 0,
       latestStateVector: input.latestStateVector ? toBuffer(input.latestStateVector) : null,
       latestCheckpointId: input.latestCheckpointId ?? null,
@@ -343,7 +358,7 @@ async function upsertHead(
       set: {
         // Heads advance schema_version monotonically so a downgraded server cannot
         // erase the stale-schema fence by stamping an older COLLAB_SCHEMA_VERSION.
-        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${COLLAB_SCHEMA_VERSION})`,
+        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packedSchemaVersion})`,
         ...(input.latestUpdateSeq !== undefined ? { latestUpdateSeq: input.latestUpdateSeq } : {}),
         ...(input.latestStateVector !== undefined
           ? {
@@ -783,8 +798,10 @@ async function persistRedoEntries(
   return { consumed: true, seqs };
 }
 
-export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
+export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
+    headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
+
     async append(docId, update, meta) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;

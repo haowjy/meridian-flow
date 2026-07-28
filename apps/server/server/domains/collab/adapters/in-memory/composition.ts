@@ -126,6 +126,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,
+      headSchemaVersion: async () => null,
       resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,

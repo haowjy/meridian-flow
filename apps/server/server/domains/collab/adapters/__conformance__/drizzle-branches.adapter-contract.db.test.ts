@@ -70,8 +70,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleDocumentAccess } = await import("../../../../lib/document-access.js");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
-    const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
-    const { COLLAB_SCHEMA_VERSION } = await import("@meridian/prosemirror-schema");
+    const { DocumentSchemaMajorMismatchError } = await import("../../domain/stale-schema.js");
+    const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
+      "@meridian/prosemirror-schema"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000601";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000602";
@@ -246,22 +248,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("stamps branch rows from the live head and checks the row schema on resolve", async () => {
-      const staleVersion = COLLAB_SCHEMA_VERSION - 1;
+      const majorMismatchVersion = { major: 1, minor: 0, patch: 0 };
+      const packedMajorMismatchVersion = packCollabSchemaVersion(majorMismatchVersion);
+      expect(await livePersistence.journal.headSchemaVersion(DOC_ID)).toBeNull();
       await db.insert(documentYjsHeads).values({
         documentId: DOC_ID as never,
-        schemaVersion: staleVersion,
+        schemaVersion: packedMajorMismatchVersion,
       });
+      expect(await livePersistence.journal.headSchemaVersion(DOC_ID)).toEqual(majorMismatchVersion);
       const work = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
         liveDoc: docWithText("seeded under stale schema"),
       });
-      expect(work.schemaVersion).toBe(staleVersion);
+      expect(work.schemaVersion).toEqual(majorMismatchVersion);
 
       await db
         .update(documentYjsHeads)
-        .set({ schemaVersion: COLLAB_SCHEMA_VERSION })
+        .set({ schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION) })
         .where(eq(documentYjsHeads.documentId, DOC_ID as never));
+      expect(await livePersistence.journal.headSchemaVersion(DOC_ID)).toEqual(
+        COLLAB_SCHEMA_VERSION,
+      );
       const peerDoc = docWithText("stale peer snapshot");
       await db.insert(documentBranches).values({
         id: "branch_stale_peer",
@@ -274,12 +282,89 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "active",
         state: Buffer.from(Y.encodeStateAsUpdate(peerDoc)),
         stateVector: Buffer.from(Y.encodeStateVector(peerDoc)),
-        schemaVersion: staleVersion,
+        schemaVersion: packedMajorMismatchVersion,
       });
 
       await expect(store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never)).rejects.toThrow(
-        StaleDocumentSchemaError,
+        DocumentSchemaMajorMismatchError,
       );
+    });
+
+    it("restamps persisted branches monotonically", async () => {
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("initial"),
+      });
+      const stalePacked = packCollabSchemaVersion({ major: 0, minor: 0, patch: 4 });
+      await db
+        .update(documentBranches)
+        .set({ schemaVersion: stalePacked })
+        .where(eq(documentBranches.id, branch.branchId));
+
+      const currentDoc = docWithText("current server edit");
+      const currentState = Y.encodeStateAsUpdate(currentDoc);
+      const currentStateVector = Y.encodeStateVector(currentDoc);
+      await expect(
+        store.updateBranchSnapshot({
+          branchId: branch.branchId,
+          expectedGeneration: branch.generation,
+          expectedState: branch.state,
+          expectedStateVector: branch.stateVector,
+          state: currentState,
+          stateVector: currentStateVector,
+        }),
+      ).resolves.toBe(true);
+      const [restamped] = await db
+        .select({ schemaVersion: documentBranches.schemaVersion })
+        .from(documentBranches)
+        .where(eq(documentBranches.id, branch.branchId));
+      expect(restamped?.schemaVersion).toBe(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION));
+
+      const aheadPacked = packCollabSchemaVersion({ major: 0, minor: 2, patch: 7 });
+      await db
+        .update(documentBranches)
+        .set({ schemaVersion: aheadPacked })
+        .where(eq(documentBranches.id, branch.branchId));
+      const rollbackDoc = docWithText("rollback server edit");
+      await expect(
+        store.updateBranchSnapshot({
+          branchId: branch.branchId,
+          expectedGeneration: branch.generation,
+          expectedState: currentState,
+          expectedStateVector: currentStateVector,
+          state: Y.encodeStateAsUpdate(rollbackDoc),
+          stateVector: Y.encodeStateVector(rollbackDoc),
+        }),
+      ).resolves.toBe(true);
+      const [preserved] = await db
+        .select({ schemaVersion: documentBranches.schemaVersion })
+        .from(documentBranches)
+        .where(eq(documentBranches.id, branch.branchId));
+      expect(preserved?.schemaVersion).toBe(aheadPacked);
+
+      const parentPacked = packCollabSchemaVersion({ major: 0, minor: 0, patch: 9 });
+      await db
+        .update(documentBranches)
+        .set({ schemaVersion: parentPacked })
+        .where(eq(documentBranches.id, branch.branchId));
+      const peer = await store.ensureThreadPeerBranch({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        liveDoc: currentDoc,
+      });
+      await db
+        .update(documentBranches)
+        .set({ schemaVersion: aheadPacked })
+        .where(eq(documentBranches.id, peer.branchId));
+
+      await createBranchCoordinator({ store }).resetFromBranch(peer.branchId);
+
+      const [reset] = await db
+        .select({ schemaVersion: documentBranches.schemaVersion })
+        .from(documentBranches)
+        .where(eq(documentBranches.id, peer.branchId));
+      expect(reset?.schemaVersion).toBe(aheadPacked);
     });
 
     it("persists live->work and work->thread pulls", async () => {
@@ -509,7 +594,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning({ id: documentYjsCheckpoints.id });
       await db.insert(documentYjsHeads).values({
         documentId: DOC_ID as never,
-        schemaVersion: COLLAB_SCHEMA_VERSION,
+        schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
         latestUpdateSeq: 1,
         latestStateVector: Buffer.from(Y.encodeStateVector(live)),
         latestCheckpointId: checkpoint?.id ?? null,
@@ -1079,7 +1164,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(branchRoomName(branch.branchId, branch.generation)).toBe(
         `branch:${branch.branchId}:gen:${branch.generation}`,
       );
-      expect(room).toMatchObject({ branchId: branch.branchId, documentId: DOC_ID });
+      expect(room).toMatchObject({
+        branchId: branch.branchId,
+        documentId: DOC_ID,
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+      });
       expect(loadedDoc.getText("content").toString()).toBe("live review seed");
     });
 
@@ -1106,7 +1195,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("target"))),
-          schemaVersion: COLLAB_SCHEMA_VERSION,
+          schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
           generation: 1,
         },
         {
@@ -1120,7 +1209,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("other"))),
-          schemaVersion: COLLAB_SCHEMA_VERSION,
+          schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
           generation: 2,
         },
         {
@@ -1134,7 +1223,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("other doc"))),
-          schemaVersion: COLLAB_SCHEMA_VERSION,
+          schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
           generation: 1,
         },
       ]);
@@ -1213,7 +1302,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "active",
         state: Buffer.from([1, 2]),
         stateVector: Buffer.from([0]),
-        schemaVersion: COLLAB_SCHEMA_VERSION,
+        schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
       });
       const persistence = createHocuspocusPersistenceService({
         journal: livePersistence.journal,
@@ -1242,7 +1331,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "active",
         state: Buffer.from([1, 2]),
         stateVector: Buffer.from([0]),
-        schemaVersion: COLLAB_SCHEMA_VERSION,
+        schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
       });
       const coordinator = createBranchCoordinator({ store });
 

@@ -1,5 +1,7 @@
 /** Contract tests for work-draft auto/manual push policy transitions. */
+
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
@@ -25,7 +27,7 @@ function workDraft(
     generation: 1,
     state: new Uint8Array(),
     stateVector: new Uint8Array(),
-    schemaVersion: 1,
+    schemaVersion: COLLAB_SCHEMA_VERSION,
   } as BranchSnapshot;
 }
 

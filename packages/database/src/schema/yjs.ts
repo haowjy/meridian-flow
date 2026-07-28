@@ -7,7 +7,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -72,7 +72,9 @@ export const documentBranches = pgTable(
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     discardedStateVector: byteaColumn("discarded_state_vector"),
-    schemaVersion: integer("schema_version").notNull(),
+    schemaVersion: integer("schema_version")
+      .notNull()
+      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
     generation: integer("generation").notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -663,7 +665,9 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     .notNull()
     .default(sql`1`),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
-  schemaVersion: integer("schema_version").notNull().default(COLLAB_SCHEMA_VERSION),
+  schemaVersion: integer("schema_version")
+    .notNull()
+    .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
   // SET NULL is effectively unreachable: checkpoints delete only via document cascade,

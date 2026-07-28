@@ -7,8 +7,9 @@ Yjs document session. It must stay structurally aligned with
 ## Contracts
 
 - `createEditorExtensions()` is the only app-side extension assembly point for
-  collaborative documents. `schema-parity.test.ts` compares its TipTap schema
-  against `buildDocumentSchema()`.
+  collaborative documents. The editor schema and
+  `@meridian/prosemirror-schema` are built separately; parity is not enforced,
+  so structural changes must update both surfaces together.
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
 - `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
@@ -92,6 +93,22 @@ Yjs document session. It must stay structurally aligned with
   default because it may contain the only copy of unsynced words; only confirmed
   cleanup paths may request persistence deletion. Retention and unavailable-room
   recovery must not materialize or replace a detached session implicitly.
+- A schema fence is orthogonal session state, not a connection status:
+  `DocumentSessionSnapshot.schemaFence` composes with detached, synced, offline,
+  and access-lost states. The first fence wins, is persisted through the
+  version-keyed localStorage quarantine producer, and remains observable for the
+  session lifetime; it never changes `deriveStatus()`. A quarantine loaded
+  before attachment keeps the room detached. Raising a fence on an attached
+  session pauses editing and presence but does not itself detach transport.
+  Storage failure leaves the in-memory fence effective but not durable.
+- A `4406 client-schema-superseded` reset gets one silent reload before the
+  session raises `client-superseded`. The sessionStorage guard is keyed by room
+  and the schema `major.minor` tag, is written before `location.reload()`, and
+  clears only after first transport sync. IndexedDB persistence and localStorage
+  quarantine use the same tag: patch releases reuse them, while a minor or major
+  change partitions them. A blocked guard or repeated refusal raises the fence
+  without another reload. `4407 document-schema-stale` never reloads or raises
+  a fence because a new bundle cannot repair a server/head major mismatch.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.

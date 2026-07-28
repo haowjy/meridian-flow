@@ -27,9 +27,17 @@
 import {
   type ChangeEventWsMessage,
   parseYjsRoomName,
+  WS_CLOSE,
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
-import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  COLLAB_SCHEMA_VERSION,
+  type CollabSchemaVersion,
+  cmpMajorMinor,
+  collabSchemaKeyTag,
+  createCollabYDoc,
+  parseCollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
@@ -37,19 +45,29 @@ import type * as Y from "yjs";
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import {
+  attemptClientSchemaReload,
+  clearClientSchemaReloadGuard,
+  type SchemaFence,
+} from "./schema-fence";
+
+export type { SchemaFence } from "./schema-fence";
+
 import { SessionMarkerStore } from "./session-marker-store";
 
-/** IndexedDB name for y-indexeddb; bumps with {@link COLLAB_SCHEMA_VERSION} invalidate stale caches. */
 export function documentSessionPersistenceKey(roomKey: string): string {
-  return `meridian:document:v${COLLAB_SCHEMA_VERSION}:${roomKey}`;
+  return `meridian:document:${collabSchemaKeyTag()}:${roomKey}`;
 }
 
 const PERSISTENCE_KEY_PREFIX = "meridian:document:v";
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
 
-/** Best-effort delete of pre-version-bump IndexedDB entries for one document. */
-function deleteStaleVersionedIndexedDb(roomKey: string): void {
+/** Best-effort delete of obsolete schema-partitioned IndexedDB entries for one document. */
+export function deleteStaleVersionedIndexedDb(
+  roomKey: string,
+  currentVersion: CollabSchemaVersion = COLLAB_SCHEMA_VERSION,
+): void {
   if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
 
   const suffix = `:${roomKey}`;
@@ -60,8 +78,8 @@ function deleteStaleVersionedIndexedDb(roomKey: string): void {
         const name = db.name;
         if (!name?.startsWith(PERSISTENCE_KEY_PREFIX) || !name.endsWith(suffix)) continue;
         const versionPart = name.slice(PERSISTENCE_KEY_PREFIX.length, name.length - suffix.length);
-        const version = Number.parseInt(versionPart, 10);
-        if (Number.isFinite(version) && version < COLLAB_SCHEMA_VERSION) {
+        const version = parseCollabSchemaVersion(`${versionPart}.0`);
+        if (!version || cmpMajorMinor(version, currentVersion) < 0) {
           indexedDB.deleteDatabase(name);
         }
       }
@@ -86,9 +104,24 @@ export type DocumentSessionSnapshot = {
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
-  connectionState: ConnectionState | null;
+  connectionState: DocumentSessionConnectionState | null;
   localPersistenceSynced: boolean;
+  schemaFence: SchemaFence | null;
 };
+
+export type DocumentSessionResetReason =
+  | typeof WS_CLOSE.BRANCH_STALE.reason
+  | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
+  | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
+  | "branch-generation-stale";
+
+export type DocumentSessionConnectionState =
+  | Exclude<ConnectionState, { kind: "reset" }>
+  | {
+      kind: "reset";
+      reason: DocumentSessionResetReason;
+      code?: number;
+    };
 
 /**
  * Surface `DocumentSession` consumes from its transport.
@@ -117,7 +150,7 @@ export type DocumentSessionTransportProvider = {
    * Implementations MUST emit the current state synchronously on subscribe
    * and on every subsequent change. Returns an unsubscribe function.
    */
-  subscribeStatus?: (listener: (state: ConnectionState) => void) => () => void;
+  subscribeStatus?: (listener: (state: DocumentSessionConnectionState) => void) => () => void;
   subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
 };
@@ -139,6 +172,8 @@ export type DocumentSessionOptions = {
   enableIndexedDb?: boolean;
   /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
+  /** Registry-owned persistence hook for the first fence transition. */
+  persistSchemaFence?: (fence: SchemaFence) => void;
   ownUserId?: string | null;
 };
 
@@ -174,7 +209,9 @@ export class DocumentSession {
    * pre-`whenSynced` we treat the session as syncing; this field lets us
    * distinguish "connected & synced" from "disconnected" after that.
    */
-  private transportState: ConnectionState | null = null;
+  private transportState: DocumentSessionConnectionState | null = null;
+  private schemaFence: SchemaFence | null = null;
+  private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private presenceSuspendDepth = 0;
   private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
   private readonly localPersistenceSyncedPromise: Promise<void>;
@@ -188,6 +225,7 @@ export class DocumentSession {
     persistenceKey = documentSessionPersistenceKey(roomKey),
     enableIndexedDb = canUseIndexedDb(),
     transportFactory,
+    persistSchemaFence,
     ownUserId = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
@@ -196,6 +234,7 @@ export class DocumentSession {
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.branchId;
     this.document = createCollabYDoc();
+    this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
     if (enableIndexedDb) {
@@ -248,6 +287,11 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
+        if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
+          if (!attemptClientSchemaReload(this.roomKey)) {
+            this.raiseSchemaFence({ reason: "client-superseded" });
+          }
+        }
         this.recomputeStatus();
       }) ?? null;
     this.unsubscribeChangeEvents =
@@ -307,7 +351,17 @@ export class DocumentSession {
       status: this.status,
       connectionState: this.transportState,
       localPersistenceSynced: this.localPersistenceSynced,
+      schemaFence: this.schemaFence,
     };
+  }
+
+  /** Permanently stop editing for this session while preserving its connection status. */
+  raiseSchemaFence(fence: SchemaFence): void {
+    if (this.destroyed || this.schemaFence) return;
+    this.schemaFence = fence;
+    this.persistSchemaFence?.(fence);
+    this.suspendPresence();
+    this.emit();
   }
 
   subscribe(listener: Listener): () => void {
@@ -467,6 +521,7 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
   }
 

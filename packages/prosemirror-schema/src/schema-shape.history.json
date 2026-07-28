@@ -1,0 +1,230 @@
+[
+  {
+    "version": {
+      "major": 0,
+      "minor": 1,
+      "patch": 0
+    },
+    "surface": {
+      "fragmentName": "prosemirror",
+      "nodes": {
+        "blockquote": {
+          "attrs": {},
+          "content": "block+"
+        },
+        "bullet_list": {
+          "attrs": {
+            "tight": {
+              "hasDefault": true,
+              "default": false
+            }
+          },
+          "content": "list_item+"
+        },
+        "code_block": {
+          "attrs": {
+            "language": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "text*"
+        },
+        "doc": {
+          "attrs": {},
+          "content": "block+"
+        },
+        "figure": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "caption": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "label": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            }
+          },
+          "content": null
+        },
+        "hard_break": {
+          "attrs": {},
+          "content": null
+        },
+        "heading": {
+          "attrs": {
+            "level": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "inline*"
+        },
+        "horizontal_rule": {
+          "attrs": {},
+          "content": null
+        },
+        "image": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "jsx_container": {
+          "attrs": {
+            "name": {
+              "hasDefault": false
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            }
+          },
+          "content": "block+"
+        },
+        "jsx_leaf": {
+          "attrs": {
+            "name": {
+              "hasDefault": false
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            }
+          },
+          "content": "text*"
+        },
+        "list_item": {
+          "attrs": {
+            "checked": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "paragraph block*"
+        },
+        "ordered_list": {
+          "attrs": {
+            "order": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "tight": {
+              "hasDefault": true,
+              "default": false
+            }
+          },
+          "content": "list_item+"
+        },
+        "paragraph": {
+          "attrs": {},
+          "content": "inline*"
+        },
+        "table": {
+          "attrs": {},
+          "content": "table_row+"
+        },
+        "table_cell": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "paragraph"
+        },
+        "table_header": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "paragraph"
+        },
+        "table_row": {
+          "attrs": {},
+          "content": "(table_header | table_cell)+"
+        },
+        "text": {
+          "attrs": {},
+          "content": null
+        }
+      },
+      "marks": {
+        "code": {
+          "attrs": {},
+          "content": null
+        },
+        "em": {
+          "attrs": {},
+          "content": null
+        },
+        "link": {
+          "attrs": {
+            "href": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "strike": {
+          "attrs": {},
+          "content": null
+        },
+        "strong": {
+          "attrs": {},
+          "content": null
+        }
+      }
+    }
+  }
+]

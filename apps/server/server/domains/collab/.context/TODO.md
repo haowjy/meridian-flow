@@ -2,27 +2,27 @@
 
 ## Draft preview fails on empty paragraphs
 
-The real-stack adversarial-editing probe `p3511` saw the draft-preview endpoint return
-HTTP 500 four times when the draft contained empty paragraphs:
-`Cannot anchor text offset in block <id> (paragraph) without text`. Reproduce at the
-draft-preview anchoring seam and make empty text blocks a supported preview input; this
-is pre-existing and was not part of the loaded-room live-pull fix.
+The draft-preview endpoint returns HTTP 500 when a draft contains an empty
+paragraph: `Cannot anchor text offset in block <id> (paragraph) without text`.
+Reproduce at the draft-preview anchoring seam and make empty text blocks a
+supported preview input.
 
 ## Code files become a display lens; cross-schema rename becomes a metadata flip
 
-**Tracked:** [#212](https://github.com/haowjy/meridian-flow/issues/212) — direction
-decided 2026-07-14, awaiting tech-lead scoping.
+The client mounts a constrained schema for code with exactly one `code_block`
+(`config.ts` `CodeDocument`), and `markdown-document.ts` serializes code
+verbatim from block 0 only. Document ↔ code renames return typed
+`invalid_operation` (`context-fs.move-filetype` tests) because remounting the
+other schema against existing content could let ProseMirror normalization
+delete it.
 
-**Current (shipped):** the client mounts a constrained schema for code (exactly one
-`code_block`; `config.ts` `CodeDocument`) and the server serializes code verbatim from
-**block 0 only** (`markdown-document.ts`); document ↔ code renames return typed
-`invalid_operation` (`context-fs.move-filetype` tests pin this) because remounting the
-other schema against existing content would let ProseMirror normalization delete it.
+The desired end state in [#212](https://github.com/haowjy/meridian-flow/issues/212)
+uses one schema everywhere. Code becomes presentation, input policy, and
+line-oriented verbatim serialization rather than a mounted schema. Disable
+prose affordances through commands, paste, and transaction filters, not schema
+node removal; then md ↔ py rename is a metadata flip and `CodeDocument` plus the
+block-0 serializer are deleted.
 
-**Decided direction:** one schema everywhere; "code" is presentation + input policy +
-line-oriented verbatim serialization, never a different mounted schema. Disabling prose
-affordances must be input policy (commands/paste/transaction filters), NOT schema node
-removal — an absent node type re-creates the silent-deletion class (#196/#203). Then
-rename md ↔ py is a metadata flip, and `CodeDocument` + the block-0 serializer hazard are
-deleted. Scoping open: whitespace roundtrip fidelity, doc-wide highlighting (or none in
-v1), code-lens paste flattening, migration of existing single-`code_block` docs.
+**Affected paths:** app editor `config.ts`, collab
+`domain/markdown-document.ts`, context filetype moves, and their schema and
+round-trip tests.

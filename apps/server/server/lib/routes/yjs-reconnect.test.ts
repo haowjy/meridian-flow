@@ -45,6 +45,7 @@ describe("Yjs reconnect writer admission", () => {
             syncType: type,
             payload,
             userId: "user-1" as never,
+            expectedGeneration: 1n,
           });
           if (result) {
             writerFrames.push({

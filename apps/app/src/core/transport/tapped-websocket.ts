@@ -6,7 +6,7 @@ export interface YjsWireTap {
   onFrame(direction: WireDirection, bytes: Uint8Array, socketEpoch: number): void;
   onSocketOpen(socketEpoch: number): void;
   onSocketClose(socketEpoch: number, code: number, wasClean: boolean): void;
-  /** Correlation aid: a document transport attached a room on the shared socket. */
+  /** Correlation aid: a document transport attached its room-scoped socket. */
   onRoomAttached(roomName: string, yjsClient: number): void;
 }
 

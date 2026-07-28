@@ -6,6 +6,7 @@
  * first, then close it from open() with the deferred-close context.
  */
 
+import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import {
   createNoopEventSink,
@@ -16,10 +17,7 @@ import {
 import type { AppServices } from "./app.js";
 import { resolveAppUserFromRequest } from "./auth-gate.js";
 
-export type WsDeferredClose = {
-  code: number;
-  reason: string;
-};
+export type WsDeferredClose = typeof WS_CLOSE.AUTH_FAILED | typeof WS_CLOSE.AUTH_ERROR;
 
 export type WsAuthenticatedUpgrade = {
   kind: "authenticated";
@@ -50,7 +48,7 @@ export async function resolveWsUpgradeAuth(
   try {
     const auth = await resolveAppUserFromRequest(request);
     if (!auth) {
-      return deferWsClose({ code: 4401, reason: "auth_failed" });
+      return deferWsClose(WS_CLOSE.AUTH_FAILED);
     }
     return { kind: "authenticated", app: auth.app, userId: auth.user.userId };
   } catch (error) {
@@ -60,6 +58,6 @@ export async function resolveWsUpgradeAuth(
       name: "upgrade_auth.failed",
       payload: { logPrefix: options.logPrefix, ...unknownToEventPayload(error) },
     });
-    return deferWsClose({ code: 1011, reason: "auth_error" });
+    return deferWsClose(WS_CLOSE.AUTH_ERROR);
   }
 }

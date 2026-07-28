@@ -100,8 +100,8 @@ free of Meridian URI schemes and database concerns.
 | `auth-gate.ts` | Single seam composing authentication, provisioning, and app services. `requireAppUser(event)` returns `{ app, user }`; `resolveAppUserFromRequest` is nullable for WS upgrade paths. |
 | `ws-upgrade-auth.ts` | Shared WS upgrade auth returning authenticated or deferred-close contexts. |
 
-Ownership gates live in domains, not in `lib/`: `requireProject workspaceOwner` from
-`domains/projects` for project workspace-scoped routes and `requireThreadOwner` from
+Ownership gates live in domains, not in `lib/`: `requireProjectOwner` from
+`domains/projects` for project-scoped routes and `requireThreadOwner` from
 `domains/threads` for thread routes / thread WS subscriptions. Yjs document
 access uses `DocumentAccessPort.canAccessDocument()`.
 
@@ -110,7 +110,21 @@ access uses `DocumentAccessPort.canAccessDocument()`.
 | File | Role |
 |---|---|
 | `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, hub catchup/live events, unsubscribe/cleanup. |
-| `ws-safe-send.ts` | Defensive `peer.send` wrapper used for all server-initiated sends. |
+| `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
+| `ws-safe-send.ts` | Defensive `peer.send` wrapper for callers that opt into close-on-send-failure behavior. |
+
+For typed Yjs admission refusals, `YjsConnectionContext.closeTransport` is the
+physical-close seam. `refuseConnection()` invokes it before throwing; the throw
+only aborts the active Hocuspocus hook and must not be treated as close
+delivery. Schema-head comparison semantics remain in the
+[collab domain](../../domains/collab/.context/document-authority-and-schema.md).
+
+The Yjs gateway resolves the client schema from `Sec-WebSocket-Protocol`.
+Exactly one grammar match supplies the triple; absent, zero, or multiple
+matches become the `0.0.0` sentinel. The route explicitly echoes the sole
+matching token, otherwise the first offered token, so the 101 completes and a
+typed schema refusal can reach ambiguous or malformed clients. No offered token
+means no echo, and query parameters never participate in resolution.
 
 ## Route helpers / services
 
@@ -121,9 +135,9 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 |---|---|
 | `thread-creation.ts` | Ownership-gated primary thread creation shared by global and project workspace-scoped routes; resolves work attachment and touches the work. |
 | `work-attachment.ts` | Determines a new thread's work: explicit `workId`, subagent parent inheritance, or default work for primary threads. |
-| `project workspace-preferences-route.ts` | Unit-testable handlers for project workspace preferences GET/PUT. |
-| `project workspace-stats.ts` | Pure projection folding thread list + works into `Project workspaceStatsResponse`. |
-| `project workspace-results-route.ts` | Ownership-gated project workspace result listing and signed artifact URL refresh. |
+| `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
+| `project-stats.ts` | Pure projection folding thread list + works into `ProjectStatsResponse`. |
+| `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |
 | `backend-policy.ts` | Small policy helpers for backend selection/guarding. |
@@ -146,7 +160,7 @@ requireAppUser(event)  → getApp() + WorkOS/AuthKit user provisioning
 Route destructures needed AppServices
   │
   ▼
-requireProject workspaceOwner / requireThreadOwner / DocumentAccessPort
+requireProjectOwner / requireThreadOwner / DocumentAccessPort
   │
   ▼
 Domain API call → contract wire shape

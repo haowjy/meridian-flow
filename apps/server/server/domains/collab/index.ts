@@ -5,7 +5,7 @@ export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export {
-  isStaleDocumentSchemaError,
+  DocumentSchemaMajorMismatchError,
+  isDocumentSchemaMajorMismatchError,
   isStaleSchema,
-  StaleDocumentSchemaError,
 } from "./domain/stale-schema.js";

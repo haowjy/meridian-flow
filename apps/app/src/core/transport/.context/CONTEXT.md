@@ -8,6 +8,20 @@ returns, then emits every later transition. `DocumentSession` relies on that
 initial callback to derive an honest first status; a deferred initial emission
 creates a timing-dependent gap between the transport and session snapshots.
 
+Document collaboration sockets are room-scoped rather than multiplexed. A
+typed schema refusal is a physical WebSocket close, so a shared socket would
+deliver one room's 4406/4407 to every attached provider and reset healthy
+rooms. The session registry remains the per-room deduplication owner; the cost
+is one physical socket per attached room. The soft-cap warning runs when a live
+session is added but compares the registry's total session count, including
+branch sessions; it does not evict sessions or block attachments.
+
+The client declares its schema as the sole WebSocket subprotocol on each Yjs
+socket. `CollabSchemaWebSocket` formats the current version through
+`@meridian/prosemirror-schema`; the Yjs URL carries no schema parameter. The
+subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
+production so observation does not create a second transport path.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with
@@ -17,8 +31,9 @@ per-message subscriptions. Live `DocumentSession`s subscribe to
 
 ## Dev-only wire observation
 
-The two client sockets use their canonical transport seams. `TappedWebSocket`
-observes the shared Hocuspocus socket's final binary frames.
+The two client socket types use their canonical transport seams.
+`TappedWebSocket` observes each room-scoped Hocuspocus socket's final binary
+frames.
 `SocketLifecycleController` observes the thread/agent socket's lifecycle and
 final string frames. Both are active only behind the build-time debug gate;
 default production builds retain native WebSockets without capture, while the
@@ -44,11 +59,9 @@ tap interfaces prevent thread strings from broadening the Yjs byte contract.
 outgoing deletion-only updates, whose bytes contain the deleted items' creators
 but not the deleter.
 
-Do not move this observer to `HocuspocusProvider` hooks. Live seam probes found
-those are object-level notifications rather than a complete final-byte seam:
-one sync-step-2 notification carried zero bytes, and the shared provider's
-outgoing hook did not fire. Protocol inspection and `EventRecord` construction
-belong in the debug feature, preserving the dependency direction
+Provider hooks are not the final-byte seam; use `TappedWebSocket`. Protocol
+inspection and `EventRecord` construction belong in the debug feature,
+preserving the dependency direction
 `features/debug -> core/transport`. Thread inspection follows the same boundary
 and must only emit allowlisted classifications and identifiers; no agent, user,
 tool, catchup, or error content may enter an `EventRecord`.

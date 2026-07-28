@@ -1,4 +1,4 @@
-import { encodeWsServerMessage } from "@meridian/contracts/protocol";
+import { encodeWsServerMessage, WS_CLOSE } from "@meridian/contracts/protocol";
 import { defineWebSocketHandler } from "nitro";
 import {
   createThreadWebSocketSession,
@@ -62,7 +62,7 @@ export default defineWebSocketHandler(() => ({
           error: {
             code: context.close.reason,
             message:
-              context.close.reason === "auth_failed"
+              context.close.reason === WS_CLOSE.AUTH_FAILED.reason
                 ? "Authentication failed"
                 : "Internal server error",
             retryable: false,

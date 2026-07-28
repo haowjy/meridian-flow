@@ -7,7 +7,11 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
+  createCollabYDoc,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
@@ -63,7 +67,7 @@ function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): Br
     generation: 1,
     state: Y.encodeStateAsUpdate(doc),
     stateVector: Y.encodeStateVector(doc),
-    schemaVersion: 3,
+    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 

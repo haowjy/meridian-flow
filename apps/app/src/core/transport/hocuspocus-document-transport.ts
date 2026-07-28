@@ -2,9 +2,10 @@
  * hocuspocus-document-transport — binds HocuspocusProvider to DocumentSession.
  *
  * DocumentSession remains the owner of the Y.Doc, Awareness, and IndexedDB
- * cache. This adapter only attaches Hocuspocus' document provider to those
- * existing objects and maps provider/socket events back to the unchanged
- * DocumentSessionTransportProvider seam.
+ * cache. This adapter owns one socket per room because WebSocket closes are
+ * connection-wide, while schema refusals are room-specific. It maps those
+ * provider/socket events back to the unchanged DocumentSessionTransportProvider
+ * seam.
  */
 import {
   HocuspocusProvider,
@@ -20,34 +21,54 @@ import {
 import {
   type ChangeEventWsMessage,
   parseYjsStatelessMessage,
+  WS_CLOSE,
   yjsWsPath,
 } from "@meridian/contracts/protocol";
+import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import type { DocumentSessionTransportProvider } from "@/core/editor/document-session";
+import type {
+  DocumentSessionConnectionState,
+  DocumentSessionResetReason,
+  DocumentSessionTransportProvider,
+} from "@/core/editor/document-session";
 
 import { buildSameOriginWsUrl } from "./dev-transport";
-import type { ConnectionState } from "./ThreadTransport";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 
-const TERMINAL_DENIAL_CODES = new Set([4401, 4403]);
-const HOCUSPOCUS_BRANCH_RESET_REASONS = new Set(["branch-generation-stale", "branch-stale-doc"]);
+const TERMINAL_DENIAL_CODES = new Set<number>([
+  WS_CLOSE.AUTH_FAILED.code,
+  WS_CLOSE.PERMISSION_DENIED.code,
+]);
 
-let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
+class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
+  private permanentlyDestroyed = false;
 
-function getSharedWebsocket(): HocuspocusProviderWebsocket {
-  sharedWebsocket ??= new HocuspocusProviderWebsocket({
-    url: buildSameOriginWsUrl(yjsWsPath()),
-    // Keep the build-time gate local so production removes the tap adapter,
-    // while the authenticated composition root owns dev-time installation.
-    ...(import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1"
-      ? { WebSocketPolyfill: TappedWebSocket }
-      : {}),
-  });
-  return sharedWebsocket;
+  // Hocuspocus 4.3 schedules an untracked reconnect from its close handler.
+  // Guard connect itself so a terminal room cannot resurrect after destroy().
+  override async connect() {
+    if (this.permanentlyDestroyed) return;
+    return super.connect();
+  }
+
+  override destroy(): void {
+    this.permanentlyDestroyed = true;
+    super.destroy();
+  }
 }
 
-function mapStatus(status: WebSocketStatus): ConnectionState {
+// Keep the build-time gate local so production removes the tap adapter while
+// the authenticated composition root owns dev-time installation.
+const DocumentWebSocket =
+  import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1" ? TappedWebSocket : WebSocket;
+
+export class CollabSchemaWebSocket extends DocumentWebSocket {
+  constructor(url: string | URL) {
+    super(url, [formatCollabSchemaSubprotocol(COLLAB_SCHEMA_VERSION)]);
+  }
+}
+
+function mapStatus(status: WebSocketStatus): DocumentSessionConnectionState {
   if (status === WebSocketStatus.Connected) return { kind: "connected" };
   if (status === WebSocketStatus.Connecting) return { kind: "connecting", attempt: 1 };
   return { kind: "disconnected" };
@@ -57,12 +78,39 @@ function isTerminalDenialClose(event: onCloseParameters["event"]): boolean {
   return TERMINAL_DENIAL_CODES.has(event.code);
 }
 
-function terminalState(reason: string, code?: number): ConnectionState {
+function terminalState(reason: string, code?: number): DocumentSessionConnectionState {
   return { kind: "unauthorized", reason, code };
 }
 
-function resetState(reason: string, code?: number): ConnectionState {
+function resetState(
+  reason: DocumentSessionResetReason,
+  code?: number,
+): DocumentSessionConnectionState {
   return { kind: "reset", reason, code };
+}
+
+function branchResetReason(reason: string): DocumentSessionResetReason | null {
+  if (reason === "branch-generation-stale") return "branch-generation-stale";
+  if (reason === WS_CLOSE.BRANCH_STALE.reason) return WS_CLOSE.BRANCH_STALE.reason;
+  return null;
+}
+
+export function classifyDocumentTransportClose(
+  roomName: string,
+  event: { code: number; reason: string },
+): DocumentSessionConnectionState | null {
+  if (isTerminalDenialClose(event)) return terminalState(event.reason, event.code);
+  if (event.code === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code) {
+    return resetState(WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason, event.code);
+  }
+  if (event.code === WS_CLOSE.DOCUMENT_SCHEMA_STALE.code) {
+    return resetState(WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason, event.code);
+  }
+  const branchReason = branchResetReason(event.reason);
+  if (roomName.startsWith("branch:") && branchReason) {
+    return resetState(branchReason, event.code);
+  }
+  return null;
 }
 
 export type HocuspocusDocumentTransportOptions = {
@@ -100,9 +148,13 @@ export function createHocuspocusDocumentTransport({
   document,
   awareness,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
-  const listeners = new Set<(state: ConnectionState) => void>();
+  const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
-  let currentState = mapStatus(getSharedWebsocket().status);
+  const websocket = new RoomScopedHocuspocusWebsocket({
+    url: buildSameOriginWsUrl(yjsWsPath()),
+    WebSocketPolyfill: CollabSchemaWebSocket,
+  });
+  let currentState = mapStatus(websocket.status);
   let terminal = false;
   let destroyed = false;
   let resolveSynced!: () => void;
@@ -111,16 +163,17 @@ export function createHocuspocusDocumentTransport({
   });
   const durableSync = createDurableSyncBarrier();
 
-  function publish(state: ConnectionState): void {
+  function publish(state: DocumentSessionConnectionState): void {
     currentState = state;
     for (const listener of listeners) listener(state);
   }
 
-  function publishTerminal(state: ConnectionState): void {
+  function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
     publish(state);
     provider.destroy();
+    websocket.destroy();
   }
 
   function handleStatus({ status }: onStatusParameters): void {
@@ -147,13 +200,8 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (isTerminalDenialClose(event)) {
-      publishTerminal(terminalState(event.reason, event.code));
-      return;
-    }
-    if (roomName.startsWith("branch:") && HOCUSPOCUS_BRANCH_RESET_REASONS.has(event.reason)) {
-      publishTerminal(resetState(event.reason, event.code));
-    }
+    const state = classifyDocumentTransportClose(roomName, event);
+    if (state) publishTerminal(state);
   }
 
   function handleStateless({ payload }: onStatelessParameters): void {
@@ -166,7 +214,7 @@ export function createHocuspocusDocumentTransport({
     name: roomName,
     document,
     awareness,
-    websocketProvider: getSharedWebsocket(),
+    websocketProvider: websocket,
     onStatus: handleStatus,
     onSynced: handleSynced,
     onUnsyncedChanges: handleUnsyncedChanges,
@@ -208,6 +256,7 @@ export function createHocuspocusDocumentTransport({
       if (destroyed) return;
       destroyed = true;
       provider.destroy();
+      websocket.destroy();
       listeners.clear();
       changeEventListeners.clear();
     },

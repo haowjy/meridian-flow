@@ -3,10 +3,12 @@
  * the default ping timeout, terminal-close detection (auth codes), and
  * human-readable close-reason formatting. Shared by the WS transports.
  */
+import { WS_CLOSE } from "@meridian/contracts/protocol";
+
 export const DEFAULT_WS_PING_TIMEOUT_MS = 45_000;
 
 export function isTerminalWsClose(event: CloseEvent): boolean {
-  return event.code === 4401 || event.code === 4403;
+  return event.code === WS_CLOSE.AUTH_FAILED.code || event.code === WS_CLOSE.PERMISSION_DENIED.code;
 }
 
 export function formatWsCloseReason(event: CloseEvent): string {

@@ -15,7 +15,12 @@ import { describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
-import type { DocumentSession } from "@/core/editor/document-session";
+import type {
+  DocumentSession,
+  DocumentSessionConnectionState,
+  DocumentSessionSnapshot,
+  SchemaFence,
+} from "@/core/editor/document-session";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
@@ -27,22 +32,60 @@ const threadList: { current: ThreadListItem[] } = {
 };
 
 const sessions = new Map<string, DocumentSession>();
+const sessionSnapshots = new Map<string, DocumentSessionSnapshot>();
+const sessionListeners = new Map<string, Set<(snapshot: DocumentSessionSnapshot) => void>>();
 
 function sessionFor(roomKey: string): DocumentSession {
   const existing = sessions.get(roomKey);
   if (existing) return existing;
   const doc = new Y.Doc({ gc: false });
   const awareness = new Awareness(doc);
+  const snapshot: DocumentSessionSnapshot = {
+    documentId: roomKey,
+    roomKey,
+    room: { kind: "live", documentId: roomKey },
+    status: "detached",
+    connectionState: null,
+    localPersistenceSynced: true,
+    schemaFence: null,
+  };
+  const listeners = new Set<(next: DocumentSessionSnapshot) => void>();
+  sessionSnapshots.set(roomKey, snapshot);
+  sessionListeners.set(roomKey, listeners);
   const session = {
     roomKey,
     document: doc,
     awareness,
     cursorProvider: { awareness },
     markerStore: new SessionMarkerStore("writer"),
-    subscribe: () => () => {},
+    getSnapshot: () => sessionSnapshots.get(roomKey) ?? snapshot,
+    subscribe: (listener: (next: DocumentSessionSnapshot) => void) => {
+      listeners.add(listener);
+      listener(sessionSnapshots.get(roomKey) ?? snapshot);
+      return () => listeners.delete(listener);
+    },
   } as unknown as DocumentSession;
   sessions.set(roomKey, session);
   return session;
+}
+
+function raiseSchemaFence(roomKey: string, fence: SchemaFence): void {
+  const snapshot = sessionSnapshots.get(roomKey);
+  if (!snapshot || snapshot.schemaFence) return;
+  const fenced = { ...snapshot, schemaFence: fence };
+  sessionSnapshots.set(roomKey, fenced);
+  for (const listener of sessionListeners.get(roomKey) ?? []) listener(fenced);
+}
+
+function setConnectionState(
+  roomKey: string,
+  connectionState: DocumentSessionConnectionState,
+): void {
+  const snapshot = sessionSnapshots.get(roomKey);
+  if (!snapshot) return;
+  const next = { ...snapshot, connectionState };
+  sessionSnapshots.set(roomKey, next);
+  for (const listener of sessionListeners.get(roomKey) ?? []) listener(next);
 }
 
 const registry = {
@@ -79,7 +122,6 @@ vi.mock("@/core/editor/document-session-registry", () => ({
   getDocumentSessionRegistry: () => registry,
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
-vi.mock("./EditorToolbar", () => ({ EditorToolbar: () => null }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./PeerMarkPopover", () => ({ PeerMarkPopover: () => null }));
 
@@ -171,6 +213,58 @@ describe("editor lifetime", () => {
     await withReactRoot(<Harness initial={initial} />, async () => {
       expect(mountedEditor().isEditable).toBe(false);
       expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
+    });
+  });
+
+  it("keeps the editor instance and turns it read-only when its session is fenced", async () => {
+    const initial = { documentId: "document-fenced", projectId: "project-1" };
+    await withReactRoot(<Harness initial={initial} />, async () => {
+      const original = tagOf(mountedEditor(), "editor");
+      expect(mountedEditor().isEditable).toBe(true);
+      await act(async () => {
+        mountedEditor().commands.insertContent("Fenced words");
+      });
+
+      await act(async () => {
+        raiseSchemaFence("document-fenced", { reason: "client-superseded" });
+      });
+
+      expect(tagOf(mountedEditor(), "editor")).toBe(original);
+      expect(mountedEditor().isEditable).toBe(false);
+      expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
+      const fencedHtml = mountedEditor().getHTML();
+      const toolbarButtons =
+        document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button');
+      expect(toolbarButtons.length).toBeGreaterThan(0);
+      expect([...toolbarButtons].every((button) => button.disabled)).toBe(true);
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>('button[aria-label="Bold"]')?.click();
+      });
+      expect(mountedEditor().getHTML()).toBe(fencedHtml);
+      expect(document.querySelector("[data-schema-fence]")?.textContent).toBe(
+        "This chapter was opened in a newer version of Meridian. Refresh to keep writing.",
+      );
+    });
+  });
+
+  it("replaces a stale-head editor with the unstyled unavailable state", async () => {
+    const initial = { documentId: "document-stale", projectId: "project-1" };
+    await withReactRoot(<Harness initial={initial} />, async () => {
+      expect(mountedEditor()).toBeDefined();
+
+      await act(async () => {
+        setConnectionState("document-stale", {
+          kind: "reset",
+          reason: "document-schema-stale",
+          code: 4407,
+        });
+      });
+
+      const unavailable = document.querySelector("[data-document-schema-stale]");
+      expect(unavailable?.textContent).toBe("This chapter is temporarily unavailable");
+      expect(unavailable?.hasAttribute("class")).toBe(false);
+      expect(document.querySelector(".ProseMirror")).toBeNull();
+      expect(sessionSnapshots.get("document-stale")?.schemaFence).toBeNull();
     });
   });
 });

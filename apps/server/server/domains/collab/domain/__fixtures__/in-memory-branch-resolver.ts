@@ -1,7 +1,7 @@
 /** In-memory branch resolver skeleton used by domain conformance tests. */
 
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, type CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   BranchCorruptError,
@@ -9,7 +9,7 @@ import {
   type BranchResolver,
   type BranchState,
 } from "../branch-resolver.js";
-import { isStaleSchema, StaleDocumentSchemaError } from "../stale-schema.js";
+import { DocumentSchemaMajorMismatchError, isStaleSchema } from "../stale-schema.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -27,7 +27,7 @@ export type InMemoryDocumentBranchRow = {
   state: Uint8Array | null;
   stateVector: Uint8Array | null;
   status: BranchStatus;
-  schemaVersion: number;
+  schemaVersion: CollabSchemaVersion;
 };
 
 export type SeedWorkDraftInput = {
@@ -36,7 +36,7 @@ export type SeedWorkDraftInput = {
   doc: Y.Doc;
   branchId?: string;
   generation?: number;
-  schemaVersion?: number;
+  schemaVersion?: CollabSchemaVersion;
 };
 
 export type CreateThreadPeerInput = {
@@ -55,9 +55,9 @@ export class InMemoryBranchStore implements BranchResolver {
   readonly rows = new Map<string, InMemoryDocumentBranchRow>();
 
   #nextBranchNumber = 1;
-  readonly #schemaVersion: number;
+  readonly #schemaVersion: CollabSchemaVersion;
 
-  constructor(options: { schemaVersion?: number } = {}) {
+  constructor(options: { schemaVersion?: CollabSchemaVersion } = {}) {
     this.#schemaVersion = options.schemaVersion ?? COLLAB_SCHEMA_VERSION;
   }
 
@@ -192,7 +192,11 @@ export class InMemoryBranchStore implements BranchResolver {
     context: { documentId: DocumentId; threadId: ThreadId },
   ): Y.Doc {
     if (isStaleSchema(row.schemaVersion, this.#schemaVersion)) {
-      throw new StaleDocumentSchemaError(row.documentId, row.schemaVersion, this.#schemaVersion);
+      throw new DocumentSchemaMajorMismatchError(
+        row.documentId,
+        row.schemaVersion,
+        this.#schemaVersion,
+      );
     }
     if (!row.state || !row.stateVector) {
       throw new BranchCorruptError({ branchId: row.id, ...context });
@@ -249,7 +253,7 @@ export class InMemoryBranchStore implements BranchResolver {
 }
 
 export function createInMemoryBranchStore(options?: {
-  schemaVersion?: number;
+  schemaVersion?: CollabSchemaVersion;
 }): InMemoryBranchStore {
   return new InMemoryBranchStore(options);
 }

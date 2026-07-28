@@ -3,7 +3,11 @@
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  COLLAB_SCHEMA_VERSION,
+  type CollabSchemaVersion,
+  createCollabYDoc,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   assertBranchLeaseCovers,
@@ -19,7 +23,7 @@ import {
   replicateFrozenIdentity,
 } from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
-import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
+import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchPushPolicy = "manual" | "auto";
@@ -38,7 +42,7 @@ export type BranchSnapshot = {
   state: Uint8Array;
   stateVector: Uint8Array;
   discardedStateVector?: Uint8Array | null;
-  schemaVersion: number;
+  schemaVersion: CollabSchemaVersion;
 };
 
 export type PersistBranchInput = {
@@ -79,7 +83,7 @@ export type ResetBranchSnapshotInput = {
   state: Uint8Array;
   stateVector: Uint8Array;
   discardedStateVector: Uint8Array;
-  schemaVersion: number;
+  schemaVersion: CollabSchemaVersion;
 };
 
 export type BranchStore = {
@@ -120,14 +124,18 @@ export type BranchCoordinator = {
   ): Promise<T>;
   pullFromDoc(branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
   pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
-  resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion?: number): Promise<void>;
+  resetFromDoc(
+    branchId: string,
+    upstream: Y.Doc,
+    schemaVersion?: CollabSchemaVersion,
+  ): Promise<void>;
   resetFromDocIfUnchanged(input: {
     branchId: string;
     upstream: Y.Doc;
     expectedGeneration: number;
     expectedStateVector: Uint8Array;
     expectedState: Uint8Array;
-    schemaVersion?: number;
+    schemaVersion?: CollabSchemaVersion;
   }): Promise<boolean>;
   resetFromDocIfUnchangedWithLease(
     lease: BranchLockLease,
@@ -137,7 +145,7 @@ export type BranchCoordinator = {
       expectedGeneration: number;
       expectedStateVector: Uint8Array;
       expectedState: Uint8Array;
-      schemaVersion?: number;
+      schemaVersion?: CollabSchemaVersion;
     },
   ): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
@@ -192,7 +200,7 @@ export function createBranchCoordinator(input: {
       expectedGeneration: number;
       expectedStateVector: Uint8Array;
       expectedState: Uint8Array;
-      schemaVersion?: number;
+      schemaVersion?: CollabSchemaVersion;
     },
   ): Promise<boolean> {
     assertBranchLeaseCovers(lease, resetInput.branchId);
@@ -307,7 +315,7 @@ export function createBranchCoordinator(input: {
   async function persistReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
-    schemaVersion: number,
+    schemaVersion: CollabSchemaVersion,
   ): Promise<void> {
     if (!input.store.resetBranchSnapshot) {
       throw new Error("Branch store does not support branch reset");
@@ -701,7 +709,7 @@ function pendingTransientKey(transactionId: string, branchId: string): string {
 
 export function assertReadableBranch(snapshot: BranchSnapshot): void {
   if (isStaleSchema(snapshot.schemaVersion, COLLAB_SCHEMA_VERSION)) {
-    throw new StaleDocumentSchemaError(
+    throw new DocumentSchemaMajorMismatchError(
       snapshot.documentId,
       snapshot.schemaVersion,
       COLLAB_SCHEMA_VERSION,

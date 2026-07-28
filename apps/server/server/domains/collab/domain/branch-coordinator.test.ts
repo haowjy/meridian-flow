@@ -1,6 +1,6 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, type CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -89,7 +89,7 @@ class MemoryBranchStore implements BranchStore {
     state: Uint8Array;
     stateVector: Uint8Array;
     discardedStateVector: Uint8Array;
-    schemaVersion: number;
+    schemaVersion: CollabSchemaVersion;
   }): Promise<boolean> {
     return this.persist(input, (current) => ({
       ...current,
@@ -439,7 +439,7 @@ describe("BranchCoordinator", () => {
     const store = new MemoryBranchStore();
     store.branches.set("work", {
       ...branchSnapshot({ branchId: "work", doc: docWithText("fresh upstream") }),
-      schemaVersion: COLLAB_SCHEMA_VERSION + 1,
+      schemaVersion: { major: 0, minor: 2, patch: 0 },
     });
     store.branches.set(
       "thread",
@@ -456,7 +456,7 @@ describe("BranchCoordinator", () => {
 
     const thread = storedBranch(store, "thread");
     expect(thread.generation).toBe(2);
-    expect(thread.schemaVersion).toBe(COLLAB_SCHEMA_VERSION + 1);
+    expect(thread.schemaVersion).toEqual({ major: 0, minor: 2, patch: 0 });
     expect(materialize(thread).getText("content").toString()).toBe("fresh upstream");
   });
 

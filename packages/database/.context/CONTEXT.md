@@ -56,11 +56,14 @@ append-only in the production lifecycle: compaction deletes retained
 the `documents` cascade. Do not document this relationship as custom SQL or as an
 absent FK.
 
-`document_yjs_heads.schema_version` takes its Drizzle default directly from
-`COLLAB_SCHEMA_VERSION` in `@meridian/prosemirror-schema`; do not restore a
-second literal or comment-maintained copy. A schema-version bump still requires
-an additive migration that advances the Postgres column default for deployed
-databases.
+`document_yjs_heads.schema_version` and `document_branches.schema_version` store
+the packed integer form of `COLLAB_SCHEMA_VERSION`
+(`major * 1_000_000 + minor * 1_000 + patch`; `0.1.0` is `1000`). Their Drizzle
+defaults call the shared packer; do not restore a second literal or
+comment-maintained copy. The server's Drizzle adapters pack on write and unpack
+on read so database integers never cross into domain or port contracts. A
+schema-version bump still requires an additive migration that advances both
+Postgres column defaults for deployed databases.
 
 ### Billing storage
 

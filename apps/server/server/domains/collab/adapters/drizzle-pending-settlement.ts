@@ -12,7 +12,12 @@ import {
   documentYjsUpdates,
   pushLineage,
 } from "@meridian/database/schema";
-import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  COLLAB_SCHEMA_VERSION,
+  createCollabYDoc,
+  packCollabSchemaVersion,
+  unpackCollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -480,7 +485,7 @@ async function completeStagedPush(
       discardedStateVector: branchRow.discardedStateVector
         ? new Uint8Array(branchRow.discardedStateVector)
         : null,
-      schemaVersion: branchRow.schemaVersion,
+      schemaVersion: unpackCollabSchemaVersion(branchRow.schemaVersion),
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
     const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
@@ -506,11 +511,12 @@ async function upsertHead(
   latestUpdateSeq: number,
   latestStateVector: Uint8Array,
 ): Promise<void> {
+  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
   await db
     .insert(documentYjsHeads)
     .values({
       documentId,
-      schemaVersion: COLLAB_SCHEMA_VERSION,
+      schemaVersion: packedSchemaVersion,
       latestUpdateSeq,
       latestStateVector: Buffer.from(latestStateVector),
       latestCheckpointId: null,
@@ -518,7 +524,7 @@ async function upsertHead(
     .onConflictDoUpdate({
       target: documentYjsHeads.documentId,
       set: {
-        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${COLLAB_SCHEMA_VERSION})`,
+        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packedSchemaVersion})`,
         latestUpdateSeq,
         latestStateVector: Buffer.from(latestStateVector),
         updatedAt: sql`now()`,
@@ -938,11 +944,12 @@ async function materializeDurableDocumentBefore(
 }
 
 async function lockDocumentYjsHead(db: DrizzleDb, documentId: DocumentId): Promise<void> {
+  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
   await db
     .insert(documentYjsHeads)
     .values({
       documentId,
-      schemaVersion: COLLAB_SCHEMA_VERSION,
+      schemaVersion: packedSchemaVersion,
       latestUpdateSeq: 0,
       latestStateVector: Buffer.from(new Uint8Array()),
       latestCheckpointId: null,

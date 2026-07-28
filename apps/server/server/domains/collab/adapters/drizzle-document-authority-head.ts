@@ -3,7 +3,7 @@
 import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { DocumentAuthorityHeads } from "../domain/ports/document-authority-heads.js";
@@ -76,7 +76,10 @@ export async function findDocumentAuthorityHead(
 async function ensureDocumentAuthorityHead(db: AuthorityHeadDb, documentId: string): Promise<void> {
   await db
     .insert(documentYjsHeads)
-    .values({ documentId: documentId as DocumentId, schemaVersion: COLLAB_SCHEMA_VERSION })
+    .values({
+      documentId: documentId as DocumentId,
+      schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+    })
     .onConflictDoNothing({ target: documentYjsHeads.documentId });
 }
 
@@ -96,7 +99,7 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
           .values(
             uniqueIds.map((documentId) => ({
               documentId,
-              schemaVersion: COLLAB_SCHEMA_VERSION,
+              schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
             })),
           )
           .onConflictDoNothing({ target: documentYjsHeads.documentId });

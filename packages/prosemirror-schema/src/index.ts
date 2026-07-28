@@ -8,6 +8,22 @@ import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
 import { Doc } from "yjs";
 
+export type { CollabSchemaVersion } from "./collab-schema-version.js";
+export {
+  COLLAB_SCHEMA_VERSION,
+  clientSchemaVersionFromSubprotocolHeader,
+  cmpMajorMinor,
+  collabSchemaKeyTag,
+  formatCollabSchemaSubprotocol,
+  formatCollabSchemaVersion,
+  headAdmitsClient,
+  packCollabSchemaVersion,
+  parseCollabSchemaVersion,
+  selectCollabSchemaSubprotocol,
+  serverServesHead,
+  unpackCollabSchemaVersion,
+} from "./collab-schema-version.js";
+
 /**
  * Strip parseDOM/toDOM from an upstream spec. Our package exports only
  * structural specs (content, group, attrs, etc.) — DOM serialization is
@@ -172,14 +188,6 @@ const customMarks = {
 } satisfies Record<string, MarkSpec>;
 
 // ─── Exports ────────────────────────────────────────────────────────
-
-/**
- * Bump when the ProseMirror/TipTap schema or Yjs encoding changes; bumping
- * invalidates client IndexedDB caches and flags server-persisted docs built on
- * the old version. Lives here because this package owns the schema shape the
- * version tracks — client and server must import the same value.
- */
-export const COLLAB_SCHEMA_VERSION = 4;
 
 export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
 

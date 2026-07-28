@@ -8,10 +8,10 @@
  * survives view unmount and is destroyed only when every opener has released
  * that document from its open set, after a short grace window so rapid
  * release→retain (e.g. React strict mode) does not detach the Hocuspocus
- * provider on the shared socket.
+ * provider from its room-scoped socket.
  *
- * The Hocuspocus adapter owns the shared socket; this registry owns the
- * per-room sessions on the same process-wide plane.
+ * The Hocuspocus adapter owns each room's socket; this registry owns the
+ * corresponding per-room session and prevents duplicate sockets for that room.
  */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
@@ -19,20 +19,18 @@ import type { UserId } from "@meridian/contracts/runtime";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
 import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
+import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
-/** Soft cap — log once when exceeded; no hard eviction (R14). */
+/** Warn once above the soft cap; never evict a writer's open session. */
 const LIVE_DOC_SOFT_CAP = 50;
 
 /**
  * Grace window before tearing down an unretained session. Rapid
  * release→retain (React strict mode, fast navigation) cancels the timer so
- * the live provider stays attached on the shared socket — avoiding a stale
+ * the live provider stays attached to its socket — avoiding a stale
  * CloseMessage racing a new SyncStep1.
  */
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-
-// R14: hard max-live-docs eviction + reconnect load-concurrency cap deferred
-// (before-prod); watch server liveDocumentCount metric
 
 export class DocumentSessionRegistry {
   private ownUserId: UserId | null = null;
@@ -109,6 +107,7 @@ export class DocumentSessionRegistry {
   }
 
   private attachSessionTransport(session: DocumentSession): void {
+    if (session.getSnapshot().schemaFence) return;
     session.attachTransport(({ roomKey, document, awareness }) =>
       createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     );
@@ -125,7 +124,12 @@ export class DocumentSessionRegistry {
       roomKey,
       enableIndexedDb: room.kind === "live" ? undefined : false,
       ownUserId: this.ownUserId,
+      persistSchemaFence: (fence) => {
+        writeSchemaFenceQuarantine(roomKey, fence);
+      },
     });
+    const quarantine = readSchemaFenceQuarantine(roomKey);
+    if (quarantine) session.raiseSchemaFence(quarantine);
     if (room.kind === "branch") {
       session.subscribe((snapshot) => {
         if (snapshot.connectionState?.kind !== "reset") return;
@@ -190,7 +194,7 @@ export class DocumentSessionRegistry {
     const session = this.sessions.get(roomKey);
     if (!session) return false;
     const snapshot = session.getSnapshot();
-    if (snapshot.status === "detached") return false;
+    if (snapshot.schemaFence || snapshot.status === "detached") return false;
     if (
       snapshot.status !== "access-lost" &&
       snapshot.connectionState?.kind !== "unauthorized" &&

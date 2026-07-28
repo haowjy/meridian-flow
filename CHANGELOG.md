@@ -4,6 +4,30 @@
 
 - `tools/dev`: worktree pruning now ignores Meridian diagnostics and skips
   work items that disappear during discovery.
+- `apps/app`: schema-fenced chapters now remain quarantined and read-only, with
+  an explicit manuscript-protection notice instead of reconnecting unsafely.
+- `apps/server`, `packages/prosemirror-schema`: collaboration upgrades now
+  resolve schema triples from WebSocket subprotocol offers and explicitly echo
+  a client-offered token so typed schema refusals survive the handshake.
+- `apps/app`: collaboration sockets now offer the bundle schema as their sole
+  WebSocket subprotocol instead of appending a version query parameter.
+- `apps/app`, `apps/server`, `packages/database`, `packages/prosemirror-schema`:
+  collaboration schema compatibility now uses `major.minor.patch`; servers load
+  same-major heads, clients below the head's `major.minor` stay fenced, and
+  patch differences never gate.
+- `apps/server`: branch resets now preserve the highest durable collaboration
+  schema stamp.
+- `apps/app`: repeated superseded-client refusals now persist a version-scoped
+  quarantine, so reacquired chapters stay read-only without opening transport.
+- `apps/app`: collaboration sockets now declare the client schema and stay
+  room-scoped, so one chapter's terminal refusal cannot reset healthy chapters.
+- `apps/app`: superseded clients now silently reload once before pausing on a
+  schema fence, without risking a stale-bundle reload loop.
+- `apps/app`: chapters with stale stored schema heads now stop on a plain
+  temporarily-unavailable state instead of syncing forever.
+- `apps/server`, `packages/contracts`: collaboration sockets now refuse clients
+  older than a live or draft head with `4406`; stale stored heads close with
+  `4407` instead of reconnecting indefinitely.
 - `apps/server`: Anthropic-format cache usage now normalizes to inclusive input
   totals, so uncached prompt tokens are priced instead of silently clamped away;
   OpenAI-compatible trailing usage-only chunks are also retained.

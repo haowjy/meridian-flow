@@ -1,5 +1,6 @@
 /** Thin CrossWS transport shell for the Hocuspocus-backed Yjs gateway. */
 import type { UserId } from "@meridian/contracts/runtime";
+import { selectCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { defineWebSocketHandler } from "nitro";
 import type { AppServices } from "../../lib/app.js";
 import {
@@ -15,7 +16,12 @@ import {
 } from "../../lib/yjs-ws-handler.js";
 
 type YjsRouteContext =
-  | { kind: "authenticated"; app: AppServices; userId: UserId; gateway: YjsGateway }
+  | {
+      kind: "authenticated";
+      app: AppServices;
+      userId: UserId;
+      gateway: YjsGateway;
+    }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
 type YjsRoutePeer = {
@@ -37,8 +43,14 @@ export function getYjsGateway(app: AppServices): YjsGateway {
 export const yjsWebSocketHandler = defineWebSocketHandler({
   async upgrade(request) {
     const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
+    const selectedSubprotocol = selectCollabSchemaSubprotocol(
+      request.headers.get("sec-websocket-protocol"),
+    );
+    const responseHeaders = selectedSubprotocol
+      ? { headers: { "sec-websocket-protocol": selectedSubprotocol } }
+      : {};
     return auth.kind === "deferred-close"
-      ? { context: deferWsClose(auth.close) satisfies YjsRouteContext }
+      ? { context: deferWsClose(auth.close) satisfies YjsRouteContext, ...responseHeaders }
       : {
           context: {
             kind: "authenticated",
@@ -46,6 +58,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
             userId: auth.userId,
             gateway: getYjsGateway(auth.app),
           } satisfies YjsRouteContext,
+          ...responseHeaders,
         };
   },
   open(peer) {

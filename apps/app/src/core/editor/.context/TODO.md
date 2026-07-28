@@ -30,8 +30,8 @@ block hashes** (the moved figure, and every block it jumps over, get new hashes)
 which breaks agent-edit's "block hash = stable block identity" contract. See the
 no-in-place-reorder policy in `packages/agent-edit/.context/write-invariants.md`.
 
-We removed `draggable: true` from `figure` (here and in
-`packages/prosemirror-schema`); figures move via cut/paste (delete+insert).
+`figure` is not draggable in either editor schema surface; figures move via
+cut/paste (delete+insert).
 
 **Implementation when we build drag-to-place:**
 - Intercept the figure drop (custom `handleDrop` / drag handler) and decompose the
@@ -41,5 +41,6 @@ We removed `draggable: true` from `figure` (here and in
   here"), and no other block's hash changes.
 - Add a test asserting a figure move leaves every *other* block's hash unchanged and
   gives the moved figure a new id.
-- Keep parity: any schema-spec change stays mirrored between
-  `apps/app/src/core/editor` and `packages/prosemirror-schema` (`schema-parity.test.ts`).
+- Keep any schema-spec change mirrored between `apps/app/src/core/editor` and
+  `packages/prosemirror-schema`; the two schemas are built separately and parity
+  is currently unenforced.

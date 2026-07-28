@@ -7,6 +7,7 @@ import {
   branchWriteJournal,
   documentBranches,
 } from "@meridian/database/schema";
+import { unpackCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
@@ -94,7 +95,7 @@ async function branchStates(
   threadId: ThreadId,
   turnId: TurnId,
 ): Promise<TurnReceiptState[]> {
-  const currentRows = await db
+  const persistedRows = await db
     .select({
       journalStatus: branchWriteJournal.status,
       branchId: documentBranches.id,
@@ -121,6 +122,10 @@ async function branchStates(
         eq(branchWriteJournal.generation, documentBranches.generation),
       ),
     );
+  const currentRows = persistedRows.map((row) => ({
+    ...row,
+    schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
+  }));
 
   const states: TurnReceiptState[] = [];
   const journalReadStore = createDrizzleBranchJournalReadStore(db);

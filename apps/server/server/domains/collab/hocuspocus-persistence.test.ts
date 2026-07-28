@@ -1,5 +1,7 @@
 /** Tests for Hocuspocus branch-room persistence guards. */
+
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
@@ -790,7 +792,7 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
     generation: 2,
     state: Y.encodeStateAsUpdate(doc),
     stateVector: Y.encodeStateVector(doc),
-    schemaVersion: 1,
+    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 

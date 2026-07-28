@@ -9,7 +9,7 @@ export interface BranchResolver {
    *
    * Throws BranchNotFoundError if no active branch exists.
    * Throws BranchCorruptError if snapshot is missing or undecodable.
-   * Throws StaleDocumentSchemaError if persisted branch state is behind the running schema.
+   * Throws DocumentSchemaMajorMismatchError if the persisted branch has another major.
    */
   resolveThreadBranch(documentId: DocumentId, threadId: ThreadId): Promise<BranchState>;
 }

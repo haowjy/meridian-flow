@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 export type EditorToolbarProps = {
   editor: Editor | null;
+  disabled?: boolean;
   onFigureButtonClick?: () => void;
   figureUploadBusy?: boolean;
   figureUploadDisabled?: boolean;
@@ -26,6 +27,7 @@ export type EditorToolbarProps = {
 
 export function EditorToolbar({
   editor,
+  disabled = false,
   onFigureButtonClick,
   figureUploadBusy = false,
   figureUploadDisabled = false,
@@ -53,7 +55,7 @@ export function EditorToolbar({
         <ToolbarButton
           label={t`Heading`}
           active={editor?.isActive("heading", { level: 1 }) ?? false}
-          disabled={!editor}
+          disabled={!editor || disabled}
           onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
         >
           <Heading1 className="size-3.5" aria-hidden />
@@ -61,7 +63,7 @@ export function EditorToolbar({
         <ToolbarButton
           label={t`Bold`}
           active={editor?.isActive("strong") ?? false}
-          disabled={!editor}
+          disabled={!editor || disabled}
           onClick={() => editor?.chain().focus().toggleBold().run()}
         >
           <Bold className="size-3.5" aria-hidden />
@@ -69,7 +71,7 @@ export function EditorToolbar({
         <ToolbarButton
           label={t`Italic`}
           active={editor?.isActive("em") ?? false}
-          disabled={!editor}
+          disabled={!editor || disabled}
           onClick={() => editor?.chain().focus().toggleItalic().run()}
         >
           <Italic className="size-3.5" aria-hidden />
@@ -77,7 +79,7 @@ export function EditorToolbar({
         <ToolbarButton
           label={t`Code`}
           active={editor?.isActive("code") ?? false}
-          disabled={!editor}
+          disabled={!editor || disabled}
           onClick={() => editor?.chain().focus().toggleCode().run()}
         >
           <Code className="size-3.5" aria-hidden />
@@ -85,14 +87,14 @@ export function EditorToolbar({
         <ToolbarButton
           label={t`Bullet list`}
           active={editor?.isActive("bullet_list") ?? false}
-          disabled={!editor}
+          disabled={!editor || disabled}
           onClick={() => editor?.chain().focus().toggleBulletList().run()}
         >
           <List className="size-3.5" aria-hidden />
         </ToolbarButton>
         <ToolbarButton
           label={t`Link`}
-          disabled={!editor}
+          disabled={!editor || disabled}
           onClick={() =>
             editor
               ?.chain()
@@ -105,7 +107,7 @@ export function EditorToolbar({
         </ToolbarButton>
         <ToolbarButton
           label={t`Upload figure`}
-          disabled={!editor || figureUploadBusy || figureUploadDisabled}
+          disabled={!editor || disabled || figureUploadBusy || figureUploadDisabled}
           onClick={() => onFigureButtonClick?.()}
         >
           <ImageUp className="size-3.5" aria-hidden />

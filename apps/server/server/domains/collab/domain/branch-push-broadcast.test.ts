@@ -4,7 +4,11 @@ import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit/in
 import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
+  createCollabYDoc,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
@@ -78,7 +82,7 @@ function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
     generation: 1,
     state: Y.encodeStateAsUpdate(doc),
     stateVector: Y.encodeStateVector(doc),
-    schemaVersion: 3,
+    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 

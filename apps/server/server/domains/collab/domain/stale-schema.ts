@@ -1,29 +1,40 @@
-/** Stale ProseMirror schema detection for persisted Yjs document heads. */
+/** Major-version compatibility guard for persisted Yjs document heads. */
+import {
+  type CollabSchemaVersion,
+  formatCollabSchemaVersion,
+  serverServesHead,
+} from "@meridian/prosemirror-schema";
 
 export function isStaleSchema(
-  storedVersion: number | null | undefined,
-  expectedVersion: number,
+  storedVersion: CollabSchemaVersion | null | undefined,
+  expectedVersion: CollabSchemaVersion,
 ): boolean {
-  return storedVersion != null && storedVersion < expectedVersion;
+  return storedVersion != null && !serverServesHead(storedVersion, expectedVersion);
 }
 
-export class StaleDocumentSchemaError extends Error {
+export class DocumentSchemaMajorMismatchError extends Error {
   readonly docId: string;
-  readonly storedVersion: number;
-  readonly expectedVersion: number;
+  readonly storedVersion: CollabSchemaVersion;
+  readonly expectedVersion: CollabSchemaVersion;
 
-  constructor(docId: string, storedVersion: number, expectedVersion: number) {
+  constructor(
+    docId: string,
+    storedVersion: CollabSchemaVersion,
+    expectedVersion: CollabSchemaVersion,
+  ) {
     super(
-      `Document ${docId} was persisted with schema version ${storedVersion} ` +
-        `(current ${expectedVersion}); replay would corrupt CRDT state`,
+      `Document ${docId} was persisted with schema version ${formatCollabSchemaVersion(storedVersion)} ` +
+        `(current ${formatCollabSchemaVersion(expectedVersion)}); replay would corrupt CRDT state`,
     );
-    this.name = "StaleDocumentSchemaError";
+    this.name = "DocumentSchemaMajorMismatchError";
     this.docId = docId;
     this.storedVersion = storedVersion;
     this.expectedVersion = expectedVersion;
   }
 }
 
-export function isStaleDocumentSchemaError(cause: unknown): cause is StaleDocumentSchemaError {
-  return cause instanceof StaleDocumentSchemaError;
+export function isDocumentSchemaMajorMismatchError(
+  cause: unknown,
+): cause is DocumentSchemaMajorMismatchError {
+  return cause instanceof DocumentSchemaMajorMismatchError;
 }

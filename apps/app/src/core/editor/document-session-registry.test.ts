@@ -1,19 +1,24 @@
 /** Regression coverage for replacing pre-materialization authorization failures. */
 
-import type { AuthMeResponse, ChangeEventWsMessage } from "@meridian/contracts/protocol";
-import { describe, expect, it, vi } from "vitest";
-import type { ConnectionState } from "@/core/transport/ThreadTransport";
+import {
+  type AuthMeResponse,
+  type ChangeEventWsMessage,
+  WS_CLOSE,
+} from "@meridian/contracts/protocol";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DocumentSessionConnectionState } from "./document-session";
+import { clientSchemaReloadGuardKey } from "./schema-fence";
 
 const providers: Array<{
-  emit: (state: ConnectionState) => void;
+  emit: (state: DocumentSessionConnectionState) => void;
   destroy: ReturnType<typeof vi.fn>;
 }> = [];
 
 vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
   createHocuspocusDocumentTransport: () => {
-    const listeners = new Set<(state: ConnectionState) => void>();
+    const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
     const provider = {
-      emit: (state: ConnectionState) => {
+      emit: (state: DocumentSessionConnectionState) => {
         for (const listener of listeners) listener(state);
       },
       destroy: vi.fn(),
@@ -21,7 +26,7 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
     providers.push(provider);
     return {
       synced: false,
-      subscribeStatus: (listener: (state: ConnectionState) => void) => {
+      subscribeStatus: (listener: (state: DocumentSessionConnectionState) => void) => {
         listeners.add(listener);
         listener({ kind: "connecting", attempt: 1 });
         return () => listeners.delete(listener);
@@ -32,6 +37,11 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 }));
 
 const { DocumentSessionRegistry } = await import("./document-session-registry");
+const { memoryStorage } = await import("@/test-support/memory-storage");
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
   it("uses the bootstrap's internal identity for self-suppression, never its external id", () => {
@@ -237,5 +247,38 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
     expect(providers).toHaveLength(1);
     expect(registry.get("document-2")).toBe(session);
     registry.destroyAll();
+  });
+
+  it("persists the repeated-4406 fence so a fresh registry starts detached", () => {
+    providers.length = 0;
+    const localStorage = memoryStorage();
+    const sessionStorage = memoryStorage();
+    vi.stubGlobal("localStorage", localStorage);
+    vi.stubGlobal("sessionStorage", sessionStorage);
+    sessionStorage.setItem(clientSchemaReloadGuardKey("document-quarantined"), "1");
+    const firstRegistry = new DocumentSessionRegistry();
+    const firstSession = firstRegistry.get("document-quarantined");
+
+    providers.at(-1)?.emit({
+      kind: "reset",
+      reason: WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason,
+      code: WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code,
+    });
+    expect(firstSession.getSnapshot().schemaFence).toEqual({
+      reason: "client-superseded",
+    });
+    expect(providers).toHaveLength(1);
+    firstRegistry.destroyAll();
+
+    const secondRegistry = new DocumentSessionRegistry();
+    const reacquired = secondRegistry.get("document-quarantined");
+    expect(reacquired.getSnapshot()).toEqual(
+      expect.objectContaining({
+        status: "detached",
+        schemaFence: { reason: "client-superseded" },
+      }),
+    );
+    expect(providers).toHaveLength(1);
+    secondRegistry.destroyAll();
   });
 });
