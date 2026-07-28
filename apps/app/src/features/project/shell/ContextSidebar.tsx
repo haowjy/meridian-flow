@@ -5,6 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { DocumentFileType } from "@meridian/contracts/protocol";
+import type { LucideIcon } from "lucide-react";
 import { FileText, Image as ImageIcon, Sparkles, Upload } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -192,7 +193,7 @@ function DocumentRow({ document }: { document: RailDocument }) {
 }
 
 function KindIcon({ fileType }: { fileType: DocumentFileType | null }) {
-  const { Icon, tone } = pickIcon(fileType);
+  const { Icon, tone } = pickIconForFileType(fileType);
   return (
     <RailKindIcon tone={tone}>
       <Icon className="size-3.5" />
@@ -200,7 +201,13 @@ function KindIcon({ fileType }: { fileType: DocumentFileType | null }) {
   );
 }
 
-function pickIcon(fileType: DocumentFileType | null): { Icon: typeof FileText; tone: string } {
+/* Takes `string`, not `DocumentFileType`: the value is DB `documents.file_type`,
+ * unconstrained text that the server types — but never narrows — as the union.
+ * Real markdown chapters arrive as `"markdown"`, so a switch that is exhaustive
+ * over the declared union returns `undefined` and the caller's destructure takes
+ * the whole project view down. Unknown kinds read as generic files.
+ */
+export function pickIconForFileType(fileType: string | null): { Icon: LucideIcon; tone: string } {
   switch (fileType) {
     case null:
       return { Icon: FileText, tone: "text-primary" };
@@ -210,7 +217,7 @@ function pickIcon(fileType: DocumentFileType | null): { Icon: typeof FileText; t
       return { Icon: FileText, tone: "text-destructive" };
     case "docx":
       return { Icon: FileText, tone: "text-accent" };
-    case "binary":
+    default:
       return { Icon: FileText, tone: "text-muted-foreground" };
   }
 }

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: a document whose kind the app doesn't recognize (an
+  ordinary markdown chapter, for one) now shows a plain file icon in the
+  chat context rail instead of blanking the whole project view.
 - `apps/app`: document names in the activity timeline are now doors — clicking
   a name opens that document in the context pane; clicking the rest of the row
   still toggles its detail. Names stay plain text where navigation can't work
