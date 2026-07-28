@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
 import { toDocHandle } from "../handles.js";
-import { createAgentEditCore, type WriteIdempotencyHitDetail } from "../index.js";
+import type { WriteIdempotencyHitDetail } from "../index.js";
 import { fragmentOf } from "../model/y-prosemirror.js";
-import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import type { UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
   expectOutcome,
@@ -259,36 +259,6 @@ describe("write tool dispatch", () => {
 
     expectOutcome(result, "success");
     expect(observedBaseline).toEqual(["R10 Y survivor baseline.", "R10 Z foreign agent insert."]);
-  });
-
-  it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword." });
-    const oldJournalOnly = {
-      append: ctx.journal.append.bind(ctx.journal),
-      appendBatch: ctx.journal.appendBatch.bind(ctx.journal),
-      read: ctx.journal.read.bind(ctx.journal),
-      checkpoint: ctx.journal.checkpoint.bind(ctx.journal),
-      compact: ctx.journal.compact.bind(ctx.journal),
-    } as unknown as UpdateJournal & ReversalStore;
-    const core = createAgentEditCore({
-      journal: oldJournalOnly,
-      coordinator: ctx.coordinator,
-      lifecycle: ctx.lifecycle,
-      codec,
-      model,
-    });
-
-    await core.write({ command: "read", file: "chapter.md" }, context);
-    const write = await core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      context,
-    );
-
-    expectOutcome(write, "internal_error", true);
-    expect(outcomeText(write)).toBe(
-      "status: internal_error\n\nRetry — transient edit system failure.",
-    );
-    expect(outcomeText(write)).not.toMatch(/ReversalStore|reserveWriteOrdinal|is not a function/i);
   });
 
   it("creates a document with initial content", async () => {

@@ -11,9 +11,7 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000305";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000306";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("drizzle notice port (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("drizzle notice port (postgres)", () => {});
 } else {
   describe("drizzle notice port (postgres)", async () => {
     const schema = await import("@meridian/database/schema");

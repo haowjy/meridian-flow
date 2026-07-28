@@ -9,9 +9,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("drizzle credit ledger (postgres)", () => {
-    it("requires DATABASE_URL", () => {});
-  });
+  describe.skip("drizzle credit ledger (postgres)", () => {});
 } else {
   describe("drizzle credit ledger (postgres)", async () => {
     const { creditLots, creditTransactions, users } = await import("@meridian/database/schema");

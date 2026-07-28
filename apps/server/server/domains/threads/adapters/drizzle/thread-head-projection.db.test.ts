@@ -16,9 +16,7 @@ const INACTIVE_USER_TURN_ID = "00000000-0000-4000-8000-000000000407";
 const INTERLEAVED_USER_TURN_ID = "00000000-0000-4000-8000-000000000408";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("thread head projection (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("thread head projection (postgres)", () => {});
 } else {
   describe("thread head projection (postgres)", async () => {
     const { eq } = await import("drizzle-orm");

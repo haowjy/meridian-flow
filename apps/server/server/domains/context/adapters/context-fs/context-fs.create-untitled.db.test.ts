@@ -16,9 +16,7 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("ContextFS untitled collab persistence (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("ContextFS untitled collab persistence (postgres)", () => {});
 } else {
   describe("ContextFS untitled collab persistence (postgres)", () => {
     const USER_ID = "00000000-0000-4000-8000-000000000911";

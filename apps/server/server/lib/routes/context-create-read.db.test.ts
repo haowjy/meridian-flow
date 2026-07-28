@@ -7,9 +7,7 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("context create/read routes (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("context create/read routes (postgres)", () => {});
 } else {
   describe("context create/read routes (postgres)", async () => {
     const { Hocuspocus } = await import("@hocuspocus/server");

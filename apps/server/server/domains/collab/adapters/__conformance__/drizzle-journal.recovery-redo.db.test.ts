@@ -53,9 +53,7 @@ const codec = createAgentEditCodec(mdxCodec({ schema }));
 const model = yProsemirrorModel(schema);
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("drizzle journal (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("drizzle journal (postgres)", () => {});
 } else {
   describe("drizzle journal recovery/redo (postgres)", async () => {
     const dbSchema = await import("@meridian/database/schema");

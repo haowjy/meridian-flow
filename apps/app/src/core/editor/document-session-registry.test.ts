@@ -142,24 +142,27 @@ describe("DocumentSessionRegistry.restartUnavailableRoom", () => {
 
   it("starts a fresh teardown grace window after a room is retained again", () => {
     vi.useFakeTimers();
-    const registry = new DocumentSessionRegistry();
-    registry.retain("owner", ["document-grace"]);
-    const session = registry.get("document-grace");
+    try {
+      const registry = new DocumentSessionRegistry();
+      registry.retain("owner", ["document-grace"]);
+      const session = registry.get("document-grace");
 
-    registry.release("owner");
-    vi.advanceTimersByTime(2_800);
-    registry.retain("owner", ["document-grace"]);
-    registry.release("owner");
-    vi.advanceTimersByTime(200);
+      registry.release("owner");
+      vi.advanceTimersByTime(2_800);
+      registry.retain("owner", ["document-grace"]);
+      registry.release("owner");
+      vi.advanceTimersByTime(200);
 
-    expect(registry.has("document-grace")).toBe(true);
-    expect(session.getSnapshot().status).not.toBe("destroyed");
+      expect(registry.has("document-grace")).toBe(true);
+      expect(session.getSnapshot().status).not.toBe("destroyed");
 
-    vi.advanceTimersByTime(2_800);
-    expect(registry.has("document-grace")).toBe(false);
-    expect(session.getSnapshot().status).toBe("destroyed");
-    registry.destroyAll();
-    vi.useRealTimers();
+      vi.advanceTimersByTime(2_800);
+      expect(registry.has("document-grace")).toBe(false);
+      expect(session.getSnapshot().status).toBe("destroyed");
+      registry.destroyAll();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("peeks during the grace window without cancelling teardown", () => {

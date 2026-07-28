@@ -5,9 +5,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("drizzle internal upload document store (postgres)", () => {
-    it("requires DATABASE_URL", () => {});
-  });
+  describe.skip("drizzle internal upload document store (postgres)", () => {});
 } else {
   describe("drizzle internal upload document store (postgres)", async () => {
     const schema = await import("@meridian/database/schema");

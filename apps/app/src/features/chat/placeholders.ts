@@ -9,7 +9,7 @@ import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { useSyncExternalStore } from "react";
 
-export const COMPOSE_PLACEHOLDERS = [
+const COMPOSE_PLACEHOLDERS = [
   msg`Chat away`,
   msg`Write away`,
   msg`Go ahead`,
@@ -22,7 +22,7 @@ export const COMPOSE_PLACEHOLDERS = [
   msg`Let's work on it`,
 ] as const;
 
-export const INTERJECT_PLACEHOLDERS = [
+const INTERJECT_PLACEHOLDERS = [
   msg`Interject`,
   msg`Chime in`,
   msg`Actually…`,
@@ -42,7 +42,7 @@ type PlaceholderSelection<T> = {
   value: T;
 };
 
-export function selectNextPlaceholder<T>(
+function selectNextPlaceholder<T>(
   pool: readonly T[],
   storedIndex: string | null,
 ): PlaceholderSelection<T> {

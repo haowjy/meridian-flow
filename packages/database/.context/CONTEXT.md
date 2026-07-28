@@ -98,12 +98,12 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
    (functions are applied separately, after migrate).
 
-Migrations that transform existing rows need a populated upgrade scenario in
-`fresh-migrations.db.test.ts`. Use `withPopulatedMigrationDatabase` to apply the
-committed prefix, seed the pre-migration shape, apply the remaining chain, and
-assert the intended disposition. Preserve or backfill recoverable facts; make
-deliberate pre-release deletion explicit; and fail closed when required evidence
-is missing rather than inventing a plausible value.
+A row-transform migration MUST ship with a populated upgrade fixture in
+`fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
+shape, and prove the fixture fails before the transform (pre-fix red) and passes
+after the remaining chain runs. Cull the fixture once the migration is
+superseded and frozen: pre-launch schema freedom means old migration history is
+not a live contract.
 
 The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
 migrations (`0001_serious_red_skull`, …); prefer additive migrations over

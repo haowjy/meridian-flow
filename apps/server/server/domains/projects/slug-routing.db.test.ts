@@ -10,9 +10,7 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("slug routing (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("slug routing (postgres)", () => {});
 } else {
   describe("slug routing (postgres)", async () => {
     const { createDb } = await import("@meridian/database");

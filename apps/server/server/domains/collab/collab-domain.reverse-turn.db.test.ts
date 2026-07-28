@@ -8,9 +8,7 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("collab domain reverseTurn (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("collab domain reverseTurn (postgres)", () => {});
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
@@ -396,7 +394,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
+      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "manual" });
       for (const [documentId, markdown] of [
         [DOC_ID, "First base."],
         [CREATED_DOC_ID, "Second base."],
@@ -418,6 +416,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             { sessionId: "session-atomic-redo", threadId: THREAD_ID, turnId: TURN_ID },
           ),
         ).resolves.toMatchObject({ status: "success" });
+        await expect(
+          collab.pushToLive({ branchId: await currentDraftId(collab, documentId) }),
+        ).resolves.toMatchObject({ status: "pushed" });
       }
       await expect(
         collab.reverseTurn({

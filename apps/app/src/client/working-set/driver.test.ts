@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canSweepWorkingSet, getWorkingSetStorage, WorkingSetSyncDriver } from "./driver";
 import { DeviceWorkingSetStore, type WorkingSetSnapshot } from "./store";
@@ -7,6 +7,38 @@ const pendingRecord = {
   snapshot: { recentRoutes: [], lastThreadId: null },
   pending: { baseRevision: null, localVersion: 1 },
 };
+
+const pendingDriverRequests = new Map<Promise<unknown>, () => void>();
+
+function trackDriverRequests<Args extends unknown[], Result>(
+  request: (...args: Args) => Promise<Result>,
+): (...args: Args) => Promise<Result> {
+  return (...args) => {
+    let cancel: () => void = () => undefined;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancel = () => reject(new Error("driver test cleanup"));
+    });
+    const pending = Promise.race([request(...args), cancelled]);
+    pendingDriverRequests.set(pending, cancel);
+    void pending.then(
+      () => pendingDriverRequests.delete(pending),
+      () => pendingDriverRequests.delete(pending),
+    );
+    return pending;
+  };
+}
+
+async function disposeDriver(driver: WorkingSetSyncDriver | undefined): Promise<void> {
+  driver?.configure("test-cleanup", false);
+  const requests = [...pendingDriverRequests.entries()];
+  for (const [, cancel] of requests) cancel();
+  await Promise.allSettled(requests.map(([request]) => request));
+  await Promise.resolve();
+  if (vi.isFakeTimers()) {
+    await vi.runAllTimersAsync();
+    vi.clearAllTimers();
+  }
+}
 
 describe("working-set sweep eligibility", () => {
   it("requires the real toggle, a pending report, and a session baseline", () => {
@@ -22,6 +54,14 @@ describe("working-set sweep eligibility", () => {
 });
 
 describe("working-set identity sessions", () => {
+  let driver: WorkingSetSyncDriver | undefined;
+
+  afterEach(async () => {
+    await disposeDriver(driver);
+    driver = undefined;
+    vi.useRealTimers();
+  });
+
   it("adopts a server revision once and returns its seeding plan on a strict-mode replay", () => {
     const storage = {
       getItem: () => null,
@@ -29,7 +69,7 @@ describe("working-set identity sessions", () => {
       removeItem: () => undefined,
     };
     const store = new DeviceWorkingSetStore(storage);
-    const driver = new WorkingSetSyncDriver(store, vi.fn());
+    driver = new WorkingSetSyncDriver(store, vi.fn());
     const result = {
       status: "row" as const,
       row: {
@@ -63,7 +103,7 @@ describe("working-set identity sessions", () => {
       setItem: () => undefined,
       removeItem: () => undefined,
     });
-    const driver = new WorkingSetSyncDriver(store, vi.fn());
+    driver = new WorkingSetSyncDriver(store, vi.fn());
     const result = {
       status: "row" as const,
       row: {
@@ -81,7 +121,6 @@ describe("working-set identity sessions", () => {
 
     expect(driver.hydrate("project-1", result)).toEqual({ status: "local", revision: 3 });
     expect(store.read("project-1")?.snapshot.lastThreadId).toBe("thread-local");
-    vi.useRealTimers();
   });
 
   it("requires fresh hydration after sync is re-enabled before pending state can push", async () => {
@@ -92,7 +131,7 @@ describe("working-set identity sessions", () => {
       removeItem: () => undefined,
     });
     const put = vi.fn().mockResolvedValue({ revision: 7 });
-    const driver = new WorkingSetSyncDriver(store, put);
+    driver = new WorkingSetSyncDriver(store, trackDriverRequests(put));
     const serverRow = {
       userId: "user-a",
       projectId: "project-1",
@@ -124,7 +163,6 @@ describe("working-set identity sessions", () => {
     driver.flush();
     await vi.runAllTimersAsync();
     expect(put).not.toHaveBeenCalled();
-    vi.useRealTimers();
   });
 
   it("ignores an old user's acknowledgement before sweeping the new user's pending record", async () => {
@@ -141,7 +179,7 @@ describe("working-set identity sessions", () => {
           responses.push(resolve);
         }),
     );
-    const driver = new WorkingSetSyncDriver(store, put);
+    driver = new WorkingSetSyncDriver(store, trackDriverRequests(put));
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "absent" });
@@ -161,7 +199,6 @@ describe("working-set identity sessions", () => {
 
     responses[1]?.({ revision: 1 });
     await vi.waitFor(() => expect(store.read("project-1")?.pending).toBeUndefined());
-    vi.useRealTimers();
   });
 });
 
@@ -182,6 +219,14 @@ describe("working-set browser storage", () => {
 });
 
 describe("suspect baseline recovery", () => {
+  let driver: WorkingSetSyncDriver | undefined;
+
+  afterEach(async () => {
+    await disposeDriver(driver);
+    driver = undefined;
+    vi.useRealTimers();
+  });
+
   const serverRowAt = (revision: number) => ({
     userId: "user-a",
     projectId: "project-1",
@@ -200,7 +245,7 @@ describe("suspect baseline recovery", () => {
     });
     const get = vi.fn().mockResolvedValueOnce(serverRowAt(23)).mockResolvedValue(serverRowAt(23));
     const put = vi.fn().mockResolvedValue({ revision: 24 });
-    const driver = new WorkingSetSyncDriver(store, put, get);
+    driver = new WorkingSetSyncDriver(store, trackDriverRequests(put), trackDriverRequests(get));
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
@@ -227,7 +272,6 @@ describe("suspect baseline recovery", () => {
       scheme: "kb",
       path: "/after-reconcile.md",
     });
-    vi.useRealTimers();
   });
 
   it("pushes after offline recovery when the server row still matches", async () => {
@@ -239,7 +283,7 @@ describe("suspect baseline recovery", () => {
     });
     const get = vi.fn().mockResolvedValue(serverRowAt(22));
     const put = vi.fn().mockResolvedValue({ revision: 23 });
-    const driver = new WorkingSetSyncDriver(store, put, get);
+    driver = new WorkingSetSyncDriver(store, trackDriverRequests(put), trackDriverRequests(get));
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
@@ -252,7 +296,6 @@ describe("suspect baseline recovery", () => {
     expect(get).toHaveBeenCalledTimes(1);
     expect(put).toHaveBeenCalledTimes(1);
     expect(put.mock.calls[0]?.[1].recentRoutes[0]).toEqual({ scheme: "kb", path: "/local.md" });
-    vi.useRealTimers();
   });
 
   it("withholds further PUTs after failure until a successful GET", async () => {
@@ -270,7 +313,7 @@ describe("suspect baseline recovery", () => {
       .fn()
       .mockRejectedValueOnce(new Error("network down"))
       .mockResolvedValue({ revision: 23 });
-    const driver = new WorkingSetSyncDriver(store, put, get);
+    driver = new WorkingSetSyncDriver(store, trackDriverRequests(put), trackDriverRequests(get));
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
@@ -288,7 +331,6 @@ describe("suspect baseline recovery", () => {
     await vi.runAllTimersAsync();
     expect(get).toHaveBeenCalledTimes(2);
     expect(put).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
   });
 
   it("does not resurrect a confirmed baseline from loader data while suspect", async () => {
@@ -300,7 +342,7 @@ describe("suspect baseline recovery", () => {
     });
     const get = vi.fn().mockResolvedValue(serverRowAt(22));
     const put = vi.fn().mockResolvedValue({ revision: 23 });
-    const driver = new WorkingSetSyncDriver(store, put, get);
+    driver = new WorkingSetSyncDriver(store, trackDriverRequests(put), trackDriverRequests(get));
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
@@ -313,6 +355,5 @@ describe("suspect baseline recovery", () => {
 
     expect(get).toHaveBeenCalledTimes(1);
     expect(put).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 });

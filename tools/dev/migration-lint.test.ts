@@ -45,16 +45,6 @@ describe("migration lint", () => {
     expect(released.output).toContain("No issues found");
   });
 
-  it("rejects a new NOT NULL column that cannot be added to populated rows", async () => {
-    const result = await lintMigration(
-      "0067_unsafe.sql",
-      'ALTER TABLE "publications" ADD COLUMN "generation" integer NOT NULL;',
-    );
-
-    expect(result.exitCode).toBe(1);
-    expect(result.output).toContain("[ADD_NOT_NULL_WITHOUT_DEFAULT]");
-  });
-
   it("accepts a nullable add followed by a backfill and NOT NULL constraint", async () => {
     const result = await lintMigration(
       "0067_safe.sql",

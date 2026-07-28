@@ -20,6 +20,7 @@ const { DocumentSession } = await import("./document-session");
 
 describe("DocumentSession persistence cleanup", () => {
   afterEach(() => {
+    vi.useRealTimers();
     persistence.clearData.mockClear();
     persistence.destroy.mockClear();
     persistence.createWhenSynced.mockReset().mockResolvedValue();
@@ -117,6 +118,5 @@ describe("DocumentSession persistence cleanup", () => {
     expect(transportFactory).toHaveBeenCalledOnce();
 
     await session.destroy();
-    vi.useRealTimers();
   });
 });

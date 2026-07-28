@@ -24,9 +24,7 @@ function postgresErrorCode(error: unknown): string | null {
 }
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("turn start serialization (postgres)", () => {
-    it("requires RUN_DB_TESTS and DATABASE_URL", () => {});
-  });
+  describe.skip("turn start serialization (postgres)", () => {});
 } else {
   describe("turn start serialization (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
