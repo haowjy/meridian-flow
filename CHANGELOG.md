@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `tools/dev`: worktree pruning now ignores Meridian diagnostics and skips
+  work items that disappear during discovery.
 - `apps/server`: Anthropic-format cache usage now normalizes to inclusive input
   totals, so uncached prompt tokens are priced instead of silently clamped away;
   OpenAI-compatible trailing usage-only chunks are also retained.

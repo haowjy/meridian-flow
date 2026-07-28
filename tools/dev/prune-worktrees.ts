@@ -225,10 +225,17 @@ async function collectMeridianWorkItems(cwd: string): Promise<MeridianWorkItem[]
   }
 
   const listItems = parseMeridianWorkList(listOutput);
-  return mapWithConcurrency(listItems, 8, async (item) => {
-    const showOutput = await runTextAsync("meridian", ["work", "show", item.id], cwd);
-    return parseMeridianWorkShow(item.id, showOutput);
+  const workItems = await mapWithConcurrency(listItems, 8, async (item) => {
+    try {
+      const showOutput = await runTextAsync("meridian", ["work", "show", item.id], cwd);
+      return parseMeridianWorkShow(item.id, showOutput);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`Warning: skipping Meridian work item '${item.id}': ${reason}`);
+      return undefined;
+    }
   });
+  return workItems.filter((item): item is MeridianWorkItem => item !== undefined);
 }
 
 // The trunk this repo integrates into. Detected from the remote's default

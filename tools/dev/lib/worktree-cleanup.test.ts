@@ -5,6 +5,7 @@ import {
   createCleanupPlan,
   executeCleanupPlan,
   parseGitWorktreePorcelain,
+  parseMeridianWorkList,
   resolveAutoTargets,
   resolveTarget,
 } from "./worktree-cleanup";
@@ -57,6 +58,20 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
 }
 
 describe("worktree cleanup resolver", () => {
+  it("ignores diagnostics in the Meridian work list", () => {
+    expect(
+      parseMeridianWorkList(
+        [
+          "name           status  created",
+          "backlog-audit  open    2026-07-27T16:38:23.855789Z",
+          "",
+          "warning: Work item 'backlog-audit' exists in both active and archive directories.",
+          "error: unrelated diagnostic",
+        ].join("\n"),
+      ),
+    ).toEqual([{ id: "backlog-audit" }]);
+  });
+
   it("preserves Git's locked worktree marker", () => {
     expect(
       parseGitWorktreePorcelain(

@@ -163,9 +163,11 @@ export function parseMeridianWorkList(output: string): MeridianWorkListItem[] {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !line.startsWith("name "))
-    .map((line) => ({ id: line.split(/\s+/)[0] }))
-    .filter((item): item is MeridianWorkListItem => Boolean(item.id));
+    .flatMap((line) => {
+      const [id, _status, created, ...extra] = line.split(/\s+/);
+      if (!id || !created || extra.length > 0 || Number.isNaN(Date.parse(created))) return [];
+      return [{ id }];
+    });
 }
 
 export function parseMeridianWorkShow(id: string, output: string): MeridianWorkItem {
