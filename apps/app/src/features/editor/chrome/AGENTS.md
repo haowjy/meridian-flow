@@ -6,7 +6,7 @@ and lives in [`core/editor/chrome/`](../../../core/editor/chrome/AGENTS.md).
 
 ## Mental model
 
-Three primitives and one host.
+Four primitives and one host.
 
 - **`OverlayIconRow`** — an object's verbs, overlaid just inside its top-right
   bounds (ruling 8; mockup 03b is the decision record). Portalled and
@@ -14,6 +14,10 @@ Three primitives and one host.
 - **`EditorMenu` / `EditorPopover` / `EditorDialog`** — Radix, subordinated.
   Each registers as a layer in the Esc chain, defers Escape when something
   deeper is open, and hands the caret back to the prose on every close path.
+- **`SuggestionMenu`** — the list a writer types underneath, for `/` and for
+  `[[`. It owns the eight-row cap, the internal scroll that follows the arrow
+  keys, the hairline fades, and the announcement the caret's own element has to
+  carry; a lane brings rows.
 - **`EditorChromeHost`** — the one place chrome mounts. Surfaces arrive
   through `EDITOR_CHROME_SURFACES`; `EditorView.tsx` never learns about one.
 
