@@ -1,10 +1,26 @@
 /** Core document-language instruction baked into every model system prompt. */
 
+const dialectSyntax = {
+  fence: "```",
+  pipeHardBreak: {
+    wire: "\\\n",
+    instruction: "a backslash immediately followed by a newline",
+  },
+  htmlTable: {
+    open: "<table>",
+    close: "</table>",
+  },
+  htmlLiteralNewline: "&#10;",
+  htmlHardBreak: "<br />",
+  layoutClose: "</Layout>",
+  internalAssetPrefix: "asset:",
+} as const;
+
 const htmlTableEscalations = [
   {
     reason: "`rowspan` or `colspan`",
     wire: [
-      "<table>",
+      dialectSyntax.htmlTable.open,
       "  <thead>",
       "    <tr>",
       '      <th colspan="2">Name</th>',
@@ -17,13 +33,13 @@ const htmlTableEscalations = [
       "      <td>Body</td>",
       "    </tr>",
       "  </tbody>",
-      "</table>",
+      dialectSyntax.htmlTable.close,
     ].join("\n"),
   },
   {
     reason: "literal multi-line cell text",
     wire: [
-      "<table>",
+      dialectSyntax.htmlTable.open,
       "  <thead>",
       "    <tr>",
       "      <th>Note</th>",
@@ -31,19 +47,19 @@ const htmlTableEscalations = [
       "  </thead>",
       "  <tbody>",
       "    <tr>",
-      "      <td>line one&#10;line two</td>",
+      `      <td>line one${dialectSyntax.htmlLiteralNewline}line two</td>`,
       "    </tr>",
       "  </tbody>",
-      "</table>",
+      dialectSyntax.htmlTable.close,
     ].join("\n"),
   },
   {
     reason: "no header row",
     wire: [
-      "<table>",
+      dialectSyntax.htmlTable.open,
       "  <tbody>",
       "    <tr>",
-      "      <td>Skill<br />Type</td>",
+      `      <td>Skill${dialectSyntax.htmlHardBreak}Type</td>`,
       "      <td>Rank</td>",
       "    </tr>",
       "    <tr>",
@@ -51,26 +67,26 @@ const htmlTableEscalations = [
       "      <td>7</td>",
       "    </tr>",
       "  </tbody>",
-      "</table>",
+      dialectSyntax.htmlTable.close,
     ].join("\n"),
   },
   {
     reason: "mixed header and body cells in one row",
     wire: [
-      "<table>",
+      dialectSyntax.htmlTable.open,
       "  <tbody>",
       "    <tr>",
       "      <th>Skill</th>",
       "      <td>Iron Body</td>",
       "    </tr>",
       "  </tbody>",
-      "</table>",
+      dialectSyntax.htmlTable.close,
     ].join("\n"),
   },
   {
     reason: "ragged rows",
     wire: [
-      "<table>",
+      dialectSyntax.htmlTable.open,
       "  <thead>",
       "    <tr>",
       "      <th>Skill</th>",
@@ -82,13 +98,13 @@ const htmlTableEscalations = [
       "      <td>Iron Body</td>",
       "    </tr>",
       "  </tbody>",
-      "</table>",
+      dialectSyntax.htmlTable.close,
     ].join("\n"),
   },
   {
     reason: "per-cell alignment that is not one column alignment",
     wire: [
-      "<table>",
+      dialectSyntax.htmlTable.open,
       "  <thead>",
       "    <tr>",
       '      <th align="left">Value</th>',
@@ -99,7 +115,7 @@ const htmlTableEscalations = [
       '      <td align="right">7</td>',
       "    </tr>",
       "  </tbody>",
-      "</table>",
+      dialectSyntax.htmlTable.close,
     ].join("\n"),
   },
 ] as const;
@@ -107,11 +123,11 @@ const htmlTableEscalations = [
 const layoutSpellings = [
   {
     form: '`<Layout align="center">`',
-    wire: '<Layout align="center">\n  The sword remembers.\n</Layout>',
+    wire: `<Layout align="center">\n  The sword remembers.\n${dialectSyntax.layoutClose}`,
   },
   {
     form: '`<Layout align="right">`',
-    wire: '<Layout align="right">\n  ## Dateline\n</Layout>',
+    wire: `<Layout align="right">\n  ## Dateline\n${dialectSyntax.layoutClose}`,
   },
   {
     form: '`widths="120,,80"`',
@@ -120,12 +136,13 @@ const layoutSpellings = [
       "  | Stat | Detail | Value |",
       "  | ---- | ------ | ----: |",
       "  | STR  | Power  |    15 |",
-      "</Layout>",
+      dialectSyntax.layoutClose,
     ].join("\n"),
   },
 ] as const;
 
 export const DOCUMENT_DIALECT_CONTRACT = {
+  syntax: dialectSyntax,
   gfm: {
     wire: [
       "# Chapter",
@@ -147,16 +164,18 @@ export const DOCUMENT_DIALECT_CONTRACT = {
   codeFences: [
     {
       language: "typescript",
-      wire: "```typescript\nconst rank = 7;\n```",
+      opening: `${dialectSyntax.fence}typescript`,
+      wire: `${dialectSyntax.fence}typescript\nconst rank = 7;\n${dialectSyntax.fence}`,
     },
     {
       language: "mermaid",
-      wire: "```mermaid\ngraph TD\n  Trial --> Ascension\n```",
+      opening: `${dialectSyntax.fence}mermaid`,
+      wire: `${dialectSyntax.fence}mermaid\ngraph TD\n  Trial --> Ascension\n${dialectSyntax.fence}`,
     },
   ],
   pipeTable: {
     wire: "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |",
-    hardBreakWire: "| Detail    |\n| --------- |\n| one\\\ntwo |",
+    hardBreakWire: `| Detail    |\n| --------- |\n| one${dialectSyntax.pipeHardBreak.wire}two |`,
   },
   htmlTableEscalations,
   layouts: layoutSpellings,
@@ -206,11 +225,11 @@ export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "",
   "Meridian adds these wire rules:",
   `- Link to another document as \`${DOCUMENT_DIALECT_CONTRACT.wikilink.wire}\`. The target is the label; \`${DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral}\` is literal text, not a link.`,
-  `- Put block code in backtick fences with the language after the opening fence, such as \`${DOCUMENT_DIALECT_CONTRACT.codeFences[0].language}\`. A \`${DOCUMENT_DIALECT_CONTRACT.codeFences[1].language}\` language fence renders as a diagram.`,
-  "- Keep a table in GFM pipes when it has one header row, rectangular rows, unit cells, consistent per-column alignment, and no literal newline in a cell. Within a pipe cell, spell an intentional hard break as a backslash immediately followed by a newline.",
-  `- Use raw HTML \`<table>\` when a table needs ${htmlEscalationReasons}. In HTML cells, use \`&#10;\` for a literal newline and \`<br />\` for a hard break.`,
-  `- Wrap exactly one paragraph, heading, or table in ${alignmentForms}, closed by \`</Layout>\`, for block alignment. On a table only, add ${widthsForm} to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.`,
-  `- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`${DOCUMENT_DIALECT_CONTRACT.image.wire}\`. Do not emit internal \`asset:\` identifiers or signed URLs.`,
+  `- Put block code in a language-tagged fence such as \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening} \`\`\`\`. Use \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening} \`\`\`\` for a diagram.`,
+  `- Keep a table in GFM pipes when it has one header row, rectangular rows, unit cells, consistent per-column alignment, and no literal newline in a cell. Within a pipe cell, spell an intentional hard break as ${DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak.instruction}.`,
+  `- Use raw HTML \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open}\` when a table needs ${htmlEscalationReasons}. In HTML cells, use \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline}\` for a literal newline and \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak}\` for a hard break.`,
+  `- Wrap exactly one paragraph, heading, or table in ${alignmentForms}, closed by \`${DOCUMENT_DIALECT_CONTRACT.syntax.layoutClose}\`, for block alignment. On a table only, add ${widthsForm} to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.`,
+  `- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`${DOCUMENT_DIALECT_CONTRACT.image.wire}\`. Do not emit internal \`${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}\` identifiers or signed URLs.`,
   "",
   "Specialized table, diagram, and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.",
 ].join("\n");

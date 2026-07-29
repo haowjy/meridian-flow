@@ -57,6 +57,8 @@ export interface BuildContextInput {
   turns: Turn[];
   blocks: Block[];
   tools?: Tool[];
+  /** Raw agent/project prompt used only while the thread prompt is not frozen. */
+  unfrozenBasePrompt?: string | null;
   /**
    * Skills catalog for pre-freeze assembly only. Ignored when
    * `thread.composedSystemPrompt` is already frozen.
@@ -75,7 +77,7 @@ export function buildContext(input: BuildContextInput): {
   if (composed && isThreadPromptFrozen(input.thread)) {
     messages.push(system(composed));
   } else {
-    const systemPrompt = composed ?? input.thread.systemPrompt;
+    const systemPrompt = input.unfrozenBasePrompt ?? composed ?? input.thread.systemPrompt;
     messages.push(
       system(
         assembleComposedSystemPrompt({

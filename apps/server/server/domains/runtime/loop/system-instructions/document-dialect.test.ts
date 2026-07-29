@@ -92,6 +92,13 @@ describe("document dialect card codec gate", () => {
         spelling.reason,
       ).toBe(true);
     }
+
+    const multiline = codec.parse(DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations[1].wire).blocks;
+    const headerlessWithBreak = codec.parse(
+      DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations[2].wire,
+    ).blocks;
+    expect(multiline[0]?.textContent).toContain("line one\nline two");
+    expect(descendantsOfType(headerlessWithBreak, "hard_break")).toHaveLength(1);
   });
 
   it("maps every claimed Layout form to block attributes", () => {
@@ -127,5 +134,18 @@ describe("document dialect card codec gate", () => {
     expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(
       DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral,
     );
+    for (const spelling of [
+      DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening,
+      DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening,
+      DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak.instruction,
+      DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open,
+      DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline,
+      DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak,
+      DOCUMENT_DIALECT_CONTRACT.syntax.layoutClose,
+      DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix,
+      DOCUMENT_DIALECT_CONTRACT.image.wire,
+    ]) {
+      expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(spelling);
+    }
   });
 });
