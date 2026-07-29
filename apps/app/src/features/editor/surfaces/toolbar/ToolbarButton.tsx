@@ -12,8 +12,10 @@
 import type { ComponentProps, ReactNode } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+// Straight at the primitive: the chrome barrel also carries the surface
+// registry this lane is listed in, and the round trip is a module cycle.
+import { ReasonTooltip } from "../../chrome/ReasonTooltip";
 
 export type ToolbarButtonProps = Omit<
   ComponentProps<typeof IconButton>,
@@ -41,6 +43,7 @@ export function toolbarControlClass({
   );
 }
 
+/** The row's tooltip: named below the button, since the toolbar sits on top. */
 export function ToolbarControlTooltip({
   label,
   blockedReason,
@@ -51,13 +54,9 @@ export function ToolbarControlTooltip({
   children: ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-56">
-        <span className="block">{label}</span>
-        {blockedReason ? <span className="block text-background/70">{blockedReason}</span> : null}
-      </TooltipContent>
-    </Tooltip>
+    <ReasonTooltip name={label} reason={blockedReason} side="bottom">
+      {children}
+    </ReasonTooltip>
   );
 }
 

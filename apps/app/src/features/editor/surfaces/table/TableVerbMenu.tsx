@@ -3,8 +3,9 @@
  *
  * One item component for all three, because law 5 is one rule: a verb that
  * cannot run here stays where the writer found it, keeps its hover and focus,
- * and says why on a second line. `disabled` would take it out of the focus
- * path and the reason would never arrive, so nothing here uses it.
+ * and says why when the writer reaches it. The greying, the swallowed select,
+ * and the tooltip are the shared row's (`chrome/EditorMenuItem`); this file
+ * only knows which verb is blocked and by what.
  *
  * The table verbs appear twice on purpose — flat under the selected table's ⋮
  * and as a submenu at the foot of both grip menus. Selecting a whole table is
@@ -80,24 +81,17 @@ function TableVerbItem({
   mergeJoinsText?: boolean;
 }) {
   const { blockedBy } = states[verb];
-  const reason = tableBlockedMessage(verb, blockedBy);
-  const hint = reason ?? tableVerbHint(verb, { mergeJoinsText });
+  const blockedReason = tableBlockedMessage(verb, blockedBy);
+  // What the verb will make is worth standing under a verb that will run. A
+  // verb that will not run has one thing to say, and says it on demand.
+  const hint = blockedReason ? null : tableVerbHint(verb, { mergeJoinsText });
 
   return (
     <EditorMenuItem
       data-table-verb={verb}
       variant={destructive ? "destructive" : "default"}
-      aria-disabled={reason ? true : undefined}
-      className={reason ? "cursor-not-allowed opacity-50 focus:bg-transparent" : undefined}
-      onSelect={(event) => {
-        // A blocked item stays open and stays reachable: the writer came for
-        // the reason, and closing the menu would take it away again.
-        if (reason) {
-          event.preventDefault();
-          return;
-        }
-        runTableVerb(editor, verb);
-      }}
+      blockedReason={blockedReason}
+      onSelect={() => runTableVerb(editor, verb)}
     >
       {icon}
       <span className="flex min-w-0 flex-col">

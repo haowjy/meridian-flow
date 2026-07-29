@@ -43,8 +43,9 @@ Three files, three jobs:
   mouse.
 - **Never bind Escape, never listen for `contextmenu`.** The Esc chain owns the
   first and the kernel's router owns the second.
-- **A greyed item keeps its hover and focus.** `aria-disabled` plus a tooltip,
-  never Radix's `disabled`, which takes the reason away with the item (law 5).
+- **A greyed item keeps its hover and focus** and shows its label alone; the
+  reason arrives from the shared row's tooltip, which is why the row may never
+  take Radix's `disabled` (law 5). Pass `blockedReason`; wire nothing else.
 - **A refusal that came from the browser still reaches the writer.** The
   clipboard can be withheld in either direction; the control greys with the
   shortcut rather than failing twice in silence.
